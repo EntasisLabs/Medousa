@@ -9,6 +9,7 @@ import {
 } from "$lib/code/codeDocumentService";
 import type { CodeWorkspaceSymbol } from "$lib/code/codingEngineClient";
 import { fuzzyMatchPaths } from "$lib/utils/pathFuzzyMatch";
+import { captureCodeScope } from "$lib/code/codeWorkspaceContext.svelte";
 
 export type CodeQuickOpenMode = "file" | "symbol" | "line";
 
@@ -18,6 +19,7 @@ export type CodeQuickOpenLspClient = {
 };
 
 export type CodeQuickOpenControllerDeps = {
+  getScopeKey: () => string;
   getWorkId: () => string;
   getLspClient: () => CodeQuickOpenLspClient | null;
   pathFromUri: (uri?: string) => string | null;
@@ -67,21 +69,33 @@ export class CodeQuickOpenController {
     this.open = false;
   }
 
+  resetForScope() {
+    this.close();
+    this.files = [];
+    this.symbols = [];
+    this.symbolQuery = "";
+    this.loading = false;
+    this.index = 0;
+  }
+
   setFiles(files: ForgeSourceTreeFile[]) {
     this.files = files;
   }
 
   async refreshTree() {
+    const current = captureCodeScope(this.#deps.getScopeKey);
     const workId = this.#deps.getWorkId();
     if (!workId) return;
     try {
-      this.files = (await getUndertakingSourceTree(workId)).files;
+      const files = (await getUndertakingSourceTree(workId)).files;
+      if (current()) this.files = files;
     } catch {
       /* tree refresh can retry later */
     }
   }
 
   async show() {
+    const current = captureCodeScope(this.#deps.getScopeKey);
     this.open = true;
     this.query = "";
     this.index = 0;
@@ -93,11 +107,12 @@ export class CodeQuickOpenController {
     } catch (err) {
       this.#deps.onError(err instanceof Error ? err.message : String(err));
     } finally {
-      this.loading = false;
+      if (current()) this.loading = false;
     }
   }
 
   async refreshSymbols() {
+    const current = captureCodeScope(this.#deps.getScopeKey);
     const query = this.query.startsWith("@") ? this.query.slice(1).trim() : "";
     const client = this.#deps.getLspClient();
     if (!this.#deps.getWorkId() || this.mode !== "symbol" || !client) return;
@@ -108,9 +123,11 @@ export class CodeQuickOpenController {
         "workspace/symbol",
         { query },
       );
-      if (this.symbolQuery === query) this.symbols = Array.isArray(result) ? result : [];
+      if (current() && this.#deps.getLspClient() === client && this.symbolQuery === query) {
+        this.symbols = Array.isArray(result) ? result : [];
+      }
     } catch {
-      if (this.symbolQuery === query) this.symbols = [];
+      if (current() && this.#deps.getLspClient() === client && this.symbolQuery === query) this.symbols = [];
     }
   }
 

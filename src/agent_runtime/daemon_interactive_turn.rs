@@ -75,6 +75,8 @@ pub struct InteractiveTurnSessionHooks {
     pub turn_ticket_registry: Option<TurnTicketRegistry>,
     /// When set, mirror terminal/interim outcomes into ask job store + workspace cards.
     pub ask_job_id: Option<String>,
+    pub(crate) peer_receipt_sink: Option<crate::daemon::coordination::PeerReceiptSink>,
+    pub(crate) native_coder_guard: Option<Arc<dyn super::coder_tools::CoderExecutionGuard>>,
     /// When set, store the latest turn-start context budget per session.
     pub context_usage_by_session:
         Option<Arc<RwLock<HashMap<String, crate::daemon_api::ContextUsageReport>>>>,
@@ -360,23 +362,95 @@ impl InteractiveTurnStreamSink {
 
     async fn publish_failure(
         &self,
-        outcome: TurnCompletionOutcomeV3,
-        operator_message: String,
-        debug_message: Option<String>,
+        mut outcome: TurnCompletionOutcomeV3,
+        mut operator_message: String,
+        mut debug_message: Option<String>,
     ) {
-        self.publish_tracked(TurnStreamEventV3::Error {
-            operator_message: operator_message.clone(),
-            debug_message: debug_message.clone(),
-        })
+        self.commit_active_segment(false).await;
+        let turn = self.finalize_failed_activity(&operator_message);
+        let tool_names = turn
+            .as_ref()
+            .map(|turn| turn.tool_names.clone())
+            .unwrap_or_default();
+        let mut journal = None;
+        if let Some(turn) = turn {
+            let event = super::turn_event::TurnEvent::Error {
+                message: operator_message.clone(),
+                turn: Some(Box::new(turn.clone())),
+            };
+            match self.persist_via_spine(turn, event.clone()).await {
+                Ok(_) => journal = Some(event),
+                Err(error) => {
+                    outcome = TurnCompletionOutcomeV3::Fatal;
+                    operator_message =
+                        "This turn stopped, and its activity could not be saved.".into();
+                    debug_message = Some(format!("turn persistence failed: {error}"));
+                }
+            }
+        }
+        // One settlement after the transcript receipt. A separate Error journal
+        // event would terminate the pipeline before TurnCompleted reaches Home.
+        self.publish_tracked_with_journal(
+            TurnStreamEventV3::TurnCompleted {
+                outcome,
+                aggregate_text: self.aggregate_text(),
+                tool_names,
+                operator_message: Some(operator_message),
+                debug_message,
+            },
+            journal,
+        )
         .await;
-        self.publish_tracked(TurnStreamEventV3::TurnCompleted {
-            outcome,
-            aggregate_text: self.aggregate_text(),
-            tool_names: Vec::new(),
-            operator_message: Some(operator_message),
-            debug_message,
-        })
-        .await;
+    }
+
+    fn finalize_failed_activity(
+        &self,
+        operator_message: &str,
+    ) -> Option<crate::session::ConversationTurn> {
+        let body = self.aggregate_text();
+        let mut parts = self.parts.lock().ok()?;
+        let observed = parts.preview_parts();
+        if body.trim().is_empty()
+            && !observed.iter().any(|part| {
+                matches!(
+                    part,
+                    crate::turn_parts::TurnPart::ToolRun { .. }
+                        | crate::turn_parts::TurnPart::Progress { .. }
+                )
+            })
+        {
+            return None;
+        }
+        let mut tool_names = Vec::new();
+        for part in &observed {
+            if let crate::turn_parts::TurnPart::ToolRun { tool_name, .. } = part
+                && !tool_names.contains(tool_name)
+            {
+                tool_names.push(tool_name.clone());
+            }
+        }
+        let mut turn = parts.finalize_chronological_turn(body, tool_names, Some("failed".into()));
+        if let Some(parts) = turn.parts.as_mut() {
+            for part in parts {
+                if let crate::turn_parts::TurnPart::ToolRun {
+                    status,
+                    finished_at,
+                    ..
+                } = part
+                    && finished_at.is_none()
+                {
+                    *status = "failed".into();
+                    *finished_at = Some(chrono::Utc::now());
+                }
+            }
+        }
+        let mut summary = crate::turn_slice::compute_slice_summary(&turn, None);
+        summary.failures.insert(0, operator_message.to_string());
+        turn.slice_summary = Some(summary);
+        if let Ok(reactions) = self.reactions.lock() {
+            turn.reactions = reactions.clone();
+        }
+        Some(turn)
     }
 
     async fn publish_tracked(&self, event: TurnStreamEventV3) {
@@ -388,6 +462,25 @@ impl InteractiveTurnStreamSink {
         event: TurnStreamEventV3,
         journal_override: Option<super::turn_event::TurnEvent>,
     ) {
+        if let Some(sink) = &self.session_hooks.peer_receipt_sink
+            && let TurnStreamEventV3::TurnCompleted {
+                outcome,
+                aggregate_text,
+                operator_message,
+                ..
+            } = &event
+        {
+            let result = operator_message.as_ref().unwrap_or(aggregate_text).clone();
+            if let Err(error) = sink
+                .terminal(
+                    crate::daemon::coordination::native_coder::terminal_outcome(*outcome),
+                    result,
+                )
+                .await
+            {
+                tracing::warn!(%error, "native Coder terminal retained for reconciliation");
+            }
+        }
         if let Some(registry) = &self.session_hooks.turn_ticket_registry {
             let (event_type, phase, terminal) = stream_tracking(&event);
             session_active_turn::note_stream_event(
@@ -1342,16 +1435,15 @@ pub async fn run_agent_turn(
     }
 }
 
-pub(crate) fn prepare_attached_native_coder_handoff(
+/// Transfer the UI's human lease when admitted Coder work takes over the
+/// undertaking workspace. Placement does not change execution custody.
+pub(crate) fn prepare_native_coder_handoff(
     forge: &medousa_forge::forge::Forge,
     work_id: &medousa_forge::model::WorkId,
     session_id: &str,
     turn_id: &str,
 ) -> Result<(), medousa_forge::error::ForgeError> {
     let item = forge.load(work_id)?;
-    if !item.uses_attached_checkout() {
-        return Ok(());
-    }
     let active_human = item
         .active_attempt_ids()
         .into_iter()
@@ -1503,15 +1595,56 @@ async fn run_agent_turn_inner(
                     .trim()
                     .to_string(),
             );
-            if let Err(err) = prepare_attached_native_coder_handoff(
-                forge.as_ref(),
-                &work_id,
-                &session_id,
-                turn_id,
-            ) {
+            let native_coder_guard = context_telemetry
+                .as_ref()
+                .and_then(|sink| sink.session_hooks.native_coder_guard.clone());
+            if let Some(guard) = native_coder_guard.as_ref() {
+                let guard = guard.clone();
+                let checked = match guard.admission_service() {
+                    Some(service) => service
+                        .run(
+                            medousa_forge::execution::ExecutionClass::StoreIo,
+                            64 * 1024,
+                            move || Ok(guard.verify()),
+                        )
+                        .await
+                        .map_err(|error| {
+                            stasis::prelude::StasisError::PortFailure(error.to_string())
+                        })
+                        .and_then(|result| result),
+                    None => guard.verify(),
+                };
+                if let Err(error) = checked {
+                    sink.agent_error(
+                        1,
+                        format!("native Coder assignment is no longer admitted: {error}"),
+                    )
+                    .await;
+                    return;
+                }
+            }
+            let handoff_result = project_state
+                .as_ref()
+                .expect("Coder Forge authority checked above")
+                .forge_execution
+                .run(
+                    medousa_forge::execution::ExecutionClass::StoreIo,
+                    64 * 1024,
+                    {
+                        let forge = forge.clone();
+                        let work_id = work_id.clone();
+                        let session_id = session_id.clone();
+                        let turn_id = turn_id.to_string();
+                        move || {
+                            prepare_native_coder_handoff(&forge, &work_id, &session_id, &turn_id)
+                        }
+                    },
+                )
+                .await;
+            if let Err(err) = handoff_result {
                 sink.agent_error(
                     1,
-                    format!("cannot hand the current checkout to Coder: {err}"),
+                    format!("cannot hand the undertaking workspace to Coder: {err}"),
                 )
                 .await;
                 return;
@@ -1558,11 +1691,8 @@ async fn run_agent_turn_inner(
                     &medousa_forge::forge::Forge::system_actor(),
                 )
             {
-                sink.agent_error(
-                    1,
-                    format!("cannot resume reviewed Coder work: {err}"),
-                )
-                .await;
+                sink.agent_error(1, format!("cannot resume reviewed Coder work: {err}"))
+                    .await;
                 return;
             }
             let source_attempt = recovery_plan.exact_checkpoint().map(|checkpoint| {
@@ -1667,11 +1797,12 @@ async fn run_agent_turn_inner(
                 turn_id,
                 &lease.attempt_id.to_string(),
             );
-            let authority = match super::coder_tools::CoderTurnLease::new(
+            let authority = match super::coder_tools::CoderTurnLease::new_with_guard(
                 forge,
                 lease,
                 super::coder_activity::coder_activity_store(),
                 identity,
+                native_coder_guard,
             ) {
                 Ok(authority) => Arc::new(authority),
                 Err(err) => {
@@ -2087,18 +2218,19 @@ async fn run_agent_turn_inner(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let scheduled_tool_allowlist = super::turn_services::requested_tool_allowlist(
-        request.scheduled_tool_allowlist.as_deref(),
-    )
-        .or_else(|| {
-            manuscript_id.and_then(|id| {
-                crate::identity_manuscript::build_manuscript_context(id)
-                    .ok()
-                    .map(|ctx| {
-                        crate::identity_manuscript::scheduled_tool_allowlist_for_manuscript(&ctx)
-                    })
-            })
-        });
+    let scheduled_tool_allowlist =
+        super::turn_services::requested_tool_allowlist(request.scheduled_tool_allowlist.as_deref())
+            .or_else(|| {
+                manuscript_id.and_then(|id| {
+                    crate::identity_manuscript::build_manuscript_context(id)
+                        .ok()
+                        .map(|ctx| {
+                            crate::identity_manuscript::scheduled_tool_allowlist_for_manuscript(
+                                &ctx,
+                            )
+                        })
+                })
+            });
 
     if let Some(manuscript_id) = manuscript_id {
         sink.notice(format!(
@@ -2546,6 +2678,148 @@ mod coder_admission_tests {
 }
 
 #[cfg(test)]
+mod coder_handoff_tests {
+    use super::*;
+    use medousa_forge::{
+        error::ForgeError,
+        forge::Forge,
+        git::{CheckpointAuthor, GitEngine},
+        model::{ExecutorDescriptor, WorkspaceMode},
+    };
+
+    #[test]
+    fn coder_handoff_releases_human_custody_in_each_workspace_mode() {
+        for mode in [WorkspaceMode::Isolated, WorkspaceMode::AttachedCheckout] {
+            let repo = tempfile::tempdir().unwrap();
+            let root = tempfile::tempdir().unwrap();
+            let git = GitEngine::detect().unwrap();
+            assert!(
+                std::process::Command::new("git")
+                    .args(["init", "-b", "main", "--template="])
+                    .current_dir(repo.path())
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            std::fs::write(repo.path().join("app.txt"), "original\n").unwrap();
+            assert!(
+                std::process::Command::new("git")
+                    .args(["add", "--", "app.txt"])
+                    .current_dir(repo.path())
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            git.commit_checkpoint(repo.path(), "initial", &CheckpointAuthor::default())
+                .unwrap();
+            let forge = Forge::open(root.path()).unwrap();
+            let actor = Forge::system_actor();
+            let item = forge
+                .register_with_workspace_mode(
+                    "Demo",
+                    "Continue the demo",
+                    repo.path(),
+                    "main",
+                    "user-1",
+                    mode,
+                    &actor,
+                )
+                .unwrap();
+            let item = forge.provision(&item.id, &actor).unwrap();
+            let (_, human) = forge
+                .begin_workspace_attempt(
+                    &item.id,
+                    ExecutorDescriptor {
+                        kind: "human".into(),
+                        detail: serde_json::json!({}),
+                    },
+                    None,
+                    &actor,
+                )
+                .unwrap();
+            let workspace = item.environment.as_ref().unwrap().worktree.clone();
+            std::fs::write(workspace.join("app.txt"), "human edits\n").unwrap();
+            let coder = ExecutorDescriptor {
+                kind: "medousa-coder".into(),
+                detail: serde_json::json!({}),
+            };
+            assert!(matches!(
+                forge.begin_collaborative_workspace_attempt(&item.id, coder.clone(), None, &actor,),
+                Err(ForgeError::WorkspaceBusy(_))
+            ));
+
+            prepare_native_coder_handoff(&forge, &item.id, "coder-session", "coder-turn").unwrap();
+            let (current, lease) = forge
+                .begin_collaborative_workspace_attempt(&item.id, coder, None, &actor)
+                .expect("admitted Coder must take over the human workspace");
+            assert_eq!(
+                current.environment.as_ref().unwrap(),
+                item.environment.as_ref().unwrap()
+            );
+            assert_eq!(
+                std::fs::read_to_string(workspace.join("app.txt")).unwrap(),
+                "human edits\n"
+            );
+            assert!(!current.active_attempt_ids().contains(&&human.attempt_id));
+            assert!(current.active_attempt_ids().contains(&&lease.attempt_id));
+            prepare_native_coder_handoff(&forge, &item.id, "other-session", "other-turn").unwrap();
+            assert!(
+                forge
+                    .load(&item.id)
+                    .unwrap()
+                    .active_attempt_ids()
+                    .contains(&&lease.attempt_id)
+            );
+            forge
+                .interrupt_attempt(
+                    &lease,
+                    medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                    &actor,
+                )
+                .unwrap();
+            let (_, external) = forge
+                .begin_workspace_attempt(
+                    &item.id,
+                    ExecutorDescriptor {
+                        kind: "cursor".into(),
+                        detail: serde_json::json!({}),
+                    },
+                    None,
+                    &actor,
+                )
+                .unwrap();
+            prepare_native_coder_handoff(&forge, &item.id, "coder-session", "coder-turn").unwrap();
+            assert!(matches!(
+                forge.begin_collaborative_workspace_attempt(
+                    &item.id,
+                    ExecutorDescriptor {
+                        kind: "medousa-coder".into(),
+                        detail: serde_json::json!({})
+                    },
+                    None,
+                    &actor,
+                ),
+                Err(ForgeError::WorkspaceBusy(_))
+            ));
+            assert!(
+                forge
+                    .load(&item.id)
+                    .unwrap()
+                    .active_attempt_ids()
+                    .contains(&&external.attempt_id)
+            );
+            forge
+                .interrupt_attempt(
+                    &external,
+                    medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                    &actor,
+                )
+                .unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
 mod chronological_sink_tests {
     use std::sync::Mutex;
 
@@ -2590,6 +2864,58 @@ mod chronological_sink_tests {
             pending_slice_scratch: std::sync::Mutex::new(None),
             reactions: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    #[tokio::test]
+    async fn failed_activity_keeps_typed_parts_and_folds_into_failed_history() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(output);
+        sink.content_chunk(1, "I reviewed the returned work.".into())
+            .await;
+        sink.tool_run_started(
+            "review-run".into(),
+            "cognition_peer_review".into(),
+            "Review receipt".into(),
+            Vec::new(),
+            1,
+        )
+        .await;
+        let turn = sink
+            .finalize_failed_activity("This turn could not finish.")
+            .unwrap();
+        assert_eq!(turn.answer_state.as_deref(), Some("failed"));
+        assert_eq!(turn.content, "I reviewed the returned work.");
+        assert_eq!(turn.tool_names, ["cognition_peer_review"]);
+        assert!(
+            matches!(turn.parts.as_ref().unwrap().last(), Some(TurnPart::ToolRun { status, finished_at: Some(_), .. }) if status == "failed")
+        );
+        let event = super::super::turn_event::TurnEvent::Error {
+            message: "This turn could not finish.".into(),
+            turn: Some(Box::new(turn.clone())),
+        };
+        assert_eq!(
+            super::super::turn_event_log::project_turn_to_history(&event),
+            Some(turn)
+        );
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn failure_settles_once_without_an_early_error_terminal() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+        sink.publish_failure(
+            TurnCompletionOutcomeV3::Failed,
+            "This turn stopped.".into(),
+            None,
+        )
+        .await;
+        let events = output.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], TurnPipelineEnvelope::V3(envelope)
+            if matches!(envelope.event, TurnStreamEventV3::TurnCompleted { outcome: TurnCompletionOutcomeV3::Failed, .. })));
+        drop(events);
+        sink.pipeline.cancel();
     }
 
     #[tokio::test]
@@ -2766,6 +3092,48 @@ mod chronological_sink_tests {
             medousa_types::TurnStreamEventV2::ToolStarted { tool_run_id, .. }
                 if tool_run_id == "run-1"
         ));
+        drop(events);
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn silent_finish_preserves_delivered_prose_without_another_text_segment() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+        let prose = "The callback bridge is bounded and abort-aware.";
+        sink.model_response_completed_with_text(1, 1, Some(prose.into()))
+            .await;
+        sink.model_response_completed_with_text(1, 2, None).await;
+        let body = sink.terminal_body("").await;
+        assert_eq!(body, prose);
+        sink.publish_tracked(TurnStreamEventV3::TurnCompleted {
+            outcome: TurnCompletionOutcomeV3::Completed,
+            aggregate_text: body,
+            tool_names: vec!["cognition_turn".into()],
+            operator_message: None,
+            debug_message: None,
+        })
+        .await;
+
+        let parts = sink.parts.lock().unwrap().preview_parts();
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|part| matches!(part, TurnPart::Text { .. }))
+                .count(),
+            1
+        );
+        let events = output.events.lock().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event,
+                    TurnPipelineEnvelope::V3(envelope)
+                        if matches!(&envelope.event, TurnStreamEventV3::TurnCompleted { .. })
+                ))
+                .count(),
+            1
+        );
         drop(events);
         sink.pipeline.cancel();
     }

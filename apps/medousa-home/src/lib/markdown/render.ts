@@ -6,6 +6,7 @@ import type { VaultNote } from "$lib/types/vault";
 import { plainHeadingText, uniqueHeadingSlug } from "$lib/markdown/headingRender";
 import { stripTrailingBlockIdHtml } from "$lib/markdown/blockAnchors";
 import { escapeAttr, escapeHtml } from "./escape";
+import { canWrapCode, codeCopyContent, codeLanguageLabel, codeLineCount, isLongCode } from "./codeBlockPresentation";
 import { preprocessMarkdown } from "./preprocess";
 import {
   imageSizeStyle,
@@ -128,13 +129,19 @@ function createMarked(
         if (language.toLowerCase() === "draw") {
           return `<div class="medousa-draw-embed liquid-md-embed" data-draw-embed=""><pre class="medousa-draw-source">${escapeHtml(text)}</pre></div>`;
         }
-        const langLabel = language
-          ? `<span class="markdown-code-lang">${escapeHtml(language)}</span>`
-          : `<span class="markdown-code-lang markdown-code-lang-muted">code</span>`;
+        const langLabel = `<span class="markdown-code-lang">${escapeHtml(codeLanguageLabel(language))}</span>`;
         const className = language
           ? `language-${escapeHtml(language)}`
           : "language-text";
-        return `<div class="markdown-code-block"><div class="markdown-code-header">${langLabel}</div><pre class="markdown-pre"><code class="markdown-code ${className}">${escapeHtml(text)}</code></pre></div>`;
+        const collapsed = isLongCode(text);
+        const lineCount = codeLineCount(text);
+        const footer = collapsed
+          ? `<div class="markdown-code-footer" data-export-strip><span>${lineCount} ${lineCount === 1 ? "line" : "lines"}</span><button type="button" class="markdown-code-expand" aria-expanded="false">Show all</button></div>`
+          : "";
+        const wrap = canWrapCode(text)
+          ? '<button type="button" class="markdown-code-wrap" aria-pressed="false" title="Wrap lines" data-export-strip>Wrap</button>'
+          : "";
+        return `<div class="markdown-code-block${collapsed ? " markdown-code-collapsed" : ""}"><div class="markdown-code-header">${langLabel}<div class="markdown-code-actions">${wrap}<button type="button" class="markdown-code-copy" aria-label="Copy code" title="Copy code">${codeCopyContent()}</button></div></div><pre class="markdown-pre"><code class="markdown-code ${className}">${escapeHtml(text)}</code></pre>${footer}</div>`;
       },
       checkbox({ checked }: Tokens.Checkbox) {
         if (!options.interactiveTasks) {

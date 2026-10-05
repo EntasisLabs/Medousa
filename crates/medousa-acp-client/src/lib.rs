@@ -967,7 +967,7 @@ pub fn runtime_availability(kind: AgentRuntimeKind) -> (bool, Option<String>, Op
                     cfg.command
                 ))
             };
-            (true, Some(cfg.command), detail)
+            (available, Some(cfg.command), detail)
         }
     }
 }

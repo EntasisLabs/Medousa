@@ -112,8 +112,9 @@ pub fn binary_filename(name: &str) -> String {
 }
 
 pub fn verify_sha256(bytes: &[u8], expected: &str) -> Result<(), String> {
-    if expected.trim().is_empty() {
-        return Ok(());
+    if expected.trim().len() != 64 || !expected.trim().bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("SHA256 digest is missing or invalid".to_string());
     }
     let digest = Sha256::digest(bytes);
     let actual = format!("{:x}", digest);
@@ -257,18 +258,93 @@ fn find_extracted_bin_dir(packages_dir: &Path) -> Result<PathBuf, String> {
 }
 
 fn copy_binary(src: impl AsRef<Path>, dest: &Path) -> Result<(), String> {
+    copy_binary_with(src.as_ref(), dest, |source, target| {
+        fs::copy(source, target)
+    })
+}
+
+fn copy_binary_with(
+    src: &Path,
+    dest: &Path,
+    copy: impl FnOnce(&Path, &Path) -> std::io::Result<u64>,
+) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
-    fs::copy(src.as_ref(), dest).map_err(|err| err.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(dest)
-            .map_err(|err| err.to_string())?
-            .permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(dest, perms).map_err(|err| err.to_string())?;
+    let staged = dest.with_file_name(format!(
+        ".{}.medousa-stage-{}",
+        dest.file_name().unwrap_or_default().to_string_lossy(),
+        uuid::Uuid::new_v4()
+    ));
+    let result = (|| {
+        copy(src, &staged).map_err(|err| err.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&staged)
+                .map_err(|err| err.to_string())?
+                .permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&staged, perms).map_err(|err| err.to_string())?;
+        }
+        fs::File::open(&staged)
+            .and_then(|file| file.sync_all())
+            .map_err(|err| err.to_string())?;
+        #[cfg(windows)]
+        {
+            let backup = dest.with_extension("medousa-backup");
+            if !dest.exists() && backup.exists() {
+                fs::rename(&backup, dest).map_err(|err| err.to_string())?;
+            }
+            if dest.exists() {
+                if backup.exists() {
+                    fs::remove_file(&backup).map_err(|err| err.to_string())?;
+                }
+                fs::rename(dest, &backup).map_err(|err| err.to_string())?;
+                if let Err(error) = fs::rename(&staged, dest) {
+                    let _ = fs::rename(&backup, dest);
+                    return Err(error.to_string());
+                }
+                let _ = fs::remove_file(&backup);
+                return Ok(());
+            }
+        }
+        fs::rename(&staged, dest).map_err(|err| err.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&staged);
     }
-    Ok(())
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::verify_sha256;
+
+    #[test]
+    fn sha256_verification_fails_closed() {
+        let payload = b"medousa package";
+        let digest = "432a0a959e33aca0f0d216b2c4aef42530ee3d14b892fcbee4dfc9390ba7db05";
+        assert!(verify_sha256(payload, "").is_err());
+        assert!(verify_sha256(payload, "not-a-digest").is_err());
+        assert!(verify_sha256(payload, &"0".repeat(64)).is_err());
+        assert!(verify_sha256(payload, digest).is_ok());
+    }
+
+    #[test]
+    fn failed_binary_copy_preserves_live_binary() {
+        let root = std::env::temp_dir().join(format!("medousa-copy-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let live = root.join("medousa_daemon");
+        std::fs::write(&live, b"working binary").unwrap();
+        assert!(super::copy_binary(root.join("missing"), &live).is_err());
+        assert_eq!(std::fs::read(&live).unwrap(), b"working binary");
+        let error = super::copy_binary_with(&live, &live, |_, staged| {
+            std::fs::write(staged, b"partial download")?;
+            Err(std::io::Error::from_raw_os_error(28))
+        });
+        assert!(error.is_err());
+        assert_eq!(std::fs::read(&live).unwrap(), b"working binary");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

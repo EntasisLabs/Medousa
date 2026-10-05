@@ -76,6 +76,13 @@ Source: `src/tool_bootstrap.rs`
 | Handback | `cognition_turn action=turn.checkpoint` — ends this agent turn and waits for principal input; use only when input is needed or work must pause |
 | Finish | `cognition_turn action=turn.finish` — ends tool loop after the full requested outcome is complete or a concrete blocker is reported |
 
+`turn.finish` ends the turn on its first successful standalone call, including
+when `message` and assistant prose are absent. Earlier prose stays in the
+chronological transcript; the runtime does not request another model response
+to repeat it, including external-channel continuation synthesis. Same-response
+prose takes precedence over the optional `message` fallback. `intent` and
+`reason` are control metadata, not reply text.
+
 `turn.finish` may also carry a short reaction without assistant prose:
 
 ```json
@@ -112,6 +119,30 @@ Its one-shot work-environment route waits for completion and currently has no
 per-call timeout. For OCI-backed environments, interruption of the request does
 not prove the command stopped inside the container. An uncertain result is not
 automatically replayed, to avoid duplicating side effects.
+
+### Saved SSH targets
+
+On the full daemon, `cognition_runtime_query` exposes `ssh.targets` and
+`ssh.execution`. `cognition_runtime_mutate` exposes `ssh.run`,
+`ssh.open_terminal`, and `ssh.terminal_input`. Discover their typed fields with
+`cognition_schema`. Setup is operator-only in Settings → Connection; agents can
+only use saved targets enabled for their frozen turn owner. No Forge undertaking
+is required and no operator credential is borrowed by the model-facing tools.
+
+`ssh.run` returns an execution ID immediately. Poll `ssh.execution` for
+`starting`, `running`, `succeeded`, `failed`, `not_started`, or `unknown`.
+Reuse the exact `request_key` and parameters for retries: a durable receipt
+prevents replay even after a daemon restart. A conflicting retry is rejected.
+Output is retained up to 64 KiB for each of stdout and stderr; excess is drained.
+SSH exit 255, signal loss, timeout, and unfinished work after restart are
+uncertain remote outcomes, never an automatic invitation to repeat side effects.
+
+`ssh.open_terminal` returns an owned execution and PTY session. Observe or send
+raw input with `ssh.terminal_input`, using `after_sequence` to avoid repeated
+output. Interactive input has no per-command completion guarantee. Private-key
+paths and host-key material are not exposed by `ssh.targets`; authentication
+stays on the workshop. Native setup routes under `/v1/ssh/` require
+`admin.runtime` and cannot be invoked from remote browser content.
 
 ### Repeated failed tool calls
 
@@ -218,6 +249,13 @@ explicitly asked to create or clone a project. Peer destinations still require
 an existing project admitted by their execution policy.
 
 ---
+
+Runtime actions also expose the owner Assistant's
+[native undertaking lifecycle](work-units.md#native-undertaking-review-and-closure):
+prepare merge, inspect sealed evidence, approve, apply, request changes, or
+explicitly discard. Completion callbacks can continue authorized review and
+closure without operator permission escalation. Delegated executors retain
+separate authority.
 
 ## MCP vs built-ins
 

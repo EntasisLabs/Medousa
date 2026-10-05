@@ -6,6 +6,7 @@
     type MarkdownRenderSession,
   } from "$lib/markdown/render";
   import { StreamingMarkdownBlocks } from "$lib/markdown/streamingBlocks";
+  import { handleCodeBlockControlClick } from "$lib/markdown/codeBlocks";
   import { hydrateMarkdownContainer, destroyMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
   import {
     getLiquidContext,
@@ -114,6 +115,13 @@
     void openInBrowser(href, { openedBy: "user" });
   }
 
+  function handleClick(event: MouseEvent) {
+    if ((event.target as Element | null)?.closest("[data-streaming-markdown-tail]")) {
+      handleCodeBlockControlClick(event);
+    }
+    handleLinkClick(event);
+  }
+
   function handleLinkKeydown(event: KeyboardEvent) {
     if (event.key !== "Enter" && event.key !== " ") return;
     handleLinkClick(event as unknown as MouseEvent);
@@ -147,7 +155,7 @@
   bind:this={container}
   class="markdown-content min-w-0 max-w-full"
   role="document"
-  onclick={handleLinkClick}
+  onclick={handleClick}
   onkeydown={handleLinkKeydown}
 >
   {#if stableMode}

@@ -32,10 +32,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use medousa_types::EnqueueAskRequest;
 
 let job = client.jobs().enqueue_ask(&EnqueueAskRequest {
-    channel: "api".into(),
-    user_id: "demo".into(),
-    text: "Summarize status".into(),
-    ..Default::default()
+    prompt: "Summarize status".into(),
+    idempotency_key: Some("status-summary-2026-10-01".into()),
+    policy_profile: None,
+    model_hint: None,
+    max_turns: None,
+    identity_user_id: None,
+    identity_persona_id: None,
+    identity_channel_id: None,
+    manuscript_id: None,
+    additional_manuscript_ids: None,
+    suggested_capability_ids: None,
 }).await?;
 ```
 

@@ -4,6 +4,8 @@
 
 export type TerminalInputHandler = {
   workId: string | null;
+  sessionId?: () => string;
+  ready?: () => boolean;
   write: (text: string) => void;
 };
 
@@ -16,14 +18,13 @@ export function registerTerminalInputHandler(handler: TerminalInputHandler): () 
   };
 }
 
-/** Prefer a handler matching workId; otherwise the most recently registered. */
-export function writeToTerminal(text: string, workId?: string | null): boolean {
+/** A scoped send must never fall through to another project or process. */
+export function writeToTerminal(text: string, workId?: string | null, sessionId?: string | null): boolean {
   const payload = text.endsWith("\n") ? text : `${text}\n`;
-  const preferred =
-    (workId
-      ? [...handlers].reverse().find((handler) => handler.workId === workId)
-      : null) ?? [...handlers].at(-1);
-  if (!preferred) return false;
+  const preferred = [...handlers].reverse().find((handler) =>
+    (!workId || handler.workId === workId) && (!sessionId || handler.sessionId?.() === sessionId)
+  );
+  if (!preferred || preferred.ready?.() === false) return false;
   preferred.write(payload);
   return true;
 }

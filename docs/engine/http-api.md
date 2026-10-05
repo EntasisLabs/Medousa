@@ -195,6 +195,17 @@ bindings; it does not grant tools, credentials, or execution authority.
 | GET | `/v1/sessions/{session_id}/bot` | `SessionBotResponse` | `bots().session` |
 | PUT | `/v1/sessions/{session_id}/bot` | `SetSessionBotRequest` -> `SessionBotResponse` | `bots().bind_session` |
 | DELETE | `/v1/sessions/{session_id}/bot` | `SessionBotResponse` | `bots().unbind_session` |
+| POST | `/v1/bots/ask` | `{prompt, request_id, bot?, agent?, workshop?, session_id?}` -> `{request_id, ticket}` | CLI `medousa ask` |
+| GET | `/v1/bots/ask/{job_id}` | durable status, result, destination, runtime, Forge IDs, terminal evidence | CLI `medousa ask --resume` |
+| POST | `/v1/bots/ask/{job_id}/cancel` | explicit owner-scoped cancellation | CLI `medousa ask --cancel` |
+
+`agent` accepts `codex`, `cursor`, or `hermes`. External executors pin that
+runtime, a home workshop, a provisioned Forge work and repository, and a
+`fresh_per_job` session contract. Configuration requires `admin.execute`.
+When `session_id` is supplied to `/v1/bots/ask`, it must be bound to the selected
+Bot and owned by the caller. Admission and terminal results are appended to
+that conversation; CLI requests without it use a private job conversation.
+The session is part of the request fingerprint, so retries cannot retarget it.
 
 All operations are scoped to the authenticated workshop profile. Create and
 duplicate allocate a fresh primary conversation on the daemon. Duplicate copies
@@ -296,6 +307,13 @@ turns and other session-owned mutations.
 | DELETE | `/v1/recurring/{recurring_id}` | delete | `http().delete` |
 | GET | `/v1/recurring/{recurring_id}/runs` | runs | `http().get` |
 | GET | `/v1/recurring/{recurring_id}/delivery` | delivery status | `http().get` |
+
+For retry-safe `POST /v1/jobs/ask` admission, set `idempotency_key` to a stable
+value for one intended request. The workshop scopes it to the authenticated
+principal and returns the same job ID after a lost response or restart while the
+job record is retained.
+Reusing the key with different request content returns `409 Conflict`. Without
+a key, each admission receives a new unique job ID.
 
 ---
 
@@ -719,6 +737,7 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 |--------|------|---------|
 | POST | `/v1/forge/items` | Register |
 | POST | `/v1/forge/items/start` | Register and provision in one operation |
+| POST | `/v1/forge/projects` | Create and provision a blank or existing-repository project without binding a chat session; accepts `StartSessionCodeProjectRequest`, returns a Forge item projection. Local execution administration required. |
 | POST | `/v1/forge/repositories/inspect` | Inspect a repository path, commit readiness, and starting branch (`has_commits`, nullable `suggested_base_ref`) |
 | GET, PUT | `/v1/forge/repositories` | Workshop repository recents and pins |
 | GET | `/v1/forge/repositories/browse?path=…` | Scoped workshop directory/repository browser |

@@ -110,6 +110,7 @@ impl PendingRemoteWorker {
             user_ack: self.user_ack.clone(),
             manuscript_ids: self.manuscript_ids.clone(),
             manuscript: self.manuscript.clone(),
+            external_agent: None,
             stage_role: self.stage_role.clone(),
             model_hint: self.model_hint.clone(),
             parent: self.parent.clone(),

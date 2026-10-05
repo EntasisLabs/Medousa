@@ -503,7 +503,7 @@ pub async fn ingest_handler(
         return Ok(build_ingest_response(
             session_id,
             None,
-            "This sender is not on the Telegram allowlist for this bot.".to_string(),
+            denied_sender_reply(&request.channel).to_string(),
             false,
             None,
             None,
@@ -644,6 +644,16 @@ pub async fn ingest_handler(
         stream_url,
         stream_ready,
     ))
+}
+
+fn denied_sender_reply(channel: &str) -> &'static str {
+    match channel.to_ascii_lowercase().as_str() {
+        // The linked WhatsApp account also carries the owner's normal chats.
+        // Unknown contacts must never receive an unsolicited bot reply.
+        "whatsapp" => "",
+        "slack" => "This sender is not on the Slack allowlist for this bot.",
+        _ => "This sender is not on the Telegram allowlist for this bot.",
+    }
 }
 
 struct IngestAskStream {
@@ -1232,8 +1242,8 @@ pub async fn maybe_resume_agent_turn_from_child_job(state: &AppState, child_job_
     );
 
     eprintln!(
-        "turn continuation resume child_job_id={child_job_id} turn_correlation_id={} session_id={}",
-        record.turn_correlation_id, record.session_id
+        "turn continuation resume child_job_id={child_job_id} turn_correlation_id={}",
+        record.turn_correlation_id
     );
 
     if let Err(error) = spawn_continuation_agent_turn(state, &record, resume_prompt).await {
@@ -2438,6 +2448,27 @@ mod stream_version_tests {
     use axum::body::to_bytes;
     use axum::http::HeaderValue;
     use medousa_engine::{Principal, TurnEnvelope};
+
+    #[test]
+    fn denied_whatsapp_sender_has_no_reply_or_delivery() {
+        let Json(response) = build_ingest_response(
+            "ignored-session".into(),
+            None,
+            denied_sender_reply("WhatsApp").into(),
+            false,
+            None,
+            None,
+            false,
+        );
+        assert!(response.reply.is_empty());
+        assert!(!response.is_new_session);
+        assert!(!response.stream_ready);
+        assert!(response.job_id.is_none());
+        assert_eq!(
+            denied_sender_reply("telegram"),
+            "This sender is not on the Telegram allowlist for this bot."
+        );
+    }
 
     #[test]
     fn stream_v1_remains_the_default() {

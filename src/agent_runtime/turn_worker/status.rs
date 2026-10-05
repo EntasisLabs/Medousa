@@ -85,6 +85,8 @@ mod tests {
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
+            external_agent_session_id: None,
+            external_agent_workdir: None,
             intent: "research".to_string(),
             task_prompt: "Scan the repo".to_string(),
             status: TurnWorkStatus::Running,

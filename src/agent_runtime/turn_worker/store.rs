@@ -192,6 +192,10 @@ pub struct TurnWorkRecord {
     /// may omit it; new local and remote parallel workers persist it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_spawn_spec: Option<crate::delegated_task::WorkerSpawnSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_agent_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_agent_workdir: Option<String>,
     pub intent: String,
     pub task_prompt: String,
     pub status: TurnWorkStatus,
@@ -302,6 +306,8 @@ impl TurnWorkRecord {
             execution_placement,
             task_execution_grant: Some(task_execution_grant),
             worker_spawn_spec: None,
+            external_agent_session_id: None,
+            external_agent_workdir: None,
             intent: "research".to_string(),
             task_prompt,
             status: TurnWorkStatus::Pending,
@@ -1396,6 +1402,7 @@ mod tests {
             user_ack: "On it".to_string(),
             manuscript_ids: Vec::new(),
             manuscript: None,
+            external_agent: None,
             stage_role: None,
             model_hint: None,
             parent: crate::delegated_task::WorkerParentSpec {
@@ -1544,6 +1551,28 @@ mod tests {
         assert!(store.get("work-not-durable").is_none());
     }
 
+    #[test]
+    fn delegated_admission_replay_never_creates_a_second_worker() {
+        let store = TurnWorkerStore::empty_for_tests();
+        let mut record = test_record(
+            "work-delegated",
+            "session-delegated",
+            1,
+            TurnWorkStatus::Pending,
+        );
+        record.disposition = TurnWorkDisposition::Delegated;
+        record.identity_user_id = Some("peer:source".into());
+        assert!(store.try_insert_delegated(record.clone()).unwrap());
+        assert!(!store.try_insert_delegated(record.clone()).unwrap());
+        let mut changed = record;
+        changed.task_prompt = "different task".into();
+        assert!(matches!(
+            store.try_insert_delegated(changed),
+            Err(DelegatedWorkAdmissionError::ConflictingIdentity)
+        ));
+        assert_eq!(store.records.lock().unwrap().len(), 1);
+    }
+
     fn test_record(
         work_id: &str,
         session_id: &str,
@@ -1561,6 +1590,8 @@ mod tests {
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
+            external_agent_session_id: None,
+            external_agent_workdir: None,
             intent: "research".to_string(),
             task_prompt: "task".to_string(),
             status,

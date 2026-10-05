@@ -4,6 +4,7 @@
   import ShellTabNotchSearch from "$lib/components/shell/ShellTabNotchSearch.svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import { placeToolbarPopover } from "$lib/utils/railPopover";
   import {
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
@@ -63,17 +64,9 @@
 
   function placeDrawer() {
     if (!triggerEl || !drawerEl) return;
-    const trigger = triggerEl.getBoundingClientRect();
-    const pad = 8;
-    const width = Math.min(30 * 16, window.innerWidth - pad * 2);
-    const left = Math.max(pad, Math.min(trigger.right - width, window.innerWidth - width - pad));
-    const maxHeight = Math.min(28 * 16, window.innerHeight - trigger.bottom - pad * 2);
-    drawerEl.style.position = "fixed";
-    drawerEl.style.left = `${Math.round(left)}px`;
-    drawerEl.style.top = `${Math.round(trigger.bottom + 6)}px`;
-    drawerEl.style.width = `${Math.round(width)}px`;
-    drawerEl.style.maxWidth = `${Math.round(width)}px`;
-    drawerEl.style.maxHeight = `${Math.round(maxHeight)}px`;
+    placeToolbarPopover(triggerEl, drawerEl, {
+      width: 560, maxHeight: 480, prefer: "below", gap: 6, pad: 8,
+    });
     drawerEl.style.zIndex = "145";
   }
 

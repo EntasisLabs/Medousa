@@ -24,22 +24,21 @@
   </div>
   <span class="text-chrome-xs text-rose-300" title="Errors">{problems.counts.errors}</span>
   <span class="text-chrome-xs text-amber-300" title="Warnings">{problems.counts.warnings}</span>
-  <button type="button" class="rounded p-0.5 text-content-quiet hover:bg-surface-800 hover:text-surface-200 disabled:opacity-50" aria-label="Refresh project problems" title="Refresh project problems" disabled={problems.loading} onclick={() => void problems.refresh()}><RotateCcw size={11} class={problems.loading ? "animate-spin" : ""} /></button>
+  <button type="button" class="rounded p-0.5 text-content-quiet hover:bg-surface-800 hover:text-surface-200 disabled:opacity-50" aria-label="Refresh project problems" title="Refresh project problems" disabled={problems.refreshing} onclick={() => void problems.refresh()}><RotateCcw size={11} class={problems.loading ? "animate-spin" : ""} /></button>
 </div>
 
-{#if problems.error}
-  <div class="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/5 px-3 py-2 text-chrome-sm text-rose-200">
-    <span>Could not refresh project problems: {problems.error}</span>
-    <button type="button" class="shrink-0 underline underline-offset-2" onclick={() => void problems.refresh()}>Retry</button>
-  </div>
-{/if}
-{#if problems.unavailableLanguages.length > 0}
-  <p class="border-b border-amber-400/20 bg-amber-500/5 px-3 py-1.5 text-chrome-sm text-amber-200">Results are incomplete for {problems.unavailableLanguages.join(", ")}.</p>
-{/if}
-{#if problems.loading && !problems.loaded}
+<p class="border-b border-surface-500/15 px-3 py-1.5 text-chrome-xs text-content-quiet">
+  {problems.loaded ? `${problems.observedDocuments} observed documents` : "Current file observations"}
+  {#if problems.error}
+    <span class="text-content-warning"> · {problems.loaded ? "Results may be stale" : "Project analysis unavailable"}</span>
+  {:else if problems.unavailableLanguages.length > 0}
+    <span class="text-content-warning" title={`Unavailable: ${problems.unavailableLanguages.join(", ")}`}> · Analysis incomplete</span>
+  {/if}
+</p>
+{#if problems.loading && !problems.loaded && !problems.error && problems.counts.total === 0}
   <p class="flex items-center px-3 py-3 text-chrome-sm text-content-quiet"><LoaderCircle size={11} class="mr-1.5 animate-spin" />Loading project problems…</p>
 {:else if problems.counts.total === 0}
-  <p class="px-3 py-3 text-chrome-sm text-content-quiet">No problems found in this project.</p>
+  <p class="px-3 py-3 text-chrome-sm text-content-quiet">No problems in the available observations.</p>
 {:else if problems.groups.length === 0}
   <p class="px-3 py-3 text-chrome-sm text-content-quiet">No problems match the current filters.</p>
 {:else}
@@ -55,7 +54,8 @@
         <CircleAlert size={11} class={problem.severity === "error" ? "mt-0.5 shrink-0 text-rose-300" : problem.severity === "warning" ? "mt-0.5 shrink-0 text-amber-300" : "mt-0.5 shrink-0 text-sky-300"} />
         <span class="min-w-0 flex-1 text-chrome-sm text-content-secondary">
           <span class="break-words">{problem.message}</span>
-          {#if problem.origin === "task"}<span class="ml-1 rounded bg-surface-800 px-1 text-chrome-xs text-content-quiet">{problem.taskLabel} · current run</span>{/if}
+          {#if problem.origin === "task"}<span class="ml-1 rounded bg-surface-800 px-1 text-chrome-xs text-content-quiet">{problem.taskLabel} · recorded run</span>{/if}
+          {#if problem.origin === "language" && problem.fresh === false}<span class="ml-1 text-chrome-xs text-amber-200">{problem.documentVersion == null ? "Unversioned observation" : `Version ${problem.documentVersion} observation`}</span>{/if}
           {#if problem.source || problem.code}<span class="ml-1 text-chrome-xs text-content-faint">{[problem.source, problem.code].filter(Boolean).join(" · ")}</span>{/if}
         </span>
         <span class="shrink-0 font-mono text-chrome-xs text-content-quiet">{problem.line}:{problem.character}</span>

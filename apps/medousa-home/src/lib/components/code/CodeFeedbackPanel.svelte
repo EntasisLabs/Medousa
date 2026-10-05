@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { TerminalSessionSummary } from "$lib/terminal";
+  import CodePanelFrame from "./CodePanelFrame.svelte";
   import { Copy, RotateCcw, SquareTerminal, Trash2, X } from "@lucide/svelte";
   import type { CodeBottomPanel } from "$lib/code/codeWorkbenchState.svelte";
   import type { CodeProblemsController } from "$lib/code/codeProblemsController.svelte";
@@ -13,8 +15,15 @@
     tasks: CodeTasksController;
     workId: string;
     terminalSessionId: string | null;
+    terminalBusy: boolean;
+    terminalError: string | null;
+    canCreateTerminal: boolean;
+    terminalBlockedReason: string;
+    onCreateTerminal: () => void;
+    activePath: string;
     workspaceRoot: string | null;
     terminalTitle: string;
+    onTerminalContext?: (context: TerminalSessionSummary["workspace_context"]) => void;
     onSelect: (panel: Exclude<CodeBottomPanel, null>) => void | Promise<void>;
     onClose: () => void;
     onOpenLocation: (path: string, line: number) => void;
@@ -27,8 +36,15 @@
     tasks,
     workId,
     terminalSessionId,
+    terminalBusy,
+    terminalError,
+    canCreateTerminal,
+    terminalBlockedReason,
+    onCreateTerminal,
+    activePath,
     workspaceRoot,
     terminalTitle,
+    onTerminalContext,
     onSelect,
     onClose,
     onOpenLocation,
@@ -46,7 +62,7 @@
 </script>
 
 {#if active}
-  <section class="flex max-h-72 shrink-0 flex-col border-t border-surface-500/35 bg-surface-950/90" aria-label="Code feedback">
+  <CodePanelFrame {workId} name="Feedback">
     <div class="flex shrink-0 items-center justify-between gap-2 border-b border-surface-500/25 px-2 py-1">
       <div class="flex min-w-0 items-center gap-0.5" role="tablist" aria-label="Code feedback channels">
         {#each ["problems", "output", "tests", "terminal"] as panel (panel)}
@@ -72,16 +88,16 @@
     {#if active === "output" && commandRevealed && command}
       <code class="shrink-0 border-b border-surface-500/20 bg-surface-900/70 px-3 py-1 font-mono text-chrome-xs text-content-tertiary">{command}</code>
     {/if}
-    <div class="min-h-0 overflow-y-auto">
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {#if active === "problems"}
         <CodeProblemsPanel {problems} />
       {:else if active === "output"}
         <CodeTasksOutput {tasks} mode="output" {onOpenLocation} />
       {:else if active === "tests"}
-        <CodeTasksOutput {tasks} mode="tests" {onOpenLocation} />
+        <CodeTasksOutput {tasks} mode="tests" {activePath} {onOpenLocation} />
       {:else}
-        <CodeTerminalDock open={true} sessionId={terminalSessionId} {workId} worktreeRoot={workspaceRoot} title={terminalTitle} onClose={onClose} onPopOut={() => void onPopOutTerminal()} />
+        <CodeTerminalDock open={true} sessionId={terminalSessionId} busy={terminalBusy} error={terminalError} {canCreateTerminal} blockedReason={terminalBlockedReason} onCreate={onCreateTerminal} {workId} worktreeRoot={workspaceRoot} title={terminalTitle} {onTerminalContext} onClose={onClose} onPopOut={() => void onPopOutTerminal()} />
       {/if}
     </div>
-  </section>
+  </CodePanelFrame>
 {/if}

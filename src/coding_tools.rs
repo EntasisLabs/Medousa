@@ -1776,12 +1776,12 @@ impl CognitionShellSessionRunTool {
     }
 }
 
-struct SessionStreamOutput {
-    output: String,
-    input_written: bool,
-    next_sequence: u64,
-    replay_truncated: bool,
-    output_truncated: bool,
+pub(crate) struct SessionStreamOutput {
+    pub(crate) output: String,
+    pub(crate) input_written: bool,
+    pub(crate) next_sequence: u64,
+    pub(crate) replay_truncated: bool,
+    pub(crate) output_truncated: bool,
 }
 
 fn shell_websocket_request(
@@ -1800,7 +1800,7 @@ fn shell_websocket_request(
     Ok(request)
 }
 
-async fn stream_session_input(
+pub(crate) async fn stream_session_input(
     session_id: &str,
     input: Option<&[u8]>,
     wait_ms: u64,

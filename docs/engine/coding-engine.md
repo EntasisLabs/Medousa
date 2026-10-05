@@ -8,6 +8,23 @@ on the workshop machine.
 
 ## Daemon routes
 
+`POST /v1/sessions/workspace-shell` opens an interactive human project shell.
+It is native-only and requires `AdminExecute` on the selected workshop. The
+request has `work_id`, optional `cwd`, and optional `cols`/`rows` (80/24 default);
+lease, attempt, and task `argv` fields are rejected. The workshop admits the
+current project folder and repository identity, including canonical containment
+of a requested subdirectory, without adopting its branch/HEAD/index as a Forge
+execution baseline. Closed projects cannot admit new shells.
+
+These sessions report `root_kind: "workspace"` and `workspace_context` with
+`cwd`, `current_branch` (null for detached HEAD), and `attached_branch` (null for
+isolated projects). `GET /v1/sessions/shell` refreshes this context for workspace
+sessions; a failed refresh returns `workspace_context_error` without terminating
+an existing PTY. The response is folder context, not verification evidence.
+Tracked task/agent sessions retain their existing `/v1/sessions/shell` path and
+attachment validation. The session sidecar API revision is 6; older daemons or
+sidecars do not downgrade this request into a tracked attempt.
+
 `GET /v1/coding-engine` and `GET /v1/shell-sessions` report `available` and
 `starting`. When `starting: true`, the managed process is alive but has not
 answered a compatible health probe yet. Poll the same endpoint; the daemon
@@ -63,9 +80,24 @@ and pooling identity, while the daemon independently forwards the active
 document and authoritative project root to the coding engine. The coding engine
 revalidates both and rewrites initialize root fields before launching the server
 in that directory. Nested monorepo packages therefore get distinct sessions;
-files under the same language root reuse one Home client. With an older coding
-engine that lacks the discovery route, Home explicitly falls back to the whole
-project root for rolling-upgrade compatibility.
+files under the same language root reuse one Home client. Home requires the
+language-root discovery contract. Missing, failed, or invalid discovery leaves
+language assistance unavailable; Home never substitutes the project root.
+
+Home's client identity also includes the workshop, execution transport, and
+governed environment projection (working-copy path, generation, branch, and
+baseline). A workshop visit generation prevents earlier requests from becoming
+current again after leaving and returning. Delayed root discovery and
+initialization are checked against their original workshop before a client can
+be used. These client checks do not grant execution authority; the daemon still
+validates the project boundary and current environment.
+
+All editor languages, including Grapheme, use `/v1/code/lsp`. Home does not
+switch to the daemon's Grapheme endpoint when the coding engine is unavailable,
+incompatible, or fails to initialize. The engine's failure reason is retained.
+An announced `grapheme-lsp` identity is rejected for a different requested
+language. Optional server identity is retained for diagnosis; servers that omit
+`serverInfo` remain supported through the explicit engine route and registry.
 
 ## Session lifecycle and configuration
 
@@ -79,10 +111,12 @@ document before selecting records. Logs are memory-bounded diagnostic history,
 not an unbounded project file.
 
 The editor WebSocket terminates when the underlying language server exits or
-its protocol stream fails. Home removes the dead client, keeps the source
-buffer editable, and retries at 250 ms, 750 ms, and 1.5 seconds. A visible
-degraded banner then retains **Restart**, **Logs**, and package **Repair**
-actions. Manual restart replaces only the matching project/language-root client;
+its protocol stream fails. Home removes the dead client and its editor markers,
+keeps the source buffer editable, and retries the same service at 250 ms, 750 ms,
+and 1.5 seconds. Missing tools and unsupported discovery contracts fail without
+reconnect loops. The editor status reports the failure reason and provides
+**Restart**, **Logs**, and **Repair** actions. Manual restart replaces only the
+matching project/language-root client;
 it does not close the project or another nested package's server.
 
 On the editor channel the coding engine rewrites `initialize` to advertise
@@ -102,6 +136,8 @@ its command, file extensions, root markers, optional package id, and a
 uses this before treating a language as supported and for **Repair language
 support**, which installs `coding-engine` plus the row's exact `package_id`
 when one exists. Registry membership alone never means the language is usable.
+Missing or malformed matrix responses leave language assistance unavailable;
+Home does not infer usability or attempt a connection without the registry row.
 
 ## Workspace diagnostics
 
@@ -112,10 +148,11 @@ language ids, and documents with their URI, language, optional version, and
 complete LSP diagnostic payload. An empty aggregate request does not start a
 placeholder language server.
 
-Supplying `language=…` preserves the earlier per-language behavior and may
-initialize that language's pooled agent session. This is also the rolling-
-upgrade fallback used by Home when an older coding engine does not advertise
-the aggregate scope. Home's Problems panel groups the result by project file,
+Supplying `language=…` may initialize that language's pooled agent session for
+explicit API callers. Home requires the aggregate `active_sessions` contract;
+it reports unsupported or failed diagnostics instead of starting per-language
+sessions as a compatibility fallback. Home's Problems panel groups the result
+by project file,
 filters by severity or text, and can open an unopened diagnostic target. It
 refreshes while visible and reconciles when resumable
 `GET /v1/forge/items/{work_id}/project-events` reports source changes. Home
@@ -142,11 +179,11 @@ through the same Forge workspace-edit endpoint. The runtime treats an in-flight
 or uncertain application as non-replayable; it must reconcile and preview again
 rather than repeat a possibly completed side effect.
 
-For rolling upgrades, Home falls back to the older digest-fenced
-`PUT …/source/batch` contract only when the proposal contains text writes and
-the connected daemon does not expose `source/workspace-edit`. Resource edits
-remain unapplied with an explicit daemon-upgrade message; Home never splits an
-atomic refactor across the older create/rename/delete endpoints.
+Home requires the Forge workspace-edit contract for language refactors. If the
+connected daemon does not expose it, the proposal remains unapplied with a
+daemon-upgrade message. Home never substitutes source-batch writes or splits an
+atomic refactor across separate create/rename/delete endpoints. Pending language
+actions also retain their document and workspace context before editing buffers.
 
 ## Language dogfood pack
 
@@ -186,3 +223,15 @@ available from the editor menu for crash diagnosis.
 Co-located Home can install the optional `coding-engine` and `langservers`
 packages. Remote Home never installs binaries on the client while implying
 that it repaired the workshop.
+
+Code preserves diagnostic source, code, range, related information, and version
+through the CodeMirror adapter. Publications with a mismatched version or an
+unsynchronized buffer are ignored. Editing clears existing markers; unversioned
+publications are accepted for a synchronized buffer until its next edit.
+Workspace Problems describe active-session coverage, not a repository-wide
+verification result.
+
+Forge source search accepts 1–200 Unicode characters. One-character queries are
+capped at 50 matching lines per page; other queries retain the 500-line maximum.
+Include/exclude pathspecs intersect changed-file scope rather than broadening it.
+Replacement retains its reviewed digest preconditions and atomic application.

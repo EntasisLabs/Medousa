@@ -341,6 +341,8 @@ mod tests {
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
+            external_agent_session_id: None,
+            external_agent_workdir: None,
             intent: "general".to_string(),
             task_prompt: "task".to_string(),
             status: crate::agent_runtime::turn_worker::TurnWorkStatus::Pending,

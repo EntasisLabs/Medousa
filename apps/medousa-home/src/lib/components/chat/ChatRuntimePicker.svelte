@@ -35,10 +35,6 @@
     { id: "cursor", hint: "External Cursor agent" },
     { id: "codex", hint: "ChatGPT-backed agent + chat" },
     { id: "hermes", hint: "External Hermes agent" },
-    { id: "grok_bot", hint: "Registered Grok bots" },
-    { id: "muse", hint: "Registered Muse sessions" },
-    { id: "instinct", hint: "WhatsApp + remote API" },
-    { id: "dots", hint: "Slack + remote API" },
   ];
 
   onMount(() => {
@@ -146,6 +142,7 @@
           markId={settings.medousaMark}
           darkMode={settings.darkMode}
           simplified
+          showMascot={false}
           decorative
         />
       </span>

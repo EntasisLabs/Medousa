@@ -18,10 +18,12 @@ import {
 } from "$lib/code/codingEngineClient";
 import type { MedousaCodeWorkspaceHandler } from "$lib/code/medousaCodeWorkspace";
 import { deferCodeWorkspaceWork } from "$lib/utils/codeWorkspaceTrace";
+import { codeExecutionScopeKey } from "$lib/code/codeWorkspaceContext.svelte";
 
 export type CodeLspSessionBridge = MedousaCodeWorkspaceHandler;
 
 export type CodeLspConnectRequest = {
+  workspaceScope?: string;
   workId: string;
   workspaceRoot: string;
   language: string;
@@ -33,6 +35,7 @@ export type CodeLspConnectRequest = {
 
 export type CodeLspSessionDeps = {
   acquire: (options: {
+    workspaceScope?: string;
     workId: string;
     workspaceRoot: string;
     language: string;
@@ -58,6 +61,7 @@ export function unusableLanguageError(
   entry: CodeLanguageMatrixEntry,
   language: string,
 ): string {
+  if (entry.binaryAvailable) return `${language} language service is unavailable on this workshop`;
   const missing = entry.command ?? language;
   return entry.packageId
     ? `${missing} is not installed on this workshop`
@@ -138,7 +142,7 @@ export class CodeLspSession {
     this.#deps = { ...defaultDeps, ...deps };
   }
 
-  /** Active connect scope (`workId:language:uri`), empty when stopped. */
+  /** Active workshop/environment/document scope, empty when stopped. */
   get scope(): string {
     return this.#scope;
   }
@@ -148,7 +152,10 @@ export class CodeLspSession {
   }
 
   connect(request: CodeLspConnectRequest): void {
-    const scope = `${request.workId}:${request.language}:${request.documentUri}`;
+    const scope = JSON.stringify([
+      codeExecutionScopeKey(), request.workspaceScope, request.workId,
+      request.workspaceRoot, request.language, request.documentUri,
+    ]);
     if (scope !== this.#scope) {
       this.#scope = scope;
       this.#attempt = 0;
@@ -218,7 +225,8 @@ export class CodeLspSession {
   }
 
   async #runConnect(request: CodeLspConnectRequest, generation: number): Promise<void> {
-    const alive = () => generation === this.#generation;
+    const executionScope = codeExecutionScopeKey();
+    const alive = () => generation === this.#generation && executionScope === codeExecutionScopeKey();
     try {
       try {
         const matrix = await this.#deps.getMatrix();
@@ -226,22 +234,24 @@ export class CodeLspSession {
         this.languageMatrix = matrix;
         this.languageMatrixError = null;
         const entry = this.#deps.findMatrixEntry(matrix, request.language);
-        if (entry && !entry.usable) {
-          const detail = unusableLanguageError(entry, request.language);
+        if (!entry || !entry.usable) {
+          const detail = entry
+            ? unusableLanguageError(entry, request.language)
+            : `No language server is registered for ${request.language} on this workshop`;
           this.connecting = false;
           this.error = detail;
           this.status = { phase: "failed", detail, progress: null, notice: null };
           return;
         }
       } catch (err) {
-        // Older coding engines omit the matrix; keep attempting the LSP.
-        if (alive()) {
-          this.languageMatrixError =
-            err instanceof Error ? err.message : String(err);
-        }
+        if (!alive()) return;
+        this.languageMatrix = [];
+        this.languageMatrixError = err instanceof Error ? err.message : String(err);
+        throw err;
       }
 
       const lease = await this.#deps.acquire({
+        workspaceScope: request.workspaceScope,
         workId: request.workId,
         workspaceRoot: request.workspaceRoot,
         language: request.language,

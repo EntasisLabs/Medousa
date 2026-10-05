@@ -521,6 +521,17 @@
           "display_name": {
             "type": "string"
           },
+          "external_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Configuration only. Each execution still requires placement, pairing, destination policy, and runtime admission."
+          },
           "memory_scope_id": {
             "type": "string"
           },
@@ -2168,6 +2179,16 @@
           "display_name": {
             "type": "string"
           },
+          "external_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "primary_manuscript_id": {
             "type": "string"
           },
@@ -2978,6 +2999,14 @@
               "null"
             ]
           },
+          "idempotency_key": {
+            "default": null,
+            "description": "Reuse this key when retrying the same admission after an uncertain response.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "identity_channel_id": {
             "type": [
               "string",
@@ -3577,10 +3606,61 @@
         ],
         "type": "object"
       },
+      "ExternalAgentExecutor": {
+        "description": "Owner-pinned execution authority for an external-agent Bot. `forge_work_id` is resolved on the home workshop; caller-supplied host paths are forbidden.",
+        "properties": {
+          "allowed_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allowed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forge_repo_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "home_workshop_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPeerRuntime"
+              }
+            ],
+            "description": "Installed ACP runtime, distinct from an inference provider."
+          },
+          "session_contract": {
+            "$ref": "#/components/schemas/ExternalAgentSessionContract"
+          }
+        },
+        "required": [
+          "forge_repo_id",
+          "forge_work_id",
+          "home_workshop_id",
+          "runtime",
+          "session_contract"
+        ],
+        "type": "object"
+      },
       "ExternalAgentScope": {
         "enum": [
           "read",
           "work"
+        ],
+        "type": "string"
+      },
+      "ExternalAgentSessionContract": {
+        "enum": [
+          "fresh_per_job"
         ],
         "type": "string"
       },
@@ -3648,11 +3728,48 @@
       "ExternalConversationSendRequest": {
         "additionalProperties": false,
         "properties": {
+          "after_native_completion": {
+            "description": "Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.",
+            "type": "boolean"
+          },
+          "after_provider_completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderRequestRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native operator admission for one send after this exact provider request completes. Requires work metadata; mutually exclusive with the native trigger."
+          },
+          "coordinator_wake": {
+            "description": "Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.",
+            "type": "boolean"
+          },
+          "provider_chain": {
+            "description": "Remaining linear stages, frozen with this provider handoff. No new grants.",
+            "items": {
+              "$ref": "#/components/schemas/WorkProviderStageInput"
+            },
+            "type": "array"
+          },
           "request_id": {
             "type": "string"
           },
           "text": {
             "type": "string"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderRequestInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional exact work association; ordinary messages retain their behavior."
           }
         },
         "required": [
@@ -3892,6 +4009,7 @@
       },
       "ExternalPeerRuntime": {
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -4298,6 +4416,20 @@
           "vulkan",
           "directml",
           "other"
+        ],
+        "type": "string"
+      },
+      "HandoffCompletion": {
+        "enum": [
+          "sender_review",
+          "worker_result"
+        ],
+        "type": "string"
+      },
+      "HandoffResponsibility": {
+        "enum": [
+          "retain",
+          "transfer"
         ],
         "type": "string"
       },
@@ -5828,6 +5960,15 @@
         "title": "ModelDownloadProgress",
         "type": "object"
       },
+      "PeerActivityStatus": {
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "blocked"
+        ],
+        "type": "string"
+      },
       "PeerAssignmentOutcome": {
         "enum": [
           "completed",
@@ -5836,6 +5977,51 @@
           "interrupted"
         ],
         "type": "string"
+      },
+      "PeerAssignmentProgress": {
+        "properties": {
+          "current_activity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_activity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_activity_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_activity_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerActivityStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PeerExecutionState"
+          }
+        },
+        "required": [
+          "observed_at",
+          "state"
+        ],
+        "type": "object"
       },
       "PeerAssignmentProposal": {
         "description": "Immutable snapshot offered to the owner for explicit approval. No execution authority exists merely because a proposal was submitted.",
@@ -5861,6 +6047,143 @@
           "request"
         ],
         "type": "object"
+      },
+      "PeerExecutionState": {
+        "description": "Read-only execution observations; only a terminal receipt establishes the assignment outcome. Missing observations never authorize a retry.",
+        "enum": [
+          "accepted",
+          "running",
+          "blocked",
+          "awaiting_receipt",
+          "unobserved"
+        ],
+        "type": "string"
+      },
+      "PeerHandoffAdmission": {
+        "enum": [
+          "delegate",
+          "propose"
+        ],
+        "type": "string"
+      },
+      "PeerHandoffPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "completion": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HandoffCompletion"
+              }
+            ],
+            "default": "sender_review"
+          },
+          "contact": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkContactPreference"
+              }
+            ],
+            "default": {
+              "kind": "return_to_origin"
+            }
+          },
+          "responsibility": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HandoffResponsibility"
+              }
+            ],
+            "default": "retain"
+          },
+          "wake_on_accepted": {
+            "default": true,
+            "type": "boolean"
+          },
+          "wake_on_terminal": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "PeerHandoffReview": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "sender_session": {
+            "$ref": "#/components/schemas/SessionRef"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/PeerHandoffVerdict"
+          }
+        },
+        "required": [
+          "reason",
+          "receipt_id",
+          "sender_session",
+          "turn_id",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "PeerHandoffState": {
+        "enum": [
+          "awaiting_acceptance",
+          "working",
+          "awaiting_sender_review",
+          "accepted",
+          "changes_requested",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "PeerHandoffSummary": {
+        "description": "Inbox metadata beside its existing proposal, binding and receipt; no duplicated payloads.",
+        "properties": {
+          "admission": {
+            "$ref": "#/components/schemas/PeerHandoffAdmission"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PeerHandoffPolicy"
+          },
+          "responsible_session": {
+            "$ref": "#/components/schemas/SessionRef"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerHandoffReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/PeerHandoffState"
+          }
+        },
+        "required": [
+          "admission",
+          "policy",
+          "responsible_session",
+          "state"
+        ],
+        "type": "object"
+      },
+      "PeerHandoffVerdict": {
+        "enum": [
+          "accept",
+          "changes_requested"
+        ],
+        "type": "string"
       },
       "PeerProposalActionRequest": {
         "additionalProperties": false,
@@ -5922,12 +6245,87 @@
               "$ref": "#/components/schemas/PeerProposalReviewRecord"
             },
             "type": "array"
+          },
+          "tracked_proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerProposalReviewRecord"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keeps the selected, owner-scoped assignment visible independently of the history page and cursor. It does not consume a pagination slot."
           }
         },
         "required": [
           "proposals"
         ],
         "title": "PeerProposalInboxResponse",
+        "type": "object"
+      },
+      "PeerProposalIntent": {
+        "additionalProperties": false,
+        "description": "Source selection is checked against a visible, owned, governed chat.",
+        "properties": {
+          "after_entry_seq": {
+            "description": "Exclusive lower bound from native discovery.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "continue_owner": {
+            "description": "Result-only owner-chat continuation; must be false for HTTP work participants.",
+            "type": "boolean"
+          },
+          "existing_agent_session_id": {
+            "description": "Exact adoptable native session; omit to create fresh work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forge_work_id": {
+            "default": null,
+            "description": "An explicit owned project; omission preserves legacy chat binding.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "request_key": {
+            "description": "Stable request key; reuse for exact retries.",
+            "type": "string"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPeerRuntime"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Omit to use the workshop's saved preference and available fallbacks."
+          },
+          "through_entry_seq": {
+            "description": "Inclusive committed upper bound from native discovery.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "after_entry_seq",
+          "continue_owner",
+          "instructions",
+          "request_key",
+          "through_entry_seq"
+        ],
         "type": "object"
       },
       "PeerProposalReviewRecord": {
@@ -5941,12 +6339,32 @@
                 "type": "null"
               }
             ],
-            "description": "Recorded custody remains visible until its terminal receipt arrives."
+            "description": "Durable custody remains visible with its terminal receipt in chat history."
           },
           "decision": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PeerProposalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handoff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerHandoffSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerAssignmentProgress"
               },
               {
                 "type": "null"
@@ -5965,7 +6383,7 @@
                 "type": "null"
               }
             ],
-            "description": "Present for source-session projections so a remote owner can observe the immutable terminal even though execution belongs to another workshop."
+            "description": "Immutable terminal result retained in local and source-session history."
           }
         },
         "required": [
@@ -6118,6 +6536,14 @@
         "title": "RefreshMcpOAuthRequest",
         "type": "object"
       },
+      "RelationshipDirection": {
+        "enum": [
+          "both",
+          "incoming",
+          "outgoing"
+        ],
+        "type": "string"
+      },
       "ResolvedConversationRange": {
         "properties": {
           "selection": {
@@ -6132,6 +6558,64 @@
           "selection_digest"
         ],
         "type": "object"
+      },
+      "ResourceKind": {
+        "enum": [
+          "project",
+          "forge_work",
+          "vault_note",
+          "vault_folder",
+          "artifact",
+          "component",
+          "feed",
+          "session",
+          "assignment",
+          "job",
+          "work_unit",
+          "bot",
+          "external_agent"
+        ],
+        "type": "string"
+      },
+      "ResourceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "id": {
+            "description": "Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ResourceKind"
+          }
+        },
+        "required": [
+          "authority_id",
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "ResourceRelationshipKind": {
+        "enum": [
+          "supports",
+          "informs",
+          "produces",
+          "tracks",
+          "related_to"
+        ],
+        "type": "string"
+      },
+      "ResourceResolution": {
+        "enum": [
+          "unresolved",
+          "available",
+          "unavailable",
+          "tombstoned"
+        ],
+        "type": "string"
       },
       "RotateExternalCallbackResponse": {
         "properties": {
@@ -8945,6 +9429,9 @@
               "null"
             ]
           },
+          "clear_external_agent": {
+            "type": "boolean"
+          },
           "clear_world_binding": {
             "description": "Explicitly clear durable continuity. This cannot be combined with `world_binding`.",
             "type": "boolean"
@@ -8966,6 +9453,17 @@
             "format": "uint64",
             "minimum": 0.0,
             "type": "integer"
+          },
+          "external_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Omission preserves the current executor for older clients."
           },
           "primary_manuscript_id": {
             "type": "string"
@@ -9449,6 +9947,55 @@
         ],
         "type": "string"
       },
+      "WorkBudgetDisposition": {
+        "oneOf": [
+          {
+            "enum": [
+              "completed"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Native admission proves the execution never started; release its hold.",
+            "enum": [
+              "not_started"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "WorkBudgetLimits": {
+        "additionalProperties": false,
+        "properties": {
+          "concurrent_executions": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "cost_microusd": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "deadline": {
+            "description": "Absolute deadline survives process and conversation restarts.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "execution_count": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "concurrent_executions",
+          "cost_microusd",
+          "deadline",
+          "execution_count"
+        ],
+        "type": "object"
+      },
       "WorkCard": {
         "properties": {
           "column": {
@@ -9483,6 +10030,1756 @@
         "type": "object"
       },
       "WorkCardId": {
+        "type": "string"
+      },
+      "WorkContactPreference": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "silent"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "return_to_origin"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "participant"
+                ],
+                "type": "string"
+              },
+              "participant": {
+                "$ref": "#/components/schemas/ResourceRef"
+              }
+            },
+            "required": [
+              "kind",
+              "participant"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "channel": {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              "kind": {
+                "enum": [
+                  "channel"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "WorkCoordinationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/CoordinationChannelRef"
+          },
+          "coordination_id": {
+            "type": "string"
+          },
+          "deadline": {
+            "description": "Absolute bound; at most 24 hours and no later than either approval.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "executor_proposal_id": {
+            "type": "string"
+          },
+          "expected_scope_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "fix_review_rounds": {
+            "description": "Up to three separately approved fix/review rounds, only after exact changes_requested.",
+            "items": {
+              "$ref": "#/components/schemas/WorkCoordinationRoundInput"
+            },
+            "type": "array"
+          },
+          "reviewer_proposal_id": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "coordination_id",
+          "deadline",
+          "executor_proposal_id",
+          "expected_scope_revision",
+          "reviewer_proposal_id",
+          "work_unit_id"
+        ],
+        "type": "object"
+      },
+      "WorkCoordinationQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/CoordinationChannelRef"
+          },
+          "coordination_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "coordination_id"
+        ],
+        "type": "object"
+      },
+      "WorkCoordinationRoundInput": {
+        "additionalProperties": false,
+        "properties": {
+          "executor_proposal_id": {
+            "type": "string"
+          },
+          "reviewer_proposal_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "executor_proposal_id",
+          "reviewer_proposal_id"
+        ],
+        "type": "object"
+      },
+      "WorkCoordinatorAttempt": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "prompt_digest": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "prompt_digest",
+          "turn_id"
+        ],
+        "type": "object"
+      },
+      "WorkCoordinatorDecision": {
+        "properties": {
+          "content_digest": {
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/TranscriptEntryRef"
+          }
+        },
+        "required": [
+          "content_digest",
+          "entry"
+        ],
+        "type": "object"
+      },
+      "WorkCoordinatorWake": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/WorkProviderRequestInput"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "response_depth_mode": {
+            "type": "string"
+          },
+          "scope_digest": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionRef"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "input",
+          "model",
+          "provider",
+          "reasoning_effort",
+          "request_id",
+          "response_depth_mode",
+          "scope_digest",
+          "session"
+        ],
+        "type": "object"
+      },
+      "WorkEventKind": {
+        "description": "Selected observations, never an implicit grant to execute or contact anyone.",
+        "enum": [
+          "resource_observed",
+          "work_state_changed",
+          "work_scope_changed",
+          "provider_progress",
+          "provider_completed",
+          "provider_failed"
+        ],
+        "type": "string"
+      },
+      "WorkEventsQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "subscription_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription_id"
+        ],
+        "type": "object"
+      },
+      "WorkGraphCollection": {
+        "enum": [
+          "resources",
+          "relationships",
+          "work_units",
+          "events",
+          "budget_reservations",
+          "subscriptions",
+          "provider_requests",
+          "provider_dispatches",
+          "coordinator_wakes"
+        ],
+        "type": "string"
+      },
+      "WorkGraphCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "description": "Replays of the exact command return the original receipt, even after later commits. Reusing this key for different intent is a conflict.",
+            "type": "string"
+          },
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "mutation": {
+            "$ref": "#/components/schemas/WorkGraphMutation"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_revision",
+          "mutation"
+        ],
+        "type": "object"
+      },
+      "WorkGraphMutation": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "input": {
+                "$ref": "#/components/schemas/WorkSubscriptionInput"
+              },
+              "operation": {
+                "enum": [
+                  "subscribe"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "input",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "decision": {
+                "description": "Attributable observation/decision receipt, not a provider effect.",
+                "type": "string"
+              },
+              "event_revision": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "operation": {
+                "enum": [
+                  "acknowledge_event"
+                ],
+                "type": "string"
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "decision",
+              "event_revision",
+              "operation",
+              "subscription_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Native runtime decision and inbox acknowledgment commit atomically.",
+            "properties": {
+              "event_revision": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "operation": {
+                "enum": [
+                  "advance_provider_stage"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WorkUnitState"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "event_revision",
+              "operation",
+              "reason",
+              "subscription_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "operation": {
+                "enum": [
+                  "stop_subscription"
+                ],
+                "type": "string"
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "subscription_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "locator": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "native_revision": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "enum": [
+                  "record_resource"
+                ],
+                "type": "string"
+              },
+              "reference": {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              "resolution": {
+                "$ref": "#/components/schemas/ResourceResolution"
+              }
+            },
+            "required": [
+              "operation",
+              "reference",
+              "resolution"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/ResourceRelationshipKind"
+              },
+              "operation": {
+                "enum": [
+                  "put_relationship"
+                ],
+                "type": "string"
+              },
+              "relationship_id": {
+                "type": "string"
+              },
+              "to": {
+                "$ref": "#/components/schemas/ResourceRef"
+              }
+            },
+            "required": [
+              "from",
+              "kind",
+              "operation",
+              "relationship_id",
+              "to"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "budget": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WorkBudgetLimits"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "completion_condition": {
+                "type": "string"
+              },
+              "contact": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WorkContactPreference"
+                  }
+                ],
+                "default": {
+                  "kind": "return_to_origin"
+                }
+              },
+              "intent": {
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/WorkUnitKind"
+              },
+              "operation": {
+                "enum": [
+                  "accept_work"
+                ],
+                "type": "string"
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scope": {
+                "$ref": "#/components/schemas/WorkScope"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "completion_condition",
+              "intent",
+              "kind",
+              "operation",
+              "scope",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "operation": {
+                "enum": [
+                  "set_scope"
+                ],
+                "type": "string"
+              },
+              "scope": {
+                "$ref": "#/components/schemas/WorkScope"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "scope",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "evidence": {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceRef"
+                },
+                "type": "array"
+              },
+              "operation": {
+                "enum": [
+                  "set_state"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "$ref": "#/components/schemas/WorkUnitState"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidence",
+              "operation",
+              "reason",
+              "state",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "contact": {
+                "$ref": "#/components/schemas/WorkContactPreference"
+              },
+              "operation": {
+                "enum": [
+                  "set_contact"
+                ],
+                "type": "string"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "contact",
+              "operation",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "operation": {
+                "enum": [
+                  "attach_conversation"
+                ],
+                "type": "string"
+              },
+              "session": {
+                "$ref": "#/components/schemas/SessionRef"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "session",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "condition": {
+                "type": "string"
+              },
+              "evidence": {
+                "items": {
+                  "$ref": "#/components/schemas/WorkRevisionEvidence"
+                },
+                "type": "array"
+              },
+              "expected_scope_revision": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "operation": {
+                "enum": [
+                  "record_readiness"
+                ],
+                "type": "string"
+              },
+              "valid_for_seconds": {
+                "description": "Checkpoints expire; the runtime does not infer continuing freshness.",
+                "format": "uint32",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "condition",
+              "evidence",
+              "expected_scope_revision",
+              "operation",
+              "valid_for_seconds",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "limits": {
+                "$ref": "#/components/schemas/WorkBudgetLimits"
+              },
+              "operation": {
+                "enum": [
+                  "set_budget"
+                ],
+                "type": "string"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "limits",
+              "operation",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Runtime-only reservation; storing intent is not executor admission.",
+            "properties": {
+              "execution": {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              "operation": {
+                "enum": [
+                  "reserve_budget"
+                ],
+                "type": "string"
+              },
+              "reservation_id": {
+                "type": "string"
+              },
+              "reserved_cost_microusd": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "execution",
+              "operation",
+              "reservation_id",
+              "reserved_cost_microusd",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Runtime-only settlement against authoritative native custody.",
+            "properties": {
+              "actual_cost_microusd": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "disposition": {
+                "$ref": "#/components/schemas/WorkBudgetDisposition"
+              },
+              "operation": {
+                "enum": [
+                  "settle_budget"
+                ],
+                "type": "string"
+              },
+              "reservation_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "actual_cost_microusd",
+              "disposition",
+              "operation",
+              "reservation_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Native-only association, retained before provider effects.",
+            "properties": {
+              "operation": {
+                "enum": [
+                  "register_provider_request"
+                ],
+                "type": "string"
+              },
+              "request": {
+                "$ref": "#/components/schemas/WorkProviderRequest"
+              }
+            },
+            "required": [
+              "operation",
+              "request"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "dispatch": {
+                "$ref": "#/components/schemas/WorkProviderDispatch"
+              },
+              "operation": {
+                "enum": [
+                  "register_provider_dispatch"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "dispatch",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "operation": {
+                "enum": [
+                  "register_coordinator_wake"
+                ],
+                "type": "string"
+              },
+              "wake": {
+                "$ref": "#/components/schemas/WorkCoordinatorWake"
+              }
+            },
+            "required": [
+              "operation",
+              "wake"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attempt": {
+                "$ref": "#/components/schemas/WorkCoordinatorAttempt"
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "enum": [
+                  "claim_coordinator_wake"
+                ],
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "attempt",
+              "conversation_id",
+              "operation",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "decision": {
+                "$ref": "#/components/schemas/WorkCoordinatorDecision"
+              },
+              "operation": {
+                "enum": [
+                  "complete_coordinator_wake"
+                ],
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conversation_id",
+              "decision",
+              "operation",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "enum": [
+                  "block_coordinator_wake"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conversation_id",
+              "operation",
+              "reason",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "enum": [
+                  "close_provider_dispatch"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conversation_id",
+              "operation",
+              "reason",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Native-only single dispatch custody. Unknown claims never relaunch.",
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "enum": [
+                  "claim_provider_request"
+                ],
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conversation_id",
+              "operation",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Authenticated provider evidence; not native execution or satisfaction.",
+            "properties": {
+              "event": {
+                "$ref": "#/components/schemas/WorkProviderEvent"
+              },
+              "operation": {
+                "enum": [
+                  "record_provider_event"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "operation"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "WorkGraphQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "collection": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkGraphCollection"
+              }
+            ],
+            "default": "resources"
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "direction": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RelationshipDirection"
+              }
+            ],
+            "default": "both"
+          },
+          "limit": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "WorkParticipantMutation": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "work.record"
+                ],
+                "type": "string"
+              },
+              "command": {
+                "$ref": "#/components/schemas/WorkGraphCommand"
+              }
+            },
+            "required": [
+              "action",
+              "command"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "work.coordinate"
+                ],
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/components/schemas/WorkCoordinationInput"
+              }
+            },
+            "required": [
+              "action",
+              "input"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "peer.propose"
+                ],
+                "type": "string"
+              },
+              "intent": {
+                "$ref": "#/components/schemas/PeerProposalIntent"
+              },
+              "session_id": {
+                "$ref": "#/components/schemas/SessionId"
+              }
+            },
+            "required": [
+              "action",
+              "intent",
+              "session_id"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "WorkParticipantMutation"
+      },
+      "WorkParticipantQuery": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "work.graph"
+                ],
+                "type": "string"
+              },
+              "query": {
+                "$ref": "#/components/schemas/WorkGraphQuery"
+              }
+            },
+            "required": [
+              "action",
+              "query"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "work.get"
+                ],
+                "type": "string"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "work_unit_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "work.events"
+                ],
+                "type": "string"
+              },
+              "query": {
+                "$ref": "#/components/schemas/WorkEventsQuery"
+              }
+            },
+            "required": [
+              "action",
+              "query"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "work.coordination"
+                ],
+                "type": "string"
+              },
+              "query": {
+                "$ref": "#/components/schemas/WorkCoordinationQuery"
+              }
+            },
+            "required": [
+              "action",
+              "query"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "peer.discover"
+                ],
+                "type": "string"
+              },
+              "session_id": {
+                "$ref": "#/components/schemas/SessionId"
+              }
+            },
+            "required": [
+              "action",
+              "session_id"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "WorkParticipantQuery"
+      },
+      "WorkParticipantResponse": {
+        "additionalProperties": false,
+        "description": "Bounded native result; no transport acknowledgment is promoted to completion.",
+        "properties": {
+          "result": true
+        },
+        "required": [
+          "result"
+        ],
+        "title": "WorkParticipantResponse",
+        "type": "object"
+      },
+      "WorkProviderDispatch": {
+        "additionalProperties": false,
+        "description": "One immutable, operator-admitted handoff after a native executor or exact provider predecessor completes. Recovery derives its result/revision pin.",
+        "properties": {
+          "after_provider_completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderDispatchSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "coordinator_wake": {
+            "type": "boolean"
+          },
+          "input": {
+            "$ref": "#/components/schemas/WorkProviderRequestInput"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "remaining_stages": {
+            "items": {
+              "$ref": "#/components/schemas/WorkProviderPlannedStage"
+            },
+            "type": "array"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "scope_digest": {
+            "type": "string"
+          },
+          "source_request_digest": {
+            "type": "string"
+          },
+          "target_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "input",
+          "instructions",
+          "provider",
+          "request_id",
+          "scope_digest",
+          "source_request_digest",
+          "target_digest"
+        ],
+        "type": "object"
+      },
+      "WorkProviderDispatchSource": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/WorkProviderRequestRef"
+          },
+          "target_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request",
+          "target_digest"
+        ],
+        "type": "object"
+      },
+      "WorkProviderEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ExternalEventKind"
+          },
+          "qualification": {
+            "$ref": "#/components/schemas/WorkProviderQualification"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "request_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "review_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkReviewDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_id",
+          "conversation_id",
+          "created_at",
+          "event_id",
+          "kind",
+          "qualification",
+          "request_id",
+          "request_sequence",
+          "text"
+        ],
+        "type": "object"
+      },
+      "WorkProviderPlannedStage": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/WorkProviderStageInput"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "target_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "input",
+          "provider",
+          "target_digest"
+        ],
+        "type": "object"
+      },
+      "WorkProviderQualification": {
+        "enum": [
+          "outcome_only",
+          "review_approved",
+          "changes_requested",
+          "invalid_review",
+          "revision_changed",
+          "scope_changed",
+          "inactive_work",
+          "expired"
+        ],
+        "type": "string"
+      },
+      "WorkProviderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_condition": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/WorkProviderRequestInput"
+          },
+          "instruction_digest": {
+            "type": "string"
+          },
+          "predecessor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderTerminalRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "reviewed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkReviewInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "completion_condition",
+          "conversation_id",
+          "input",
+          "instruction_digest",
+          "provider",
+          "request_id",
+          "scope_digest"
+        ],
+        "type": "object"
+      },
+      "WorkProviderRequestInput": {
+        "additionalProperties": false,
+        "properties": {
+          "deadline": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expected_scope_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "review_of": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderReviewSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The runtime derives the receipt/revision pin; callers cannot assert it."
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deadline",
+          "expected_scope_revision",
+          "work_unit_id"
+        ],
+        "type": "object"
+      },
+      "WorkProviderRequestRef": {
+        "additionalProperties": false,
+        "description": "Exact request identity within the admitted owner's local user domain.",
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "WorkProviderReviewSource": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/CoordinationChannelRef"
+          },
+          "executor_assignment_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "executor_assignment_id"
+        ],
+        "type": "object"
+      },
+      "WorkProviderStageInput": {
+        "additionalProperties": false,
+        "description": "A future stage supplied with native operator admission. Work scope and deadline are inherited; the runtime freezes its destination separately.",
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "coordinator_wake": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "request_id",
+          "text"
+        ],
+        "type": "object"
+      },
+      "WorkProviderTerminalRef": {
+        "additionalProperties": false,
+        "description": "Native-derived pin of the immutable predecessor terminal, never a caller verdict.",
+        "properties": {
+          "event_digest": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/WorkProviderRequestRef"
+          }
+        },
+        "required": [
+          "event_digest",
+          "event_id",
+          "request"
+        ],
+        "type": "object"
+      },
+      "WorkReadinessRequirement": {
+        "additionalProperties": false,
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "condition",
+          "work_unit_id"
+        ],
+        "type": "object"
+      },
+      "WorkReviewDecision": {
+        "additionalProperties": false,
+        "description": "A completed reviewer process is not an approval. Its entire result must be this bounded envelope, naming the exact input supplied by the runtime.",
+        "properties": {
+          "reviewed": {
+            "$ref": "#/components/schemas/WorkReviewInput"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/WorkReviewVerdict"
+          }
+        },
+        "required": [
+          "reviewed",
+          "summary",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "WorkReviewInput": {
+        "additionalProperties": false,
+        "description": "Captured from a clean governed checkout after native executor completion.",
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "coordination_id": {
+            "type": "string"
+          },
+          "environment_generation": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "executor_assignment_id": {
+            "type": "string"
+          },
+          "executor_receipt_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "head_oid": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch",
+          "coordination_id",
+          "environment_generation",
+          "executor_assignment_id",
+          "executor_receipt_id",
+          "forge_work_id",
+          "head_oid",
+          "work_unit_id"
+        ],
+        "type": "object"
+      },
+      "WorkReviewVerdict": {
+        "enum": [
+          "approved",
+          "changes_requested"
+        ],
+        "type": "string"
+      },
+      "WorkRevisionEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "native_revision": {
+            "type": "string"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/ResourceRef"
+          }
+        },
+        "required": [
+          "native_revision",
+          "reference"
+        ],
+        "type": "object"
+      },
+      "WorkScope": {
+        "additionalProperties": false,
+        "properties": {
+          "children": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "depends_on": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "readiness": {
+            "description": "Explicit checkpoints for maintenance members. Omission requires a terminal satisfied child, which an ongoing responsibility cannot supply.",
+            "items": {
+              "$ref": "#/components/schemas/WorkReadinessRequirement"
+            },
+            "type": "array"
+          },
+          "resources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResourceRef"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "WorkSubscriptionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "after_revision": {
+            "description": "Exclusive durable journal cursor, including events racing registration.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "event_kinds": {
+            "items": {
+              "$ref": "#/components/schemas/WorkEventKind"
+            },
+            "type": "array"
+          },
+          "expected_scope_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resources": {
+            "description": "Exact resources within the saved work scope; no transitive selectors.",
+            "items": {
+              "$ref": "#/components/schemas/ResourceRef"
+            },
+            "type": "array"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "after_revision",
+          "event_kinds",
+          "expected_scope_revision",
+          "expires_at",
+          "resources",
+          "subscription_id",
+          "work_unit_id"
+        ],
+        "type": "object"
+      },
+      "WorkUnitKind": {
+        "enum": [
+          "finite",
+          "maintenance"
+        ],
+        "type": "string"
+      },
+      "WorkUnitState": {
+        "enum": [
+          "accepted",
+          "active",
+          "waiting",
+          "needs_attention",
+          "paused",
+          "satisfied",
+          "failed",
+          "cancelled"
+        ],
         "type": "string"
       },
       "WorkerAckKind": {
@@ -12957,6 +15254,177 @@
         },
         "x-medousa-policy": {
           "body_limit": 131072,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/ask": {
+      "post": {
+        "operationId": "bots.ask.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BOTS_ASK_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "bots.ask.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 131072,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/ask/{job_id}": {
+      "get": {
+        "operationId": "bots.ask.by_job_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BOTS_ASK_BY_JOB_ID_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/ask/{job_id}/cancel": {
+      "post": {
+        "operationId": "bots.ask.by_job_id.cancel.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BOTS_ASK_BY_JOB_ID_CANCEL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.cancel.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.cancel.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.cancel.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
           "bootstrap_public": false,
           "browser_policy": "native_only",
           "capabilities": [
@@ -16889,6 +19357,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "selected_proposal_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -18497,6 +20973,75 @@
           "browser_policy": "native_only",
           "capabilities": [
             "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/{id}/work-events": {
+      "post": {
+        "operationId": "external_conversations.by_id.work_events.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalProviderEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalConversationView"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.work_events.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.work_events.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.work_events.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
           ],
           "credential_scheme": "bearer",
           "feature_profile": "core",
@@ -23871,6 +26416,57 @@
           "feature_profile": "preview",
           "rate_limit_class": "mutation",
           "trust_group": "preview"
+        }
+      }
+    },
+    "/v1/forge/projects": {
+      "post": {
+        "operationId": "forge.projects.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "FORGE_PROJECTS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "forge.projects.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.projects.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.projects.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
         }
       }
     },
@@ -32021,6 +34617,57 @@
         }
       }
     },
+    "/v1/sessions/workspace-shell": {
+      "post": {
+        "operationId": "sessions.workspace_shell.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SESSIONS_WORKSPACE_SHELL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "sessions.workspace_shell.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.workspace_shell.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.workspace_shell.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 262144,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/sessions/{session_id}": {
       "delete": {
         "operationId": "sessions.by_session_id.delete",
@@ -33782,6 +36429,379 @@
           "browser_policy": "native_only",
           "capabilities": [
             "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/inspect": {
+      "post": {
+        "operationId": "ssh.inspect.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_INSPECT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.inspect.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.inspect.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.inspect.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/targets": {
+      "get": {
+        "operationId": "ssh.targets.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TARGETS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.targets.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "post": {
+        "operationId": "ssh.targets.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TARGETS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.targets.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/targets/{id}": {
+      "delete": {
+        "operationId": "ssh.targets.by_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TARGETS_BY_ID_DELETEResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/targets/{id}/access": {
+      "post": {
+        "operationId": "ssh.targets.by_id.access.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TARGETS_BY_ID_ACCESS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.access.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.access.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.access.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/terminal": {
+      "post": {
+        "operationId": "ssh.terminal.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TERMINAL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.terminal.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.terminal.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.terminal.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/test": {
+      "post": {
+        "operationId": "ssh.test.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TEST_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.test.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.test.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.test.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
           ],
           "credential_scheme": "bearer",
           "feature_profile": "core",
@@ -35672,6 +38692,126 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/work/mutate": {
+      "post": {
+        "operationId": "work.mutate.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkParticipantMutation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkParticipantResponse"
+                }
+              }
+            },
+            "description": "work.mutate.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "work.mutate.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "work.mutate.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/work/query": {
+      "post": {
+        "operationId": "work.query.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkParticipantQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkParticipantResponse"
+                }
+              }
+            },
+            "description": "work.query.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "work.query.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "work.query.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
           "trust_group": "portal"
         }
       }

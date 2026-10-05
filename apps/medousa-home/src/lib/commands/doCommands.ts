@@ -3,6 +3,7 @@ import {
   resetContentZoom,
   stepContentZoom,
 } from "$lib/config/contentZoom";
+import { agentCreation } from "$lib/stores/agentCreation.svelte";
 import { enqueueDaemonAsk } from "$lib/daemon";
 import {
   applyRecipeToEditor,
@@ -64,6 +65,8 @@ function buildCreateCommands(): WorkshopCommand[] {
   );
 
   return [
+    {id:"do-create-bot",section:"do",verb:"create",label:"New Bot",subtitle:"Create a companion with its own conversation and memory",keywords:"create new bot companion codex cursor hermes",aliases:["bot","+bot"],run:(ctx) => {ctx.callbacks.close();agentCreation.createBot();}},
+    {id:"do-connect-agent",section:"do",verb:"create",label:"Connect agent",subtitle:"Connect Muse, Grok Bot, Instinct, or Dots",keywords:"create connect new agent muse grokbot instinct dots",aliases:["agent","+agent"],run:(ctx) => {ctx.callbacks.close();agentCreation.connectAgent();}},
     {
       id: "do-create-note",
       section: "do",

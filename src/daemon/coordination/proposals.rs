@@ -13,53 +13,70 @@ impl LocalPeerDispatcher {
         principal: &RequestPrincipal,
         session_id: medousa_types::SessionId,
         after: Option<String>,
+        selected_proposal_id: Option<String>,
     ) -> Result<PeerProposalInboxResponse> {
         let owner = actor(principal)?;
         let authority = crate::workshop_authority::current()
             .map_err(anyhow::Error::msg)?
             .clone();
         let store = self.store.clone();
-        let rows = self
+        let (mut rows, mut tracked_proposal) = self
             .state
             .forge_execution
             .run(
                 ExecutionClass::StoreIo,
                 medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
                 move || {
-                    Ok(
-                        if crate::session_catalog::session_visible_to_profile(
+                    Ok((|| -> Result<_> {
+                        let visible = crate::session_catalog::session_visible_to_profile(
                             session_id.as_str(),
                             &owner,
-                        ) {
-                            store.proposal_inbox(
-                                &owner,
-                                &medousa_types::SessionRef {
-                                    authority_id: authority,
-                                    session_id,
-                                },
-                                after.as_deref(),
-                            )
+                        );
+                        let session = medousa_types::SessionRef {
+                            authority_id: authority,
+                            session_id,
+                        };
+                        let rows = if visible {
+                            store.proposal_inbox(&owner, &session, after.as_deref())?
                         } else {
                             store.proposal_inbox_for_source_session(
                                 &owner,
-                                &session_id,
+                                &session.session_id,
                                 after.as_deref(),
-                            )
-                        },
-                    )
+                            )?
+                        };
+                        let tracked = selected_proposal_id
+                            .as_deref()
+                            .map(|id| {
+                                store.tracked_proposal_for_session(&owner, &session, id, !visible)
+                            })
+                            .transpose()?
+                            .flatten();
+                        Ok((rows, tracked))
+                    })())
                 },
             )
             .await??;
         // Review does not expose source bodies. Full visibility is rechecked at approval.
-        for row in &rows {
+        for row in rows.iter().chain(tracked_proposal.iter()) {
             self.local_request(principal, &row.proposal.request)?;
         }
         let next_cursor =
             (rows.len() == 8).then(|| rows.last().unwrap().proposal.proposal_id.clone());
-        Ok(PeerProposalInboxResponse {
+        for row in rows.iter_mut().chain(tracked_proposal.iter_mut()) {
+            if row.receipt.is_none() && row.binding.is_some() {
+                row.progress = Some(self.assignment_progress(row).await?);
+            }
+        }
+        let response = PeerProposalInboxResponse {
             proposals: rows,
             next_cursor,
-        })
+            tracked_proposal,
+        };
+        if serde_json::to_vec(&response)?.len() > 2 * 1024 * 1024 {
+            bail!("proposal observation response budget exhausted");
+        }
+        Ok(response)
     }
 
     pub async fn propose_assignment(
@@ -176,7 +193,7 @@ impl LocalPeerDispatcher {
         principal: &RequestPrincipal,
         channel: CoordinationChannelRef,
         proposal_id: String,
-    ) -> Result<ExternalPeerAssignmentBinding> {
+    ) -> Result<Option<ExternalPeerAssignmentBinding>> {
         let owner = actor(principal)?;
         let store = self.store.clone();
         let proposal = self
@@ -195,12 +212,34 @@ impl LocalPeerDispatcher {
             true,
         )
         .await?;
+        let native = self.store.clone();
+        let request = proposal.request.clone();
+        let registered = self
+            .state
+            .forge_execution
+            .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
+                Ok((|| -> Result<_> {
+                    if native.work_plan_for_assignment(&request)?.is_some() {
+                        return Ok(Some(
+                            native.peer_if_recorded(&request.channel, &request.assignment_id)?,
+                        ));
+                    }
+                    Ok(None)
+                })())
+            })
+            .await??;
+        if let Some(binding) = registered {
+            // Existing approval UI submits approve then dispatch. Accept work
+            // into the durable controller; a reviewer waits for its dependency.
+            self.wake.notify_one();
+            return Ok(binding);
+        }
         let binding = self.dispatch(principal, &proposal.request).await?;
         crate::peer_coordination_mesh::record_remote_peer_completion_destination_binding_admitted(
             &proposal.proposal_id,
             &binding,
         )
         .await?;
-        Ok(binding)
+        Ok(Some(binding))
     }
 }

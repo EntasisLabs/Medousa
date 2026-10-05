@@ -59,6 +59,7 @@ struct LiveAgentSession {
     /// Shared across the registry and the running prompt-pump clone so an
     /// explicitly authorized owner can adopt already-running custody.
     peer_receipt: Arc<Mutex<Option<super::coordination::PeerReceiptSink>>>,
+    delegated_work_id: Arc<Mutex<Option<String>>>,
     /// Retain one terminal observation so adoption racing completion can
     /// publish the exact result instead of losing it or restarting work.
     peer_terminal: Arc<Mutex<Option<(medousa_types::coordination::PeerAssignmentOutcome, String)>>>,
@@ -77,6 +78,43 @@ static AGENT_SESSIONS: once_cell::sync::Lazy<RwLock<AgentSessionRegistry>> =
 
 static ACP_CLIENT: once_cell::sync::Lazy<ExternalAcpClient> =
     once_cell::sync::Lazy::new(ExternalAcpClient::new);
+
+/// Inspect exact assignment custody without discovering unrelated sessions or
+/// dispatching work. The coordinator authenticates the proposal before calling.
+pub(crate) async fn peer_execution_state(
+    binding: &medousa_types::coordination::ExternalPeerAssignmentBinding,
+    work_id: &str,
+) -> Option<medousa_types::coordination::PeerExecutionState> {
+    use medousa_types::coordination::PeerExecutionState;
+    let live = AGENT_SESSIONS
+        .read()
+        .await
+        .by_agent_session
+        .get(&binding.agent_session_id)
+        .cloned()?;
+    if live.session_id != binding.execution_session.session_id.as_str()
+        || live.runtime != binding.target.runtime.as_str()
+        || live.forge_work_id.as_ref().map(|id| id.as_str()) != Some(work_id)
+    {
+        return None;
+    }
+    let cancelled = *live.cancelled.lock().await;
+    let terminal = live.peer_terminal.lock().await.is_some();
+    if cancelled || terminal {
+        Some(PeerExecutionState::AwaitingReceipt)
+    } else if agent_permission_request_store()
+        .has_pending_for_session(&live.agent_session_id, &live.session_id)
+    {
+        Some(PeerExecutionState::Blocked)
+    } else if live
+        .peer_prompt_started
+        .load(std::sync::atomic::Ordering::SeqCst)
+    {
+        Some(PeerExecutionState::Running)
+    } else {
+        Some(PeerExecutionState::Accepted)
+    }
+}
 
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct AdoptableAgentSession {
@@ -402,6 +440,30 @@ pub(crate) async fn create_agent_session_service(
     state: AppState,
     body: CreateAgentSessionRequest,
 ) -> Result<CreateAgentSessionResponse, (StatusCode, String)> {
+    create_agent_session_service_with_contract(state, body, false)
+        .await
+        .map(|(response, _)| response)
+}
+
+pub(crate) async fn create_fresh_delegated_agent_session_service(
+    state: AppState,
+    body: CreateAgentSessionRequest,
+) -> Result<(CreateAgentSessionResponse, String), (StatusCode, String)> {
+    let (response, workdir) = create_agent_session_service_with_contract(state, body, true).await?;
+    let workdir = workdir.ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "delegated ACP session has no governed workdir".to_string(),
+        )
+    })?;
+    Ok((response, workdir))
+}
+
+async fn create_agent_session_service_with_contract(
+    state: AppState,
+    body: CreateAgentSessionRequest,
+    fresh_per_job: bool,
+) -> Result<(CreateAgentSessionResponse, Option<String>), (StatusCode, String)> {
     let command = CreateAgentSessionCommand::try_from(body)
         .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
     let session_id = command.session_id.into_string();
@@ -555,7 +617,9 @@ pub(crate) async fn create_agent_session_service(
             .as_ref()
             .map(TrimmedText::as_str)
             .map(str::to_string);
-        if explicit.is_some() {
+        if fresh_per_job {
+            None
+        } else if explicit.is_some() {
             explicit
         } else if let Some(ref work_id) = forge_work_id {
             state.forge.latest_resume_token(work_id).ok().flatten()
@@ -567,6 +631,7 @@ pub(crate) async fn create_agent_session_service(
     Ok((config, forge_work_id, forge_lease, resume_token, command.prompt, command.code_context))
     }).await.map_err(agent_admission_error)??;
 
+    let actual_workdir = config.cwd.clone();
     let provider_start = ACP_CLIENT
         .create_or_resume_session(&config, resume_token.as_deref())
         .await;
@@ -638,6 +703,7 @@ pub(crate) async fn create_agent_session_service(
         forge_work_id: forge_work_id.clone(),
         forge_lease,
         peer_receipt: Arc::new(Mutex::new(None)),
+        delegated_work_id: Arc::new(Mutex::new(None)),
         peer_terminal: Arc::new(Mutex::new(None)),
         peer_prompt_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
@@ -704,18 +770,21 @@ pub(crate) async fn create_agent_session_service(
         );
     }
 
-    Ok(CreateAgentSessionResponse {
-        agent_session_id,
-        session_id,
-        runtime: kind.as_str().to_string(),
-        phase: "accepted".into(),
-        stream_url,
-        stream_ready: true,
-        accepted_at_utc,
-        work_id: forge_work_id.map(|id| id.to_string()),
-        resumed: Some(resumed),
-        config_options,
-    })
+    Ok((
+        CreateAgentSessionResponse {
+            agent_session_id,
+            session_id,
+            runtime: kind.as_str().to_string(),
+            phase: "accepted".into(),
+            stream_url,
+            stream_ready: true,
+            accepted_at_utc,
+            work_id: forge_work_id.map(|id| id.to_string()),
+            resumed: Some(resumed),
+            config_options,
+        },
+        actual_workdir,
+    ))
 }
 
 fn parse_config_options(values: Vec<serde_json::Value>) -> Vec<AgentSessionConfigOption> {
@@ -794,7 +863,7 @@ pub(crate) async fn prompt_agent_session_service(
     if *live.cancelled.lock().await {
         return Err((StatusCode::CONFLICT, "agent session cancelled".into()));
     }
-    if live.peer_receipt.lock().await.is_some()
+    if (live.peer_receipt.lock().await.is_some() || live.delegated_work_id.lock().await.is_some())
         && live
             .peer_prompt_started
             .swap(true, std::sync::atomic::Ordering::SeqCst)
@@ -841,12 +910,61 @@ pub(crate) async fn attach_peer_receipt_sink(
     Ok(())
 }
 
+pub(crate) async fn attach_delegated_work(
+    agent_session_id: &str,
+    work_id: &str,
+) -> anyhow::Result<()> {
+    let live = AGENT_SESSIONS
+        .read()
+        .await
+        .by_agent_session
+        .get(agent_session_id)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("delegated agent session disappeared"))?;
+    let mut slot = live.delegated_work_id.lock().await;
+    if slot.is_some() || live.peer_receipt.lock().await.is_some() {
+        anyhow::bail!("agent session already has delegated custody");
+    }
+    *slot = Some(work_id.to_owned());
+    Ok(())
+}
+
 async fn persist_peer_terminal(
     live: &LiveAgentSession,
     outcome: medousa_types::coordination::PeerAssignmentOutcome,
     result: String,
 ) -> anyhow::Result<()> {
     let terminal = (outcome, result);
+    if let Some(work_id) = live.delegated_work_id.lock().await.clone() {
+        use crate::agent_runtime::turn_worker::{TurnWorkStatus, turn_worker_store};
+        let (outcome, result) = terminal.clone();
+        turn_worker_store().try_update(&work_id, |record| {
+            if record.status != TurnWorkStatus::Running {
+                return;
+            }
+            record.status = match outcome {
+                medousa_types::coordination::PeerAssignmentOutcome::Completed => {
+                    TurnWorkStatus::Completed
+                }
+                medousa_types::coordination::PeerAssignmentOutcome::Cancelled => {
+                    TurnWorkStatus::Cancelled
+                }
+                medousa_types::coordination::PeerAssignmentOutcome::Failed
+                | medousa_types::coordination::PeerAssignmentOutcome::Interrupted => {
+                    TurnWorkStatus::Failed
+                }
+            };
+            record.needs_synthesis = Some(false);
+            record.synthesis_delivered = true;
+            if record.status == TurnWorkStatus::Completed {
+                record.result_text = Some(result.clone());
+            } else {
+                record.error = Some(result.clone());
+            }
+            record.termination_reason = Some(format!("acp_{outcome:?}").to_ascii_lowercase());
+        })?;
+        crate::workspace::flush_persist_writer().await?;
+    }
     let mut saved = live.peer_terminal.lock().await;
     if let Some(existing) = saved.as_ref() {
         if existing != &terminal {
@@ -857,12 +975,11 @@ async fn persist_peer_terminal(
     }
     drop(saved);
     if let Some(sink) = live.peer_receipt.lock().await.clone() {
-        let (outcome, result) = terminal;
+        let (outcome, result) = terminal.clone();
         sink.terminal(outcome, result).await?;
     }
     Ok(())
 }
-
 pub async fn cancel_agent_session(
     State(state): State<AppState>,
     AxumPath(agent_session_id): AxumPath<String>,
@@ -1622,7 +1739,9 @@ async fn run_prompt_pump(
                     json!({ "error": message }),
                 )
                 .await;
-                if live.peer_receipt.lock().await.is_some() {
+                if live.peer_receipt.lock().await.is_some()
+                    || live.delegated_work_id.lock().await.is_some()
+                {
                     break;
                 }
             }

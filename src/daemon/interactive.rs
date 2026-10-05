@@ -106,6 +106,7 @@ pub async fn spawn_turn_ticket(
     mode: crate::turn_ticket::TurnTicketMode,
     mut interactive_request: InteractiveTurnRequest,
     workspace_card_id: Option<String>,
+    request_fingerprint: Option<String>,
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
     // Every admission path, including background jobs, must carry the bound
     // profile into runtime identity and durable continuations.
@@ -122,33 +123,57 @@ pub async fn spawn_turn_ticket(
         .profile_id()
         .map(str::to_string)
         .unwrap_or_else(|| state.workshop_identity_user_id());
-    let session_id_for_bot = session_id.to_string();
-    let bot_resolution = tokio::task::spawn_blocking(move || {
-        crate::bot_profiles::BotProfileStore::daemon_default()
-            .resolve_session(&principal_profile_id, &session_id_for_bot)
-    })
-    .await
-    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
-    .map_err(|error| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("resolve Bot binding: {error}"),
+    if turn_id.starts_with("handoff_wake_") || session_id.as_str().starts_with("ses_handoff_") {
+        crate::daemon::coordination::local_coordination_host()
+            .ok_or((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "handoff host unavailable".into(),
+            ))?
+            .verify_handoff_wake(&principal, &turn_id, &interactive_request)
+            .await
+            .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
+    }
+    let native_model_wake = turn_id
+        .starts_with(medousa_types::work_coordinator::WORK_COORDINATOR_TURN_PREFIX)
+        || session_id
+            .as_str()
+            .starts_with(medousa_types::work_coordinator::WORK_COORDINATOR_SESSION_PREFIX);
+    let bot_identity = if native_model_wake {
+        crate::daemon::work_units::model_wake::verify_admission(
+            &principal,
+            &turn_id,
+            &interactive_request,
         )
-    })?;
-    let bot_identity = if let Some(bot) = bot_resolution.bot.as_ref() {
-        crate::identity_manuscript::build_manuscript_context(&bot.primary_manuscript_id).map_err(
-            |error| {
-                (
-                    StatusCode::CONFLICT,
-                    format!(
-                        "Bot '{}' references an unavailable primary Specialist: {error}",
-                        bot.display_name
-                    ),
-                )
-            },
-        )?;
-        for manuscript_id in &bot.additional_manuscript_ids {
-            crate::identity_manuscript::build_manuscript_context(manuscript_id).map_err(
+        .await
+        .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
+        None
+    } else {
+        let session_id_for_bot = session_id.to_string();
+        let bot_resolution = tokio::task::spawn_blocking(move || {
+            crate::bot_profiles::BotProfileStore::daemon_default()
+                .resolve_session(&principal_profile_id, &session_id_for_bot)
+        })
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("resolve Bot binding: {error}"),
+            )
+        })?;
+        if let Some(bot) = bot_resolution.bot.as_ref() {
+            crate::identity_manuscript::build_manuscript_context(&bot.primary_manuscript_id)
+                .map_err(|error| {
+                    (
+                        StatusCode::CONFLICT,
+                        format!(
+                            "Bot '{}' references an unavailable primary Specialist: {error}",
+                            bot.display_name
+                        ),
+                    )
+                })?;
+            for manuscript_id in &bot.additional_manuscript_ids {
+                crate::identity_manuscript::build_manuscript_context(manuscript_id).map_err(
                 |error| {
                     (
                         StatusCode::CONFLICT,
@@ -159,11 +184,15 @@ pub async fn spawn_turn_ticket(
                     )
                 },
             )?;
-        }
-        interactive_request.manuscript_id = Some(bot.primary_manuscript_id.clone());
-        interactive_request.additional_manuscript_ids = (!bot.additional_manuscript_ids.is_empty())
-            .then(|| bot.additional_manuscript_ids.clone());
-        apply_bot_world_continuity(&mut interactive_request.surface, bot.world_binding.as_ref())
+            }
+            interactive_request.manuscript_id = Some(bot.primary_manuscript_id.clone());
+            interactive_request.additional_manuscript_ids =
+                (!bot.additional_manuscript_ids.is_empty())
+                    .then(|| bot.additional_manuscript_ids.clone());
+            apply_bot_world_continuity(
+                &mut interactive_request.surface,
+                bot.world_binding.as_ref(),
+            )
             .map_err(|error| {
                 (
                     StatusCode::CONFLICT,
@@ -173,7 +202,32 @@ pub async fn spawn_turn_ticket(
                     ),
                 )
             })?;
-        Some(crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot))
+            Some(crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot))
+        } else {
+            None
+        }
+    };
+    let native_coder = if turn_id.starts_with("medousa_coder_") {
+        let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {
+            (
+                StatusCode::CONFLICT,
+                "native Coder host unavailable".to_string(),
+            )
+        })?;
+        host.native_coder_contract(
+            &turn_id,
+            session_id.as_str(),
+            interactive_request
+                .identity_user_id
+                .as_deref()
+                .unwrap_or_default(),
+            interactive_request
+                .code_context
+                .as_ref()
+                .and_then(|context| context.work_id.as_deref()),
+        )
+        .await
+        .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?
     } else {
         None
     };
@@ -304,6 +358,7 @@ pub async fn spawn_turn_ticket(
         let persisted = async {
             store.try_register_pending(crate::workspace::ask_job_store::AskJobRecord {
                 job_id: job_id.to_string(),
+                request_fingerprint,
                 prompt: interactive_request.prompt.clone(),
                 status: crate::workspace::ask_job_store::AskJobStatus::Pending,
                 output_text: None,
@@ -370,6 +425,8 @@ pub async fn spawn_turn_ticket(
         cancelled_turns: Some(cancelled_interactive_turns),
         turn_ticket_registry: Some(turn_tickets.clone()),
         ask_job_id,
+        native_coder_guard: native_coder.as_ref().map(|(guard, _)| guard.clone()),
+        peer_receipt_sink: native_coder.map(|(_, sink)| sink),
         context_usage_by_session: Some(state.last_context_usage_by_session.clone()),
     };
 
@@ -499,8 +556,7 @@ pub async fn create_turn_ticket(
             (format!("daemon-turn-{}", Uuid::new_v4().simple()), None)
         }
         crate::turn_ticket::TurnTicketMode::Background => {
-            let now = Utc::now();
-            let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
+            let job_id = format!("medousa-daemon-ask-{}", Uuid::new_v4().simple());
             (job_id.clone(), Some(job_id))
         }
     };
@@ -519,6 +575,7 @@ pub async fn create_turn_ticket(
         request.mode,
         interactive_request,
         workspace_card_id,
+        None,
     )
     .await
     .map(Json)
@@ -613,6 +670,7 @@ pub async fn start_interactive_turn(
         turn_id,
         crate::turn_ticket::TurnTicketMode::Interactive,
         interactive_request,
+        None,
         None,
     )
     .await?;

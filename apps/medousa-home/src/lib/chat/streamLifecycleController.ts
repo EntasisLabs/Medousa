@@ -4,6 +4,7 @@
  * land here. Transcript body apply goes through `$lib/stream/transcriptReducer`.
  */
 
+import { externalConversationBinding } from "$lib/utils/externalConversationSession";
 import {
   cancelActiveSessionTurn,
   getActiveSessionTurn,
@@ -123,7 +124,7 @@ export async function tryReattachActiveTurn(
 ): Promise<boolean> {
   if (host.streamRole === "observer") return false;
   const sessionId = host.sessionId.trim();
-  if (!sessionId) return false;
+  if (!sessionId || externalConversationBinding(sessionId)) return false;
 
   await pruneStreamOwnership(host);
 

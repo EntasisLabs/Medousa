@@ -17,8 +17,8 @@ computer can access workshop content separately through a scoped API token.
    (`U…`, `W…`, or `B…`), and the owner's user token (`xoxp-…`). These values are visible in
    Slack's channel and member details. Medousa stores the token in the workshop
    credential store, not the transcript.
-4. In Chat, choose **Dots** and that session. On iPhone, open **Chat context →
-   Runtime → Dots**. Send a harmless test request and confirm that it appears
+4. Open **Sessions → Connected agents** and choose the named Dots session on
+   desktop or iPhone. Send a harmless test request and confirm that it appears
    in Slack and the dot's reply appears in Medousa. A Slack send receipt alone
    does not prove the dot received or acted on a message.
 
@@ -59,3 +59,13 @@ permissions; the Slack identity does not grant filesystem access.
 OpenAI documents [Slack messaging for dots](https://learn.chatgpt.com/docs/dots/channels)
 and [computer access](https://learn.chatgpt.com/docs/dots/computers-and-apps)
 as separate connections.
+
+## Coordinate durable work
+
+The saved API token can also use the [work participant API](../engine/external-conversations.md#work-participant-adapters).
+Read access can inspect your work graph, units, and coordination status. Work
+access can record work intent, propose native execution against a visible governed
+project chat, and register executor/reviewer handoffs. Native execution retains
+its existing approval requirements. The originating chat can close while the
+runtime coordinates approved work; this does not enable automatic follow-ups or
+turn provider messages into qualified review verdicts.

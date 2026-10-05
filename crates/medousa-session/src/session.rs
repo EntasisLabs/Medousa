@@ -41,6 +41,7 @@ impl std::fmt::Display for SessionId {
 pub enum SessionRootKind {
     Scripts,
     Forge,
+    Workspace,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -118,8 +119,20 @@ impl Session {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Self>> {
-        std::fs::create_dir_all(&cwd)?;
-        let cwd = cwd.canonicalize().unwrap_or(cwd);
+        // The directory must already exist. Creating it here would let a
+        // caller-supplied cwd materialize arbitrary filesystem locations.
+        let cwd = cwd.canonicalize().map_err(|error| {
+            anyhow::anyhow!(
+                "session cwd must be an existing directory ({}): {error}",
+                cwd.display()
+            )
+        })?;
+        if !cwd.is_dir() {
+            anyhow::bail!(
+                "session cwd must be an existing directory ({})",
+                cwd.display()
+            );
+        }
         let size = normalized_pty_size(cols, rows);
 
         let pty_system = native_pty_system();
@@ -322,7 +335,7 @@ impl SessionManager {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Session>> {
-        let cwd = cwd.unwrap_or_else(|| self.default_workspace.clone());
+        let cwd = self.session_cwd(cwd)?;
         let id = SessionId::new();
         let session = Session::spawn_with_size(id.clone(), cwd, root_kind, work_id, cols, rows)?;
         self.sessions.write().await.insert(id, Arc::clone(&session));
@@ -338,7 +351,7 @@ impl SessionManager {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Session>> {
-        let cwd = cwd.unwrap_or_else(|| self.default_workspace.clone());
+        let cwd = self.session_cwd(cwd)?;
         let id = SessionId::new();
         let session = Session::spawn_command_with_size(
             id.clone(),
@@ -351,6 +364,13 @@ impl SessionManager {
         )?;
         self.sessions.write().await.insert(id, Arc::clone(&session));
         Ok(session)
+    }
+
+    fn session_cwd(&self, cwd: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+        match cwd {
+            Some(cwd) => Ok(cwd),
+            None => confined_workspace(&self.default_workspace),
+        }
     }
 
     pub async fn get(&self, id: &SessionId) -> Option<Arc<Session>> {
@@ -394,6 +414,44 @@ impl SessionManager {
         }
         count
     }
+}
+
+fn confined_workspace(requested: &std::path::Path) -> anyhow::Result<PathBuf> {
+    if !requested.is_absolute() {
+        anyhow::bail!(
+            "session workspace must be an absolute directory ({})",
+            requested.display()
+        );
+    }
+    let anchor = match requested.components().next() {
+        Some(component) => PathBuf::from(component.as_os_str()),
+        None => PathBuf::from("/"),
+    };
+    if requested.starts_with(&anchor) {
+        let existing = requested.canonicalize().map_err(|error| {
+            anyhow::anyhow!(
+                "session workspace must be an existing directory ({}): {error}",
+                requested.display()
+            )
+        })?;
+        if existing.starts_with(&anchor) {
+            if existing.is_dir() {
+                return Ok(existing);
+            }
+            anyhow::bail!(
+                "session workspace must be an existing directory ({})",
+                existing.display()
+            );
+        }
+        anyhow::bail!(
+            "session workspace escapes its root ({})",
+            existing.display()
+        );
+    }
+    anyhow::bail!(
+        "session workspace escapes its root ({})",
+        requested.display()
+    );
 }
 
 #[cfg(test)]

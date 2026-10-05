@@ -29,9 +29,131 @@ pub struct CoordinationChannelRecord {
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ExternalPeerRuntime {
+    // Native Medousa Coder. Keep the historic wire enum usable by native peers.
+    Medousa,
     Codex,
     Cursor,
     Hermes,
+}
+
+impl ExternalPeerRuntime {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Medousa => "medousa",
+            Self::Codex => "codex",
+            Self::Cursor => "cursor",
+            Self::Hermes => "hermes",
+        }
+    }
+}
+
+/// Workshop preference, never an execution grant. Fallbacks apply only before
+/// an immutable assignment is prepared; a started assignment never migrates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CodingRuntimePreferences {
+    pub preferred: ExternalPeerRuntime,
+    #[serde(default)]
+    pub fallbacks: Vec<ExternalPeerRuntime>,
+}
+
+impl Default for CodingRuntimePreferences {
+    fn default() -> Self {
+        Self {
+            preferred: ExternalPeerRuntime::Medousa,
+            fallbacks: Vec::new(),
+        }
+    }
+}
+
+impl CodingRuntimePreferences {
+    pub fn ordered(&self) -> Vec<ExternalPeerRuntime> {
+        std::iter::once(self.preferred)
+            .chain(self.fallbacks.iter().copied())
+            .collect()
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        let ordered = self.ordered();
+        if ordered.len() > 4
+            || ordered
+                .iter()
+                .enumerate()
+                .any(|(i, runtime)| ordered[..i].contains(runtime))
+        {
+            return Err("coding runtimes must be unique, with at most three fallbacks".into());
+        }
+        Ok(())
+    }
+
+    pub fn select(&self, peers: &[ExternalPeerCandidate]) -> Option<ExternalPeerRuntime> {
+        self.ordered().into_iter().find(|runtime| {
+            peers.iter().any(|peer| {
+                peer.target.runtime == *runtime && peer.availability == PeerAvailability::Ready
+            })
+        })
+    }
+}
+
+#[cfg(test)]
+mod coding_preference_tests {
+    use super::*;
+
+    fn peer(runtime: ExternalPeerRuntime, ready: bool) -> ExternalPeerCandidate {
+        ExternalPeerCandidate {
+            target: ExternalPeerTarget {
+                authority_id: format!("auth_{}", "a".repeat(64)).parse().unwrap(),
+                execution_runtime_id: "workshop".into(),
+                runtime,
+            },
+            availability: if ready {
+                PeerAvailability::Ready
+            } else {
+                PeerAvailability::Unavailable {
+                    reason: "signed out".into(),
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn default_is_native_without_implicit_external_fallback() {
+        let preferences = CodingRuntimePreferences::default();
+        assert_eq!(preferences.ordered(), vec![ExternalPeerRuntime::Medousa]);
+        assert_eq!(
+            preferences.select(&[peer(ExternalPeerRuntime::Codex, true)]),
+            None
+        );
+        assert_eq!(
+            preferences.select(&[peer(ExternalPeerRuntime::Medousa, true)]),
+            Some(ExternalPeerRuntime::Medousa)
+        );
+    }
+
+    #[test]
+    fn preferences_select_first_ready_runtime_in_saved_order() {
+        let preferences = CodingRuntimePreferences {
+            preferred: ExternalPeerRuntime::Cursor,
+            fallbacks: vec![ExternalPeerRuntime::Hermes, ExternalPeerRuntime::Medousa],
+        };
+        let peers = [
+            peer(ExternalPeerRuntime::Medousa, true),
+            peer(ExternalPeerRuntime::Codex, true),
+            peer(ExternalPeerRuntime::Cursor, false),
+            peer(ExternalPeerRuntime::Hermes, true),
+        ];
+        assert_eq!(
+            preferences.select(&peers),
+            Some(ExternalPeerRuntime::Hermes)
+        );
+        assert!(preferences.validate().is_ok());
+        let duplicate = CodingRuntimePreferences {
+            preferred: ExternalPeerRuntime::Medousa,
+            fallbacks: vec![ExternalPeerRuntime::Medousa],
+        };
+        assert!(duplicate.validate().is_err());
+    }
 }
 
 /// An exact adapter on an exact execution workshop, not a model preference.
@@ -213,6 +335,9 @@ pub enum OwnerEventSource {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum OwnerEventPayload {
+    AssignmentAccepted {
+        binding: Box<ExternalPeerAssignmentBinding>,
+    },
     AssignmentTerminal {
         assignment_id: String,
         receipt: Box<ExternalPeerAssignmentReceipt>,
@@ -336,17 +461,58 @@ pub struct PeerProposalDecision {
     pub approved: bool,
 }
 
+/// Read-only execution observations; only a terminal receipt establishes the
+/// assignment outcome. Missing observations never authorize a retry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PeerExecutionState {
+    Accepted,
+    Running,
+    Blocked,
+    AwaitingReceipt,
+    Unobserved,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PeerActivityStatus {
+    Running,
+    Succeeded,
+    Failed,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PeerAssignmentProgress {
+    pub state: PeerExecutionState,
+    pub observed_at: chrono::DateTime<chrono::Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_activity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_status: Option<PeerActivityStatus>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct PeerProposalReviewRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<crate::work_handoff::PeerHandoffSummary>,
     pub proposal: PeerAssignmentProposal,
     pub decision: Option<PeerProposalDecision>,
-    /// Recorded custody remains visible until its terminal receipt arrives.
+    /// Durable custody remains visible with its terminal receipt in chat history.
     pub binding: Option<ExternalPeerAssignmentBinding>,
-    /// Present for source-session projections so a remote owner can observe the
-    /// immutable terminal even though execution belongs to another workshop.
+    /// Immutable terminal result retained in local and source-session history.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receipt: Option<ExternalPeerAssignmentReceipt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<PeerAssignmentProgress>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -354,6 +520,10 @@ pub struct PeerProposalReviewRecord {
 pub struct PeerProposalInboxResponse {
     pub proposals: Vec<PeerProposalReviewRecord>,
     pub next_cursor: Option<String>,
+    /// Keeps the selected, owner-scoped assignment visible independently of the
+    /// history page and cursor. It does not consume a pagination slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracked_proposal: Option<PeerProposalReviewRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

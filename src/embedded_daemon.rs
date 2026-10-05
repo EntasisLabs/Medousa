@@ -489,7 +489,7 @@ fn embedded_tool_status(output: &Value) -> &'static str {
         .get("ok")
         .and_then(Value::as_bool)
         .is_some_and(|ok| !ok)
-        || output.get("error").is_some()
+        || output.get("error").is_some_and(|error| !error.is_null())
     {
         "failed"
     } else {
@@ -6287,6 +6287,27 @@ mod tests {
 
     use super::*;
     use crate::request_principal::PrincipalKind;
+
+    #[test]
+    fn tool_status_accepts_null_errors_but_preserves_failures() {
+        assert_eq!(
+            embedded_tool_status(&serde_json::json!({
+                "ok": true,
+                "completed": true,
+                "exit_code": 0,
+                "error": null
+            })),
+            "succeeded"
+        );
+        assert_eq!(
+            embedded_tool_status(&serde_json::json!({"ok": false, "error": null})),
+            "failed"
+        );
+        assert_eq!(
+            embedded_tool_status(&serde_json::json!({"error": "command failed"})),
+            "failed"
+        );
+    }
 
     #[test]
     fn live_history_is_bounded_and_keeps_chronological_order() {

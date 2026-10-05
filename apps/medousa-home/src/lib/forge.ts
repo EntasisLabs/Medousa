@@ -1288,13 +1288,13 @@ export async function cloneProviderRepository(input: {
     body: JSON.stringify(input),
   });
 }
-
 export async function startUndertaking(input: {
   title: string;
   brief: string;
   repo_path: string;
   base_ref?: string;
   workspace_mode?: ForgeWorkspaceMode;
+  request_key?: string;
 }): Promise<ItemProjection> {
   try {
     const item = await forgeFetch<ItemProjection>(operationPath("forge.items.start.post"), {
@@ -1305,6 +1305,7 @@ export async function startUndertaking(input: {
         repo_path: input.repo_path,
         base_ref: input.base_ref ?? "main",
         workspace_mode: input.workspace_mode ?? "isolated",
+        request_key: input.request_key,
       }),
     });
     assertWorkspaceMode(item, input.workspace_mode);
@@ -1317,7 +1318,6 @@ export async function startUndertaking(input: {
     return provisionUndertaking(registered.id);
   }
 }
-
 export async function provisionUndertaking(workId: string): Promise<ItemProjection> {
   return forgeFetch(operationPath("forge.items.by_work_id.provision.post", { work_id: workId }), {
     method: "POST",

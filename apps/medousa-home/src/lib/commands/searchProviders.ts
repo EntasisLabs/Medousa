@@ -1,3 +1,8 @@
+import { bots } from "$lib/stores/bots.svelte";
+import { connectedAgents } from "$lib/stores/connectedAgents.svelte";
+import { shellTabs } from "$lib/stores/shellTabs.svelte";
+import { agentRuntimeLabel, getSessionAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
+import { externalConversationSessionId } from "$lib/utils/externalConversationSession";
 import { chat } from "$lib/stores/chat.svelte";
 import { browserHistory } from "$lib/browser/browserHistory.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
@@ -57,7 +62,7 @@ export function buildSessionOpenCommands(
   limit = 8,
 ): WorkshopCommand[] {
   const trimmed = query.trim().toLowerCase();
-  const sessions = [...chat.sessions]
+  const sessions = [...chat.sessions].filter((session) => !bots.forSession(session.session_id) && !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)))
     .map((session) => {
       const label = formatSessionLabel(session);
       const haystack = `${label} ${session.session_id} ${session.preview}`.toLowerCase();
@@ -147,4 +152,43 @@ export function buildBrowserHistoryCommands(
       ctx.callbacks.close();
     },
   }));
+}
+
+
+export function buildBotOpenCommands(query: string, limit = 12): WorkshopCommand[] {
+  const needle = query.trim().toLowerCase();
+  return bots.bots.filter((bot) => !bot.archived)
+    .map((bot) => ({bot,score:fuzzyScore(needle,`bot ${bot.display_name} ${bot.role_description ?? ""} ${bot.primary_manuscript_id} ${bot.external_agent?.runtime ?? "medousa"}`.toLowerCase())}))
+    .filter((row) => row.score > 0).sort((a,b) => b.score-a.score).slice(0,limit)
+    .map(({bot}) => ({
+      id:`open-bot:${bot.bot_id}`, section:"bots", label:bot.display_name,
+      subtitle:bot.external_agent ? `${agentRuntimeLabel(bot.external_agent.runtime)} Bot` : "Bot",
+      keywords:`bot ${bot.display_name} ${bot.role_description ?? ""} ${bot.primary_manuscript_id} ${bot.external_agent?.runtime ?? "medousa"}`,
+      preview:{kind:"agent",name:bot.display_name,avatarRef:bot.avatar_ref,description:bot.role_description ?? "Open this Bot’s conversation."},
+      run:async(ctx) => {
+        const scope = ctx.chat.workshopScopeId;
+        const response = await bots.open(bot);
+        if (scope !== ctx.chat.workshopScopeId) return;
+        await ctx.chat.switchSession(response.binding.session_id);
+        shellTabs.openChat(response.binding.session_id,{title:response.bot.display_name,activate:true});
+        ctx.callbacks.focusChat();ctx.callbacks.close();
+      },
+    }));
+}
+export function buildConnectedAgentOpenCommands(query: string, limit = 12): WorkshopCommand[] {
+  if (connectedAgents.workshopScopeId !== chat.workshopScopeId) return [];
+  const needle = query.trim().toLowerCase();
+  return connectedAgents.conversations.map((agent) => ({agent,score:fuzzyScore(needle,`agent ${agent.label} ${agentRuntimeLabel(agent.provider)}`.toLowerCase())}))
+    .filter((row) => row.score > 0).sort((a,b) => b.score-a.score).slice(0,limit)
+    .map(({agent}) => ({
+      id:`open-agent:${agent.provider}:${agent.id}`,section:"agents",label:agent.label,
+      subtitle:agentRuntimeLabel(agent.provider),keywords:`agent ${agent.label} ${agentRuntimeLabel(agent.provider)}`,
+      preview:{kind:"agent",name:agent.label,description:`${agentRuntimeLabel(agent.provider)} conversation attached to this workshop.`},
+      run:async(ctx) => {
+        const scope = ctx.chat.workshopScopeId;
+        const id = externalConversationSessionId(agent.provider,agent.id);
+        await ctx.chat.switchSession(id);if (scope !== ctx.chat.workshopScopeId) return; shellTabs.openChat(id,{title:agent.label,activate:true});
+        ctx.callbacks.focusChat();ctx.callbacks.close();
+      },
+    }));
 }

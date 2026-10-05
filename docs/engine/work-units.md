@@ -1,0 +1,1007 @@
+# Work scopes and resource relationships
+
+The full workshop daemon has a durable, owner-scoped registry for resource
+relationships and session-independent work intent. It uses the existing
+`cognition_runtime_query`, `cognition_runtime_mutate`, and `cognition_schema`
+tools. It adds no app navigation or required Goals workflow.
+
+This is the storage and intent foundation, with native user-vault and governed
+overlay observations, repository identities, Forge lifecycle metadata, and exact
+artifact/component/feed observations. A bounded native executor → reviewer
+controller can now be registered separately with `work.coordinate`. Provider
+federation, automatic fix loops, and contact delivery remain subsequent steps.
+Recording a responsibility alone does not launch an executor or register a schedule.
+
+## Access and identity
+
+The admitted turn supplies the domain: workshop authority plus authenticated
+owner identity. Bound principal identity wins over any turn hint. For the local
+app, the host uses the identity frozen at turn admission, rather than the
+profile selected later. Requests cannot supply a domain, owner, or provenance
+override. Reads require `content.read` and `workshop.interact`; mutations also
+require `content.write`.
+
+The registry lives on the workshop daemon under `{dataDir}/work_units`. It
+contains scope metadata and intent; native notes, repositories, artifacts,
+feeds, sessions, and executions retain their existing stores and access checks.
+A recorded reference is neither a native content read nor an access grant.
+Remote references do not establish cross-workshop identity or execution policy.
+
+`ResourceRef` consists of `authority_id`, `kind`, and `id`. A locator may change
+without changing that reference. Paths, titles, and content hashes alone do not
+establish stable identity. The initial agent-facing registration records
+unresolved claims. Models cannot assert native availability, native revisions,
+or deletion; those facts require an authoritative adapter. `work.resolve` issues
+and refreshes authoritative references for exact user-vault notes and folders.
+`work.resolve_project` resolves owned Forge repository groups, work threads, and
+notes/folders in a pinned governed overlay. `work.resolve_content` observes exact
+artifact payloads, environment components, and retained feed streams.
+
+## Undertaking creation from an admitted turn
+
+`cognition_runtime_mutate` action `work.create_project` creates and provisions
+an owned Forge undertaking in an existing Git repository on the current
+workshop. Use it only for user-authorized new work. The owner comes from frozen
+turn admission; the caller cannot provide an owner, destination runtime, chat
+binding, or execution grant. Content mutation and workspace write capabilities
+are required.
+
+```json
+{"action":"work.create_project","request_key":"penjamin-scaffold-1","title":"Penjamin","brief":"Scaffold the application","repo_path":"/work/penjamin","base_ref":"main","workspace_mode":"isolated"}
+```
+
+The omitted `base_ref` uses the workshop’s suggested or current branch; omitted
+`workspace_mode` defaults to `isolated`. Use `attached_checkout` only when the
+user selects work in the current checkout.
+The repository may contain only `git init`; creation adds an empty initial
+commit on the current unborn branch, preserving files and the real index. It
+does not manufacture a missing branch in an established repository. The shared
+Forge creation path is also used by Home’s project creation flow.
+
+The response includes `forge_work_id` and native `project` and `forge_work`
+resource observations and their native `tracks` relationship in the admitted
+user’s graph. It does not create a
+synthetic execution receipt, change the source chat’s binding or mode, or start
+an agent. Use the returned work ID with `cognition_peer_handoff` for delegation
+covered by the current human request, or `peer_propose` for recommendations
+needing approval. See [sender-owned local handoffs](coordination.md#sender-owned-local-handoffs).
+
+Keep `request_key` unchanged for exact retries, including uncertain transport
+outcomes. A durable owner-scoped identity prevents duplicate undertakings after
+a restart or concurrent retry. Reusing the key with different creation
+parameters or for a closed undertaking fails. If graph publication is
+interrupted after Forge creation, an exact retry refreshes its native resource
+observations rather than creating another undertaking. This action creates an
+existing repository-backed project; cloning or creating a new folder is not
+part of this contract.
+
+## Native undertaking review and closure
+
+An owning Assistant can continue a user-authorized undertaking through native
+Forge review and closure, including from an acceptance/completion callback.
+These actions use the existing runtime tools; they do not require another chat
+binding or the human UI approval card. Existing authorization still determines
+the intended outcome. A coder's result is reference material, not permission to
+approve, merge, or abandon work.
+
+| Tool | Action | Outcome |
+| --- | --- | --- |
+| `cognition_runtime_mutate` | `work.prepare_merge` | Capture the governed workspace as sealed evidence; no approval or integration |
+| `cognition_runtime_query` | `work.project_review` | Inspect the sealed manifest, policy, review decisions and allowed strategies |
+| `cognition_runtime_query` | `work.project_review_file` | Inspect an exact changed file's sealed diff |
+| `cognition_runtime_mutate` | `work.approve_project` | Record an evidence-bound native decision; return `decision_id` |
+| `cognition_runtime_mutate` | `work.apply_project` | Apply that decision and close the undertaking on success |
+| `cognition_runtime_mutate` | `work.request_project_changes` | Record required revisions, invalidate approvals and reopen ready work |
+| `cognition_runtime_mutate` | `work.discard_project` | Abandon idle work without claiming a successful merge |
+
+Fetch parameter schemas with `cognition_schema` and the action names in `types`.
+Every action takes the exact native `work_id`. Review defaults to the latest
+sealed attempt; `attempt_id` selects an explicit candidate. Review returns a
+`reviewed` object containing attempt, environment generation, evidence identity
+and digest, baseline, reviewed head, and expected base revision. Copy that object
+unchanged into file review, approval, or request-changes input. Approval also
+requires an explicit `strategy` and nonempty `rationale`. Policy violation IDs
+must be explicitly supplied in `acknowledged_violations`; capture-risk
+acknowledgment (`ack_risks` during preparation) requires user authorization.
+
+```json
+{"action":"work.prepare_merge","work_id":"work-…"}
+```
+
+Then query `work.project_review`, inspect the relevant `work.project_review_file`
+diffs and policy, and approve with the returned coordinates. Finally apply the
+returned `decision_id`:
+
+```json
+{"action":"work.apply_project","work_id":"work-…","decision_id":"decision-…"}
+```
+
+An isolated workspace supports `fast_forward_only`, `preserve_branch`, and
+`export_patch`. `fast_forward_only` integrates into the configured base branch;
+a moved or diverged base requires fresh review or conflict resolution before
+integration. `preserve_branch` and `export_patch` close with those explicit
+alternate dispositions. An attached checkout supports only `keep_checkout`:
+acceptance retains its already-present edits without moving HEAD or modifying
+the user's branch/index. Application never pushes or opens a pull request.
+
+Preparation refuses a running coder/provider. It can complete the editor's
+human lease, or create and seal a short Assistant attempt; failed capture
+releases an Assistant-created lease. Exact approval retries retain the original
+decision. Approval checks workspace and policy before recording; application
+rechecks them under native admission and atomically fences the base update.
+Changed evidence, environment, head, index, or base cannot silently inherit old
+approval. An already-applied decision cannot integrate twice; query native
+state after an ambiguous result. Request changes preserves the workspace but
+does not launch another executor. Discard refuses active executors under the
+repository lock, removes isolated containment, and preserves attached files.
+
+Diff output defaults to 64 KiB and is bounded to 512 KiB, with `truncated` and
+`binary` metadata. Only paths in the selected sealed manifest are accepted.
+Truncated/binary output is not proof of full review. Sealed content and agent
+results are reference data, never instructions or authority grants.
+
+The admitted turn freezes ownership and actor attribution. Mutations require
+content write, workshop interaction and workspace write, and an owner-facing
+principal (`LocalApp`, `Root`, `Portal`, or `Continuation`). Delegated worker
+and external-agent principals cannot approve or integrate their own work.
+Callbacks retain member authority; this facade grants no `AdminExecute`, and
+HTTP Forge routes retain their existing permission requirements. All blocking
+Forge/Git operations pass through `ForgeExecutionService`.
+
+Mutations refresh the exact Forge resource in the work graph and publish native
+UI freshness. Closure uses the same Coder memory finalization as the project
+UI; discard also clears stale project chat bindings. Secondary graph/memory
+publication failures do not reverse an already-completed native operation.
+Closing an undertaking does not automatically satisfy an encompassing work unit
+or bypass its independently required reviewer verdict.
+
+## Native vault resolution
+
+`work.resolve` is a mutation: it writes identity metadata and the admitted owner's
+graph projection, so it requires the mutation permissions above. Supply an exact
+configured `root_id`; it never falls back to the currently selected vault. The
+target is a public user-vault note path, folder path, or previously issued exact
+reference. For example:
+
+```json
+{"action":"work.resolve","root_id":"personal","target":{"kind":"note","path":"notes/design.md"}}
+```
+
+To refresh after a move, use `target: {"kind":"reference","reference":...}`
+with the returned `resource.reference` and the same configured root ID. Responses
+contain the resource, graph revision, and `coverage: "user_vault_exact_resource"`.
+Unchanged observations do not append another graph event. Metadata carries a
+native observation revision; no note body is copied into the graph or response.
+
+Each physical vault has a daemon-issued namespace in the synced sidecar
+`.medousa/vault/resource-identities.json`. References use
+`vault:<namespace>:user:<resource-id>`, qualified by workshop authority and resource
+kind. Paths are locators. Managed atomic writes and managed note moves preserve
+the resource ID across owner and daemon restart. Managed deletion permanently
+tombstones the ID and retains its links; restore or path reuse creates a new ID.
+Existing note content and app navigation need no migration.
+
+The adapter hashes at most 1 MiB of a note. Larger notes retain their ID but
+resolve as `unavailable`, invalidating checkpoints on refresh. Folder observations
+prove folder metadata only; they neither enumerate membership nor prove every
+descendant ready. The sidecar holds at most 4,096 identities and 1 MiB of metadata,
+with projection headroom checked before native mutations. Capacity exhaustion
+rejects further mutations rather than evicting identities or tombstones.
+
+Filesystem object identifiers and creation time provide reconciliation evidence,
+not semantic identity. External replacement cannot inherit an old ID because its
+bytes match. Missing or replaced resources resolve as `unavailable`; a physical
+object observed at another path stays ambiguous until explicit reconciliation.
+External moves and folder moves are not automatically adopted. Copied sidecars
+under a different physical root, corrupt metadata, and unsupported versions fail
+without resetting identities. Losing the sidecar produces a new namespace, so
+old references cannot silently retarget. Unobserved filesystem identifier reuse
+remains subject to the platform's object identity guarantees.
+
+Native write/move/delete/restore journals retain identity bindings until sidecar
+projection is synced. Write publication witnesses come from the staged file
+handle, so an external replacement immediately after publication cannot inherit
+the publisher's identity. If publication succeeds but projection fails, the native
+commit reports repair required and retains its intent/receipt. Owner startup and
+`work.resolve` replay pending journals before resolution. Unchanged metadata and
+graph replays finish pending parent sync fences without adding observations.
+A nonblocking root lock
+rejects concurrent identity custody as overloaded; retry after the owner releases
+it. When a write published without a durable physical publication witness,
+recovery retains an ambiguous intent instead of guessing from equal content.
+Identity resolution and further native mutations remain blocked until explicit
+reconciliation through `work.reconcile`. An ambiguous startup retains the native
+owner for ordinary content reads; identity operations still fail until repair.
+
+Observations are explicit, not background subscriptions. `work.get` does not
+refresh native content; refresh relevant resources before using a checkpoint for
+new work. Resolve projects and governed overlays with `work.resolve_project`.
+Resolve artifacts, components, and feeds with `work.resolve_content`. Execution
+identities and cross-workshop resolution remain outside these adapters.
+
+## Native reconciliation
+
+`work.reconcile` uses the same admitted owner, mutation permissions, explicit
+configured `root_id`, and daemon filesystem authority as `work.resolve`. It adds
+no user-managed Goals workflow or new app UI. The runtime validates evidence;
+the reasoning agent cannot override native availability or use equal bytes to
+assert identity. Fetch its typed schema through `cognition_schema`.
+
+Inspect and attempt ordinary journal recovery first:
+
+```json
+{"action":"work.reconcile","root_id":"personal","command":{"operation":"inspect"}}
+```
+
+Inspection returns a bounded `pending_journals` list with exact operation IDs,
+intent digests, locators, and witness/receipt flags, plus a bounded recovery
+diagnostic. It contains no note bodies or original journal payloads. Inspection
+can open a root whose ordinary startup recovery is ambiguous. Directory inspection
+is capped at 128 entries and each journal at 64 KiB; larger or malformed metadata
+fails without resetting identity. Ordinary recovery runs before repair and never
+repeats a file mutation.
+
+To adopt an external move, provide `command.operation: "adopt_move"`, a fresh
+`command_id`, the original local `reference`, its exact `expected_native_revision`
+from `work.resolve`, and the new public `path`. The runtime requires the same
+physical object and kind, an original locator that no longer owns it, and no
+competing identity for that object. A changed observation, tombstone, symlink,
+foreign authority/root, or equal-content copy cannot pass that check. The accepted
+move retains the reference and its graph links. Any replaced object already
+registered at the new locator becomes unavailable with its own ID retained.
+Folder adoption changes that folder only; reconcile known descendants separately.
+
+When publication cannot be proven, provide `command.operation:
+"quarantine_journal"`, a fresh `command_id`, and the inspected `operation_id` and
+`expected_intent_digest`. The runtime preserves the exact intent and any native
+receipt in `.medousa/vault/reconciliations/<operation-id>.json`, then atomically
+publishes its decision and unavailable identity facts in the sidecar before
+removing the active intent and syncing its parent. It changes no note bytes and
+never retries write/move/delete/restore effects. Permanent tombstones remain
+tombstones. An unproven publication does not bind the reserved or prior ID to the
+current file; resolve that file separately to issue an appropriate new reference.
+Quarantine reports `native_outcome: "unresolved"`, not completed work, and affected
+unavailable facts invalidate old readiness checkpoints when projected.
+
+Repair responses contain an immutable `reconciliation` receipt, affected current
+`resources`, a graph revision when resources were projected, and
+`file_effects_replayed: false`. Retry the exact request after uncertainty. Command
+keys bind to the admitted domain and full request; changed intent under the same
+key conflicts. Replays retain the receipt but publish current observations,
+without rolling a locator back after a later managed move. A decision published
+before intent cleanup is finished at owner restart or the next identity operation.
+Archive-before-decision failures leave the active intent in place. Graph projection
+failures remain retryable without repeating file effects.
+
+The sidecar retains at most 256 repair receipts within its existing 1 MiB bound.
+Exhaustion denies new reconciliation without evicting receipts; exact replay still
+works. Compaction remains future work. Corrupt or changed archives/journals and
+copied namespace metadata fail closed rather than granting arbitrary reattachment.
+Reconciliation is native metadata repair, not execution completion, lifecycle
+cancellation, automatic background scanning, or cross-workshop federation.
+
+## Native projects and governed overlays
+
+`work.resolve_project` requires mutation permissions and an exact native Forge
+`work_id` owned by the admitted user. It uses the daemon's already-composed Forge
+host and bounded execution admission. A model cannot supply a repository path,
+owner, native revision, actor, or availability override. It changes no app UI.
+
+Resolve the repository group or work thread separately:
+
+```json
+{"action":"work.resolve_project","work_id":"work-…","target":{"kind":"project"}}
+{"action":"work.resolve_project","work_id":"work-…","target":{"kind":"forge_work"}}
+```
+
+A repository group is a `project` resource. Several Forge work threads against the
+same physical Git common directory resolve to one project reference. Each thread
+is a distinct `forge_work` resource. Resolve an issued reference with
+`target: {"kind":"reference","reference":...}` and an owned work ID pointing at
+that repository or exact thread. A project from another repository, foreign
+workshop, or native store cannot retarget that request. Relationships and work
+scope remain explicit `work.record` operations; observation creates no goal,
+execution, or inferred user-intent relationship.
+
+`{dataDir}/forge/resource-projects.json` retains the workshop-issued namespace and
+UUID repository IDs under a nonblocking cross-process lock. References use
+`forge:<namespace>:project:<uuid>` and `forge:<namespace>:work:<work-id>`. Git common
+directory paths, remotes, titles, and matching commits are evidence or locators,
+not semantic IDs. Verified physical relocation retains an issued project ID.
+Missing registered repositories become unavailable; physically different
+repositories at a reused locator receive new IDs, with previous availability
+retired and previous links retained. Copied/corrupt registries fail without a
+namespace reset. Registry loss issues a new namespace, preventing old references
+from silently retargeting. Filesystem identifier reuse retains the same platform
+limits as native vault identity.
+
+Repository observations cover **identity and availability metadata**. Forge work
+revisions cover **durable lifecycle metadata**, including native environment and
+attempt changes. Neither proves live repository file contents, a clean checkout,
+review acceptance, or a completed work unit. A discarded thread remains an
+addressable lifecycle record; this does not tombstone its repository. An unchanged
+observation replays its graph receipt without a new event. Native identity facts
+are synced before graph publication; retrying after a graph failure projects
+current facts and retires all retained replacements at the selected locator.
+
+For an existing project overlay, pin both the native environment generation and
+branch. Forge candidate checkouts can share a generation; the pair selects the
+current governed environment without using a selected project or daemon cwd:
+
+```json
+{"action":"work.resolve_project","work_id":"work-…","target":{"kind":"overlay","environment_generation":1,"environment_branch":"main","target":{"kind":"note","path":"notes/design.md"}}}
+```
+
+The target is a note, folder, or exact reference inside that environment's existing
+`.medousa/vault` directory. There is no fallback to the user vault and no creation
+of a missing overlay. Workspace/root and branch checks precede a no-follow child
+capability; symlink escapes and stale environment pins fail. Overlay references
+use `vault:<namespace>:project:<resource-id>`, independently of user-vault
+references, with the native vault sidecar relative to that physical overlay.
+Note bodies remain native; hashing and folder metadata have the same bounded
+coverage as user-vault observations. External replacement does not preserve an
+old note ID. The existing user-vault reconciliation action does not repair an
+overlay; external overlay moves and ambiguous journals remain explicit failures.
+
+Responses include `resource`, `graph_revision`, a graph receipt, and
+`file_effects_replayed: false`. Coverage distinguishes
+`forge_repository_identity_metadata`, `forge_work_lifecycle_metadata`, and
+`forge_project_overlay_exact_resource`. Project responses also include
+`affected_resources`; overlay responses identify the work and environment pins.
+The project registry holds at most 256 identities, eight physical identities per
+locator, and 1 MiB. Capacity exhaustion preserves history and denies new identity
+admission; compaction remains future work. Automatic subscriptions, broader
+executor adapters, federation, and contact delivery remain subsequent milestones.
+The bounded native execute/review controller is described below.
+
+## Native artifacts, components, and feeds
+
+`work.resolve_content` projects existing native metadata into the admitted owner's
+work graph. It requires the same mutation permissions as other resolvers. It
+accepts no caller-selected profile, owner, path, revision, availability, or payload.
+The artifact source chat must remain visible to that owner, including native
+shared-chat membership checks. Components and feeds use the admitted profile;
+the currently selected app profile does not override it.
+
+```json
+{"action":"work.resolve_content","target":{"kind":"artifact","session_id":"source-chat","artifact_id":"art:exact-native-id"}}
+{"action":"work.resolve_content","target":{"kind":"component","component_id":"dashboard"}}
+{"action":"work.resolve_content","target":{"kind":"feed","feed_id":"digest"}}
+```
+
+Refresh a previously observed resource using
+`target: {"kind":"reference","reference":...}` and the returned
+`resource.reference`. The graph must contain a native observation for that exact
+reference in this owner's domain; an inferred locator cannot authorize resolution.
+Wrong authorities, resource kinds, owners, and reference/locator combinations fail.
+
+These are three distinct native kinds. Artifact references identify an exact
+payload revision using the **full** source-session ID and artifact ID: legacy
+artifact IDs include only a short session prefix. Resolution never follows an
+alias, prefix match, latest-revision chain, or another session's payload. Component
+and feed references identify their existing logical profile-scoped IDs. References
+use `content-v1:<digest>` qualified by authority and kind; the digest encodes the
+native key and owner, rather than treating content bytes as identity. Native
+component/feed ID reuse retains the logical reference; these stores do not yet
+provide physical-incarnation or historical deletion identities.
+
+Responses include the resource, graph revision, receipt, `bindings`, coverage,
+and `file_effects_replayed: false`. Available means observed at this native
+boundary; it does not prove execution, rendered correctness, review, or completion:
+
+| Coverage | Observation and revision |
+| --- | --- |
+| `artifact_index_and_payload_presence` | Exact index metadata plus native payload-file presence; revision hashes the record, without reading or validating HTML/binary content. |
+| `environment_component_configuration` | Exact existing component configuration; revision hashes that component rather than a process-local environment revision counter. No default environment is installed by observation. |
+| `daemon_retained_feed_stream` | The daemon's retained feed state; revision includes event generation, next sequence, and last-event digest. Read-cursor changes do not invalidate it. An empty stream resolves unavailable. |
+
+Artifact bindings report source-chat lineage. Component bindings return exact
+profile-scoped feed references, even if those feeds have no events yet. A configured
+artifact ID or alias is reported as **unresolved** until an exact source chat and
+artifact are supplied; configuration alone cannot prove that binding. Feed event
+refs are producer hints and are not promoted into verified resource relationships.
+Bindings describe the current native observation; they do not create graph edges.
+Use existing `work.record` relationships to save intended links among the returned
+resources, vault notes, projects, or work scopes. Saved links survive resource loss
+and restart. A native binding change invalidates pinned component readiness on
+refresh, without silently rewriting an explicit intent relationship.
+
+Graph publication retains native writer custody: artifact payload/index writes,
+maintenance and deletion share daemon custody; component observations exclude native
+`put`; feeds retain their append/cursor mutex. Unchanged observations replay their
+receipt. Interrupted graph publication can be retried after restart without
+republishing HTML, appending events, or reapplying file effects. Missing native
+resources refresh as unavailable. Native read, parse, custody, or size errors fail
+instead of being reported as absence. The file artifact index scan is capped at
+4 MiB; component specs retain their 4 MiB bound and feed logs their 16 MiB bound.
+Component binding responses admit at most 128 feed references and 256 bytes per
+configured artifact ID.
+
+The adapters expose no artifact bodies, component config bodies, feed payloads,
+or event summaries. They retain existing native stores and UI. Feed coverage is the
+in-process owner's retained state, not an external-writer or complete-history
+snapshot; native file tampering, multi-process content writers, subscriptions,
+physical-incarnation tracking, artifact alias reconciliation, automatic maintenance,
+broader executor/reviewer adapters, and contact delivery remain subsequent work.
+
+## Query actions
+
+`work.graph` accepts:
+
+| Field | Meaning |
+|---|---|
+| `collection` | `resources` (default), `relationships`, `work_units`, `events`, `budget_reservations`, `subscriptions`, or `provider_requests` |
+| `anchor` | Optional exact resource reference; event history is domain-scoped and rejects an anchor |
+| `direction` | For relationship queries: `both` (default), `incoming`, or `outgoing` |
+| `limit` | 1–100, default 20 |
+| `cursor` | Returned `next_cursor`, passed unchanged with the same query |
+
+Resource queries with an anchor return that exact record. Work-unit queries
+with an anchor return units explicitly containing that resource; a work-unit
+anchor also finds its record and units composing or depending on it. Semantic
+adjacency does not expand the saved scope. A session anchor also finds exact
+conversation attachments, independently of the unit's resource scope.
+
+Pages contain the domain, current `revision`, typed `items`, `next_cursor`, and
+`coverage: "current_workshop_domain_registry"`. Coverage does not claim a
+complete mesh or a complete index of native resources. Cursors bind to domain,
+query, and revision. If the registry changes between pages, restart pagination.
+Events are ordered by commit revision and retain the exact command, provenance,
+and receipt.
+
+`work.get` accepts an exact `work_unit_id` and returns the saved unit. A unit has
+no required session. An optional, visible local `origin` session records its
+source; later sessions inspect the same unit by exact identity.
+The response includes `readiness_current`, evaluated from the same registry
+snapshot as the returned unit. This checks recorded adapter facts, scope revision,
+state, and expiry; it does not silently refresh native content.
+`budget_usage` reports the aggregate's reserved/settled cost, total admitted
+execution count, and outstanding execution count from that same snapshot.
+
+For example, inspect accepted work through the existing query tool:
+
+```json
+{"action":"work.graph","collection":"work_units","limit":20}
+```
+
+## Intent mutation action
+
+`work.record` accepts a `command` containing `command_id`, `expected_revision`,
+and a typed `mutation`. Fetch the full parameter schema with `cognition_schema`
+for `work.record`. Supported mutation operations are:
+
+| Operation | Purpose |
+|---|---|
+| `record_resource` | Register or revise an unresolved resource reference and locator |
+| `put_relationship` | Record a named `supports`, `informs`, `produces`, `tracks`, or `related_to` link between registered resources |
+| `accept_work` | Save exact identity, intent, finite/maintenance kind, scope, completion condition, optional origin, and contact preference |
+| `set_scope` | Revise a nonterminal unit's explicit resources, children, and dependencies |
+| `set_state` | Record a nonterminal unit's state, reason, and evidence |
+| `set_contact` | Revise contact preference independently of lifecycle |
+| `attach_conversation` | Associate an exact, visible local session with existing work without changing its scope or starting execution |
+| `record_readiness` | Save a bounded maintenance checkpoint against exact scope and adapter-owned native revisions |
+| `set_budget` | Set explicit aggregate ceilings and an absolute execution deadline |
+
+The command contract also defines `reserve_budget` and `settle_budget` for native
+execution adapters. The agent-facing host rejects both operations; a model
+cannot claim execution custody or refund its own cost. Native dispatch paths are
+not yet connected to the ledger.
+
+Scope members must already exist in this domain. Work-unit membership uses
+`children` or `depends_on`, rather than the resource list. Composition and
+dependency cycles are rejected together. Ordinary resource relationship cycles
+are allowed. Cancelling a parent does not cancel shared children or native
+executions.
+
+For example, with an empty registry at revision zero:
+
+```json
+{
+  "action": "work.record",
+  "command": {
+    "command_id": "accept-release-documentation-1",
+    "expected_revision": 0,
+    "mutation": {
+      "operation": "accept_work",
+      "work_unit_id": "release-documentation-1",
+      "intent": "Keep release documentation current",
+      "kind": "maintenance",
+      "scope": {},
+      "completion_condition": "Documentation reflects accepted release changes",
+      "contact": {"kind": "silent"}
+    }
+  }
+}
+```
+
+The condition is retained intent, not an executable predicate or registered
+maintenance trigger. The receipt acknowledges storage, not active execution.
+
+States are `accepted`, `active`, `waiting`, `needs_attention`, `paused`,
+`satisfied`, `failed`, and `cancelled`. Terminal units cannot be implicitly
+reopened. A finite unit's satisfaction requires available adapter-resolved
+evidence and satisfied finite component/dependency units. An unresolved resource or
+the unit itself cannot prove satisfaction. Maintenance units remain ongoing
+until explicitly terminated; the store rejects terminal satisfaction for them.
+For an ongoing member, a parent must save a `scope.readiness` requirement with
+that member's exact `work_unit_id` and a named `condition`. A matching current
+checkpoint can satisfy that requirement while the maintenance unit stays active.
+Lifecycle records do not replace native executor status or validate the prose
+completion condition by themselves.
+
+`record_readiness` requires an active maintenance unit, its exact
+`expected_scope_revision`, a named `condition`, distinct local resources from its
+saved scope with their current `native_revision`, and `valid_for_seconds` in
+1–86,400. Every proof must match an available, adapter-owned resource record.
+The host stamps observation and expiry times; callers cannot backdate them.
+Native facts must already have been recorded by an adapter; model registration
+alone cannot produce a checkpoint.
+
+The saved checkpoint pins both native versions and registry revisions. A resource
+update, loss of availability, scope edit, pause, or expiry invalidates it for new
+parent completion. Scope edits and lifecycle transitions clear the checkpoint;
+contact changes and conversation attachments preserve it. Previously satisfied
+finite units retain their historical result. `work.resolve` refreshes exact vault
+resources; freshness remains limited to observations already present in this
+registry until native event subscriptions are connected.
+
+An accepted origin is also its first conversation attachment. A later session
+joins through `attach_conversation`, specifying the exact work identity and
+authority-qualified `session`; no title matching occurs. New attachments require
+current native session visibility. Exact command replay still returns its
+original receipt after that session is removed. Attaching a conversation changes
+neither scope nor contact policy, and does not reopen terminal work.
+
+Contact preferences are `silent`, `return_to_origin` (default), `participant`
+with a registered participant reference, or `channel` with a registered channel
+reference. They retain user intent without implying transport availability.
+Changing to silent neither cancels work nor erases results. This implementation
+does not send messages or voice invitations.
+
+## Aggregate budget custody
+
+`accept_work` may include `budget`, or `set_budget` can set it later. The limits
+are `cost_microusd`, `execution_count`, `concurrent_executions`, and an absolute
+UTC `deadline`. Zero is a real ceiling, not an unknown estimate. A new native
+reservation requires active work, an available adapter-owned local assignment
+or job identity, and explicit limits on every charged aggregate. Expired
+deadlines, paused aggregates, and exhausted ceilings deny new reservations.
+Limits describe accounting bounds and do not grant execution or spending authority.
+Wake/retry/review limits remain in native continuation admission; they are not
+yet aggregated by this work ledger.
+
+Each execution has one durable `reservation_id` in its owner domain. A held
+reservation counts its reserved cost and one outstanding execution; completion
+replaces the cost hold with actual cost and releases concurrency. Aggregate
+accounting follows composition `children`, counting a shared reservation once
+even through several paths. `depends_on` consumes another unit's result without
+automatically charging its execution to the consumer.
+
+Attaching already allocated children checks the new aggregate's limits and
+retains its charge. Removing them later does not erase admitted cost. Terminal
+parents receive no new child allocations; their historical charges remain.
+Satisfaction requires settled custody. Cancellation and failure do not refund
+held reservations or imply native execution cancellation. Only an adapter's
+`not_started` settlement releases a hold without cost or execution count.
+
+Native actual cost is retained even when it exceeds a reservation or ceiling;
+future admissions use that overrun. If aggregate cost exceeds `u64`, the reported
+cost saturates with `cost_overflowed: true`; individual ledger records retain the
+exact values and further reservations fail closed. Settlements are immutable;
+retry their exact command after an uncertain outcome.
+
+Query `budget_reservations` with an assignment/job anchor for exact custody, or
+a work-unit anchor for that aggregate's retained charges. This is durable
+accounting groundwork; it does not yet constrain native executors until their
+admission and settlement adapters are connected.
+
+## Persistence and recovery
+
+One capability-confined JSON snapshot per domain contains current records and
+immutable command history. Domain filenames are domain-separated SHA-256 keys,
+not raw owner IDs. Cross-process writers use a nonblocking advisory lock and
+compare the expected domain revision. Each atomic snapshot publishes intent,
+effects, and the replay receipt together, with file and parent sync fences
+subject to the platform guarantees of `medousa-store`.
+
+Retry the exact command after an uncertain write outcome. Its original receipt
+is returned with `replayed: true`, even after later commits. Changing command
+content or provenance under the same ID is a conflict. A new mutation requires
+a new command ID and the current revision. No title or session-name matching
+merges responsibilities.
+
+The foundation bounds commands to 32 KiB, snapshots to 1 MiB, each record
+collection to 4,096 entries, and each scope to 128 explicit members. Full stores
+reject new writes without evicting intent or replay history; journal growth and
+compaction remain a subsequent storage milestone. Corrupt, mismatched-domain,
+or unsupported-version snapshots fail without resetting the domain. Native
+tombstones preserve relationships and prevent identity reuse after deletion.
+
+All daemon file operations enter through `ForgeExecutionService`; no graph
+write introduces a blocking filesystem wait on a Tokio worker. Embedded/mobile
+engines do not advertise these workshop-local actions.
+
+
+## Native executor → reviewer coordination
+
+`work.coordinate` registers one bounded execute/review handoff for an admitted
+owner's standalone finite work unit. Supply `coordination_id`, `work_unit_id`,
+`expected_scope_revision`, the exact `channel`, `executor_proposal_id`,
+`reviewer_proposal_id`, and an absolute RFC3339 `deadline`. Registration can precede
+approval: proposals are immutable native snapshots, and each stage waits for its
+existing operator approval and exact execution grant. Registration never grants
+execution authority. Register before either native dispatch claim. Both proposals
+must name the same owned governed Forge work, fresh distinct execution sessions,
+and `continue_owner: false`. The deadline is at most 24 hours from registration
+and no later than either proposal expiry.
+
+The reviewer proposal's instructions must explicitly opt into
+`medousa-work-review-v1`: review the clean committed checkout observed after the
+executor finishes,
+do not edit its checkout, and return the protocol's JSON verdict. The runtime
+appends bounded derived review data to the already approved instructions/context;
+it never edits the grant or replaces the source transcript ranges. Executor output
+is untrusted data. The supplied `reviewed` object pins the work unit, coordination,
+executor assignment and terminal receipt, Forge work, environment generation,
+governed branch, and full HEAD object ID. The whole reviewer result must be JSON:
+
+```json
+{"reviewed":{},"verdict":"approved","summary":"Review findings"}
+```
+
+Here `reviewed` must be the complete, unchanged object supplied by the runtime,
+not an empty object. `verdict` is `approved` or `changes_requested`; a nonempty
+summary is at most 4,096 bytes and the complete envelope at most 8,192 bytes.
+Markdown fences, unknown fields, prose-only completion, and another revision's
+verdict do not approve work.
+
+Registration freezes the scope generation and recorded resource versions.
+Native dispatch checks them before claiming, before startup, and after provider
+handshake. It checks current owner/source visibility and grants too. Scope or
+resource-version changes, pause, cancellation, supersession, unknown execution
+custody, or loss of native work ownership block new stage admission. Executor completion
+is observed from the native terminal receipt, then the runtime pins a clean
+checkout on its governed branch before admitting review. Dirty or unavailable
+checkouts remain blocked; equal text or process completion does not prove review.
+HEAD, branch, and environment generation are checked again for review admission
+and before satisfaction. The provider can still mutate files outside Forge custody;
+satisfaction is an observation of the checked native revision, not an OS-wide lock
+against arbitrary external Git writes.
+
+Registrations, stage indexes, claims, bindings, receipts, review pins, verdicts,
+and publication acknowledgment live in the existing coordination store. Native
+stage indexes fence standalone dispatch as well as recovery. A partial registration
+blocks dispatch and exact registration replay repairs it. Nonblocking assignment
+locks serialize registration against claim publication; contention reports
+retryable overload and retains the same command identity. Cross-process coordinator
+leases and native claims prevent duplicate starts. A claim without a binding remains
+uncertain after restart; the runtime never launches a replacement to resolve it.
+
+The daemon recovers four work registrations at a time on its existing coordination
+wake/30-second recovery loop. Recovery pages rotate and do not need an active source
+chat or a result-only owner turn. Existing approval UI still submits the same approve
+and dispatch operations: dispatch accepts a registered stage into the durable
+controller and may return `binding: null` until its dependency is ready. Source
+transcript visibility remains required for new native execution, even after the
+originating chat stops being active.
+
+`work.coordination` queries the same exact `channel` and `coordination_id` from
+any admitted chat in the owner domain. It returns the registration, current
+scope/state, approval and claim markers,
+pinned review input, native stage bindings/terminal receipts, and retained result.
+A claimed stage without a binding is uncertain. Reading native results requires
+current Forge ownership and source-context visibility; `work.get` retains the
+owner's saved intent metadata independently. `work.get`
+shows published work state and evidence. An explicit approval for the current
+revision publishes both native Assignment references using their actual ledger
+IDs and can satisfy the work. Changes
+requested, failed/interrupted execution, invalid review, changed revision, and
+elapsed deadline publish `needs_attention`. Model state claims cannot satisfy
+registered execute/review work, even after
+rescoping; satisfaction writes require an available native control registry.
+Native results survive a crash before work publication and replay without repeating either provider effect. A deadline
+blocks new stages; it does not invent cancellation or settlement of existing custody.
+
+This first controller admits at most two new native effects per registration.
+It does not auto-retry, fix code after review, cancel existing custody, or send
+notifications. Work contact preferences are retained without spending any contact
+or owner-continuation grant. Work-owned terminal events are retained for the
+work controller and never admit the source chat's result-only AI continuation.
+Work with children/dependencies, maintenance duties,
+existing reservations, or cost budgets (including ancestor budgets) requires a
+later metered/composite execution adapter. ACP provider costs are currently unknown;
+these configurations fail closed rather than recording unknown cost as zero.
+Current native execution targets are Medousa Coder, Codex, Cursor, and Hermes on
+this workshop. Muse/Instinct/Dots/Grok Bot have authenticated work API access;
+authenticated provider callbacks can now retain exact request/result association
+and revision-bound review evidence as described below. Automatic next-stage provider
+dispatch, cross-workshop coordination and voice/contact routing remain separate
+admission paths.
+
+## Durable work event subscriptions
+
+Use `work.record` with `operation: "subscribe"` to register an exact work inbox.
+Its `input` supplies `subscription_id`, `work_unit_id`,
+`expected_scope_revision`, selected `resources`, `event_kinds`, an exclusive
+`after_revision`, and `expires_at` (within 30 days). Resource selectors must be
+local members of the saved scope. The recipient is the authenticated actor;
+requests cannot select another actor or grant execution/contact authority.
+
+`work.events` takes `subscription_id` and optional `limit` (1–32, default 16).
+It returns retained matching journal events, the current subscription status,
+and `has_more`. Reads never consume events. Native resource observations,
+work-state changes, scope changes, and correlated provider progress/completed/failed
+results are selected explicitly; model-written
+resource claims are not native observation events. An earlier cursor covers
+completion racing registration. The journal retains exact commands and receipts
+across restart and closed chats; capacity exhaustion never evicts unseen events.
+
+Commit `acknowledge_event` with `subscription_id`, the next pending
+`event_revision`, and an attributable `decision` through `work.record`.
+Acknowledgment and cursor advancement publish atomically. Skipping a pending
+event or acknowledging another credential's inbox fails. Exact command retry
+returns the original receipt. `stop_subscription` stops future intake while
+retaining already pending observations. Scope changes, pause, terminal work,
+expiry and stop are explicit statuses, not permission to reopen work.
+
+Caller-created subscriptions are pull-based agent/runtime inboxes, not user-managed goal screens.
+They do not automatically start model turns, invoke providers, refresh resource
+observations, or send contact. A consumer must retain its own admitted command
+identity before effects; an acknowledgment is observation evidence, not proof
+that an external effect succeeded.
+
+## Authenticated provider participation
+
+Muse, Instinct, Dots and Grok Bot can read and record owner-domain work and propose
+native execution through the [work participant HTTP adapters](external-conversations.md#work-participant-adapters).
+These requests bind the domain to a scoped credential rather than an active chat.
+They share this registry, model-intent validation, native grant checks and durable
+controller; HTTP access adds no independent scheduler or execution authority.
+
+
+## Correlated provider work and review evidence
+
+The existing conversation send API accepts optional `work` metadata: an exact
+`work_unit_id`, `expected_scope_revision`, and `deadline` within 24 hours.
+The authenticated native adapter records the conversation/request/provider,
+instruction digest, saved completion condition and scope/resource-version digest
+before dispatch. Only standalone finite work without budgets, dependencies,
+children or competing execution custody is admitted. A native execute/review
+controller cannot be replaced through this adapter.
+
+A durable dispatch claim precedes the existing provider transport. After a claim,
+reconciliation inspects the same request; it never creates a replacement send.
+An unknown delivery remains unresolved across restart. New requests for the same
+work cannot replace an outstanding claimed request. This path preserves current
+operator send authority; provider Work credentials cannot send messages or mint
+execution grants.
+
+An authenticated callback names the exact conversation, request and event IDs.
+The work journal commits before its conversation mirror. Exact callback retry
+returns the original evidence, actor and timestamp, including after credential
+rotation. Changed event bodies, unknown requests, pre-dispatch callbacks, reused
+event IDs across requests, and replacement terminal outcomes fail closed.
+Late progress can be retained but does not generate progress intake after a
+terminal outcome. `work.graph` with `collection: "provider_requests"` exposes
+bounded records, optionally selected through the existing work anchor. Subscription
+kinds `provider_progress`, `provider_completed` and `provider_failed` select them.
+
+Optional `review_of` names an owned native channel and completed executor
+assignment. The runtime verifies the exact proposal/receipt, current source
+visibility, Forge ownership and a clean governed checkout. It derives a
+`WorkReviewInput` pin with native receipt, environment generation, branch and full
+HEAD; callers cannot assert that pin. A provider `completed` callback qualifies
+as `review_approved` or `changes_requested` only with strict JSON containing the
+exact `reviewed` object, a recognized verdict and a nonempty bounded summary.
+Changed checkout revision, invalid review JSON, changed scope, inactive work and
+expired deadlines remain explicit qualifications with no approving decision.
+
+These records are attributable provider outcomes and qualified review evidence.
+For newly associated requests, the admitted runtime stage controller consumes
+callbacks and can publish verified work satisfaction as described below. It does
+not reopen terminal work or send contact. A separately admitted internal model
+wake can analyze the terminal result as described below. Model mutations cannot
+manufacture these records or satisfy a provider-associated unit. Ordinary
+WhatsApp/Slack messages, reactions and transport acceptance remain conversation
+observations. Live provider transport acceptance
+remains a qualification gate. Native executor completion can trigger one saved
+provider review handoff as described below.
+See [Provider callback protocol](external-conversations.md#correlated-work-callbacks).
+
+### Runtime-owned provider intake
+
+New provider work associations atomically register an actor-bound runtime inbox
+before a dispatch claim can be committed. Its identity pins the owner domain,
+request, work scope generation and deadline. The observation inbox retains
+callbacks for one further day; execution and approval authority still end at the
+original request deadline. Recovery uses the retained journal,
+not the selected profile, open source chat or a new provider send. Authenticated
+callback publication wakes the daemon coordinator; a bounded rotating scan also
+recovers inboxes after restart. Native and provider recovery share four worker
+slots, and corrupt snapshots are retained rather than reset.
+
+The runtime consumes one callback at a time. Progress is an observation;
+questions and failures require attention. A bare execution completion moves work
+to waiting for review. An exact native executor source named by `review_of` pins
+the review stage; only a qualified review approval can satisfy the unit. Changes
+requested, malformed verdicts, expired results or changed checkout revisions
+require attention. Stage publication rechecks source visibility, native custody,
+current scope/resources, the deadline and a clean checkout while holding Forge
+custody through the graph transaction.
+
+The native-only `advance_provider_stage` decision commits state, attributable
+assignment evidence and the event cursor atomically. A crash retains the whole
+decision or the whole pending event. Duplicate wakes are reads after consumption.
+Only the newest claimed provider stage can change state; older and unrelated
+callbacks are acknowledged without overwriting it. Paused work retains its next
+pending event until resumed; cancelled, terminal or rescoped work is never revived.
+Runtime recovery reserves capacity for both native and provider stages. Neither
+callback intake nor transport acceptance admits another send, model turn or
+contact. A subsequent stage requires saved native admission.
+Existing caller-created pull subscriptions retain their explicit acknowledgment
+contract. This increment registers inboxes for new provider associations; legacy
+associations keep their retained evidence and explicit pull path.
+
+### Native executor to provider reviewer handoff
+
+The conversation send API accepts `after_native_completion: true` alongside
+`work.review_of`. This option requires native operator authority (`admin.execute`)
+and an exact currently approved native executor proposal. It saves one review
+handoff instead of sending immediately; it does not approve or start the executor.
+The saved admission freezes the owner domain, work generation/resource digest,
+native request digest, destination digest, instructions and deadline. It supports
+the same standalone finite, unbudgeted local scope as direct provider requests.
+Existing native execute/review controllers cannot be replaced by this handoff.
+
+The runtime recovers that admission after restart without opening the originating
+chat. It waits for the exact executor receipt. A completed executor permits the
+runtime to derive the clean governed checkout pin and send through the existing
+provider transport. Failed or cancelled executor receipts, terminal work,
+rescoped work and expired deadlines close the handoff without sending. Paused work
+retains it. Source visibility, owner custody, destination, scope and deadline are
+rechecked before dispatch. A changed destination requires new explicit admission;
+recovery never follows a replacement conversation target.
+
+Only that handoff may claim provider dispatch for its work while pending. A
+durable claim precedes the transport effect; a claimed request is never resent,
+including when transport acceptance or its conversation mirror is uncertain.
+Failures before a claim retain the same admission for inspection and bounded
+recovery. The conversation journal can also retain an interrupted pre-send
+attempt; recovery does not overwrite that evidence to force a retry.
+`work.graph` with `collection: "provider_dispatches"` exposes the saved handoff
+and its closure reason. Provider results still require the exact authenticated
+callback protocol and revision qualification above. This increment adds native
+executor → provider reviewer dispatch. Bounded provider-to-provider chains use the
+separate contract below; native fix/review rounds use their own exact proposal contract.
+
+### Admitted coordinator model wakes
+
+An operator-authorized provider work send can include `coordinator_wake: true`
+to admit one internal result-analysis turn. The default is false. The option
+requires `admin.execute` and exact `work` metadata; model tools and provider Work
+credentials cannot admit a wake. It also works with `after_native_completion`,
+whose saved handoff retains the wake preference. This increment supports finite,
+standalone, unbudgeted local work; an ancestor budget also blocks admission.
+
+The native graph stores the owner domain, provider request, scope/resource digest,
+deadline, derived internal session and frozen model route. Only that request's
+authenticated completed/failed terminal can trigger analysis. Progress and ordinary
+chat replies do not. The runtime saves a stable attempt identity and prompt digest
+before admitting the canonical turn ticket. Ticket admission rechecks current work,
+resource versions, source visibility, stage custody, deadline and parent budgets.
+Paused work retains an unstarted wake; cancelled, rescoped, expired or superseded
+work cannot start one. A qualified satisfied unit may retain this read-only
+analysis without reopening work.
+
+The turn has an empty exact tool ceiling and no code, worker, channel, voice or
+manuscript authority. Its assessment and suggested next steps are reference data;
+they cannot qualify a review, launch another agent or contact the user. Internal
+transcripts stay outside normal chat listings while retaining owner-bound history.
+Contact preferences remain unchanged. Cancelling/rescoping work after ticket
+admission does not automatically cancel an already running read-only turn.
+
+Recovery reconciles the exact ticket and execution-attributed committed assistant
+entry. A completed result records its transcript reference and content digest in
+`work.graph` collection `coordinator_wakes`. Missing tickets, uncertain starts and
+missing committed output never authorize a replacement turn. Error/cancelled
+tickets retain a blocked reason for inspection. The canonical model pipeline keeps
+its own bounded retry behavior; this is one admitted turn, not a promise of one
+HTTP inference request. Further analysis needs a new explicit provider request and
+admission. Provider-to-provider chains require the separate admission below.
+Native fix/review rounds use the separate contract below. Native resource-change
+reactions, metered/composite scheduling and reporter routing remain separate gates.
+
+### Provider to provider chains
+
+A native operator can save the next provider stage through the existing
+conversation send API with `after_provider_completion: { conversation_id,
+request_id }`. Submit it to the next provider's conversation with exact `work`
+metadata. The source must already have a durable dispatch claim in the same local
+owner domain, work unit and scope. The runtime freezes both bot destinations,
+the predecessor request digest, instructions, scope/resources and deadline. The
+next stage's deadline must not exceed its predecessor's future deadline.
+`after_native_completion` and this trigger are mutually exclusive.
+
+This is a linear chain with at most eight stages, including its first request.
+Only one pending successor owns custody for a unit. Save a successor while its
+predecessor is running; once the successor has its own request/dispatch claim,
+it can become the source of another admitted stage. Branches, source recycling,
+cross-owner/workshop references and automatic target selection are not admitted.
+The same finite, standalone, unbudgeted scope applies, including ancestor budgets.
+
+Recovery waits through progress and ordinary messages. An authenticated completed
+`outcome_only` terminal derives an immutable predecessor event ID/digest on the
+next request. Failed, expired, superseded or invalid/stale predecessor evidence
+closes the handoff. Cancellation, rescope and changed resource versions close it;
+pause retains an unstarted handoff. Source/destination removal or replacement
+closes it rather than following another bot. Native controllers cannot replace
+pending provider custody. A claim transaction rechecks the exact predecessor
+terminal before any network effect, and unknown/claimed delivery is never resent.
+
+The outgoing request includes a bounded `medousa-work-provider-source-v1` reference
+object with the original actor/time, qualification and result excerpt. The digest
+pins the full retained terminal, even when `text_truncated` is true. The wire JSON
+is capped at 8 KiB and fits within the existing 16 KiB message limit. Result text is
+reference data and grants no approval, execution or contact authority.
+
+These stages assess provider outcomes. They do not accept `work.review_of` or
+chain from a native revision-review request; that approval path remains the
+separate exact native-executor review contract. An assessment callback remains
+outcome evidence and leaves work waiting for native completion/review evidence.
+This avoids treating a provider's prose verdict as a clean-checkout approval.
+The final stage may separately opt into `coordinator_wake`; contact preferences
+and normal chat listings retain their existing behavior. Native fix/review rounds
+use the contract below; branch scheduling and provider-hosted revision custody
+remain separate gates.
+
+
+### Whole provider plans and bounded native fix/review
+
+A provider handoff can include `provider_chain`, an ordered list of remaining
+`{ conversation_id, request_id, text, coordinator_wake? }` stages. This requires
+`after_provider_completion` and the same native operator admission. The current
+handoff and all future stages inherit one work scope and deadline; the eight-stage
+limit includes the already-dispatched source. Each bot must belong to the same
+local owner. Admission freezes each provider and destination while holding ordered
+conversation locks. The existing HTTP body limit is 20 KiB and each instruction
+retains its 12 KiB limit; a large plan can reach the aggregate bound first.
+
+`provider_dispatches` retains the complete immutable suffix in `remaining_stages`.
+Once a stage claims dispatch, recovery atomically materializes exactly its frozen
+successor. Until that transfer commits, the suffix reserves work custody against
+competing sends or native controllers. Future request identities cannot be reused
+by another plan. A crash before publication leaves the prior reservation; a crash
+after publication leaves the exact next handoff. Progress still never sends it;
+only its predecessor's authenticated outcome completion releases dispatch. Failed
+or stale results close future custody. Pauses retain it; cancellation, scope or
+resource changes and expiry close it. A missing or changed bot closes the affected
+handoff. Unknown delivery retains the current claim without replacement execution.
+This is complete *linear* plan admission, without branching or composite scheduling.
+
+Native `work.coordinate` can separately include up to three `fix_review_rounds`,
+each naming an `executor_proposal_id` and `reviewer_proposal_id`. Root registration
+freezes all assignments under one owner/channel/work/scope/deadline and publishes
+all stage indexes before its root plan. Every stage needs a distinct fresh native
+session and its own exact approved execution grant. All stages must run on the
+same local runtime against the same governed Forge work. Reviewers opt into
+`medousa-work-review-v1`; follow-up executors must explicitly include
+`medousa-work-fix-v1` in their approved instructions. Registration issues no grants.
+
+Only an exact strict `changes_requested` verdict for the preceding pinned checkout
+can release a fix round. The runtime retains that decision without projecting a
+terminal work state between rounds. Before the fix starts, the checkout must still
+match the rejected revision; its runtime context includes the exact prior review
+receipt and decision as reference feedback. Active native execution custody permits
+that executor's subsequent edits. Its own completed receipt then pins a fresh clean
+checkout for its own reviewer. Pins and outcomes are immutable and distinct per
+round, even though all rounds belong to one coordination ID.
+
+Approval stops the plan immediately and skips unused rounds. Failures, invalid
+reviews and revision changes stop it; exhausting the admitted rounds with another
+changes request leaves work needing attention. Pause, cancellation, rescope,
+resource changes, grant revocation and deadlines retain the existing fences.
+Unknown launches are reconciled without relaunching or starting later rounds.
+`work.coordination` adds `active_round` and a `rounds` array with each round's claims,
+review pin and outcome; its top-level `result` describes the active/final round.
+Ordinary two-stage registrations omit these fields on input and retain their
+original stored identities. Contact preferences and chat UI remain unchanged.

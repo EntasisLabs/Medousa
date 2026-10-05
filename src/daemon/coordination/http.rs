@@ -82,13 +82,19 @@ fn channel(channel_id: String) -> Result<CoordinationChannelRef, HttpError> {
 struct InboxQuery {
     session_id: SessionId,
     after: Option<String>,
+    selected_proposal_id: Option<String>,
 }
 async fn inbox(
     Extension(principal): Extension<RequestPrincipal>,
     Query(query): Query<InboxQuery>,
 ) -> Result<Json<PeerProposalInboxResponse>, HttpError> {
     host()?
-        .proposal_inbox(&principal, query.session_id, query.after)
+        .proposal_inbox(
+            &principal,
+            query.session_id,
+            query.after,
+            query.selected_proposal_id,
+        )
         .await
         .map(Json)
         .map_err(conflict)
@@ -138,7 +144,7 @@ async fn dispatch(
         .map_err(conflict)?;
     Ok(Json(PeerProposalActionResponse {
         proposal_id,
-        binding: Some(binding),
+        binding,
     }))
 }
 

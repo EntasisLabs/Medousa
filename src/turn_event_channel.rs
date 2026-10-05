@@ -103,7 +103,7 @@ impl TurnEventChannel {
     /// Admit a live SSE subscriber without allowing an unbounded receiver set.
     pub fn try_subscribe(&self) -> Option<TurnEventSubscription> {
         self.active_subscribers
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |active| {
                 (active < self.max_subscribers).then_some(active + 1)
             })
             .ok()?;

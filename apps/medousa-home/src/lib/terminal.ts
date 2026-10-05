@@ -15,6 +15,13 @@ export type TerminalSessionSummary = {
   cwd: string;
   root_kind: string;
   work_id: string | null;
+  argv?: string[];
+  workspace_context?: {
+    cwd: string;
+    current_branch: string | null;
+    attached_branch: string | null;
+  } | null;
+  workspace_context_error?: string | null;
 };
 
 export type TerminalAttachResponse = {
@@ -69,6 +76,7 @@ export async function terminalCreate(input: {
   lease_id?: string | null;
   cols?: number;
   rows?: number;
+  workspace_shell?: boolean;
 }, runtimeId?: string | null): Promise<{ session_id?: string } & Record<string, unknown>> {
   return invoke("terminal_create", {
     input,

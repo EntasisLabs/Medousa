@@ -1,4 +1,4 @@
-# Coordination proposal approval (native preview)
+# Agent handoffs and coordination
 
 Logical coordination channels are not Telegram/Slack delivery channels. Proposal
 snapshots retain authority-qualified channel/session references, exact context
@@ -8,7 +8,8 @@ ranges and digests, a governed Forge work item, and independent peer custody.
 
 The portable host exposes read-only `cognition_active_work_discover` in ordinary
 conversation modes. Assistant additionally exposes local
-`cognition_peer_discover` / `cognition_peer_propose` and the location-neutral
+`cognition_peer_discover`, `cognition_peer_handoff`, `cognition_peer_review`,
+`cognition_peer_propose`, and the portable remote
 `cognition_peer_delegate`. All require an admitted owner turn and use its
 authenticated principal/session. Active-work discovery lists each reachable
 workshop's non-terminal Forge projects and joins visible ACP sessions by exact
@@ -35,6 +36,15 @@ explicit. General and Teacher do not receive this tool. Ranking neither issues
 a grant nor starts or adopts work; native execution admission still applies.
 
 ## Assignment inspection
+
+Session-independent intent and resource relationships use the separate
+[work-domain registry](work-units.md). Its bounded `work.coordinate` controller
+registers native executor/reviewer proposals before effects and observes their
+terminal receipts without an owner-chat continuation. Existing native approvals,
+exact grants, and source-session visibility still admit every new stage. A
+registered proposal's dispatch operation queues the stage with that controller;
+its existing response can contain `binding: null` while approval/dependency or
+native custody is pending. Ordinary unregistered proposals still dispatch directly.
 
 On a full workshop daemon, `cognition_runtime_query` exposes `assignment.list`,
 `assignment.get`, `assignment.events`, and `owner.events`. The admitted turn supplies the
@@ -74,16 +84,103 @@ An interrupted projection with a terminal observation but no committed terminal
 marker reports `unknown` until native snapshot replay reconciles it. A corrupt
 or conflicting terminal marker fails closed.
 
+## Sender-owned local handoffs
+
+On a full workshop daemon, `cognition_peer_handoff` delegates work already
+covered by the current authenticated human request. Its input contains
+`request_key`, `forge_work_id`, `instructions`, `after_entry_seq`,
+`through_entry_seq`, optional `runtime`, optional `admission` (`delegate` by
+default, or `propose`), and optional `handoff` policy. Discover the owned project
+and committed context first. Omitted runtime uses saved coding preferences.
+The source chat does not need a project binding.
+
+The sender chooses four independent aspects of the handoff:
+
+- `responsibility`: `retain` (default) or `transfer`. Transfer occurs only after
+  native worker admission, not when a proposal, claim, or custody binding exists.
+- `completion`: `sender_review` (default) or `worker_result`. A completed worker
+  result cannot waive a saved sender review requirement.
+- `wake_on_accepted` and `wake_on_terminal`: both default to `true`.
+- `contact`: the existing work contact preference, default `return_to_origin`.
+  `silent` keeps coordination callbacks in a hidden internal session. Alternate
+  participant/channel routes are retained for a separate contact adapter;
+  these callbacks do not send messages or start voice calls on those routes.
+
+Direct admission requires operator execution capability and a committed user
+entry attributed to this exact human turn in the selected context. The host
+captures the sender session, Bot, source entry/digest, immutable assignment and
+24-hour expiry, then compiles the exact native grant. Worker, provider and
+continuation turns cannot mint direct admission by supplying model-written
+approval or authority fields. `admission: "propose"` stores the same sender
+policy but waits for the existing native approval/start flow. The legacy
+`cognition_peer_propose` and portable remote `cognition_peer_delegate` contracts
+remain available; legacy proposals are not silently upgraded into handoffs.
+
+Acceptance and verified terminal receipts are durable native events. The runtime
+serializes callbacks with other callbacks targeting the sender session and
+waits while an interactive turn is active. If completion overtakes acceptance,
+the terminal callback supersedes the stale starting message. Callback admission
+rechecks grants, owner/source visibility, pinned context and originating Bot.
+Callbacks resume the sender's normal Assistant tool surface, including the full
+`cognition_turn` controls, and use its normal turn budget. They do not impose a
+callback-specific allowlist or two-round limit. Existing Bot policies, work
+scope, permissions and contact preferences still apply; event data is evidence,
+not new user authority. Started attempts reconcile
+against their exact canonical ticket/transcript after restart; uncertain turns
+are never launched again. Rejected admissions have a bounded retry budget.
+
+If a callback fails after producing text or tool activity, its typed timeline is
+saved with `answer_state=failed` before terminal publication. Home restores that
+activity and failure state on refresh. Failed activity cannot acknowledge a
+callback as successfully delivered after restart.
+
+A handoff requiring review remains `awaiting_sender_review` until the originating
+sender calls `cognition_peer_review` with the exact `channel`, `assignment_id`,
+`receipt_id`, `verdict` (`accept` or `changes_requested`) and bounded `reason`.
+The executor and other chats cannot supply the sender's verdict. Exact semantic
+retries retain the first review's turn attribution; conflicting verdicts fail.
+Neither completion nor handoff acceptance marks an encompassing work unit or
+project satisfied. Work-scoped execute/review controllers retain their existing
+revision checks and stage admission.
+
+Proposal inbox records expose optional compact `handoff` summaries with saved
+policy, responsible session, state and sender review beside the existing native
+binding/receipt, without duplicating instructions and result payloads. This is
+backend metadata for the compact delegation UI; this slice does not change
+cards. `owner.events` reports callback consumption or an explicit blocker.
+
 ## Conversational peer proposals
 
-Peer discovery reports local ACP availability and the current chat's project
-binding and committed range.
-Proposal input contains only `request_key`, `runtime`, `instructions`,
+Peer discovery reports Medousa Coder and local ACP availability, saved coding
+runtime preferences, and the current chat's project binding and committed range.
+Proposal input contains only `request_key`, optional `runtime`, optional
+`forge_work_id`, `instructions`,
 `after_entry_seq`, `through_entry_seq`, `continue_owner`, and the optional exact
 `existing_agent_session_id` returned by discovery; unknown fields are rejected.
 The host derives owner, workshop, session, channel, Forge work, range digests,
 manifest, grant reference, and independent coordination execution session.
-Project binding must explicitly name the current execution runtime.
+An explicit `forge_work_id` names a project owned by the authenticated user on
+this workshop; the source chat need not be bound to it. When omitted, the legacy
+chat binding must explicitly name the current execution runtime. Omitted
+`runtime` follows saved preferences (default Medousa Coder); explicit selection
+wins. Exact retries retain the original runtime even after preferences change.
+
+Medousa Coder uses a dedicated native turn and Forge lease through the same
+immutable assignment, approval, claim, and receipt contracts as external peers.
+Its turn correlation is persisted before admission. Native Coder tools recheck
+the exact grant, source visibility, project ownership, and registered work scope.
+When admitted Coder work takes over a workspace held by the project UI's human
+executor, the runtime interrupts that human lease in both isolated worktrees and
+attached checkouts. The same workspace and existing edits are preserved. Other
+Coder leases remain governed by shared-space coordination; active external
+executors retain exclusive custody and block takeover with an actionable error.
+Checkpointed and input-needed turns are interrupted receipts, not completion.
+Native peer assignments currently execute in their admitted Coder turn; child
+worker spawning is denied until those workers can inherit the exact grant.
+Additional parallel work requires separate scoped assignments.
+Revocation cancels the native turn. Uncertain native claims are never relaunched
+from disk. Codex/Cursor/Hermes continue through ACP; Medousa is not sent to the
+ACP session endpoint or external-agent Bot adapter.
 
 Discovery includes visible, unowned local ACP sessions bound to the same Forge
 work. Adopting one never sends another prompt or restarts its provider. Approval
@@ -154,7 +251,7 @@ These native-only routes require `admin.execute` plus a bound owner identity
 
 | Method | Route | Behavior |
 |--------|-------|----------|
-| GET | `/v1/coordination/proposals?session_id=...&after=...` | Owner-session inbox, including paired request-scoped shadows projected through their immutable source chat; optional opaque proposal-id cursor |
+| GET | `/v1/coordination/proposals?session_id=...&after=...&selected_proposal_id=...` | Owner-session inbox, including paired request-scoped shadows projected through their immutable source chat; optional opaque proposal-id cursor and exact selected-assignment observation |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve` | Approve the immutable snapshot; compile exact grants |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny` | Immutable denial |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch` | Dispatch an already approved snapshot |
@@ -165,12 +262,37 @@ destination daemon, not the caller. Approval cannot be reversed into denial or
 vice versa. A revised proposal requires a new assignment identity.
 
 Inbox pages contain at most eight proposal/decision records and one MiB of JSON.
-Denied assignments leave this inbox. Recorded custody remains visible to the
-owner as active work until its terminal receipt arrives. Each indexed proposal is
+Denied assignments leave this inbox. Recorded custody and terminal receipts stay
+in the originating chat's history, including completed, failed, cancelled, and
+interrupted work. Reopening the chat retrieves these persisted records without
+requiring a remembered selection. Each indexed proposal is
 validated against its immutable snapshot and current channel owner. Source
 visibility is fully rechecked on approval and dispatch, not inferred from channel
 membership. Corruption or exceeded scan budgets fail closed. The index is
 create-only; an interrupted index write is repaired by exact proposal replay.
+
+The optional `selected_proposal_id` returns an owner/session-scoped
+`tracked_proposal` independently of the history page and its cursor. This
+projection keeps the selected assignment visible when paging through other
+requests. An unrelated session, owner, or unassociated source
+shadow cannot inspect it. Selecting an assignment grants no execution authority.
+The history page keeps its one-MiB budget; the combined response with progress
+and the extra selected record is capped at two MiB.
+
+Assigned records may include an optional `progress` observation with
+`observed_at`, `last_activity_at`, `current_activity`, `last_activity`, and
+`last_activity_status`. Execution states are `accepted`, `running`, `blocked`,
+`awaiting_receipt`, and `unobserved`. Activity statuses are `running`,
+`succeeded`, `failed`, and `blocked`; an action failure is not an assignment
+failure. Only `receipt` establishes the assignment outcome.
+
+Native progress joins the exact execution-session/turn ticket, Forge attempt,
+and bounded Coder activity. External progress inspects the exact ACP custody,
+pending permissions, and its matching Forge attempt/lease. Progress includes
+no raw reasoning, tool payloads, or activity from other attempts. Filesystem
+inspection is admitted through `ForgeExecutionService`. Missing process-local
+custody after a restart is `unobserved`, even when durable attempt metadata
+still says running; inspection never retries or dispatches work.
 
 Approval records precede grant compilation. Dispatch repairs partial compilation
 from an already approved snapshot before executing. Retries use persistent

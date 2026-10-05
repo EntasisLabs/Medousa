@@ -3,67 +3,67 @@
   "entries": [
     {
       "id": "general_host_policy",
-      "chars": 4533,
-      "tokens_estimate": 1134,
+      "chars": 4605,
+      "tokens_estimate": 1152,
       "constituents": [
         { "id": "sttp_envelope", "chars": 907, "tokens_estimate": 227 },
         { "id": "p1_core", "chars": 755, "tokens_estimate": 189 },
         { "id": "p2_mode_general", "chars": 202, "tokens_estimate": 51 },
         { "id": "p3_actor_host", "chars": 409, "tokens_estimate": 103 },
-        { "id": "p4_turn_protocol", "chars": 1166, "tokens_estimate": 292 },
+        { "id": "p4_turn_protocol", "chars": 1238, "tokens_estimate": 310 },
         { "id": "p5_presentation", "chars": 1094, "tokens_estimate": 274 }
       ]
     },
     {
       "id": "coder_setup_host_policy",
-      "chars": 4786,
-      "tokens_estimate": 1197,
+      "chars": 4858,
+      "tokens_estimate": 1215,
       "constituents": [
         { "id": "sttp_envelope", "chars": 915, "tokens_estimate": 229 },
         { "id": "p1_core", "chars": 755, "tokens_estimate": 189 },
         { "id": "p2_mode_coder_setup", "chars": 447, "tokens_estimate": 112 },
         { "id": "p3_actor_host", "chars": 409, "tokens_estimate": 103 },
-        { "id": "p4_turn_protocol", "chars": 1166, "tokens_estimate": 292 },
+        { "id": "p4_turn_protocol", "chars": 1238, "tokens_estimate": 310 },
         { "id": "p5_presentation", "chars": 1094, "tokens_estimate": 274 }
       ]
     },
     {
       "id": "coder_work_host_policy",
-      "chars": 5747,
-      "tokens_estimate": 1437,
+      "chars": 5819,
+      "tokens_estimate": 1455,
       "constituents": [
         { "id": "sttp_envelope", "chars": 913, "tokens_estimate": 229 },
         { "id": "p1_core", "chars": 755, "tokens_estimate": 189 },
         { "id": "p2_mode_coder_work", "chars": 1410, "tokens_estimate": 353 },
         { "id": "p3_actor_host", "chars": 409, "tokens_estimate": 103 },
-        { "id": "p4_turn_protocol", "chars": 1166, "tokens_estimate": 292 },
+        { "id": "p4_turn_protocol", "chars": 1238, "tokens_estimate": 310 },
         { "id": "p5_presentation", "chars": 1094, "tokens_estimate": 274 }
       ]
     },
     {
       "id": "general_worker_policy_hud",
-      "chars": 4720,
-      "tokens_estimate": 1180,
+      "chars": 4792,
+      "tokens_estimate": 1198,
       "constituents": [
         { "id": "sttp_envelope", "chars": 911, "tokens_estimate": 228 },
         { "id": "p1_core", "chars": 755, "tokens_estimate": 189 },
         { "id": "p2_mode_general", "chars": 202, "tokens_estimate": 51 },
         { "id": "p3_actor_worker", "chars": 232, "tokens_estimate": 58 },
-        { "id": "p4_turn_protocol", "chars": 1166, "tokens_estimate": 292 },
+        { "id": "p4_turn_protocol", "chars": 1238, "tokens_estimate": 310 },
         { "id": "p5_presentation", "chars": 1094, "tokens_estimate": 274 },
         { "id": "worker_hud", "chars": 360, "tokens_estimate": 90 }
       ]
     },
     {
       "id": "coder_worker_policy_hud",
-      "chars": 5930,
-      "tokens_estimate": 1483,
+      "chars": 6002,
+      "tokens_estimate": 1501,
       "constituents": [
         { "id": "sttp_envelope", "chars": 917, "tokens_estimate": 230 },
         { "id": "p1_core", "chars": 755, "tokens_estimate": 189 },
         { "id": "p2_mode_coder_work", "chars": 1410, "tokens_estimate": 353 },
         { "id": "p3_actor_worker", "chars": 232, "tokens_estimate": 58 },
-        { "id": "p4_turn_protocol", "chars": 1166, "tokens_estimate": 292 },
+        { "id": "p4_turn_protocol", "chars": 1238, "tokens_estimate": 310 },
         { "id": "p5_presentation", "chars": 1094, "tokens_estimate": 274 },
         { "id": "worker_hud", "chars": 356, "tokens_estimate": 89 }
       ]

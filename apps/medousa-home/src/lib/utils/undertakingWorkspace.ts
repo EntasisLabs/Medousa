@@ -9,7 +9,7 @@ import {
   usesAttachedCheckout,
   type ItemProjection,
 } from "$lib/forge";
-import { terminalCreate } from "$lib/terminal";
+import { terminalCreate, terminalSessions } from "$lib/terminal";
 import { undertakings } from "$lib/stores/undertakings.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { chat } from "$lib/stores/chat.svelte";
@@ -31,6 +31,7 @@ import {
 import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 import { landCodeWorkingSet as landCodeWorkingSetThroughController } from "$lib/utils/codeWorkspaceController";
 import type { LandCodeResult } from "$lib/utils/codeWorkspaceController";
+import { captureCodeScope, codeExecutionScopeKey } from "$lib/code/codeWorkspaceContext.svelte";
 
 function terminalSessionId(created: { session_id?: string; id?: string }): string {
   return typeof created.session_id === "string"
@@ -98,20 +99,31 @@ export function activeCodeContext(sessionId: string): CodeIntentContext | null {
   };
 }
 
-export async function openTrackedTerminal(
+export async function openProjectTerminal(
   item: ItemProjection,
-  options?: { activate?: boolean },
+  options?: { activate?: boolean; create?: boolean },
 ): Promise<string | null> {
   if (undertakings.active?.workId !== item.id) undertakings.setActiveFromItem(item);
+  const terminalScope = () => JSON.stringify([
+    codeExecutionScopeKey(), undertakings.active?.workId,
+    undertakings.active?.executionRuntimeId, undertakings.active?.worktree,
+    undertakings.active?.baselineOid,
+    undertakings.detail?.id === item.id ? undertakings.detail.environment : null,
+  ]);
+  const current = captureCodeScope(terminalScope);
+  const executionRuntimeId = undertakings.active?.executionRuntimeId ?? null;
 
-  const existing =
-    undertakings.active?.workId === item.id
-      ? undertakings.active.boundTerminalSessionIds[0]
-      : null;
+  const sessions = await terminalSessions(executionRuntimeId);
+  if (!current()) return null;
+  // Opening a human shell must not attach input to an agent/task process.
+  const existing = sessions.find((session) =>
+    session.work_id === item.id && session.root_kind === "workspace" && session.workspace_context
+  )?.session_id;
 
   const openShellTab = options?.activate !== false;
 
   if (existing) {
+    undertakings.bindTerminal(existing);
     if (openShellTab) {
       shellTabs.openTerminal(existing, {
         activate: true,
@@ -123,21 +135,13 @@ export async function openTrackedTerminal(
     return existing;
   }
 
-  let leaseId = undertakings.active?.leaseId ?? null;
-  if (canStartHumanEditing(item.allowed_actions)) {
-    const begun = await startHumanEditingSession(item.id, item.allowed_actions);
-    leaseId = begun.lease.lease_id;
-    undertakings.setActiveFromItem(begun.item, {
-      leaseId,
-      leaseGeneration: begun.lease.generation,
-      executorKind: "human",
-    });
-  }
+  if (options?.create === false) return null;
 
   const created = await terminalCreate(
-    { work_id: item.id, lease_id: leaseId },
-    undertakings.active?.executionRuntimeId ?? null,
+    { work_id: item.id, workspace_shell: true },
+    executionRuntimeId,
   );
+  if (!current()) return null;
   const sessionId = terminalSessionId(created);
   if (!sessionId) return null;
 

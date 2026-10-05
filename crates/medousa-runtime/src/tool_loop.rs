@@ -60,10 +60,9 @@ use crate::turn_control::{
     ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, WorkerSpawnDisposition,
     begin_work_note_from_invocations, checkpoint_turn_from_invocations,
     finish_turn_from_invocations, is_begin_work_tool_name, is_terminal_turn_tool_name,
-    is_workshop_spawn_call, reaction_intents_from_invocations, request_input_from_invocations,
-    request_more_rounds_from_invocations, terminal_text_for_fsm_end,
-    turn_progress_message_from_invocations, worker_spawn_control_from_invocations,
-    workshop_entered_from_invocations,
+    is_workshop_spawn_call, request_input_from_invocations, request_more_rounds_from_invocations,
+    terminal_text_for_fsm_end, turn_progress_message_from_invocations,
+    worker_spawn_control_from_invocations, workshop_entered_from_invocations,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS;
@@ -71,12 +70,6 @@ const TOOL_OBSERVATION_MARKER: &str = "[MEDOUSA_RUNTIME_TOOL_OBSERVATION]";
 const MAX_HYDRATED_TOOL_OBSERVATIONS_PER_ROUND: usize = 2;
 const MAX_HYDRATED_TOOL_OBSERVATION_BYTES: usize = 8 * 1024 * 1024;
 const MAX_HYDRATED_TOOL_OBSERVATION_BYTES_PER_ROUND: usize = 16 * 1024 * 1024;
-const SILENT_FINISH_GUIDANCE: &str = concat!(
-    "[MEDOUSA_TURN_CONTROL]\n",
-    "turn.finish was ignored because this response contained no principal-facing final answer. ",
-    "Emit the complete final answer as assistant prose alongside turn.finish, or provide it in ",
-    "turn.finish.message. intent and reason are control metadata and are not shown to the principal."
-);
 
 fn turn_boundary_failure(operation: &str, error: TurnExecutionBoundaryError) -> StasisError {
     StasisError::PortFailure(format!("{error} during {operation}"))
@@ -1211,26 +1204,11 @@ impl MedousaToolLoopPipeline {
                     && let Some(message) = finish_turn_from_invocations(round_invocations)
                 {
                     // The response's chronological prose is authoritative.
-                    // turn.finish.message exists only for providers that cannot
-                    // emit prose and a tool call in the same response.
+                    // A successful explicit finish is terminal even without
+                    // new prose. Earlier text is already committed by the host;
+                    // do not ask the model to regenerate it or invent a reply.
+                    // message remains a fallback for tool-only responses.
                     let message = maybe_text.clone().unwrap_or(message);
-                    if message.trim().is_empty()
-                        && reaction_intents_from_invocations(round_invocations).is_empty()
-                    {
-                        push_turn_control_message(
-                            &mut turn_ctx.tool_lane.messages,
-                            SILENT_FINISH_GUIDANCE,
-                        );
-                        persist_checkpoint!(
-                            SafeCheckpointBoundary::ToolBatchCompleted,
-                            ActiveTurnCheckpointStatus::Active,
-                            None,
-                            None,
-                            &round_tool_names,
-                            &round_provider_call_ids,
-                        );
-                        continue;
-                    }
                     if let Some(gate) = completion_gate.as_ref() {
                         let tools = collect_tool_names(&invocations);
                         persist_gate_ledger(

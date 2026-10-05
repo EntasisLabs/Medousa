@@ -65,7 +65,7 @@ struct FeedOwner {
     transaction: FileTransaction,
     log_path: StorePath,
     cursor_path: StorePath,
-    legacy_path: StorePath,
+    legacy_path: Option<StorePath>,
     state: AsyncMutex<FeedOwnerState>,
 }
 
@@ -122,14 +122,10 @@ impl FeedStore {
         ))?)
     }
 
-    fn legacy_feed_path(profile_id: &str, feed_id: &str) -> Result<StorePath> {
+    fn legacy_feed_path(profile_id: &str, feed_id: &str) -> Result<Option<StorePath>> {
         let profile = EnvironmentProfileId::parse(profile_id)?;
         let feed = FeedId::parse(feed_id)?;
-        Ok(StorePath::parse(&format!(
-            "{}/{}.jsonl",
-            profile.as_str(),
-            feed.as_str()
-        ))?)
+        Ok(StorePath::parse(&format!("{}/{}.jsonl", profile.as_str(), feed.as_str())).ok())
     }
 
     fn cursor_path(profile_id: &str, feed_id: &str) -> Result<StorePath> {
@@ -153,7 +149,8 @@ impl FeedStore {
             return Ok(owner);
         }
 
-        let root = Arc::new(Self::store_at(&self.root_path)?);
+        let root_path = self.root_path.clone();
+        let root = Arc::new(feed_io(move || Self::store_at(&root_path)).await?);
         let candidate = Arc::new(FeedOwner {
             transaction: FileTransaction::new(Arc::clone(&root)),
             root,
@@ -164,6 +161,38 @@ impl FeedStore {
         });
         let mut owners = self.owners.write().await;
         Ok(owners.entry(key).or_insert(candidate).clone())
+    }
+
+    /// Observe the daemon's retained native stream under its append/cursor custody.
+    /// No event payload or summary leaves this boundary.
+    #[cfg(feature = "full-daemon")]
+    pub(crate) async fn observe_metadata<T, F, Fut>(
+        &self,
+        profile: &str,
+        feed: &str,
+        publish: F,
+    ) -> Result<T>
+    where
+        F: FnOnce(bool, String) -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        use sha2::{Digest, Sha256};
+        let owner = self.owner(profile, feed).await?;
+        let mut state = owner.state.lock().await;
+        owner.ensure_loaded(&mut state).await?;
+        if state.events.iter().any(|event| event.feed_id != feed) {
+            anyhow::bail!("native feed log contains another stream identity");
+        }
+        let last = state.events.back().map(|event| event.as_ref());
+        let revision = format!(
+            "feed-v1:{:x}",
+            Sha256::digest(serde_json::to_vec(&(
+                state.generation,
+                state.next_seq,
+                last
+            ))?)
+        );
+        publish(last.is_some(), revision).await
     }
 
     pub async fn append(
@@ -346,7 +375,8 @@ impl FeedOwner {
         let legacy_path = self.legacy_path.clone();
         let cursor_path = self.cursor_path.clone();
         let loaded =
-            feed_io(move || load_owner_state(&root, &log_path, &legacy_path, &cursor_path)).await?;
+            feed_io(move || load_owner_state(&root, &log_path, legacy_path.as_ref(), &cursor_path))
+                .await?;
         *state = loaded;
         Ok(())
     }
@@ -404,14 +434,18 @@ async fn feed_io<T: Send + 'static>(
 fn load_owner_state(
     root: &StoreRoot,
     log_path: &StorePath,
-    legacy_path: &StorePath,
+    legacy_path: Option<&StorePath>,
     cursor_path: &StorePath,
 ) -> Result<FeedOwnerState> {
     let (raw, legacy_loaded) = match root.read_limited(log_path, MAX_FEED_LOG_BYTES) {
         Ok(raw) => (raw, false),
         Err(error) if error.is_not_found() => {
-            match root.read_limited(legacy_path, MAX_FEED_LOG_BYTES) {
-                Ok(raw) => (raw, true),
+            match legacy_path
+                .map(|path| root.read_limited(path, MAX_FEED_LOG_BYTES))
+                .transpose()
+            {
+                Ok(Some(raw)) => (raw, true),
+                Ok(None) => (Vec::new(), false),
                 Err(error) if error.is_not_found() => (Vec::new(), false),
                 Err(error) => return Err(error.into()),
             }
@@ -845,7 +879,9 @@ mod latest_good_tests {
     async fn legacy_log_migrates_before_accepting_a_new_append() {
         let (_directory, root_path, store) = test_store();
         let root = FeedStore::store_at(&root_path).unwrap();
-        let legacy = FeedStore::legacy_feed_path("personal", "summer-ai-digest").unwrap();
+        let legacy = FeedStore::legacy_feed_path("personal", "summer-ai-digest")
+            .unwrap()
+            .unwrap();
         let mut old = sample_event(json!({"phase": "tick_succeeded", "body": "old"}));
         old.id = "feed-7".to_string();
         let mut raw = serde_json::to_vec(&old).unwrap();

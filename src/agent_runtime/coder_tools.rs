@@ -643,7 +643,11 @@ pub async fn finalize_coder_memory_lineage(
         .cloned()
         .collect::<Vec<_>>();
     environments.reverse();
+    let execution = forge
+        .execution()
+        .unwrap_or_else(|| Arc::new(medousa_forge::execution::ForgeExecutionService::new()));
     let archive_futures = environments.into_iter().map(|environment| {
+        let execution = execution.clone();
         let registry = registry.clone();
         let forge = forge.clone();
         let work_id = item.id.to_string();
@@ -656,9 +660,14 @@ pub async fn finalize_coder_memory_lineage(
                 &environment.branch,
                 environment.generation,
             );
-            let current_head = forge
-                .git()
-                .head_oid(&environment.worktree)
+            let head_worktree = environment.worktree.clone();
+            let current_head = execution
+                .run(
+                    medousa_forge::execution::ExecutionClass::Observation,
+                    16 * 1024,
+                    move || forge.git().head_oid(&head_worktree),
+                )
+                .await
                 .map(|head| head.to_string())
                 .unwrap_or_else(|_| environment.baseline_oid.to_string());
             let identity = CoderAgentIdentity::for_turn(
@@ -709,6 +718,14 @@ pub struct CoderTurnLease {
 /// destination's peer policy so revocation takes effect without moving work.
 pub trait CoderExecutionGuard: Send + Sync {
     fn verify(&self) -> Result<()>;
+    /// A scoped assignment cannot create workers without carrying its grant.
+    fn allows_worker_spawns(&self) -> bool {
+        true
+    }
+    /// Guards that read durable assignment state must leave the async worker.
+    fn admission_service(&self) -> Option<Arc<medousa_forge::execution::ForgeExecutionService>> {
+        None
+    }
 }
 
 /// Exact environment-aware Coder surface used after a portable undertaking is
@@ -985,6 +1002,25 @@ impl ToolRegistry for PortableCoderToolRegistry {
 }
 
 impl CoderTurnLease {
+    async fn heartbeat_admitted(self: &Arc<Self>) -> Result<()> {
+        let service = self
+            .execution_guard
+            .as_ref()
+            .and_then(|guard| guard.admission_service());
+        if let Some(service) = service {
+            let authority = self.clone();
+            service
+                .run(
+                    medousa_forge::execution::ExecutionClass::StoreIo,
+                    64 * 1024,
+                    move || Ok(authority.heartbeat()),
+                )
+                .await
+                .map_err(|error| StasisError::PortFailure(error.to_string()))?
+        } else {
+            self.heartbeat()
+        }
+    }
     pub fn new(
         forge: Arc<Forge>,
         lease: ExecutionLease,
@@ -2798,7 +2834,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
         }
         let tool_name = tool_id.as_str();
         let authority = self.authority()?;
-        authority.heartbeat()?;
+        authority.heartbeat_admitted().await?;
         let (metadata, input) = take_coder_call(input)?;
         let intent = metadata.intent;
         let spawn_intent_hint = input
@@ -2818,6 +2854,19 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(intent.as_str())
             });
         let input = self.enrich_semantic_input(tool_name, input)?;
+        if authority
+            .execution_guard
+            .as_ref()
+            .is_some_and(|guard| !guard.allows_worker_spawns())
+            && (crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input)
+                || crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(
+                    tool_name, &input,
+                ))
+        {
+            return Err(StasisError::PortFailure(
+                "This coding assignment must execute in its admitted turn; additional workers require their own scoped assignments".into(),
+            ));
+        }
         let targets = tool_targets(tool_name, &input, authority.lease());
         let claims = super::coder_claims::infer_tool_claims(
             tool_name,
@@ -3871,6 +3920,92 @@ mod tests {
             )
             .expect("Coder authority"),
         )
+    }
+
+    #[tokio::test]
+    async fn admitted_assignment_guard_blocks_revoked_tools_and_unscoped_worker_spawns() {
+        struct AssignmentGuard {
+            revoked: AtomicBool,
+            admission: Arc<medousa_forge::execution::ForgeExecutionService>,
+        }
+        impl CoderExecutionGuard for AssignmentGuard {
+            fn verify(&self) -> Result<()> {
+                if self.revoked.load(Ordering::SeqCst) {
+                    Err(StasisError::PortFailure("assignment grant revoked".into()))
+                } else {
+                    Ok(())
+                }
+            }
+            fn admission_service(
+                &self,
+            ) -> Option<Arc<medousa_forge::execution::ForgeExecutionService>> {
+                Some(self.admission.clone())
+            }
+            fn allows_worker_spawns(&self) -> bool {
+                false
+            }
+        }
+        let fixture = fixture();
+        let mut authority = authority(&fixture);
+        let guard = Arc::new(AssignmentGuard {
+            revoked: AtomicBool::new(false),
+            admission: Arc::new(medousa_forge::execution::ForgeExecutionService::new()),
+        });
+        Arc::get_mut(&mut authority).unwrap().execution_guard = Some(guard.clone());
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let read =
+            json!({"intent":"Inspect the source", "action":"code.read", "path":"src/lib.rs"});
+        registry
+            .invoke_tool(crate::public_api::COGNITION_STORE_READ, read.clone())
+            .await
+            .unwrap();
+        for (tool, input) in [
+            (
+                crate::public_api::COGNITION_TURN,
+                json!({"intent":"Delegate research", "action":"turn.begin_work", "goal":"Investigate CI"}),
+            ),
+            (
+                crate::public_api::COGNITION_WORKSHOP_MUTATE,
+                json!({"intent":"Delegate research", "action":"workshop.spawn", "task":"Investigate CI"}),
+            ),
+        ] {
+            assert!(
+                registry
+                    .invoke_tool(tool, input)
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("admitted turn")
+            );
+        }
+        guard.revoked.store(true, Ordering::SeqCst);
+        assert!(
+            registry
+                .invoke_tool(crate::public_api::COGNITION_STORE_READ, read)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("revoked")
+        );
+        let calls = inner.invocations.lock().unwrap();
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|(tool, _)| tool == crate::public_api::COGNITION_STORE_READ)
+                .count(),
+            1
+        );
+        assert!(
+            !calls
+                .iter()
+                .any(|(tool, _)| tool == crate::public_api::COGNITION_WORKSHOP_MUTATE)
+        );
     }
 
     #[tokio::test]

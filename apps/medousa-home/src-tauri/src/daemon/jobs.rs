@@ -30,6 +30,7 @@ pub async fn job_enqueue_ask(
 ) -> Result<EnqueueResponse, String> {
     let request = EnqueueAskRequest {
         prompt,
+        idempotency_key: None,
         policy_profile: Some("interactive".to_string()),
         model_hint,
         max_turns: Some(1),

@@ -262,7 +262,13 @@ pub enum TurnEvent {
     /// `seq`, which ride on the envelope.
     StreamMirror(serde_json::Value),
     /// Terminal: the turn failed.
-    Error { message: String },
+    Error {
+        message: String,
+        /// Observed assistant activity retained on failure, never successful
+        /// completion evidence. Legacy errors carry no transcript snapshot.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn: Option<Box<medousa_types::ConversationTurn>>,
+    },
 }
 
 impl TurnEvent {
@@ -313,6 +319,7 @@ impl TurnEvent {
                 | TurnEvent::NeedsInput { .. }
                 | TurnEvent::Checkpoint { .. }
                 | TurnEvent::WorkerAck { .. }
+                | TurnEvent::Error { turn: Some(_), .. }
         )
     }
 }

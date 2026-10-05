@@ -215,15 +215,18 @@ tool. Existing path containment, symlink checks, mutation policy, and live Coder
 lease checks still apply.
 
 The shell host keeps scripts and managed worktrees on its existing root path.
-For an external attached checkout, session creation requires a matching open
-Forge project and revalidates its repository, branch, HEAD, index, and requested
-cwd. Newly attached projects are available without restarting the shell host;
-closed projects and changed checkout authority reject new sessions. Project
-roots are never added to the host's global allowlist. This admission check does
-not turn the native PTY into an OS filesystem sandbox.
+For a tracked agent/task shell in an external attached checkout, creation
+requires a matching open Forge project and revalidates its repository, branch,
+HEAD, index, and requested cwd. Human project shells use the separate native-only
+workspace-shell route: they validate the current folder's repository identity
+and containment without renewing a Forge execution lease or baseline. Branch
+changes are context for that human shell and remain fenced for tracked work.
+Newly attached projects are available without restarting the shell host; closed
+projects reject new project shells. Project roots never enter the host's global
+allowlist. This admission check does not turn the PTY into an OS filesystem sandbox.
 
 The daemon and `medousa-session` must be upgraded together for this behavior.
-Shell-host API revision 5 accepts `--forge-root` and reports that store path in
+Shell-host API revision 6 accepts `--forge-root` and reports that store path in
 `/health`; the daemon rejects a host using an older protocol or a different Forge
 store. Source builds must include both `engine` and `shell-session` components.
 

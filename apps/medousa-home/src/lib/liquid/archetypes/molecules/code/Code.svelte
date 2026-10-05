@@ -1,10 +1,22 @@
 <script lang="ts">
   /**
-   * `code` molecule — enhanced snippet: lang badge, copy, optional diff tint.
+   * `code` molecule — compact snippet: language label, copy, optional diff tint.
    * Paste-first from ```code markdown (not a mistaken prose ```code fence).
    */
   import type { ArchetypeProps } from "$lib/liquid/render/types";
   import { highlightElement } from "$lib/syntax/highlightCode";
+  import "$lib/styles/markdown-content.postcss";
+  import { onDestroy } from "svelte";
+  import { haptic } from "$lib/haptics";
+  import {
+    canWrapCode,
+    codeCopyContent,
+    codeLanguageLabel,
+    codeLineCount,
+    copyCodeText,
+    isLongCode,
+    type CodeCopyState,
+  } from "$lib/markdown/codeBlockPresentation";
 
   let { node }: ArchetypeProps = $props();
 
@@ -18,7 +30,11 @@
   );
   const showCopy = $derived(node.props.copy !== false);
 
-  let copied = $state(false);
+  const lineCount = $derived(codeLineCount(source));
+  const collapsible = $derived(isLongCode(source));
+  let expanded = $state(false);
+  let wrapped = $state(false);
+  let copyState = $state<CodeCopyState>("idle");
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
   let codeEl = $state<HTMLElement | null>(null);
 
@@ -29,23 +45,22 @@
     if (!el || isDiff) return;
     delete el.dataset.hljs;
     el.textContent = src;
-    el.className = language ? `syn-code language-${language}` : "syn-code";
-    void highlightElement(el, language || "plaintext");
+    el.className = language ? `markdown-code syn-code language-${language}` : "markdown-code syn-code";
+    void highlightElement(el, language || "plaintext").catch(() => {});
   });
 
+  $effect(() => { source; expanded = false; });
+  onDestroy(() => { if (copyTimer) clearTimeout(copyTimer); });
+
   async function copySource() {
-    if (!source || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
-    try {
-      await navigator.clipboard.writeText(source);
-      copied = true;
-      if (copyTimer) clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => {
-        copied = false;
-        copyTimer = null;
-      }, 1600);
-    } catch {
-      // clipboard may be denied — stay quiet
-    }
+    const ok = await copyCodeText(source);
+    copyState = ok ? "copied" : "failed";
+    if (ok) haptic("light");
+    if (copyTimer) clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => {
+      copyState = "idle";
+      copyTimer = null;
+    }, 1500);
   }
 
   interface DiffLine {
@@ -68,75 +83,45 @@
 </script>
 
 {#if source}
-  <div class="liquid-code" class:liquid-code-diff={isDiff}>
-    <header class="liquid-code-header">
+  <div class="liquid-code markdown-code-block" class:liquid-code-diff={isDiff} class:markdown-code-collapsed={collapsible && !expanded} class:markdown-code-wrapped={wrapped} data-copy-hydrated="1">
+    <header class="liquid-code-header markdown-code-header">
       <div class="liquid-code-meta">
-        {#if lang}
-          <span class="liquid-code-lang">{lang}</span>
-        {/if}
+        <span class="markdown-code-lang">{codeLanguageLabel(lang)}</span>
         {#if title}
           <span class="liquid-code-title">{title}</span>
         {/if}
       </div>
-      {#if showCopy}
-        <button type="button" class="liquid-code-copy" onclick={copySource}>
-          {copied ? "Copied" : "Copy"}
-        </button>
-      {/if}
+      <div class="markdown-code-actions">
+        {#if canWrapCode(source)}
+          <button type="button" class="markdown-code-wrap" aria-pressed={wrapped} title="Wrap lines" data-export-strip onclick={() => wrapped = !wrapped}>Wrap</button>
+        {/if}
+        {#if showCopy}
+          <button type="button" class="liquid-code-copy markdown-code-copy" class:markdown-code-copy-done={copyState === "copied"} aria-label="Copy code" title={copyState === "copied" ? "Code copied" : copyState === "failed" ? "Could not copy code" : "Copy code"} onclick={copySource}>
+            {@html codeCopyContent(copyState)}
+          </button>
+        {/if}
+      </div>
     </header>
     {#if lines}
-      <pre class="liquid-code-pre"><code
-          >{#each lines as line}{#if line.kind === "add"}<span class="liquid-code-add">{line.text}
-{"\n"}</span
-            >{:else if line.kind === "del"}<span class="liquid-code-del">{line.text}
-{"\n"}</span
-            >{:else}<span class="liquid-code-ctx">{line.text}
-{"\n"}</span
-            >{/if}{/each}</code
-        ></pre>
+      <pre class="liquid-code-pre markdown-pre"><code class="markdown-code">{#each lines as line, index}<span class:liquid-code-add={line.kind === "add"} class:liquid-code-del={line.kind === "del"}>{line.text}{index < lines.length - 1 ? "\n" : ""}</span>{/each}</code></pre>
     {:else}
-      <pre class="liquid-code-pre"><code bind:this={codeEl} class="syn-code"></code></pre>
+      <pre class="liquid-code-pre markdown-pre"><code bind:this={codeEl} class="markdown-code syn-code"></code></pre>
+    {/if}
+    {#if collapsible}
+      <div class="markdown-code-footer" data-export-strip>
+        <span>{lineCount} {lineCount === 1 ? "line" : "lines"}</span>
+        <button type="button" class="markdown-code-expand" aria-expanded={expanded} onclick={() => expanded = !expanded}>{expanded ? "Show less" : "Show all"}</button>
+      </div>
     {/if}
   </div>
 {/if}
 
 <style>
-  .liquid-code {
-    margin: 0;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 30%, transparent);
-    background: color-mix(in srgb, var(--color-surface-950) 72%, transparent);
-    overflow: hidden;
-    min-width: 0;
-  }
-
-  .liquid-code-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.4rem 0.55rem 0.4rem 0.7rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-surface-500) 22%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 55%, transparent);
-  }
-
   .liquid-code-meta {
     display: flex;
     align-items: center;
     gap: 0.45rem;
     min-width: 0;
-  }
-
-  .liquid-code-lang {
-    flex: 0 0 auto;
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: rgb(var(--color-surface-200));
-    padding: 0.12rem 0.4rem;
-    border-radius: 0.3rem;
-    background: color-mix(in srgb, var(--color-surface-600) 55%, transparent);
   }
 
   .liquid-code-title {
@@ -147,56 +132,13 @@
     white-space: nowrap;
   }
 
-  .liquid-code-copy {
-    flex: 0 0 auto;
-    margin: 0;
-    padding: 0.2rem 0.5rem;
-    border: 0;
-    border-radius: 0.35rem;
-    font-size: 0.68rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-200));
-    background: color-mix(in srgb, var(--color-surface-700) 60%, transparent);
-    cursor: pointer;
-  }
-
-  .liquid-code-copy:hover {
-    background: color-mix(in srgb, var(--color-surface-600) 70%, transparent);
-  }
-
-  .liquid-code-pre {
-    margin: 0;
-    padding: 0.7rem 0.85rem;
-    overflow-x: auto;
-    font-size: 0.78rem;
-    line-height: 1.5;
-    color: rgb(var(--syn-fg));
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    cursor: text;
-    user-select: text;
-    -webkit-user-select: text;
-  }
-
-  .liquid-code-pre code {
-    font-family: inherit;
-    white-space: pre;
-    user-select: text;
-    -webkit-user-select: text;
-  }
-
   .liquid-code-add {
-    display: block;
     background: color-mix(in srgb, var(--color-success-500) 14%, transparent);
     color: rgb(var(--theme-success));
   }
 
   .liquid-code-del {
-    display: block;
     background: color-mix(in srgb, var(--color-error-500) 14%, transparent);
     color: rgb(var(--theme-error));
-  }
-
-  .liquid-code-ctx {
-    display: block;
   }
 </style>

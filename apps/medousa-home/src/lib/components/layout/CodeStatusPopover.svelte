@@ -11,6 +11,7 @@
     status: CodeEditorStatusSnapshot;
     onClose: () => void;
     onShowProblems: () => void;
+    onRefreshProblems: () => void;
     onShowLogs: () => void;
     onRestart: () => void;
     onRepair: () => void;
@@ -22,6 +23,7 @@
     status,
     onClose,
     onShowProblems,
+    onRefreshProblems,
     onShowLogs,
     onRestart,
     onRepair,
@@ -53,14 +55,23 @@
         maxHeightRatio: 0.6,
       });
     };
-    void tick().then(place);
+    void tick().then(() => {
+      if (!open) return;
+      place();
+      menuEl?.focus();
+    });
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
   });
 
   function act(action: () => void) {
-    onClose();
+    close();
     action();
+  }
+
+  function close() {
+    onClose();
+    triggerEl?.focus();
   }
 </script>
 
@@ -68,7 +79,7 @@
   {#snippet children()}
     {#if open}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="code-status-scrim" role="presentation" onclick={onClose}></div>
+      <div class="code-status-scrim" role="presentation" onclick={close}></div>
       <div
         bind:this={menuEl}
         class="code-status-popover workshop-rail-sheet"
@@ -76,7 +87,7 @@
         aria-label="Code editor status"
         tabindex="-1"
         onkeydown={(event) => {
-          if (event.key === "Escape") onClose();
+          if (event.key === "Escape") close();
         }}
       >
         <header class="code-status-header">
@@ -84,7 +95,7 @@
             <h2>Editor status</h2>
             <p>{status.path}</p>
           </div>
-          {#if languageHealthy}
+          {#if languageHealthy && status.issues.length === 0}
             <CircleCheck size={15} strokeWidth={1.9} class="text-content-success" aria-hidden="true" />
           {:else}
             <CircleAlert size={15} strokeWidth={1.9} class="text-content-error" aria-hidden="true" />
@@ -92,12 +103,34 @@
         </header>
 
         <div class="code-status-body">
+          {#each status.issues as issue (issue.id)}
+            <section class="code-status-language">
+              <strong class="text-content-warning">{issue.summary}</strong>
+              {#if issue.guidance}<p>{issue.guidance}</p>{/if}
+              {#if issue.id === "analysis"}
+                <button type="button" class="mt-2 text-content-link" onclick={() => act(onRefreshProblems)}>Retry analysis</button>
+              {/if}
+              {#if issue.details}
+                <details class="mt-2 text-content-quiet">
+                  <summary class="cursor-pointer">Technical details</summary>
+                  <pre class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono text-chrome-xs">{issue.details}</pre>
+                </details>
+              {/if}
+            </section>
+          {/each}
           <section class="code-status-row">
             <span>Problems</span>
             <button type="button" onclick={() => act(onShowProblems)}>
               {status.issueCount} {status.issueCount === 1 ? "issue" : "issues"}
             </button>
           </section>
+          <p class="text-content-quiet">
+            {status.analysis === "unavailable" ? "Project analysis is unavailable."
+              : status.analysis === "stale" ? "Project observations may be stale."
+              : status.analysis === "incomplete" ? "Project analysis is incomplete."
+              : status.analysis === "unobserved" ? "Project analysis has not been observed."
+              : "Counts reflect observed sessions, not every file in the project."}
+          </p>
           <section class="code-status-language">
             <div class="code-status-row">
               <span>{status.language} language service</span>
@@ -140,7 +173,7 @@
 
   .code-status-popover {
     z-index: 241;
-    overflow: hidden;
+    overflow: auto;
     padding: 0;
     color: rgb(var(--theme-text-primary));
     font-size: 0.72rem;

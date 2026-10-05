@@ -1698,7 +1698,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 == super::coder_turn_checkpoint::TOOL_ROUND_BUDGET_EXHAUSTED_REASON;
             if !is_coder_turn
                 && !tool_budget_exhausted
-                && should_run_continuation(&combined_invocations)
+                && should_run_continuation(&response.termination_reason, &combined_invocations)
                 && !crate::channel_delivery::is_principal_interactive_channel(
                     origin_channel
                         .as_deref()

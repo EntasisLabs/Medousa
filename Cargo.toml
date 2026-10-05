@@ -24,6 +24,7 @@ members = [
     "crates/medousa-local-inference",
     "crates/medousa-host",
     "crates/medousa-store",
+    "crates/medousa-work",
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
     "crates/medousa-computer-bridge",
@@ -91,6 +92,7 @@ medousa-engine = { path = "crates/medousa-engine", optional = true }
 medousa-runtime = { path = "crates/medousa-runtime", optional = true }
 medousa-host = { path = "crates/medousa-host", optional = true }
 medousa-store = { path = "crates/medousa-store", optional = true }
+medousa-work = { path = "crates/medousa-work", optional = true }
 medousa-sdk = { path = "crates/medousa-sdk", optional = true }
 medousa-acp-client = { path = "crates/medousa-acp-client", optional = true }
 medousa-forge = { path = "crates/medousa-forge", optional = true }
@@ -230,6 +232,7 @@ full-daemon = [
     "dep:medousa-engine",
     "dep:medousa-runtime",
     "dep:medousa-store",
+    "dep:medousa-work",
     "dep:genai",
     "dep:tempfile",
     "stasis-rs/dashboard",

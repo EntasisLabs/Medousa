@@ -7,6 +7,8 @@ pub mod contracts;
 pub mod fixtures;
 #[cfg(any(test, feature = "full-daemon"))]
 pub mod h07_verify;
+#[cfg(feature = "full-daemon")]
+pub mod identity;
 pub mod io;
 #[cfg(feature = "full-daemon")]
 pub mod job_footer;

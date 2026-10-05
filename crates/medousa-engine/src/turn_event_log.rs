@@ -748,6 +748,7 @@ pub fn fold_history_from_events(events: &[SequencedTurnEvent]) -> Vec<Conversati
 
 pub fn project_turn_to_history(event: &TurnEvent) -> Option<ConversationTurn> {
     match event {
+        TurnEvent::Error { turn, .. } => turn.as_deref().cloned(),
         TurnEvent::FinalResponse {
             text,
             tool_names,
@@ -1223,6 +1224,41 @@ mod tests {
 
         assert!(TurnEventLog::open_in(&root, envelope).is_err());
         assert!(recover_uncommitted(&root).is_empty());
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn failed_activity_restores_from_the_journal_without_becoming_a_final_response() {
+        let root = tmp_root("failed-history");
+        let mut turn = history_turn(
+            "Review activity before failure",
+            &["cognition_peer_review".into()],
+            Some("failed".into()),
+            &[],
+            Utc::now(),
+        );
+        turn.slice_summary = Some(medousa_types::turn::TurnSliceSummary {
+            failures: vec!["This turn stopped before it could finish.".into()],
+            ..Default::default()
+        });
+        let event = TurnEvent::Error {
+            message: "This turn stopped before it could finish.".into(),
+            turn: Some(Box::new(turn.clone())),
+        };
+        assert!(event.is_terminal());
+        assert!(event.contributes_to_history());
+        {
+            let log = TurnEventLog::open_in(&root, env("turn-failed-history")).unwrap();
+            log.append(event).unwrap();
+        }
+        let reopened = TurnEventLog::open_in(&root, env("turn-failed-history")).unwrap();
+        assert_eq!(reopened.fold_history(), [turn]);
+        let legacy: TurnEvent = serde_json::from_value(
+            serde_json::json!({"kind": "error", "message": "legacy failure"}),
+        )
+        .unwrap();
+        assert!(!legacy.contributes_to_history());
+        assert!(project_turn_to_history(&legacy).is_none());
         fs::remove_dir_all(&root).ok();
     }
 

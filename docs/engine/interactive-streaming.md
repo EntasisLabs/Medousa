@@ -77,6 +77,14 @@ Cancellation and execution-context admission still apply when no whole-turn
 deadline is configured. The embedded host can opt into a foreground deadline;
 the default is unset.
 
+Daemon turns that fail after emitting assistant text or tool activity preserve
+the observed timeline in canonical history with `answer_state=failed`. The
+safe failure message is retained in the slice summary; raw engine errors stay
+in debug fields. Persistence completes before the single `turn_completed`
+settlement. Refreshing Home restores the typed parts and failure state. The
+error journal may carry this optional transcript snapshot; older message-only
+errors remain readable and do not create synthetic assistant history.
+
 ---
 
 ## Event schema (`InteractiveTurnStreamEvent`)

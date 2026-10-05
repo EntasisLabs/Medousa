@@ -14,6 +14,7 @@ import type {
 } from "$lib/types/runtime";
 import type { TuiDefaults } from "$lib/types/workshopDefaults";
 import type { DaemonHealth } from "./client";
+import { operationPath } from "./opPath";
 
 export async function checkDaemonHealth(): Promise<DaemonHealth> {
   if (browserPortalActive()) {
@@ -28,7 +29,7 @@ export async function checkDaemonHealth(): Promise<DaemonHealth> {
         last_agent_turn_latency_ms?: number | null;
         active_profile_id?: string;
         active_profile_display_name?: string;
-      }>("GET", "/v1/health");
+      }>("GET", operationPath("health.get"));
       const tools = detail.tool_registry_count ?? 0;
       const revision = detail.runtime?.build_revision ?? "";
       return {

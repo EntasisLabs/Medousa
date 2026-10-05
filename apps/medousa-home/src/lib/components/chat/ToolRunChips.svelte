@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { ChevronRight, Route, Workflow } from "@lucide/svelte";
+  import { ChevronRight, Workflow } from "@lucide/svelte";
   import ToolActivitySheet from "$lib/components/chat/ToolActivitySheet.svelte";
   import { haptic } from "$lib/haptics";
   import type { ToolRunState } from "$lib/types/chat";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
   import { sliceRefFromChatToolRun } from "$lib/types/toolHistory";
+  import { toolActivitySummary } from "$lib/utils/toolActivitySummary";
   import type { ToolLineageSegment } from "$lib/utils/toolRunLineage";
   import {
     buildToolLineage,
-    formatCollapsedLabel,
     formatLineagePreview,
     formatSegmentLabel,
     segmentAccentClass,
@@ -34,15 +34,12 @@
   }: Props = $props();
 
   const lineage = $derived(buildToolLineage(runs));
-  const toolCount = $derived(runs.length);
-  const collapsed = $derived(formatCollapsedLabel(lineage, toolCount));
+  const summary = $derived(toolActivitySummary(runs));
   const fullTrace = $derived(formatLineagePreview(lineage));
-  const hasRunning = $derived(runs.some((run) => run.status === "running"));
+  const hasRunning = $derived(summary.running > 0);
   const activeSegment = $derived(
     hasRunning ? lineage.find((segment) => segment.status === "running") : null,
   );
-  const isDone = $derived(!hasRunning && runs.every((run) => run.status !== "failed"));
-  const footnote = $derived(inspectorCollapsed && isDone);
   let activityOpen = $state(false);
 
   function openActivity() {
@@ -199,40 +196,24 @@
   {#if inspectorCollapsed}
     <button
       type="button"
-      class="tool-trace tool-trace-trigger w-full overflow-hidden text-left transition-[border-color,background,box-shadow] duration-200 {footnote
-        ? 'chat-tool-footnote'
-        : `rounded-lg border ${isDone
-          ? 'border-primary-500/20 bg-gradient-to-r from-primary-500/[0.07] via-surface-900/40 to-surface-900/20'
-          : 'border-primary-500/30 bg-gradient-to-r from-primary-500/[0.1] via-surface-900/50 to-surface-900/30 shadow-[inset_0_1px_0_rgba(167,139,250,0.08)]'}`}"
+      class="tool-trace tool-context-trigger"
       title={fullTrace}
       aria-haspopup="dialog"
+      aria-expanded={activityOpen}
       onclick={openActivity}
     >
-      <span
-        class="flex items-center gap-2 {footnote
-          ? 'py-0.5 text-[10px] text-content-faint hover:text-content-tertiary'
-          : 'px-2.5 py-1.5'}"
-      >
-        {#if !footnote}
-          <Route
-            class="h-3 w-3 shrink-0 text-primary-400/80"
-            strokeWidth={2}
-            aria-hidden="true"
-          />
-        {/if}
-        <span
-          class="min-w-0 flex-1 {footnote
-            ? 'font-normal normal-case tracking-normal'
-            : 'text-[11px] tabular-nums text-surface-200'}"
-        >
-          {collapsed.primary}
+      <Workflow class="tool-context-icon" size={13} aria-hidden="true" />
+      <span class="tool-context-count">{summary.countLabel}</span>
+      {#if summary.context}
+        <span class="tool-context-preview">
+          {#if hasRunning}<span class="tool-context-running" aria-hidden="true"></span>{/if}
+          <span class="tool-context-label">{summary.context}</span>
         </span>
-        <ChevronRight
-          class="h-3 w-3 shrink-0 text-content-faint"
-          strokeWidth={2}
-          aria-hidden="true"
-        />
-      </span>
+      {/if}
+      {#if summary.failed > 0}
+        <span class="tool-context-failed">{summary.failed} failed</span>
+      {/if}
+      <ChevronRight class="tool-context-chevron" size={13} aria-hidden="true" />
     </button>
     <ToolActivitySheet
       open={activityOpen}
@@ -267,7 +248,91 @@
     );
   }
 
-  .tool-trace-trigger:active {
-    transform: scale(0.995);
+  .tool-context-trigger {
+    display: grid;
+    grid-template-columns: 13px auto minmax(0, 1fr) auto 13px;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-width: 0;
+    min-height: 30px;
+    padding: 0.25rem 0.5rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    text-align: left;
+    font-size: 12px;
+    color: rgb(var(--theme-text-tertiary));
+    transition: background-color 150ms;
+  }
+
+  .tool-context-trigger:hover {
+    background: rgb(var(--theme-card-hover) / 0.6);
+  }
+
+  .tool-context-count {
+    grid-column: 2;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .tool-context-preview {
+    grid-column: 3;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .tool-context-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tool-context-running {
+    width: 5px;
+    height: 5px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: rgb(var(--theme-text-tertiary));
+  }
+
+  .tool-context-failed {
+    grid-column: 4;
+    border-left: 1px solid rgb(var(--theme-border));
+    padding-left: 0.5rem;
+    color: rgb(var(--theme-warning));
+    white-space: nowrap;
+  }
+
+  .tool-context-trigger :global(.tool-context-icon) {
+    grid-column: 1;
+  }
+
+  .tool-context-trigger :global(.tool-context-chevron) {
+    grid-column: 5;
+  }
+
+  @media (max-width: 480px) {
+    .tool-context-preview {
+      grid-row: 2;
+      grid-column: 2 / 5;
+    }
+    .tool-context-count,
+    .tool-context-failed,
+    .tool-context-trigger :global(svg) {
+      grid-row: 1;
+    }
+  }
+
+  @media (pointer: coarse) {
+    .tool-context-trigger { min-height: 44px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tool-context-trigger { transition: none; }
   }
 </style>

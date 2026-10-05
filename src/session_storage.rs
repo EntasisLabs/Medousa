@@ -371,6 +371,15 @@ impl SessionDirectoryStore {
         self.root()?.read(path)
     }
 
+    #[cfg(feature = "full-daemon")]
+    pub(crate) fn read_root_limited(
+        &self,
+        path: &StorePath,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, StoreRootError> {
+        self.root()?.read_limited(path, max_bytes)
+    }
+
     pub fn append_root(&self, path: &StorePath, bytes: &[u8]) -> Result<(), StoreRootError> {
         self.root()?.append(path, bytes)
     }

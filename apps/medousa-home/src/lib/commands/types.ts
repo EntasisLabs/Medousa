@@ -13,6 +13,8 @@ export type CommandSection =
   | "suggested"
   | "pinned"
   | "go"
+  | "bots"
+  | "agents"
   | "open"
   | "do"
   | "ask"
@@ -25,6 +27,7 @@ export type CommandRisk = "safe" | "attention";
 export type CommandVerb = "create" | "run" | "toggle" | "pin";
 
 export type CommandPreview =
+  | { kind: "agent"; avatarRef?: string | null; name: string; description: string }
   | { kind: "note"; path: string }
   | { kind: "script"; scriptId: string; body?: string }
   | { kind: "chat"; sessionId: string; text?: string }
@@ -81,6 +84,8 @@ export const SECTION_LABELS: Record<CommandSection, string> = {
   suggested: "Suggested",
   pinned: "Pinned",
   go: "Go to",
+  bots: "Bots",
+  agents: "Connected agents",
   open: "Open",
   do: "Actions",
   ask: "Ask Medousa",
@@ -92,6 +97,8 @@ export const SECTION_ORDER: CommandSection[] = [
   "suggested",
   "pinned",
   "go",
+  "bots",
+  "agents",
   "open",
   "do",
   "ask",

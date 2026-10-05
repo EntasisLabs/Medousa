@@ -300,7 +300,10 @@ pub fn tool_status_from_output(tool_output: &serde_json::Value) -> &'static str 
     ) {
         return "failed";
     }
-    if tool_output.get("error").is_some() {
+    if tool_output
+        .get("error")
+        .is_some_and(|error| !error.is_null())
+    {
         return "failed";
     }
     if matches!(
@@ -604,6 +607,27 @@ mod tests {
                 "requires_confirmation": true
             })),
             "succeeded"
+        );
+    }
+
+    #[test]
+    fn tool_status_accepts_successful_shell_outputs_with_null_errors() {
+        assert_eq!(
+            tool_status_from_output(&json!({
+                "ok": true,
+                "completed": true,
+                "exit_code": 0,
+                "error": null
+            })),
+            "succeeded"
+        );
+        assert_eq!(
+            tool_status_from_output(&json!({"ok": false, "error": null})),
+            "failed"
+        );
+        assert_eq!(
+            tool_status_from_output(&json!({"error": {"message": "command failed"}})),
+            "failed"
         );
     }
 

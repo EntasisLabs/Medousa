@@ -18,6 +18,8 @@ import {
   buildPinnedJumpCommands,
 } from "./pinCommands";
 import {
+  buildBotOpenCommands,
+  buildConnectedAgentOpenCommands,
   buildNoteOpenCommands,
   buildBrowserHistoryCommands,
   buildSessionOpenCommands,
@@ -161,6 +163,8 @@ export function collectWorkshopCommands(
   }
 
   const searchPool: WorkshopCommand[] = withNotePreviews([
+    ...buildBotOpenCommands(rawQuery),
+    ...buildConnectedAgentOpenCommands(rawQuery),
     ...buildNoteOpenCommands(ctx, rawQuery),
     ...buildSessionOpenCommands(ctx, rawQuery),
     ...buildWorkCardOpenCommands(ctx, rawQuery),
@@ -228,11 +232,15 @@ export function collectWorkshopLensCommands(
     return [
       lensGroup("suggested", "Suggested", suggested.slice(0, 3)),
       lensGroup("open", "Continue", continueCommands),
+      lensGroup("bots", "Bots", buildBotOpenCommands("",3)),
+      lensGroup("agents", "Connected agents", buildConnectedAgentOpenCommands("",3)),
     ].filter((group): group is GroupedCommands => Boolean(group));
   }
 
   if (lens === "recent") {
     return [
+      lensGroup("bots", "Bots", buildBotOpenCommands("",3)),
+      lensGroup("agents", "Connected agents", buildConnectedAgentOpenCommands("",3)),
       lensGroup("open", "Conversations", buildSessionOpenCommands(ctx, "", 3)),
       lensGroup("open", "Notes", withNotePreviews(buildNoteOpenCommands(ctx, "", 3))),
       lensGroup("open", "Work", buildWorkCardOpenCommands(ctx, "", 2)),

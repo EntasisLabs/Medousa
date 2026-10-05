@@ -6,10 +6,49 @@ Shared client libraries for talking to **medousa_daemon** without duplicating HT
 
 Coder tool contracts and local diagnostics: [Usage attribution and batch edits](../engine/coder-efficiency.md).
 
+Human project shells use the native-only `sessions.workspace_shell.post`
+operation and the selected workshop's `AdminExecute` authority. Its folder
+context does not grant a Forge execution lease or produce sealed task evidence;
+see [Coding engine integration](../engine/coding-engine.md#daemon-routes).
+
 Assistant ownership queries and signed paired-workshop completion retrieval:
 [Coordination contracts](../engine/coordination.md). The peer-only completion
 query requires the exact saved proposal association and signed mesh envelopes;
 an ordinary bearer-only SDK request does not supply that authority.
+
+Full-daemon assistant handoffs expose typed sender responsibility, completion,
+callback and contact policy. Direct admission is tied to the current human
+request; proposal admission remains available. Inbox records carry optional
+`PeerHandoffSummary` metadata, and sender review requires the exact terminal receipt.
+See [Sender-owned handoffs](../engine/coordination.md#sender-owned-local-handoffs).
+
+Project Markdown images use `forge.items.by_work_id.source.get` with query
+`path=<project-relative-image>&image=true`. The JSON response is
+`{path,mime,bytes_base64}` instead of the text source response. PNG, JPEG, GIF,
+WebP, SVG, and AVIF reads are capped at 2 MiB and remain scoped to the governed
+workshop working copy, including symlink and `.git` restrictions. Omitting
+`image` preserves the existing source response. See [Forge routes](../engine/forge.md).
+
+Admitted assistant turns can use `work.create_project` to create an owned
+undertaking in an existing workshop Git repository, including one with no
+commits. Creation returns native graph references and a Forge work ID without
+binding the assistant chat or launching an executor. See
+[Undertaking creation](../engine/work-units.md#undertaking-creation-from-an-admitted-turn).
+
+Work-scoped native execute/review uses runtime actions `work.coordinate` and
+`work.coordination`. Provider participants access owner-domain work through
+`POST /v1/work/query` and `POST /v1/work/mutate` using scoped, revocable credentials.
+Registration accepts exact native proposal IDs and each stage waits for its
+existing grant. Registered proposal dispatch can return the existing nullable
+`binding` while queued. See [Work scopes and native coordination](../engine/work-units.md#native-executor--reviewer-coordination)
+and [Provider work participant adapters](../engine/external-conversations.md#work-participant-adapters).
+
+Work event inboxes use `work.events` plus explicit actor-bound acknowledgment.
+Provider sends can attach exact `work` scope metadata, and current self Work
+credentials report outcomes through
+`external_conversations.by_id.work_events.post`. These callbacks retain exact
+request/result association and qualified revision-bound review evidence without
+automatically satisfying work. See [Correlated work callbacks](../engine/external-conversations.md#correlated-work-callbacks).
 
 ## Packages
 

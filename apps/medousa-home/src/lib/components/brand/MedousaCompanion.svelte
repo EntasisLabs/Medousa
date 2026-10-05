@@ -1,6 +1,6 @@
 <script lang="ts">
   import MedousaSprite from "$lib/components/brand/MedousaSprite.svelte";
-  import type { MedousaMarkId } from "$lib/theme/medousaMarks";
+  import { mascotForMark, mascotImage, type MascotExpression, type MedousaMarkId } from "$lib/theme/medousaMarks";
 
   type Action = "float" | "hit" | "idle" | "jump" | "power-up";
   type Variant = "abyss" | "amber" | "aurora" | "bone" | "jade" | "nebula" | "ocean" | "violet" | "white";
@@ -57,7 +57,25 @@
     loading: "float",
   };
 
+  const stateExpression: Record<CompanionState, MascotExpression> = {
+    idle: "default",
+    float: "default",
+    squash: "chill",
+    launch: "happy",
+    jump: "happy",
+    recoil: "chill",
+    hit: "sus",
+    surge: "sweet",
+    success: "happy",
+    "power-up": "sweet",
+    attention: "sus",
+    error: "sus",
+    loading: "focus",
+  };
+
   const action = $derived(stateAction[state]);
+  const mascot = $derived(mascotForMark(markId));
+  const expression = $derived(stateExpression[state]);
 </script>
 
 <span
@@ -65,23 +83,28 @@
   data-state={state}
   data-action={action}
   data-paused={paused ? "true" : undefined}
+  data-mascot={mascot ? "true" : undefined}
   role={label ? "img" : undefined}
   aria-label={label || undefined}
   aria-hidden={label ? undefined : "true"}
   style={`--medousa-companion-size: ${size}`}
 >
-  <MedousaSprite
-    variant={variant}
-    {markId}
-    {darkMode}
-    size={size}
-    fps={fps}
-    paused={paused}
-    action={action}
-    loop={loop}
-    label={null}
-    class="medousa-companion-mark"
-  />
+  {#if mascot}
+    <img class="medousa-companion-mark mascot-image" src={mascotImage(mascot, expression)} alt="" aria-hidden="true" />
+  {:else}
+    <MedousaSprite
+      variant={variant}
+      {markId}
+      {darkMode}
+      size={size}
+      fps={fps}
+      paused={paused}
+      action={action}
+      loop={loop}
+      label={null}
+      class="medousa-companion-mark"
+    />
+  {/if}
 </span>
 
 <style>
@@ -93,6 +116,18 @@
     min-height: 0;
     overflow: visible;
     vertical-align: middle;
+  }
+
+  .medousa-companion[data-mascot="true"] {
+    aspect-ratio: 1;
+  }
+
+  .mascot-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    image-rendering: pixelated;
   }
 
   :global(.medousa-companion-mark) {

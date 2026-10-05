@@ -1,6 +1,6 @@
 //! Explicit human Git actions from review. Inputs are tied to a fresh repository snapshot.
 use super::*;
-use medousa_forge::execution::{ExecutionClass, supervise_command};
+use medousa_forge::execution::{ExecutionClass, MAX_CAPTURE_BYTES, supervise_command};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Serialize)]
@@ -45,7 +45,7 @@ async fn command(
         args,
         env,
         std::time::Duration::from_secs(120),
-        8 * 1024 * 1024,
+        MAX_CAPTURE_BYTES,
     )
     .await
     .map_err(map_err)?;
@@ -262,7 +262,7 @@ pub(super) async fn state(
         .forge_execution
         .run_async(
             ExecutionClass::Observation,
-            8 * 1024 * 1024,
+            MAX_CAPTURE_BYTES,
             Some(root.display().to_string()),
             async move {
                 Ok(snapshot(&binary, &root, target.base_ref)
@@ -299,7 +299,7 @@ async fn execute(
 ) -> ApiResult<Json<serde_json::Value>> {
     let (_, root, binary) = context(&state, work_id.clone()).await?;
     let execution = state.forge_execution.clone();
-    execution.run_async(if pr { ExecutionClass::NetworkGit } else { ExecutionClass::LocalMutation }, 8 * 1024 * 1024,
+    execution.run_async(if pr { ExecutionClass::NetworkGit } else { ExecutionClass::LocalMutation }, MAX_CAPTURE_BYTES,
         Some(root.display().to_string()), async move {
         let result = async {
             // Revalidate custody after waiting for the repository admission lane.
@@ -591,8 +591,19 @@ mod tests {
         git(bin, root, &["add", "two.txt"]).await.unwrap();
         let before = snapshot(bin, root, "main".into()).await.unwrap();
         let paths = vec!["one.txt".into(), "new file.txt".into()];
-        let prepared = prepare_commit(bin, root, &before, &paths).await.unwrap();
-        finish_commit(bin, root, &prepared, "selected files", &paths)
+        medousa_forge::execution::ForgeExecutionService::new()
+            .run_async(
+                ExecutionClass::LocalMutation,
+                MAX_CAPTURE_BYTES,
+                Some(root.display().to_string()),
+                async {
+                    let prepared = prepare_commit(bin, root, &before, &paths).await.unwrap();
+                    finish_commit(bin, root, &prepared, "selected files", &paths)
+                        .await
+                        .unwrap();
+                    Ok(())
+                },
+            )
             .await
             .unwrap();
         assert_eq!(

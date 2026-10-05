@@ -18,6 +18,7 @@ pub mod execution;
 pub mod fold;
 pub mod forge;
 pub mod git;
+pub mod lifecycle;
 pub mod log_v2;
 pub mod model;
 pub mod observation;

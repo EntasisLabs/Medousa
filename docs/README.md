@@ -26,17 +26,18 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
-| [Bots](guides/bots.md) | Create durable named teammates with their own memory and conversation |
+| [Bots](guides/bots.md) | Create native and runtime Bots, search them in Spotlight, and continue their memory |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
-| [Phone pairing](guides/phone-pairing.md) | Add another computer as an optional portal, including from a browser |
+| [Phone pairing](guides/phone-pairing.md) | Name paired workshops, refresh stale connections, and add optional portals |
 | [Siri and Shortcuts](guides/siri-and-shortcuts.md) | Continue the selected chat by voice or from an iPhone shortcut |
 | [Medousa Live on iPhone](guides/medousa-live-ios.md) | Continuous in-app voice, controls, requirements, and preview limits |
 | [Medousa Live in CarPlay](guides/medousa-carplay.md) | Development companion controls, setup, and qualification limits |
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
+| [SSH targets](guides/ssh-targets.md) | Connect named servers, grant agent access, and open terminals |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
-| [External agent conversations](guides/provider-conversations.md) | Chat with provider-hosted agents through WhatsApp or a webhook |
+| [External agent conversations](guides/provider-conversations.md) | Find and connect named agents from Sessions or Spotlight through WhatsApp, Slack, or a webhook |
 | [Instinct Agent](guides/instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |
 | [Dots](guides/dots.md) | Slack conversations and scoped workshop access |
 | [VS Code](guides/vscode.md) | Medousa chat, editor context, and workshop sessions in VS Code |
@@ -48,6 +49,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
 | [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
+| [Coding runtimes](guides/coding-runtimes.md) | Choose a preferred coder, ordered fallbacks, and follow assigned work |
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
 | [Delegation approvals](guides/delegation-approvals.md) | Review agent-work proposals and queue remote background workers |
@@ -96,7 +98,8 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
 | [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
-| [External agent conversations](engine/external-conversations.md) | Muse, Grok Bot, Instinct, and Dots bridge HTTP contract |
+| [Work scopes and relationships](engine/work-units.md) | Durable user-domain intent, resource links, actor-bound inboxes, and correlated provider evidence through existing runtime tools |
+| [External agent conversations](engine/external-conversations.md) | Muse, Grok Bot, Instinct, and Dots bridges, authenticated work participation, and exact work callbacks |
 | [Coding engine](engine/coding-engine.md) | Language servers, project intelligence, safe edits |
 | [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |

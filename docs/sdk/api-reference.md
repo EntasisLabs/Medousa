@@ -43,6 +43,10 @@ Forge undertaking custody and governed source/workspace operations currently use
 this generic HTTP client rather than a dedicated typed SDK accessor. See the
 [Forge engine guide](../engine/forge.md) and the
 [HTTP route index](../engine/http-api.md#forge-undertakings).
+`POST /v1/forge/projects` creates and provisions a blank or existing-repository
+project without a chat session. `GET /v1/forge/items` and
+`GET /v1/forge/items/{work_id}` list and inspect projects. The product CLI
+exposes these as `medousa project create|list|inspect` on the workshop daemon.
 
 Native computer-driver discovery, observation, and semantic actions also
 use this generic client for now. Call `GET /v1/computer/drivers`, preflight the
@@ -139,6 +143,11 @@ obtains fresh admission at the destination.
 | `complete_actions(job_id, request)` | `POST .../complete-actions` | `AskJobCompleteActionsRequest` |
 | `archive(job_id, request)` | `POST .../archive` | `ArchiveAskJobRequest` |
 
+Set `EnqueueAskRequest.idempotency_key` and reuse it for retries of the same
+request. A matching retry returns the original job ID while its record is
+retained; a changed request with the same key returns `409 Conflict`. The key is
+scoped to the authenticated principal on the connected workshop.
+
 ---
 
 ## `recurring()`
@@ -226,6 +235,15 @@ The accessor is available on Rust async and blocking clients and on Python
 async and sync clients. Bot updates and archive transitions require the current
 profile revision. `open` returns the durable primary conversation, creating a
 replacement only when the previous primary binding was explicitly removed.
+
+The external-agent Bot job path is exposed by the app and
+product CLI: `medousa ask "prompt" --bot NAME`. Its local daemon endpoints are
+`POST /v1/bots/ask`, `GET /v1/bots/ask/{job_id}`, and
+`POST /v1/bots/ask/{job_id}/cancel`; the SDK `bots()` accessor does not wrap
+this job workflow. `request_id` is scoped to the authenticated profile, and a
+retry with the same ID must carry the same payload. `agent` accepts `codex`,
+`cursor`, and `hermes`. An optional `session_id` attaches the request to an
+owned conversation bound to the selected Bot; results remain in that transcript.
 
 ---
 
@@ -559,13 +577,81 @@ the snapshot returned by `changes/git`. See [Forge](../engine/forge.md#explicit-
 for request fields, stale-snapshot behavior, and partial-success handling.
 ## Native coordination approval preview
 
+The coordination wire runtime enum now includes `medousa` for native Medousa
+Coder alongside `codex`, `cursor`, and `hermes`. `PeerProposalIntent.runtime`
+is optional on local intake: omission uses the connected workshop's saved
+`TuiDefaults.codingRuntime` (`CodingRuntimePreferences`), defaulting to Medousa
+with no implicit fallback. `forge_work_id` may name an owned project independently
+of the source chat binding. An immutable proposal retains its selected runtime
+on retries. Explicit runtime requests take priority over preferences.
+Remote delegation still names an exact runtime; discovery exposes destination
+preferences and availability. Preferences do not issue execution grants. See
+[runtime configuration](../engine/runtime-config.md) and
+[coding runtime preferences](../guides/coding-runtimes.md).
+
 Generated operation tables include `coordination.proposals.get` and
 `coordination.channels.by_channel_id.proposals.by_proposal_id.{approve,deny,dispatch}.post`.
 Use the SDK's low-level generated-operation request path; dedicated convenience
 helpers are not yet exposed. POST bodies are `{}` and must not contain mutable
 instructions or caller-selected identities. The inbox query requires
-`session_id` and optionally `after`; response DTOs are `PeerProposalInboxResponse`
+`session_id` and optionally `after` and `selected_proposal_id`; response DTOs are `PeerProposalInboxResponse`
 and `PeerProposalActionResponse` in `medousa-types::coordination` (and generated
 Python/TypeScript mirrors). These are native operator operations, not model
 approval tools. See [Coordination](../engine/coordination.md) for limits and
 ownership checks.
+
+`tracked_proposal` is an optional exact, owner/session-scoped record that can
+retain a selected terminal result after it leaves the pending inbox. Assigned
+records may include optional `progress` (`PeerAssignmentProgress`), with
+execution state, observation/activity times, and bounded current/previous
+actions. Treat missing progress as unavailable. An activity failure or stale
+observation does not establish an assignment outcome or authorize a retry;
+the immutable `receipt` remains authoritative.
+
+Provider work callbacks now admit deterministic runtime stage intake for new
+request associations. `advance_provider_stage` is a native-only journal command;
+model and Work-credential mutations cannot use it. Publication commits qualified
+state, evidence and acknowledgment together. Execution completion waits for an
+admitted review; strict approval of the current native revision can satisfy work.
+See [work units](../engine/work-units.md#runtime-owned-provider-intake) for
+restart, scope, custody and silence behavior.
+
+`ExternalConversationSendRequest.after_native_completion` saves one native
+executor → provider reviewer send when set to `true`. It requires `work.review_of`
+and native operator admission; omitted/false retains immediate-send behavior.
+`provider_dispatches` is the bounded work graph collection for saved handoffs.
+`register_provider_dispatch` and `close_provider_dispatch` are native-only
+commands, unavailable to model or provider Work-credential mutations. See
+[handoff admission and recovery](../engine/work-units.md#native-executor-to-provider-reviewer-handoff).
+
+`ExternalConversationSendRequest.coordinator_wake` separately admits one internal
+result-only model turn for the exact provider work request. It requires native
+operator authority and `work` metadata, defaults to false and is retained by a
+saved handoff. `coordinator_wakes` exposes admission, attempt, decision reference
+and blocked reason. `register_coordinator_wake`, `claim_coordinator_wake`,
+`complete_coordinator_wake` and `block_coordinator_wake` are native-only commands;
+model or provider Work-credential mutations cannot manufacture them. See
+[admitted model wakes](../engine/work-units.md#admitted-coordinator-model-wakes)
+for frozen routing, restart reconciliation and the empty tool ceiling.
+
+`ExternalConversationSendRequest.after_provider_completion` optionally names a
+`WorkProviderRequestRef` for one saved provider successor. Omission preserves the
+ordinary send path. It requires native operator admission and ordinary exact
+`work` metadata, and cannot be combined with the native completion trigger or
+revision-review source. `WorkProviderDispatch.after_provider_completion` stores
+the derived source destination pin; `WorkProviderRequest.predecessor` stores the
+exact native-derived terminal reference/digest. These additive fields default to
+absent so retained ordinary/native requests keep their previous wire identities.
+See [provider chains](../engine/work-units.md#provider-to-provider-chains) for the
+eight-stage bound, deadline/scope restrictions and restart/unknown-send behavior.
+
+
+`ExternalConversationSendRequest.provider_chain` optionally supplies future linear
+stages with a provider handoff. It defaults to empty; native admission derives
+`WorkProviderDispatch.remaining_stages` with frozen destination pins. Stages
+inherit work scope/deadline and cannot mint execution or contact authority.
+`WorkCoordinationInput.fix_review_rounds` optionally supplies up to three exact
+future native proposal pairs. Every pair needs its own execution grants and the
+fix/review data contracts; no execution grant is issued by registration. Query
+results expose distinct round pins/results and the active/final result. See
+[whole plans and fix/review](../engine/work-units.md#whole-provider-plans-and-bounded-native-fixreview).

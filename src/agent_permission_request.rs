@@ -76,6 +76,18 @@ impl AgentPermissionRequestStore {
             .cloned()
     }
 
+    pub(crate) fn has_pending_for_session(&self, agent_session_id: &str, session_id: &str) -> bool {
+        self.records
+            .lock()
+            .expect("agent permission records")
+            .values()
+            .any(|record| {
+                record.agent_session_id == agent_session_id
+                    && record.session_id == session_id
+                    && record.status == AgentPermissionRequestStatus::Pending
+            })
+    }
+
     pub fn list_pending(&self, limit: usize) -> Vec<AgentPermissionRequestRecord> {
         let mut rows: Vec<_> = self
             .records

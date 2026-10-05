@@ -35,7 +35,9 @@ Intent → Set up → Edit → Verify → Review → Finish
    editing** interrupt or reclaim the agent. **Understand** explains
    relationships without changing anything.
 4. **Review changes** gathers what changed and how it was made.
-5. **Approve changes**, then **Finish project**. Close, Terminal in the
+5. Choose the approval outcome, click **Approve**, then **Apply to** the source
+   branch or **Keep** the separate branch. Current-checkout projects show
+   **Keep changes here**. Close, Terminal in the
    workspace, and Reveal remain under **More**. Closing an isolated project
    removes its private copy; closing a current-checkout project never removes,
    resets, or stashes files. The workshop stops any bound coding agent before
@@ -54,6 +56,39 @@ it** sends the current message through a restricted setup phase: it can list,
 bind, or create a project, but receives no repository mutation or command
 authority until the following bound turn.
 
+You can also ask an assistant such as Taco to create an undertaking in an
+existing Git folder and prepare a coder assignment. The assistant creates the
+project on the connected workshop and retains its own chat and mode. When your
+request already asks for the coder to do the work, the assistant can delegate
+it directly on that workshop. Recommendations needing another decision still
+return an approval card. By default the sender keeps responsibility, receives
+acceptance and completion updates, and reviews the result. Creating a project
+alone does not launch a coder. The folder can contain only `git init`
+or have existing uncommitted files; Medousa preserves those files and the index.
+
+The assistant can also finish the native project lifecycle when your request
+includes that outcome: prepare the changes for merge, review the sealed changes
+and checks, approve, and apply them. For example, ask Taco to “have the coder
+implement this, review it, and merge the undertaking when the checks pass.” The
+completion update can wake Taco to continue that authorized work. If the result
+needs revisions, Taco can request changes and arrange another pass. You do not
+need to approve the same instruction again in a card.
+
+An isolated project's native merge currently requires a fast-forward into its
+base branch. If the base moved or conflicts need resolution, Medousa reports
+that and keeps the project open for another review. Accepting current-checkout
+work keeps its edits in place without changing the branch or index. Keeping a
+separate branch or exporting a patch are other explicit finish outcomes. None
+of these actions pushes to a remote or opens a pull request. Abandoning work is
+a separate request; it preserves current-checkout files and removes an isolated
+working copy only after its agents stop.
+
+Delegated work stays in the originating chat after closing and reopening
+Medousa, including its final status and agent result. Expand its compact context
+line to inspect the assignment or open the execution chat or project. Use
+**Next request** and **More requests** to browse saved handoffs. A connection
+interruption preserves already loaded entries while updates are unavailable.
+
 Cursor and Codex start only after the conversation has a project. Medousa
 resolves that durable binding on the workshop daemon and launches the external
 agent inside the project's governed workspace. Switching projects stops the
@@ -65,6 +100,26 @@ If repository or tree APIs return 404, Medousa reports that the workshop daemon
 is older than the project tools — rebuild and restart `medousa_daemon` from this
 checkout rather than showing a fake-ready empty editor. If the project has no
 workspace yet, **Set up project** is the primary action in the center and rail.
+
+## Language assistance
+
+Syntax highlighting and typing remain available when a language service cannot
+start. Medousa reports the failure in the editor status; it never switches to a
+different language service or analyses your file under a different project root.
+
+Open the language issue in the status bar to inspect the reason, restart the
+service, or view its logs. If a tool is missing, use **Settings → Packages** on
+the workshop that owns the project. If the workshop is too old for language
+discovery, update its coding engine and daemon together, then restart the service.
+The file and your draft remain open while you recover language assistance.
+
+Coding tools follow the selected workshop and working copy. When that context
+changes, results from the previous context are cleared, and pending actions stop
+before continuing in the new context. A command already submitted remains owned
+by its original workshop; switching does not cancel it or move it elsewhere.
+Within the same working copy, changing files keeps your selected command and
+active run stable. The workshop validates editing control again when you run or
+change files.
 
 ## Choose a repository
 
@@ -170,7 +225,7 @@ a private Code IDE chrome.
   current-checkout project permits Fetch but disables Pull, Push, and Sync so
   Coder cannot move its pinned `HEAD`, branch, or index while the attachment is
   active.
-  **Seal for Review** checkpoints into Review; Share still happens from Review
+  **Prepare merge** checkpoints into Review; Share still happens from Review
   after finish. History and Blame are available on the Changes panel.
   Review remains the finish/decision surface.
 - New file and New folder are available in the repository explorer. Nested
@@ -181,6 +236,18 @@ a private Code IDE chrome.
   second autosave, save-all or require-clean run preflight, and whether failed
   task matchers open Problems. The selected primary task remains scoped to the
   project and is changed from the Code command bar.
+- Markdown files offer **Source**, **Markdown**, **Preview**, and **Split** in
+  the same tab. Markdown opens a writing editor with the Notes formatting
+  controls; Preview renders the current draft, and Split keeps source beside
+  its live preview. Switching views keeps the same project file, draft, and
+  guarded save. Opening the writing editor does not rewrite the file. Edits
+  preserve untouched blocks and frontmatter; HTML, reference definitions, and
+  constructs outside the rich schema remain editable source blocks. Relative
+  links open project files, and relative images come from the workshop working
+  copy (PNG, JPEG, GIF, WebP, SVG, AVIF; up to 2 MiB per image). These views do
+  not import files into Notes. Find in the writing or preview view opens the
+  file's floating Source search. Binary, truncated, and lossy previews stay
+  read-only and do not offer the writing modes.
 - Open files become project-scoped shell tabs with independent unsaved drafts.
   Cursor targets and protected draft recovery survive view changes and app
   restarts. If the file changed outside Medousa, the recovered draft remains
@@ -193,7 +260,11 @@ a private Code IDE chrome.
   and session ownership. Language failures stay compact there; select
   **Language issue** for the full message plus Problems, logs, restart, and
   repair actions. **View** toggles word wrap and line numbers. Saves whisper
-  `Saving…` / timed `Saved`.
+  `Saving…` / timed `Saved`. A blocked or failed save stays visible in the
+  status bar while the draft remains unsaved. Working-copy changes and analysis
+  failures also stay compact there; select the warning for its explanation and
+  collapsed technical details. A working Terminal does not display a duplicate
+  branch-warning strip.
 - File and folder create/rename/delete begin or reuse the editing session and
   remain inside the working copy; rename/delete refuse unsaved open drafts and
   use change-conflict protection.
@@ -216,8 +287,19 @@ a private Code IDE chrome.
   copy path, and Reveal in Explorer. `F2` opens inline rename. **Problems**
   collects diagnostics from every active project-language session, groups them
   by file, filters by severity or text, and opens the exact location even when
-  the file is not already open. `Cmd/Ctrl+F` opens find with the shared editor
-  chrome.
+  the file is not already open. `Cmd/Ctrl+F` opens a compact floating **Find**
+  bar at the editor’s upper right, using the same appearance as Notes. Matches
+  highlight as you type, with a current-match count. Use `Enter` / `Shift+Enter`
+  or the arrows to move between hits; `Esc` closes Find and returns focus to
+  the editor. Each open file retains its query and options when switching tabs.
+  Toggle **Match case**, **Whole word**, **Regular expression**, or **Find in
+  selection** as needed; invalid expressions are explained inside the bar.
+  **Replace** reveals a second row (`Cmd+Option+F` on Mac, `Ctrl+H` elsewhere).
+  `Enter` in that row replaces the current match; `Cmd/Ctrl+Enter` replaces all
+  matches in the current file or selected range. Replacements change the draft
+  and are undoable; use the inline **Undo** action or the editor’s usual undo.
+  Read-only previews support Find without replacement controls. Project search
+  remains separate on `Cmd/Ctrl+Shift+F`.
 - If a language server stops, Code keeps the file editable, shows the degraded
   state, and makes three short reconnect attempts. Use **Restart language
   server** to retry immediately or **Show language server logs** to inspect the
@@ -230,9 +312,9 @@ a private Code IDE chrome.
   refactor** first, including text changes and any proposed create, rename, or
   delete operations. Apply verifies the previewed digest or absence of every
   path and commits the ordered edit as one governed transaction; a conflict or
-  write failure leaves every file unchanged. An older connected daemon can
-  still apply text-only refactors, while resource operations explain that the
-  workshop must be updated instead of partially applying the rename.
+  write failure leaves every file unchanged. An older connected daemon must
+  be updated before applying language refactors; Medousa keeps the proposal
+  unapplied instead of changing how the rename is executed.
 - Repository `.editorconfig` rules feed indentation before Medousa falls back
   to the file’s existing style and language defaults. An explicit user
   preference still wins.
@@ -330,10 +412,13 @@ impact.”
 
 ## Terminal ownership
 
-- **Work in Terminal** begins a human attempt when needed and opens the PTY with
-  `work_id` + `lease_id` so commands can enter sealed evidence.
-- Tracked Terminal tabs retain their undertaking when restored and keep their
-  active lease fresh while open.
+- **Work in Terminal** opens a human shell in the project's actual working
+  folder on the workshop. It retains the project association without starting
+  an editing attempt, taking an agent's lease, or recording commands as sealed
+  evidence. Tracked Run commands keep their separate execution context.
+- Restored project terminals retain their workshop and folder. Opening Terminal
+  reuses a human shell; it never automatically sends input to an agent or task
+  process. You can still explicitly choose another session in the session menu.
 - The Code terminal dock supports **Find** (Mod+F while focused / Spotlight),
   clickable `path:line` links into Code, session switching, and **Run Selected
   Text in Terminal** from the editor. The default workshop shell profile uses
@@ -376,7 +461,13 @@ Binary changes show honest file metadata instead of an unreadable patch. Policy
 exceptions and risky content (secrets, oversize) are called out above the file
 list and must be acknowledged before approval; softer warnings such as “checks
 haven’t run” do not block Approve. Applying an approved revision has its own
-confirmation boundary.
+confirmation boundary. For an isolated worktree, choose **Apply to main** (or
+the project's source branch) and click **Approve**. The toolbar then shows
+**Apply to main**; click it and confirm to integrate the reviewed changes
+locally without a PR. This requires a safe fast-forward and refuses if the base
+branch has advanced. Choose **Keep** with the worktree branch instead to finish
+with that branch separate. A current-checkout project offers **Keep changes
+here**, since its files are already in that checkout.
 
 When several sealed attempts exist, pick another from a quiet overflow under the
 outcome — not as the hero of the page.
@@ -475,10 +566,11 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
   source/Git events (Code reconciles every open buffer from this stream)
 - `GET /v1/world/bindings/{work_id}` for World status
 
-Repository inspection distinguishes a branch name from a usable commit. Empty
-repositories must receive an initial commit before Code can create its isolated
-working copy; if a saved starting branch was renamed or deleted, choose an
-existing branch and retry.
+Repository inspection distinguishes a branch name from a usable commit. A folder initialized with `git init` can start a project immediately. Medousa
+creates an empty initial commit on its current branch without adding a README,
+staging files, or changing existing staged content. Both isolated copies and
+current-checkout projects support this setup. If a saved starting branch in an
+existing repository was renamed or deleted, choose an existing branch and retry.
 
 ## Review and ship from chat
 
@@ -504,3 +596,81 @@ reviewed commit to origin without force, then creates a GitHub PR against that
 same repository. GitHub CLI must already be installed and signed in on the
 workshop. Retrying reuses an existing open PR for the same head and base. These
 operations use the workshop's repository, including when you are on a phone.
+
+### Opening a shell from Code
+
+Opening Terminal reuses a human project shell or creates one directly in the
+project's working folder on the selected workshop. It does not require editing
+control, including while an agent is working. A failed connection stays visible
+with **Retry opening terminal** and **Details** for the workshop response.
+
+If an attached checkout changed branches externally, an information line names
+the current branch and the branch used by the previous tracked work. The shell
+remains available. Opening it does not adopt a new Forge baseline: stale agent
+operations and tracked saves remain fenced. Continuing tracked work currently
+requires returning to its branch or preserving drafts and releasing/attaching
+the checkout again; in-place reconciliation is still pending. Switching the
+source checkout's branch does not affect an isolated project's working copy.
+Language support package management opens **Settings → Packages**; editor repair
+never installs optional tools silently.
+
+### Choosing a project command
+
+The command picker beside **Run** starts with the deepest runtime-discovered
+package containing the current file. Choose **Whole project** to search every
+package. Commands are grouped into Run, Build, Test, and Check, with their working
+directory and exact command visible before selection. Equal recommendations
+require a choice. Selecting a command pins it for this project; moving to another
+file does not retarget that choice, an active run, Stop, or Rerun.
+
+### Reading tests and resizing tools
+
+Tests are grouped by file and can be filtered by name, current file, current
+package, or prior failed invocation. Large catalogs show a bounded initial page;
+**Show more** keeps the remaining tests available. **Run file** runs the provider’s
+file target; **Run test** uses an individually addressable target. Providers that
+cannot target the selected test offer an explicit package command instead.
+Recorded results include their invocation time and output. A prior pass does not
+verify edits made afterwards.
+
+Drag the upper edge of Search or the feedback panel to resize it, or focus its
+resize control and use the arrow keys. **Expand** gives the tool more room;
+**Restore size** returns to the chosen height. Heights are remembered on this
+device by workshop and project.
+
+### Search and language observations
+
+Search responds as you type, groups matching lines by file, and highlights
+literal matches. **Replace** reveals replacement text; **Filters** reveals
+include/exclude patterns. Scope is visible: whole project, a selected discovered
+package, or changed files. One-character searches return bounded pages of up to
+50 matching lines. Escape closes Search; arrow-down moves from the query to the
+first match.
+
+Choose **Review replace…** before applying. The preview freezes the query,
+replacement, scope, selected paths, and expected file digests. Changing the
+inputs invalidates that preview. An external file edit prevents a stale write;
+review a new preview before retrying.
+
+Problems identify observed sessions rather than claiming the whole project is
+clean. Observations refresh when diagnostic publications, project changes, or
+language connections change, and when you select Refresh. Opening Problems does
+not start a repeating poll. Background retries preserve rows, filters, and the
+existing failure state; failed requests back off, while explicit Refresh retries
+immediately. Unavailable analysis and stale observations remain distinguishable
+from zero reported problems. They retain producer, code, precise range, and
+document version when supplied. Editor markers clear when the buffer changes; a new matching diagnostic
+publication can restore them. Unversioned editor diagnostics are accepted only
+for a synchronized buffer and cleared on the next edit. Aggregate unversioned
+or older observations are labelled. Language information leads with this file’s
+actual connection state; executable names and logs are under **Service details
+and logs**.
+
+**Run filtered targets** queues the reviewed supported test/file targets
+sequentially. Several names in one provider file target produce one invocation.
+The queue reports invocation progress and known pass/fail counts; it does not
+invent individual results from a file or package pass. **Failed invocations**
+can queue their supported targets again. **Clear remaining queue** cancels
+pending submissions while leaving the current process visible; Stop controls
+that process. Changing workshops or working copies prevents further queue
+submissions.

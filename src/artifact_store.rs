@@ -15,6 +15,9 @@ use tokio::runtime::Handle;
 
 use crate::store_root::StorePath;
 
+// Native observation shares custody with payload/index writers in this daemon.
+static ARTIFACT_CUSTODY: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
+
 const ARTIFACT_PAYLOAD_DOMAIN: &[u8] = b"artifact-payload";
 const ARTIFACT_INDEX_FILE: &str = "index.jsonl";
 const ARTIFACT_ALIASES_FILE: &str = "artifact_aliases.json";
@@ -82,6 +85,8 @@ fn set_artifact_index_store(store: Arc<dyn ArtifactIndexStore>) {
 
 trait ArtifactIndexStore: Send + Sync {
     fn read_all(&self) -> Vec<ArtifactRecord>;
+    #[cfg(feature = "full-daemon")]
+    fn exact(&self, session: &str, artifact: &str) -> Result<Option<ArtifactRecord>, String>;
     fn append(&self, record: &ArtifactRecord) -> std::result::Result<(), String>;
     fn overwrite_all(&self, records: &[ArtifactRecord]) -> std::result::Result<(), String>;
 }
@@ -157,6 +162,9 @@ pub fn persist_tool_artifact(
     byte_size: usize,
     payload: &Value,
 ) -> std::result::Result<ArtifactRecord, String> {
+    let _custody = ARTIFACT_CUSTODY
+        .write()
+        .map_err(|_| "artifact custody poisoned".to_string())?;
     let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let now = Utc::now();
     let tool_slug = slugify_tool_name(tool_name);
@@ -212,6 +220,9 @@ pub fn persist_binary_artifact(
     label: Option<&str>,
     bytes: &[u8],
 ) -> std::result::Result<ArtifactRecord, String> {
+    let _custody = ARTIFACT_CUSTODY
+        .write()
+        .map_err(|_| "artifact custody poisoned".to_string())?;
     let (extension, content_type) = match content_type.trim().to_ascii_lowercase().as_str() {
         "image/png" => ("png", "image/png"),
         other => return Err(format!("binary artifact mime type is not allowed: {other}")),
@@ -291,6 +302,9 @@ pub fn persist_ui_artifact_revision(
     height_px: Option<u32>,
     supersedes_artifact_id: Option<&str>,
 ) -> std::result::Result<ArtifactRecord, String> {
+    let _custody = ARTIFACT_CUSTODY
+        .write()
+        .map_err(|_| "artifact custody poisoned".to_string())?;
     let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let wrapped = wrap_html_document(html);
     let byte_size = wrapped.len();
@@ -638,6 +652,9 @@ pub fn delete_ui_artifact(
     session_id: &str,
     artifact_ref: &str,
 ) -> std::result::Result<Vec<String>, String> {
+    let _custody = ARTIFACT_CUSTODY
+        .write()
+        .map_err(|_| "artifact custody poisoned".to_string())?;
     let session_id = session_id.trim();
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
@@ -716,6 +733,9 @@ pub fn delete_ui_artifact(
 
 /// Delete the complete artifact satellite for one session.
 pub fn delete_artifacts_for_session(session_id: &str) -> Result<(), String> {
+    let _custody = ARTIFACT_CUSTODY
+        .write()
+        .map_err(|_| "artifact custody poisoned".to_string())?;
     let session_id =
         crate::session_storage::SessionId::parse(session_id).map_err(|error| error.to_string())?;
     let remaining = artifact_index_store()
@@ -961,6 +981,9 @@ pub fn run_artifact_maintenance(
     max_per_session: usize,
     max_age_days: i64,
 ) -> std::result::Result<ArtifactMaintenanceReport, String> {
+    let _custody = ARTIFACT_CUSTODY
+        .write()
+        .map_err(|_| "artifact custody poisoned".to_string())?;
     let max_per_session = max_per_session.max(1);
     let max_age_days = max_age_days.max(1);
 
@@ -1098,6 +1121,11 @@ impl ArtifactIndexStore for FileArtifactIndexStore {
         file_read_index_records()
     }
 
+    #[cfg(feature = "full-daemon")]
+    fn exact(&self, session: &str, artifact: &str) -> Result<Option<ArtifactRecord>, String> {
+        file_exact_record(session, artifact)
+    }
+
     fn append(&self, record: &ArtifactRecord) -> std::result::Result<(), String> {
         file_append_index_record(record)
     }
@@ -1145,6 +1173,20 @@ impl ArtifactIndexStore for SurrealArtifactIndexStore {
         };
 
         response.take::<Vec<ArtifactRecord>>(0).unwrap_or_default()
+    }
+
+    #[cfg(feature = "full-daemon")]
+    fn exact(&self, session: &str, artifact: &str) -> Result<Option<ArtifactRecord>, String> {
+        let mut response = block_on(self.db.query(
+            "SELECT * FROM artifact_record WHERE session_id = $session AND artifact_id = $artifact LIMIT 2"
+        ).bind(("session", session.to_string())).bind(("artifact", artifact.to_string())))
+            .map_err(|error| error.to_string())?;
+        let mut records: Vec<ArtifactRecord> =
+            response.take(0).map_err(|error| error.to_string())?;
+        if records.len() > 1 {
+            return Err("ambiguous native artifact identity".into());
+        }
+        Ok(records.pop())
     }
 
     fn append(&self, record: &ArtifactRecord) -> std::result::Result<(), String> {
@@ -1208,6 +1250,65 @@ fn file_read_index_records() -> Vec<ArtifactRecord> {
         .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
         .filter_map(|line| serde_json::from_slice::<ArtifactRecord>(line).ok())
         .collect()
+}
+
+/// Exact metadata only: never use alias, prefix, latest-chain, or other-session fallbacks.
+/// The callback runs under native writer custody through graph publication.
+#[cfg(feature = "full-daemon")]
+pub(crate) fn observe_exact<T>(
+    session: &str,
+    artifact: &str,
+    publish: impl FnOnce(Option<ArtifactRecord>, bool) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let _custody = ARTIFACT_CUSTODY
+        .read()
+        .map_err(|_| anyhow::anyhow!("artifact custody poisoned"))?;
+    let mut record = artifact_index_store()
+        .exact(session, artifact)
+        .map_err(anyhow::Error::msg)?;
+    if ARTIFACT_INDEX_USES_SURREAL.load(Ordering::Acquire) && record.is_none() {
+        record = file_exact_record(session, artifact).map_err(anyhow::Error::msg)?;
+    }
+    let available = match record.as_ref() {
+        Some(record) => {
+            let session = crate::session_storage::SessionId::parse(session)?;
+            let current =
+                ARTIFACT_FILES.is_file(&session, &artifact_payload_path_for_record(record))?;
+            current
+                || match legacy_artifact_payload_path_for_record(record) {
+                    Some(path) => ARTIFACT_FILES.is_file(&session, &path)?,
+                    None => false,
+                }
+        }
+        None => false,
+    };
+    publish(record, available)
+}
+
+#[cfg(feature = "full-daemon")]
+fn file_exact_record(session: &str, artifact: &str) -> Result<Option<ArtifactRecord>, String> {
+    let raw = match ARTIFACT_FILES.read_root_limited(&artifact_index_path(), 4 * 1024 * 1024) {
+        Ok(raw) => raw,
+        Err(error) if error.is_not_found() => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut found = None;
+    for line in raw
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+    {
+        let record: ArtifactRecord =
+            serde_json::from_slice(line).map_err(|error| error.to_string())?;
+        if record.session_id == session && record.artifact_id == artifact {
+            if found.as_ref().is_some_and(|old: &ArtifactRecord| {
+                old.hash64 != record.hash64 || old.payload_path != record.payload_path
+            }) {
+                return Err("ambiguous native artifact identity".into());
+            }
+            found = Some(record);
+        }
+    }
+    Ok(found)
 }
 
 fn artifact_payload_path(

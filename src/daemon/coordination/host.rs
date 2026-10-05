@@ -20,6 +20,12 @@ pub fn local_coordination_host() -> Option<Arc<LocalPeerDispatcher>> {
     HOST.get().cloned()
 }
 
+pub(crate) fn wake_work_coordinator() {
+    if let Some(host) = HOST.get() {
+        host.wake.notify_one();
+    }
+}
+
 pub async fn start_local_coordination_host(
     state: AppState,
     runtime_id: String,
@@ -54,14 +60,33 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
     let mut retry_after = HashMap::new();
     let mut worker_keys = HashMap::new();
     let mut cursor: Option<String> = None;
+    let mut work_cursor: Option<String> = None;
+    let mut intake_cursor: Option<String> = None;
+    let mut work_workers = tokio::task::JoinSet::new();
+    let mut intake_workers = tokio::task::JoinSet::new();
     loop {
         if *shutdown.borrow() {
             break;
         }
+        let mut recover_work = false;
         tokio::select! {
             changed = shutdown.changed() => { if changed.is_err() || *shutdown.borrow() { break; } },
-            _ = interval.tick() => {},
-            _ = host.wake.notified() => { cursor = None; },
+            _ = interval.tick() => { recover_work = true; },
+            _ = host.wake.notified() => { cursor = None; work_cursor = None; intake_cursor = None; recover_work = true; },
+            finished = work_workers.join_next(), if !work_workers.is_empty() => {
+                match finished {
+                    Some(Ok(Err(error))) => tracing::warn!(%error, "work coordination retained for reconciliation"),
+                    Some(Err(error)) => tracing::warn!(%error, "work coordination interrupted; native claims retained"),
+                    _ => {},
+                }
+            },
+            finished = intake_workers.join_next(), if !intake_workers.is_empty() => {
+                match finished {
+                    Some(Ok(Err(error))) => tracing::warn!(%error, "provider stage event retained for reconciliation"),
+                    Some(Err(error)) => tracing::warn!(%error, "provider intake interrupted; journal decision remains atomic"),
+                    _ => {},
+                }
+            },
             finished = workers.join_next_with_id(), if !workers.is_empty() => {
                 match finished {
                     Some(Ok((worker_id, (key, id, outcome)))) => {
@@ -88,6 +113,75 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                     None => {},
                 }
             },
+        }
+        if recover_work && work_workers.is_empty() {
+            let native = host.store.clone();
+            let runtime = host.local_runtime_id.clone();
+            let after = work_cursor.clone();
+            let authority = match crate::workshop_authority::current() {
+                Ok(authority) => authority.clone(),
+                Err(_) => break,
+            };
+            let page = host
+                .state
+                .forge_execution
+                .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
+                    Ok(native.local_work_plans(&authority, &runtime, 2, after.as_deref()))
+                })
+                .await;
+            match page {
+                Ok(Ok(plans)) => {
+                    if plans.is_empty() {
+                        work_cursor = None;
+                    }
+                    for plan in plans {
+                        work_cursor = CoordinationStore::work_plan_cursor(&plan).ok();
+                        let host = host.clone();
+                        work_workers
+                            .spawn(async move { host.resume_work_coordination(plan).await });
+                    }
+                }
+                other => {
+                    tracing::warn!(error = ?other, "work coordination recovery scan failed closed")
+                }
+            }
+        }
+        if recover_work
+            && intake_workers.is_empty()
+            && let Some(work) = crate::daemon::work_units::local_work_unit_host()
+        {
+            let after = intake_cursor.clone();
+            match work.coordinator_inboxes(after, 2).await {
+                Ok(page) => {
+                    intake_cursor = page.next_cursor;
+                    // Two slots are reserved for each recovery family, so a
+                    // backlog of native stages cannot starve provider callbacks.
+                    for inbox in page.inboxes {
+                        let host = host.clone();
+                        intake_workers
+                            .spawn(async move { host.resume_provider_inbox(inbox).await });
+                    }
+                    for (domain, dispatch) in page.dispatches {
+                        let state = host.state.clone();
+                        intake_workers.spawn(async move {
+                            crate::daemon::external_conversations::work_dispatch::resume(
+                                state, domain, dispatch,
+                            )
+                            .await?;
+                            Ok(super::work::WorkCoordinationProgress::ProviderIntake)
+                        });
+                    }
+                    for (domain, wake) in page.wakes {
+                        let state = host.state.clone();
+                        intake_workers.spawn(async move {
+                            crate::daemon::work_units::model_wake::resume(state, domain, wake)
+                                .await?;
+                            Ok(super::work::WorkCoordinationProgress::ProviderIntake)
+                        });
+                    }
+                }
+                Err(error) => tracing::warn!(%error, "work intake retained for reconciliation"),
+            }
         }
         if workers.len() >= 4 {
             continue;
@@ -164,6 +258,9 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                         host.resume_owner_intake(&principal, event.channel.clone(), assignment_id)
                             .await
                     }
+                    medousa_types::coordination::OwnerEventPayload::AssignmentAccepted { .. } => {
+                        host.resume_handoff_event(event.clone()).await
+                    }
                     medousa_types::coordination::OwnerEventPayload::Approval { .. } => {
                         host.block_owner_event(
                             &event,
@@ -186,5 +283,9 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
         }
     }
     workers.abort_all();
+    intake_workers.abort_all();
+    while intake_workers.join_next().await.is_some() {}
+    work_workers.abort_all();
+    while work_workers.join_next().await.is_some() {}
     while workers.join_next().await.is_some() {}
 }

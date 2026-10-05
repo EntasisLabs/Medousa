@@ -10,8 +10,8 @@ files, tools, and long-running work.
 2. Link the workshop's WhatsApp adapter if it is not already connected.
 3. Enter a session name and Instinct's international phone number, including
    `+` and the country code, then choose **Connect**.
-4. In Chat, choose **Instinct Agent** and that session. On mobile, open
-   **Chat context → Runtime → Instinct Agent**.
+4. Open **Sessions → Connected agents** and choose the named Instinct session
+   on desktop or mobile.
 
 Replies belong to this workshop's transcript. When WhatsApp supplies a linked
 ID instead of a phone number, the adapter uses WhatsApp's phone mapping to route
@@ -115,3 +115,13 @@ have been accepted. Check the workshop's job history first. A 401 means the
 token is invalid, expired, or revoked. A 403 means its scope does not permit the
 operation. API access is separate from WhatsApp; the token never needs to be
 sent in a WhatsApp message.
+
+## Coordinate durable work
+
+The saved API token can also use the [work participant API](../engine/external-conversations.md#work-participant-adapters).
+Read access can inspect your work graph, units, and coordination status. Work
+access can record work intent, propose native execution against a visible governed
+project chat, and register executor/reviewer handoffs. Native execution retains
+its existing approval requirements. The originating chat can close while the
+runtime coordinates approved work; this does not enable automatic follow-ups or
+turn provider messages into qualified review verdicts.

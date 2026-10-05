@@ -953,16 +953,35 @@ impl PeerExecutionPolicyStore {
     }
 
     fn load(&self) -> Result<PeerExecutionPolicyFile> {
-        if !self.path.is_file() {
+        let Some(name) = self.path.file_name() else {
+            bail!("peer execution policy path is missing a file name");
+        };
+        let Some(requested_parent) = self.path.parent() else {
+            bail!("peer execution policy path is missing a parent");
+        };
+        let parent = match requested_parent.canonicalize() {
+            Ok(parent) => parent,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(PeerExecutionPolicyFile::default());
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("canonicalize {}", requested_parent.display()));
+            }
+        };
+        let path = parent.join(name);
+        if !path.starts_with(&parent) {
+            bail!("peer execution policy path escapes its directory");
+        }
+        if !path.is_file() {
             return Ok(PeerExecutionPolicyFile::default());
         }
-        let metadata = std::fs::metadata(&self.path)
-            .with_context(|| format!("inspect {}", self.path.display()))?;
+        let metadata =
+            std::fs::metadata(&path).with_context(|| format!("inspect {}", path.display()))?;
         if metadata.len() > MAX_POLICY_FILE_BYTES {
             bail!("peer execution policy store exceeds {MAX_POLICY_FILE_BYTES} bytes");
         }
-        let raw =
-            std::fs::read(&self.path).with_context(|| format!("read {}", self.path.display()))?;
+        let raw = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
         if raw.is_empty() {
             return Ok(PeerExecutionPolicyFile::default());
         }
@@ -982,9 +1001,66 @@ impl PeerExecutionPolicyStore {
         if raw.len() as u64 > MAX_POLICY_FILE_BYTES {
             bail!("peer execution policy store exceeds {MAX_POLICY_FILE_BYTES} bytes");
         }
-        crate::session::atomic_write(&self.path, &raw)
-            .with_context(|| format!("write {}", self.path.display()))
+        let parent = ensure_confined_parent(&self.path)?;
+        let name = self
+            .path
+            .file_name()
+            .context("peer execution policy path is missing a file name")?;
+        let path = parent.join(name);
+        if !path.starts_with(&parent) {
+            bail!("peer execution policy path escapes its directory");
+        }
+        crate::session::atomic_write(&path, &raw)
+            .with_context(|| format!("write {}", path.display()))
     }
+}
+
+fn ensure_confined_parent(path: &std::path::Path) -> Result<PathBuf> {
+    let mut cursor = path
+        .parent()
+        .context("peer execution policy path is missing a parent")?
+        .to_path_buf();
+    let mut missing = Vec::new();
+    let ancestor = loop {
+        match cursor.canonicalize() {
+            Ok(canon) => break canon,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let component = cursor
+                    .file_name()
+                    .context("peer execution policy path has no parent")?;
+                missing.push(component.to_os_string());
+                cursor = cursor
+                    .parent()
+                    .context("peer execution policy path has no parent")?
+                    .to_path_buf();
+            }
+            Err(error) => {
+                return Err(error).with_context(|| format!("canonicalize {}", cursor.display()));
+            }
+        }
+    };
+    missing.reverse();
+    let mut parent = ancestor.clone();
+    for component in missing {
+        let component = component.to_string_lossy();
+        if component.is_empty()
+            || component == "."
+            || component == ".."
+            || component.contains('/')
+            || component.contains('\\')
+        {
+            bail!("peer execution policy directory name is invalid");
+        }
+        parent.push(component.as_ref());
+        if !parent.starts_with(&ancestor) {
+            bail!("peer execution policy path escapes its directory");
+        }
+    }
+    if !parent.starts_with(&ancestor) {
+        bail!("peer execution policy path escapes its directory");
+    }
+    std::fs::create_dir_all(&parent).with_context(|| format!("create {}", parent.display()))?;
+    Ok(parent)
 }
 
 fn resolve_policy(

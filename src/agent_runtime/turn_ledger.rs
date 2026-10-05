@@ -165,6 +165,7 @@ mod tests {
             default_mode: None,
             primary_session_id: Some(session.to_string()),
             world_binding: None,
+            external_agent: None,
             archived: false,
             revision: 4,
             created_at: chrono::Utc::now(),

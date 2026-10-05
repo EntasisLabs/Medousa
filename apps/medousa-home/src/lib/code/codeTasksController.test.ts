@@ -38,14 +38,15 @@ const checkTask = {
   provider: "cargo",
 };
 
-function createController(overrides?: { prepareRun?: () => Promise<boolean> }) {
+function createController(overrides?: { prepareRun?: () => Promise<boolean>; getScopeKey?: () => string; ensureLease?: () => Promise<{ leaseId: string; generation: number }> }) {
   const persistSelectedTask = vi.fn();
-  const ensureLease = vi.fn(async () => ({ leaseId: "lease-1", generation: 3 }));
+  const ensureLease = vi.fn(overrides?.ensureLease ?? (async () => ({ leaseId: "lease-1", generation: 3 })));
   const refreshDetail = vi.fn(async () => {});
   const onError = vi.fn();
   const persistOutputOpen = vi.fn();
   const controller = new CodeTasksController({
     getWorkId: () => "work-1",
+    getScopeKey: overrides?.getScopeKey ?? (() => "workshop-a/work-1"),
     persistTestsOpen: vi.fn(),
     persistOutputOpen,
     persistSelectedTask,
@@ -60,40 +61,40 @@ function createController(overrides?: { prepareRun?: () => Promise<boolean> }) {
   return { controller, persistSelectedTask, persistOutputOpen, ensureLease, refreshDetail, onError };
 }
 
-describe("CodeTasksController", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    api.startProjectTaskRun.mockResolvedValue({
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.startProjectTaskRun.mockResolvedValue({
+    run_id: "run-1",
+    work_id: "work-1",
+    state: "passed",
+    task: checkTask,
+    result: null,
+    stdout: "",
+    stderr: "",
+    locations: [],
+  });
+  api.getProjectTaskRuns.mockResolvedValue({
+    runs: [],
+    truncated: false,
+    retained_count: 0,
+    active_count: 0,
+    terminal_count: 0,
+    terminal_limit: 64,
+    terminal_ttl_seconds: 600,
+    registry_evicted_count: 0,
+  });
+  api.getProjectTasks.mockResolvedValue([checkTask]);
+  api.cancelProjectTaskRun.mockImplementation(
+    (_workId: string, _runId: string, force: boolean) => Promise.resolve({
       run_id: "run-1",
       work_id: "work-1",
-      state: "passed",
+      state: force ? "cancelled" : "stopping",
       task: checkTask,
-      result: null,
-      stdout: "",
-      stderr: "",
-      locations: [],
-    });
-    api.getProjectTaskRuns.mockResolvedValue({
-      runs: [],
-      truncated: false,
-      retained_count: 0,
-      active_count: 0,
-      terminal_count: 0,
-      terminal_limit: 64,
-      terminal_ttl_seconds: 600,
-      registry_evicted_count: 0,
-    });
-    api.getProjectTasks.mockResolvedValue([checkTask]);
-    api.cancelProjectTaskRun.mockImplementation(
-      (_workId: string, _runId: string, force: boolean) => Promise.resolve({
-        run_id: "run-1",
-        work_id: "work-1",
-        state: force ? "cancelled" : "stopping",
-        task: checkTask,
-      }),
-    );
-  });
+    }),
+  );
+});
 
+describe("CodeTasksController", () => {
   it("does not start a task when saving dirty buffers is blocked", async () => {
     const prepareRun = vi.fn(async () => false);
     const { controller, ensureLease } = createController({ prepareRun });
@@ -381,4 +382,221 @@ describe("CodeTasksController", () => {
     unbind();
     controller.dispose();
   });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+describe("coding scope transitions", () => {
+  it("does not start after the workshop changes during save preflight", async () => {
+    let scope = "workshop-a";
+    const prepared = deferred<boolean>();
+    const { controller, ensureLease } = createController({
+      getScopeKey: () => scope, prepareRun: () => prepared.promise,
+    });
+    const pending = controller.runDetected();
+    expect(controller.preparing).toBe(true);
+    scope = "workshop-b";
+    const unbind = controller.bindTaskList("work-1", true, true);
+    prepared.resolve(true);
+    await pending;
+    expect(ensureLease).not.toHaveBeenCalled();
+    expect(api.startProjectTaskRun).not.toHaveBeenCalled();
+    expect(controller.preparing).toBe(false);
+    unbind(); controller.dispose();
+  });
+
+  it("does not start after checkout replacement while waiting for a lease", async () => {
+    let scope = "checkout-generation-1";
+    const lease = deferred<{ leaseId: string; generation: number }>();
+    const { controller, ensureLease } = createController({
+      getScopeKey: () => scope, ensureLease: () => lease.promise,
+    });
+    const pending = controller.runDetected();
+    await vi.waitFor(() => expect(ensureLease).toHaveBeenCalledOnce());
+    scope = "checkout-generation-2";
+    const unbind = controller.bindTaskList("work-1", true, true);
+    lease.resolve({ leaseId: "old-lease", generation: 1 });
+    await pending;
+    expect(api.startProjectTaskRun).not.toHaveBeenCalled();
+    expect(controller.running).toBe(false);
+    unbind(); controller.dispose();
+  });
+
+  it("does not relabel an already submitted run when its reply arrives after switching", async () => {
+    let scope = "workshop-a";
+    const started = deferred<unknown>();
+    api.startProjectTaskRun.mockReturnValueOnce(started.promise);
+    const { controller } = createController({ getScopeKey: () => scope });
+    const pending = controller.runDetected();
+    await vi.waitFor(() => expect(api.startProjectTaskRun).toHaveBeenCalledOnce());
+    scope = "workshop-b";
+    const unbind = controller.bindTaskList("work-1", true, true);
+    started.resolve({ run_id: "old-run", work_id: "work-1", state: "running", task: checkTask });
+    await pending;
+    expect(controller.run).toBeNull();
+    expect(controller.lastInvocation).toBeNull();
+    expect(controller.liveStdout).toBe("");
+    unbind(); controller.dispose();
+  });
+
+  it("discards old tests even when the user returns to the same project scope", async () => {
+    let scope = "workshop-a";
+    const tests = deferred<unknown[]>();
+    api.getProjectTests.mockReturnValueOnce(tests.promise);
+    const { controller } = createController({ getScopeKey: () => scope });
+    const first = controller.bindTaskList("work-1", true, true);
+    const pending = controller.toggleTests();
+    scope = "workshop-b";
+    const second = controller.bindTaskList("work-1", true, true);
+    scope = "workshop-a";
+    const third = controller.bindTaskList("work-1", true, true);
+    tests.resolve([{ id: "old-test", label: "Old", path: "old.rs", line: 1, task_id: checkTask.id }]);
+    await pending;
+    expect(controller.projectTests).toEqual([]);
+    first(); second(); third(); controller.dispose();
+  });
+
+  it("does not overwrite the current run with a late stop response", async () => {
+    let scope = "workshop-a";
+    const stopped = deferred<unknown>();
+    api.cancelProjectTaskRun.mockReturnValueOnce(stopped.promise);
+    const { controller } = createController({ getScopeKey: () => scope });
+    controller.run = { run_id: "old-run", work_id: "work-1", state: "running", task: checkTask };
+    const pending = controller.stopDetected();
+    scope = "workshop-b";
+    const unbind = controller.bindTaskList("work-1", true, true);
+    controller.run = { run_id: "new-run", work_id: "work-1", state: "running", task: checkTask };
+    stopped.resolve({ run_id: "old-run", work_id: "work-1", state: "cancelled", task: checkTask });
+    await pending;
+    expect(controller.run.run_id).toBe("new-run");
+    expect(controller.run.state).toBe("running");
+    unbind(); controller.dispose();
+  });
+
+  it("ignores output and terminal results from a different run", () => {
+    const { controller } = createController();
+    controller.run = { run_id: "current-run", work_id: "work-1", state: "running", task: checkTask };
+    controller.applyRunEvent({ run_id: "old-run", seq: 1, kind: "output", text: "wrong output" });
+    controller.applyRunEvent({ run_id: "old-run", seq: 2, kind: "state", state: "failed" });
+    expect(controller.liveStdout).toBe("");
+    expect(controller.run.state).toBe("running");
+    controller.dispose();
+  });
+
+  it("keeps an explicit command and active run stable within the same checkout", async () => {
+    const { controller } = createController();
+    const unbind = controller.bindTaskList("work-1", true, true);
+    await vi.waitFor(() => expect(controller.projectTasks).toHaveLength(1));
+    controller.selectTask(checkTask.id);
+    controller.run = { run_id: "pinned-run", work_id: "work-1", state: "running", task: checkTask };
+    const rebind = controller.bindTaskList("work-1", true, true);
+    await Promise.resolve();
+    expect(controller.selectedTaskId).toBe(checkTask.id);
+    expect(controller.restoredTaskId).toBe(checkTask.id);
+    expect(controller.run.run_id).toBe("pinned-run");
+    unbind(); rebind(); controller.dispose();
+  });
+});
+
+it("does not let delayed run history replace an explicit new run", async () => {
+  let resolve!: (value: unknown) => void;
+  api.getProjectTaskRuns.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+  const { controller } = createController();
+  const unbind = controller.bindTaskList("work-1", true, true);
+  await vi.waitFor(() => expect(controller.projectTasks).toHaveLength(1));
+  await controller.runDetected();
+  resolve({ runs: [{ run_id: "historical", task: checkTask, terminal: true }], truncated: false });
+  await Promise.resolve();
+  expect(controller.run?.run_id).toBe("run-1");
+  expect(api.getProjectTaskRun).not.toHaveBeenCalled();
+  unbind(); controller.dispose();
+});
+
+it("follows a discovered package until an explicit command is selected", () => {
+  const { controller } = createController();
+  controller.projectTasks = [
+    { ...checkTask, id: "web", root: "apps/web", default_rank: 500 },
+    { ...checkTask, id: "rust", root: "crates/engine", default_rank: 900 },
+  ];
+  controller.suggestForDocument("apps/web/src/app.ts");
+  expect(controller.selectedTaskId).toBe("web");
+  controller.selectTask("web");
+  controller.suggestForDocument("crates/engine/src/lib.rs");
+  expect(controller.selectedTaskId).toBe("web");
+});
+
+it("keeps failed test discovery distinct from an empty test catalog", async () => {
+  const { controller } = createController();
+  api.getProjectTests.mockRejectedValueOnce(new Error("workshop disconnected"));
+  await controller.refreshTests();
+  expect(controller.testsLoaded).toBe(false);
+  expect(controller.testsError).toBe("workshop disconnected");
+  expect(controller.testsLoading).toBe(false);
+});
+
+it("does not silently replace an explicit command removed from discovery", async () => {
+  const { controller } = createController();
+  controller.restoreSelectedTask("removed-command");
+  const cleanup = controller.bindTaskList("work-1", true, true);
+  controller.restoreSelectedTask("removed-command");
+  await vi.waitFor(() => expect(controller.catalogError).toContain("no longer available"));
+  expect(controller.selectedTask).toBeNull();
+  cleanup(); controller.dispose();
+});
+
+it("queues supported targets once per file and counts actual invocations", async () => {
+  const { controller } = createController();
+  api.startProjectTaskRun.mockImplementation(async (_workId, _taskId, input) => ({ run_id: `run-${input.test_id}`, test_id: input.test_id, state: "passed", work_id: "work-1", task: checkTask }));
+  await controller.runTests([
+    { id: "a", task_id: checkTask.id, path: "a.ts", line: 1, label: "a", target_kind: "file" },
+    { id: "a-second", task_id: checkTask.id, path: "a.ts", line: 2, label: "a-second", target_kind: "file" },
+    { id: "b", task_id: checkTask.id, path: "b.ts", line: 1, label: "b", target_kind: "file" },
+  ]);
+  expect(api.startProjectTaskRun.mock.calls.map((call) => call[2].test_id)).toEqual(["a", "b"]);
+  expect(controller.testQueue).toMatchObject({ phase: "completed", total: 2, completed: 2, passed: 2 });
+  controller.dispose();
+});
+
+it("does not submit the next queued target after a scope change", async () => {
+  let scope = "workshop-a";
+  const { controller } = createController({ getScopeKey: () => scope });
+  api.startProjectTaskRun.mockImplementation(async (_workId, _taskId, input) => {
+    scope = "workshop-b";
+    return { run_id: `run-${input.test_id}`, test_id: input.test_id, state: "passed", work_id: "work-1", task: checkTask };
+  });
+  await controller.runTests([
+    { id: "a", task_id: checkTask.id, path: "a.rs", line: 1, label: "a", target_kind: "named", provider: "cargo" },
+    { id: "b", task_id: checkTask.id, path: "b.rs", line: 1, label: "b", target_kind: "named", provider: "cargo" },
+  ]);
+  expect(api.startProjectTaskRun).toHaveBeenCalledOnce();
+  controller.dispose();
+});
+
+it("does not count an old pass when queue save preflight is rejected", async () => {
+  const { controller } = createController({ prepareRun: async () => false });
+  controller.run = { run_id: "old", test_id: "a", state: "passed", work_id: "work-1", task: checkTask };
+  await controller.runTests([{ id: "a", task_id: checkTask.id, path: "a.rs", line: 1, label: "a", target_kind: "named", provider: "cargo" }]);
+  expect(api.startProjectTaskRun).not.toHaveBeenCalled();
+  expect(controller.testQueue).toMatchObject({ phase: "interrupted", completed: 0, passed: 0 });
+  controller.dispose();
+});
+
+it("clears pending tests without dropping the invocation already submitted", async () => {
+  const { controller } = createController();
+  api.startProjectTaskRun.mockImplementationOnce(async (_workId, _taskId, input) => {
+    controller.cancelTestQueue();
+    return { run_id: "submitted", test_id: input.test_id, state: "passed", work_id: "work-1", task: checkTask };
+  });
+  await controller.runTests([
+    { id: "a", task_id: checkTask.id, path: "a.rs", line: 1, label: "a", target_kind: "named", provider: "cargo" },
+    { id: "b", task_id: checkTask.id, path: "b.rs", line: 1, label: "b", target_kind: "named", provider: "cargo" },
+  ]);
+  expect(api.startProjectTaskRun).toHaveBeenCalledOnce();
+  expect(controller.run?.run_id).toBe("submitted");
+  expect(controller.testQueue?.phase).toBe("cancelled");
+  controller.dispose();
 });

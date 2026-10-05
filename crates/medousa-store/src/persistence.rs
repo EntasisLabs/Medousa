@@ -11,7 +11,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use crate::store_root::{
-    AtomicWriteError, AtomicWriteStage, StoreRoot, StoreRootError, StoreRootPath,
+    AtomicWriteError, AtomicWriteStage, StoreMetadata, StoreRoot, StoreRootError, StoreRootPath,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -229,6 +229,16 @@ impl FileTransaction {
         bytes: &[u8],
         durability: DurabilityLevel,
     ) -> Result<usize, PersistenceError> {
+        self.replace_snapshot_with_witness(path, bytes, durability)
+            .map(|_| bytes.len())
+    }
+
+    pub fn replace_snapshot_with_witness(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+        durability: DurabilityLevel,
+    ) -> Result<StoreMetadata, PersistenceError> {
         if durability == DurabilityLevel::Accepted {
             return Err(PersistenceError::new(
                 PersistenceErrorKind::PermanentIo,
@@ -239,11 +249,11 @@ impl FileTransaction {
         self.faults.check(TransactionFaultPoint::BeforePublish)?;
         self.faults
             .check(TransactionFaultPoint::BeforeSnapshotPublish)?;
-        self.publish_bytes(path, bytes, false, durability)?;
+        let metadata = self.publish_bytes(path, bytes, false, durability)?;
         self.faults.check(TransactionFaultPoint::AfterPublish)?;
         self.faults
             .check(TransactionFaultPoint::AfterSnapshotPublish)?;
-        Ok(bytes.len())
+        Ok(metadata)
     }
 
     /// Serialize a snapshot directly to an atomically published file. Snapshot
@@ -306,6 +316,16 @@ impl FileTransaction {
         bytes: &[u8],
         durability: DurabilityLevel,
     ) -> Result<usize, PersistenceError> {
+        self.create_only_with_witness(path, bytes, durability)
+            .map(|_| bytes.len())
+    }
+
+    pub fn create_only_with_witness(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+        durability: DurabilityLevel,
+    ) -> Result<StoreMetadata, PersistenceError> {
         if durability == DurabilityLevel::Accepted {
             return Err(PersistenceError::new(
                 PersistenceErrorKind::PermanentIo,
@@ -321,10 +341,10 @@ impl FileTransaction {
                 "create_only destination already exists",
             ));
         }
-        self.publish_bytes(path, bytes, true, durability)?;
+        let metadata = self.publish_bytes(path, bytes, true, durability)?;
         self.faults.check(TransactionFaultPoint::AfterPublish)?;
         self.faults.check(TransactionFaultPoint::AfterCreateOnly)?;
-        Ok(bytes.len())
+        Ok(metadata)
     }
 
     /// Same-filesystem rename with parent-directory sync fences.
@@ -416,14 +436,10 @@ impl FileTransaction {
         bytes: &[u8],
         create_only: bool,
         durability: DurabilityLevel,
-    ) -> Result<(), PersistenceError> {
+    ) -> Result<StoreMetadata, PersistenceError> {
         self.faults.check(TransactionFaultPoint::BeforeTempWrite)?;
         self.faults.check(TransactionFaultPoint::BeforeFileSync)?;
-        if create_only {
-            self.root.atomic_create(path, bytes)?;
-        } else {
-            self.root.atomic_write(path, bytes)?;
-        }
+        let metadata = self.root.atomic_publish_witness(path, bytes, create_only)?;
         self.faults.check(TransactionFaultPoint::AfterTempWrite)?;
         self.faults.check(TransactionFaultPoint::AfterFileSync)?;
         if matches!(durability, DurabilityLevel::Synced) {
@@ -431,7 +447,7 @@ impl FileTransaction {
             self.root.sync_parent_of(path)?;
             self.faults.check(TransactionFaultPoint::AfterParentSync)?;
         }
-        Ok(())
+        Ok(metadata)
     }
 }
 

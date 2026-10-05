@@ -224,6 +224,7 @@ mod tests {
     fn sample_record() -> AskJobRecord {
         AskJobRecord {
             job_id: "medousa-daemon-ask-1".to_string(),
+            request_fingerprint: None,
             prompt: "Research OpenClaw trends".to_string(),
             status: AskJobStatus::Succeeded,
             output_text: Some("Here is the full synthesized report.".to_string()),

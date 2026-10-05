@@ -18,6 +18,9 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    Ask(AskArgs),
+    Bot(BotArgs),
+    Project(ProjectArgs),
     #[command(visible_aliases = ["setup", "init"])]
     Onboard(OnboardArgs),
     Start(StartArgs),
@@ -65,6 +68,97 @@ pub enum Commands {
     Pull(PullArgs),
     Update(UpdateArgs),
     Packages(PackagesArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ProjectArgs {
+    #[command(subcommand)]
+    pub command: ProjectCommand,
+    #[arg(long = "daemon-url", global = true)]
+    pub daemon_url: Option<String>,
+    #[arg(long, global = true, help = "Print the daemon response as JSON")]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProjectCommand {
+    /// Create and provision a governed project on this workshop.
+    Create {
+        #[arg(long)]
+        title: String,
+        #[arg(long)]
+        brief: String,
+        #[arg(long, help = "Existing Git repository path on the workshop daemon")]
+        repo_path: Option<String>,
+        #[arg(long)]
+        base_ref: Option<String>,
+    },
+    /// List projects and their work IDs.
+    List {
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Inspect a project by its Forge work ID.
+    Inspect { work_id: String },
+}
+
+#[derive(Debug, Args)]
+pub struct BotArgs {
+    #[command(subcommand)]
+    pub command: BotCommand,
+    #[arg(long = "daemon-url", global = true)]
+    pub daemon_url: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BotCommand {
+    List,
+    Enroll {
+        bot: String,
+        #[arg(long, default_value = "codex", value_parser = ["codex", "cursor", "hermes"])]
+        runtime: String,
+        #[arg(long = "workshop-id")]
+        workshop_id: String,
+        #[arg(long = "work-id")]
+        work_id: String,
+        #[arg(long = "repo-id")]
+        repo_id: String,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct AskArgs {
+    /// Instructions for the enrolled Bot.
+    pub prompt: Option<String>,
+    #[arg(long, conflicts_with = "agent", help = "Exact Bot name or ID")]
+    pub bot: Option<String>,
+    #[arg(
+        long,
+        conflicts_with = "bot",
+        help = "Find an enrolled Codex, Cursor, or Hermes Bot"
+    )]
+    pub agent: Option<String>,
+    #[arg(long, help = "Eligible workshop name or ID; must match the Bot home")]
+    pub workshop: Option<String>,
+    #[arg(
+        long = "request-id",
+        help = "Stable ID for safe retries after a lost response"
+    )]
+    pub request_id: Option<String>,
+    #[arg(
+        long,
+        conflicts_with = "prompt",
+        help = "Reconnect to a durable Bot job"
+    )]
+    pub resume: Option<String>,
+    #[arg(long, conflicts_with_all = ["prompt", "resume"], help = "Explicitly cancel one Bot job")]
+    pub cancel: Option<String>,
+    #[arg(long, help = "Return the job handle after durable admission")]
+    pub detach: bool,
+    #[arg(long = "daemon-url")]
+    pub daemon_url: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -923,6 +1017,42 @@ mod tests {
     }
 
     #[test]
+    fn project_commands_expose_local_forge_create_and_inspect() {
+        let create = Cli::try_parse_from([
+            "medousa",
+            "project",
+            "create",
+            "--title",
+            "App",
+            "--brief",
+            "Fix the app",
+            "--repo-path",
+            "/srv/app",
+        ])
+        .expect("project create");
+        assert!(matches!(
+            create.command,
+            Some(Commands::Project(ProjectArgs {
+                command: ProjectCommand::Create {
+                    repo_path: Some(_),
+                    ..
+                },
+                ..
+            }))
+        ));
+        let inspect = Cli::try_parse_from(["medousa", "project", "inspect", "work-1", "--json"])
+            .expect("project inspect");
+        assert!(matches!(
+            inspect.command,
+            Some(Commands::Project(ProjectArgs {
+                command: ProjectCommand::Inspect { work_id },
+                json: true,
+                ..
+            })) if work_id == "work-1"
+        ));
+    }
+
+    #[test]
     fn pair_daemon_url_without_subcommand_defaults_to_status() {
         let cli = Cli::try_parse_from(["medousa", "pair", "--daemon-url", "http://127.0.0.1:7419"])
             .expect("parse");
@@ -999,6 +1129,54 @@ mod tests {
             }
             other => panic!("expected Credentials, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn enroll_selects_each_supported_runtime_and_rejects_unknown_ones() {
+        for runtime in ["codex", "cursor", "hermes"] {
+            let parsed = Cli::try_parse_from([
+                "medousa",
+                "bot",
+                "enroll",
+                "Ada",
+                "--runtime",
+                runtime,
+                "--workshop-id",
+                "mini",
+                "--work-id",
+                "work-project",
+                "--repo-id",
+                "repo-project",
+            ])
+            .unwrap();
+            match parsed.command {
+                Some(Commands::Bot(BotArgs {
+                    command:
+                        BotCommand::Enroll {
+                            runtime: selected, ..
+                        },
+                    ..
+                })) => assert_eq!(selected, runtime),
+                other => panic!("expected Bot enrollment, got {other:?}"),
+            }
+        }
+        assert!(
+            Cli::try_parse_from([
+                "medousa",
+                "bot",
+                "enroll",
+                "Ada",
+                "--runtime",
+                "grok",
+                "--workshop-id",
+                "mini",
+                "--work-id",
+                "work-project",
+                "--repo-id",
+                "repo-project"
+            ])
+            .is_err()
+        );
     }
 
     #[test]

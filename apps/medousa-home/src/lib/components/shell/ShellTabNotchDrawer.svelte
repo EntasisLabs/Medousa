@@ -3,6 +3,7 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { Plus, Search } from "@lucide/svelte";
   import { tick } from "svelte";
+  import type { SplitNode } from "$lib/types/shellTabs";
 
   interface Props {
     onTabSettled?: (info: { tabId: string; didMove: boolean }) => void;
@@ -18,6 +19,17 @@
   }: Props = $props();
 
   const paneCount = $derived(shellTabs.paneCount);
+  // Keep each pane readable even in nested/uneven splits. The stage scrolls
+  // when the spatial map needs more room than the viewport can offer.
+  function mapHeight(node: SplitNode): number {
+    if (node.type === "group") return 144;
+    const a = mapHeight(node.a);
+    const b = mapHeight(node.b);
+    return node.direction === "column"
+      ? Math.max(a, b)
+      : Math.max(a / node.ratio, b / (1 - node.ratio)) + 6;
+  }
+  const paneMapHeight = $derived(mapHeight(shellTabs.splitRoot));
   let renamingDesktop = $state(false);
   let renameDraft = $state("");
   let renameInputEl = $state<HTMLInputElement | null>(null);
@@ -51,7 +63,6 @@
 <div
   bind:this={sheetEl}
   class="shell-tab-notch-drawer"
-  class:shell-tab-notch-drawer--single={paneCount <= 1}
   role="dialog"
   tabindex="-1"
   aria-label="Panes"
@@ -59,7 +70,9 @@
   onkeydown={(event) => event.stopPropagation()}
 >
   <div class="shell-tab-notch-drawer-stage">
-    <ShellTabNotchMiniLayout node={shellTabs.splitRoot} {onTabSettled} />
+    <div class="shell-tab-notch-map" style:height="{paneMapHeight}px">
+      <ShellTabNotchMiniLayout node={shellTabs.splitRoot} {onTabSettled} />
+    </div>
   </div>
 
   <footer class="shell-tab-notch-drawer-footer">

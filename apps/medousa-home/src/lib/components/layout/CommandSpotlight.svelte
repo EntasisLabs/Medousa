@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { onMount, untrack } from "svelte";
+  import BotAvatar from "$lib/components/chat/BotAvatar.svelte";
+  import { bots } from "$lib/stores/bots.svelte";
+  import { connectedAgents } from "$lib/stores/connectedAgents.svelte";
   import "$lib/styles/command-spotlight.postcss";
   import { buildWorkshopCommandContext } from "$lib/commands/context";
   import {
@@ -79,6 +83,15 @@
   let previewTitle = $state<string | null>(null);
   let resultsEl = $state<HTMLDivElement | null>(null);
   let highlightNavigation = $state<"keyboard" | "pointer" | "data">("data");
+  $effect(() => {
+    const scope = chat.workshopScopeId;
+    if (commandSpotlight.open && scope && !connection.offline) untrack(() => {void bots.refresh().catch(() => undefined);void connectedAgents.refresh(scope);});
+  });
+  onMount(() => {
+    const changed = () => {if (chat.workshopScopeId) void connectedAgents.refresh(chat.workshopScopeId,true);};
+    window.addEventListener("medousa-external-conversation-changed",changed);
+    return () => window.removeEventListener("medousa-external-conversation-changed",changed);
+  });
   const notesMode = $derived(commandSpotlight.mode === "notes");
   const promptStep = $derived(commandSpotlight.promptStep);
 
@@ -170,6 +183,7 @@
   function iconForCommand(command: WorkshopCommand): Component | null {
     const identity = `${command.id} ${command.label} ${command.keywords ?? ""}`.toLowerCase();
     if (command.id.startsWith("spotlight-pane:")) return LayoutPanelTop;
+    if (command.preview?.kind === "agent") return Bot;
     if (command.preview?.kind === "note") return FileText;
     if (command.preview?.kind === "chat") return MessageSquare;
     if (command.preview?.kind === "script") return Play;
@@ -211,6 +225,7 @@
   }
 
   function executionVerb(command: WorkshopCommand): string {
+    if (command.preview?.kind === "agent") return "Open";
     if (command.prompt) return "Continue";
     if (command.id.startsWith("spotlight-tab:") || command.id.startsWith("spotlight-pane:")) {
       return "Focus";
@@ -221,6 +236,7 @@
       check: "Check",
       clear: "Clear",
       create: "Create",
+      connect: "Connect",
       edit: "Edit",
       export: "Export",
       fetch: "Fetch",
@@ -367,6 +383,8 @@
 
     void vault.notes;
     void vault.labelByPathMap;
+    void bots.bots;
+    void connectedAgents.conversations;
     void chat.sessions;
     void chat.pendingBudgetApprovals;
     void chat.contextUsage;
@@ -497,6 +515,7 @@
       return;
     }
 
+    if (preview.kind === "agent") {previewText = preview.description;return;}
     if (preview.kind === "text") {
       previewText = preview.text;
       return;
@@ -845,7 +864,9 @@
                     onclick={() => void runCommand(command)}
                   >
                     <span class="command-spotlight-row-icon" aria-hidden="true">
-                      {#if CommandIcon}
+                      {#if command.preview?.kind === "agent" && command.preview.avatarRef}
+                        <BotAvatar reference={command.preview.avatarRef} size={22} />
+                      {:else if CommandIcon}
                         <CommandIcon size={14} strokeWidth={1.6} />
                       {/if}
                     </span>
@@ -916,6 +937,11 @@
                     layout={selectedDesktopLayout}
                     selectedTabId={activeWorkspaceTabId}
                   />
+                </div>
+              {:else if activeCommand?.preview?.kind === "agent"}
+                <div class="p-5 flex flex-col items-center gap-3 text-center">
+                  {#if activeCommand.preview.avatarRef}<BotAvatar reference={activeCommand.preview.avatarRef} size={64}/>{:else}<Bot size={32}/>{/if}
+                  <strong>{activeCommand.preview.name}</strong><p class="text-sm text-content-secondary">{activeCommand.preview.description}</p>
                 </div>
               {:else if activePreviewKind === "note" && previewText}
                 <div class="command-spotlight-preview-markdown">

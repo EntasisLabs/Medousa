@@ -1,6 +1,18 @@
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import { friendlyTurnError } from "$lib/utils/normieErrors";
 
+/** Startup acknowledgements add no useful progress, including in saved turns. */
+function isRuntimeStartupText(message: string | null | undefined): boolean {
+  return /^(?:(?:interactive turn|ingest) accepted;\s*)?agent runtime (?:started|accepted)[.!]?$/i.test(message?.trim() ?? "");
+}
+
+function isQuietStartupEvent(event: InteractiveTurnStreamEvent): boolean {
+  return event.event_type === "status" && (
+    event.phase?.toLowerCase() === "accepted" ||
+    isRuntimeStartupText(event.operator_message ?? event.message ?? event.debug_message)
+  );
+}
+
 export function isEngineTelemetryText(message: string | null | undefined): boolean {
   const trimmed = message?.trim() ?? "";
   if (!trimmed) return false;
@@ -56,7 +68,7 @@ function streamOperatorMessage(event: InteractiveTurnStreamEvent): string | null
 
 /** Engine/TUI telemetry — hidden from chat unless the operator enables engine details. */
 export function isEngineTelemetryEvent(event: InteractiveTurnStreamEvent): boolean {
-  if (isAcpQuietEvent(event)) return true;
+  if (isQuietStartupEvent(event) || isAcpQuietEvent(event)) return true;
   if (event.event_type === "status" && event.phase === "orchestration") {
     return streamOperatorMessage(event) == null;
   }
@@ -69,6 +81,7 @@ export function visibleChatStatusLine(
 ): string | null {
   const trimmed = line?.trim();
   if (!trimmed) return null;
+  if (isRuntimeStartupText(trimmed)) return null;
   if (!showEngineDetails && isEngineTelemetryText(trimmed)) return null;
   return trimmed;
 }
@@ -77,7 +90,7 @@ export function operatorStreamStatusLine(
   event: InteractiveTurnStreamEvent,
   showEngineDetails: boolean,
 ): string | null {
-  if (isAcpQuietEvent(event)) return null;
+  if (isQuietStartupEvent(event) || isAcpQuietEvent(event)) return null;
   const operator = streamOperatorMessage(event);
   if (operator) return operator;
   if (showEngineDetails) {

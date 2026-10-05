@@ -40,6 +40,9 @@
     Wrench,
   } from "@lucide/svelte";
   import type { Component } from "svelte";
+  import SessionIdentity from "$lib/components/chat/SessionIdentity.svelte";
+  import { bots } from "$lib/stores/bots.svelte";
+  import { getSessionAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
@@ -753,6 +756,7 @@
       </button>
     </div>
   {:else}
+    {#if surface === "chat" && (bots.forSession(chat.focusedSessionId) || isProviderConversationRuntime(getSessionAgentRuntime(chat.focusedSessionId)))}<SessionIdentity sessionId={chat.focusedSessionId} />{/if}
     <div class="mobile-chrome-actions">
       {#each trailing as action (action)}
         {#if action === "sessions"}

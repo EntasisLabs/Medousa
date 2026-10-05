@@ -583,30 +583,38 @@ async fn flush_mesh_outbox_item(
         return Err((StatusCode::BAD_GATEWAY, msg));
     }
 
-    if let Some(raw) = response
+    let receipt = response
         .headers()
         .get("x-medousa-mesh-receipt")
         .and_then(|value| value.to_str().ok())
-        && let Ok(receipt) = serde_json::from_str::<MeshReceipt>(raw)
-    {
-        let _ = receipts::store_received(&receipt);
-        let item = outbox::mark_acked(&item.id, &receipt).map_err(internal)?;
-        return Ok(Json(item));
-    }
-
-    // Soft-ack when the peer accepted the POST but did not return a receipt header.
-    let soft = MeshReceipt {
-        id: format!("mrc_soft_{}", item.id),
-        version: receipts::MESH_RECEIPT_VERSION,
-        sender_device_id: item.peer_device_id.clone(),
-        recipient_device_id: state.local_device_id.clone(),
-        ack_seq: item.seq,
-        payload_hash: item.envelope.payload_hash.clone(),
-        status: receipts::MeshReceiptStatus::Delivered,
-        issued_at: chrono::Utc::now(),
-        signature: "soft".to_string(),
-    };
-    let item = outbox::mark_acked(&item.id, &soft).map_err(internal)?;
+        .ok_or_else(|| "peer response missing mesh receipt".to_string())
+        .and_then(|raw| serde_json::from_str::<MeshReceipt>(raw).map_err(|err| err.to_string()))
+        .and_then(|receipt| {
+            outbox::verify_receipt_for_item(
+                &item,
+                &receipt,
+                &peer.public_key_b64,
+                &state.local_device_id,
+            )
+            .map_err(|err| err.to_string())?;
+            receipts::store_received(&receipt).map_err(|err| err.to_string())?;
+            outbox::mark_acked(
+                &item.id,
+                &receipt,
+                &peer.public_key_b64,
+                &state.local_device_id,
+            )
+            .map(|acked| (receipt, acked))
+            .map_err(|err| err.to_string())
+        })
+        .map_err(|err| {
+            let _ = outbox::mark_failed(&item.id, &err);
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("peer deliver receipt invalid: {err}"),
+            )
+        })?;
+    let item = receipt.1;
     Ok(Json(item))
 }
 
@@ -666,6 +674,17 @@ async fn exchange_mesh_task(
     let work_id = delegated_work_id(&record.phone_id, turn_id);
     let task_execution_grant = resolve_task_execution_grant(&state, &record, &payload, &work_id)?;
 
+    let executor = state.delegated_task_executor.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "delegated task execution is not configured".to_string(),
+        )
+    })?;
+    executor
+        .preflight(&record, &payload, &task_execution_grant)
+        .await
+        .map_err(map_delegated_task_error)?;
+
     let payload_hash =
         payload_hash_hex(&payload).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let pairing = state.pairing.as_ref().ok_or_else(|| {
@@ -684,12 +703,6 @@ async fn exchange_mesh_task(
     delivery::bind_delivery_local_ref(&accepted.inbox_id, &work_id, &accepted.receipt.id)
         .map_err(internal)?;
 
-    let executor = state.delegated_task_executor.as_ref().ok_or_else(|| {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "delegated task execution is not configured".to_string(),
-        )
-    })?;
     let observation: DelegatedTaskObservation = executor
         .submit_or_observe(&record, &payload, &task_execution_grant)
         .await
@@ -1098,7 +1111,8 @@ async fn propose_remote_peer(
             shadow_session_id,
             crate::daemon::coordination::PeerProposalIntent {
                 request_key: request.request_key,
-                runtime: request.runtime,
+                runtime: Some(request.runtime),
+                forge_work_id: Some(request.forge_work_id.clone()),
                 instructions: request.instructions,
                 after_entry_seq: first.entry_seq.saturating_sub(1),
                 through_entry_seq: last.entry_seq,
@@ -1144,10 +1158,15 @@ async fn propose_remote_peer(
             )
             .await
             .map_err(internal)?;
-        record_remote_peer_completion_destination_binding_admitted(&proposal.proposal_id, &binding)
+        if let Some(binding) = &binding {
+            record_remote_peer_completion_destination_binding_admitted(
+                &proposal.proposal_id,
+                binding,
+            )
             .await
             .map_err(internal)?;
-        Some(binding)
+        }
+        binding
     } else {
         None
     };
@@ -1433,6 +1452,15 @@ async fn control_mesh_task(
                 .map_err(map_delegated_control_error)?
         }
     };
+    if request.action == DelegatedTaskControlAction::Cancel
+        && let Some(agent_session_id) = current.external_agent_session_id.as_deref()
+        && let Some(executor) = state.delegated_task_executor.as_ref()
+    {
+        executor
+            .cancel_external(agent_session_id)
+            .await
+            .map_err(map_delegated_task_error)?;
+    }
     let observation = DelegatedTaskControlObservation {
         schema_version: crate::delegated_task::DELEGATED_TASK_SCHEMA_VERSION,
         action: request.action,
@@ -1623,6 +1651,15 @@ fn resolve_task_execution_grant(
         .iter()
         .map(|name| execution_tool_domain(name).to_string())
         .collect::<std::collections::BTreeSet<_>>();
+    if request
+        .worker
+        .as_ref()
+        .is_some_and(|worker| worker.external_agent.is_some())
+    {
+        // ACP owns concrete tools, but destination Coder policy still gates
+        // access to the pinned Forge project and code execution domain.
+        requested_tool_domain_values.insert("code".to_string());
+    }
     if !requested_world_ids.is_empty() {
         requested_tool_domain_values.insert("world".to_string());
     }
@@ -1681,20 +1718,44 @@ async fn list_mesh_receipts(
 }
 
 async fn post_mesh_receipt(
-    State(_state): State<MeshApiState>,
+    State(state): State<MeshApiState>,
     Extension(principal): Extension<RequestPrincipal>,
     Json(receipt): Json<MeshReceipt>,
 ) -> Result<Json<MeshReceipt>, (StatusCode, String)> {
-    if principal.transport() != TransportClass::Loopback {
-        let _record = authorize_remote_peer(&_state, &principal)?;
-    }
-    receipts::store_received(&receipt).map_err(internal)?;
+    let peer_public_key = if principal.transport() == TransportClass::Loopback {
+        registry::get_peer(&receipt.sender_device_id)
+            .map_err(internal)?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    "mesh peer not registered".to_string(),
+                )
+            })?
+            .public_key_b64
+    } else {
+        let record = authorize_remote_peer(&state, &principal)?;
+        if record.phone_id != receipt.sender_device_id {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "mesh receipt caller mismatch".to_string(),
+            ));
+        }
+        record.phone_public_key
+    };
     // Receipt.sender = remote host that received our delivery; that host is our outbox peer.
-    if let Some(item) =
-        outbox::find_by_peer_seq(&receipt.sender_device_id, receipt.ack_seq).map_err(internal)?
-    {
-        let _ = outbox::mark_acked(&item.id, &receipt);
-    }
+    let item = outbox::find_by_peer_seq(&receipt.sender_device_id, receipt.ack_seq)
+        .map_err(internal)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "matching mesh delivery not found".to_string(),
+            )
+        })?;
+    outbox::verify_receipt_for_item(&item, &receipt, &peer_public_key, &state.local_device_id)
+        .map_err(|err| (StatusCode::UNAUTHORIZED, err.to_string()))?;
+    receipts::store_received(&receipt).map_err(internal)?;
+    outbox::mark_acked(&item.id, &receipt, &peer_public_key, &state.local_device_id)
+        .map_err(|err| (StatusCode::UNAUTHORIZED, err.to_string()))?;
     Ok(Json(receipt))
 }
 

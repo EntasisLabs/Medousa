@@ -43,8 +43,18 @@ impl AgentAccess {
         {
             return true;
         }
+        if method == Method::POST && route == "/v1/work/query" {
+            return self.scopes.contains(&ExternalAgentScope::Read)
+                || self.scopes.contains(&ExternalAgentScope::Work);
+        }
         self.scopes.contains(&ExternalAgentScope::Work)
-            && ((method == Method::POST && route == "/v1/jobs/ask")
+            && ((method == Method::POST
+                && matches!(
+                    route,
+                    "/v1/jobs/ask"
+                        | "/v1/work/mutate"
+                        | "/v1/external-conversations/{id}/work-events"
+                ))
                 || (method == Method::GET
                     && matches!(
                         route,
@@ -66,6 +76,26 @@ impl AgentAccess {
 }
 
 impl ExternalConversationStore {
+    pub(super) async fn permits_work_callback(
+        &self,
+        principal: &RequestPrincipal,
+        id: &str,
+    ) -> bool {
+        if principal.kind() != crate::request_principal::PrincipalKind::ExternalAgent {
+            return false;
+        }
+        let document = self.document.lock().await;
+        document.conversations.get(id).is_some_and(|record| {
+            principal.profile_id() == Some(record.owner_id.as_str())
+                && record.api_access.as_ref().is_some_and(|grant| {
+                    grant.status.expires_at > Utc::now()
+                        && grant.status.scopes.contains(&ExternalAgentScope::Work)
+                        && principal.credential_id().is_some_and(|credential| {
+                            credential.as_str() == format!("external-agent:{}", grant.id)
+                        })
+                })
+        })
+    }
     pub async fn resolve_agent_token(&self, token: &str) -> Option<AgentAccess> {
         if token.len() > 200 {
             return None;
@@ -73,9 +103,6 @@ impl ExternalConversationStore {
         let (id, _) = token.strip_prefix(TOKEN_PREFIX)?.split_once('.')?;
         let document = self.document.lock().await;
         let record = document.conversations.get(id)?;
-        if !matches!(record.provider, Provider::Instinct | Provider::Dots) {
-            return None;
-        }
         let grant = record.api_access.as_ref()?;
         if grant.status.expires_at <= Utc::now()
             || !constant_time_equal(grant.token_hash.as_bytes(), token_hash(token).as_bytes())
@@ -109,10 +136,7 @@ impl ExternalConversationStore {
         let record = current
             .conversations
             .get(id)
-            .filter(|record| {
-                record.owner_id == owner_id
-                    && matches!(record.provider, Provider::Instinct | Provider::Dots)
-            })
+            .filter(|record| record.owner_id == owner_id)
             .ok_or((StatusCode::NOT_FOUND, "agent conversation not found".into()))?;
         let mut random = [0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut random);
@@ -149,10 +173,7 @@ impl ExternalConversationStore {
         let record = next
             .conversations
             .get_mut(id)
-            .filter(|record| {
-                record.owner_id == owner_id
-                    && matches!(record.provider, Provider::Instinct | Provider::Dots)
-            })
+            .filter(|record| record.owner_id == owner_id)
             .ok_or((StatusCode::NOT_FOUND, "agent conversation not found".into()))?;
         record.api_access = None;
         let view = ConversationView::from(&*record);
@@ -278,6 +299,95 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn every_provider_has_revocable_work_participation_without_admin_authority() {
+        let (_dir, store, other_id) = fixture().await;
+        for (index, provider) in [
+            Provider::Muse,
+            Provider::Instinct,
+            Provider::Dots,
+            Provider::GrokBot,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = uuid::Uuid::new_v4().to_string();
+            store
+                .create(
+                    id.clone(),
+                    "owner".into(),
+                    &CreateConversationRequest {
+                        provider,
+                        label: "Participant".into(),
+                        target: format!("target-{index}"),
+                        webhook_url: None,
+                        webhook_key: None,
+                        slack_user_token: None,
+                        dot_user_id: None,
+                    },
+                )
+                .await
+                .unwrap();
+            let grant = store
+                .issue_agent_token("owner", &id, request(vec![ExternalAgentScope::Work]))
+                .await
+                .unwrap();
+            let access = store.resolve_agent_token(&grant.token).await.unwrap();
+            assert!(access.permits(&Method::POST, "/v1/work/query"));
+            assert!(access.permits(&Method::POST, "/v1/work/mutate"));
+            for route in [
+                "/v1/work/mutate/extra",
+                "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve",
+                "/v1/external-conversations/{id}/messages",
+            ] {
+                assert!(!access.permits(&Method::POST, route));
+            }
+            let principal = access.principal(crate::request_principal::TransportClass::Iroh);
+            assert_eq!(principal.profile_id(), Some("owner"));
+            assert!(!principal.capabilities().contains(Capability::AdminExecute));
+            assert!(access.permits(&Method::POST, "/v1/external-conversations/{id}/work-events"));
+            assert!(!access.permits(&Method::POST, "/v1/external-conversations/{id}/events"));
+            assert!(store.permits_work_callback(&principal, &id).await);
+            assert!(!store.permits_work_callback(&principal, &other_id).await);
+            assert!(!store.permits_work_callback(&principal, "missing").await);
+            let reopened = ExternalConversationStore::open(store.path.clone())
+                .await
+                .unwrap();
+            assert!(reopened.resolve_agent_token(&grant.token).await.is_some());
+            assert!(reopened.permits_work_callback(&principal, &id).await);
+            let read = store
+                .issue_agent_token("owner", &id, request(vec![ExternalAgentScope::Read]))
+                .await
+                .unwrap();
+            assert!(!store.permits_work_callback(&principal, &id).await);
+            let read_access = store.resolve_agent_token(&read.token).await.unwrap();
+            assert!(
+                !read_access.permits(&Method::POST, "/v1/external-conversations/{id}/work-events")
+            );
+            assert!(
+                !store
+                    .permits_work_callback(
+                        &read_access.principal(crate::request_principal::TransportClass::Direct),
+                        &id
+                    )
+                    .await
+            );
+            let rotated = store
+                .issue_agent_token("owner", &id, request(vec![ExternalAgentScope::Work]))
+                .await
+                .unwrap();
+            let rotated_principal = store
+                .resolve_agent_token(&rotated.token)
+                .await
+                .unwrap()
+                .principal(crate::request_principal::TransportClass::Direct);
+            assert!(store.permits_work_callback(&rotated_principal, &id).await);
+            store.revoke_agent_token("owner", &id).await.unwrap();
+            assert!(store.resolve_agent_token(&rotated.token).await.is_none());
+            assert!(!store.permits_work_callback(&rotated_principal, &id).await);
+        }
+    }
+
+    #[tokio::test]
     async fn expired_or_invalid_grants_fail_closed() {
         let (_dir, store, id) = fixture().await;
         assert!(
@@ -348,6 +458,8 @@ mod tests {
                 Capability::ContentRead,
             ),
             (Method::POST, "/v1/jobs/ask", Capability::WorkshopInteract),
+            (Method::POST, "/v1/work/query", Capability::ContentRead),
+            (Method::POST, "/v1/work/mutate", Capability::ContentWrite),
             (
                 Method::GET,
                 "/v1/external-conversations",
@@ -385,6 +497,8 @@ mod tests {
                 (Method::GET, "/v1/vault/notes", StatusCode::OK),
                 (Method::GET, "/v1/vault/notes/note.md", StatusCode::OK),
                 (Method::POST, "/v1/jobs/ask", StatusCode::FORBIDDEN),
+                (Method::POST, "/v1/work/query", StatusCode::OK),
+                (Method::POST, "/v1/work/mutate", StatusCode::FORBIDDEN),
                 (
                     Method::GET,
                     "/v1/external-conversations",
@@ -421,6 +535,8 @@ mod tests {
             .unwrap();
         for (method, path, expected) in [
             (Method::POST, "/v1/jobs/ask", StatusCode::OK),
+            (Method::POST, "/v1/work/query", StatusCode::OK),
+            (Method::POST, "/v1/work/mutate", StatusCode::OK),
             (Method::GET, "/v1/vault/notes", StatusCode::FORBIDDEN),
         ] {
             let response = app
@@ -493,6 +609,161 @@ mod tests {
                 )
                 .await
                 .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn authenticated_work_callback_replays_after_conversation_mirror_failure() {
+        use crate::daemon::work_units::participant::tests::{
+            accept, fixture as work_fixture, request as work_request,
+        };
+        use crate::request_principal::TransportClass;
+        use medousa_types::{
+            CreateExternalAgentTokenRequest, ExternalAgentScope, work_provider::*,
+            work_unit::UserDomainRef,
+        };
+        let (dir, host) = work_fixture().await;
+        let path = dir.path().join("conversations.json");
+        let store = ExternalConversationStore::open(path.clone()).await.unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        store
+            .create(
+                id.clone(),
+                "owner".into(),
+                &CreateConversationRequest {
+                    provider: Provider::Dots,
+                    label: "Reviewer".into(),
+                    target: "C12345678".into(),
+                    dot_user_id: Some("U12345678".into()),
+                    webhook_url: None,
+                    webhook_key: None,
+                    slack_user_token: None,
+                },
+            )
+            .await
+            .unwrap();
+        let grant = store
+            .issue_agent_token(
+                "owner",
+                &id,
+                CreateExternalAgentTokenRequest {
+                    scopes: vec![ExternalAgentScope::Work],
+                    expires_in_days: 1,
+                },
+            )
+            .await
+            .unwrap();
+        let principal = store
+            .resolve_agent_token(&grant.token)
+            .await
+            .unwrap()
+            .principal(TransportClass::Direct);
+        assert_eq!(
+            work_request(host.clone(), principal.clone(), "/v1/work/mutate", accept())
+                .await
+                .0,
+            StatusCode::OK
+        );
+        let domain = UserDomainRef {
+            authority_id: crate::workshop_authority::current().unwrap().clone(),
+            user_id: "owner".into(),
+        };
+        let prepared = host
+            .prepare_provider_request(
+                domain.clone(),
+                id.clone(),
+                Provider::Dots,
+                "request".into(),
+                WorkProviderRequestInput {
+                    work_unit_id: "unit".into(),
+                    expected_scope_revision: 1,
+                    deadline: Utc::now() + TimeDelta::hours(1),
+                    review_of: None,
+                },
+                "Implement".into(),
+            )
+            .await
+            .unwrap();
+        host.claim_provider_request(domain.clone(), prepared)
+            .await
+            .unwrap();
+        let event = ProviderEventRequest {
+            event_id: "done".into(),
+            request_id: "request".into(),
+            kind: EventKind::Completed,
+            text: "Implemented".into(),
+            reaction: None,
+        };
+        assert_eq!(
+            record_work_event(
+                &store,
+                &host,
+                &principal,
+                "other-conversation",
+                event.clone()
+            )
+            .await
+            .unwrap_err()
+            .0,
+            StatusCode::FORBIDDEN
+        );
+        let mut invalid = event.clone();
+        invalid.kind = EventKind::TransportAccepted;
+        assert_eq!(
+            record_work_event(&store, &host, &principal, &id, invalid)
+                .await
+                .unwrap_err()
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+        // Fail only the advisory mirror after native evidence commits.
+        let saved = tokio::fs::read(&path).await.unwrap();
+        tokio::fs::remove_file(&path).await.unwrap();
+        tokio::fs::create_dir(&path).await.unwrap();
+        assert_eq!(
+            record_work_event(&store, &host, &principal, &id, event.clone())
+                .await
+                .unwrap_err()
+                .0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let evidence = host
+            .provider_request(domain.clone(), id.clone(), "request".into())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(evidence.events.len(), 1);
+        assert_eq!(
+            evidence.events[0].qualification,
+            WorkProviderQualification::OutcomeOnly
+        );
+        assert!(store.get("owner", &id).await.unwrap().events.is_empty());
+        tokio::fs::remove_dir(&path).await.unwrap();
+        tokio::fs::write(&path, saved).await.unwrap();
+        let mirror = record_work_event(&store, &host, &principal, &id, event.clone())
+            .await
+            .unwrap();
+        assert_eq!(mirror.events.len(), 1);
+        let replay = record_work_event(&store, &host, &principal, &id, event.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(replay.events).unwrap(),
+            serde_json::to_value(mirror.events).unwrap()
+        );
+        assert_eq!(
+            host.provider_request(domain, id.clone(), "request".into())
+                .await
+                .unwrap()
+                .unwrap(),
+            evidence
+        );
+        store.revoke_agent_token("owner", &id).await.unwrap();
+        assert_eq!(
+            record_work_event(&store, &host, &principal, &id, event)
+                .await
+                .unwrap_err()
+                .0,
+            StatusCode::FORBIDDEN
         );
     }
 }

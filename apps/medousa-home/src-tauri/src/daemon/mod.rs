@@ -229,8 +229,9 @@ pub fn apply_daemon_url(state: &DaemonState, url: &str) -> Result<(), String> {
 /// was backgrounded forces a fresh LAN-vs-Iroh probe instead of riding a stale
 /// cached route for the remainder of its TTL.
 #[tauri::command]
-pub fn invalidate_route_caches() {
+pub async fn invalidate_route_caches() {
     workshop_transport::invalidate_all_route_caches();
+    medousa_iroh_http::notify_network_change().await;
 }
 
 fn connected_health(detail: medousa_types::HealthResponse, endpoint: &str) -> DaemonHealth {

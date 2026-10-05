@@ -1,4 +1,5 @@
 import { onMount } from "svelte";
+import { externalConversationBinding } from "$lib/utils/externalConversationSession";
 import {
   listExternalConversations,
   sendExternalConversationMessage,
@@ -29,6 +30,9 @@ export function createExternalConversationController(input: {
   function select(id: string) {
     const provider = input.provider();
     if (!provider) return;
+    const binding = externalConversationBinding(input.sessionId());
+    const retained = getExternalConversationSelection(input.sessionId(), provider);
+    if ((binding && binding.id !== id) || (retained && retained !== id)) return;
     selectedId = id;
     setExternalConversationSelection(input.sessionId(), provider, id);
     error = null;
@@ -48,7 +52,7 @@ export function createExternalConversationController(input: {
       conversations = next;
       const available = next.filter((item) => item.provider === provider);
       const desired = selectedId ?? getExternalConversationSelection(sessionId, provider);
-      if (desired && available.some((item) => item.id === desired)) {
+      if (desired) {
         selectedId = desired;
       } else if (available.length === 1) {
         select(available[0].id);
@@ -68,7 +72,7 @@ export function createExternalConversationController(input: {
 
   async function send(text: string, hasExtraInputs: boolean) {
     if (!selected) {
-      error = "Choose a registered external agent conversation before sending.";
+      error = "Open a connected agent from Sessions before sending.";
       throw new Error(error);
     }
     if (hasExtraInputs) {

@@ -46,6 +46,17 @@ describe("vaultExportPrep helpers", () => {
     expect(root.querySelector(".keep")?.textContent).toBe("hi");
   });
 
+  it("exports every line of a collapsed code snippet without its controls", () => {
+    const root = document.createElement("div");
+    const code = "first line\nlast line";
+    root.innerHTML = `<div class="markdown-code-block markdown-code-collapsed"><button class="markdown-code-copy">Copy</button><pre><code>${code}</code></pre><div class="markdown-code-footer" data-export-strip>Show all</div></div>`;
+    expandDetailsForExport(root);
+    stripExportChrome(root);
+    expect(root.querySelector(".markdown-code-collapsed")).toBeNull();
+    expect(root.querySelector(".markdown-code-footer")).toBeNull();
+    expect(root.querySelector("code")?.textContent).toBe(code);
+  });
+
   it("hardens table/embed widths", () => {
     const root = document.createElement("div");
     root.innerHTML = `<table class="liquid-compare-table"></table>`;

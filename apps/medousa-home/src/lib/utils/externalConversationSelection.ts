@@ -1,6 +1,8 @@
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 import type { ExternalProvider } from "$lib/daemon/externalConversations";
 
+import { externalConversationBinding } from "./externalConversationSession";
+
 const STORAGE_KEY = "medousa-external-conversation-selection-v1";
 
 function key(sessionId: string, provider: ExternalProvider): string {
@@ -19,11 +21,14 @@ function read(): Record<string, string> {
 }
 
 export function getExternalConversationSelection(sessionId: string, provider: ExternalProvider): string | null {
+  const binding = externalConversationBinding(sessionId);
+  if (binding) return binding.provider === provider ? binding.id : null;
   const value = read()[key(sessionId, provider)];
   return typeof value === "string" && value.trim() ? value : null;
 }
 
 export function setExternalConversationSelection(sessionId: string, provider: ExternalProvider, id: string): void {
+  if (externalConversationBinding(sessionId)) return;
   if (typeof localStorage === "undefined" || !sessionId.trim() || !id.trim()) return;
   const all = read();
   all[key(sessionId, provider)] = id.trim();

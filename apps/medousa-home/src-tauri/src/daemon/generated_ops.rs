@@ -52,6 +52,12 @@ pub enum DaemonOperation {
     AuthChatgptModelsGet,
     #[serde(rename = "auth.chatgpt.refresh.post")]
     AuthChatgptRefreshPost,
+    #[serde(rename = "bots.ask.by_job_id.cancel.post")]
+    BotsAskByJobIdCancelPost,
+    #[serde(rename = "bots.ask.by_job_id.get")]
+    BotsAskByJobIdGet,
+    #[serde(rename = "bots.ask.post")]
+    BotsAskPost,
     #[serde(rename = "bots.by_bot_id.archive.put")]
     BotsByBotIdArchivePut,
     #[serde(rename = "bots.by_bot_id.duplicate.post")]
@@ -232,6 +238,8 @@ pub enum DaemonOperation {
     ExternalConversationsByIdGet,
     #[serde(rename = "external_conversations.by_id.messages.post")]
     ExternalConversationsByIdMessagesPost,
+    #[serde(rename = "external_conversations.by_id.work_events.post")]
+    ExternalConversationsByIdWorkEventsPost,
     #[serde(rename = "external_conversations.get")]
     ExternalConversationsGet,
     #[serde(rename = "external_conversations.muse.discovery.get")]
@@ -426,6 +434,8 @@ pub enum DaemonOperation {
     ForgePreviewByTokenPost,
     #[serde(rename = "forge.preview.by_token.put")]
     ForgePreviewByTokenPut,
+    #[serde(rename = "forge.projects.post")]
+    ForgeProjectsPost,
     #[serde(rename = "forge.repositories.browse.get")]
     ForgeRepositoriesBrowseGet,
     #[serde(rename = "forge.repositories.get")]
@@ -802,6 +812,8 @@ pub enum DaemonOperation {
     SessionsShellGet,
     #[serde(rename = "sessions.shell.post")]
     SessionsShellPost,
+    #[serde(rename = "sessions.workspace_shell.post")]
+    SessionsWorkspaceShellPost,
     #[serde(rename = "share.capabilities.get")]
     ShareCapabilitiesGet,
     #[serde(rename = "share.export.post")]
@@ -816,6 +828,20 @@ pub enum DaemonOperation {
     SharedModePut,
     #[serde(rename = "shell_sessions.get")]
     ShellSessionsGet,
+    #[serde(rename = "ssh.inspect.post")]
+    SshInspectPost,
+    #[serde(rename = "ssh.targets.by_id.access.post")]
+    SshTargetsByIdAccessPost,
+    #[serde(rename = "ssh.targets.by_id.delete")]
+    SshTargetsByIdDelete,
+    #[serde(rename = "ssh.targets.get")]
+    SshTargetsGet,
+    #[serde(rename = "ssh.targets.post")]
+    SshTargetsPost,
+    #[serde(rename = "ssh.terminal.post")]
+    SshTerminalPost,
+    #[serde(rename = "ssh.test.post")]
+    SshTestPost,
     #[serde(rename = "stats.get")]
     StatsGet,
     #[serde(rename = "stt.status.get")]
@@ -886,6 +912,10 @@ pub enum DaemonOperation {
     VaultTrashGet,
     #[serde(rename = "vault.trash.restore.post")]
     VaultTrashRestorePost,
+    #[serde(rename = "work.mutate.post")]
+    WorkMutatePost,
+    #[serde(rename = "work.query.post")]
+    WorkQueryPost,
     #[serde(rename = "workers.by_id.delete")]
     WorkersByIdDelete,
     #[serde(rename = "workers.by_id.put")]
@@ -987,6 +1017,9 @@ impl DaemonOperation {
             Self::AuthChatgptGet => "auth.chatgpt.get",
             Self::AuthChatgptModelsGet => "auth.chatgpt.models.get",
             Self::AuthChatgptRefreshPost => "auth.chatgpt.refresh.post",
+            Self::BotsAskByJobIdCancelPost => "bots.ask.by_job_id.cancel.post",
+            Self::BotsAskByJobIdGet => "bots.ask.by_job_id.get",
+            Self::BotsAskPost => "bots.ask.post",
             Self::BotsByBotIdArchivePut => "bots.by_bot_id.archive.put",
             Self::BotsByBotIdDuplicatePost => "bots.by_bot_id.duplicate.post",
             Self::BotsByBotIdGet => "bots.by_bot_id.get",
@@ -1077,6 +1110,7 @@ impl DaemonOperation {
             Self::ExternalConversationsByIdEventsPost => "external_conversations.by_id.events.post",
             Self::ExternalConversationsByIdGet => "external_conversations.by_id.get",
             Self::ExternalConversationsByIdMessagesPost => "external_conversations.by_id.messages.post",
+            Self::ExternalConversationsByIdWorkEventsPost => "external_conversations.by_id.work_events.post",
             Self::ExternalConversationsGet => "external_conversations.get",
             Self::ExternalConversationsMuseDiscoveryGet => "external_conversations.muse.discovery.get",
             Self::ExternalConversationsMuseDiscoveryPost => "external_conversations.muse.discovery.post",
@@ -1174,6 +1208,7 @@ impl DaemonOperation {
             Self::ForgePreviewByTokenPatch => "forge.preview.by_token.patch",
             Self::ForgePreviewByTokenPost => "forge.preview.by_token.post",
             Self::ForgePreviewByTokenPut => "forge.preview.by_token.put",
+            Self::ForgeProjectsPost => "forge.projects.post",
             Self::ForgeRepositoriesBrowseGet => "forge.repositories.browse.get",
             Self::ForgeRepositoriesGet => "forge.repositories.get",
             Self::ForgeRepositoriesInspectPost => "forge.repositories.inspect.post",
@@ -1362,6 +1397,7 @@ impl DaemonOperation {
             Self::SessionsShellByIdSignalPost => "sessions.shell.by_id.signal.post",
             Self::SessionsShellGet => "sessions.shell.get",
             Self::SessionsShellPost => "sessions.shell.post",
+            Self::SessionsWorkspaceShellPost => "sessions.workspace_shell.post",
             Self::ShareCapabilitiesGet => "share.capabilities.get",
             Self::ShareExportPost => "share.export.post",
             Self::ShareImportPost => "share.import.post",
@@ -1369,6 +1405,13 @@ impl DaemonOperation {
             Self::SharedModeGet => "shared_mode.get",
             Self::SharedModePut => "shared_mode.put",
             Self::ShellSessionsGet => "shell_sessions.get",
+            Self::SshInspectPost => "ssh.inspect.post",
+            Self::SshTargetsByIdAccessPost => "ssh.targets.by_id.access.post",
+            Self::SshTargetsByIdDelete => "ssh.targets.by_id.delete",
+            Self::SshTargetsGet => "ssh.targets.get",
+            Self::SshTargetsPost => "ssh.targets.post",
+            Self::SshTerminalPost => "ssh.terminal.post",
+            Self::SshTestPost => "ssh.test.post",
             Self::StatsGet => "stats.get",
             Self::SttStatusGet => "stt.status.get",
             Self::SttTranscribePost => "stt.transcribe.post",
@@ -1404,6 +1447,8 @@ impl DaemonOperation {
             Self::VaultTagsGet => "vault.tags.get",
             Self::VaultTrashGet => "vault.trash.get",
             Self::VaultTrashRestorePost => "vault.trash.restore.post",
+            Self::WorkMutatePost => "work.mutate.post",
+            Self::WorkQueryPost => "work.query.post",
             Self::WorkersByIdDelete => "workers.by_id.delete",
             Self::WorkersByIdPut => "workers.by_id.put",
             Self::WorkersDefaultPut => "workers.default.put",

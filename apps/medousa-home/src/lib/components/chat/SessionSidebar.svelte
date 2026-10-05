@@ -2,6 +2,10 @@
   import "$lib/styles/chat.postcss";
   import { onMount, untrack } from "svelte";
   import { ChevronDown, ChevronRight, Plus, Search, Users, X } from "@lucide/svelte";
+  import { agentCreation } from "$lib/stores/agentCreation.svelte";
+  import ConnectedAgentList from "./ConnectedAgentList.svelte";
+  import { getSessionAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
+  import { botExecutorUpdate } from "$lib/utils/botExecutorUpdate";
   import BotEditor from "$lib/components/chat/BotEditor.svelte";
   import { DEFAULT_BOT_AVATAR } from "$lib/utils/botAvatar";
   import BotRow from "$lib/components/chat/BotRow.svelte";
@@ -16,7 +20,7 @@
   import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { SessionSummary } from "$lib/types/session";
-  import type { BotProfile, BotWorldBinding } from "$lib/types/generated/daemon_api";
+  import type { BotProfile, BotWorldBinding, ExternalAgentExecutor } from "$lib/types/generated/daemon_api";
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { groupSessionsByRecency } from "$lib/utils/sessionHistoryGroups";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
@@ -55,6 +59,7 @@
   let botRole = $state("");
   let botAvatar = $state<string>(DEFAULT_BOT_AVATAR);
   let botSpecialistId = $state("");
+  let botExternalAgent = $state<ExternalAgentExecutor | null>(null);
   let botWorldBinding = $state<BotWorldBinding | null>(null);
   let botSaving = $state(false);
   let botError = $state<string | null>(null);
@@ -140,6 +145,7 @@
     chat.sessions.filter(
       (session) =>
         !botSessionIds.has(session.session_id) &&
+        !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)) &&
         chat.isPinned(session.session_id) &&
         matchesQuery(session),
     ),
@@ -149,6 +155,7 @@
     chat.sessions.filter(
       (session) =>
         !botSessionIds.has(session.session_id) &&
+        !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)) &&
         !chat.isPinned(session.session_id) &&
         matchesQuery(session),
     ),
@@ -174,10 +181,10 @@
     bots.bots.filter((bot) => bot.archived && matchesBotQuery(bot)),
   );
 
-  async function selectSession(sessionId: string) {
+  async function selectSession(sessionId: string, title?: string) {
     // Shell tabs own visible chat selection. Activating through the shell also
     // switches/hydrates the chat store, without relying on its async mirror.
-    const tabId = shellTabs.openChat(sessionId, { activate: true });
+    const tabId = shellTabs.openChat(sessionId, { activate: true, title });
     if (!tabId) await chat.switchSession(sessionId);
     onPick?.();
     if (variant === "drawer" || variant === "sheet") {
@@ -219,19 +226,7 @@
     }
   }
 
-  function openCreateBot() {
-    if (catalog.manuscripts.length === 0 && !catalog.loading) {
-      void catalog.refresh();
-    }
-    editingBot = null;
-    botName = "";
-    botRole = "";
-    botAvatar = DEFAULT_BOT_AVATAR;
-    botSpecialistId = "";
-    botWorldBinding = null;
-    botError = null;
-    botEditorOpen = true;
-  }
+  function openCreateBot() { agentCreation.createBot(); }
 
   function openEditBot(bot: BotProfile) {
     editingBot = bot;
@@ -239,6 +234,7 @@
     botRole = bot.role_description ?? "";
     botAvatar = bot.avatar_ref?.trim() || DEFAULT_BOT_AVATAR;
     botSpecialistId = bot.primary_manuscript_id;
+    botExternalAgent = bot.external_agent ? { ...bot.external_agent } : null;
     botWorldBinding = bot.world_binding ? { ...bot.world_binding } : null;
     botError = null;
     botEditorOpen = true;
@@ -266,6 +262,7 @@
           primary_manuscript_id: botSpecialistId,
           additional_manuscript_ids: editingBot.additional_manuscript_ids ?? [],
           default_mode: editingBot.default_mode ?? null,
+          ...botExecutorUpdate(editingBot.external_agent, botExternalAgent),
           world_binding: botWorldBinding ?? undefined,
           clear_world_binding: Boolean(editingBot.world_binding && !botWorldBinding),
         });
@@ -280,6 +277,7 @@
           primary_manuscript_id: botSpecialistId,
           additional_manuscript_ids: [],
           default_mode: null,
+          external_agent: botExternalAgent,
           world_binding: botWorldBinding ?? undefined,
         });
         await chat.refreshSessions({ force: true });
@@ -581,7 +579,7 @@
                 <BotRow
                   {bot}
                   specialistLabel={specialistLabel(bot)}
-                  selected={bot.primary_session_id === chat.sessionId}
+                  selected={bots.forSession(chat.focusedSessionId)?.bot_id === bot.bot_id}
                   alwaysShowActions={touchActions}
                   onSelect={() => void selectBot(bot)}
                   onEdit={() => openEditBot(bot)}
@@ -605,6 +603,8 @@
           </div>
         {/if}
       </li>
+
+      <ConnectedAgentList {open} {query} onSelect={(sessionId, title) => void selectSession(sessionId, title)} />
 
       {#if archivedBots.length > 0}
         <li class="session-sidebar-section">
@@ -843,7 +843,7 @@
 
   {#if botEditorOpen}
     <BotEditor bind:name={botName} bind:purpose={botRole} bind:avatar={botAvatar}
-      bind:archetypeId={botSpecialistId} bind:worldBinding={botWorldBinding}
+      bind:archetypeId={botSpecialistId} bind:worldBinding={botWorldBinding} bind:externalAgent={botExternalAgent}
       editing={Boolean(editingBot)} saving={botSaving} error={botError}
       onclose={closeBotEditor} onsubmit={submitBot} />
   {/if}

@@ -88,4 +88,24 @@ describe("cached session resume", () => {
     expect(host.sessionId).toBe("source-session");
     expect(host.tryReattachActiveTurn).toHaveBeenCalledOnce();
   });
+  it("opens and reopens a provider address without hydrating native history", async () => {
+    vi.mocked(getSessionHistory).mockClear();
+    vi.stubGlobal("localStorage", { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() });
+    const hostState = {
+      workshopEpoch: 0, workshopScopeId: "personal", sessionId: "ordinary-chat", transcriptEpoch: 0,
+      sessionRuntimes: new Map(), messages: [] as ChatMessage[],
+      flushDraftPersist: vi.fn(), stashFocusedRuntime: vi.fn(),
+      loadRuntimeIntoFocused: (_runtime: ReturnType<typeof emptySessionRuntime>) => {},
+      tryReattachActiveTurn: vi.fn(async () => false),
+    };
+    hostState.loadRuntimeIntoFocused = (runtime) => { hostState.sessionId = runtime.sessionId; hostState.messages = runtime.messages; };
+    const host = hostState as unknown as ChatStoreHost;
+    await switchSession(host, "external-conversation:grok_bot:prox");
+    await switchSession(host, "external-conversation:grok_bot:prox");
+    expect(host.sessionId).toBe("external-conversation:grok_bot:prox");
+    expect(getSessionHistory).not.toHaveBeenCalled();
+    expect(host.tryReattachActiveTurn).not.toHaveBeenCalled();
+    expect(host.historyLoading).toBe(false);
+  });
+
 });

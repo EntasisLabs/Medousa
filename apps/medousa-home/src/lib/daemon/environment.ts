@@ -9,6 +9,7 @@ import {
   subscribePortalStreamError,
 } from "$lib/wasm/browserPortal";
 import type { StreamErrorPayload } from "./client";
+import { operationPath } from "./opPath";
 
 export async function getEnvironmentStatus(
   profileId?: string,
@@ -61,7 +62,7 @@ export async function startEnvironmentStream(
     if (sinceRevision !== undefined) query.set("since_revision", String(sinceRevision));
     if (profileId?.trim()) query.set("profile_id", profileId.trim());
     const suffix = query.size ? `?${query}` : "";
-    await openPortalStream("environment", `/v1/environment/spec/stream${suffix}`);
+    await openPortalStream("environment", `${operationPath("environment.spec.stream.get")}${suffix}`);
     return;
   }
   if (isBrowserWorkshop()) return;

@@ -64,6 +64,18 @@ describe("BotStore", () => {
     expect(store.forSession("another-session")).toBeNull();
   });
 
+  it("resolves a Bot attached to a secondary conversation and clears it on workshop switch", async () => {
+    const bot = profile();
+    const session = vi.fn(async () => ({ session_id: "secondary", bot, binding: { ...openResponse(bot).binding, session_id: "secondary", kind: "secondary" as const } }));
+    const store = new BotStore(api({ session }));
+    await store.refreshSessionBinding("secondary");
+    expect(store.forSession("secondary")?.display_name).toBe("Ada");
+    await store.refreshSessionBinding("secondary");
+    expect(session).toHaveBeenCalledOnce();
+    store.activateWorkshopScope("different-workshop");
+    expect(store.forSession("secondary")).toBeNull();
+  });
+
   it("does not publish a stale workshop response after switching", async () => {
     let resolveList: ((value: { bots: BotProfile[] }) => void) | undefined;
     const pending = new Promise<{ bots: BotProfile[] }>((resolve) => {
@@ -128,4 +140,14 @@ describe("BotStore", () => {
     );
     expect(store.bots[0]?.world_binding).toEqual(worldBinding);
   });
+  it("does not import an edit response into another workshop", async () => {
+    let resolve!: (bot: BotProfile) => void;
+    const store = new BotStore(api({ update: vi.fn(() => new Promise<BotProfile>((done) => { resolve = done; })) }));
+    const pending = store.update(profile(), { display_name: "Grace", primary_manuscript_id: "teacher" });
+    store.activateWorkshopScope("another-workshop");
+    resolve(profile({ display_name: "Grace", revision: 2 }));
+    await pending;
+    expect(store.bots).toEqual([]);
+  });
+
 });

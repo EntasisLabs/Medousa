@@ -1,8 +1,10 @@
 /**
  * Discover + connect to the workshop LSP Interoperability Orchestrator.
- * Prefer generated `code.lsp.get`; fall back to in-daemon Grapheme LSP.
+ * All languages use the coding engine; unavailable services remain unavailable.
  */
 
+import { quietShowMessageHandlers } from "$lib/code/codeDiagnosticPresentation";
+import { notifyCodeDiagnostics } from "$lib/code/codeDiagnosticsEvents";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
@@ -32,6 +34,9 @@ import {
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
 import { isTauri } from "$lib/window";
 import { getCoderExecutionTransport } from "$lib/executionAuthority";
+import { codeExecutionScopeKey, captureCodeScope } from "$lib/code/codeWorkspaceContext.svelte";
+import { observeCodeLanguageService, type CodeLanguageServiceIdentity } from "$lib/code/codeLspServiceIdentity";
+export type { CodeLanguageServiceIdentity } from "$lib/code/codeLspServiceIdentity";
 type CloseableTransport = {
   transport: Transport;
   close: () => void;
@@ -134,6 +139,8 @@ async function createNativeCloseableWebSocketTransport(
   path: string,
   onServerEvent?: (event: CodeLanguageServerEvent) => void,
 ): Promise<CloseableTransport> {
+  const executionRuntimeId = getCoderExecutionTransport();
+  const current = captureCodeScope(codeExecutionScopeKey);
   const handlers: Array<(value: string) => void> = [];
   let attachId: number | null = null;
   let expectedClose = false;
@@ -177,7 +184,8 @@ async function createNativeCloseableWebSocketTransport(
   );
 
   try {
-    const attached = await invoke<{ attach_id: number }>("code_lsp_attach", { path, executionRuntimeId: getCoderExecutionTransport() });
+    if (!current()) throw new Error("The coding workshop changed while opening the language connection");
+    const attached = await invoke<{ attach_id: number }>("code_lsp_attach", { path, executionRuntimeId });
     attachId = attached.attach_id;
     await invoke("code_lsp_ready", { attachId });
   } catch (error) {
@@ -334,7 +342,7 @@ export async function createWebSocketTransport(uri: string): Promise<Transport> 
 export type CodingEngineInfo = CodingEngineInfoResponse;
 
 export type ConnectOrchestratorLspOptions = {
-  language?: string;
+  language: string;
   workId?: string;
   documentUri?: string;
   workspaceRoot?: string;
@@ -343,108 +351,109 @@ export type ConnectOrchestratorLspOptions = {
   onServerEvent?: (event: CodeLanguageServerEvent) => void;
 };
 
-export async function connectOrchestratorLspClient(options?: ConnectOrchestratorLspOptions): Promise<{
+export async function connectOrchestratorLspClient(options: ConnectOrchestratorLspOptions): Promise<{
   client: LSPClient;
   workspace: GraphemeLspWorkspaceResponse;
-  via: "orchestrator" | "grapheme";
+  via: "orchestrator";
   close: () => void;
   closed: Promise<CodeLspSocketClose>;
   ready: Promise<null>;
+  service: CodeLanguageServiceIdentity;
 }> {
-  const language = (options?.language ?? "grapheme").trim() || "grapheme";
-  const graphemeWorkspace = await getGraphemeLspWorkspace();
+  const language = options.language?.trim().toLowerCase();
+  if (!language) throw new Error("An explicit language is required for language assistance");
+  const current = captureCodeScope(codeExecutionScopeKey);
+  const diagnosticScope = codeExecutionScopeKey();
+  const assertCurrent = () => {
+    if (!current()) throw new Error("The coding workshop changed while starting language assistance");
+  };
 
   try {
     const info = await getCodingEngineInfo();
-    if (info.available || info.starting) {
-      const query = new URLSearchParams({ language });
-      if (options?.workId) query.set("work_id", options.workId);
-      if (options?.documentUri) query.set("document_uri", options.documentUri);
-      const path = `${info.daemon_lsp_path || OPERATIONS["code.lsp.get"].path}?${query}`;
-      const wsUrl = await daemonWebSocketUrl(path);
-      const connection = await createCloseableWebSocketTransport(
-        wsUrl,
-        options?.onServerEvent,
-        path,
-      );
-      const rootUri = options?.languageRootUri
-        ? canonicalCodeDocumentUri(options.languageRootUri)
-        : options?.workspaceRoot
-          ? pathToFileUri(options.workspaceRoot)
-          : info.workspace_root_uri || graphemeWorkspace.root_uri;
-      const client = new LSPClient({
-        rootUri,
-        timeout: 30_000,
-        notificationHandlers: quietShowMessageHandlers(options?.onServerEvent),
-        extensions: [
-          ...languageServerExtensions(),
-          {
-            clientCapabilities: {
-              workspace: {
-                configuration: true,
-                workspaceFolders: true,
-              },
-              window: { workDoneProgress: true },
+    assertCurrent();
+    if (!info.available && !info.starting) {
+      throw new Error(info.message || "The coding engine is unavailable on this workshop");
+    }
+    if (info.daemon_lsp_path !== OPERATIONS["code.lsp.get"].path) {
+      throw new Error("This coding engine does not support the required language-service route. Update it in Settings → Packages.");
+    }
+    if (options.languageRootUri && options.workspaceRoot &&
+      !validatedCodeLanguageRootUri(options.languageRootUri, options.workspaceRoot)) {
+      throw new Error("Coding engine returned an invalid language root outside the governed coding workspace");
+    }
+    const graphemeWorkspace = await getGraphemeLspWorkspace();
+    assertCurrent();
+    const rootUri = options.languageRootUri
+      ? canonicalCodeDocumentUri(options.languageRootUri)
+      : options.workspaceRoot
+        ? pathToFileUri(options.workspaceRoot)
+        : graphemeWorkspace.root_uri;
+    if (options.workId && !options.languageRootUri) {
+      throw new Error("Coding engine returned an invalid language root for this project");
+    }
+    const query = new URLSearchParams({ language });
+    if (options.workId) query.set("work_id", options.workId);
+    if (options.documentUri) query.set("document_uri", options.documentUri);
+    const path = `${info.daemon_lsp_path}?${query}`;
+    const wsUrl = await daemonWebSocketUrl(path);
+    assertCurrent();
+    const connection = await createCloseableWebSocketTransport(
+      wsUrl,
+      options.onServerEvent,
+      path,
+    );
+    if (!current()) {
+      connection.close();
+      assertCurrent();
+    }
+    const identity = observeCodeLanguageService(connection.transport, { language, rootUri, path });
+    const client = new LSPClient({
+      rootUri,
+      timeout: 30_000,
+      notificationHandlers: quietShowMessageHandlers(options.onServerEvent, () => {
+        if (current() && options.workId) notifyCodeDiagnostics(diagnosticScope, options.workId);
+      }),
+      extensions: [
+        ...languageServerExtensions(),
+        {
+          clientCapabilities: {
+            workspace: {
+              configuration: true,
+              workspaceFolders: true,
             },
+            window: { workDoneProgress: true },
           },
-        ],
-        workspace: options?.workspaceBridge
-          ? (client) => new MedousaCodeWorkspace(client, options.workspaceBridge!)
-          : undefined,
-      }).connect(connection.transport);
-      const ready = client.initializing;
-      void ready.catch(() => {
-        client.disconnect();
-        connection.close();
-      });
-      return {
-        client,
-        workspace: {
-          ...graphemeWorkspace,
-          root_uri: rootUri,
-          root_path: options?.workspaceRoot || info.workspace_root || graphemeWorkspace.root_path,
         },
-        via: "orchestrator",
-        close: connection.close,
-        closed: connection.closed,
-        ready,
-      };
-    }
+      ],
+      workspace: options.workspaceBridge
+        ? (client) => new MedousaCodeWorkspace(client, options.workspaceBridge!)
+        : undefined,
+    }).connect(identity.transport);
+    const ready = client.initializing.then(() => {
+      assertCurrent();
+      identity.validate();
+      return null;
+    }).finally(identity.dispose);
+    void ready.catch(() => {
+      client.disconnect();
+      connection.close();
+    });
+    return {
+      client,
+      workspace: {
+        ...graphemeWorkspace,
+        root_uri: rootUri,
+        root_path: options.workspaceRoot ?? graphemeWorkspace.root_path,
+      },
+      via: "orchestrator",
+      close: connection.close,
+      closed: connection.closed,
+      ready,
+      service: identity.service,
+    };
   } catch (error) {
-    if (language !== "grapheme") {
-      throw new Error(smartEditingUnavailableMessage(language, error));
-    }
-    // Grapheme has an in-daemon fallback.
+    throw new Error(smartEditingUnavailableMessage(language, error));
   }
-
-  const wsUrl = await daemonWebSocketUrl(OPERATIONS["grapheme.lsp.get"].path);
-  const connection = await createCloseableWebSocketTransport(
-    wsUrl,
-    options?.onServerEvent,
-    OPERATIONS["grapheme.lsp.get"].path,
-  );
-  const client = new LSPClient({
-    rootUri: graphemeWorkspace.root_uri,
-    timeout: 30_000,
-    notificationHandlers: quietShowMessageHandlers(options?.onServerEvent),
-    extensions: languageServerExtensions(),
-    workspace: options?.workspaceBridge
-      ? (client) => new MedousaCodeWorkspace(client, options.workspaceBridge!)
-      : undefined,
-  }).connect(connection.transport);
-  const ready = client.initializing;
-  void ready.catch(() => {
-    client.disconnect();
-    connection.close();
-  });
-  return {
-    client,
-    workspace: graphemeWorkspace,
-    via: "grapheme",
-    close: connection.close,
-    closed: connection.closed,
-    ready,
-  };
 }
 
 export type CodeWorkspaceLspProgress = {
@@ -490,6 +499,13 @@ const workspaceClients = new Map<string, WorkspaceClientEntry>();
 export function isPermanentLanguageServiceError(detail: string): boolean {
   const lower = detail.toLowerCase();
   return (
+    lower.includes("does not support the required language-service") ||
+    lower.includes("coding engine returned an invalid language") ||
+    lower.includes("no language server is registered") ||
+    lower.includes("unexpected language server") ||
+    lower.includes("medousa-code binary not found") ||
+    lower.includes("incompatible medousa-code") ||
+    /\bhttp\s+40[45]\b/.test(lower) ||
     lower.includes("outside the governed") ||
     lower.includes("outside the coding engine allowlist") ||
     lower.includes("is not installed on this workshop") ||
@@ -513,8 +529,9 @@ export function codeWorkspaceLspPoolKey(
   workId: string,
   language: string,
   languageRootUri: string,
+  workspaceScope = codeExecutionScopeKey(),
 ): string {
-  return `${workId}:${language.toLowerCase()}:${canonicalCodeDocumentUri(languageRootUri)}`;
+  return JSON.stringify([workspaceScope, workId, language.toLowerCase(), canonicalCodeDocumentUri(languageRootUri)]);
 }
 
 function closeWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
@@ -570,36 +587,6 @@ function applyWorkspaceServerEvent(
       notice: event.message,
     });
   }
-}
-
-/** Suppress CodeMirror's top OK dialog for window/showMessage; route via onServerEvent. */
-function quietShowMessageHandlers(
-  onServerEvent?: (event: CodeLanguageServerEvent) => void,
-): NonNullable<ConstructorParameters<typeof LSPClient>[0]>["notificationHandlers"] {
-  return {
-    "window/showMessage": (_client, params) => {
-      const message =
-        params && typeof (params as { message?: unknown }).message === "string"
-          ? (params as { message: string }).message
-          : "";
-      const type = (params as { type?: unknown } | null)?.type;
-      const level =
-        type === 1
-          ? "error"
-          : type === 2
-            ? "warning"
-            : type === 3
-              ? "info"
-              : "log";
-      if (message) {
-        // Info spam (e.g. rust-analyzer auto-reload) stays out of the chrome.
-        if (level === "info" || level === "log") return true;
-        if (/auto-reloading is disabled/i.test(message)) return true;
-        onServerEvent?.({ kind: "log", level, message });
-      }
-      return true;
-    },
-  };
 }
 
 function createWorkspaceClientEntry(
@@ -661,7 +648,7 @@ function createWorkspaceClientEntry(
         notice: null,
       });
     });
-  });
+  }).catch(() => {});
   void client.catch((err) => {
     if (entry.expectedClose || entry.status.phase === "reconnecting") return;
     entry.disconnected = true;
@@ -693,33 +680,31 @@ function restartWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
 }
 
 export async function acquireCodeWorkspaceLspClient(options: {
+  workspaceScope?: string;
   workId: string;
   workspaceRoot: string;
   language: string;
   documentUri: string;
 }): Promise<CodeWorkspaceLspLease> {
+  const executionScope = codeExecutionScopeKey();
   const workspaceRoot = options.workspaceRoot.replace(/[\\/]+$/, "");
-  const projectRootUri = canonicalCodeDocumentUri(pathToFileUri(workspaceRoot));
-  let languageRootUri = projectRootUri;
-  try {
-    const resolved = await getCodeLanguageRoot({
-      workId: options.workId,
-      language: options.language,
-      uri: options.documentUri,
-    });
-    languageRootUri =
-      validatedCodeLanguageRootUri(resolved.root_uri, workspaceRoot) ?? projectRootUri;
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    // Permanent path/policy failures must not fall through to a websocket that
-    // will immediately die and trigger reconnect spam.
-    if (isPermanentLanguageServiceError(detail)) throw err;
-    // Rolling-upgrade compatibility: older coding engines use the project root.
+  const resolved = await getCodeLanguageRoot({
+    workId: options.workId,
+    language: options.language,
+    uri: options.documentUri,
+  });
+  if (executionScope !== codeExecutionScopeKey()) {
+    throw new Error("The coding workshop changed while discovering the language root");
+  }
+  const languageRootUri = validatedCodeLanguageRootUri(resolved.root_uri, workspaceRoot);
+  if (!languageRootUri) {
+    throw new Error("Coding engine returned an invalid language root outside the governed coding workspace");
   }
   const key = codeWorkspaceLspPoolKey(
     options.workId,
     options.language,
     languageRootUri,
+    JSON.stringify([executionScope, options.workspaceScope]),
   );
   let entry = workspaceClients.get(key);
   if (!entry) {
@@ -845,11 +830,15 @@ export async function getCodeLanguageRoot(options: {
     uri: options.uri,
     language: options.language,
   });
-  if (typeof response.root_uri !== "string" || !response.root_uri) {
+  if (
+    response.ok !== true ||
+    response.language !== options.language.toLowerCase() ||
+    typeof response.root_uri !== "string" || !response.root_uri
+  ) {
     throw new Error("Coding engine returned an invalid language root");
   }
   return {
-    language: response.language ?? options.language,
+    language: response.language,
     root_uri: response.root_uri,
     relative_root: response.relative_root ?? "",
   };
@@ -937,14 +926,22 @@ export async function getCodeLanguageMatrix(): Promise<CodeLanguageMatrixEntry[]
       args?: string[];
     }>;
   }>(OPERATIONS["code.language_matrix.get"].path, {});
-  if (!Array.isArray(response.languages)) return [];
+  if (
+    response.ok !== true || !Array.isArray(response.languages) ||
+    response.languages.some((entry) =>
+      !entry || typeof entry.language !== "string" || !entry.language.trim() ||
+      typeof entry.binary_available !== "boolean" || typeof entry.usable !== "boolean",
+    )
+  ) {
+    throw new Error("This coding engine does not support the required language-service matrix. Update it in Settings → Packages.");
+  }
   return response.languages
     .filter((entry) => typeof entry.language === "string" && entry.language)
     .map((entry) => ({
       language: entry.language!,
       command: typeof entry.command === "string" ? entry.command : null,
-      binaryAvailable: Boolean(entry.binary_available ?? entry.usable),
-      usable: Boolean(entry.usable ?? entry.binary_available),
+      binaryAvailable: entry.binary_available === true,
+      usable: entry.usable === true && entry.binary_available === true,
       packageId: typeof entry.package_id === "string" ? entry.package_id : null,
       rootMarkers: Array.isArray(entry.root_markers)
         ? entry.root_markers.filter((marker): marker is string => typeof marker === "string")
@@ -1053,7 +1050,7 @@ export type CodeWorkspaceDiagnostic = {
 };
 
 export type CodeWorkspaceDiagnosticsSnapshot = {
-  scope?: "active_sessions" | "language" | "language_fallback" | string;
+  scope?: "active_sessions" | "language" | string;
   languages: string[];
   documents: CodeWorkspaceDiagnostic[];
   unavailableLanguages?: string[];
@@ -1071,6 +1068,9 @@ export async function getCodeWorkspaceDiagnostics(options: {
     languages?: string[];
     documents?: CodeWorkspaceDiagnostic[];
   }>(OPERATIONS["code.workspace_diagnostics.get"].path, query);
+  if (response.ok !== true || !Array.isArray(response.documents)) {
+    throw new Error("This coding engine does not support the required language-service diagnostics. Update it in Settings → Packages.");
+  }
   return {
     scope: response.scope,
     languages: Array.isArray(response.languages)
@@ -1082,43 +1082,16 @@ export async function getCodeWorkspaceDiagnostics(options: {
   };
 }
 
-/** New engines aggregate active sessions; older engines are queried per open language. */
+/** Read the required aggregate contract without starting alternate language sessions. */
 export async function getAllCodeWorkspaceDiagnostics(options: {
   workId: string;
   languages: string[];
 }): Promise<CodeWorkspaceDiagnosticsSnapshot> {
-  let aggregateError: unknown = null;
-  try {
-    const aggregate = await getCodeWorkspaceDiagnostics({ workId: options.workId });
-    if (aggregate.scope === "active_sessions") return aggregate;
-  } catch (err) {
-    aggregateError = err;
+  const snapshot = await getCodeWorkspaceDiagnostics({ workId: options.workId });
+  if (snapshot.scope !== "active_sessions") {
+    throw new Error("This coding engine does not support the required language-service diagnostics. Update it in Settings → Packages.");
   }
-  const languages = [...new Set(options.languages.map((language) => language.trim()).filter(Boolean))];
-  const settled = await Promise.allSettled(
-    languages.map((language) =>
-      getCodeWorkspaceDiagnostics({ workId: options.workId, language }),
-    ),
-  );
-  const snapshots = settled.flatMap((result) =>
-    result.status === "fulfilled" ? [result.value] : [],
-  );
-  if (snapshots.length === 0 && aggregateError) throw aggregateError;
-  const documents = new Map<string, CodeWorkspaceDiagnostic>();
-  for (const snapshot of snapshots) {
-    for (const document of snapshot.documents) {
-      const key = `${document.language ?? ""}:${document.uri ?? ""}`;
-      documents.set(key, document);
-    }
-  }
-  return {
-    scope: "language_fallback",
-    languages,
-    documents: [...documents.values()],
-    unavailableLanguages: languages.filter(
-      (_, index) => settled[index]?.status === "rejected",
-    ),
-  };
+  return { ...snapshot, unavailableLanguages: options.languages.filter((language) => !snapshot.languages.includes(language)) };
 }
 
 export type CodeLanguageCapabilities = Record<string, unknown>;

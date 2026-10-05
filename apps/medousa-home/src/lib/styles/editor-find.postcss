@@ -1,0 +1,83 @@
+/** Shared floating find chrome for Notes and Code. */
+@layer features {
+  .editor-find-bar {
+    @apply pointer-events-auto absolute right-3 top-2.5 z-[90] flex max-w-[min(100%-1.5rem,24rem)] flex-col gap-1 rounded-md border border-surface-500/35 py-0.5 pl-2 pr-0.5 shadow-lg;
+    background-color: rgb(var(--color-surface-900) / 0.94);
+    backdrop-filter: blur(8px);
+  }
+
+  .editor-find-bar--replace {
+    @apply max-w-[min(100%-1.5rem,26rem)];
+  }
+
+  .editor-find-bar-row {
+    @apply flex items-center;
+  }
+
+  .editor-find-bar-row--replace {
+    @apply border-t border-surface-500/25 pt-0.5;
+  }
+
+  .editor-find-input {
+    @apply min-w-[6.5rem] flex-1 border-0 bg-transparent py-1 text-[13px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0;
+  }
+
+  .editor-find-divider {
+    @apply mx-0.5 h-3.5 w-px shrink-0 bg-surface-500/35;
+  }
+
+  .editor-find-status {
+    @apply shrink-0 px-1 text-[11px] tabular-nums text-content-quiet;
+    min-width: 3.25rem;
+    text-align: center;
+  }
+
+  .editor-find-nav {
+    @apply flex shrink-0 items-center;
+  }
+
+  .editor-find-btn {
+    @apply inline-flex h-6 w-6 items-center justify-center rounded text-content-tertiary transition hover:bg-surface-800/80 hover:text-surface-100 disabled:opacity-30;
+  }
+
+  .editor-find-btn--active {
+    @apply bg-primary-500/20 text-primary-100;
+  }
+
+  .editor-find-text-btn {
+    @apply shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-content-secondary transition hover:bg-surface-800/80 hover:text-surface-50 disabled:opacity-30;
+  }
+
+  .editor-find-bar--code {
+    width: min(calc(100% - 1.5rem), 32rem);
+    max-width: calc(100% - 1.5rem);
+  }
+
+  .editor-find-bar--below {
+    top: auto;
+    bottom: 0.75rem;
+  }
+
+  .editor-find-bar--code .editor-find-bar-row:first-child {
+    flex-wrap: wrap;
+  }
+
+  .editor-find-bar--code .editor-find-input {
+    min-width: 5rem;
+    width: 0;
+  }
+
+  .editor-find-btn:focus-visible,
+  .editor-find-text-btn:focus-visible {
+    outline: 2px solid rgb(var(--color-primary-400));
+    outline-offset: 1px;
+  }
+
+  .editor-find-message {
+    @apply px-1 pb-1 text-[11px] text-content-quiet;
+  }
+
+  .editor-find-message--error {
+    @apply text-error-300;
+  }
+}

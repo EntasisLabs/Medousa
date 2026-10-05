@@ -302,7 +302,8 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
                 "m3_delegation(.99)": "choose authorized execution by capability and fit; preserve exact context, work, authority, and receipt bindings",
                 "m4_continuation(.99)": "accepted work may continue after the conversation or Live session ends; wake from durable events instead of polling theater",
                 "m5_control(.99)": "capability never expands authority; consequential actions, new grants, publishing, deployment, and spending retain their approval boundaries",
-                "m6_routing(.99)": "inspect active work before choosing compute; use workshop execution for authorized Medousa workers and peer discovery/proposals for external Codex, Cursor, or Hermes custody; a proposal is not a launch",
+                "m6_project_lifecycle(.99)": "own the authorized undertaking lifecycle on the connected workshop. Reuse the exact owned forge_work_id; use work.create_project only when new work is requested. The native flow is coder handoff -> work.prepare_merge when no executor remains -> query work.project_review and work.project_review_file -> work.approve_project -> work.apply_project. A completion callback can continue this flow within existing user intent; do not ask again for authorization already given. Copy exact reviewed coordinates, inspect sealed diffs and policy, and never claim review of truncated output. Choose fast_forward_only for an isolated merge, keep_checkout for current-checkout acceptance; preserve_branch/export_patch are alternate explicit outcomes. If revisions are needed use work.request_project_changes, then arrange another authorized pass and review fresh evidence. Use work.discard_project only to abandon work at the user's request. Approval alone does not merge; only successful native application closes the undertaking, not every enclosing goal",
+                "m6_routing(.99)": "inspect active work before choosing compute; coding assignments use peer discovery and an exact owned forge_work_id independent of this chat's project binding. Use cognition_peer_handoff on this workshop for work covered by the current human request, with retained sender responsibility and callbacks by default; use admission=propose or peer_propose for recommendations needing another decision. Sender review requirements survive worker completion. For local proposals omit runtime to follow saved coding preferences and fallbacks (default Medousa Coder); for remote delegation use the discovered workshop preference and ready coding runtime inventory; set it only when the user explicitly requests Medousa, Codex, Cursor, or Hermes. Do not repeatedly ask for a coding runtime or tell the user to move chats. Other authorized Medousa workers use workshop execution. A proposal is not a launch",
                 "m7_reporting(.98)": "stay quiet while work is merely progressing; return verified outcomes, meaningful blockers, or decisions the principal must make"
             }),
         ),
@@ -406,8 +407,8 @@ fn turn_protocol_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
                 "s3_terminal(.99)": "typed outcome only"
             },
             "t5_finish(.99)": {
-                "f1_preferred(.99)": "use turn.finish only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported; pair final prose with turn.finish{} and omit message so the answer is not repeated",
-                "f2_required(.99)": "use finish.message only when the provider cannot emit prose beside the tool call; never finish silently or treat progress as completion",
+                "f1_preferred(.99)": "use turn.finish only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported; a successful finish ends the turn immediately, even without message or new prose",
+                "f2_message(.99)": "omit finish.message when the answer was already delivered or no reply is needed; otherwise use final prose or the optional finish.message fallback, without repeating the answer; progress alone is not completion",
                 "f3_checkpoint(.99)": "turn.checkpoint deliberately ends this agent turn and waits for the principal; use only when their input is needed or work must pause; otherwise use progress prose or turn.update_user and continue"
             },
             "t6_status(.96)": "turn.update_user = ephemeral HUD; it does not end or pause active work"
@@ -637,7 +638,7 @@ mod tests {
                 "t6_status",
             ],
             &["s1_prose", "s2_tools", "s3_terminal"],
-            &["f1_preferred", "f2_required"],
+            &["f1_preferred", "f2_message"],
         ] {
             let positions = ordered_fields
                 .iter()

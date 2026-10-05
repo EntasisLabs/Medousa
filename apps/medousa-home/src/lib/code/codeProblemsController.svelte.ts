@@ -11,13 +11,21 @@ import {
   type CodeProblem,
   type CodeProblemSeverityFilter,
 } from "$lib/code/codeProblems";
-import { getAllCodeWorkspaceDiagnostics } from "$lib/code/codingEngineClient";
+import { getAllCodeWorkspaceDiagnostics, type CodeWorkspaceDiagnostic } from "$lib/code/codingEngineClient";
 import type { CodeContextPanel } from "$lib/code/codeWorkbenchState.svelte";
 
 export type CodeEditorDocumentProblem = {
   message: string;
   severity: "error" | "warning" | "info" | "hint" | string;
   line: number;
+  character?: number;
+  endLine?: number;
+  endCharacter?: number;
+  source?: string;
+  code?: NonNullable<CodeWorkspaceDiagnostic["diagnostics"]>[number]["code"];
+  tags?: number[];
+  relatedInformation?: NonNullable<CodeWorkspaceDiagnostic["diagnostics"]>[number]["relatedInformation"];
+  version?: number;
 };
 
 export const PROBLEM_SEVERITY_OPTIONS: Array<{
@@ -31,9 +39,11 @@ export const PROBLEM_SEVERITY_OPTIONS: Array<{
 ];
 
 export type CodeProblemsControllerDeps = {
+  getScopeKey: () => string;
   getWorkId: () => string;
   getWorkspaceRoot: () => string | null;
   getDocumentUri: () => string | null;
+  getDocumentVersion?: () => number | null;
   getActiveLanguage: () => string;
   getWorkspaceLanguages: () => string[];
   persistPanel: (panel: CodeContextPanel) => void;
@@ -65,6 +75,7 @@ function editorProblemsToWorkspace(
     [
       {
         uri: documentUri,
+        version: problems[0]?.version,
         language,
         diagnostics: problems.map((problem) => {
           const severity =
@@ -77,10 +88,11 @@ function editorProblemsToWorkspace(
                   : 4;
           return {
             message: problem.message,
+            source: problem.source, code: problem.code, tags: problem.tags, relatedInformation: problem.relatedInformation,
             severity,
             range: {
-              start: { line: Math.max(0, problem.line - 1), character: 0 },
-              end: { line: Math.max(0, problem.line - 1), character: 0 },
+              start: { line: Math.max(0, problem.line - 1), character: Math.max(0, (problem.character ?? 1) - 1) },
+              end: { line: Math.max(0, (problem.endLine ?? problem.line) - 1), character: Math.max(0, (problem.endCharacter ?? problem.character ?? 1) - 1) },
             },
           };
         }),
@@ -99,11 +111,21 @@ export class CodeProblemsController {
   workspaceScope = $state("");
   loaded = $state(false);
   loading = $state(false);
+  refreshing = $state(false);
   error = $state<string | null>(null);
   unavailableLanguages = $state<string[]>([]);
+  observedDocuments = $state(0);
+  analysisScope = $state<string | null>(null);
   query = $state("");
   severity = $state<CodeProblemSeverityFilter>("all");
   #requestEpoch = 0;
+  #inFlight: { key: string; promise: Promise<void> } | null = null;
+  #refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  #retryAfter = 0;
+  #failures = 0;
+  #documentScope = "";
+  #documentUri: string | null = null;
+  #taskScope = "";
   #deps: CodeProblemsControllerDeps;
 
   constructor(deps: CodeProblemsControllerDeps) {
@@ -113,13 +135,37 @@ export class CodeProblemsController {
   get scopeKey(): string {
     const workId = this.#deps.getWorkId();
     const root = this.#deps.getWorkspaceRoot();
-    return workId && root ? `${workId}\u0000${root}` : "";
+    return workId && root ? this.#deps.getScopeKey() : "";
   }
 
-  get documentFallback(): CodeProblem[] {
+  resetForScope() {
+    this.#requestEpoch += 1;
+    this.#inFlight = null;
+    if (this.#refreshTimer) clearTimeout(this.#refreshTimer);
+    this.#refreshTimer = null;
+    this.#retryAfter = 0;
+    this.#failures = 0;
+    this.documentProblems = [];
+    this.workspaceProblems = [];
+    this.taskProblems = [];
+    this.taskRunId = null;
+    this.workspaceScope = "";
+    this.loaded = false;
+    this.loading = false;
+    this.refreshing = false;
+    this.error = null;
+    this.unavailableLanguages = [];
+    this.observedDocuments = 0;
+    this.analysisScope = null;
+    this.#documentScope = "";
+    this.#documentUri = null;
+    this.#taskScope = "";
+  }
+
+  get documentObservations(): CodeProblem[] {
     const uri = this.#deps.getDocumentUri();
     const root = this.#deps.getWorkspaceRoot();
-    if (!uri || !root) return [];
+    if (!uri || !root || this.#documentScope !== this.scopeKey || this.#documentUri !== uri) return [];
     return editorProblemsToWorkspace(
       this.documentProblems,
       uri,
@@ -129,10 +175,14 @@ export class CodeProblemsController {
   }
 
   get effective(): CodeProblem[] {
+    const uri = this.#deps.getDocumentUri();
+    const currentDocumentObserved = this.#documentScope === this.scopeKey && this.#documentUri === uri;
     const languageProblems = this.loaded && this.workspaceScope === this.scopeKey
-      ? this.workspaceProblems
-      : this.documentFallback;
-    return [...languageProblems, ...this.taskProblems];
+      ? [...this.workspaceProblems.filter((problem) => !currentDocumentObserved || problem.uri !== uri), ...(currentDocumentObserved ? this.documentObservations : [])]
+      : this.documentObservations;
+    const version = this.#deps.getDocumentVersion?.();
+    const observations = languageProblems.map((problem) => problem.uri === uri && version != null ? { ...problem, fresh: problem.documentVersion != null && problem.documentVersion === version } : problem);
+    return [...observations, ...(this.#taskScope === this.scopeKey ? this.taskProblems : [])];
   }
 
   get filtered(): CodeProblem[] {
@@ -161,10 +211,13 @@ export class CodeProblemsController {
   }
 
   setDocumentProblems(next: CodeEditorDocumentProblem[]) {
+    this.#documentScope = this.scopeKey;
+    this.#documentUri = this.#deps.getDocumentUri();
     this.documentProblems = next;
   }
 
   setTaskRun(run: CodeTaskProblemRun | null) {
+    this.#taskScope = this.scopeKey;
     if (!run) {
       this.taskRunId = null;
       this.taskProblems = [];
@@ -193,11 +246,37 @@ export class CodeProblemsController {
     }));
   }
 
-  async refresh(options?: { quiet?: boolean }) {
+  /** Coalesce diagnostic publications and filesystem events into one snapshot read. */
+  scheduleRefresh() {
+    if (this.#refreshTimer) clearTimeout(this.#refreshTimer);
+    this.#refreshTimer = setTimeout(() => {
+      this.#refreshTimer = null;
+      void this.refresh({ quiet: true });
+    }, 350);
+  }
+
+  dispose() {
+    this.resetForScope();
+  }
+
+  refresh(options?: { quiet?: boolean }): Promise<void> {
+    const key = JSON.stringify([this.scopeKey, this.#deps.getWorkspaceLanguages()]);
+    if (this.#inFlight?.key === key) return this.#inFlight.promise;
+    // Background invalidations must not hammer a failing service. Explicit Retry bypasses this.
+    if (options?.quiet && this.error && this.scopeKey && this.workspaceScope === this.scopeKey &&
+        Date.now() < this.#retryAfter) return Promise.resolve();
+    const request = { key, promise: this.#refresh(options) };
+    this.#inFlight = request;
+    void request.promise.finally(() => {
+      if (this.#inFlight === request) this.#inFlight = null;
+    });
+    return request.promise;
+  }
+
+  async #refresh(options?: { quiet?: boolean }) {
     const requestWorkId = this.#deps.getWorkId();
     const requestRoot = this.#deps.getWorkspaceRoot();
-    const requestScope =
-      requestWorkId && requestRoot ? `${requestWorkId}\u0000${requestRoot}` : "";
+    const requestScope = this.scopeKey;
     const requestLanguages = [...this.#deps.getWorkspaceLanguages()];
     const requestEpoch = ++this.#requestEpoch;
     if (!requestScope || !requestRoot) {
@@ -205,6 +284,7 @@ export class CodeProblemsController {
       this.workspaceScope = "";
       this.loaded = false;
       this.loading = false;
+      this.refreshing = false;
       this.error = null;
       this.unavailableLanguages = [];
       return;
@@ -213,10 +293,13 @@ export class CodeProblemsController {
       this.workspaceProblems = [];
       this.workspaceScope = requestScope;
       this.loaded = false;
+      this.error = null;
+      this.#retryAfter = 0;
+      this.#failures = 0;
       this.unavailableLanguages = [];
     }
-    if (!options?.quiet || !this.loaded) this.loading = true;
-    this.error = null;
+    this.refreshing = true;
+    this.loading = !options?.quiet || (!this.loaded && !this.error);
     try {
       const snapshot = await getAllCodeWorkspaceDiagnostics({
         workId: requestWorkId,
@@ -229,15 +312,24 @@ export class CodeProblemsController {
         snapshot.documents,
         requestRoot,
       );
+      this.observedDocuments = snapshot.documents.length;
+      this.analysisScope = snapshot.scope ?? null;
       this.unavailableLanguages = snapshot.unavailableLanguages ?? [];
       this.loaded = true;
+      this.error = null;
+      this.#failures = 0;
+      this.#retryAfter = 0;
     } catch (err) {
       if (requestEpoch !== this.#requestEpoch || this.scopeKey !== requestScope) {
         return;
       }
       this.error = err instanceof Error ? err.message : String(err);
+      this.#retryAfter = Date.now() + Math.min(60_000, 5_000 * 2 ** this.#failures++);
     } finally {
-      if (requestEpoch === this.#requestEpoch) this.loading = false;
+      if (requestEpoch === this.#requestEpoch) {
+        this.loading = false;
+        this.refreshing = false;
+      }
     }
   }
 

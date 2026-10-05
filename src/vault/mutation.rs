@@ -39,6 +39,12 @@ pub fn commit_write(
         check_precondition(&mutation, existing.as_ref())?;
 
         let operation_id = uuid::Uuid::new_v4().simple().to_string();
+        #[cfg(feature = "full-daemon")]
+        let mut identities = crate::vault::identity::VaultIdentityTransaction::begin(owner, false)?;
+        #[cfg(feature = "full-daemon")]
+        let identity = Some(identities.prepare_write(&path)?);
+        #[cfg(not(feature = "full-daemon"))]
+        let identity = None;
         let digest = content_digest(&mutation.content);
         let intent_generation = owner.current_generation();
         let intent = VaultMutationIntent {
@@ -52,19 +58,55 @@ pub fn commit_write(
                 .map(|v| v.as_str().to_string()),
             content_digest: digest.clone(),
             vault_generation: intent_generation,
+            identity,
         };
+        #[cfg(feature = "full-daemon")]
+        let mut intent = intent;
         let intent_path = intent_store_path(&operation_id)?;
         let intent_bytes = serde_json::to_vec(&intent)
             .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
         let tx = owner.transaction();
         tx.write_intent(&intent_path, &intent_bytes, DurabilityLevel::Synced)?;
 
-        match mutation.precondition {
-            MutationPrecondition::CreateOnly => {
-                tx.create_only(&path, mutation.content.as_bytes(), DurabilityLevel::Synced)?;
-            }
-            _ => {
-                tx.replace_snapshot(&path, mutation.content.as_bytes(), DurabilityLevel::Synced)?;
+        let published_file = match mutation.precondition {
+            MutationPrecondition::CreateOnly => tx.create_only_with_witness(
+                &path,
+                mutation.content.as_bytes(),
+                DurabilityLevel::Synced,
+            )?,
+            _ => tx.replace_snapshot_with_witness(
+                &path,
+                mutation.content.as_bytes(),
+                DurabilityLevel::Synced,
+            )?,
+        };
+        #[cfg(not(feature = "full-daemon"))]
+        let _ = published_file;
+
+        #[cfg(feature = "full-daemon")]
+        {
+            // Seal the physical publication witness before generation/receipt
+            // work. A crash before this fence stays ambiguous, never hash-merged.
+            if let Some(binding) = &mut intent.identity {
+                binding.published_file = Some(published_file.into());
+                let bytes = serde_json::to_vec(&intent)
+                    .map_err(|e| VaultMutationError::Invalid(e.to_string()))?;
+                if tx
+                    .write_intent(&intent_path, &bytes, DurabilityLevel::Synced)
+                    .is_err()
+                {
+                    return Ok(published_repair_outcome(
+                        owner,
+                        &normalized,
+                        &mutation.content,
+                    ));
+                }
+            } else {
+                return Ok(published_repair_outcome(
+                    owner,
+                    &normalized,
+                    &mutation.content,
+                ));
             }
         }
 
@@ -104,6 +146,7 @@ pub fn commit_write(
             note_version: note_version.as_str().to_string(),
             vault_generation,
             bytes: mutation.content.len(),
+            identity: intent.identity.clone(),
         };
         let receipt_path = receipt_store_path(&operation_id)?;
         let receipt_bytes = serde_json::to_vec(&receipt_record)
@@ -119,6 +162,24 @@ pub fn commit_write(
         let index_repair_required =
             match tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced) {
                 Ok(_) => {
+                    #[cfg(feature = "full-daemon")]
+                    if let Some(binding) = &receipt_record.identity
+                        && identities
+                            .complete(
+                                binding,
+                                &path,
+                                false,
+                                Some(&content_hash(&mutation.content)),
+                            )
+                            .is_err()
+                    {
+                        return Ok(VaultCommitOutcome {
+                            receipt,
+                            note_version,
+                            vault_generation,
+                            index_repair_required: true,
+                        });
+                    }
                     let _ = tx.root().remove_file(&intent_path);
                     false
                 }
@@ -153,16 +214,20 @@ pub fn recover_all_pending_writes(
     if !owner.files.is_dir(&intent_root).unwrap_or(false) {
         return Ok(Vec::new());
     }
-    let mut recovered = Vec::new();
-    for entry in owner
+    #[cfg(feature = "full-daemon")]
+    let operation_ids = {
+        let _repair = crate::vault::identity::VaultIdentityTransaction::begin(owner, true)?;
+        crate::vault::identity::VaultIdentityTransaction::pending_journal_ids(owner)?
+    };
+    #[cfg(not(feature = "full-daemon"))]
+    let operation_ids: Vec<String> = owner
         .files
-        .list_directory_utf8(&intent_root)
-        .map_err(VaultMutationError::from)?
-    {
-        if !entry.name.ends_with(".json") {
-            continue;
-        }
-        let operation_id = entry.name.trim_end_matches(".json");
+        .list_directory_utf8(&intent_root)?
+        .into_iter()
+        .filter_map(|entry| entry.name.strip_suffix(".json").map(str::to_string))
+        .collect();
+    let mut recovered = Vec::new();
+    for operation_id in &operation_ids {
         let intent_path = intent_store_path(operation_id)?;
         let peek = owner
             .files
@@ -192,6 +257,8 @@ pub fn recover_pending_write(
     owner: &Arc<VaultIndexOwner>,
     operation_id: &str,
 ) -> Result<Option<VaultCommitOutcome>, VaultMutationError> {
+    #[cfg(feature = "full-daemon")]
+    let mut identities = crate::vault::identity::VaultIdentityTransaction::begin(owner, true)?;
     let intent_path = intent_store_path(operation_id)?;
     let receipt_path = receipt_store_path(operation_id)?;
     let tx = owner.transaction();
@@ -205,6 +272,11 @@ pub fn recover_pending_write(
             .map_err(VaultMutationError::from)?;
         let record: VaultMutationReceiptRecord = serde_json::from_slice(&bytes)
             .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+        #[cfg(feature = "full-daemon")]
+        if has_intent && let Some(binding) = &record.identity {
+            let path = VaultPath::parse(&record.path)?;
+            identities.complete(binding, &path, false, None)?;
+        }
         let _ = tx.root().remove_file(&intent_path);
         return Ok(Some(VaultCommitOutcome {
             receipt: vault_receipt(
@@ -231,6 +303,24 @@ pub fn recover_pending_write(
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let note_path = VaultPath::parse(&intent.path)
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    #[cfg(feature = "full-daemon")]
+    if let Some(binding) = &intent.identity
+        && binding.published_file.is_none()
+    {
+        match owner.files.metadata(&note_path) {
+            Ok(metadata) if binding.prior_file.as_ref() == Some(&metadata.into()) => {
+                let _ = tx.root().remove_file(&intent_path);
+                return Ok(None);
+            }
+            Err(error) if error.is_not_found() && binding.prior_file.is_none() => {
+                let _ = tx.root().remove_file(&intent_path);
+                return Ok(None);
+            }
+            Err(error) if !error.is_not_found() => return Err(error.into()),
+            _ => {}
+        }
+        return Err(VaultMutationError::ExternallyAmbiguous("write publication has no durable file witness; retained intent requires reconciliation".into()));
+    }
     let published = tx.root().is_file(&note_path).unwrap_or(false);
     if published {
         let content = String::from_utf8(tx.root().read_limited(&note_path, 8 * 1024 * 1024)?)
@@ -252,10 +342,15 @@ pub fn recover_pending_write(
                 note_version: note_version.as_str().to_string(),
                 vault_generation,
                 bytes: content.len(),
+                identity: intent.identity.clone(),
             };
             let receipt_bytes = serde_json::to_vec(&receipt_record)
                 .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
             tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced)?;
+            #[cfg(feature = "full-daemon")]
+            if let Some(binding) = &receipt_record.identity {
+                identities.complete(binding, &note_path, false, Some(&digest))?;
+            }
             let _ = tx.root().remove_file(&intent_path);
             return Ok(Some(VaultCommitOutcome {
                 receipt: vault_receipt(
@@ -271,13 +366,45 @@ pub fn recover_pending_write(
         }
     }
 
-    // Incomplete publication: drop intent; do not invent a retry mutation.
+    #[cfg(feature = "full-daemon")]
+    if let Some(binding) = &intent.identity {
+        // The witness proves an earlier publication even if current bytes were
+        // subsequently changed or removed. Retain the witnessed identity;
+        // a missing or physically replaced file is marked unavailable.
+        identities.complete(binding, &note_path, false, None)?;
+    }
+    // Incomplete legacy publication: do not invent a retry mutation.
     let _ = tx.root().remove_file(&intent_path);
     Ok(None)
 }
 
 fn versions_match(existing: &NoteVersion, expected: &NoteVersion) -> bool {
     existing.matches_precondition(expected)
+}
+
+#[cfg(feature = "full-daemon")]
+fn published_repair_outcome(
+    owner: &VaultIndexOwner,
+    path: &str,
+    content: &str,
+) -> VaultCommitOutcome {
+    let generation = owner.current_generation();
+    VaultCommitOutcome {
+        receipt: vault_receipt(
+            format!("note:{path}"),
+            generation,
+            content.len(),
+            DurabilityLevel::Synced,
+        ),
+        note_version: NoteVersion::encode(
+            owner.root_id.as_str(),
+            &VaultNoteSource::User,
+            generation,
+            &content_hash(content),
+        ),
+        vault_generation: generation,
+        index_repair_required: true,
+    }
 }
 
 fn check_precondition(

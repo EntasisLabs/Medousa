@@ -691,13 +691,13 @@ checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
 
 [[package]]
 name = "async-trait"
-version = "0.1.89"
+version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
+checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -2937,7 +2937,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccc2776f0c61eca1ca32528f85548abd1a4be8fb53d1b21c013e4f18da1e7090"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -7636,6 +7636,7 @@ dependencies = [
  "medousa-store",
  "medousa-tool-macros",
  "medousa-types",
+ "medousa-work",
  "medousa-world",
  "notify",
  "once_cell",
@@ -8112,10 +8113,12 @@ name = "medousa-slack"
 version = "0.11.0"
 dependencies = [
  "anyhow",
+ "dirs 6.0.0",
  "medousa-adapter-common",
  "medousa-sdk",
  "medousa-types",
  "reqwest 0.12.28",
+ "serde",
  "serde_json",
  "slack-morphism",
  "tokio",
@@ -8185,6 +8188,20 @@ dependencies = [
  "medousa-types",
  "schemars 0.8.22",
  "serde_json",
+]
+
+[[package]]
+name = "medousa-work"
+version = "0.11.0"
+dependencies = [
+ "chrono",
+ "fs2",
+ "medousa-store",
+ "medousa-types",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
 ]
 
 [[package]]
@@ -14983,6 +15000,17 @@ name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
+version = "3.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8593e8e72159ed2257d083c7a454a85cbf854f37a0966d8d483aff8c8a3ebcee"
 dependencies = [
  "proc-macro2",
  "quote",

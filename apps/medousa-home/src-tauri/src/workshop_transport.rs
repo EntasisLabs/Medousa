@@ -354,6 +354,13 @@ async fn workshop_request_once(
             invalidate_workshop_route_cache();
             iroh_request(config, method, path, &headers, payload).await
         }
+        Err(err) if route == WorkshopRoute::Iroh && is_connect_error(&err) => {
+            invalidate_workshop_route_cache();
+            if method == "GET" && pick_route(config).await == WorkshopRoute::Lan {
+                return lan_request(config, method, path, &headers, payload, is_stream).await;
+            }
+            Err(err)
+        }
         Err(err) => Err(err),
     }
 }

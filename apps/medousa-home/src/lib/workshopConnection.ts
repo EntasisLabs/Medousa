@@ -72,6 +72,7 @@ let workshopRecoveryGeneration = 0;
 let workshopTeardown = false;
 let workshopTransitioning = false;
 let workshopConnectMode: WorkshopConnectMode = "full";
+let connectionReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
 const workspaceReconnect = new ReconnectScheduler({
   policy: DEFAULT_WORKSPACE_BACKOFF,
 });
@@ -79,6 +80,7 @@ const interactiveReconnect = new ReconnectScheduler({
   policy: DEFAULT_INTERACTIVE_BACKOFF,
 });
 let resumeWorkshopInFlight = false;
+let workshopRefreshTask: Promise<DaemonHealth> | null = null;
 let lastResumeWorkshopAt = 0;
 const RESUME_DEBOUNCE_MS = 3_000;
 const TRUST_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1_000;
@@ -86,12 +88,48 @@ const BROWSER_CLIENT_HEARTBEAT_INTERVAL_MS = 45_000;
 
 function cancelScheduledStreamRecovery() {
   workshopRecoveryGeneration += 1;
+  connectionReconnect.cancel();
   workspaceReconnect.cancel();
   interactiveReconnect.cancel();
 }
 
 function recoveryIsCurrent(generation: number): boolean {
   return generation === workshopRecoveryGeneration && !workshopTeardown && !workshopTransitioning;
+}
+
+/** Startup failures have no SSE pipe yet, so they need their own recovery owner. */
+function scheduleWorkshopConnectionRecovery(
+  onHealthChange: (health: DaemonHealth | null) => void,
+) {
+  if (workshopTeardown || workshopTransitioning) return;
+  const generation = workshopRecoveryGeneration;
+  const workshopId = workshops.activeWorkshop?.id;
+  connectionReconnect.schedule(async () => {
+    if (!recoveryIsCurrent(generation) || document.visibilityState === "hidden") return;
+    try {
+      const health = workshopConnectMode === "observer"
+        ? await checkDaemonHealth()
+        : await refreshWorkshopConnection(onHealthChange);
+      if (workshopTeardown || workshopTransitioning || workshops.activeWorkshop?.id !== workshopId) return;
+      if (workshopConnectMode === "observer") {
+        if (!recoveryIsCurrent(generation)) return;
+        connection.setHealth(health);
+        onHealthChange(health);
+        if (health.ok) await bootstrapWorkshopObserver();
+      }
+      if (!health.ok) {
+        if (recoveryIsCurrent(generation)) scheduleWorkshopConnectionRecovery(onHealthChange);
+        return;
+      }
+      connectionReconnect.noteSuccess();
+      await loadWorkshopDefaults(true);
+    } catch (error) {
+      if (recoveryIsCurrent(generation)) {
+        chat.noteResumeFailure(error);
+        scheduleWorkshopConnectionRecovery(onHealthChange);
+      }
+    }
+  });
 }
 
 function scheduleEnvironmentStreamReconnect() {
@@ -199,7 +237,7 @@ async function restartWorkshopStreamsLite(): Promise<void> {
   await stopEnvironmentSync();
   await startWorkspaceStream(workspace.revision || undefined);
   await startEnvironmentSync();
-  void chat.tryReattachActiveTurn(workspace.cards);
+  await chat.tryReattachActiveTurn(workspace.cards);
 }
 
 function registerStreamListeners(unlisteners: Promise<() => void>[]) {
@@ -367,15 +405,20 @@ export async function resumeWorkshopObserver(
   }
   resumeWorkshopInFlight = true;
   lastResumeWorkshopAt = now;
+  const generation = workshopRecoveryGeneration;
 
   try {
-    await sendPairingHeartbeat().catch(() => {});
     await invalidateRouteCaches().catch(() => {});
+    await sendPairingHeartbeat().catch(() => {});
     // Observer does not own spawn — main window / connectWorkshop does.
     const health = await checkDaemonHealth();
+    if (!recoveryIsCurrent(generation)) return;
     connection.setHealth(health);
     onHealthChange(health);
-    if (!health.ok) return;
+    if (!health.ok) {
+      scheduleWorkshopConnectionRecovery(onHealthChange);
+      return;
+    }
 
     await workspace.reconcileCardsFromSnapshot();
     await Promise.all([
@@ -383,6 +426,11 @@ export async function resumeWorkshopObserver(
       chat.hydrateAskThreads(workspace.cards),
     ]);
     await workspace.recoverPendingWorkerResults();
+  } catch (error) {
+    if (recoveryIsCurrent(generation)) {
+      chat.noteResumeFailure(error);
+      scheduleWorkshopConnectionRecovery(onHealthChange);
+    }
   } finally {
     resumeWorkshopInFlight = false;
   }
@@ -406,27 +454,31 @@ export async function resumeWorkshop(
   onHealthChange: (health: DaemonHealth | null) => void,
 ): Promise<void> {
   const now = Date.now();
-  if (resumeWorkshopInFlight || now - lastResumeWorkshopAt < RESUME_DEBOUNCE_MS) {
+  if (workshopRefreshTask || resumeWorkshopInFlight || now - lastResumeWorkshopAt < RESUME_DEBOUNCE_MS) {
     return;
   }
   resumeWorkshopInFlight = true;
   lastResumeWorkshopAt = now;
+  const generation = workshopRecoveryGeneration;
 
   try {
     // Every paired Home surface renews the same durable device trust. Waiting
     // here prevents the health probe from racing an expired bearer on resume.
-    await sendPairingHeartbeat().catch(() => {});
-
     // A network handoff (WiFi↔LTE, Mac sleep/DHCP) may have happened while we were
     // backgrounded. Flush both route caches so the health probe below re-picks
     // LAN vs Iroh instead of riding a stale cached route for the rest of its TTL.
     await invalidateRouteCaches().catch(() => {});
+    await sendPairingHeartbeat().catch(() => {});
 
     // P0.3 — if the sidecar died over sleep, spawn again before giving up.
     const health = await ensureWorkshopEngineHealthy({ allowSpawn: true });
+    if (!recoveryIsCurrent(generation)) return;
     connection.setHealth(health);
     onHealthChange(health);
-    if (!health.ok) return;
+    if (!health.ok) {
+      scheduleWorkshopConnectionRecovery(onHealthChange);
+      return;
+    }
 
     void registerBrowserHostClient(health);
 
@@ -481,8 +533,87 @@ export async function resumeWorkshop(
         // Glance sync is best-effort on resume.
       }
     }
+  } catch (error) {
+    if (recoveryIsCurrent(generation)) {
+      chat.noteResumeFailure(error);
+      scheduleWorkshopConnectionRecovery(onHealthChange);
+    }
   } finally {
     resumeWorkshopInFlight = false;
+  }
+}
+
+/** Refresh the same authority without clearing drafts, open notes, tabs, or turns. */
+export async function refreshWorkshopConnection(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): Promise<DaemonHealth> {
+  if (workshopRefreshTask) {
+    const health = await workshopRefreshTask;
+    onHealthChange(health);
+    return health;
+  }
+  if (workshopTransitioning || workshopTeardown) {
+    throw new Error("The workshop connection is changing. Try again in a moment.");
+  }
+  workshopRefreshTask = refreshCurrentWorkshop(onHealthChange);
+  try {
+    return await workshopRefreshTask;
+  } finally {
+    workshopRefreshTask = null;
+  }
+}
+
+async function refreshCurrentWorkshop(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): Promise<DaemonHealth> {
+  const generation = workshopRecoveryGeneration;
+  connection.setRecovering(true);
+  try {
+    await ensureMobileDaemonUrl();
+    await invalidateRouteCaches();
+    // The transport renews expired/rejected paired sessions using the saved key.
+    await sendPairingHeartbeat().catch(() => {});
+    const health = await ensureWorkshopEngineHealthy({
+      allowSpawn: workshops.activeWorkshop?.kind === "local",
+    });
+    if (!recoveryIsCurrent(generation)) {
+      throw new Error("The workshop connection changed while refreshing.");
+    }
+    connection.setHealth(health);
+    onHealthChange(health);
+    if (!health.ok) {
+      scheduleWorkshopConnectionRecovery(onHealthChange);
+      return health;
+    }
+
+    cancelScheduledStreamRecovery();
+    await Promise.all([
+      stopWorkspaceStream(), stopEnvironmentSync(), chat.stopOwnedInteractiveStreams(),
+    ]);
+    try {
+      await workspace.reconcileCardsFromSnapshot();
+      await Promise.all([
+        environment.load(), vault.refreshVaultRoots(), vault.refreshNotes(),
+        chat.refreshSessions({ force: true }),
+        chat.reconcileOnResume({ notice: false }, workspace.cards),
+        chat.hydrateAskThreads(workspace.cards),
+        userProfiles.syncOnResume(health),
+        executionTargets.refresh({ force: true }), bots.refresh({ force: true }),
+      ]);
+      await workspace.recoverPendingWorkerResults();
+    } finally {
+      await restartWorkshopStreamsLite();
+    }
+    void registerBrowserHostClient(health);
+    return health;
+  } catch (error) {
+    scheduleWorkshopConnectionRecovery(onHealthChange);
+    scheduleWorkspaceStreamReconnect();
+    scheduleEnvironmentStreamReconnect();
+    scheduleInteractiveStreamRecover();
+    throw error;
+  } finally {
+    connection.setRecovering(false);
   }
 }
 
@@ -536,6 +667,7 @@ export async function reconnectWorkshop(
     return health;
   } finally {
     workshopTransitioning = false;
+    if (connection.offline) scheduleWorkshopConnectionRecovery(onHealthChange);
   }
 }
 
@@ -552,6 +684,9 @@ export function connectWorkshop(options: {
   const mode = options.mode ?? "full";
   workshopConnectMode = mode;
   workshopTeardown = false;
+  connectionReconnect.teardown();
+  connectionReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
+  const generation = workshopRecoveryGeneration;
   chat.setStreamRole(mode === "observer" ? "observer" : "owner");
   settings.applyTheme();
   const unlisteners: Promise<() => void>[] = [];
@@ -579,6 +714,7 @@ export function connectWorkshop(options: {
     let health: DaemonHealth;
     try {
       await workshops.load();
+      if (!recoveryIsCurrent(generation)) return;
       connection.setHealth(null);
       options.onHealthChange(null);
       await ensureMobileDaemonUrl();
@@ -588,19 +724,23 @@ export function connectWorkshop(options: {
       health = await ensureWorkshopEngineHealthy({
         allowSpawn: mode === "full",
       });
+      if (!recoveryIsCurrent(generation)) return;
       connection.setHealth(health);
       options.onHealthChange(health);
     } catch (err) {
+      if (!recoveryIsCurrent(generation)) return;
       const failed = {
         ok: false,
         message: err instanceof Error ? err.message : String(err),
       };
       connection.setHealth(failed);
       options.onHealthChange(failed);
+      scheduleWorkshopConnectionRecovery(options.onHealthChange);
       return;
     }
 
     void loadWorkshopDefaults(health.ok);
+    if (!health.ok) scheduleWorkshopConnectionRecovery(options.onHealthChange);
 
     try {
       if (health.ok) {
@@ -623,11 +763,13 @@ export function connectWorkshop(options: {
       // Projection/bootstrap failures do not make a healthy daemon offline.
       // Keep the composer usable; existing stream errors own their recovery.
       chat.noteResumeFailure(err);
+      scheduleWorkshopConnectionRecovery(options.onHealthChange);
     }
   })();
 
   return () => {
     workshopTeardown = true;
+    connectionReconnect.teardown();
     detachForeground();
     if (trustHeartbeatTimer !== null) {
       clearInterval(trustHeartbeatTimer);

@@ -399,6 +399,7 @@ function createUndertakingsStore() {
     repo_path: string;
     base_ref?: string;
     workspace_mode?: ForgeWorkspaceMode;
+    request_key?: string;
   }, authority?: Pick<
     ActiveUndertakingContext,
     "executionRuntimeId" | "executionTransportRuntimeId" | "repoId"

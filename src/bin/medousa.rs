@@ -50,8 +50,14 @@ mod peer_cli;
 #[path = "medousa/iroh_cli.rs"]
 mod iroh_cli;
 
+#[path = "medousa/ask_cli.rs"]
+mod ask_cli;
+#[path = "medousa/bot_cli.rs"]
+mod bot_cli;
 #[path = "medousa/packages_cli.rs"]
 mod packages_cli;
+#[path = "medousa/project_cli.rs"]
+mod project_cli;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct OnboardProfile {
@@ -69,6 +75,9 @@ struct ComponentCommand {
 fn main() -> Result<()> {
     let cli = cli::Cli::parse();
     match cli.command {
+        Some(cli::Commands::Ask(args)) => ask_cli::run_ask(args),
+        Some(cli::Commands::Bot(args)) => bot_cli::run_bot(args),
+        Some(cli::Commands::Project(args)) => project_cli::run_project(args),
         None => {
             print_help();
             Ok(())
@@ -1345,7 +1354,11 @@ fn run_doctor(args: &[String]) -> Result<()> {
             "computer_driver=ready binary={} platform={} session={}",
             computer_driver.binary.as_deref().unwrap_or("(unknown)"),
             preflight.platform,
-            preflight.session_id,
+            if preflight.session_id.is_empty() {
+                "missing"
+            } else {
+                "present"
+            },
         );
         for permission in &preflight.permissions {
             println!(
@@ -1441,22 +1454,10 @@ fn run_doctor(args: &[String]) -> Result<()> {
             "disabled"
         }
     );
+    println!("slack_allow_user_ids=(not shown)");
     println!(
-        "slack_allow_user_ids={}",
-        if product_config.slack.allowed_user_ids.is_empty() {
-            "(all users)".to_string()
-        } else {
-            product_config.slack.allowed_user_ids.join(",")
-        }
-    );
-    println!(
-        "whatsapp_deliver_bind={} whatsapp_allow_user_ids={}",
+        "whatsapp_deliver_bind={} whatsapp_allow_user_ids=(not shown)",
         product_config.whatsapp.deliver_bind,
-        if product_config.whatsapp.allowed_user_ids.is_empty() {
-            "(all users)".to_string()
-        } else {
-            product_config.whatsapp.allowed_user_ids.join(",")
-        }
     );
     let whatsapp_session_db = product_config
         .whatsapp
@@ -1893,10 +1894,7 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
                 .context("list profiles")?;
             let payload: medousa::daemon_api::ListUserProfilesResponse =
                 response.json().context("decode profiles list")?;
-            println!(
-                "active_profile_id={} resolved_user_id={}",
-                payload.active_profile_id, payload.resolved_user_id
-            );
+            println!("active_profile_id={}", payload.active_profile_id);
             for profile in payload.profiles {
                 let marker = if profile.profile_id == payload.active_profile_id {
                     "*"
@@ -1935,8 +1933,8 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
             let payload: medousa::daemon_api::CreateUserProfileResponse =
                 response.json().context("decode create profile")?;
             println!(
-                "created profile {} ({}) resolved_user_id={}",
-                payload.profile.display_name, payload.profile.profile_id, payload.resolved_user_id
+                "created profile {} ({})",
+                payload.profile.display_name, payload.profile.profile_id
             );
         }
         "use" => {
@@ -1961,10 +1959,7 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
                 .context("set active profile")?;
             let payload: medousa::daemon_api::SetActiveUserProfileResponse =
                 response.json().context("decode set active profile")?;
-            println!(
-                "active_profile_id={} resolved_user_id={}",
-                payload.active_profile_id, payload.resolved_user_id
-            );
+            println!("active_profile_id={}", payload.active_profile_id);
         }
         "export" => {
             let profile_id = args

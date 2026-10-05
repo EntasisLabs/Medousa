@@ -2,6 +2,7 @@
 //! and agent outcomes are separate events; no ACP process is created here.
 
 pub mod access;
+pub(crate) mod work_dispatch;
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -141,17 +142,72 @@ impl ExternalConversationStore {
     }
 
     async fn persist(&self, next: &Document) -> anyhow::Result<()> {
-        let parent = self
+        let name = self
+            .path
+            .file_name()
+            .ok_or_else(|| {
+                anyhow::anyhow!("external conversation store path is missing a file name")
+            })?
+            .to_os_string();
+        let requested_parent = self
             .path
             .parent()
-            .ok_or_else(|| anyhow::anyhow!("missing store parent"))?;
-        tokio::fs::create_dir_all(parent).await?;
+            .ok_or_else(|| anyhow::anyhow!("external conversation store path is missing a parent"))?
+            .to_path_buf();
+        let mut missing = Vec::new();
+        let mut cursor = requested_parent.clone();
+        let ancestor = loop {
+            match tokio::fs::canonicalize(&cursor).await {
+                Ok(canon) => break canon,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    let component = cursor.file_name().ok_or_else(|| {
+                        anyhow::anyhow!("external conversation store path has no parent")
+                    })?;
+                    missing.push(component.to_os_string());
+                    cursor = cursor
+                        .parent()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("external conversation store path has no parent")
+                        })?
+                        .to_path_buf();
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
+        missing.reverse();
+        let mut parent = ancestor.clone();
+        for component in missing {
+            let component = component.to_string_lossy();
+            if component.is_empty()
+                || component == "."
+                || component == ".."
+                || component.contains('/')
+                || component.contains('\\')
+            {
+                anyhow::bail!("external conversation store path contains an invalid component");
+            }
+            parent.push(component.as_ref());
+            if !parent.starts_with(&ancestor) {
+                anyhow::bail!("external conversation store path escapes its directory");
+            }
+        }
+        if !parent.starts_with(&ancestor) {
+            anyhow::bail!("external conversation store path escapes its directory");
+        }
+        tokio::fs::create_dir_all(&parent).await?;
+        let path = parent.join(&name);
+        if !path.starts_with(&parent) {
+            anyhow::bail!("external conversation store path escapes its directory");
+        }
         let temporary = parent.join(format!(
             ".external-conversations-{}.tmp",
             uuid::Uuid::new_v4()
         ));
+        if !temporary.starts_with(&parent) {
+            anyhow::bail!("external conversation store temp file escapes its directory");
+        }
         tokio::fs::write(&temporary, serde_json::to_vec(next)?).await?;
-        if let Err(error) = tokio::fs::rename(&temporary, &self.path).await {
+        if let Err(error) = tokio::fs::rename(&temporary, &path).await {
             let _ = tokio::fs::remove_file(&temporary).await;
             return Err(error.into());
         }
@@ -746,20 +802,161 @@ pub async fn send(
     Path(id): Path<String>,
     Json(input): Json<SendMessageRequest>,
 ) -> Result<Json<ConversationView>, HttpError> {
+    send_admitted(state, principal, id, input, false).await
+}
+
+fn validate_send_admission(
+    principal: &RequestPrincipal,
+    input: &SendMessageRequest,
+    scheduled: bool,
+) -> Result<(), HttpError> {
+    if input.provider_chain.len() > medousa_work::MAX_PROVIDER_CHAIN_STAGES - 2
+        || (!input.provider_chain.is_empty() && input.after_provider_completion.is_none())
+        || (scheduled && !input.provider_chain.is_empty())
+        || input.provider_chain.iter().any(|stage| {
+            stage.conversation_id.trim().is_empty()
+                || stage.conversation_id.len() > 128
+                || stage.conversation_id.chars().any(char::is_control)
+                || stage.request_id.trim().is_empty()
+                || stage.request_id.len() > 128
+                || stage.request_id.chars().any(char::is_control)
+                || stage.text.trim().is_empty()
+                || stage.text.len() > 12 * 1024
+        })
+    {
+        return Err(bad_request("invalid bounded provider plan"));
+    }
+    if input.coordinator_wake && input.work.is_none() {
+        return Err(bad_request("coordinator wake requires exact work metadata"));
+    }
     if input.request_id.trim().is_empty()
         || input.request_id.len() > 128
         || input.text.trim().is_empty()
         || input.text.len() > 16 * 1024
+        || (input.work.is_some() && input.text.len() > 12 * 1024)
     {
         return Err(bad_request("invalid request ID or message"));
     }
-    let _send_guard = state.external_conversations.send_lock(&id).await;
+    if let Some(source) = &input.after_provider_completion
+        && [&source.conversation_id, &source.request_id]
+            .iter()
+            .any(|id| id.trim().is_empty() || id.len() > 128 || id.chars().any(char::is_control))
+    {
+        return Err(bad_request("invalid provider predecessor identity"));
+    }
+    if input.after_native_completion && input.after_provider_completion.is_some() {
+        return Err(bad_request(
+            "native and provider completion triggers are mutually exclusive",
+        ));
+    }
+    if (input.after_native_completion && scheduled)
+        || (!scheduled
+            && (input.after_native_completion
+                || input.after_provider_completion.is_some()
+                || input.coordinator_wake)
+            && !principal.capabilities().contains(Capability::AdminExecute))
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "scheduled handoff or model wake requires native operator admission".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn send_admitted(
+    state: AppState,
+    principal: RequestPrincipal,
+    id: String,
+    mut input: SendMessageRequest,
+    scheduled: bool,
+) -> Result<Json<ConversationView>, HttpError> {
+    validate_send_admission(&principal, &input, scheduled)?;
+    // Hold both immutable conversation identities in a fixed order through
+    // dispatch admission. Removal/rotation cannot race the predecessor check.
+    let mut lock_ids = vec![id.clone()];
+    if let Some(source) = &input.after_provider_completion {
+        lock_ids.push(source.conversation_id.clone());
+    }
+    lock_ids.extend(
+        input
+            .provider_chain
+            .iter()
+            .map(|stage| stage.conversation_id.clone()),
+    );
+    lock_ids.sort();
+    lock_ids.dedup();
+    let mut _send_guards = vec![];
+    for key in lock_ids {
+        _send_guards.push(state.external_conversations.send_lock(&key).await);
+    }
     let binding = state
         .external_conversations
         .binding(&id)
         .await
         .filter(|record| record.owner_id == owner(&principal, &state))
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))?;
+    if input.after_native_completion || (input.after_provider_completion.is_some() && !scheduled) {
+        return work_dispatch::admit(&state, &binding, input).await;
+    }
+    if let Some(host) = crate::daemon::work_units::local_work_unit_host() {
+        let domain = provider_work_domain(&binding.owner_id)?;
+        if let Some(saved) = host
+            .pending_provider_dispatch(domain.clone(), id.clone(), input.request_id.clone())
+            .await
+            .map_err(internal)?
+        {
+            if scheduled
+                && (saved.dispatch.target_digest
+                    != work_dispatch::target_digest(&binding).map_err(internal)?
+                    || !work_dispatch::source_matches(&state, &saved.dispatch).await)
+            {
+                host.close_provider_dispatch(
+                    domain,
+                    saved.dispatch,
+                    "provider handoff source or destination changed before dispatch".into(),
+                )
+                .await
+                .map_err(internal)?;
+                return Err((
+                    StatusCode::CONFLICT,
+                    "saved provider handoff destination changed".into(),
+                ));
+            }
+            if !scheduled
+                || saved.dispatch.target_digest
+                    != work_dispatch::target_digest(&binding).map_err(internal)?
+                || input.work.as_ref() != Some(&saved.dispatch.input)
+                || input.text != saved.dispatch.instructions
+                || input.coordinator_wake != saved.dispatch.coordinator_wake
+                || input.after_provider_completion.as_ref()
+                    != saved
+                        .dispatch
+                        .after_provider_completion
+                        .as_ref()
+                        .map(|source| &source.request)
+                || !host
+                    .provider_dispatch_ready(domain, saved.dispatch)
+                    .await
+                    .map_err(internal)?
+            {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "provider handoff is not admitted for this send; inspect saved dispatch".into(),
+                ));
+            }
+        } else if scheduled {
+            return Err((
+                StatusCode::CONFLICT,
+                "saved provider handoff admission missing".into(),
+            ));
+        }
+    } else if scheduled {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "work unit host unavailable".into(),
+        ));
+    }
     if binding.events.iter().any(|event| {
         event.request_id.as_deref() == Some(&input.request_id)
             && event.kind == EventKind::UserMessage
@@ -798,6 +995,53 @@ pub async fn send(
     } else {
         None
     };
+    let work = if let Some(work) = input.work.clone() {
+        let host = crate::daemon::work_units::local_work_unit_host().ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "work unit host unavailable".into(),
+        ))?;
+        let domain = provider_work_domain(&binding.owner_id)?;
+        let request = host
+            .prepare_provider_request(
+                domain.clone(),
+                id.clone(),
+                binding.provider,
+                input.request_id.clone(),
+                work,
+                input.text.clone(),
+            )
+            .await
+            .map_err(internal)?;
+        if input.coordinator_wake {
+            crate::daemon::work_units::model_wake::admit(&state, domain.clone(), &request)
+                .await
+                .map_err(internal)?;
+        }
+        input.text.push_str(&format!("\n\nmedousa-work-provider-v1: {}\nReport progress/completed/failed with your Work credential to Medousa's work-events endpoint, naming this exact request. Ordinary chat replies are not completion receipts.", serde_json::to_string(&request).map_err(internal)?));
+        if request.reviewed.is_some() {
+            input.text.push_str("\nmedousa-work-review-v1: inspect the pinned clean checkout without editing it. Completed result must be strict JSON with the exact reviewed object above, verdict approved or changes_requested, and a nonempty summary.");
+        }
+        if let Some(pin) = &request.predecessor {
+            let budget = (16usize * 1024)
+                .saturating_sub(input.text.len() + 64)
+                .min(8192);
+            let context = host
+                .provider_predecessor_context(domain.clone(), pin.clone(), budget)
+                .await
+                .map_err(internal)?;
+            input
+                .text
+                .push_str(&format!("\n\nmedousa-work-provider-source-v1: {context}"));
+        }
+        if input.text.len() > 16 * 1024 {
+            return Err(bad_request(
+                "work instructions and derived context exceed message bound",
+            ));
+        }
+        Some((host, domain, request))
+    } else {
+        None
+    };
     state
         .external_conversations
         .record(
@@ -820,6 +1064,11 @@ pub async fn send(
         )
         .await
         .map_err(internal)?;
+    if let Some((host, domain, request)) = work {
+        host.claim_provider_request(domain, request)
+            .await
+            .map_err(internal)?;
+    }
     let outcome: Result<(), (EventKind, String)> = match binding.provider {
         Provider::Muse | Provider::Instinct => {
             let target = crate::turn_scope::ChannelDeliveryTarget::interactive(
@@ -986,6 +1235,32 @@ pub async fn provider_event(
         return Err((StatusCode::CONFLICT, "unknown request ID".into()));
     }
     let event_id = format!("provider:{}", input.event_id);
+    if let Some(host) = crate::daemon::work_units::local_work_unit_host() {
+        let domain = provider_work_domain(&binding.owner_id)?;
+        if host
+            .provider_request(domain.clone(), id.clone(), input.request_id.clone())
+            .await
+            .map_err(internal)?
+            .is_some()
+            && matches!(
+                input.kind,
+                EventKind::Progress
+                    | EventKind::Question
+                    | EventKind::Completed
+                    | EventKind::Failed
+            )
+            && input.reaction.is_none()
+        {
+            host.record_provider_outcome(
+                domain,
+                id.clone(),
+                format!("provider-bridge:{id}"),
+                input.clone(),
+            )
+            .await
+            .map_err(internal)?;
+        }
+    }
     let view = if let Some(reaction) = input.reaction {
         state
             .external_conversations
@@ -1013,6 +1288,98 @@ pub async fn provider_event(
     view.map_err(internal)?
         .map(Json)
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))
+}
+
+fn provider_work_domain(owner: &str) -> Result<medousa_types::work_unit::UserDomainRef, HttpError> {
+    Ok(medousa_types::work_unit::UserDomainRef {
+        authority_id: crate::workshop_authority::current()
+            .map_err(internal)?
+            .clone(),
+        user_id: owner.into(),
+    })
+}
+
+/// Narrow provider-owned callback; the bearer credential must belong to this
+/// exact conversation. No admin capability or transport identity can substitute.
+pub async fn work_event(
+    State(state): State<AppState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Path(id): Path<String>,
+    Json(input): Json<ProviderEventRequest>,
+) -> Result<Json<ConversationView>, HttpError> {
+    if !state
+        .external_conversations
+        .permits_work_callback(&principal, &id)
+        .await
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "work callback requires this provider's current Work credential".into(),
+        ));
+    }
+    let host = crate::daemon::work_units::local_work_unit_host().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "work unit host unavailable".into(),
+    ))?;
+    record_work_event(&state.external_conversations, &host, &principal, &id, input)
+        .await
+        .map(Json)
+}
+
+async fn record_work_event(
+    store: &ExternalConversationStore,
+    host: &crate::daemon::work_units::WorkUnitHost,
+    principal: &RequestPrincipal,
+    id: &str,
+    input: ProviderEventRequest,
+) -> Result<ConversationView, HttpError> {
+    if !store.permits_work_callback(principal, id).await {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "work callback requires this provider's current Work credential".into(),
+        ));
+    }
+    if input.event_id.trim().is_empty()
+        || input.event_id.len() > 128
+        || input.request_id.trim().is_empty()
+        || input.request_id.len() > 128
+        || input.text.len() > 16 * 1024
+        || input.reaction.is_some()
+        || !matches!(
+            input.kind,
+            EventKind::Progress | EventKind::Question | EventKind::Completed | EventKind::Failed
+        )
+    {
+        return Err(bad_request("invalid provider work event"));
+    }
+    let domain = provider_work_domain(principal.profile_id().expect("callback owner checked"))?;
+    let copy = input.clone();
+    host.record_provider_outcome(
+        domain,
+        id.to_owned(),
+        principal
+            .credential_id()
+            .expect("callback credential checked")
+            .as_str()
+            .into(),
+        copy,
+    )
+    .await
+    .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
+    // The durable work receipt precedes this conversation mirror. A mirror
+    // failure can retry the same callback without losing or replacing evidence.
+    let view = store
+        .record(
+            id,
+            format!("provider:{}", input.event_id),
+            Some(input.request_id),
+            input.kind,
+            input.text,
+        )
+        .await
+        .map_err(internal)?
+        .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))?;
+    Ok(view)
 }
 
 fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
@@ -1061,7 +1428,7 @@ pub async fn whatsapp_inbound(
         return Ok(Json(InboundClaimResponse { claimed: false }));
     };
     let event_id = format!("whatsapp:{}", input.message_id);
-    let recorded = if let Some(reaction) = input.reaction {
+    if let Some(reaction) = input.reaction {
         state
             .external_conversations
             .record_reaction(
@@ -1086,9 +1453,7 @@ pub async fn whatsapp_inbound(
             .await
     }
     .map_err(internal)?;
-    Ok(Json(InboundClaimResponse {
-        claimed: recorded.is_some(),
-    }))
+    Ok(Json(InboundClaimResponse { claimed: true }))
 }
 
 pub async fn slack_inbound(
@@ -1128,7 +1493,7 @@ pub async fn slack_inbound(
     ) {
         return Ok(Json(InboundClaimResponse { claimed: true }));
     }
-    let recorded = state
+    state
         .external_conversations
         .record(
             &binding.id,
@@ -1139,9 +1504,7 @@ pub async fn slack_inbound(
         )
         .await
         .map_err(internal)?;
-    Ok(Json(InboundClaimResponse {
-        claimed: recorded.is_some(),
-    }))
+    Ok(Json(InboundClaimResponse { claimed: true }))
 }
 
 pub async fn get_whatsapp_pairing(
@@ -1197,6 +1560,15 @@ fn whatsapp_pairing_read_policy() -> RoutePolicy {
 
 pub fn surface() -> DeclaredRouter<AppState> {
     DeclaredRouter::default()
+        .route(
+            policy(
+                Method::POST,
+                "/v1/external-conversations/{id}/work-events",
+                Capability::ContentWrite,
+                20 * 1024,
+            ),
+            post(work_event),
+        )
         .methods([
             (
                 policy(
@@ -1339,6 +1711,45 @@ pub fn surface() -> DeclaredRouter<AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_chain_intent_cannot_mint_operator_authority_from_work_or_worker_credentials() {
+        let mut input: SendMessageRequest = serde_json::from_value(serde_json::json!({
+            "request_id": "next", "text": "Analyze the predecessor",
+            "after_provider_completion": {"conversation_id":"source", "request_id":"first"},
+            "work": {"work_unit_id":"unit", "expected_scope_revision":1, "deadline":chrono::Utc::now()+chrono::Duration::hours(1)}
+        })).unwrap();
+        let external = RequestPrincipal::external_agent(
+            Arc::from("work-token"),
+            "owner".into(),
+            true,
+            crate::request_principal::TransportClass::Loopback,
+        );
+        for principal in [
+            external,
+            RequestPrincipal::worker("owner"),
+            RequestPrincipal::continuation("owner"),
+        ] {
+            assert_eq!(
+                validate_send_admission(&principal, &input, false)
+                    .unwrap_err()
+                    .0,
+                StatusCode::FORBIDDEN
+            );
+        }
+        let operator = RequestPrincipal::local_app(
+            Arc::from("local-app"),
+            crate::request_principal::TransportClass::Loopback,
+        );
+        validate_send_admission(&operator, &input, false).unwrap();
+        input.after_native_completion = true;
+        assert_eq!(
+            validate_send_admission(&operator, &input, false)
+                .unwrap_err()
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
 
     #[tokio::test]
     async fn journal_replays_and_deduplicates() {

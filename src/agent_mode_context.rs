@@ -38,6 +38,8 @@ pub const ASSISTANT_ELEVATED_TOOL_NAMES: &[&str] = &[
     "cognition_peer_delegate",
     "cognition_peer_discover",
     "cognition_peer_propose",
+    "cognition_peer_handoff",
+    "cognition_peer_review",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,11 +126,13 @@ mod tests {
     #[test]
     fn assistant_elevated_surface_is_coordination_only() {
         let tools = assistant_elevated_tool_names();
-        assert_eq!(tools.len(), 4);
+        assert_eq!(tools.len(), 6);
         assert!(tools.contains("cognition_assistant_placement"));
         assert!(tools.contains("cognition_peer_delegate"));
         assert!(tools.contains("cognition_peer_discover"));
         assert!(tools.contains("cognition_peer_propose"));
+        assert!(tools.contains("cognition_peer_handoff"));
+        assert!(tools.contains("cognition_peer_review"));
         assert!(!tools.contains("cognition_active_work_discover"));
         assert!(!tools.contains(crate::public_api::COGNITION_WORKSHOP_QUERY));
         assert!(!tools.contains(crate::public_api::COGNITION_WORKSHOP_MUTATE));

@@ -18,8 +18,11 @@ const MAX_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 const SCHEMA_VERSION: u16 = 1;
 pub mod assistant_ledger;
 pub mod intake;
+pub mod handoff;
+pub mod native_coder;
 pub mod owner_inbox;
 pub mod proposals;
+pub mod work;
 
 #[derive(Serialize, Deserialize)]
 struct Record<T> {
@@ -64,6 +67,9 @@ fn object_path(channel: &CoordinationChannelRef, kind: &str, id: &str) -> Result
             "assistant-event" => "ae1",
             "assistant-terminal" => "at1",
             "assistant-command" => "ac1",
+            "work-plan" => "wp1",
+            "native-coder" => "nc1",
+            "handoff" => "hf1",
             _ => "c1",
         },
         digest.finalize()
@@ -218,10 +224,23 @@ impl CoordinationStore {
         &self,
         request: &ExternalPeerAssignmentRequest,
     ) -> Result<AssignmentClaim> {
+        self.claim_assignment_checked(request, || Ok(()))
+    }
+
+    pub fn claim_assignment_checked(
+        &self,
+        request: &ExternalPeerAssignmentRequest,
+        check: impl FnOnce() -> Result<()>,
+    ) -> Result<AssignmentClaim> {
+        let _registration = self.work_assignment_lock(&request.channel, &request.assignment_id)?;
         self.require_owner(&request.channel, &request.owner_principal_id)?;
         if request.assignment_id.trim().is_empty() || request.idempotency_key.trim().is_empty() {
             bail!("assignment requires stable assignment and command identities");
         }
+        // Registration and claiming share the native assignment lock. A work
+        // index published after earlier authorization cannot escape this gate.
+        self.work_plan_for_assignment(request)?;
+        check()?;
         // Two create-only indexes prevent either command or assignment identity
         // being reused for different work. A crash between indexes is recoverable
         // only by replaying this exact request, never by guessing new instructions.

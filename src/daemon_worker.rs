@@ -36,6 +36,13 @@ use std::{
     time::Duration,
 };
 const VERSION: u32 = 1;
+static LOCAL_DELEGATED_EXECUTOR: once_cell::sync::OnceCell<
+    Arc<dyn crate::mesh::DelegatedTaskExecutor>,
+> = once_cell::sync::OnceCell::new();
+
+pub fn register_local_delegated_executor(executor: Arc<dyn crate::mesh::DelegatedTaskExecutor>) {
+    let _ = LOCAL_DELEGATED_EXECUTOR.set(executor);
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DaemonWorkerConnection {
@@ -432,17 +439,26 @@ impl DaemonWorkerTransport {
             envelope: env,
             payload,
         };
-        let wrapped: MeshEnvelopedRequest<R> = worker_request_json(
+        let body = serde_json::to_vec(&request)
+            .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+        let (status, response) = worker_request(
             &self.client,
             &s.summary.daemon_url,
             s.summary.iroh_ticket.as_deref(),
             Method::POST,
             path,
             Some(&s.session_token),
-            Some(&request),
+            Some(&body),
         )
         .await
         .map_err(|e| DelegatedTaskError::transport(e.to_string()))?;
+        if !(200..300).contains(&status) {
+            return Err(classify_destination_http_failure(status, &response));
+        }
+        let wrapped: MeshEnvelopedRequest<R> =
+            serde_json::from_slice(&response).map_err(|error| {
+                DelegatedTaskError::transport(format!("invalid destination response: {error}"))
+            })?;
         verify_enveloped_payload(
             &wrapped,
             &s.summary.daemon_public_key,
@@ -483,6 +499,18 @@ impl DaemonWorkerTransport {
         })
     }
 }
+
+fn classify_destination_http_failure(status: u16, response: &[u8]) -> DelegatedTaskError {
+    let message = format!(
+        "destination HTTP {status}: {}",
+        String::from_utf8_lossy(response)
+    );
+    if matches!(status, 400 | 401 | 403 | 404 | 409 | 422) {
+        DelegatedTaskError::conflict(message)
+    } else {
+        DelegatedTaskError::transport(message)
+    }
+}
 #[async_trait]
 impl DelegatedTaskTransport for DaemonWorkerTransport {
     async fn authorized_targets(
@@ -496,9 +524,7 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
                 peer_device_id: x.summary.workshop_device_id,
                 label: Some(x.summary.label),
             };
-            if let Ok(Ok(p)) = tokio::time::timeout(Duration::from_secs(5), self.probe(t)).await
-                && p.candidate.user_selectable
-            {
+            if let Ok(Ok(p)) = tokio::time::timeout(Duration::from_secs(5), self.probe(t)).await {
                 out.push(p)
             }
         }
@@ -554,6 +580,71 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
         t: &DelegationTarget,
         r: DelegatedTaskRequest,
     ) -> Result<DelegatedTaskObservation, DelegatedTaskError> {
+        if t.route_ref == "local" {
+            let (identity, _) = self.all_async().await?;
+            if t.peer_device_id != identity.device_id {
+                return Err(DelegatedTaskError::conflict(
+                    "local target identity mismatch",
+                ));
+            }
+            let executor = LOCAL_DELEGATED_EXECUTOR.get().ok_or_else(|| {
+                DelegatedTaskError::transport("local delegated executor is unavailable")
+            })?;
+            let now = Utc::now();
+            let sender: crate::pairing::PairedDeviceRecord =
+                serde_json::from_value(serde_json::json!({
+                    "pairingId": "local-operator", "phoneId": identity.device_id,
+                    "phoneName": "This workshop", "phonePublicKey": "local",
+                    "pairedAt": now, "lastSeen": now, "sessionTokenHash": "local",
+                    "sessionTokenExpiry": now + chrono::Duration::days(1),
+                }))
+                .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+            let worker = r
+                .worker
+                .as_ref()
+                .ok_or_else(|| DelegatedTaskError::invalid("local Bot worker is required"))?;
+            let work_id = delegated_work_id(
+                &identity.device_id,
+                r.grant
+                    .turn_id
+                    .as_deref()
+                    .ok_or_else(|| DelegatedTaskError::invalid("missing turn id"))?,
+            );
+            let grant = crate::peer_execution_policy::TaskExecutionGrant {
+                schema_version: crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION,
+                grant_id: format!("local-{work_id}"),
+                peer_device_id: identity.device_id.clone(),
+                peer_pairing_id: "local-operator".into(),
+                authorization_role: None,
+                origin_runtime_id: r.parent_runtime_id.clone(),
+                destination_runtime_id: identity.device_id.clone(),
+                parent_session_id: r.grant.session_id.clone(),
+                bot_id: worker.parent.bot.as_ref().map(|bot| bot.bot_id.clone()),
+                work_id,
+                correlation_id: r.grant.correlation_id.clone(),
+                worker_intent: worker.intent.clone(),
+                project_id: worker
+                    .code_project
+                    .as_ref()
+                    .map(|project| project.repo_id.clone()),
+                work_environment_materialization: false,
+                authorized_root_ref: None,
+                authorized_secret_refs: Vec::new(),
+                policy_revision: 0,
+                policy_source: crate::peer_execution_policy::PeerExecutionPolicySource::Stored,
+                requested_tool_domains: vec!["turn".into(), "code".into()],
+                effective_tool_domains: vec!["turn".into(), "code".into()],
+                requested_tool_names: worker.tools.names.clone(),
+                effective_tool_names: worker.tools.names.clone(),
+                requested_world_ids: Vec::new(),
+                effective_world_ids: Vec::new(),
+                network_policy: crate::peer_execution_policy::PeerNetworkPolicy::Deny,
+                issued_at: now,
+                expires_at: None,
+            };
+            executor.preflight(&sender, &r, &grant).await?;
+            return executor.submit_or_observe(&sender, &r, &grant).await;
+        }
         let (i, s) = self.target_async(t.clone()).await?;
         let expected = delegated_work_id(
             &i.device_id,
@@ -583,6 +674,52 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
         t: &DelegationTarget,
         r: DelegatedTaskControlRequest,
     ) -> Result<DelegatedTaskControlObservation, DelegatedTaskError> {
+        if t.route_ref == "local" {
+            let (identity, _) = self.all_async().await?;
+            if identity.device_id != t.peer_device_id {
+                return Err(DelegatedTaskError::conflict(
+                    "local target identity mismatch",
+                ));
+            }
+            if r.action != crate::delegated_task::DelegatedTaskControlAction::Cancel {
+                return Err(DelegatedTaskError::invalid(
+                    "local external-agent Bot only supports cancellation",
+                ));
+            }
+            let record = crate::agent_runtime::turn_worker::turn_worker_store()
+                .get(&r.work_id)
+                .ok_or_else(|| DelegatedTaskError::conflict("local delegated work not found"))?;
+            if record.identity_user_id.as_deref()
+                != Some(format!("peer:{}", identity.device_id).as_str())
+                || record.parent_runtime_id != r.parent_runtime_id
+                || record.parent_turn_correlation_id.as_deref() != Some(r.correlation_id.as_str())
+            {
+                return Err(DelegatedTaskError::conflict(
+                    "local delegated work identity mismatch",
+                ));
+            }
+            let updated = crate::agent_runtime::turn_worker::turn_worker_store()
+                .cancel_delegated_exact(&r.work_id, &format!("peer:{}", identity.device_id))
+                .map_err(|error| DelegatedTaskError::conflict(format!("{error:?}")))?;
+            if let Some(agent_session_id) = record.external_agent_session_id.as_deref()
+                && let Some(executor) = LOCAL_DELEGATED_EXECUTOR.get()
+            {
+                executor.cancel_external(agent_session_id).await?;
+            }
+            return Ok(DelegatedTaskControlObservation {
+                schema_version: crate::delegated_task::DELEGATED_TASK_SCHEMA_VERSION,
+                action: r.action,
+                work_id: r.work_id,
+                status: match updated.status {
+                    crate::agent_runtime::turn_worker::TurnWorkStatus::Cancelled => {
+                        crate::delegated_task::DelegatedTaskStatus::Cancelled
+                    }
+                    _ => crate::delegated_task::DelegatedTaskStatus::Failed,
+                },
+                queued_steers: updated.steer_messages.len(),
+                destination_runtime_id: identity.device_id,
+            });
+        }
         let (i, s) = self.target_async(t.clone()).await?;
         let p = format!("/v1/mesh/tasks/{}/control", r.work_id);
         let o = self.exchange(&s, &i, &p, r.clone()).await?;
@@ -979,6 +1116,56 @@ fn worker_api_error(error: anyhow::Error) -> (axum::http::StatusCode, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn destination_denial_is_terminal_but_transport_failure_is_retryable() {
+        assert_eq!(
+            classify_destination_http_failure(403, b"Coder project denied").kind,
+            crate::delegated_task::DelegatedTaskErrorKind::Conflict
+        );
+        assert_eq!(
+            classify_destination_http_failure(503, b"offline").kind,
+            crate::delegated_task::DelegatedTaskErrorKind::Transport
+        );
+    }
+
+    #[tokio::test]
+    async fn signed_mesh_dispatch_surfaces_destination_denial() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = axum::Router::new().route(
+            "/v1/mesh/tasks",
+            axum::routing::post(|| async {
+                (axum::http::StatusCode::FORBIDDEN, "Coder project denied")
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let temp = tempdir().unwrap();
+        let root = temp.path().to_path_buf();
+        let identity = DaemonWorkerPairing::new(root.clone()).identity().unwrap();
+        let mut summary = sample();
+        summary.daemon_url = base;
+        let stored = Stored {
+            summary,
+            session_token: "test-pairing-token".into(),
+        };
+        let transport = DaemonWorkerTransport::new(root, reqwest::Client::new());
+        let error = transport
+            .exchange::<_, serde_json::Value>(
+                &stored,
+                &identity,
+                "/v1/mesh/tasks",
+                serde_json::json!({"task": "test"}),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind,
+            crate::delegated_task::DelegatedTaskErrorKind::Conflict
+        );
+        assert!(error.message.contains("Coder project denied"));
+        server.abort();
+    }
     use tempfile::tempdir;
     fn sample() -> DaemonWorkerConnection {
         DaemonWorkerConnection {

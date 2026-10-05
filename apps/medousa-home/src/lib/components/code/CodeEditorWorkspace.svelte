@@ -1,12 +1,16 @@
 <script lang="ts">
+  import type { TerminalSessionSummary } from "$lib/terminal";
+  import { currentCommandRoot } from "$lib/code/codeCommandContext";
   import { LoaderCircle, Sparkles } from "@lucide/svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
+  import CodeMarkdownDocument from "$lib/components/code/CodeMarkdownDocument.svelte";
   import CodeWorkspaceSearch from "$lib/components/code/CodeWorkspaceSearch.svelte";
   import CodeChangesPanel from "$lib/components/code/CodeChangesPanel.svelte";
   import CodeContextSidePanel from "$lib/components/code/CodeContextSidePanel.svelte";
   import CodeFeedbackPanel from "$lib/components/code/CodeFeedbackPanel.svelte";
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
+  import type { CodeFindState } from "$lib/code/codeFindController.svelte";
   import type { CodeChangesController } from "$lib/code/codeChangesController.svelte";
   import type { CodeProblemsController } from "$lib/code/codeProblemsController.svelte";
   import type { CodeQuickOpenController } from "$lib/code/codeQuickOpenController.svelte";
@@ -17,7 +21,7 @@
     humanizeForgeMessage,
     type ForgeSourceFile,
   } from "$lib/code/codeDocumentService";
-  import type { CodeDocumentSymbol, CodeLanguageMatrixEntry } from "$lib/code/codingEngineClient";
+  import type { CodeDocumentSymbol, CodeLanguageMatrixEntry, CodeWorkspaceLspStatus } from "$lib/code/codingEngineClient";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import type { CodeBottomPanel } from "$lib/code/codeWorkbenchState.svelte";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
@@ -29,6 +33,7 @@
   };
 
   interface Props {
+    workspaceScope: string;
     workId: string;
     activeTab: CodeDocumentTab | null;
     surfaceError: string | null;
@@ -40,8 +45,12 @@
     editor: CodeMirrorHost | undefined;
     editorSelection: EditorSelection | null;
     editorPrefsEpoch: number;
+    findState?: CodeFindState;
     documentUri: string | null;
     lspClient: LSPClient | null | undefined;
+    languageStatus: CodeWorkspaceLspStatus;
+    languageError: string | null;
+    onLanguagePackages: () => void;
     bufferInteractive: boolean;
     reviewChangedLines: Array<{ line: number; kind: string }>;
     editorConventions: { indent_style?: "space" | "tab"; indent_size?: string; tab_width?: string };
@@ -89,8 +98,13 @@
     dockSessionId: string | null;
     workspaceRoot: string | null;
     terminalTitle: string;
+    onTerminalContext?: (context: TerminalSessionSummary["workspace_context"]) => void;
     terminalAvailable: boolean;
     dockBusy: boolean;
+    dockError: string | null;
+    canCreateTerminal: boolean;
+    terminalBlockedReason: string;
+    onCreateTerminal: () => void;
     onToggleTerminal: (forceOpen?: boolean) => void | Promise<void>;
     onPopOutTerminal: () => void | Promise<void>;
     feedbackPanel: CodeBottomPanel;
@@ -99,6 +113,7 @@
   }
 
   let {
+    workspaceScope,
     workId,
     activeTab,
     surfaceError,
@@ -110,8 +125,12 @@
     editor = $bindable(),
     editorSelection = $bindable(),
     editorPrefsEpoch,
+    findState,
     documentUri,
     lspClient,
+    languageStatus,
+    languageError,
+    onLanguagePackages,
     bufferInteractive,
     reviewChangedLines,
     editorConventions,
@@ -154,8 +173,13 @@
     dockSessionId,
     workspaceRoot,
     terminalTitle,
+    onTerminalContext,
     terminalAvailable,
     dockBusy,
+    dockError,
+    canCreateTerminal,
+    terminalBlockedReason,
+    onCreateTerminal,
     onToggleTerminal,
     onPopOutTerminal,
     feedbackPanel,
@@ -165,11 +189,6 @@
 </script>
 
 {#if activeTab}
-  {#if surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId]}
-    <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-chrome-sm text-amber-100">
-      {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
-    </p>
-  {/if}
   {#if activeTab.preview}
     <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5 text-chrome-sm text-sky-100/90" role="status">
       {#if activeTab.encoding === "binary"}
@@ -192,8 +211,8 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div class="relative min-h-0 min-w-0 flex-1">
-      {#if editorSelection?.text && onHandoffToAgent && !agentHasControl}
-        <div class="absolute right-3 top-2 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto rounded-md border border-primary-500/30 bg-surface-950/95 px-1.5 py-1 shadow-xl" aria-label="Selected code actions">
+      {#if editorSelection?.text && onHandoffToAgent && !agentHasControl && !findState?.open && (!activeTab.markdownMode || activeTab.markdownMode === "source" || activeTab.markdownMode === "split")}
+        <div class="absolute right-3 {activeTab.language === 'markdown' && !activeTab.preview ? 'top-12' : 'top-2'} z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto rounded-md border border-primary-500/30 bg-surface-950/95 px-1.5 py-1 shadow-xl" aria-label="Selected code actions">
           <span class="mr-1 flex shrink-0 items-center gap-1 text-chrome-xs text-primary-200/80"><Sparkles size={10} />Selection</span>
           <button type="button" class="code-intent-action" disabled={busy} onclick={() => void save.handoffToAgent("Help me understand the selected code and answer my questions about it.")}>Ask</button>
           <button type="button" class="code-intent-action" disabled={busy} onclick={() => void save.handoffToAgent("Change the selected code. Ask only if the intended change is ambiguous.")}>Change</button>
@@ -212,27 +231,32 @@
       {#if !activeTab.loading && activeTab.digest}
         {@const editorTab = activeTab}
         {#key `${editorTab.tabId}:${editorPrefsEpoch}`}
-          <CodeMirrorHost
-            bind:this={editor}
-            value={editorTab.draft}
-            languageId={editorTab.encoding === "binary" ? "plaintext" : editorTab.language}
-            {documentUri}
-            lspLanguageId={editorTab.preview ? null : codeEditorLspLanguageId(editorTab.language)}
-            client={editorTab.preview ? null : lspClient}
-            readOnly={!bufferInteractive || editorTab.preview}
-            contentSyncKey={editorTab.syncKey}
-            changedLines={reviewChangedLines}
-            conventionIndentStyle={editorConventions.indent_style ?? null}
-            conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
-            {wordWrap}
-            {showLineNumbers}
-            onchange={(value) => void save.onDraftChanged(editorTab.tabId, value)}
-            onCursorChanged={(cursor) => onCursorChanged(editorTab, cursor)}
-            onSelectionChanged={(selection) => (editorSelection = selection.text ? selection : null)}
-            onProblemsChanged={onProblemsChanged}
-            onContextMenu={onContextMenu}
-            onLanguageNavigationRequested={(kind) => void onLanguageNavigation(kind)}
-          />
+          <CodeMarkdownDocument tab={editorTab} {editor} {findState} readOnly={!bufferInteractive || !!editorTab.preview} onchange={(value) => void save.onDraftChanged(editorTab.tabId, value)} {onOpenLocation}>
+            {#snippet source()}
+              <CodeMirrorHost
+                bind:this={editor}
+                {findState}
+                value={editorTab.draft}
+                languageId={editorTab.encoding === "binary" ? "plaintext" : editorTab.language}
+                {documentUri}
+                lspLanguageId={editorTab.preview ? null : codeEditorLspLanguageId(editorTab.language)}
+                client={editorTab.preview ? null : lspClient}
+                readOnly={!bufferInteractive || editorTab.preview}
+                contentSyncKey={editorTab.syncKey}
+                changedLines={reviewChangedLines}
+                conventionIndentStyle={editorConventions.indent_style ?? null}
+                conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
+                {wordWrap}
+                {showLineNumbers}
+                onchange={(value) => void save.onDraftChanged(editorTab.tabId, value)}
+                onCursorChanged={(cursor) => onCursorChanged(editorTab, cursor)}
+                onSelectionChanged={(selection) => (editorSelection = selection.text ? selection : null)}
+                onProblemsChanged={onProblemsChanged}
+                onContextMenu={onContextMenu}
+                onLanguageNavigationRequested={(kind) => void onLanguageNavigation(kind)}
+              />
+            {/snippet}
+          </CodeMarkdownDocument>
         {/key}
       {:else if !activeTab.loading}
         <div class="flex h-full min-h-48 items-center justify-center p-6 text-xs text-content-quiet">
@@ -243,6 +267,10 @@
   </div>
 
   <CodeContextSidePanel
+    {workspaceScope}
+    {languageStatus}
+    {languageError}
+    {onLanguagePackages}
     {problems}
     {symbols}
     {symbolsLoading}
@@ -261,7 +289,9 @@
     onRestartLanguage={onRestartLanguage}
   />
   {#if searchOpen}
-    <CodeWorkspaceSearch
+    {#key workspaceScope}
+    <CodeWorkspaceSearch packageRoot={currentCommandRoot(tasks.projectTasks, activeTab?.path ?? "")}
+      {workspaceScope}
       {workId}
       onOpenHit={onOpenSearchHit}
       onClose={() => onToggleSearch(false)}
@@ -269,6 +299,7 @@
         await onSearchApplied();
       }}
     />
+    {/key}
   {/if}
   {#if changes.open}
     <CodeChangesPanel
@@ -373,9 +404,16 @@
   {problems}
   {tasks}
   {workId}
+  activePath={activeTab?.path ?? ""}
   terminalSessionId={dockSessionId}
+  terminalBusy={dockBusy}
+  terminalError={dockError}
+  {canCreateTerminal}
+  {terminalBlockedReason}
+  {onCreateTerminal}
   {workspaceRoot}
   {terminalTitle}
+  {onTerminalContext}
   onSelect={onSelectFeedbackPanel}
   onClose={onCloseFeedbackPanel}
   onOpenLocation={(path, line) => void onOpenLocation(path, line)}

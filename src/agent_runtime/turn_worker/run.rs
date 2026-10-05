@@ -314,17 +314,36 @@ async fn prepare_worker_coder(
             project.repo_id
         )));
     }
-    super::super::daemon_interactive_turn::prepare_attached_native_coder_handoff(
-        forge.as_ref(),
-        &work_id,
-        &record.session_id,
-        &record.work_id,
-    )
-    .map_err(|error| {
-        stasis::prelude::StasisError::PortFailure(format!(
-            "cannot hand the destination checkout to Coder: {error}"
-        ))
+    let admission = forge.execution().ok_or_else(|| {
+        stasis::prelude::StasisError::PortFailure(
+            "destination Coder project has no Forge execution admission".into(),
+        )
     })?;
+    admission
+        .run(
+            medousa_forge::execution::ExecutionClass::StoreIo,
+            64 * 1024,
+            {
+                let forge = forge.clone();
+                let work_id = work_id.clone();
+                let session_id = record.session_id.clone();
+                let turn_id = record.work_id.clone();
+                move || {
+                    super::super::daemon_interactive_turn::prepare_native_coder_handoff(
+                        &forge,
+                        &work_id,
+                        &session_id,
+                        &turn_id,
+                    )
+                }
+            },
+        )
+        .await
+        .map_err(|error| {
+            stasis::prelude::StasisError::PortFailure(format!(
+                "cannot hand the destination workspace to Coder: {error}"
+            ))
+        })?;
     let executor = medousa_forge::model::ExecutorDescriptor {
         kind: "medousa-coder".to_string(),
         detail: json!({
@@ -969,6 +988,7 @@ impl TurnWorkerScheduler {
             user_ack: user_ack.trim().to_string(),
             manuscript_ids: manuscript_id.clone().into_iter().collect(),
             manuscript: manuscript_spec,
+            external_agent: None,
             stage_role: resolved_stage_role.clone(),
             model_hint: resolved_model_hint.clone(),
             parent: crate::delegated_task::WorkerParentSpec {
@@ -1017,6 +1037,8 @@ impl TurnWorkerScheduler {
             execution_placement: execution_placement.clone(),
             task_execution_grant: None,
             worker_spawn_spec: Some(worker_spawn_spec),
+            external_agent_session_id: None,
+            external_agent_workdir: None,
             intent: intent.as_str().to_string(),
             task_prompt: task.trim().to_string(),
             status: TurnWorkStatus::Pending,
@@ -1242,6 +1264,8 @@ impl TurnWorkerScheduler {
             execution_placement: execution_placement.clone(),
             task_execution_grant: None,
             worker_spawn_spec: None,
+            external_agent_session_id: None,
+            external_agent_workdir: None,
             intent: intent.as_str().to_string(),
             task_prompt: task.to_string(),
             status: TurnWorkStatus::Pending,
@@ -2734,6 +2758,8 @@ mod tests {
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
+            external_agent_session_id: None,
+            external_agent_workdir: None,
             intent: "general".to_string(),
             task_prompt: "task".to_string(),
             status: TurnWorkStatus::Completed,

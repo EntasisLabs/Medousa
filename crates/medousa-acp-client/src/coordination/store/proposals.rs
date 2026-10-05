@@ -28,6 +28,69 @@ pub fn proposal_identity(proposal: &PeerAssignmentProposal) -> Result<String> {
 }
 
 impl CoordinationStore {
+    /// Exact selected-assignment projection, including a terminal receipt.
+    /// Source shadows use their immutable source association, never a caller
+    /// supplied execution session or channel.
+    pub fn tracked_proposal_for_session(
+        &self,
+        owner: &str,
+        session: &medousa_types::SessionRef,
+        proposal_id: &str,
+        source_only: bool,
+    ) -> Result<Option<PeerProposalReviewRecord>> {
+        let entries = self.root.list_root_utf8()?;
+        if entries.len() > 10_000 {
+            bail!("proposal inbox scan budget exhausted");
+        }
+        for entry in entries {
+            if !entry.name.starts_with("p1-") {
+                continue;
+            }
+            let index: ProposalIndex = self.read(&medousa_store::StorePath::parse(&entry.name)?)?;
+            if index.owner != owner || index.proposal_id != proposal_id {
+                continue;
+            }
+            if (!source_only && index.owner_session == *session)
+                || index
+                    .projected_source_session_ids
+                    .contains(&session.session_id)
+            {
+                if object_path(&index.channel, "proposal-index", &index.proposal_id)?.file_name()
+                    != entry.name
+                {
+                    bail!("proposal index identity mismatch");
+                }
+                self.require_owner(&index.channel, owner)?;
+                let proposal = self.proposal(&index.channel, proposal_id)?;
+                if proposal.request.owner_principal_id != owner
+                    || proposal.request.owner_session != index.owner_session
+                {
+                    bail!("proposal index scope mismatch");
+                }
+                let decision = self.proposal_decision(&proposal)?;
+                if decision.as_ref().is_some_and(|decision| !decision.approved) {
+                    return Ok(None);
+                }
+                let binding =
+                    self.peer_if_recorded(&index.channel, &proposal.request.assignment_id)?;
+                let receipt =
+                    self.receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?;
+                return Ok(Some(PeerProposalReviewRecord {
+                    handoff: self.handoff_summary(
+                        &proposal.request.channel,
+                        &proposal.request.assignment_id,
+                    )?,
+                    proposal,
+                    decision,
+                    binding,
+                    receipt,
+                    progress: None,
+                }));
+            }
+        }
+        Ok(None)
+    }
+
     pub fn proposal_for_assignment(
         &self,
         channel: &CoordinationChannelRef,
@@ -166,20 +229,20 @@ impl CoordinationStore {
                 continue;
             }
             let binding = self.peer_if_recorded(&index.channel, &proposal.request.assignment_id)?;
-            if binding.is_some()
-                && self
-                    .receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?
-                    .is_some()
-            {
-                continue;
-            }
+            let receipt =
+                self.receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?;
             page.insert(
                 proposal.proposal_id.clone(),
                 PeerProposalReviewRecord {
+                    handoff: self.handoff_summary(
+                        &proposal.request.channel,
+                        &proposal.request.assignment_id,
+                    )?,
                     proposal,
                     decision,
                     binding,
-                    receipt: None,
+                    receipt,
+                    progress: None,
                 },
             );
             if page.len() > 8 {
@@ -241,10 +304,15 @@ impl CoordinationStore {
             page.insert(
                 proposal.proposal_id.clone(),
                 PeerProposalReviewRecord {
+                    handoff: self.handoff_summary(
+                        &proposal.request.channel,
+                        &proposal.request.assignment_id,
+                    )?,
                     proposal,
                     decision,
                     binding,
                     receipt,
+                    progress: None,
                 },
             );
             if page.len() > 8 {

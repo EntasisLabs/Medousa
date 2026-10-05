@@ -74,6 +74,18 @@ Connection**.
 Send a normal message. Medousa keeps work durable on the engine — closing the
 window does not throw away an accepted job.
 
+Code snippets use a compact header with the language and **Copy**. Long
+snippets offer **Show all** / **Show less**, with thin scrollbars and optional
+**Wrap** for longer lines. Copy always includes the full code, including any
+collapsed lines.
+Copy works while a response is streaming, and successful copies briefly show a
+checkmark and **Copied** before returning to **Copy**.
+
+Tool activity uses a quiet count and short context line. While calls run, the
+line names the current activity; failed calls get a small count. Select the
+line to inspect the calls, their inputs, and their results. A failed tool call
+does not necessarily mean the whole task failed.
+
 To include an image, copy it and paste into the message field (**⌘V** on Mac,
 **Ctrl+V** on Windows/Linux, or touch and hold → **Paste** on your phone).
 You can also choose **+ → Paste image** when clipboard access is available;

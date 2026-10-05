@@ -85,6 +85,22 @@
       "specifier": "$lib/styles/vault-browse.postcss"
     },
     {
+      "from": "src/lib/components/code/CodeFindBar.svelte",
+      "specifier": "$lib/styles/editor-find.postcss"
+    },
+    {
+      "from": "src/lib/components/code/CodeMarkdownPreview.svelte",
+      "specifier": "$lib/styles/markdown-content.postcss"
+    },
+    {
+      "from": "src/lib/components/code/CodeMarkdownWriter.svelte",
+      "specifier": "$lib/styles/vault-editor.postcss"
+    },
+    {
+      "from": "src/lib/components/code/CodeMarkdownWriter.svelte",
+      "specifier": "$lib/styles/vault-live.postcss"
+    },
+    {
       "from": "src/lib/components/code/CodeMirrorHost.svelte",
       "specifier": "$lib/styles/editor-host.postcss"
     },
@@ -250,6 +266,10 @@
     },
     {
       "from": "src/lib/components/vault/VaultFindBar.svelte",
+      "specifier": "$lib/styles/editor-find.postcss"
+    },
+    {
+      "from": "src/lib/components/vault/VaultFindBar.svelte",
       "specifier": "$lib/styles/vault-find.postcss"
     },
     {
@@ -302,6 +322,10 @@
     },
     {
       "from": "src/lib/liquid/archetypes/atoms/whisper/Whisper.svelte",
+      "specifier": "$lib/styles/markdown-content.postcss"
+    },
+    {
+      "from": "src/lib/liquid/archetypes/molecules/code/Code.svelte",
       "specifier": "$lib/styles/markdown-content.postcss"
     },
     {

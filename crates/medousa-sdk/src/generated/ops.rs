@@ -177,6 +177,27 @@ pub const AUTH_CHATGPT_REFRESH_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const BOTS_ASK_BY_JOB_ID_CANCEL_POST: Operation = Operation {
+    id: "bots.ask.by_job_id.cancel.post",
+    method: "POST",
+    path: "/v1/bots/ask/{job_id}/cancel",
+    streaming: false,
+};
+
+pub const BOTS_ASK_BY_JOB_ID_GET: Operation = Operation {
+    id: "bots.ask.by_job_id.get",
+    method: "GET",
+    path: "/v1/bots/ask/{job_id}",
+    streaming: false,
+};
+
+pub const BOTS_ASK_POST: Operation = Operation {
+    id: "bots.ask.post",
+    method: "POST",
+    path: "/v1/bots/ask",
+    streaming: false,
+};
+
 pub const BOTS_BY_BOT_ID_ARCHIVE_PUT: Operation = Operation {
     id: "bots.by_bot_id.archive.put",
     method: "PUT",
@@ -804,6 +825,13 @@ pub const EXTERNAL_CONVERSATIONS_BY_ID_MESSAGES_POST: Operation = Operation {
     id: "external_conversations.by_id.messages.post",
     method: "POST",
     path: "/v1/external-conversations/{id}/messages",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_BY_ID_WORK_EVENTS_POST: Operation = Operation {
+    id: "external_conversations.by_id.work_events.post",
+    method: "POST",
+    path: "/v1/external-conversations/{id}/work-events",
     streaming: false,
 };
 
@@ -1483,6 +1511,13 @@ pub const FORGE_PREVIEW_BY_TOKEN_PUT: Operation = Operation {
     id: "forge.preview.by_token.put",
     method: "PUT",
     path: "/v1/forge/preview/{token}",
+    streaming: false,
+};
+
+pub const FORGE_PROJECTS_POST: Operation = Operation {
+    id: "forge.projects.post",
+    method: "POST",
+    path: "/v1/forge/projects",
     streaming: false,
 };
 
@@ -2802,6 +2837,13 @@ pub const SESSIONS_SHELL_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const SESSIONS_WORKSPACE_SHELL_POST: Operation = Operation {
+    id: "sessions.workspace_shell.post",
+    method: "POST",
+    path: "/v1/sessions/workspace-shell",
+    streaming: false,
+};
+
 pub const SHARE_CAPABILITIES_GET: Operation = Operation {
     id: "share.capabilities.get",
     method: "GET",
@@ -2848,6 +2890,55 @@ pub const SHELL_SESSIONS_GET: Operation = Operation {
     id: "shell_sessions.get",
     method: "GET",
     path: "/v1/shell-sessions",
+    streaming: false,
+};
+
+pub const SSH_INSPECT_POST: Operation = Operation {
+    id: "ssh.inspect.post",
+    method: "POST",
+    path: "/v1/ssh/inspect",
+    streaming: false,
+};
+
+pub const SSH_TARGETS_BY_ID_ACCESS_POST: Operation = Operation {
+    id: "ssh.targets.by_id.access.post",
+    method: "POST",
+    path: "/v1/ssh/targets/{id}/access",
+    streaming: false,
+};
+
+pub const SSH_TARGETS_BY_ID_DELETE: Operation = Operation {
+    id: "ssh.targets.by_id.delete",
+    method: "DELETE",
+    path: "/v1/ssh/targets/{id}",
+    streaming: false,
+};
+
+pub const SSH_TARGETS_GET: Operation = Operation {
+    id: "ssh.targets.get",
+    method: "GET",
+    path: "/v1/ssh/targets",
+    streaming: false,
+};
+
+pub const SSH_TARGETS_POST: Operation = Operation {
+    id: "ssh.targets.post",
+    method: "POST",
+    path: "/v1/ssh/targets",
+    streaming: false,
+};
+
+pub const SSH_TERMINAL_POST: Operation = Operation {
+    id: "ssh.terminal.post",
+    method: "POST",
+    path: "/v1/ssh/terminal",
+    streaming: false,
+};
+
+pub const SSH_TEST_POST: Operation = Operation {
+    id: "ssh.test.post",
+    method: "POST",
+    path: "/v1/ssh/test",
     streaming: false,
 };
 
@@ -3093,6 +3184,20 @@ pub const VAULT_TRASH_RESTORE_POST: Operation = Operation {
     id: "vault.trash.restore.post",
     method: "POST",
     path: "/v1/vault/trash/restore",
+    streaming: false,
+};
+
+pub const WORK_MUTATE_POST: Operation = Operation {
+    id: "work.mutate.post",
+    method: "POST",
+    path: "/v1/work/mutate",
+    streaming: false,
+};
+
+pub const WORK_QUERY_POST: Operation = Operation {
+    id: "work.query.post",
+    method: "POST",
+    path: "/v1/work/query",
     streaming: false,
 };
 
@@ -3373,6 +3478,9 @@ pub static ALL: &[Operation] = &[
     AUTH_CHATGPT_GET,
     AUTH_CHATGPT_MODELS_GET,
     AUTH_CHATGPT_REFRESH_POST,
+    BOTS_ASK_BY_JOB_ID_CANCEL_POST,
+    BOTS_ASK_BY_JOB_ID_GET,
+    BOTS_ASK_POST,
     BOTS_BY_BOT_ID_ARCHIVE_PUT,
     BOTS_BY_BOT_ID_DUPLICATE_POST,
     BOTS_BY_BOT_ID_GET,
@@ -3463,6 +3571,7 @@ pub static ALL: &[Operation] = &[
     EXTERNAL_CONVERSATIONS_BY_ID_EVENTS_POST,
     EXTERNAL_CONVERSATIONS_BY_ID_GET,
     EXTERNAL_CONVERSATIONS_BY_ID_MESSAGES_POST,
+    EXTERNAL_CONVERSATIONS_BY_ID_WORK_EVENTS_POST,
     EXTERNAL_CONVERSATIONS_GET,
     EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_GET,
     EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_POST,
@@ -3560,6 +3669,7 @@ pub static ALL: &[Operation] = &[
     FORGE_PREVIEW_BY_TOKEN_PATCH,
     FORGE_PREVIEW_BY_TOKEN_POST,
     FORGE_PREVIEW_BY_TOKEN_PUT,
+    FORGE_PROJECTS_POST,
     FORGE_REPOSITORIES_BROWSE_GET,
     FORGE_REPOSITORIES_GET,
     FORGE_REPOSITORIES_INSPECT_POST,
@@ -3748,6 +3858,7 @@ pub static ALL: &[Operation] = &[
     SESSIONS_SHELL_BY_ID_SIGNAL_POST,
     SESSIONS_SHELL_GET,
     SESSIONS_SHELL_POST,
+    SESSIONS_WORKSPACE_SHELL_POST,
     SHARE_CAPABILITIES_GET,
     SHARE_EXPORT_POST,
     SHARE_IMPORT_POST,
@@ -3755,6 +3866,13 @@ pub static ALL: &[Operation] = &[
     SHARED_MODE_GET,
     SHARED_MODE_PUT,
     SHELL_SESSIONS_GET,
+    SSH_INSPECT_POST,
+    SSH_TARGETS_BY_ID_ACCESS_POST,
+    SSH_TARGETS_BY_ID_DELETE,
+    SSH_TARGETS_GET,
+    SSH_TARGETS_POST,
+    SSH_TERMINAL_POST,
+    SSH_TEST_POST,
     STATS_GET,
     STT_STATUS_GET,
     STT_TRANSCRIBE_POST,
@@ -3790,6 +3908,8 @@ pub static ALL: &[Operation] = &[
     VAULT_TAGS_GET,
     VAULT_TRASH_GET,
     VAULT_TRASH_RESTORE_POST,
+    WORK_MUTATE_POST,
+    WORK_QUERY_POST,
     WORKERS_BY_ID_DELETE,
     WORKERS_BY_ID_PUT,
     WORKERS_DEFAULT_PUT,

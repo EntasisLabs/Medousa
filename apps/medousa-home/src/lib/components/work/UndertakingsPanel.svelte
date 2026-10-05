@@ -50,7 +50,7 @@
     closeUndertaking,
     interruptTrackedAgent,
     landCodeWorkingSet,
-    openTrackedTerminal,
+    openProjectTerminal,
     reclaimTrackedHuman,
     startTrackedAgent,
     undertakingWorkspaceCopy,
@@ -215,7 +215,7 @@
     const d = detail;
     if (!d) return;
     await run(async () => {
-      await openTrackedTerminal(d);
+      await openProjectTerminal(d);
       await undertakings.refreshDetail();
     });
   }
@@ -351,7 +351,7 @@
       }
     }
     if (!leaseId || generation == null) {
-      actionError = "Nothing to seal yet — make a change first, then seal for review.";
+      actionError = "Nothing to prepare yet — make a change first, then choose Prepare merge.";
       return;
     }
     await run(async () => {

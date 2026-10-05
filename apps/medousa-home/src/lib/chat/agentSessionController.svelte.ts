@@ -12,6 +12,8 @@ import {
   setAgentSessionConfigOption,
   type AgentSessionConfigOption,
 } from "$lib/daemon";
+import { getSessionBot } from "$lib/daemon/bot";
+import { bots } from "$lib/stores/bots.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 import { planAgentWorkspace } from "$lib/utils/agentWorkspacePlan";
 import {
@@ -22,6 +24,7 @@ import {
   getSessionAgentConfigOptions,
   getSessionAgentWorkId,
   isExternalAgentRuntime,
+  isProviderConversationRuntime,
   setSessionAgentRuntime,
   setSessionAgentSessionId,
   setSessionAgentConfigOptions,
@@ -37,9 +40,9 @@ export type PreparedAgentSession = {
 };
 
 export function createAgentSessionController() {
-  let sessionRuntime = $state<ChatAgentRuntime>(getSessionAgentRuntime(chat.sessionId));
+  let sessionRuntime = $state<ChatAgentRuntime>(getSessionAgentRuntime(chat.focusedSessionId));
   let agentConfigOptions = $state<AgentSessionConfigOption[]>(
-    getSessionAgentConfigOptions(chat.sessionId) as AgentSessionConfigOption[],
+    getSessionAgentConfigOptions(chat.focusedSessionId) as AgentSessionConfigOption[],
   );
   let agentLifecyclePending = $state(0);
   const preparingAgent = $derived(agentLifecyclePending > 0);
@@ -66,7 +69,7 @@ export function createAgentSessionController() {
     }
     clearSessionAgentSessionId(sessionId);
     setSessionAgentConfigOptions(sessionId, []);
-    if (chat.sessionId === sessionId) agentConfigOptions = [];
+    if (chat.focusedSessionId === sessionId) agentConfigOptions = [];
   }
 
   function synchronizeAgentSession(
@@ -75,6 +78,8 @@ export function createAgentSessionController() {
     options?: { openChooserWhenMissing?: boolean; stopWhenUnbound?: boolean },
   ): Promise<PreparedAgentSession | null> {
     return queueAgentLifecycle(async () => {
+      const botResponse = await getSessionBot(sessionId);
+      if (botResponse.binding) throw new Error("A Bot’s conversation uses its configured runtime.");
       const [binding, mode] = await Promise.all([
         getSessionCodeBinding(sessionId),
         getSessionAgentMode(sessionId),
@@ -100,7 +105,7 @@ export function createAgentSessionController() {
         await cancelKnownAgent(sessionId, currentAgentId);
       }
       if (action === "stop" || action === "wait_for_project") {
-        if (options?.openChooserWhenMissing && chat.sessionId === sessionId) {
+        if (options?.openChooserWhenMissing && chat.focusedSessionId === sessionId) {
           window.dispatchEvent(new CustomEvent("medousa-open-code-project-chooser"));
         }
         return null;
@@ -135,7 +140,7 @@ export function createAgentSessionController() {
       setSessionAgentWorkId(sessionId, bindingWorkId);
       const configOptions = accepted.config_options ?? [];
       setSessionAgentConfigOptions(sessionId, configOptions);
-      if (chat.sessionId === sessionId) agentConfigOptions = configOptions;
+      if (chat.focusedSessionId === sessionId) agentConfigOptions = configOptions;
       return {
         agentSessionId: accepted.agent_session_id,
         streamUrl: accepted.stream_url,
@@ -146,8 +151,8 @@ export function createAgentSessionController() {
   }
 
   function syncFromFocusedSession() {
-    const sessionId = chat.sessionId;
-    const runtimeChoice = getSessionAgentRuntime(sessionId);
+    const sessionId = chat.focusedSessionId;
+    const runtimeChoice = bots.forSession(sessionId) ? "medousa" : getSessionAgentRuntime(sessionId);
     sessionRuntime = runtimeChoice;
     agentConfigOptions = getSessionAgentConfigOptions(
       sessionId,
@@ -156,7 +161,8 @@ export function createAgentSessionController() {
   }
 
   function onRuntimeChange(value: ChatAgentRuntime) {
-    const sessionId = chat.sessionId;
+    const sessionId = chat.focusedSessionId;
+    if (bots.forSession(sessionId) || isProviderConversationRuntime(getSessionAgentRuntime(sessionId)) || isProviderConversationRuntime(value)) return;
     const previousRuntime = getSessionAgentRuntime(sessionId);
     const previousId = getSessionAgentSessionId(sessionId);
     const previousWorkId = getSessionAgentWorkId(sessionId);
@@ -176,7 +182,7 @@ export function createAgentSessionController() {
               setSessionAgentWorkId(sessionId, previousWorkId);
             }
             setSessionAgentConfigOptions(sessionId, previousConfigOptions);
-            if (chat.sessionId === sessionId) {
+            if (chat.focusedSessionId === sessionId) {
               sessionRuntime = previousRuntime;
               agentConfigOptions = previousConfigOptions as AgentSessionConfigOption[];
               chat.setError(err instanceof Error ? err.message : String(err));
@@ -199,7 +205,7 @@ export function createAgentSessionController() {
     event: Event & { detail?: { sessionId?: string; workId?: string | null } },
   ) {
     const sessionId = event.detail?.sessionId?.trim();
-    if (!sessionId || sessionId !== chat.sessionId) return;
+    if (!sessionId || sessionId !== chat.focusedSessionId) return;
     const runtimeChoice = getSessionAgentRuntime(sessionId);
     if (!isExternalAgentRuntime(runtimeChoice)) return;
     void synchronizeAgentSession(sessionId, runtimeChoice, {
@@ -210,16 +216,19 @@ export function createAgentSessionController() {
   }
 
   async function updateAgentConfig(configId: string, value: unknown) {
-    const agentSessionId = getSessionAgentSessionId(chat.sessionId);
+    const agentSessionId = getSessionAgentSessionId(chat.focusedSessionId);
     if (!agentSessionId) return;
     const response = await setAgentSessionConfigOption(agentSessionId, configId, value);
     agentConfigOptions = response.config_options;
-    setSessionAgentConfigOptions(chat.sessionId, agentConfigOptions);
+    setSessionAgentConfigOptions(chat.focusedSessionId, agentConfigOptions);
   }
 
   $effect(() => {
     chat.workshopScopeId;
     const { sessionId, runtimeChoice } = syncFromFocusedSession();
+    if (!isProviderConversationRuntime(runtimeChoice)) {
+      void untrack(() => bots.refreshSessionBinding(sessionId)).catch(() => undefined);
+    }
     if (isExternalAgentRuntime(runtimeChoice)) {
       // Busy counters belong outside this effect's dependency graph.
       void untrack(() => synchronizeAgentSession(sessionId, runtimeChoice)).catch(() => {
@@ -235,7 +244,7 @@ export function createAgentSessionController() {
 
   return {
     get sessionRuntime() {
-      return sessionRuntime;
+      return bots.forSession(chat.focusedSessionId) ? "medousa" : sessionRuntime;
     },
     get agentConfigOptions() {
       return agentConfigOptions;

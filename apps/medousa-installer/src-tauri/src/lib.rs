@@ -2,15 +2,15 @@ mod embedded_release;
 mod install;
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use medousa_install_support::manifest::{
-    package_dir, package_installed, read_install_manifest, write_install_manifest,
-    release_package_matches_host, InstallManifest, PackageInstallRecord, ReleaseManifest,
+    InstallManifest, PackageInstallRecord, ReleaseManifest, package_dir, package_installed,
+    read_install_manifest, release_package_matches_host, shared_bin_dir, write_install_manifest,
 };
 use medousa_install_support::packages::{
-    catalog_entry, default_install_profiles, expand_package_dependencies, package_catalog,
-    phase_label, sort_for_install, visible_catalog, PackageCategory,
+    PackageCategory, catalog_entry, default_install_profiles, expand_package_dependencies,
+    package_catalog, phase_label, sort_for_install, visible_catalog,
 };
 use medousa_install_support::release_config::{host_target, release_base_url, release_channel};
 use serde::{Deserialize, Serialize};
@@ -159,15 +159,95 @@ fn modify_mode_from_args() -> bool {
     std::env::args().any(|arg| arg == "--modify" || arg == "--repair" || arg == "--update")
 }
 
+fn repair_requested_from_args() -> bool {
+    std::env::args().any(|arg| arg == "--repair")
+}
+
+fn package_binaries_healthy(data_dir: &Path, install_root: &Path, package_id: &str) -> bool {
+    if package_id == "desktop" {
+        #[cfg(target_os = "macos")]
+        {
+            return install_root
+                .join("Contents/MacOS")
+                .read_dir()
+                .is_ok_and(|entries| {
+                    entries.flatten().any(|entry| {
+                        entry
+                            .metadata()
+                            .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+                    })
+                });
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return install_root
+                .join("Medousa.exe")
+                .metadata()
+                .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            return [
+                install_root.join("Medousa.AppImage"),
+                install_root.join("medousa-home"),
+                PathBuf::from("/usr/bin/medousa-home"),
+            ]
+            .iter()
+            .any(|path| {
+                path.metadata()
+                    .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+            });
+        }
+    }
+    let Some(entry) = catalog_entry(package_id) else {
+        return false;
+    };
+    entry.binaries.iter().all(|binary| {
+        shared_bin_dir(data_dir)
+            .join(medousa_install_support::tarball_install::binary_filename(
+                binary,
+            ))
+            .metadata()
+            .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+    })
+}
+
+fn should_skip_existing(
+    already_installed: bool,
+    needs_update: bool,
+    repair: bool,
+    healthy: bool,
+) -> bool {
+    already_installed && !needs_update && !repair && healthy
+}
+
+fn package_install_record(
+    data_dir: &std::path::Path,
+    package_id: &str,
+    remote_package: &medousa_install_support::manifest::ReleasePackage,
+) -> Result<PackageInstallRecord, String> {
+    Ok(PackageInstallRecord {
+        id: package_id.to_string(),
+        version: remote_package.version.clone(),
+        install_path: Some(package_dir(data_dir, package_id)?.display().to_string()),
+        sha256: Some(remote_package.sha256.clone()),
+        binaries: catalog_entry(package_id)
+            .map(|entry| {
+                entry
+                    .binaries
+                    .iter()
+                    .map(|binary| binary.to_string())
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
+}
+
 fn build_profile_summaries(remote: &Option<ReleaseManifest>) -> Vec<ProfileSummary> {
     default_install_profiles()
         .into_iter()
         .map(|profile| {
-            let packages: Vec<String> = profile
-                .packages
-                .iter()
-                .map(|id| id.to_string())
-                .collect();
+            let packages: Vec<String> = profile.packages.iter().map(|id| id.to_string()).collect();
             let bytes = estimate_bytes(&packages, remote);
             ProfileSummary {
                 id: profile.id.to_string(),
@@ -220,7 +300,7 @@ fn estimate_bytes(package_ids: &[String], remote: &Option<ReleaseManifest>) -> u
     total
 }
 
-fn installed_records(install_root: &PathBuf) -> HashMap<String, PackageInstallRecord> {
+fn installed_records(install_root: &Path) -> HashMap<String, PackageInstallRecord> {
     let path = install::install_manifest_path(install_root);
     if !path.exists() {
         return HashMap::new();
@@ -249,8 +329,7 @@ fn build_package_summaries(
         .into_iter()
         .map(|entry| {
             let installed_record = installed.get(entry.id);
-            let installed = installed_record.is_some()
-                || package_installed(&data_dir(), entry.id);
+            let installed = installed_record.is_some() || package_installed(&data_dir(), entry.id);
             let remote_pkg = remote.as_ref().and_then(|manifest| {
                 manifest
                     .packages
@@ -300,13 +379,15 @@ async fn installer_bootstrap() -> Result<BootstrapResponse, String> {
     let remote = load_remote_manifest().await;
     let installed = installed_records(&install_root);
     let selected: HashSet<String> = if installed.is_empty() {
-        ["desktop", "engine"].into_iter().map(str::to_string).collect()
+        ["desktop", "engine"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()
     } else {
         installed.keys().cloned().collect()
     };
 
-    let installed_version = install::read_local_install_manifest(&install_root)
-        .map(|m| m.version);
+    let installed_version = install::read_local_install_manifest(&install_root).map(|m| m.version);
     let remote_version = remote.as_ref().map(|m| m.version.clone());
     let packages = build_package_summaries(&selected, &remote, &installed);
     // Channel head can advance without every package bumping — treat mismatch as
@@ -336,8 +417,7 @@ async fn installer_catalog(selected_ids: Vec<String>) -> Result<CatalogResponse,
     let remote = load_remote_manifest().await;
     let installed = installed_records(&install_root);
     let selected: HashSet<String> = selected_ids.into_iter().collect();
-    let installed_version = install::read_local_install_manifest(&install_root)
-        .map(|m| m.version);
+    let installed_version = install::read_local_install_manifest(&install_root).map(|m| m.version);
     let remote_version = remote.as_ref().map(|m| m.version.clone());
     let packages = build_package_summaries(&selected, &remote, &installed);
     let version_mismatch = packages.iter().any(|p| p.update_available);
@@ -356,9 +436,8 @@ async fn installer_resolve_selection(
     package_ids: Vec<String>,
 ) -> Result<ResolveSelectionResponse, String> {
     let remote = load_remote_manifest().await;
-    let expanded: Vec<String> = expand_package_dependencies(
-        &package_ids.iter().map(String::as_str).collect::<Vec<_>>(),
-    );
+    let expanded: Vec<String> =
+        expand_package_dependencies(&package_ids.iter().map(String::as_str).collect::<Vec<_>>());
     let total_bytes = estimate_bytes(&expanded, &remote);
     let mut warnings = Vec::new();
 
@@ -415,7 +494,11 @@ fn build_sidebar_tree(expanded: &[String]) -> Vec<SidebarNode> {
     for id in expanded {
         let entry = catalog_entry(id);
         let (group_label, sort_key, optional) = match entry.as_ref() {
-            Some(e) => (e.category_label.to_string(), category_sort_key(e.category), e.optional),
+            Some(e) => (
+                e.category_label.to_string(),
+                category_sort_key(e.category),
+                e.optional,
+            ),
             None => (id.clone(), 99, false),
         };
         let label = entry
@@ -514,7 +597,8 @@ async fn installer_run(app: AppHandle, request: InstallRequest) -> Result<(), St
     );
     sort_for_install(&mut expanded);
 
-    let remote = install::fetch_release_manifest().await.ok();
+    let mut remote = install::fetch_release_manifest().await.ok();
+    let mut installed_now = Vec::new();
 
     for package_id in expanded {
         let already_installed = existing_manifest
@@ -535,34 +619,39 @@ async fn installer_run(app: AppHandle, request: InstallRequest) -> Result<(), St
                 }
             });
 
-        if already_installed && !needs_update {
+        if should_skip_existing(
+            already_installed,
+            needs_update,
+            repair_requested_from_args(),
+            package_binaries_healthy(&data, &install_root, &package_id),
+        ) {
             emit_progress(&app, &package_id, "ready", 100.0, "Already installed");
             continue;
         }
 
-        emit_progress(
-            &app,
-            &package_id,
-            "downloading",
-            0.0,
-            "Starting download…",
-        );
-        let result = install::install_package(
-            &install_root,
-            &data,
-            &package_id,
-            |percent, message| {
+        emit_progress(&app, &package_id, "downloading", 0.0, "Starting download…");
+        let result =
+            install::install_package(&install_root, &data, &package_id, |percent, message| {
                 emit_progress(&app, &package_id, "downloading", percent, message);
-            },
-        )
-        .await;
+            })
+            .await;
         match result {
-            Ok(()) => emit_progress(&app, &package_id, "ready", 100.0, "Installed"),
+            Ok(installed_package) => {
+                emit_progress(&app, &package_id, "ready", 100.0, "Installed");
+                installed_now.push((package_id, installed_package));
+                if remote.is_none() {
+                    remote = install::fetch_release_manifest().await.ok();
+                }
+            }
             Err(err) => {
                 emit_progress(&app, &package_id, "failed", 0.0, &err);
                 return Err(err);
             }
         }
+    }
+
+    if installed_now.is_empty() && request.remove_package_ids.is_empty() && manifest_path.exists() {
+        return Ok(());
     }
 
     let mut manifest = if manifest_path.exists() {
@@ -586,22 +675,23 @@ async fn installer_run(app: AppHandle, request: InstallRequest) -> Result<(), St
     };
     manifest.install_root = Some(install_root.display().to_string());
     manifest.data_dir = Some(data.display().to_string());
-    if let Some(remote) = &remote {
-        manifest.version = remote.version.clone();
+    if !installed_now.is_empty() {
+        if let Some(remote) = &remote {
+            manifest.version = remote.version.clone();
+        }
     }
 
-    for package_id in &request.package_ids {
-        let record = PackageInstallRecord {
-            id: package_id.clone(),
-            version: manifest.version.clone(),
-            install_path: Some(package_dir(&data, package_id)?.display().to_string()),
-            sha256: remote
-                .as_ref()
-                .and_then(|m| install::resolve_release_package(m, package_id).ok())
-                .map(|p| p.sha256.clone()),
-            binaries: catalog_entry(package_id)
-                .map(|e| e.binaries.iter().map(|b| b.to_string()).collect())
-                .unwrap_or_default(),
+    for (package_id, installed_package) in &installed_now {
+        let record = if let Some(package) = installed_package {
+            package_install_record(&data, package_id, package)?
+        } else {
+            PackageInstallRecord {
+                id: package_id.clone(),
+                version: manifest.version.clone(),
+                install_path: Some(package_dir(&data, package_id)?.display().to_string()),
+                sha256: None,
+                binaries: Vec::new(),
+            }
         };
         if let Some(existing) = manifest.packages.iter_mut().find(|p| p.id == *package_id) {
             *existing = record;
@@ -610,7 +700,9 @@ async fn installer_run(app: AppHandle, request: InstallRequest) -> Result<(), St
         }
     }
 
-    manifest.packages.retain(|p| !request.remove_package_ids.contains(&p.id));
+    manifest
+        .packages
+        .retain(|p| !request.remove_package_ids.contains(&p.id));
     write_install_manifest(&manifest_path, &manifest)?;
     Ok(())
 }
@@ -643,7 +735,7 @@ fn installer_launch_medousa(app: AppHandle) -> Result<(), String> {
             .spawn()
             .map_err(|err| err.to_string())?;
         let _ = app;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "windows")]
@@ -653,7 +745,7 @@ fn installer_launch_medousa(app: AppHandle) -> Result<(), String> {
             .spawn()
             .map_err(|err| err.to_string())?;
         let _ = app;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
@@ -702,4 +794,60 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Medousa Installer");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repair_reinstalls_missing_or_truncated_binaries_and_repeat_is_noop() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-installer-health-test-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let bin = shared_bin_dir(&root);
+        std::fs::create_dir_all(&bin).unwrap();
+        for binary in catalog_entry("engine").unwrap().binaries {
+            std::fs::write(
+                bin.join(medousa_install_support::tarball_install::binary_filename(
+                    binary,
+                )),
+                b"binary",
+            )
+            .unwrap();
+        }
+        assert!(package_binaries_healthy(&root, &root, "engine"));
+        assert!(should_skip_existing(true, false, false, true));
+        assert!(!should_skip_existing(true, false, true, true));
+        let one = bin.join(medousa_install_support::tarball_install::binary_filename(
+            "medousa_daemon",
+        ));
+        std::fs::write(&one, b"").unwrap();
+        assert!(!package_binaries_healthy(&root, &root, "engine"));
+        assert!(!should_skip_existing(true, false, false, false));
+        std::fs::remove_file(&one).unwrap();
+        assert!(!package_binaries_healthy(&root, &root, "engine"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_record_uses_resolved_package_version() {
+        let package: medousa_install_support::manifest::ReleasePackage =
+            serde_json::from_value(serde_json::json!({
+                "id": "engine",
+                "displayName": "Engine",
+                "version": "0.11.7",
+                "target": "test",
+                "url": "https://example.invalid/engine.tar.gz",
+                "sha256": "a".repeat(64),
+                "sizeBytes": 1
+            }))
+            .unwrap();
+        let record =
+            package_install_record(std::path::Path::new("/tmp/medousa"), "engine", &package)
+                .unwrap();
+        assert_eq!(record.version, "0.11.7");
+    }
 }

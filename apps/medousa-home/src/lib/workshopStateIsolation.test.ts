@@ -13,6 +13,7 @@ import {
 import { UserProfilesStore } from "$lib/stores/userProfiles.svelte";
 import { WorkshopsStore } from "$lib/stores/workshops.svelte";
 import { defaultWorkshopRegistry } from "$lib/types/workshopRegistry";
+import { setWorkshopRefreshPort } from "$lib/runtime/workshopReconnectPort";
 import {
   getSessionAgentRuntime,
   setSessionAgentRuntime,
@@ -37,6 +38,7 @@ describe("workshop client-state isolation", () => {
   });
 
   afterEach(() => {
+    setWorkshopRefreshPort(null);
     setActiveWorkshopIdPort(null);
     vi.unstubAllGlobals();
   });
@@ -126,5 +128,64 @@ describe("workshop client-state isolation", () => {
     expect(store.activeWorkshopId).toBe("personal");
     expect(store.pendingSwitchAfterPair).toBe("paired-remote-canary");
     expect(select).not.toHaveBeenCalled();
+  });
+
+  it("saves the chosen pairing name before offering to switch", async () => {
+    const store = new WorkshopsStore();
+    const registry = defaultWorkshopRegistry();
+    registry.workshops.push({ ...registry.workshops[0], id: "paired-remote", label: "Advertised name", kind: "portal" });
+    vi.spyOn(store, "load").mockImplementation(async () => { store.registry = registry; });
+    const rename = vi.spyOn(store, "renameWorkshop").mockImplementation(async (id, label) => {
+      store.registry.workshops.find((workshop) => workshop.id === id)!.label = label;
+    });
+    await store.onPairComplete({
+      workshopId: "paired-remote", workshopPeerName: "Advertised name",
+    } as Parameters<typeof store.onPairComplete>[0], "  Studio Mac  ");
+    expect(rename).toHaveBeenCalledWith("paired-remote", "Studio Mac");
+    expect(store.pendingSwitchAfterPairLabel).toBe("Studio Mac");
+    expect(store.activeWorkshopId).toBe("personal");
+  });
+
+  it("keeps a successful pairing when saving its display name fails", async () => {
+    const store = new WorkshopsStore();
+    vi.spyOn(store, "load").mockResolvedValue(undefined);
+    vi.spyOn(store, "renameWorkshop").mockRejectedValue(new Error("Storage unavailable"));
+    await store.onPairComplete({ workshopId: "paired-remote" } as Parameters<typeof store.onPairComplete>[0], "Studio");
+    expect(store.pendingSwitchAfterPair).toBe("paired-remote");
+    expect(store.error).toContain("Workshop paired, but its name could not be saved");
+  });
+
+  it("refreshes without switching or reloading workshop state, and prevents overlapping transitions", async () => {
+    const store = new WorkshopsStore();
+    const load = vi.spyOn(store, "load");
+    const select = vi.spyOn(store, "selectWorkshop");
+    let finish!: () => void;
+    const refresh = vi.fn(async () => {
+      await new Promise<void>((resolve) => { finish = resolve; });
+      return { ok: true, message: "Connected" };
+    });
+    setWorkshopRefreshPort(refresh);
+    const task = store.refreshConnection();
+    expect(store.refreshing).toBe(true);
+    store.requestSwitch("paired-remote");
+    expect(await store.refreshConnection()).toBe(false);
+    expect(select).not.toHaveBeenCalled();
+    finish();
+    expect(await task).toBe(true);
+    expect(store.refreshing).toBe(false);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(load).not.toHaveBeenCalled();
+    expect(store.activeWorkshopId).toBe("personal");
+  });
+
+  it("surfaces an unsuccessful refresh and permits retry", async () => {
+    const store = new WorkshopsStore();
+    const refresh = vi.fn().mockResolvedValueOnce({ ok: false, message: "Workshop offline" }).mockResolvedValue({ ok: true });
+    setWorkshopRefreshPort(refresh);
+    expect(await store.refreshConnection()).toBe(false);
+    expect(store.error).toBe("Workshop offline");
+    expect(store.refreshing).toBe(false);
+    expect(await store.refreshConnection()).toBe(true);
+    expect(store.error).toBeNull();
   });
 });

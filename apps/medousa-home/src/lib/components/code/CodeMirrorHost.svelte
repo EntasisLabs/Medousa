@@ -28,9 +28,7 @@
     indentWithTab,
   } from "@codemirror/commands";
   import {
-    closeSearchPanel,
     highlightSelectionMatches,
-    search,
     searchKeymap,
   } from "@codemirror/search";
   import {
@@ -39,7 +37,8 @@
     completionKeymap,
     autocompletion,
   } from "@codemirror/autocomplete";
-  import { forEachDiagnostic, lintKeymap } from "@codemirror/lint";
+  import { diagnosticMetadata } from "$lib/code/codeDiagnosticPresentation";
+  import { forEachDiagnostic, lintKeymap, setDiagnostics, setDiagnosticsEffect } from "@codemirror/lint";
   import {
     bracketMatching,
     defaultHighlightStyle,
@@ -72,7 +71,8 @@
   } from "$lib/config/codeEditorPreferences";
   import { buildCodeSyntaxThemeExtensions, getCodeSyntaxTheme } from "$lib/syntax/codeSyntaxThemes";
   import { codeSyntaxThemePreference } from "$lib/stores/codeSyntaxThemePreference.svelte";
-  import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
+  import CodeFindBar from "./CodeFindBar.svelte";
+  import { CodeFindController, CodeFindState, codeFindExtension } from "$lib/code/codeFindController.svelte";
   import { codeMirrorCspExtension } from "$lib/security/codeMirrorCsp";
 
   /**
@@ -88,19 +88,13 @@
       : [];
   }
 
-  function findOverrideExtension(owned: boolean): Extension {
-    if (!owned) return [];
-    return Prec.highest(
-      keymap.of([
-        {
-          key: "Mod-f",
-          run: () => {
-            onFindRequestedRef?.();
-            return true;
-          },
-        },
-      ]),
-    );
+  function findOverrideExtension(): Extension {
+    return Prec.highest(keymap.of([
+      { key: "Mod-f", run: () => { openFind(); return true; } },
+      { key: "Mod-h", mac: "Mod-Alt-f", run: () => { openReplace(); return true; } },
+      { key: "F3", run: () => navigateFind(false), shift: () => navigateFind(true), preventDefault: true },
+      { key: "Mod-g", run: () => navigateFind(false), shift: () => navigateFind(true), preventDefault: true },
+    ]));
   }
 
   const codeEditorCoreSetup: Extension = [
@@ -120,7 +114,7 @@
     crosshairCursor(),
     highlightActiveLine(),
     highlightSelectionMatches(),
-    search(),
+    codeFindExtension,
     keymap.of([
       ...closeBracketsKeymap,
       ...defaultKeymap,
@@ -235,6 +229,8 @@
     onFindRequested?: () => void;
     /** Override syntax pack; default follows Settings → Preferences. */
     syntaxTheme?: string | null;
+    /** File-local Find preferences owned by the workbench when switching tabs. */
+    findState?: CodeFindState;
   }
 
   let {
@@ -260,10 +256,13 @@
     initialLine = null,
     onFindRequested,
     syntaxTheme = null,
+    findState,
   }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
   let view: EditorView | undefined = $state();
+  const localFindState = new CodeFindState();
+  const find = new CodeFindController(() => findState ?? localFindState);
   let stopHoverObserve: (() => void) | undefined;
   let applyingExternal = false;
   let syncedKey: string | number = 0;
@@ -285,7 +284,6 @@
   const wrapCompartment = new Compartment();
   const lineNumbersCompartment = new Compartment();
   const foldGutterCompartment = new Compartment();
-  const findOverrideCompartment = new Compartment();
   const reviewCompartment = new Compartment();
   const syntaxThemeCompartment = new Compartment();
 
@@ -438,7 +436,7 @@
           : EditorView.theme({ ".cm-lineNumbers": { display: "none" } }),
       ),
       foldGutterCompartment.of(foldGutterExtension(showFoldGutter)),
-      findOverrideCompartment.of(findOverrideExtension(Boolean(onFindRequested))),
+      findOverrideExtension(),
       reviewCompartment.of(reviewExtensions()),
       EditorView.domEventHandlers({
         contextmenu(event) {
@@ -449,12 +447,11 @@
         },
       }),
       EditorView.updateListener.of((update) => {
+        untrack(() => find.update(update));
         if (update.docChanged) {
           scheduleChange();
         }
         if (update.docChanged || update.selectionSet) {
-          if (onFindRequestedRef) closeSearchPanel(update.view);
-          else codeEditorFind.syncFromView(update.view);
           if (telemetryFrame !== undefined) cancelAnimationFrame(telemetryFrame);
           telemetryFrame = requestAnimationFrame(() => {
             telemetryFrame = undefined;
@@ -481,7 +478,7 @@
     if (!host) return;
     const baseState = EditorState.create({
       doc: value,
-      extensions: buildExtensions(),
+      extensions: [buildExtensions(), EditorState.transactionExtender.of((transaction) => transaction.docChanged ? { effects: setDiagnosticsEffect.of([]) } : null)],
     });
     const targetLine = initialLine && initialLine > 0
       ? baseState.doc.line(
@@ -498,6 +495,7 @@
         ? EditorView.scrollIntoView(targetLine.from, { y: "center", yMargin: 48 })
         : undefined,
     });
+    untrack(() => find.bind(view!));
     syncedKey = contentSyncKey;
     reportCursor(view.state);
     if (resolvedLanguage === "grapheme") {
@@ -513,6 +511,7 @@
     if (telemetryFrame !== undefined) cancelAnimationFrame(telemetryFrame);
     stopHoverObserve?.();
     stopHoverObserve = undefined;
+    find.destroy();
     view?.destroy();
     view = undefined;
   });
@@ -535,6 +534,21 @@
 
   export function getValue(): string {
     return view?.state.doc.toString() ?? value;
+  }
+
+  /** A second document surface edits the same buffer, including its undo history. */
+  export function replaceValue(next: string) {
+    flushChange();
+    if (!view) return;
+    const previous = view.state.doc.toString();
+    if (previous === next) return;
+    let from = 0;
+    while (from < previous.length && from < next.length && previous[from] === next[from]) from++;
+    let oldEnd = previous.length, newEnd = next.length;
+    while (oldEnd > from && newEnd > from && previous[oldEnd - 1] === next[newEnd - 1]) { oldEnd--; newEnd--; }
+    applyingExternal = true;
+    try { view.dispatch({ changes: { from, to: oldEnd, insert: next.slice(from, newEnd) } }); }
+    finally { applyingExternal = false; }
   }
 
   export function flushChanges() {
@@ -588,7 +602,18 @@
       onFindRequestedRef();
       return;
     }
-    codeEditorFind.show(view);
+    find.show();
+  }
+
+  export function openReplace() {
+    if (onFindRequestedRef) { onFindRequestedRef(); return; }
+    find.show(true);
+  }
+
+  function navigateFind(previous: boolean) {
+    if (!find.state.open) openFind();
+    if (previous) find.previous(); else find.next();
+    return true;
   }
 
   export function revealLine(lineNumber: number) {
@@ -600,6 +625,17 @@
       selection: { anchor: line.from },
       effects: EditorView.scrollIntoView(line.from, { y: "center", yMargin: 48 }),
     });
+    view.focus();
+  }
+
+  export function revealProblemRange(range: { line: number; character: number; endLine: number; endCharacter: number }) {
+    if (!view) return;
+    const position = (lineNumber: number, character: number) => {
+      const line = view!.state.doc.line(Math.max(1, Math.min(lineNumber, view!.state.doc.lines)));
+      return Math.min(line.to, line.from + Math.max(0, character - 1));
+    };
+    const from = position(range.line, range.character), to = position(range.endLine, range.endCharacter);
+    view.dispatch({ selection: { anchor: from, head: Math.max(from, to) }, effects: EditorView.scrollIntoView(from, { y: "center" }) });
     view.focus();
   }
 
@@ -631,28 +667,20 @@
     view.focus();
   }
 
-  export function getProblems(): Array<{
-    from: number;
-    to: number;
-    line: number;
-    severity: string;
-    message: string;
-  }> {
+  export function getProblems(): import("$lib/code/codeProblemsController.svelte").CodeEditorDocumentProblem[] {
     if (!view) return [];
-    const problems: Array<{
-      from: number;
-      to: number;
-      line: number;
-      severity: string;
-      message: string;
-    }> = [];
+    const problems: import("$lib/code/codeProblemsController.svelte").CodeEditorDocumentProblem[] = [];
     forEachDiagnostic(view.state, (diagnostic, from, to) => {
+      const provenance = diagnosticMetadata(diagnostic);
+      if (provenance && provenance.document !== view!.state.doc) return;
+      const start = view!.state.doc.lineAt(from), end = view!.state.doc.lineAt(to);
       problems.push({
-        from,
-        to,
-        line: view!.state.doc.lineAt(from).number,
-        severity: diagnostic.severity,
-        message: diagnostic.message,
+        line: start.number, character: from - start.from + 1,
+        endLine: end.number, endCharacter: to - end.from + 1,
+        severity: diagnostic.severity, message: diagnostic.message,
+        source: diagnostic.source, code: provenance?.raw.code,
+        tags: provenance?.raw.tags, relatedInformation: provenance?.raw.relatedInformation,
+        version: provenance?.version,
       });
     });
     return problems;
@@ -720,7 +748,12 @@
 
   $effect(() => {
     if (!view) return;
-    view.dispatch({ effects: lspCompartment.reconfigure(lspExtensions()) });
+    const extensions = lspExtensions();
+    // Lint state outlives the LSP compartment. Discard the old service's
+    // markers when it disconnects or the document/client scope changes.
+    view.dispatch(setDiagnostics(view.state, []), {
+      effects: lspCompartment.reconfigure(extensions),
+    });
   });
 
   $effect(() => {
@@ -750,43 +783,42 @@
 
   $effect(() => {
     if (!view) return;
-    view.dispatch({
-      effects: findOverrideCompartment.reconfigure(
-        findOverrideExtension(Boolean(onFindRequested)),
-      ),
-    });
-  });
-
-  $effect(() => {
-    if (!view) return;
     void changedLines;
     view.dispatch({ effects: reviewCompartment.reconfigure(reviewExtensions()) });
   });
 </script>
 
-<div
-  bind:this={host}
-  class="grapheme-codemirror-host code-codemirror-host h-full min-h-0 min-w-0 flex-1 overflow-hidden"
-  data-no-tab-swipe
-  class:code-owned-find={Boolean(onFindRequested)}
-  style={`--code-editor-font-size: ${readCodeEditorFontSize()}px; --code-syntax-bg: ${activeSyntaxTheme.canvas.background}; --code-syntax-fg: ${activeSyntaxTheme.canvas.foreground}; background-color: ${activeSyntaxTheme.canvas.background}; color: ${activeSyntaxTheme.canvas.foreground}`}
-  role="textbox"
-  tabindex="0"
-  aria-label="Code editor"
-  onkeydown={(e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
-      e.preventDefault();
-      if (onFindRequested) onFindRequested();
-      else openFind();
-    }
-  }}
-></div>
+<div class="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+  <div
+    bind:this={host}
+    class="grapheme-codemirror-host code-codemirror-host h-full min-h-0 min-w-0 flex-1 overflow-hidden"
+    data-no-tab-swipe
+    style={`--code-editor-font-size: ${readCodeEditorFontSize()}px; --code-syntax-bg: ${activeSyntaxTheme.canvas.background}; --code-syntax-fg: ${activeSyntaxTheme.canvas.foreground}; background-color: ${activeSyntaxTheme.canvas.background}; color: ${activeSyntaxTheme.canvas.foreground}`}
+    role="textbox"
+    tabindex="0"
+    aria-label="Code editor"
+    onkeydown={(e) => {
+      if (!e.defaultPrevented && !e.shiftKey && !e.altKey && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        if (onFindRequested) onFindRequested();
+        else openFind();
+      }
+    }}
+  ></div>
+  {#if find.state.open && !onFindRequested}
+    <CodeFindBar {find} />
+  {/if}
+</div>
 
 <style>
   :global(.code-codemirror-host .cm-editor),
-  :global(.code-codemirror-host .cm-scroller),
-  :global(.code-codemirror-host .cm-content) {
+  :global(.code-codemirror-host .cm-scroller) {
     background-color: var(--code-syntax-bg) !important;
+    color: var(--code-syntax-fg);
+  }
+
+  :global(.code-codemirror-host .cm-content) {
+    background-color: transparent !important;
     color: var(--code-syntax-fg);
   }
 
@@ -824,77 +856,9 @@
     background: rgb(251 113 133);
   }
 
-  :global(.code-codemirror-host.code-owned-find .cm-panel.cm-search) {
-    display: none !important;
-  }
-
-  /* Medousa-skinned CodeMirror find/replace panel */
-  :global(.code-codemirror-host .cm-panel.cm-search) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.4rem 0.55rem;
-    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.35);
-    background: rgb(var(--color-surface-950) / 0.94);
-    color: rgb(var(--color-surface-200));
-    font-size: 0.7rem;
-  }
-
-  :global(.code-codemirror-host .cm-panel.cm-search input[type="text"]),
-  :global(.code-codemirror-host .cm-panel.cm-search input:not([type])) {
-    min-width: 8rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.45);
-    border-radius: 0.3rem;
-    background: rgb(var(--color-surface-900));
-    padding: 0.2rem 0.45rem;
-    color: rgb(var(--color-surface-100));
-    outline: none;
-  }
-
-  :global(.code-codemirror-host .cm-panel.cm-search input[type="text"]:focus),
-  :global(.code-codemirror-host .cm-panel.cm-search input:not([type]):focus) {
-    border-color: rgb(var(--color-primary-400) / 0.55);
-  }
-
-  :global(.code-codemirror-host .cm-panel.cm-search button) {
-    border: 1px solid rgb(var(--color-surface-500) / 0.35);
-    border-radius: 0.3rem;
-    background: rgb(var(--color-surface-800) / 0.8);
-    padding: 0.15rem 0.45rem;
-    color: rgb(var(--color-surface-200));
-    cursor: pointer;
-  }
-
-  :global(.code-codemirror-host .cm-panel.cm-search button:hover) {
-    background: rgb(var(--color-surface-700));
-    color: rgb(var(--color-surface-50));
-  }
-
-  :global(.code-codemirror-host .cm-panel.cm-search label) {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  :global(.code-codemirror-host .cm-panel.cm-search .cm-textfield) {
-    min-width: 8rem;
-  }
-
-  :global(.code-codemirror-host .cm-panel.cm-search [name="close"]) {
-    margin-left: auto;
-  }
-
   /* Quiet confidence: match hits read as marks, not alarms */
   :global(.code-codemirror-host .cm-searchMatch) {
     outline: 1px solid rgb(var(--color-warning-400) / 0.35);
   }
 
-  :global(.code-codemirror-host .cm-panel.cm-search .cm-button) {
-    border: 1px solid rgb(var(--color-surface-500) / 0.35);
-    border-radius: 0.3rem;
-    background: rgb(var(--color-surface-800) / 0.8);
-    color: rgb(var(--color-surface-200));
-  }
 </style>

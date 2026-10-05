@@ -9,6 +9,7 @@ import {
   type ForgeProjectEventKind,
 } from "$lib/forge";
 import { getCoderExecutionTransport } from "$lib/executionAuthority";
+import { codeExecutionScopeKey } from "$lib/code/codeWorkspaceContext.svelte";
 import {
   DEFAULT_WORKSPACE_BACKOFF,
   ReconnectScheduler,
@@ -106,6 +107,7 @@ export class CodeProjectEventStream {
   private lastSeq = 0;
   private connecting = false;
   private generation = 0;
+  private readonly executionScope = codeExecutionScopeKey();
   private readonly reconnect = new ReconnectScheduler({
     policy: DEFAULT_WORKSPACE_BACKOFF,
   });
@@ -162,10 +164,11 @@ export class CodeProjectEventStream {
 
   private async connect() {
     const id = this.workId;
-    if (!id || this.connecting) return;
+    if (!id || this.connecting || this.executionScope !== codeExecutionScopeKey()) return;
     this.connecting = true;
     const generation = ++this.generation;
-    const current = () => this.generation === generation && this.workId === id;
+    const current = () => this.generation === generation && this.workId === id &&
+      this.executionScope === codeExecutionScopeKey();
     if (this.source) {
       this.source.close();
       this.source = null;
@@ -235,7 +238,7 @@ export function subscribeCodeProjectEvents(
   handlers: CodeProjectEventHandlers,
 ): () => void {
   const runtime = getCoderExecutionTransport();
-  const key = JSON.stringify([runtime, workId]);
+  const key = JSON.stringify([codeExecutionScopeKey(), runtime, workId]);
   let entry = projectSubscriptions.get(key);
   if (!entry) {
     const listeners = new Set<CodeProjectEventHandlers>();

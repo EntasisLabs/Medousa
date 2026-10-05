@@ -163,8 +163,14 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::shell_session_host::shell_session_surface().inventory())
         .expect("duplicate shell session route policy");
     inventory
+        .extend(crate::daemon::ssh::surface().inventory())
+        .expect("duplicate SSH target route policy");
+    inventory
         .extend(crate::daemon::detamu_host::world_surface().inventory())
         .expect("duplicate world model route policy");
+    inventory
+        .extend(crate::daemon::work_units::participant::surface().inventory())
+        .expect("duplicate work participant route policy");
     inventory
         .extend(crate::daemon::coordination::http::surface().inventory())
         .expect("duplicate coordination route policy");
@@ -663,6 +669,28 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
                 post(crate::bot_handlers::create_bot),
             ),
         ])
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/bots/ask",
+                Capability::WorkshopInteract,
+                128 * 1024,
+            ),
+            post(crate::bot_handlers::ask_bot),
+        )
+        .route(
+            workshop_read_policy("/v1/bots/ask/{job_id}"),
+            get(crate::bot_handlers::ask_bot_status),
+        )
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/bots/ask/{job_id}/cancel",
+                Capability::WorkshopInteract,
+                1024,
+            ),
+            post(crate::bot_handlers::cancel_ask_bot),
+        )
         .methods([
             (
                 workshop_read_policy("/v1/bots/{bot_id}"),
@@ -1404,12 +1432,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 457);
-        assert_eq!(with_pairing.entries().len(), 476);
+        assert_eq!(without_pairing.entries().len(), 473);
+        assert_eq!(with_pairing.entries().len(), 492);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 476);
+        assert_eq!(rows.len(), 492);
         assert_eq!(rows[0]["path"], "/health");
         for method in ["POST", "DELETE"] {
             assert!(rows.iter().any(|row| {
@@ -1483,20 +1511,20 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 60);
+        assert_eq!(entries.len(), 63);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("workshop.read"))
                 .count(),
-            24
+            25
         );
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("workshop.interact"))
                 .count(),
-            28
+            30
         );
         assert_eq!(
             entries
@@ -1772,13 +1800,22 @@ mod tests {
             .chain(&world)
             .collect::<Vec<_>>();
 
-        assert_eq!(entries.len(), 29);
+        let human_shell = entries
+            .iter()
+            .find(|entry| entry.path == "/v1/sessions/workspace-shell")
+            .unwrap();
+        assert_eq!(human_shell.method, "POST");
+        assert_eq!(human_shell.required_capability, Some("admin.execute"));
+        assert_eq!(human_shell.browser_policy, super::BrowserPolicy::NativeOnly);
+        assert!(!human_shell.bootstrap_public);
+
+        assert_eq!(entries.len(), 30);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("admin.execute"))
                 .count(),
-            21
+            22
         );
         assert_eq!(
             entries
@@ -1802,7 +1839,7 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 78);
+        assert_eq!(entries.len(), 79);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::Administration
                 && entry.required_capability == Some("admin.execute")

@@ -8,6 +8,7 @@ import { DEFAULT_VOICE_ID, normalizeCustomVoicePresets } from "$lib/types/voiceP
 import { alignStageRoutingWithHost } from "$lib/utils/stageRouting";
 
 export interface TuiDefaults {
+  codingRuntime?: CodingRuntimePreferences | null;
   backend?: string | null;
   themeId?: string | null;
   provider?: string | null;
@@ -67,6 +68,30 @@ export interface TuiDefaults {
   shellMaxOutputBytes?: number | null;
   shellAllowedBinaries?: string[] | null;
   shellWritableRoots?: string[] | null;
+}
+
+export const CODING_RUNTIMES = [
+  { value: "medousa", label: "Medousa Coder" },
+  { value: "codex", label: "Codex" },
+  { value: "cursor", label: "Cursor" },
+  { value: "hermes", label: "Hermes" },
+] as const;
+export type CodingRuntime = (typeof CODING_RUNTIMES)[number]["value"];
+export interface CodingRuntimePreferences {
+  preferred: CodingRuntime;
+  fallbacks: CodingRuntime[];
+}
+
+export function normalizeCodingRuntimePreferences(
+  raw?: CodingRuntimePreferences | null,
+): CodingRuntimePreferences {
+  const valid = (value: unknown): value is CodingRuntime =>
+    CODING_RUNTIMES.some((runtime) => runtime.value === value);
+  const preferred = valid(raw?.preferred) ? raw.preferred : "medousa";
+  const fallbacks = Array.isArray(raw?.fallbacks)
+    ? [...new Set(raw.fallbacks.filter(valid))].filter((value) => value !== preferred)
+    : [];
+  return { preferred, fallbacks };
 }
 
 export const BACKEND_OPTIONS = ["surreal-mem", "in-memory", "surreal-kv"] as const;
@@ -148,6 +173,7 @@ export function defaultWorkshopDefaults(): Required<
 export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
   const defaults = defaultWorkshopDefaults();
   const normalized: TuiDefaults = {
+    codingRuntime: normalizeCodingRuntimePreferences(raw.codingRuntime),
     backend: raw.backend?.trim() || defaults.backend,
     themeId: raw.themeId?.trim() || "medousa-default",
     provider: raw.provider?.trim() || defaults.provider,

@@ -74,6 +74,7 @@
   let repoPath = $state("");
   let baseRef = $state("");
   let workspaceMode = $state<ForgeWorkspaceMode>("isolated");
+  let creationRequest: { fingerprint: string; key: string } | null = null;
   let repository = $state<RepositoryInspection | null>(null);
   let repositoryCatalog = $state<RepositoryCatalogEntry[]>([]);
   let duplicateAcknowledged = $state(false);
@@ -140,7 +141,6 @@
     Boolean(
       repository
       && selectedRuntimeId
-      && repository.has_commits !== false
       && baseRef.trim()
       && outcome.trim()
       && (workspaceMode !== "attached_checkout" || repository.current_branch?.trim()),
@@ -415,6 +415,12 @@
     error = null;
     try {
       const title = outcome.trim().replace(/[.!?]+$/, "");
+      const fingerprint = JSON.stringify([
+        selectedRuntimeId, repository.path, title, outcome.trim(), baseRef.trim(), workspaceMode,
+      ]);
+      if (creationRequest?.fingerprint !== fingerprint) {
+        creationRequest = { fingerprint, key: crypto.randomUUID() };
+      }
       const item = await undertakings.start(
         {
           title: title.length > 96 ? `${title.slice(0, 93)}…` : title || rootLabelFromPath(repoPath),
@@ -422,6 +428,7 @@
           repo_path: repository.path,
           base_ref: baseRef.trim(),
           workspace_mode: workspaceMode,
+          request_key: creationRequest.key,
         },
         {
           executionRuntimeId: selectedRuntimeId,
@@ -529,6 +536,9 @@
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium text-surface-100">{repository.display_name}</p>
             <p class="mt-0.5 truncate font-mono text-xs text-content-quiet">{repository.path}</p>
+            {#if repository.has_commits === false}
+              <p class="creation-status">Medousa will create an empty initial commit; your files stay unstaged or staged as they are.</p>
+            {/if}
             {#if repository.dirty}
               <p class="creation-status" title={repository.state_explanation}>
                 <CircleDot size={9} />{repository.changed_files} local {repository.changed_files === 1 ? "change" : "changes"}

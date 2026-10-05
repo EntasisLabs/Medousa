@@ -214,6 +214,8 @@ pub struct VaultMutationIntent {
     pub expected_version: Option<String>,
     pub content_digest: String,
     pub vault_generation: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<VaultIdentityBinding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,6 +226,35 @@ pub struct VaultMutationReceiptRecord {
     pub note_version: String,
     pub vault_generation: u64,
     pub bytes: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<VaultIdentityBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VaultFileIdentity {
+    pub device: u64,
+    pub inode: u64,
+    pub created: Option<std::time::SystemTime>,
+}
+
+impl From<medousa_store::StoreMetadata> for VaultFileIdentity {
+    fn from(metadata: medousa_store::StoreMetadata) -> Self {
+        Self {
+            device: metadata.device,
+            inode: metadata.inode,
+            created: metadata.created,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VaultIdentityBinding {
+    pub vault_id: String,
+    pub resource_id: String,
+    pub prior_file: Option<VaultFileIdentity>,
+    pub published_file: Option<VaultFileIdentity>,
 }
 
 #[derive(Debug, Clone)]

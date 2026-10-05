@@ -35,6 +35,8 @@ pub struct VaultIndexOwner {
     transaction: RwLock<FileTransaction>,
     generation_lock: Mutex<()>,
     persist_generation_fault: AtomicBool,
+    #[cfg(feature = "full-daemon")]
+    pub(crate) identity_persist_fault: AtomicBool,
     change_log: Mutex<VecDeque<VaultChangeRecord>>,
 }
 
@@ -51,6 +53,8 @@ impl VaultIndexOwner {
             active: AtomicBool::new(true),
             generation_lock: Mutex::new(()),
             persist_generation_fault: AtomicBool::new(false),
+            #[cfg(feature = "full-daemon")]
+            identity_persist_fault: AtomicBool::new(false),
             change_log: Mutex::new(VecDeque::new()),
         })
     }
@@ -242,14 +246,44 @@ fn persist_generation(owner: &VaultIndexOwner, generation: u64) -> Result<(), Va
 
 pub fn ensure_owner_for_active_root() -> Result<Arc<VaultIndexOwner>, VaultMutationError> {
     let root_path = crate::vault::path::user_vault_root();
+    ensure_owner_for_root(root_path)
+}
+
+pub fn ensure_owner_for_root(
+    root_path: std::path::PathBuf,
+) -> Result<Arc<VaultIndexOwner>, VaultMutationError> {
+    ensure_owner_for_root_inner(root_path, true)
+}
+
+/// Repair must be able to inspect a root whose startup recovery is ambiguous.
+#[cfg(feature = "full-daemon")]
+pub(crate) fn ensure_owner_for_root_for_repair(
+    root_path: std::path::PathBuf,
+) -> Result<Arc<VaultIndexOwner>, VaultMutationError> {
+    ensure_owner_for_root_inner(root_path, false)
+}
+
+fn ensure_owner_for_root_inner(
+    root_path: std::path::PathBuf,
+    recover: bool,
+) -> Result<Arc<VaultIndexOwner>, VaultMutationError> {
     let root_key = root_path.display().to_string();
     if let Some(existing) = vault_registry().get(&root_key) {
         return Ok(existing);
     }
-    let files = crate::vault::path::user_vault_capability()
+    let files = crate::vault::path::vault_capability_for_root(root_path)
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let owner = VaultIndexOwner::new(VaultRootId::new(root_key), files);
-    crate::vault::mutation::recover_all_pending_writes(&owner)?;
+    if recover {
+        match crate::vault::mutation::recover_all_pending_writes(&owner) {
+            Ok(_) => {}
+            // Uncertain identity custody blocks writes/resolution in the
+            // identity transaction, not ordinary reads of native note bytes.
+            #[cfg(feature = "full-daemon")]
+            Err(VaultMutationError::ExternallyAmbiguous(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
     vault_registry().insert(Arc::clone(&owner));
     Ok(owner)
 }

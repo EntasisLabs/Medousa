@@ -91,8 +91,9 @@ pub struct TurnRequestInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TurnFinish {
-    /// Complete principal-facing final answer. The runtime prefers same-response prose when present.
-    #[schemars(required, with = "String")]
+    /// Optional final answer for a tool-only response. Omit to finish without adding text.
+    #[serde(default)]
+    #[schemars(with = "String")]
     message: Option<String>,
     /// Optional short note for logs
     #[serde(default)]
@@ -427,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn finish_schema_requires_message_while_wire_remains_backward_compatible() {
+    fn finish_schema_and_wire_allow_finishing_without_a_message() {
         let schema = turn_type_schemas()
             .into_iter()
             .find(|schema| schema.name == "turn.finish")
@@ -435,7 +436,7 @@ mod tests {
             .parameters;
         let required = schema["required"].as_array().expect("required fields");
         assert!(required.iter().any(|field| field == "action"));
-        assert!(required.iter().any(|field| field == "message"));
+        assert!(!required.iter().any(|field| field == "message"));
 
         let finish: TurnAction =
             serde_json::from_value(json!({ "action": "turn.finish" })).expect("silent finish");

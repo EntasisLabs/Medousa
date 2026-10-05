@@ -19,6 +19,22 @@ function turn(
 }
 
 describe("mapTurns chronological history", () => {
+  it("restores a failed callback's tool timeline and failure state after refreshing", () => {
+    const saved = turn([
+      { kind: "text", markdown: "Reviewing the result", segment_id: "wake:text:1", model_round: 1 },
+      { kind: "tool_run", run_id: "review", tool_name: "cognition_peer_review", status: "succeeded", input_summary: "Review receipt", tool_round: 1, started_at: "2026-10-04T19:38:00Z" },
+    ]);
+    saved.answer_state = "failed";
+    saved.caused_by = { authority_id: "authority", session_id: "taco", execution_id: "handoff_wake_done" };
+    saved.slice_summary = { goal: "Review delegated work", tool_rounds: 1, tools: ["cognition_peer_review"], outcomes: [], failures: ["This turn could not finish."] };
+    const [message] = mapTurns([saved], { sessionId: "taco" });
+    expect(message.turnId).toBe("handoff_wake_done");
+    expect(message.failed).toBe(true);
+    expect(message.errorLine).toBe("This turn could not finish.");
+    expect(message.segments?.map(segment => segment.kind)).toEqual(["text", "tool_group"]);
+    expect(message.toolRuns?.[0].toolName).toBe("cognition_peer_review");
+  });
+
   it("uses durable entry coordinates for stable ids and turn indexes", () => {
     const messages = mapTurns([turn([])], { sessionId: "session-a" });
 

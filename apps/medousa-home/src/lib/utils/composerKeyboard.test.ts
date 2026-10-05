@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldSubmitComposerKey, stripComposerNavigationGlyphs } from "$lib/utils/composerKeyboard";
+import { handleComposerMessageNavigation, shouldSubmitComposerKey, stripComposerNavigationGlyphs } from "$lib/utils/composerKeyboard";
 
 function keyEvent(
   overrides: Partial<Pick<KeyboardEvent, "key" | "shiftKey" | "isComposing">> = {},
@@ -28,6 +28,19 @@ describe("shouldSubmitComposerKey", () => {
     expect(
       shouldSubmitComposerKey(keyEvent({ isComposing: true }), false),
     ).toBe(false);
+  });
+});
+
+describe("composer navigation key decoding", () => {
+  it("recovers Home/End when WebKit reports an unidentified key with its physical code", () => {
+    const element = { value: "message", setSelectionRange: () => {}, scrollHeight: 100, scrollTop: 0 } as unknown as HTMLTextAreaElement;
+    const event = { key: "Unidentified", code: "End", shiftKey: false, ctrlKey: false,
+      altKey: false, metaKey: false, isComposing: false, defaultPrevented: false,
+      preventDefault: () => {} };
+    expect(handleComposerMessageNavigation(event, element)).toBe(true);
+    expect(element.scrollTop).toBe(100);
+    // A printable remapped key must remain text even if its physical code is Home.
+    expect(handleComposerMessageNavigation({ ...event, key: "h", code: "Home" }, element)).toBe(false);
   });
 });
 

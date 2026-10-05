@@ -26,6 +26,11 @@ use crate::verification_store::VerificationRunRecord;
 pub const PREVIEW_MAX_CHARS: usize = 72;
 pub const AUTO_TITLE_MAX_CHARS: usize = 48;
 
+fn is_internal_work_session(session_id: &str) -> bool {
+    session_id.starts_with(medousa_types::work_coordinator::WORK_COORDINATOR_SESSION_PREFIX)
+        || session_id.starts_with("ses_handoff_")
+}
+
 const SESSION_CATALOG_TABLE: &str = "session_catalog";
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub(crate) const EMBEDDED_TRANSCRIPT_PROJECTION_REPAIR_MARKER: &str =
@@ -514,6 +519,7 @@ impl SessionCatalogStore for FileSessionCatalogStore {
         let mut rows = self
             .rows()
             .into_iter()
+            .filter(|row| !is_internal_work_session(&row.session_id))
             .filter(|row| query.is_none_or(|needle| row_matches_query(row, needle)))
             .filter(|row| cursor.is_none_or(|cursor| row_is_older_than_cursor(row, cursor)))
             .collect::<Vec<_>>();
@@ -675,7 +681,8 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
 
         let sql = if q_lower.is_some() {
             "SELECT * FROM type::table($table) \
-             WHERE ($cursor_at IS NONE OR last_activity_at < $cursor_at \
+             WHERE !string::starts_with(session_id, $internal_work_prefix) \
+               AND ($cursor_at IS NONE OR last_activity_at < $cursor_at \
                     OR (last_activity_at = $cursor_at AND session_id < $cursor_id)) \
                AND (string::contains(string::lowercase(session_id), $q_lower) \
                     OR string::contains(string::lowercase(preview), $q_lower) \
@@ -685,7 +692,8 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
              LIMIT $limit"
         } else {
             "SELECT * FROM type::table($table) \
-             WHERE ($cursor_at IS NONE OR last_activity_at < $cursor_at \
+             WHERE !string::starts_with(session_id, $internal_work_prefix) \
+               AND ($cursor_at IS NONE OR last_activity_at < $cursor_at \
                     OR (last_activity_at = $cursor_at AND session_id < $cursor_id)) \
              ORDER BY last_activity_at DESC, session_id DESC \
              LIMIT $limit"
@@ -695,6 +703,10 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
             .db
             .query(sql)
             .bind(("table", SESSION_CATALOG_TABLE))
+            .bind((
+                "internal_work_prefix",
+                medousa_types::work_coordinator::WORK_COORDINATOR_SESSION_PREFIX,
+            ))
             .bind(("limit", limit.max(1) as i64));
 
         if let Some(cursor) = cursor {
@@ -1399,6 +1411,41 @@ mod tests {
         FILE_STORE_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[test]
+    fn internal_work_sessions_do_not_fill_chat_pages_but_retain_owner_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let catalog = FileSessionCatalogStore::at(temp.path().canonicalize().unwrap());
+        let at = Utc.with_ymd_and_hms(2026, 10, 3, 12, 0, 0).unwrap();
+        let internal = format!(
+            "{}{}",
+            medousa_types::work_coordinator::WORK_COORDINATOR_SESSION_PREFIX,
+            "a".repeat(64)
+        );
+        for (id, offset) in [
+            (internal.as_str(), 3),
+            ("ses_visible_new", 2),
+            ("ses_visible_old", 1),
+        ] {
+            let mut row = SessionCatalogRow::empty_session(id);
+            row.profile_id = Some("owner".into());
+            row.last_activity_at = Some(at + chrono::Duration::seconds(offset));
+            row.preview = "Work result".into();
+            catalog.upsert_row(&SessionId::parse(id).unwrap(), &row);
+        }
+        let first = catalog.list_rows_page(1, None, None);
+        assert_eq!(first[0].session_id, "ses_visible_new");
+        let cursor = SessionListCursor {
+            last_activity_at: first[0].last_activity_at.unwrap(),
+            session_id: first[0].session_id.clone(),
+        };
+        let second = catalog.list_rows_page(1, Some("work"), Some(&cursor));
+        assert_eq!(second[0].session_id, "ses_visible_old");
+        let retained = catalog
+            .get_row(&SessionId::parse(internal).unwrap())
+            .unwrap();
+        assert_eq!(retained.profile_id.as_deref(), Some("owner"));
     }
 
     #[test]

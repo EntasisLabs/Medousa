@@ -12,6 +12,7 @@
     configOptions: AgentSessionConfigOption[];
     pending: boolean;
     disabled: boolean;
+    runtimeLocked?: boolean;
     onChange: (runtime: ChatAgentRuntime) => void;
     onConfigChange: (configId: string, value: unknown) => void | Promise<void>;
   }
@@ -23,6 +24,7 @@
     pending,
     disabled,
     onChange,
+    runtimeLocked = false,
     onConfigChange,
   }: Props = $props();
 
@@ -31,7 +33,7 @@
 
 <div class="chat-runtime-under" aria-label="Composer controls">
   <div class="chat-runtime-primary">
-    <ChatRuntimePicker {value} disabled={switchingDisabled} {onChange} />
+    {#if !runtimeLocked}<ChatRuntimePicker {value} disabled={switchingDisabled} {onChange} />{/if}
     {#if value === "medousa"}
       <ChatAgentModePicker {sessionId} disabled={switchingDisabled} />
     {/if}

@@ -148,6 +148,7 @@ pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEve
         },
         "error" => TurnEvent::Error {
             message: event.message.clone(),
+            turn: None,
         },
         _ => stream_mirror_from_event(event),
     }
@@ -340,7 +341,7 @@ pub fn sequenced_to_v2(sequenced: &SequencedTurnEvent) -> Result<TurnStreamEnvel
             title: title.clone(),
             opened_by_agent: *opened_by_agent,
         },
-        TurnEvent::Error { message } => TurnStreamEventV2::Error {
+        TurnEvent::Error { message, .. } => TurnStreamEventV2::Error {
             operator_message: message.clone(),
             debug_message: None,
         },
@@ -697,6 +698,7 @@ pub fn journal_turn_event_for_v3(envelope: &TurnStreamEnvelopeV3) -> TurnEvent {
                 message: operator_message
                     .clone()
                     .unwrap_or_else(|| "turn did not complete".to_string()),
+                turn: None,
             },
         },
         TurnStreamEventV3::Reaction { reaction } => {
@@ -860,7 +862,7 @@ fn typed_turn_event_to_stream(
             base.message = message.clone();
             base.debug_message = Some(message.clone());
         }
-        TurnEvent::Error { message } => {
+        TurnEvent::Error { message, .. } => {
             base.event_type = "error".to_string();
             base.phase = "failed".to_string();
             base.message = message.clone();
@@ -1542,6 +1544,7 @@ pub fn journal_turn_event_for_v2(envelope: &TurnStreamEnvelopeV2) -> TurnEvent {
             operator_message, ..
         } => TurnEvent::Error {
             message: operator_message.clone(),
+            turn: None,
         },
         _ => journal_turn_event_for_stream(&v2_to_v1(envelope), None),
     }
@@ -1630,7 +1633,7 @@ mod tests {
             crate::interactive_turn_runtime::content_delta_stream_event("turn-1", "hello").unwrap();
         match stream_event_to_turn_event(&wire) {
             TurnEvent::ContentDelta { delta } => assert_eq!(delta, "hello"),
-            other => panic!("unexpected {other:?}"),
+            _ => panic!("unexpected event variant"),
         }
     }
 
@@ -1694,7 +1697,7 @@ mod tests {
                 assert_eq!(max_tool_rounds, 5);
                 assert_eq!(requested_rounds, 3);
             }
-            other => panic!("unexpected {other:?}"),
+            _ => panic!("unexpected event variant"),
         }
     }
 
@@ -1731,7 +1734,7 @@ mod tests {
                 assert_eq!(replayed.artifact_id, artifact.artifact_id);
                 assert_eq!(replayed.height_px, artifact.height_px);
             }
-            other => panic!("unexpected {other:?}"),
+            _ => panic!("unexpected event variant"),
         }
         let legacy = sequenced_to_stream_event(&sequenced);
         assert_eq!(legacy.event_type, "artifact_presented");
@@ -1765,7 +1768,7 @@ mod tests {
             TurnStreamEventV2::WorkerAck { ack_kind, .. } => {
                 assert!(matches!(ack_kind, WorkerAckKind::Workshop));
             }
-            other => panic!("unexpected {other:?}"),
+            _ => panic!("unexpected event variant"),
         }
         assert_eq!(
             sequenced_to_stream_event(&sequenced).event_type,

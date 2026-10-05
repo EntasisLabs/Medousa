@@ -6,9 +6,10 @@ export function proposalExecutionTransport(kind: string | undefined, runtimeId: 
   return kind === "portal" || kind === "paired" ? runtimeId : null;
 }
 
-export function listPeerProposals(sessionId: string, runtimeId?: string | null, after?: string): Promise<PeerProposalInboxResponse> {
+export function listPeerProposals(sessionId: string, runtimeId?: string | null, after?: string, selectedProposalId?: string): Promise<PeerProposalInboxResponse> {
   return daemonUnary("coordination.proposals.get", {}, undefined, runtimeId, {
     session_id: sessionId, ...(after ? { after } : {}),
+    ...(selectedProposalId ? { selected_proposal_id: selectedProposalId } : {}),
   });
 }
 

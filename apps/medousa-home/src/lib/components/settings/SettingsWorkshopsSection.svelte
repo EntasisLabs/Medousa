@@ -12,6 +12,7 @@
     Pencil,
   } from "@lucide/svelte";
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
+  import WorkshopRefreshButton from "$lib/components/workshops/WorkshopRefreshButton.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
     PERSONAL_WORKSHOP_ID,
@@ -183,9 +184,7 @@
   async function switchTo(workshopId: string) {
     try {
       await workshops.selectWorkshop(workshopId, {
-        onHealthChange: () => {
-          void onDaemonHealth?.();
-        },
+        onHealthChange: () => { void onDaemonHealth?.(); },
       });
     } catch {
       // Error surfaced on store.
@@ -436,12 +435,13 @@
                   <button
                     type="button"
                     class="ws-cta {mobile ? 'ws-switch-btn' : ''}"
-                    disabled={workshops.switching}
+                    disabled={workshops.switching || workshops.refreshing}
                     onclick={() => void switchTo(workshop.id)}
                   >
                     Switch
                   </button>
                 {:else}
+                  <WorkshopRefreshButton variant="card" onHealthChange={() => { void onDaemonHealth?.(); }} />
                   <span class="ws-pill">
                     {#if mobile}<Check size={13} strokeWidth={2.4} aria-hidden="true" />{/if}
                     Active
@@ -500,7 +500,7 @@
                   <button
                     type="button"
                     class="ws-cta ws-cta-danger"
-                    disabled={workshops.switching}
+                    disabled={workshops.switching || workshops.refreshing}
                     onclick={() => void removeWorkshop(workshop.id)}
                   >
                     Remove
@@ -720,7 +720,7 @@
               <button
                 type="button"
                 class="mobile-turn-sheet-row ws-sheet-remove"
-                disabled={workshops.switching}
+                disabled={workshops.switching || workshops.refreshing}
                 onclick={() => void removeMobileWorkshop(mobileManageWorkshop.id)}
               >
                 <span class="mobile-turn-sheet-row-copy">

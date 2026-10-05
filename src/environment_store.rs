@@ -186,6 +186,73 @@ impl EnvironmentHub {
         Ok(record)
     }
 
+    /// Exact existing component observation. Unlike `get`, this never installs a default spec.
+    /// Revision custody spans native observation and graph publication, excluding `put`.
+    #[cfg(feature = "full-daemon")]
+    pub(crate) async fn observe_component<T, F, Fut>(
+        &self,
+        profile: &str,
+        component: &str,
+        execution: &medousa_forge::execution::ForgeExecutionService,
+        publish: F,
+    ) -> Result<T>
+    where
+        F: FnOnce(Option<medousa_types::environment::ComponentDef>) -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let _custody = self.revision.read().await;
+        let store = self.store.clone();
+        let profile = EnvironmentProfileId::parse(profile)?;
+        let spec = execution
+            .run(
+                medousa_forge::execution::ExecutionClass::Observation,
+                8 * 1024 * 1024,
+                move || {
+                    let read = |root: &StoreRoot| -> Result<Option<EnvironmentSpec>> {
+                        let raw = match root
+                            .read_limited(&Self::spec_path(&profile), MAX_ENVIRONMENT_SPEC_BYTES)
+                        {
+                            Ok(raw) => raw,
+                            Err(error) if error.is_not_found() => {
+                                let Some(path) = Self::legacy_spec_path(&profile) else {
+                                    return Ok(None);
+                                };
+                                match root.read_limited(&path, MAX_ENVIRONMENT_SPEC_BYTES) {
+                                    Ok(raw) => raw,
+                                    Err(error) if error.is_not_found() => return Ok(None),
+                                    Err(error) => return Err(error.into()),
+                                }
+                            }
+                            Err(error) => return Err(error.into()),
+                        };
+                        let spec: EnvironmentSpec = serde_json::from_slice(&raw)?;
+                        if spec.profile_id != profile.as_str() || !is_valid_environment_spec(&spec)
+                        {
+                            anyhow::bail!("invalid or foreign native environment spec");
+                        }
+                        Ok(Some(spec))
+                    };
+                    Ok(match store {
+                        EnvironmentStoreAuthority::Opened(root) => read(&root),
+                        EnvironmentStoreAuthority::Ambient(path) => {
+                            match StoreRoot::open_nofollow(&path) {
+                                Ok(root) => read(&root),
+                                Err(error) if error.is_not_found() => Ok(None),
+                                Err(error) => Err(error.into()),
+                            }
+                        }
+                    })
+                },
+            )
+            .await??;
+        let found = spec.and_then(|spec| {
+            spec.components
+                .into_iter()
+                .find(|item| item.id == component)
+        });
+        publish(found).await
+    }
+
     pub async fn put(
         &self,
         mut spec: EnvironmentSpec,

@@ -124,9 +124,27 @@ pub struct ExternalConversationListResponse {
 pub struct ExternalConversationSendRequest {
     pub request_id: String,
     pub text: String,
+    /// Optional exact work association; ordinary messages retain their behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<crate::work_provider::WorkProviderRequestInput>,
+    /// Native operator admission for one review send after the exact executor
+    /// completes. Requires `work.review_of`; it does not launch the executor.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub after_native_completion: bool,
+    /// Native operator admission for one send after this exact provider request
+    /// completes. Requires work metadata; mutually exclusive with the native trigger.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_provider_completion: Option<crate::work_provider::WorkProviderRequestRef>,
+    /// Remaining linear stages, frozen with this provider handoff. No new grants.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_chain: Vec<crate::work_provider::WorkProviderStageInput>,
+    /// Native admission for one internal result-analysis turn. No contact or
+    /// execution tools are granted to that turn.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub coordinator_wake: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ExternalProviderEventRequest {

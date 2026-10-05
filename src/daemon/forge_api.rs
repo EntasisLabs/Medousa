@@ -128,6 +128,10 @@ pub fn forge_surface() -> DeclaredRouter<AppState> {
             post(start_session_code_project),
         )
         .route(
+            forge_mutation_policy(axum::http::Method::POST, "/v1/forge/projects", 1024 * 1024),
+            post(create_code_project),
+        )
+        .route(
             forge_post_policy("/v1/forge/repositories/inspect"),
             post(inspect_repository),
         )
@@ -909,6 +913,8 @@ struct RegisterRequest {
     policy: Option<WorkPolicy>,
     #[serde(default)]
     workspace_mode: WorkspaceMode,
+    #[serde(default)]
+    request_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1197,7 +1203,7 @@ fn inspect_repository_path_from_items(
         .to_string();
     let existing_projects = existing_projects_for_repository(items, &path);
     let state_explanation = if !has_commits {
-        "This repository has no commits yet. Create an initial commit before starting a Medousa project.".into()
+        "This repository is ready to start. Medousa will create an empty initial commit without staging your files.".into()
     } else if changed_files > 0 {
         format!(
             "{changed_files} uncommitted {} already exist in the repository. Medousa starts from the committed revision, so those outside changes stay separate.",
@@ -1690,8 +1696,8 @@ async fn start_item(
 ) -> ApiResult<Json<ItemProjection>> {
     admit_forge(
         &state,
-        medousa_forge::execution::ExecutionClass::StoreIo,
-        64 * 1024,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
         {
             let state = state.clone();
             move || {
@@ -1700,6 +1706,68 @@ async fn start_item(
         },
     )
     .await
+}
+
+pub(crate) async fn create_owned_undertaking(
+    state: &AppState,
+    owner: String,
+    input: crate::daemon::work_units::WorkProjectCreateInput,
+) -> Result<WorkItem, String> {
+    let mut context = WorkerCodeProjectSetupContext::from_app_state(state);
+    context.owner_id = owner;
+    state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            256 * 1024,
+            move || {
+                Ok((|| -> ApiResult<WorkItem> {
+                    let repo_path = PathBuf::from(input.repo_path);
+                    let base_ref = match input.base_ref {
+                        Some(reference) => reference,
+                        None => match context
+                            .forge
+                            .project_creation_base_ref(&context.owner_id, &input.request_key)
+                            .map_err(map_err)?
+                        {
+                            Some(reference) => reference,
+                            None => context
+                                .forge
+                                .git()
+                                .suggested_base_ref(&repo_path)
+                                .map_err(map_err)?
+                                .or(context
+                                    .forge
+                                    .git()
+                                    .current_branch(&repo_path)
+                                    .map_err(map_err)?)
+                                .ok_or_else(|| {
+                                    request_error(
+                                        StatusCode::BAD_REQUEST,
+                                        "repository has no usable starting branch",
+                                    )
+                                })?,
+                        },
+                    };
+                    start_item_from_setup_context(
+                        &context,
+                        RegisterRequest {
+                            title: input.title,
+                            brief: input.brief,
+                            repo_path,
+                            base_ref,
+                            workspace_mode: input.workspace_mode,
+                            owner: None,
+                            policy: None,
+                            request_key: Some(input.request_key),
+                        },
+                    )
+                })())
+            },
+        )
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|(_, Json(error))| error.error)
 }
 
 fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult<WorkItem> {
@@ -1716,7 +1784,7 @@ fn start_item_from_setup_context(
     let owner = body.owner.unwrap_or_else(|| context.owner_id.clone());
     let registered = context
         .forge
-        .register_with_policy_and_workspace_mode(
+        .register_project_with_request_key(
             body.title,
             body.brief,
             &body.repo_path,
@@ -1725,39 +1793,50 @@ fn start_item_from_setup_context(
             body.policy.unwrap_or_default(),
             body.workspace_mode,
             &actor,
+            body.request_key.as_deref(),
         )
         .map_err(map_err)?;
-    if let Err(error) = touch_repository(&repository_path, None) {
-        match context.forge.discard(&registered.id, &actor) {
-            Ok(discarded) => {
-                publish_item_to_events(&context.forge_events, &discarded, "start_failed_released")
-            }
-            Err(discard_error) => tracing::warn!(
-                work_id = %registered.id,
-                error = %discard_error,
-                "failed to release project after repository touch failure"
-            ),
-        }
-        return Err(error);
+    if registered.workspace_environment().is_some() {
+        return Ok(registered);
     }
-    publish_item_to_events(&context.forge_events, &registered, "registered");
-    let item = match context.forge.provision(&registered.id, &actor) {
-        Ok(item) => item,
-        Err(err) => {
-            // `start` is one user action even though Forge records registration
-            // and provisioning separately. If setup fails, release that failed
-            // item so retries do not accumulate unusable projects in Home.
+    if let Err(error) = touch_repository(&repository_path, None) {
+        if body.request_key.is_none() {
             match context.forge.discard(&registered.id, &actor) {
                 Ok(discarded) => publish_item_to_events(
                     &context.forge_events,
                     &discarded,
                     "start_failed_released",
                 ),
-                Err(discard_err) => tracing::warn!(
+                Err(discard_error) => tracing::warn!(
                     work_id = %registered.id,
-                    error = %discard_err,
-                    "failed to release project after setup failure"
+                    error = %discard_error,
+                    "failed to release project after repository touch failure"
                 ),
+            }
+        }
+        return Err(error);
+    }
+    publish_item_to_events(&context.forge_events, &registered, "registered");
+    let item = match context.forge.provision_project(&registered.id, &actor) {
+        Ok(item) => item,
+        Err(err) => {
+            // `start` is one user action even though Forge records registration
+            // and provisioning separately. Legacy requests release a failed
+            // item. Keyed requests retain their exact durable outcome so an
+            // uncertain retry cannot silently create a second undertaking.
+            if body.request_key.is_none() {
+                match context.forge.discard(&registered.id, &actor) {
+                    Ok(discarded) => publish_item_to_events(
+                        &context.forge_events,
+                        &discarded,
+                        "start_failed_released",
+                    ),
+                    Err(discard_err) => tracing::warn!(
+                        work_id = %registered.id,
+                        error = %discard_err,
+                        "failed to release project after setup failure"
+                    ),
+                }
             }
             return Err(map_err(err));
         }
@@ -1789,6 +1868,28 @@ async fn start_session_code_project(
             let state = state.clone();
             let session_id = session_id.clone();
             move || start_code_project_for_session_inner(&state, &session_id, body).map(Json)
+        },
+    )
+    .await
+}
+
+async fn create_code_project(
+    State(state): State<AppState>,
+    Json(body): Json<StartSessionCodeProjectRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let context = WorkerCodeProjectSetupContext::from_app_state(&state);
+                let command = StartCodeProjectCommand::new(None, body)
+                    .map_err(|error| request_error(StatusCode::BAD_REQUEST, error))?;
+                let (item, _, _) = create_code_project_with_context(&context, &command)?;
+                Ok(Json(project_item(item)))
+            }
         },
     )
     .await
@@ -2155,7 +2256,7 @@ fn worker_repository_base_ref(
 
 #[derive(Debug)]
 struct StartCodeProjectCommand {
-    session_id: TrimmedText,
+    session_id: Option<TrimmedText>,
     title: TrimmedText,
     brief: TrimmedText,
     source: CodeProjectSource,
@@ -2164,7 +2265,10 @@ struct StartCodeProjectCommand {
 }
 
 impl StartCodeProjectCommand {
-    fn new(session_id: &str, input: StartSessionCodeProjectRequest) -> Result<Self, String> {
+    fn new(
+        session_id: Option<&str>,
+        input: StartSessionCodeProjectRequest,
+    ) -> Result<Self, String> {
         let StartSessionCodeProjectRequest {
             title,
             brief,
@@ -2172,14 +2276,17 @@ impl StartCodeProjectCommand {
             repo_path,
             base_ref,
         } = input;
-        let (session_id, title, brief) = match (
-            TrimmedText::new(session_id.to_string()),
-            TrimmedText::new(title),
-            TrimmedText::new(brief),
-        ) {
-            (Ok(session_id), Ok(title), Ok(brief)) => (session_id, title, brief),
-            _ => return Err("session_id, title, and brief are required".to_string()),
+        let required = if session_id.is_some() {
+            "session_id, title, and brief are required"
+        } else {
+            "title and brief are required"
         };
+        let session_id = session_id
+            .map(|value| TrimmedText::new(value.to_string()))
+            .transpose()
+            .map_err(|_| required.to_string())?;
+        let title = TrimmedText::new(title).map_err(|_| required.to_string())?;
+        let brief = TrimmedText::new(brief).map_err(|_| required.to_string())?;
         let repo_path = repo_path.and_then(|value| TrimmedText::new(value).ok());
         if source == CodeProjectSource::Repository && repo_path.is_none() {
             return Err("repo_path is required for an existing repository".to_string());
@@ -2212,9 +2319,47 @@ fn start_code_project_for_session_with_context(
     session_id: &str,
     body: StartSessionCodeProjectRequest,
 ) -> ApiResult<SessionCodeProjectResponse> {
-    let command = StartCodeProjectCommand::new(session_id, body)
+    let command = StartCodeProjectCommand::new(Some(session_id), body)
         .map_err(|error| request_error(StatusCode::BAD_REQUEST, error))?;
-    let session_id = command.session_id.as_str();
+    let session_id = command.session_id.as_ref().expect("session bound").as_str();
+    let (item, repo_path, created_repository) =
+        create_code_project_with_context(context, &command)?;
+    let worktree = item
+        .workspace_environment()
+        .expect("project creation provisioned a governed worktree")
+        .worktree
+        .to_string_lossy()
+        .into_owned();
+    if let Err(err) =
+        crate::agent_mode_state::set_session_code_binding(session_id, item.id.as_str())
+    {
+        let _ = context.forge.discard(&item.id, &context.actor());
+        publish_item_to_events(&context.forge_events, &item, "start_failed_released");
+        if created_repository {
+            let _ = std::fs::remove_dir_all(&repo_path);
+        }
+        return Err(request_error(StatusCode::INTERNAL_SERVER_ERROR, err));
+    }
+
+    let WorkTarget::Git(target) = &item.target;
+    Ok(SessionCodeProjectResponse {
+        session_id: session_id.to_string(),
+        work_id: item.id.to_string(),
+        title: item.title,
+        brief: item.brief,
+        state: item.state.to_string(),
+        human_phase: crate::daemon::forge_projections::human_phase(item.state).to_string(),
+        repo_path: target.repo_path.to_string_lossy().into_owned(),
+        worktree,
+        base_ref: target.base_ref.clone(),
+        created_repository,
+    })
+}
+
+fn create_code_project_with_context(
+    context: &WorkerCodeProjectSetupContext,
+    command: &StartCodeProjectCommand,
+) -> ApiResult<(WorkItem, PathBuf, bool)> {
     let title = command.title.as_str();
     let brief = command.brief.as_str();
     let base_ref = command.base_ref.as_str().to_string();
@@ -2239,6 +2384,7 @@ fn start_code_project_for_session_with_context(
             owner: None,
             policy: None,
             workspace_mode: WorkspaceMode::Isolated,
+            request_key: None,
         },
     ) {
         Ok(item) => item,
@@ -2249,45 +2395,18 @@ fn start_code_project_for_session_with_context(
             return Err(err);
         }
     };
-    let worktree = match item.workspace_environment() {
-        Some(environment) => environment.worktree.to_string_lossy().into_owned(),
-        None => {
-            let _ = context.forge.discard(&item.id, &context.actor());
-            publish_item_to_events(&context.forge_events, &item, "start_failed_released");
-            if created_repository {
-                let _ = std::fs::remove_dir_all(&repo_path);
-            }
-            return Err(request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Forge did not provision a governed worktree",
-            ));
-        }
-    };
-    if let Err(err) =
-        crate::agent_mode_state::set_session_code_binding(session_id, item.id.as_str())
-    {
+    if item.workspace_environment().is_none() {
         let _ = context.forge.discard(&item.id, &context.actor());
         publish_item_to_events(&context.forge_events, &item, "start_failed_released");
         if created_repository {
             let _ = std::fs::remove_dir_all(&repo_path);
         }
-        return Err(request_error(StatusCode::INTERNAL_SERVER_ERROR, err));
+        return Err(request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Forge did not provision a governed worktree",
+        ));
     }
-
-    let WorkTarget::Git(target) = &item.target;
-    let response = SessionCodeProjectResponse {
-        session_id: session_id.to_string(),
-        work_id: item.id.to_string(),
-        title: item.title,
-        brief: item.brief,
-        state: item.state.to_string(),
-        human_phase: crate::daemon::forge_projections::human_phase(item.state).to_string(),
-        repo_path: target.repo_path.to_string_lossy().into_owned(),
-        worktree,
-        base_ref: target.base_ref.clone(),
-        created_repository,
-    };
-    Ok(response)
+    Ok((item, repo_path, created_repository))
 }
 
 fn create_blank_repository(title: &str, base_ref: &str) -> ApiResult<PathBuf> {
@@ -2457,6 +2576,65 @@ async fn get_item(
 #[derive(Debug, Deserialize)]
 struct SourceQuery {
     path: String,
+    /// Bounded image bytes for project Markdown, through the same workspace authority.
+    #[serde(default)]
+    image: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceImageResponse {
+    path: String,
+    mime: &'static str,
+    bytes_base64: String,
+}
+
+fn read_source_image(root: &FsPath, raw: &str) -> ApiResult<SourceImageResponse> {
+    let (path, relative) = resolve_source_path(root, raw)?;
+    let extension = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let mime = match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "avif" => "image/avif",
+        _ => {
+            return Err(request_error(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "unsupported project image type",
+            ));
+        }
+    };
+    let file = std::fs::File::open(path).map_err(|err| {
+        request_error(
+            StatusCode::NOT_FOUND,
+            format!("could not read project image: {err}"),
+        )
+    })?;
+    let mut bytes = Vec::new();
+    file.take((MAX_SOURCE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not read project image: {err}"),
+            )
+        })?;
+    if bytes.len() > MAX_SOURCE_BYTES {
+        return Err(request_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "project image exceeds the 2 MiB preview limit",
+        ));
+    }
+    Ok(SourceImageResponse {
+        path: relative,
+        mime,
+        bytes_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -2720,10 +2898,10 @@ fn parse_csv_globs(value: Option<&str>) -> Vec<String> {
 
 fn source_search_options_from_query(query: &SourceSearchQuery) -> ApiResult<SourceSearchOptions> {
     let needle = query.query.trim().to_owned();
-    if needle.len() < 2 || needle.len() > 200 {
+    if needle.is_empty() || needle.chars().count() > 200 {
         return Err(request_error(
             StatusCode::BAD_REQUEST,
-            "repository search must be between 2 and 200 characters",
+            "repository search must be between 1 and 200 characters",
         ));
     }
     let mode = query
@@ -2758,7 +2936,8 @@ fn source_search_options_from_query(query: &SourceSearchQuery) -> ApiResult<Sour
             ));
         }
     };
-    let limit = query.limit.unwrap_or(100).clamp(1, 500) as usize;
+    let maximum = if needle.chars().count() == 1 { 50 } else { 500 };
+    let limit = query.limit.unwrap_or(100).clamp(1, maximum) as usize;
     let skip = query
         .cursor
         .as_deref()
@@ -2850,15 +3029,48 @@ fn run_repository_search(
 
     let mut pathspecs: Vec<String> = Vec::new();
     if options.changed_only {
-        let changed = changed_repository_paths(root)?;
+        let mut changed = changed_repository_paths(root)?;
+        if !options.include.is_empty() || !options.exclude.is_empty() {
+            // Git pathspecs are a union. Intersect the discovery scope with
+            // changed paths before grep so include globs cannot broaden it.
+            let mut command = background_command("git");
+            command.args(["ls-files", "--cached", "--others", "-z"]);
+            if !options.include_ignored {
+                command.arg("--exclude-standard");
+            }
+            command.arg("--").args(&options.include);
+            for exclude in &options.exclude {
+                command.arg(format!(":(exclude){exclude}"));
+            }
+            let output = command.current_dir(root).output().map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not filter changed files: {err}"),
+                )
+            })?;
+            if !output.status.success() {
+                return Err(request_error(
+                    StatusCode::BAD_REQUEST,
+                    "could not filter changed files",
+                ));
+            }
+            let allowed = output
+                .stdout
+                .split(|byte| *byte == 0)
+                .filter(|raw| !raw.is_empty())
+                .map(|raw| String::from_utf8_lossy(raw).replace('\\', "/"))
+                .collect::<std::collections::HashSet<_>>();
+            changed.retain(|path| allowed.contains(path));
+        }
         if changed.is_empty() {
             return Ok((Vec::new(), false, None));
         }
-        pathspecs.extend(changed);
-    }
-    pathspecs.extend(options.include.iter().cloned());
-    for exclude in &options.exclude {
-        pathspecs.push(format!(":(exclude){exclude}"));
+        pathspecs.extend(changed.into_iter().map(|path| format!(":(literal){path}")));
+    } else {
+        pathspecs.extend(options.include.iter().cloned());
+        for exclude in &options.exclude {
+            pathspecs.push(format!(":(exclude){exclude}"));
+        }
     }
     args.extend(pathspecs);
 
@@ -3377,7 +3589,8 @@ async fn read_source(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
     Query(query): Query<SourceQuery>,
-) -> ApiResult<Json<SourceResponse>> {
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
     admit_forge(
         &state,
         medousa_forge::execution::ExecutionClass::Observation,
@@ -3393,11 +3606,16 @@ async fn read_source(
                         "prepare the governed workspace before opening source files",
                     )
                 })?;
+                if query.image {
+                    return Ok(Json(read_source_image(&environment.worktree, &query.path)?)
+                        .into_response());
+                }
                 Ok(Json(read_source_response(
                     &id,
                     &environment.worktree,
                     &query.path,
-                )?))
+                )?)
+                .into_response())
             }
         },
     )
@@ -11581,7 +11799,7 @@ mod source_tests {
     #[test]
     fn start_code_project_command_normalizes_request_fields() {
         let command = StartCodeProjectCommand::new(
-            " session-a ",
+            Some(" session-a "),
             StartSessionCodeProjectRequest {
                 title: " Project ".into(),
                 brief: " Brief ".into(),
@@ -11592,7 +11810,7 @@ mod source_tests {
         )
         .expect("valid project request");
 
-        assert_eq!(command.session_id.as_str(), "session-a");
+        assert_eq!(command.session_id.as_ref().unwrap().as_str(), "session-a");
         assert_eq!(command.title.as_str(), "Project");
         assert_eq!(command.brief.as_str(), "Brief");
         assert_eq!(
@@ -11603,9 +11821,37 @@ mod source_tests {
     }
 
     #[test]
+    fn operator_project_creation_does_not_require_a_chat_session() {
+        let command = StartCodeProjectCommand::new(
+            None,
+            StartSessionCodeProjectRequest {
+                title: "Project".into(),
+                brief: "Maintain the repo".into(),
+                source: CodeProjectSource::Blank,
+                repo_path: None,
+                base_ref: None,
+            },
+        )
+        .expect("operator project request");
+        assert!(command.session_id.is_none());
+        let invalid = StartCodeProjectCommand::new(
+            None,
+            StartSessionCodeProjectRequest {
+                title: " ".into(),
+                brief: "Maintain the repo".into(),
+                source: CodeProjectSource::Blank,
+                repo_path: None,
+                base_ref: None,
+            },
+        )
+        .expect_err("operator project needs a title");
+        assert_eq!(invalid, "title and brief are required");
+    }
+
+    #[test]
     fn start_code_project_command_rejects_missing_required_values() {
         let missing_repo = StartCodeProjectCommand::new(
-            "session-a",
+            Some("session-a"),
             StartSessionCodeProjectRequest {
                 title: "Project".into(),
                 brief: "Brief".into(),
@@ -11621,7 +11867,7 @@ mod source_tests {
         );
 
         let missing_title = StartCodeProjectCommand::new(
-            "session-a",
+            Some("session-a"),
             StartSessionCodeProjectRequest {
                 title: " \n\t".into(),
                 brief: "Brief".into(),
@@ -12108,6 +12354,43 @@ mod source_tests {
     }
 
     #[test]
+    fn source_image_reads_are_bounded_and_workspace_scoped() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("image.png"), b"image bytes").unwrap();
+        let image = read_source_image(root.path(), "image.png").unwrap();
+        assert_eq!(image.mime, "image/png");
+        assert_eq!(image.path, "image.png");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(image.bytes_base64)
+                .unwrap(),
+            b"image bytes"
+        );
+        assert!(read_source_image(root.path(), "../image.png").is_err());
+        std::fs::create_dir(root.path().join(".git")).unwrap();
+        std::fs::write(root.path().join(".git/private.png"), b"private").unwrap();
+        assert!(read_source_image(root.path(), ".git/private.png").is_err());
+        std::fs::write(root.path().join("script.html"), b"<script>bad</script>").unwrap();
+        assert!(read_source_image(root.path(), "script.html").is_err());
+        std::fs::write(root.path().join("large.png"), vec![0; MAX_SOURCE_BYTES + 1]).unwrap();
+        assert!(read_source_image(root.path(), "large.png").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_image_reads_reject_symlinks_outside_the_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("private.png"), b"private").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("private.png"),
+            root.path().join("image.png"),
+        )
+        .unwrap();
+        assert!(read_source_image(root.path(), "image.png").is_err());
+    }
+
+    #[test]
     fn source_reads_preview_binary_and_large_text() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("ok.rs"), "fn ok() {}\n").unwrap();
@@ -12490,6 +12773,58 @@ mod source_tests {
             Some("??"),
         );
         assert!(!tree.truncated);
+    }
+
+    #[test]
+    fn repository_search_accepts_bounded_single_character_queries() {
+        let query: SourceSearchQuery =
+            serde_json::from_value(serde_json::json!({"query": "x", "limit": 500})).unwrap();
+        let options = source_search_options_from_query(&query).unwrap();
+        assert_eq!(options.needle, "x");
+        assert_eq!(options.limit, 50);
+        let empty: SourceSearchQuery =
+            serde_json::from_value(serde_json::json!({"query": " "})).unwrap();
+        assert!(source_search_options_from_query(&empty).is_err());
+    }
+
+    #[test]
+    fn repository_search_intersects_changed_scope_with_include_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(root.path())
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        };
+        git(&["init", "-q"]);
+        std::fs::create_dir(root.path().join("app")).unwrap();
+        std::fs::write(root.path().join("app/unchanged.rs"), "needle\n").unwrap();
+        std::fs::write(root.path().join("app/changed.rs"), "before\n").unwrap();
+        std::fs::write(root.path().join("outside.rs"), "before\n").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "baseline",
+        ]);
+        std::fs::write(root.path().join("app/changed.rs"), "needle\n").unwrap();
+        std::fs::write(root.path().join("outside.rs"), "needle\n").unwrap();
+        let query: SourceSearchQuery = serde_json::from_value(
+            serde_json::json!({"query": "needle", "scope": "changed", "include": ":(literal)app"}),
+        )
+        .unwrap();
+        let options = source_search_options_from_query(&query).unwrap();
+        let (hits, _, _) = run_repository_search(root.path(), &options).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, "app/changed.rs");
     }
 
     #[test]

@@ -30,6 +30,7 @@ H06 scaling notes (Implementing — not Validated; see architecture H06 acceptan
 - Scaffolding aims for in-memory per-item tails and a catalog projection for listings.
 - `GET /v1/forge/items` without query params still returns an array (compatibility window, catalog-backed, capped). `?limit=&cursor=` returns `{ items, next_cursor, truncated }`.
 - Forge/Git work is intended to admit through a bounded execution service. Queue-full should return `503` / `overloaded`. Do not call blocking Forge/Git from async code without that service.
+- Local mutations, including human review commits and project commands, allow up to 8 MiB of retained command capture per job, matching network Git. Store payloads remain capped at 1 MiB; the shared 8 MiB admission budget still rejects concurrent jobs when their combined reservations exceed it.
 - Slug uniqueness scaffolding uses a reservation journal rather than a full-item scan; durability/repair evidence is still open.
 - Coder logical checkpoints are being separated from worktree audits; resume must require an exact generation-fenced observation once observation fencing is complete.
 - v1 JSONL readers remain for rollback. Framed log v2 and migration are scaffolding until later cars close acceptance.
@@ -55,7 +56,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET, POST | `/v1/forge/repositories/provider` | Discover optional GitHub/GitLab CLI adapters or clone into a daemon-scoped workshop folder |
 | GET | `/v1/forge/items` | List items |
 | GET | `/v1/forge/items/{id}` | Load item |
-| GET | `/v1/forge/items/{id}/source?path=…` | Read governed source; UTF-8 edits return full content, while binary/large/lossy files return a read-only preview with `encoding`/`preview`/`truncated` |
+| GET | `/v1/forge/items/{id}/source?path=…` | Read governed source; UTF-8 edits return full content, while binary/large/lossy files return a read-only preview with `encoding`/`preview`/`truncated`. Optional `image=true` returns `{path,mime,bytes_base64}` for a project-relative PNG/JPEG/GIF/WebP/SVG/AVIF, bounded to 2 MiB; paths and symlinks cannot escape the working copy or access `.git`. The read runs under Forge observation admission and uses the same workspace on local and remote workshops |
 | POST | `/v1/forge/items/{id}/source` | Lease-fenced source-file or directory creation (`kind=directory` seeds `.gitkeep`) |
 | PUT | `/v1/forge/items/{id}/source` | Lease-fenced source save with digest conflict detection |
 | PUT | `/v1/forge/items/{id}/source/batch` | Atomic digest-fenced writes to existing text files |
@@ -347,7 +348,12 @@ Home normally calls `repositories/inspect` before `items/start`. Inspection is
 read-only and returns the canonical worktree root, display name, current and
 suggested base branch, `has_commits`, dirty-file count, and remotes. An unborn
 repository returns `has_commits: false` and `suggested_base_ref: null`; clients
-must ask the user to create an initial commit before starting governed work.
+can start the project using the current unborn branch. Explicit project creation
+through `items/start` creates an empty initial commit without changing files or
+staging the user’s index. Low-level `items` registration remains read-only with
+respect to the repository and still requires a commit. `items/start` accepts an
+optional `request_key`; exact retries return the same undertaking, including
+after a restart, while changed parameters or a closed undertaking reject reuse.
 If a previously selected base ref disappears, registration/provisioning returns
 `409 base_ref_missing` instead of silently selecting another branch. New work
 can select an existing branch; a previously saved draft must be recreated

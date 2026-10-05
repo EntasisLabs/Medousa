@@ -3,18 +3,19 @@
   import { tick } from "svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import BotAvatar from "./BotAvatar.svelte";
+  import BotRuntimeConfiguration from "./BotRuntimeConfiguration.svelte";
   import BotBrowserContinuity from "./BotBrowserContinuity.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { BOT_AVATARS } from "$lib/utils/botAvatar";
+  import { BOT_AVATARS, BOT_MASCOT_BODIES } from "$lib/utils/botAvatar";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
-  import type { BotWorldBinding } from "$lib/types/generated/daemon_api";
+  import type { BotWorldBinding, ExternalAgentExecutor } from "$lib/types/generated/daemon_api";
   import type { ManuscriptCatalogEntry } from "$lib/types/catalog";
 
   let { name = $bindable(), purpose = $bindable(), avatar = $bindable(), archetypeId = $bindable(),
-    worldBinding = $bindable(), editing = false, saving = false, error = null, onclose, onsubmit }: {
+    worldBinding = $bindable(), externalAgent = $bindable(null), editing = false, saving = false, error = null, onclose, onsubmit }: {
     name: string; purpose: string; avatar: string; archetypeId: string; worldBinding: BotWorldBinding | null;
-    editing?: boolean; saving?: boolean; error?: string | null; onclose: () => void; onsubmit: (event: SubmitEvent) => void;
+    externalAgent?: ExternalAgentExecutor | null; editing?: boolean; saving?: boolean; error?: string | null; onclose: () => void; onsubmit: (event: SubmitEvent) => void;
   } = $props();
   let view = $state<"bot" | "archetypes" | "create">("bot");
   let avatarsOpen = $state(false);
@@ -87,10 +88,25 @@
             <label class="name-field">Name<input class="input" bind:value={name} maxlength="80" placeholder="Ada" required disabled={busy} /></label>
           </div>
           {#if avatarsOpen}
-            <div class="avatars" role="group" aria-label="Bot avatar">
-              {#each BOT_AVATARS as option}
-                <button type="button" aria-label={`${option.label} Medousa avatar`} aria-pressed={avatar === option.id} disabled={busy} onclick={() => { avatar = option.id; avatarsOpen = false; }}><BotAvatar reference={option.id} size={38} /></button>
+            <div class="avatar-picker" aria-label="Bot avatar options">
+              {#each BOT_MASCOT_BODIES as body (body.id)}
+                <div class="avatar-group" role="group" aria-label={`${body.label} expressions`}>
+                  <span class="avatar-group-label">{body.label}</span>
+                  <div class="avatars">
+                    {#each BOT_AVATARS.filter((option) => option.mascot === body.id) as option (option.id)}
+                      <button type="button" aria-label={`${option.label} avatar`} aria-pressed={avatar === option.id} disabled={busy} onclick={() => { avatar = option.id; avatarsOpen = false; }}><BotAvatar reference={option.id} size={38} /><span class="avatar-label">{option.expression}</span></button>
+                    {/each}
+                  </div>
+                </div>
               {/each}
+              <div class="avatar-group" role="group" aria-label="Colored Medousa marks">
+                <span class="avatar-group-label">Colored marks</span>
+                <div class="avatars">
+                  {#each BOT_AVATARS.filter((option) => !option.mascot) as option (option.id)}
+                    <button type="button" aria-label={`${option.label} avatar`} aria-pressed={avatar === option.id} disabled={busy} onclick={() => { avatar = option.id; avatarsOpen = false; }}><BotAvatar reference={option.id} size={38} /><span class="avatar-label">{option.label}</span></button>
+                  {/each}
+                </div>
+              </div>
             </div>
           {/if}
           <label>Purpose<textarea class="textarea" bind:value={purpose} maxlength="500" rows="3" placeholder="Look after Medousa’s mobile experience." required disabled={busy}></textarea></label>
@@ -101,6 +117,7 @@
             </button>
             <p class="hint">Your Bot’s reusable expertise and approach.</p>
           </div>
+          <BotRuntimeConfiguration bind:executor={externalAgent} disabled={busy} />
           <details><summary>More options</summary><div class="more"><BotBrowserContinuity bind:binding={worldBinding} disabled={busy} /><p class="hint">Conversation and memory stay with this Bot when you change its archetype.</p></div></details>
           {#if error}<p class="error" role="alert">{error}</p>{/if}
         {:else if view === "archetypes"}
@@ -122,7 +139,7 @@
         {/if}
       </div>
       {#if view !== "archetypes"}
-        <footer><button type="button" class="secondary" disabled={busy} onclick={dismiss}>{view === "bot" ? "Cancel" : "Back"}</button><button type="submit" class="primary" disabled={busy || (view === "bot" ? !name.trim() || !purpose.trim() || !selected : !archetypeName.trim() || !expertise.trim())}>{busy ? "Saving…" : view === "create" ? "Create archetype" : editing ? "Save changes" : "Create Bot"}</button></footer>
+        <footer><button type="button" class="secondary" disabled={busy} onclick={dismiss}>{view === "bot" ? "Cancel" : "Back"}</button><button type="submit" class="primary" disabled={busy || (view === "bot" ? !name.trim() || !purpose.trim() || !selected || Boolean(externalAgent && (!externalAgent.home_workshop_id || !externalAgent.forge_work_id || !externalAgent.forge_repo_id)) : !archetypeName.trim() || !expertise.trim())}>{busy ? "Saving…" : view === "create" ? "Create archetype" : editing ? "Save changes" : "Create Bot"}</button></footer>
       {/if}
     </form>
   </dialog>
@@ -145,9 +162,13 @@
   textarea { resize: vertical; line-height: 1.5; }
   input:focus, textarea:focus { outline: 2px solid #b394f680; outline-offset: 1px; }
   .avatar-button { border-radius: 16px; margin-bottom: 0; padding: 2px; }
+  .avatar-picker { display: flex; flex-direction: column; gap: 12px; }
+  .avatar-group { display: flex; flex-direction: column; gap: 6px; }
+  .avatar-group-label { color: rgb(var(--theme-text-secondary, 155 151 169)); font-size: 11px; }
   .avatars { display: flex; flex-wrap: wrap; gap: 10px; }
-  .avatars button { padding: 3px; border: 1px solid transparent; border-radius: 13px; }
+  .avatars button { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 50px; padding: 3px; border: 1px solid transparent; border-radius: 13px; }
   .avatars button[aria-pressed="true"] { border-color: #b394f6; }
+  .avatar-label { font-size: 10px; line-height: 1.2; text-transform: capitalize; }
   .archetype-trigger, .choice { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; padding: 12px; border-radius: 11px; }
   .archetype-trigger { margin: 8px 0; border: 1px solid #ffffff14; }
   .archetype-trigger > span, .choice > span { min-width: 0; }

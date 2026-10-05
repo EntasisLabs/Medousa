@@ -6,31 +6,34 @@ use medousa_types::{
     TranscriptEntryRef,
 };
 
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PeerProposalIntent {
-    /// Stable request key; reuse for retries, never for different work.
-    pub request_key: String,
-    pub runtime: ExternalPeerRuntime,
-    pub instructions: String,
-    /// Exclusive lower bound from coordination discovery.
-    pub after_entry_seq: u64,
-    /// Inclusive committed upper bound from coordination discovery.
-    pub through_entry_seq: u64,
-    /// Request a separately approved result-only reply in this chat.
-    pub continue_owner: bool,
-    /// Exact active ACP session returned by discovery. Omit to start new work.
-    pub existing_agent_session_id: Option<String>,
-}
+pub use medousa_types::work_participant::PeerProposalIntent;
 
 fn identity(owner: &str, session: &SessionRef, key: &str) -> String {
+    intent_identity(owner, session, key, false)
+}
+
+fn intent_identity(owner: &str, session: &SessionRef, key: &str, handoff: bool) -> String {
     let mut digest = Sha256::new();
-    digest.update(b"medousa/conversational-peer/v1\0");
+    digest.update(if handoff {
+        b"medousa/sender-handoff/v1\0".as_slice()
+    } else {
+        b"medousa/conversational-peer/v1\0".as_slice()
+    });
     digest.update(serde_json::to_vec(&(owner, session, key)).expect("identity tuple"));
     format!("{:x}", digest.finalize())
 }
 
 impl LocalPeerDispatcher {
+    pub(crate) async fn create_undertaking_for_owner(
+        &self,
+        owner: String,
+        input: crate::daemon::work_units::WorkProjectCreateInput,
+    ) -> Result<medousa_forge::model::WorkItem> {
+        crate::daemon::forge_api::create_owned_undertaking(&self.state, owner, input)
+            .await
+            .map_err(anyhow::Error::msg)
+    }
+
     pub async fn execution_target_inventory(
         &self,
     ) -> crate::workshop_contract::ExecutionTargetInventory {
@@ -143,6 +146,8 @@ impl LocalPeerDispatcher {
             },
             "generated_at": Utc::now(),
             "projects": projects,
+            "coding_runtime_preferences": self.coding_preferences().await?,
+            "coding_runtimes": LocalPeerCall { host: self, principal: RequestPrincipal::worker(owner.clone()) }.discover().await?,
             "unbound_agent_sessions": unbound_agent_sessions,
             "truncated": truncated,
             "policy": "Read-only inventory. Discovery does not adopt, delegate, cancel, steer, or grant authority."
@@ -162,7 +167,8 @@ impl LocalPeerDispatcher {
                 let decision = store.proposal_decision(&proposal)?;
                     let binding = store.peer_if_recorded(&proposal.request.channel, &proposal.request.assignment_id)?;
                 let status = proposal_status(decision.as_ref().map(|decision| decision.approved), binding.is_some(), proposal.expires_at <= Utc::now());
-                Ok(serde_json::json!({"status": status, "proposal": proposal, "decision": decision, "binding": binding, "started": binding.is_some()}))
+                let handoff = store.handoff_view(&proposal.request.channel, &proposal.request.assignment_id)?;
+                Ok(serde_json::json!({"status": status, "proposal": proposal, "decision": decision, "binding": binding, "started": binding.is_some(), "handoff": handoff}))
             })())
         }).await?
     }
@@ -200,7 +206,7 @@ impl LocalPeerDispatcher {
             None => Vec::new(),
         };
         Ok(
-            serde_json::json!({"peers": peers, "adoptable_sessions": adoptable, "scope": scope, "policy": "Local workshop only. Propose requires this chat's bound Forge project. Proposal is not approval or execution. Adopt only an exact agent_session_id returned here."}),
+            serde_json::json!({"peers": peers, "adoptable_sessions": adoptable, "scope": scope, "coding_runtime_preferences": self.coding_preferences().await?, "policy": "Local workshop only. Propose may name an owned Forge project independently of the source chat. Omit runtime to use saved preferences; set it only for an explicit runtime request. Proposal is not approval or execution. Adopt only an exact agent_session_id returned here."}),
         )
     }
 
@@ -209,6 +215,24 @@ impl LocalPeerDispatcher {
         principal: &RequestPrincipal,
         session_id: SessionId,
         intent: PeerProposalIntent,
+    ) -> Result<PeerAssignmentProposal> {
+        self.compile_proposal_for_turn(
+            principal,
+            session_id,
+            intent,
+            chrono::Duration::hours(1),
+            false,
+        )
+        .await
+    }
+
+    pub(super) async fn compile_proposal_for_turn(
+        &self,
+        principal: &RequestPrincipal,
+        session_id: SessionId,
+        intent: PeerProposalIntent,
+        ttl: chrono::Duration,
+        handoff: bool,
     ) -> Result<PeerAssignmentProposal> {
         let owner = actor(principal)?;
         if intent.request_key.trim().is_empty()
@@ -227,23 +251,40 @@ impl LocalPeerDispatcher {
             authority_id: authority.clone(),
             session_id,
         };
-        let projected_source_session_ids = crate::session_store::get_session_store()
-            .load_derivation(&session.session_id)?
-            .map(|derived| {
-                derived
-                    .derivation
-                    .manifest
-                    .sources
-                    .into_iter()
-                    .map(|source| source.selection.session.session_id)
-                    .collect::<Vec<_>>()
+        let source_session = session.session_id.clone();
+        let source_owner = owner.clone();
+        let projected_source_session_ids = self
+            .state
+            .forge_execution
+            .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
+                Ok((|| -> Result<Vec<SessionId>> {
+                    if !crate::session_catalog::session_visible_to_profile(
+                        source_session.as_str(),
+                        &source_owner,
+                    ) {
+                        bail!("owner session is not visible");
+                    }
+                    Ok(crate::session_store::get_session_store()
+                        .load_derivation(&source_session)?
+                        .map(|derived| {
+                            derived
+                                .derivation
+                                .manifest
+                                .sources
+                                .into_iter()
+                                .map(|source| source.selection.session.session_id)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default())
+                })())
             })
-            .unwrap_or_default();
+            .await??;
         let channel = CoordinationChannelRef {
             authority_id: authority.clone(),
             channel_id: format!("peer_chat_{}", identity(&owner, &session, "channel")),
         };
-        let id = identity(&owner, &session, &intent.request_key);
+        // New sender contracts cannot reinterpret legacy proposal/grant identities.
+        let id = intent_identity(&owner, &session, &intent.request_key, handoff);
         let assignment_id = format!("peer_assignment_{id}");
         let store = self.store.clone();
         let channel_copy = channel.clone();
@@ -254,6 +295,7 @@ impl LocalPeerDispatcher {
         let forge = self.state.forge.clone();
         let after = intent.after_entry_seq;
         let through = intent.through_entry_seq;
+        let explicit_work = intent.forge_work_id.clone();
         let (work_id, source, previous) = self
             .state
             .forge_execution
@@ -265,19 +307,17 @@ impl LocalPeerDispatcher {
                     ) {
                         bail!("owner session is not visible");
                     }
-                    let binding = crate::agent_mode_state::get_session_code_binding(
-                        session_copy.session_id.as_str(),
-                    )
-                    .map_err(anyhow::Error::msg)?;
-                    if binding.execution_runtime_id.as_deref() != Some(runtime.as_str()) {
-                        bail!(
-                            "bind this chat to a project on this workshop before proposing a peer"
-                        );
-                    }
-                    let work = binding
-                        .work_id
-                        .filter(|id| !id.trim().is_empty())
-                        .ok_or_else(|| anyhow::anyhow!("chat has no governed Forge work item"))?;
+                    let binding = explicit_work
+                        .is_none()
+                        .then(|| {
+                            crate::agent_mode_state::get_session_code_binding(
+                                session_copy.session_id.as_str(),
+                            )
+                        })
+                        .transpose()
+                        .map_err(anyhow::Error::msg)?;
+                    let work =
+                        proposal_work_id(explicit_work.as_deref(), binding.as_ref(), &runtime)?;
                     let governed = forge.load(&medousa_forge::model::WorkId::from(work.clone()))?;
                     if governed.owner != owner_copy {
                         bail!("governed Forge work does not belong to the authenticated owner");
@@ -331,11 +371,31 @@ impl LocalPeerDispatcher {
                 })())
             })
             .await??;
+        // Exact retry keeps its already selected executor even when preferences
+        // or availability have changed. Fallback is a pre-proposal decision only.
+        let selected_runtime = match intent.runtime {
+            Some(runtime) => runtime,
+            None if previous.is_some() => previous.as_ref().unwrap().request.target.runtime,
+            None => {
+                let peers = LocalPeerCall {
+                    host: self,
+                    principal: principal.clone(),
+                }
+                .discover()
+                .await?;
+                self.coding_preferences().await?.select(&peers).ok_or_else(|| anyhow::anyhow!("none of the preferred coding runtimes are available; update coding runtime preferences or request an explicit runtime"))?
+            }
+        };
+        if selected_runtime == ExternalPeerRuntime::Medousa
+            && intent.existing_agent_session_id.is_some()
+        {
+            bail!("Medousa Coder assignments require a fresh execution session");
+        }
         if let Some(agent_session_id) = intent.existing_agent_session_id.as_deref() {
             super::super::agents::require_adoptable_agent_session(
                 &owner,
                 &work_id,
-                super::runtime_kind(intent.runtime).as_str(),
+                super::runtime_kind(selected_runtime).as_str(),
                 agent_session_id,
             )
             .await?;
@@ -354,7 +414,7 @@ impl LocalPeerDispatcher {
             target: ExternalPeerTarget {
                 authority_id: authority,
                 execution_runtime_id: self.local_runtime_id.clone(),
-                runtime: intent.runtime,
+                runtime: selected_runtime,
             },
             context: ContextManifest {
                 manifest_id: ContextManifestId::parse(format!("ctx_{}", &id[..32]))
@@ -390,12 +450,37 @@ impl LocalPeerDispatcher {
         self.propose_assignment(
             principal,
             request,
-            created_at + chrono::Duration::hours(1),
+            created_at + ttl,
             intent.continue_owner,
             projected_source_session_ids,
         )
         .await
     }
+}
+
+fn proposal_work_id(
+    explicit: Option<&str>,
+    binding: Option<&crate::daemon_api::SessionCodeBindingResponse>,
+    runtime: &str,
+) -> Result<String> {
+    if let Some(work) = explicit {
+        if work.is_empty() || work != work.trim() {
+            bail!("explicit Forge work id must be nonempty and trimmed");
+        }
+        return Ok(work.to_string());
+    }
+    let binding = binding
+        .filter(|binding| binding.execution_runtime_id.as_deref() == Some(runtime))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "select an owned Forge project on this workshop before proposing a coder"
+            )
+        })?;
+    binding
+        .work_id
+        .clone()
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("select an owned Forge project before proposing a coder"))
 }
 
 fn proposal_status(approved: Option<bool>, has_custody: bool, expired: bool) -> &'static str {
@@ -415,6 +500,23 @@ fn proposal_status(approved: Option<bool>, has_custody: bool, expired: bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_project_does_not_require_or_change_a_source_chat_binding() {
+        assert_eq!(
+            proposal_work_id(Some("work-selected"), None, "local").unwrap(),
+            "work-selected"
+        );
+        assert!(proposal_work_id(None, None, "local").is_err());
+        for invalid in ["", " work-selected", "work-selected "] {
+            assert!(proposal_work_id(Some(invalid), None, "local").is_err());
+        }
+    }
+    #[test]
+    fn runtime_omission_uses_preferences_and_explicit_project_is_intent_only() {
+        let intent: PeerProposalIntent = serde_json::from_value(serde_json::json!({"request_key":"code", "forge_work_id":"work-selected", "instructions":"Implement the change", "after_entry_seq":0, "through_entry_seq":1, "continue_owner":false})).unwrap();
+        assert!(intent.runtime.is_none());
+        assert_eq!(intent.forge_work_id.as_deref(), Some("work-selected"));
+    }
     #[test]
     fn retries_report_custody_denial_expiry_and_pending_without_claiming_completion() {
         assert_eq!(
@@ -467,6 +569,10 @@ mod tests {
             authority_id: AuthorityId::parse(format!("auth_{}", "a".repeat(64))).unwrap(),
             session_id: SessionId::parse("ses_owner").unwrap(),
         };
+        assert_ne!(
+            identity("owner", &session, "key"),
+            intent_identity("owner", &session, "key", true)
+        );
         assert_eq!(
             identity("owner", &session, "key"),
             identity("owner", &session, "key")
