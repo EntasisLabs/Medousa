@@ -893,17 +893,13 @@ mod tests {
             message_ref: "different-message".into(),
         };
         assert!(store.record_owner_event(&conflict).is_err());
-        let path = std::fs::read_dir(temp.path())
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|path| {
-                path.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .starts_with("oe1-")
-            })
-            .unwrap();
-        std::fs::write(path, b"poisoned").unwrap();
+        let path = temp.path().join(
+            object_path(&event.channel, "owner-event", &event.event_id)
+                .unwrap()
+                .file_name(),
+        );
+        assert!(path.is_file());
+        std::fs::write(&path, b"poisoned").unwrap();
         assert!(store.owner_event(&event.channel, &event.event_id).is_err());
         assert_eq!(
             store
