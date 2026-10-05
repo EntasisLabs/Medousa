@@ -1041,6 +1041,9 @@
         <LoaderCircle size={22} class="animate-spin text-content-quiet/80" aria-label="Loading" />
       </div>
       {/if}
+      {#if !embedded}
+        <PeerProposalBar sessionId={panelSessionId} {mobile} />
+      {/if}
       {#if chatCodeProject && !embedded}
         <ChatChangeReceipt
           workId={chatCodeProject.workId}
@@ -1069,7 +1072,6 @@
     onContinue={continueWhereLeftOff}
   >
     {#if !providerRuntime && !embedded && !presenceComposerCentered}
-      <PeerProposalBar sessionId={panelSessionId} />
       <BudgetApprovalBar
         onOpenWork={() => {
           workspace.workView = "hub";

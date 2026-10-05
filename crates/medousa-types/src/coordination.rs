@@ -506,10 +506,9 @@ pub struct PeerProposalReviewRecord {
     pub handoff: Option<crate::work_handoff::PeerHandoffSummary>,
     pub proposal: PeerAssignmentProposal,
     pub decision: Option<PeerProposalDecision>,
-    /// Recorded custody remains visible until its terminal receipt arrives.
+    /// Durable custody remains visible with its terminal receipt in chat history.
     pub binding: Option<ExternalPeerAssignmentBinding>,
-    /// Present for source-session projections so a remote owner can observe the
-    /// immutable terminal even though execution belongs to another workshop.
+    /// Immutable terminal result retained in local and source-session history.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receipt: Option<ExternalPeerAssignmentReceipt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -521,8 +520,8 @@ pub struct PeerProposalReviewRecord {
 pub struct PeerProposalInboxResponse {
     pub proposals: Vec<PeerProposalReviewRecord>,
     pub next_cursor: Option<String>,
-    /// Keeps the selected, owner-scoped assignment visible after it leaves the
-    /// pending inbox. It does not consume a pagination slot.
+    /// Keeps the selected, owner-scoped assignment visible independently of the
+    /// history page and cursor. It does not consume a pagination slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tracked_proposal: Option<PeerProposalReviewRecord>,
 }

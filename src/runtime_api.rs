@@ -17,6 +17,8 @@ use crate::daemon::coordination::assignments::{
     AssignmentEventsQuery, AssignmentGetQuery, AssignmentListQuery, OwnerEventsQuery,
 };
 #[cfg(feature = "full-daemon")]
+use crate::daemon::work_units::ProjectLifecycleMutation;
+#[cfg(feature = "full-daemon")]
 use crate::daemon::work_units::{
     WorkContentResolveInput, WorkGraphMutateInput, WorkNativeReconcileInput,
     WorkNativeResolveInput, WorkProjectCreateInput, WorkProjectResolveInput, WorkUnitGetQuery,
@@ -54,6 +56,11 @@ use crate::typed_tools::{
 };
 use crate::workflow::WorkflowRegistry;
 #[cfg(feature = "full-daemon")]
+use medousa_types::forge::{
+    ProjectApplyInput, ProjectApproveInput, ProjectDiscardInput, ProjectPrepareMergeInput,
+    ProjectRequestChangesInput, ProjectReviewFileQuery, ProjectReviewQuery,
+};
+#[cfg(feature = "full-daemon")]
 use medousa_types::work_coordination::{WorkCoordinationInput, WorkCoordinationQuery};
 #[cfg(feature = "full-daemon")]
 use medousa_types::work_unit::{WorkEventsQuery, WorkGraphQuery};
@@ -73,6 +80,18 @@ enum RuntimeFrom {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action")]
 pub enum RuntimeQueryAction {
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "ssh.targets")]
+    SshTargets(crate::daemon::ssh::TargetsQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "ssh.execution")]
+    SshExecution(crate::daemon::ssh::ExecutionQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.project_review")]
+    ProjectReview(ProjectReviewQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.project_review_file")]
+    ProjectReviewFile(ProjectReviewFileQuery),
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.graph")]
     WorkGraph(WorkGraphQuery),
@@ -116,6 +135,30 @@ pub enum RuntimeQueryAction {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action")]
 pub enum RuntimeMutateAction {
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "ssh.run")]
+    SshRun(crate::daemon::ssh::RunInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "ssh.open_terminal")]
+    SshOpenTerminal(crate::daemon::ssh::TerminalInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "ssh.terminal_input")]
+    SshTerminalInput(crate::daemon::ssh::TerminalWriteInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.prepare_merge")]
+    PrepareMerge(ProjectPrepareMergeInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.approve_project")]
+    ApproveProject(ProjectApproveInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.apply_project")]
+    ApplyProject(ProjectApplyInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.request_project_changes")]
+    RequestProjectChanges(ProjectRequestChangesInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.discard_project")]
+    DiscardProject(ProjectDiscardInput),
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.record")]
     WorkRecord(WorkGraphMutateInput),
@@ -383,6 +426,10 @@ impl JsonSchema for RuntimeQueryAction {
             .splice(
                 0..0,
                 [
+                    "ssh.targets",
+                    "ssh.execution",
+                    "work.project_review",
+                    "work.project_review_file",
                     "work.graph",
                     "work.get",
                     "work.events",
@@ -417,6 +464,14 @@ impl JsonSchema for RuntimeMutateAction {
         ];
         #[cfg(feature = "full-daemon")]
         let actions = [
+            "ssh.run",
+            "ssh.open_terminal",
+            "ssh.terminal_input",
+            "work.prepare_merge",
+            "work.approve_project",
+            "work.apply_project",
+            "work.request_project_changes",
+            "work.discard_project",
             "work.record",
             "work.resolve",
             "work.reconcile",
@@ -506,6 +561,66 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
     #[cfg(feature = "full-daemon")]
     {
         let mut assignment_schemas = vec![
+            typed_action_schema::<crate::daemon::ssh::TargetsQuery>(
+                QUERY_ID,
+                "ssh.targets",
+                "Discover saved SSH targets explicitly enabled for your owner. Setup and grants live in Connection settings; models cannot add hosts or widen access",
+            ),
+            typed_action_schema::<crate::daemon::ssh::ExecutionQuery>(
+                QUERY_ID,
+                "ssh.execution",
+                "Inspect a durable SSH receipt. Poll starting/running without reissuing commands; unknown means inspect remote state, not retry",
+            ),
+            typed_action_schema::<crate::daemon::ssh::RunInput>(
+                MUTATE_ID,
+                "ssh.run",
+                "Run a remote command on a saved granted target without a coding project. Returns execution_id immediately; inspect ssh.execution for output and exit status. Reuse request_key on retries. SSH exit 255 or timeout means unknown remote outcome; never automatically replay changes",
+            ),
+            typed_action_schema::<crate::daemon::ssh::TerminalInput>(
+                MUTATE_ID,
+                "ssh.open_terminal",
+                "Open a workshop-owned SSH terminal on a saved granted target. Reuse request_key on retries. Home can attach the returned session_id; the remote machine needs no Medousa installation",
+            ),
+            typed_action_schema::<crate::daemon::ssh::TerminalWriteInput>(
+                MUTATE_ID,
+                "ssh.terminal_input",
+                "Observe or send raw input to your own granted SSH terminal. Use after_sequence to avoid replayed output. Interactive output has no per-command completion guarantee; prefer ssh.run for tracked operations",
+            ),
+            typed_action_schema::<ProjectReviewQuery>(
+                QUERY_ID,
+                "work.project_review",
+                "Inspect exact sealed undertaking evidence, policy, decisions and allowed integration strategies; copy reviewed coordinates into review/approval actions",
+            ),
+            typed_action_schema::<ProjectReviewFileQuery>(
+                QUERY_ID,
+                "work.project_review_file",
+                "Read a bounded diff from exact sealed undertaking evidence, never the mutable working copy",
+            ),
+            typed_action_schema::<ProjectPrepareMergeInput>(
+                MUTATE_ID,
+                "work.prepare_merge",
+                "Seal an owned undertaking for native review. Captures the existing governed workspace; refuses active coders/providers. Does not approve, merge or close work",
+            ),
+            typed_action_schema::<ProjectApproveInput>(
+                MUTATE_ID,
+                "work.approve_project",
+                "Record an owner Assistant review decision for exact sealed evidence and base revision under existing user intent. Choose an allowed strategy explicitly; returns decision_id without applying it",
+            ),
+            typed_action_schema::<ProjectApplyInput>(
+                MUTATE_ID,
+                "work.apply_project",
+                "Apply an exact native review decision, rechecking evidence, policy and base revision. Fast-forward-only integrates an isolated branch; keep_checkout accepts attached edits. Closes the undertaking on success without pushing or opening a PR",
+            ),
+            typed_action_schema::<ProjectRequestChangesInput>(
+                MUTATE_ID,
+                "work.request_project_changes",
+                "Request another pass on exact sealed undertaking evidence, record the reason and invalidate earlier approvals. Preserves the workspace and returns work to ready without launching an executor",
+            ),
+            typed_action_schema::<ProjectDiscardInput>(
+                MUTATE_ID,
+                "work.discard_project",
+                "Discard an owned undertaking only when the user wants to abandon it. Refuses active executors. Removes isolated workspace containment; attached files are preserved. Does not merge or mark encompassing goals satisfied",
+            ),
             typed_action_schema::<WorkGraphQuery>(
                 QUERY_ID,
                 "work.graph",
@@ -624,7 +739,7 @@ pub fn register_runtime_api_tools(
 
 #[medousa_tool(id = QUERY_ID)]
 impl CognitionRuntimeQueryTool {
-    /// Inspect saved work scopes and relationships, owned assignments, jobs, recurring, workflows, or delivery. action is a typed name (work.graph, job.list, …). Fetch fields with cognition_schema types=[...].
+    /// Inspect saved work scopes and relationships, owned assignments, jobs, recurring, workflows, delivery, or granted SSH targets/receipts. action is a typed name (work.graph, job.list, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeQueryAction,
@@ -635,7 +750,7 @@ impl CognitionRuntimeQueryTool {
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Mutate durable runtime work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
+    /// Mutate durable runtime work. SSH: discover granted targets with runtime query ssh.targets; use ssh.run then poll ssh.execution, reusing request_key on retries. ssh.open_terminal/ssh.terminal_input provide interactive access. Do not replay changes with an unknown remote outcome. Native undertaking lifecycle: work.prepare_merge, work.approve_project, work.apply_project, work.request_project_changes, work.discard_project. First inspect exact sealed evidence with runtime query work.project_review and work.project_review_file. Use existing user intent; do not repeatedly ask for approval already given. Callbacks can continue the owner lifecycle, but delegated executors cannot approve or integrate work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeMutateAction,
@@ -678,6 +793,38 @@ async fn dispatch_query(
     action: RuntimeQueryAction,
 ) -> stasis::prelude::Result<Value> {
     match action {
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::SshTargets(_) => {
+            let owner = crate::daemon::ssh::turn_owner().map_err(runtime_error)?;
+            Ok(crate::daemon::ssh::local_host()
+                .map_err(runtime_error)?
+                .targets(&owner, true)
+                .await)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::SshExecution(input) => {
+            let owner = crate::daemon::ssh::turn_owner().map_err(runtime_error)?;
+            crate::daemon::ssh::local_host()
+                .map_err(runtime_error)?
+                .status(&owner, &input.execution_id)
+                .await
+                .map_err(runtime_error)
+        }
+
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::ProjectReview(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.project_review(&turn, params)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::ProjectReviewFile(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.project_review_file(&turn, params)
+                .await
+                .map_err(runtime_error)
+        }
         #[cfg(feature = "full-daemon")]
         RuntimeQueryAction::WorkGraph(params) => {
             let (host, turn) = admitted_work_access()?;
@@ -743,6 +890,69 @@ async fn dispatch_mutate(
     action: RuntimeMutateAction,
 ) -> stasis::prelude::Result<Value> {
     match action {
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::SshRun(input) => {
+            let owner = crate::daemon::ssh::turn_owner().map_err(runtime_error)?;
+            crate::daemon::ssh::local_host()
+                .map_err(runtime_error)?
+                .run(&owner, input, true)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::SshOpenTerminal(input) => {
+            let owner = crate::daemon::ssh::turn_owner().map_err(runtime_error)?;
+            crate::daemon::ssh::local_host()
+                .map_err(runtime_error)?
+                .open_terminal(&owner, input, true)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::SshTerminalInput(input) => {
+            let owner = crate::daemon::ssh::turn_owner().map_err(runtime_error)?;
+            crate::daemon::ssh::local_host()
+                .map_err(runtime_error)?
+                .terminal_input(&owner, input)
+                .await
+                .map_err(runtime_error)
+        }
+
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::PrepareMerge(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.mutate_project(&turn, ProjectLifecycleMutation::PrepareMerge(params))
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::ApproveProject(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.mutate_project(&turn, ProjectLifecycleMutation::Approve(params))
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::ApplyProject(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.mutate_project(&turn, ProjectLifecycleMutation::Apply(params))
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::RequestProjectChanges(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.mutate_project(&turn, ProjectLifecycleMutation::RequestChanges(params))
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::DiscardProject(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.mutate_project(&turn, ProjectLifecycleMutation::Discard(params))
+                .await
+                .map_err(runtime_error)
+        }
         #[cfg(feature = "full-daemon")]
         RuntimeMutateAction::WorkRecord(params) => {
             let (host, turn) = admitted_work_access()?;
@@ -1136,6 +1346,76 @@ mod tests {
 
     #[cfg(feature = "full-daemon")]
     #[test]
+    fn undertaking_lifecycle_actions_require_exact_review_and_no_authority_overrides() {
+        let pin = json!({"attempt_id":"attempt-1", "environment_generation":1,
+            "evidence_id":"evidence-1", "evidence_digest":"a".repeat(64),
+            "baseline_oid":"b".repeat(40), "reviewed_head_oid":"c".repeat(40),
+            "expected_base_oid":"b".repeat(40)});
+        let queries = [
+            json!({"action":"work.project_review", "work_id":"work-1"}),
+            json!({"action":"work.project_review_file", "work_id":"work-1", "reviewed":pin, "path":"src/lib.rs"}),
+        ];
+        let mutations = [
+            json!({"action":"work.prepare_merge", "work_id":"work-1"}),
+            json!({"action":"work.approve_project", "work_id":"work-1", "reviewed":pin, "strategy":"fast_forward_only", "rationale":"Reviewed the sealed changes"}),
+            json!({"action":"work.apply_project", "work_id":"work-1", "decision_id":"decision-1"}),
+            json!({"action":"work.request_project_changes", "work_id":"work-1", "reviewed":pin, "reason":"Missing verification"}),
+            json!({"action":"work.discard_project", "work_id":"work-1"}),
+        ];
+        let catalog = runtime_type_schemas();
+        let query_schema = serde_json::to_value(schemars::schema_for!(RuntimeQueryAction)).unwrap();
+        let mutate_schema =
+            serde_json::to_value(schemars::schema_for!(RuntimeMutateAction)).unwrap();
+        for (inputs, query, advertised) in [
+            (&queries[..], true, query_schema),
+            (&mutations[..], false, mutate_schema),
+        ] {
+            for input in inputs {
+                let parse = |value| {
+                    if query {
+                        serde_json::from_value::<RuntimeQueryAction>(value).map(|_| ())
+                    } else {
+                        serde_json::from_value::<RuntimeMutateAction>(value).map(|_| ())
+                    }
+                };
+                parse(input.clone()).unwrap();
+                let name = input["action"].as_str().unwrap();
+                let entry = catalog.iter().find(|entry| entry.name == name).unwrap();
+                assert_eq!(entry.parameters["additionalProperties"], false);
+                assert!(
+                    advertised["properties"]["action"]["enum"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|action| action == name)
+                );
+                for field in [
+                    "owner_id",
+                    "profile_id",
+                    "actor",
+                    "principal",
+                    "execution_grant",
+                    "authorized",
+                ] {
+                    let mut forged = input.clone();
+                    forged[field] = json!("other");
+                    assert!(parse(forged).is_err(), "{name} accepted {field}");
+                }
+            }
+        }
+        for field in ["reviewed", "strategy", "rationale"] {
+            let mut missing = mutations[1].clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(serde_json::from_value::<RuntimeMutateAction>(missing).is_err());
+        }
+        let mut forged = mutations[1].clone();
+        forged["reviewed"]["actor"] = json!("other");
+        assert!(serde_json::from_value::<RuntimeMutateAction>(forged).is_err());
+        assert!(admitted_work_access().is_err());
+    }
+
+    #[cfg(feature = "full-daemon")]
+    #[test]
     fn work_actions_are_typed_and_cannot_override_the_admitted_owner() {
         for action in ["work.graph", "work.get"] {
             assert!(
@@ -1366,6 +1646,8 @@ mod tests {
             "work.graph",
             "work.get",
             "work.coordination",
+            "work.project_review",
+            "work.project_review_file",
             "assignment.list",
             "assignment.get",
             "assignment.events",
@@ -1388,6 +1670,11 @@ mod tests {
             "work.resolve_project",
             "work.resolve_content",
             "work.coordinate",
+            "work.prepare_merge",
+            "work.approve_project",
+            "work.apply_project",
+            "work.request_project_changes",
+            "work.discard_project",
         ] {
             assert!(
                 serde_json::from_value::<RuntimeMutateAction>(json!({"action": action})).is_err()

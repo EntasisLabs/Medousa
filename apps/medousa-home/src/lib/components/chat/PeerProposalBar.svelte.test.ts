@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync, mount, tick, unmount } from "svelte";
 import PeerProposalBar from "./PeerProposalBar.svelte";
+import { connection } from "$lib/stores/connection.svelte";
 import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
 
 const api = vi.hoisted(() => ({ list: vi.fn(), act: vi.fn() }));
@@ -11,7 +12,10 @@ vi.mock("$lib/daemon/coordination", () => ({
   listPeerProposals: api.list, actOnPeerProposal: api.act,
   proposalExecutionTransport: (kind: string, runtime: string) => kind === "portal" ? runtime : null,
 }));
-vi.mock("$lib/stores/connection.svelte", () => ({ connection: { online: true, health: { active_profile_id: "owner", runtime: { authority_id: `auth_${"a".repeat(64)}`, advertised_capabilities: ["coordination.operator_proposals.v1"] } } } }));
+vi.mock("$lib/stores/connection.svelte", () => {
+  const state = $state({ online: true, health: { active_profile_id: "owner", runtime: { authority_id: `auth_${"a".repeat(64)}`, advertised_capabilities: ["coordination.operator_proposals.v1"] } } });
+  return { connection: state };
+});
 vi.mock("$lib/stores/workshops.svelte", () => ({ workshops: workshopState }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessions: [{ session_id: "ses_owner", display_name: "Taco" }] } }));
 vi.mock("$lib/stores/undertakings.svelte", () => ({ undertakings: { active: null, items: [] } }));
@@ -49,12 +53,59 @@ async function render() {
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now); vi.clearAllMocks();
   workshopState.workshops = [];
+  Object.assign(connection, { online: true, health: { active_profile_id: "owner", runtime: { authority_id: `auth_${"a".repeat(64)}`, advertised_capabilities: ["coordination.operator_proposals.v1"] } } });
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   api.list.mockResolvedValue({ proposals: [], next_cursor: null });
 });
 afterEach(async () => { if (component) await unmount(component); component = undefined; document.body.replaceChildren(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("assignment card lifecycle", () => {
+  it.each(["completed", "failed", "cancelled"] as const)("restores %s work after reopening without an in-memory selected id", async outcome => {
+    const work = record("saved-work");
+    work.receipt = { receipt_id: "receipt", binding: work.binding!, outcome, result: "Saved agent result" };
+    api.list.mockResolvedValue({ proposals: [work], next_cursor: null });
+    await render();
+    await unmount(component!); component = undefined; document.body.replaceChildren();
+    api.list.mockClear();
+    await render();
+    expect(api.list).toHaveBeenCalledWith("ses_owner", null, undefined, undefined);
+    expect(document.body.textContent).toContain("Assignment saved-work");
+    expect(document.body.textContent).toContain("Saved agent result");
+    expect(api.act).not.toHaveBeenCalled();
+  });
+
+  it("keeps loaded work readable through missing health and reconnect, but clears another profile's work", async () => {
+    const work = record("saved-work");
+    api.list.mockResolvedValue({ proposals: [work], next_cursor: null });
+    await render();
+    const health = connection.health!;
+    Object.assign(connection, { online: false, health: null }); await settle();
+    expect(document.body.textContent).toContain("Assignment saved-work");
+    const calls = api.list.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(15_000); await settle();
+    expect(api.list).toHaveBeenCalledTimes(calls);
+    Object.assign(connection, { online: true, health }); await settle();
+    expect(api.list).toHaveBeenLastCalledWith("ses_owner", null, undefined, "saved-work");
+    api.list.mockResolvedValue({ proposals: [], next_cursor: null });
+    connection.health = { ...health, active_profile_id: "another-owner" }; await settle();
+    expect(document.body.textContent).not.toContain("Assignment saved-work");
+    expect(api.act).not.toHaveBeenCalled();
+  });
+
+  it("retains every observed request on a workshop whose refresh fails", async () => {
+    workshopState.workshops = [{ kind: "portal", pairing: { workshopDeviceId: "remote" } }];
+    api.list.mockImplementation(async (_session, runtime) => ({ proposals: runtime === "remote" ? [record("one", "remote"), record("two", "remote")] : [] }));
+    await render();
+    api.list.mockImplementation(async (_session, runtime) => {
+      if (runtime === "remote") throw new Error("Workshop unavailable");
+      return { proposals: [] };
+    });
+    await vi.advanceTimersByTimeAsync(15_000); await settle();
+    [...document.querySelectorAll("button")].find(button => button.textContent?.includes("Next request"))!.click(); await settle();
+    expect(document.body.textContent).toContain("Assignment two");
+    expect(api.act).not.toHaveBeenCalled();
+  });
+
   it("shows live work and retains the selected terminal result after it leaves the inbox", async () => {
     const work = record("proposal-one");
     api.list.mockResolvedValueOnce({ proposals: [work], next_cursor: null });

@@ -34,6 +34,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Medousa Live on iPhone](guides/medousa-live-ios.md) | Continuous in-app voice, controls, requirements, and preview limits |
 | [Medousa Live in CarPlay](guides/medousa-carplay.md) | Development companion controls, setup, and qualification limits |
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
+| [SSH targets](guides/ssh-targets.md) | Connect named servers, grant agent access, and open terminals |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
 | [External agent conversations](guides/provider-conversations.md) | Find and connect named agents from Sessions or Spotlight through WhatsApp, Slack, or a webhook |

@@ -229,13 +229,8 @@ impl CoordinationStore {
                 continue;
             }
             let binding = self.peer_if_recorded(&index.channel, &proposal.request.assignment_id)?;
-            if binding.is_some()
-                && self
-                    .receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?
-                    .is_some()
-            {
-                continue;
-            }
+            let receipt =
+                self.receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?;
             page.insert(
                 proposal.proposal_id.clone(),
                 PeerProposalReviewRecord {
@@ -246,7 +241,7 @@ impl CoordinationStore {
                     proposal,
                     decision,
                     binding,
-                    receipt: None,
+                    receipt,
                     progress: None,
                 },
             );

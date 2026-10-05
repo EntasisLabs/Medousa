@@ -99,6 +99,11 @@ pub fn is_error_turn_excluded_from_model_context(turn: &crate::session::Conversa
 fn classify_category(raw: &str) -> TurnFailureCategory {
     let text = raw.to_ascii_lowercase();
 
+    if text.contains(
+        "undertaking workspace is held by an executor outside coder shared-space coordination",
+    ) {
+        return TurnFailureCategory::Validation;
+    }
     if text.contains("cancelled") || text.contains("canceled") {
         return TurnFailureCategory::Cancelled;
     }
@@ -196,6 +201,11 @@ fn operator_message_for(category: TurnFailureCategory, raw: &str) -> String {
 
 fn validation_operator_message(raw: &str) -> String {
     let text = raw.to_ascii_lowercase();
+    if text.contains(
+        "undertaking workspace is held by an executor outside coder shared-space coordination",
+    ) {
+        return "This project's workspace is in use by another executor. Finish or stop that work before starting Coder.".to_string();
+    }
     if text.contains("session_id") && text.contains("required") {
         return "Start or select a chat session before sending a message.".to_string();
     }
@@ -211,6 +221,17 @@ fn validation_operator_message(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_custody_failure_explains_the_blocker_without_retry_advice() {
+        let failure = TurnFailure::from_debug(
+            "cannot acquire Coder authority: workspace busy: the undertaking workspace is held by an executor outside Coder shared-space coordination",
+        );
+        assert_eq!(failure.category, TurnFailureCategory::Validation);
+        assert!(!failure.retryable);
+        assert!(failure.operator_message.contains("another executor"));
+        assert!(!failure.operator_message.contains("Try again"));
+    }
 
     #[test]
     fn classifies_rate_limit() {

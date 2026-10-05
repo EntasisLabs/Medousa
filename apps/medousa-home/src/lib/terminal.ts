@@ -15,6 +15,7 @@ export type TerminalSessionSummary = {
   cwd: string;
   root_kind: string;
   work_id: string | null;
+  argv?: string[];
   workspace_context?: {
     cwd: string;
     current_branch: string | null;

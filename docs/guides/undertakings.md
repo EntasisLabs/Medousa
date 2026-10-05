@@ -66,6 +66,29 @@ acceptance and completion updates, and reviews the result. Creating a project
 alone does not launch a coder. The folder can contain only `git init`
 or have existing uncommitted files; Medousa preserves those files and the index.
 
+The assistant can also finish the native project lifecycle when your request
+includes that outcome: prepare the changes for merge, review the sealed changes
+and checks, approve, and apply them. For example, ask Taco to “have the coder
+implement this, review it, and merge the undertaking when the checks pass.” The
+completion update can wake Taco to continue that authorized work. If the result
+needs revisions, Taco can request changes and arrange another pass. You do not
+need to approve the same instruction again in a card.
+
+An isolated project's native merge currently requires a fast-forward into its
+base branch. If the base moved or conflicts need resolution, Medousa reports
+that and keeps the project open for another review. Accepting current-checkout
+work keeps its edits in place without changing the branch or index. Keeping a
+separate branch or exporting a patch are other explicit finish outcomes. None
+of these actions pushes to a remote or opens a pull request. Abandoning work is
+a separate request; it preserves current-checkout files and removes an isolated
+working copy only after its agents stop.
+
+Delegated work stays in the originating chat after closing and reopening
+Medousa, including its final status and agent result. Expand its compact context
+line to inspect the assignment or open the execution chat or project. Use
+**Next request** and **More requests** to browse saved handoffs. A connection
+interruption preserves already loaded entries while updates are unavailable.
+
 Cursor and Codex start only after the conversation has a project. Medousa
 resolves that durable binding on the workshop daemon and launches the external
 agent inside the project's governed workspace. Switching projects stops the

@@ -136,6 +136,10 @@ export function mapTurns(
       askJobId,
       turnIndex: turn.entry_seq || index + 1,
       answerState: turn.answer_state ?? null,
+      failed: turn.answer_state === "failed",
+      errorLine: turn.answer_state === "failed"
+        ? turn.slice_summary?.failures[0] ?? "This turn stopped before it could finish."
+        : null,
       tools: turn.tool_names?.length ? turn.tool_names : undefined,
       toolRuns: toolRunsFromParts(turn.parts ?? null),
       segments,

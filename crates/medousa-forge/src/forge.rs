@@ -2515,6 +2515,21 @@ impl Forge {
     /// then mark Discarded. Failed setup may also be released so an unusable
     /// project does not remain stuck in the user's repository catalog.
     pub fn discard(&self, work_id: &WorkId, actor: &ActorRef) -> Result<WorkItem> {
+        self.discard_inner(work_id, actor, false)
+    }
+
+    /// Close idle work without cancelling an executor that acquired custody
+    /// between the caller's observation and repository admission.
+    pub fn discard_if_idle(&self, work_id: &WorkId, actor: &ActorRef) -> Result<WorkItem> {
+        self.discard_inner(work_id, actor, true)
+    }
+
+    fn discard_inner(
+        &self,
+        work_id: &WorkId,
+        actor: &ActorRef,
+        require_idle: bool,
+    ) -> Result<WorkItem> {
         let probe = self.load(work_id)?;
         let repo_key = match &probe.environment {
             Some(env) => self.repo_lock_key(&env.repo.common_dir)?,
@@ -2536,6 +2551,12 @@ impl Forge {
                     action: "discard",
                 });
             }
+        }
+
+        if require_idle && item.has_active_attempts() {
+            return Err(ForgeError::WorkspaceBusy(
+                "stop the active executor before discarding this undertaking".into(),
+            ));
         }
 
         // A user-owned checkout is not reclaimable containment. Its executor
@@ -3002,6 +3023,14 @@ impl Forge {
             });
         }
         let manifest = self.read_evidence_manifest(item, decision)?;
+        if manifest.evidence_id != decision.evidence_id
+            || manifest.baseline_oid != decision.baseline_oid
+            || manifest.sealed_head_oid != decision.reviewed_head_oid
+        {
+            return Err(ForgeError::DecisionInvalid {
+                reason: "review coordinates do not match the sealed evidence".into(),
+            });
+        }
         let stored = manifest
             .bundle_digest
             .clone()
@@ -3024,7 +3053,13 @@ impl Forge {
             .join(attempt.seq.to_string())
             .join("evidence")
             .join("policy.json");
-        let report: PolicyReport = serde_json::from_str(&std::fs::read_to_string(&policy_path)?)?;
+        let policy_bytes = std::fs::read(&policy_path)?;
+        if Digest::sha256_hex(&policy_bytes) != manifest.policy_report_digest {
+            return Err(ForgeError::DecisionInvalid {
+                reason: "sealed policy evidence changed since capture".into(),
+            });
+        }
+        let report: PolicyReport = serde_json::from_slice(&policy_bytes)?;
         if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
             self.verify_attached_checkout(item, env)?;
             let current_changes = self.workspace_changed_files(item, env)?;

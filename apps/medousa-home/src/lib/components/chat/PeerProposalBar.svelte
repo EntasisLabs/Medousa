@@ -25,6 +25,7 @@
   let selectedRuntime: string | null = null;
   let selectedId: string | undefined;
   let proposalOrigins = new Map<string, string | null>();
+  let loadedScope: { session: string | null; workshop: string | null; profile: string } | undefined;
   const current = $derived(rows[0] ?? null);
   const completed = $derived(current?.receipt ?? null);
   const progress = $derived(current ? peerHandoffPresentation(current, now) : null);
@@ -65,8 +66,15 @@
     const profile = profileScope;
     const enabled = available;
     const token = ++epoch;
-    rows = []; cursors = []; feedback = null; busy = false;
-    pageAfter = new Map(); selectedId = undefined; selectedRuntime = null; proposalOrigins = new Map();
+    const scopeChanged = !loadedScope || loadedScope.session !== session || loadedScope.workshop !== workshop
+      || Boolean(profile && loadedScope.profile && loadedScope.profile !== profile);
+    if (scopeChanged) {
+      rows = []; cursors = []; feedback = null;
+      pageAfter = new Map(); selectedId = undefined; selectedRuntime = null; proposalOrigins = new Map();
+    }
+    // Missing health during reconnect is not a change of owner.
+    loadedScope = { session, workshop, profile: profile || (scopeChanged ? "" : loadedScope?.profile ?? "") };
+    busy = false;
     if (!session || !enabled) return;
     let loading = false;
     const refresh = async () => {
@@ -95,7 +103,6 @@
         if (token === epoch && requestRevision === revision && untrack(() => rows.length > 0)) feedback = String(error);
       } finally { loading = false; }
     };
-    void workshop; void profile;
     void refresh();
     const timer = setInterval(() => { now = Date.now(); void refresh(); }, 15_000);
     document.addEventListener("visibilitychange", refresh);
@@ -115,10 +122,11 @@
       }
     }
     // A failed workshop refresh cannot erase the already observed assignment.
-    const selected = rows.find(row => row.proposal.proposal_id === selectedId);
-    if (selected && !responses.some(result => result.runtime === selectedRuntime) && !byId.has(selected.proposal.proposal_id)) {
-      byId.set(selected.proposal.proposal_id, selected);
-      proposalOrigins.set(selected.proposal.proposal_id, selectedRuntime);
+    for (const row of rows) {
+      const origin = proposalOrigins.get(row.proposal.proposal_id) ?? null;
+      if (!responses.some(result => result.runtime === origin) && !byId.has(row.proposal.proposal_id)) {
+        byId.set(row.proposal.proposal_id, row);
+      }
     }
     const proposals = [...byId.values()];
     const index = proposals.findIndex(row => row.proposal.proposal_id === selectedId);
@@ -171,7 +179,7 @@
   async function next(more = false) {
     if (busy || !sessionId) return;
     if (!more && rows.length > 1) { ++revision; rows = [...rows.slice(1), rows[0]]; selectedId = rows[0].proposal.proposal_id; selectedRuntime = proposalOrigins.get(selectedId) ?? null; feedback = null; return; }
-    if (!cursors.length) return;
+    if (!cursors.length || !available) return;
     const token = epoch;
     ++revision;
     busy = true;
@@ -219,7 +227,7 @@
   }
 </script>
 
-{#if current && available && progress}
+{#if current && progress}
   <section class="delegation-context {mobile ? 'mobile' : ''}" aria-label="Delegated work">
     {#key current.proposal.proposal_id}
       <AgentWorkContextLine title={workTitle} status={progress.status} attention={progress.attention}>
@@ -285,10 +293,10 @@
     {#if !completed && !current.binding && progress.needsApproval}
       <div class="approval-actions">
         {#if current.decision?.approved}
-          <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('dispatch')}>{busy ? 'Starting…' : 'Start approved work'}</button>
+          <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired || !available} onclick={() => void action('dispatch')}>{busy ? 'Starting…' : 'Start approved work'}</button>
         {:else}
-          <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('approve_and_dispatch')}>{busy ? 'Starting…' : adopting ? 'Approve & adopt' : 'Approve & start'}</button>
-          <button type="button" class="btn btn-sm variant-ghost-surface" disabled={busy} onclick={() => void action('deny')}>Decline</button>
+          <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired || !available} onclick={() => void action('approve_and_dispatch')}>{busy ? 'Starting…' : adopting ? 'Approve & adopt' : 'Approve & start'}</button>
+          <button type="button" class="btn btn-sm variant-ghost-surface" disabled={busy || !available} onclick={() => void action('deny')}>Decline</button>
         {/if}
         {#if expired}<span class="notice">Expired</span>{/if}
       </div>
@@ -296,7 +304,7 @@
     {#if rows.length > 1 || cursors.length}
       <div class="request-navigation">
         {#if rows.length > 1}<button type="button" class="text-action" disabled={busy} onclick={() => void next()}>Next request · {rows.length}</button>{/if}
-        {#if cursors.length}<button type="button" class="text-action" disabled={busy} onclick={() => void next(true)}>More requests</button>{/if}
+        {#if cursors.length}<button type="button" class="text-action" disabled={busy || !available} onclick={() => void next(true)}>More requests</button>{/if}
       </div>
     {/if}
   </section>

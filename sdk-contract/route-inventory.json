@@ -6555,6 +6555,118 @@
       "trust_group": "administration"
     },
     {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "ssh.inspect.post",
+      "path": "/v1/ssh/inspect",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "ssh.targets.get",
+      "path": "/v1/ssh/targets",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "ssh.targets.post",
+      "path": "/v1/ssh/targets",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "ssh.targets.by_id.delete",
+      "path": "/v1/ssh/targets/{id}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "ssh.targets.by_id.access.post",
+      "path": "/v1/ssh/targets/{id}/access",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "ssh.terminal.post",
+      "path": "/v1/ssh/terminal",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "ssh.test.post",
+      "path": "/v1/ssh/test",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",

@@ -17,6 +17,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Siri and Shortcuts](siri-and-shortcuts.md) | Continue the selected Medousa chat by voice or from an iPhone shortcut |
 | [Medousa Live on iPhone](medousa-live-ios.md) | Hold a continuous in-app voice conversation on iPhone |
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
+| [SSH targets](ssh-targets.md) | Connect named servers and choose agent access |
 | [Memory & identity](memory-and-identity.md) | Teach who you are; profiles |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
 | [External agent conversations](provider-conversations.md) | Connect provider-hosted agents and replay their messages |

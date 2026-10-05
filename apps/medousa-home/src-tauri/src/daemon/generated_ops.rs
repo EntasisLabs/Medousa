@@ -828,6 +828,20 @@ pub enum DaemonOperation {
     SharedModePut,
     #[serde(rename = "shell_sessions.get")]
     ShellSessionsGet,
+    #[serde(rename = "ssh.inspect.post")]
+    SshInspectPost,
+    #[serde(rename = "ssh.targets.by_id.access.post")]
+    SshTargetsByIdAccessPost,
+    #[serde(rename = "ssh.targets.by_id.delete")]
+    SshTargetsByIdDelete,
+    #[serde(rename = "ssh.targets.get")]
+    SshTargetsGet,
+    #[serde(rename = "ssh.targets.post")]
+    SshTargetsPost,
+    #[serde(rename = "ssh.terminal.post")]
+    SshTerminalPost,
+    #[serde(rename = "ssh.test.post")]
+    SshTestPost,
     #[serde(rename = "stats.get")]
     StatsGet,
     #[serde(rename = "stt.status.get")]
@@ -1391,6 +1405,13 @@ impl DaemonOperation {
             Self::SharedModeGet => "shared_mode.get",
             Self::SharedModePut => "shared_mode.put",
             Self::ShellSessionsGet => "shell_sessions.get",
+            Self::SshInspectPost => "ssh.inspect.post",
+            Self::SshTargetsByIdAccessPost => "ssh.targets.by_id.access.post",
+            Self::SshTargetsByIdDelete => "ssh.targets.by_id.delete",
+            Self::SshTargetsGet => "ssh.targets.get",
+            Self::SshTargetsPost => "ssh.targets.post",
+            Self::SshTerminalPost => "ssh.terminal.post",
+            Self::SshTestPost => "ssh.test.post",
             Self::StatsGet => "stats.get",
             Self::SttStatusGet => "stt.status.get",
             Self::SttTranscribePost => "stt.transcribe.post",

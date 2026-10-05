@@ -6,6 +6,103 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Exact native review coordinates. Copy these from work.project_review;
+/// approval never substitutes the current checkout for the reviewed revision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProjectReviewPin {
+    pub attempt_id: String,
+    pub environment_generation: u32,
+    pub evidence_id: String,
+    pub evidence_digest: String,
+    pub baseline_oid: String,
+    pub reviewed_head_oid: String,
+    pub expected_base_oid: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProjectReviewQuery {
+    pub work_id: String,
+    /// Select an exact sealed candidate; omission selects the latest sealed attempt.
+    #[serde(default)]
+    pub attempt_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProjectPrepareMergeInput {
+    pub work_id: String,
+    /// Only acknowledge capture risks when explicitly authorized by the user.
+    #[serde(default)]
+    pub ack_risks: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProjectReviewFileQuery {
+    pub work_id: String,
+    pub reviewed: ProjectReviewPin,
+    /// Exact changed path returned by the sealed review.
+    pub path: String,
+    /// Bounded diff output, up to 512 KiB; omission uses 64 KiB.
+    #[serde(default)]
+    pub max_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectIntegrationStrategy {
+    FastForwardOnly,
+    KeepCheckout,
+    PreserveBranch,
+    ExportPatch,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProjectApproveInput {
+    pub work_id: String,
+    pub reviewed: ProjectReviewPin,
+    /// Select explicitly from the review's allowed strategies. Approval alone
+    /// does not merge or close the undertaking.
+    pub strategy: ProjectIntegrationStrategy,
+    pub rationale: String,
+    #[serde(default)]
+    pub acknowledged_violations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProjectApplyInput {
+    pub work_id: String,
+    /// Exact native decision returned by work.approve_project.
+    pub decision_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProjectRequestChangesInput {
+    pub work_id: String,
+    pub reviewed: ProjectReviewPin,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProjectDiscardInput {
+    pub work_id: String,
+}
+
 /// Governance over paths an executor may touch, and rules for checkpoint
 /// capture. Violations are evidence — they never prove containment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,4 +187,53 @@ pub enum ChangeStatus {
     Untracked,
     /// Unmerged / conflicted path (`git status` porcelain `u`).
     Unmerged,
+}
+
+#[cfg(test)]
+mod lifecycle_contract_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn approval_requires_exact_coordinates_and_rejects_authority_overrides() {
+        let reviewed = json!({"attempt_id":"attempt-1", "environment_generation":1,
+            "evidence_id":"evidence-1", "evidence_digest":"a".repeat(64),
+            "baseline_oid":"b".repeat(40), "reviewed_head_oid":"c".repeat(40),
+            "expected_base_oid":"b".repeat(40)});
+        let input = json!({"work_id":"work-1", "reviewed":reviewed,
+            "strategy":"fast_forward_only", "rationale":"Reviewed the sealed changes"});
+        let parsed: ProjectApproveInput = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(parsed.strategy, ProjectIntegrationStrategy::FastForwardOnly);
+        assert!(parsed.acknowledged_violations.is_empty());
+        for key in ["reviewed", "strategy", "rationale"] {
+            let mut missing = input.clone();
+            missing.as_object_mut().unwrap().remove(key);
+            assert!(serde_json::from_value::<ProjectApproveInput>(missing).is_err());
+        }
+        for key in ["owner", "actor", "authorized", "execution_grant"] {
+            let mut forged = input.clone();
+            forged[key] = json!("other");
+            assert!(serde_json::from_value::<ProjectApproveInput>(forged).is_err());
+            let mut forged = input.clone();
+            forged["reviewed"][key] = json!("other");
+            assert!(serde_json::from_value::<ProjectApproveInput>(forged).is_err());
+        }
+        for key in [
+            "attempt_id",
+            "environment_generation",
+            "evidence_id",
+            "evidence_digest",
+            "baseline_oid",
+            "reviewed_head_oid",
+            "expected_base_oid",
+        ] {
+            let mut missing = input.clone();
+            missing["reviewed"].as_object_mut().unwrap().remove(key);
+            assert!(serde_json::from_value::<ProjectApproveInput>(missing).is_err());
+        }
+        assert!(serde_json::from_value::<ProjectApplyInput>(json!({"work_id":"work-1"})).is_err());
+        assert!(
+            serde_json::from_value::<ProjectIntegrationStrategy>(json!("merge_whatever")).is_err()
+        );
+    }
 }

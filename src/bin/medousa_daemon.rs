@@ -1001,6 +1001,7 @@ async fn start_daemon() -> Result<()> {
         )
         .merge(medousa::daemon::coding_engine_host::coding_engine_surface())
         .merge(medousa::daemon::shell_session_host::shell_session_surface())
+        .merge(medousa::daemon::ssh::surface().with_state(()))
         .merge(medousa::daemon::external_conversations::surface())
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
@@ -1126,6 +1127,15 @@ async fn start_daemon() -> Result<()> {
     .await
     {
         tracing::warn!(%error, "work domain registry unavailable; chat remains active");
+    }
+    if let Err(error) = medousa::daemon::ssh::compose(
+        state.forge_execution.clone(),
+        medousa::paths::medousa_data_dir().join("ssh"),
+        state.shell_sessions.clone().unwrap_or_default(),
+    )
+    .await
+    {
+        tracing::warn!(%error, "SSH connections unavailable; chat remains active");
     }
     let _coordination_host = match medousa::daemon::coordination::start_local_coordination_host(
         state.clone(),

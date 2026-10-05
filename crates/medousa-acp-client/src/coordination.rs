@@ -860,7 +860,51 @@ mod tests {
     }
 
     #[test]
-    fn dispatched_proposals_remain_until_the_terminal_receipt() {
+    fn unsuccessful_handoffs_restore_their_saved_outcome() {
+        use medousa_types::coordination::*;
+        for outcome in [
+            PeerAssignmentOutcome::Failed,
+            PeerAssignmentOutcome::Cancelled,
+            PeerAssignmentOutcome::Interrupted,
+        ] {
+            let (temp, store, request) = persisted_fixture();
+            let mut proposal = PeerAssignmentProposal {
+                proposal_id: String::new(),
+                request: request.clone(),
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                continue_owner: false,
+            };
+            proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+            store.record_proposal(&proposal).unwrap();
+            store.claim_assignment(&request).unwrap();
+            let binding = ExternalPeerAssignmentBinding {
+                assignment_id: request.assignment_id.clone(),
+                owner_principal_id: request.owner_principal_id.clone(),
+                channel: request.channel.clone(),
+                target: request.target.clone(),
+                execution_session: request.execution_session.clone(),
+                agent_session_id: "accepted-peer".into(),
+            };
+            store.record_peer(&binding).unwrap();
+            let receipt = ExternalPeerAssignmentReceipt {
+                receipt_id: store::intake::terminal_receipt_id(&binding),
+                binding,
+                outcome,
+                result: "Saved terminal details".into(),
+            };
+            store.record_receipt(&receipt).unwrap();
+            drop(store);
+            let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+            let inbox = reopened
+                .proposal_inbox(&request.owner_principal_id, &request.owner_session, None)
+                .unwrap();
+            assert_eq!(inbox.len(), 1);
+            assert_eq!(inbox[0].receipt.as_ref(), Some(&receipt));
+        }
+    }
+
+    #[test]
+    fn dispatched_proposals_restore_terminal_history_without_a_selected_id() {
         use medousa_types::coordination::*;
         let (_temp, store, request) = persisted_fixture();
         let mut proposal = PeerAssignmentProposal {
@@ -901,12 +945,11 @@ mod tests {
                 result: "done".into(),
             })
             .unwrap();
-        assert!(
-            store
-                .proposal_inbox(&request.owner_principal_id, &request.owner_session, None)
-                .unwrap()
-                .is_empty()
-        );
+        let inbox = store
+            .proposal_inbox(&request.owner_principal_id, &request.owner_session, None)
+            .unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].receipt.as_ref().unwrap().result, "done");
         let tracked = store
             .tracked_proposal_for_session(
                 &request.owner_principal_id,
@@ -953,6 +996,22 @@ mod tests {
                 .is_none()
         );
         let reopened = store::CoordinationStore::open(_temp.path()).unwrap();
+        let restored = reopened
+            .proposal_inbox(&request.owner_principal_id, &request.owner_session, None)
+            .unwrap();
+        assert_eq!(restored, inbox);
+        assert!(
+            reopened
+                .proposal_inbox("user:mallory", &request.owner_session, None)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            reopened
+                .proposal_inbox(&request.owner_principal_id, &foreign, None)
+                .unwrap()
+                .is_empty()
+        );
         assert!(
             reopened
                 .tracked_proposal_for_session(

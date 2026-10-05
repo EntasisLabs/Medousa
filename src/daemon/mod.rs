@@ -32,6 +32,7 @@ pub mod router;
 pub mod runtime_tui_defaults;
 pub mod shared_mode;
 pub mod shell_session_host;
+pub mod ssh;
 pub mod state;
 pub mod storage_governor;
 pub mod turn_event_channel;

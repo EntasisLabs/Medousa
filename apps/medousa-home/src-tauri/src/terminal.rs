@@ -13,15 +13,15 @@ use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{mpsc, Notify};
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream,
     connect_async,
     tungstenite::{
-        Message,
         client::IntoClientRequest,
-        http::{HeaderValue, header::AUTHORIZATION},
+        http::{header::AUTHORIZATION, HeaderValue},
+        Message,
     },
+    MaybeTlsStream, WebSocketStream,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -48,6 +48,8 @@ pub struct TerminalSessionSummary {
     pub cwd: String,
     pub root_kind: String,
     pub work_id: Option<String>,
+    #[serde(default)]
+    pub argv: Vec<String>,
     #[serde(default)]
     pub workspace_context: Option<serde_json::Value>,
     #[serde(default)]
@@ -126,11 +128,7 @@ pub(crate) async fn connect_authenticated_ws_for_runtime(
     let config = crate::pairing_client::ensure_fresh_session(&base_config)
         .await
         .unwrap_or(base_config);
-    let request = ws_request_with_bearer(
-        &config.lan_base,
-        path,
-        config.session_token.as_deref(),
-    )?;
+    let request = ws_request_with_bearer(&config.lan_base, path, config.session_token.as_deref())?;
     match connect_async(request).await {
         Ok((websocket, _)) => Ok(websocket),
         Err(error) if websocket_unauthorized(&error) && !config.pairing_id.trim().is_empty() => {
@@ -608,4 +606,49 @@ mod tests {
         );
         assert!(!request.uri().to_string().contains("home-secret"));
     }
+}
+
+/// SSH setup follows the connected workshop, even when a Coder worker is selected.
+#[tauri::command]
+pub async fn ssh_targets(state: State<'_, DaemonState>) -> Result<serde_json::Value, String> {
+    daemon_get(&state, "/v1/ssh/targets", None).await
+}
+#[tauri::command]
+pub async fn ssh_action(
+    state: State<'_, DaemonState>,
+    action: String,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let path = match action.as_str() {
+        "inspect" => "/v1/ssh/inspect",
+        "save" => "/v1/ssh/targets",
+        "test" => "/v1/ssh/test",
+        "terminal" => "/v1/ssh/terminal",
+        _ => return Err("Unknown SSH setup action".into()),
+    };
+    daemon_post(&state, path, &input, None).await
+}
+#[tauri::command]
+pub async fn ssh_set_access(
+    state: State<'_, DaemonState>,
+    target_id: String,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    daemon_post(
+        &state,
+        &format!("/v1/ssh/targets/{}/access", urlencoding::encode(&target_id)),
+        &serde_json::json!({"enabled": enabled}),
+        None,
+    )
+    .await
+}
+#[tauri::command]
+pub async fn ssh_remove(state: State<'_, DaemonState>, target_id: String) -> Result<(), String> {
+    let config = terminal_transport_config(&state, None)?;
+    crate::workshop_transport::workshop_delete_json::<serde_json::Value>(
+        &config,
+        &format!("/v1/ssh/targets/{}", urlencoding::encode(&target_id)),
+    )
+    .await?;
+    Ok(())
 }

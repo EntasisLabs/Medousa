@@ -594,6 +594,31 @@ pub async fn create_project_task_session(
         })
 }
 
+pub async fn create_ssh_session(
+    host: &ShellSessionHost,
+    cwd: &std::path::Path,
+    argv: &[String],
+) -> Result<String, (axum::http::StatusCode, String)> {
+    let response = proxy_shell_host(
+        host,
+        "POST",
+        "/v1/sessions/shell",
+        Some(serde_json::json!({
+            "cwd": cwd, "argv": argv, "cols": 100, "rows": 30,
+        })),
+    )
+    .await?;
+    response
+        .0
+        .get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .ok_or((
+            axum::http::StatusCode::BAD_GATEWAY,
+            "SSH terminal did not return a session id".into(),
+        ))
+}
+
 pub async fn signal_project_task_session(
     state: &AppState,
     session_id: &str,
@@ -630,7 +655,16 @@ async fn proxy_http(
     body: Option<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
     let host = state.shell_sessions.clone().unwrap_or_default();
-    let info = wait_for_shell_session_host(&host).await;
+    proxy_shell_host(&host, method, path, body).await
+}
+
+async fn proxy_shell_host(
+    host: &ShellSessionHost,
+    method: &str,
+    path: &str,
+    body: Option<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let info = wait_for_shell_session_host(host).await;
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }

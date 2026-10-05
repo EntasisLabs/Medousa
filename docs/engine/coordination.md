@@ -121,10 +121,18 @@ serializes callbacks with other callbacks targeting the sender session and
 waits while an interactive turn is active. If completion overtakes acceptance,
 the terminal callback supersedes the stale starting message. Callback admission
 rechecks grants, owner/source visibility, pinned context and originating Bot.
-It allows at most two tool rounds for discovery, preparing a proposal and
-recording sender review, without another launch. Started attempts reconcile
+Callbacks resume the sender's normal Assistant tool surface, including the full
+`cognition_turn` controls, and use its normal turn budget. They do not impose a
+callback-specific allowlist or two-round limit. Existing Bot policies, work
+scope, permissions and contact preferences still apply; event data is evidence,
+not new user authority. Started attempts reconcile
 against their exact canonical ticket/transcript after restart; uncertain turns
 are never launched again. Rejected admissions have a bounded retry budget.
+
+If a callback fails after producing text or tool activity, its typed timeline is
+saved with `answer_state=failed` before terminal publication. Home restores that
+activity and failure state on refresh. Failed activity cannot acknowledge a
+callback as successfully delivered after restart.
 
 A handoff requiring review remains `awaiting_sender_review` until the originating
 sender calls `cognition_peer_review` with the exact `channel`, `assignment_id`,
@@ -161,6 +169,11 @@ Medousa Coder uses a dedicated native turn and Forge lease through the same
 immutable assignment, approval, claim, and receipt contracts as external peers.
 Its turn correlation is persisted before admission. Native Coder tools recheck
 the exact grant, source visibility, project ownership, and registered work scope.
+When admitted Coder work takes over a workspace held by the project UI's human
+executor, the runtime interrupts that human lease in both isolated worktrees and
+attached checkouts. The same workspace and existing edits are preserved. Other
+Coder leases remain governed by shared-space coordination; active external
+executors retain exclusive custody and block takeover with an actionable error.
 Checkpointed and input-needed turns are interrupted receipts, not completion.
 Native peer assignments currently execute in their admitted Coder turn; child
 worker spawning is denied until those workers can inherit the exact grant.
@@ -249,19 +262,21 @@ destination daemon, not the caller. Approval cannot be reversed into denial or
 vice versa. A revised proposal requires a new assignment identity.
 
 Inbox pages contain at most eight proposal/decision records and one MiB of JSON.
-Denied assignments leave this inbox. Recorded custody remains visible to the
-owner as active work until its terminal receipt arrives. Each indexed proposal is
+Denied assignments leave this inbox. Recorded custody and terminal receipts stay
+in the originating chat's history, including completed, failed, cancelled, and
+interrupted work. Reopening the chat retrieves these persisted records without
+requiring a remembered selection. Each indexed proposal is
 validated against its immutable snapshot and current channel owner. Source
 visibility is fully rechecked on approval and dispatch, not inferred from channel
 membership. Corruption or exceeded scan budgets fail closed. The index is
 create-only; an interrupted index write is repaired by exact proposal replay.
 
 The optional `selected_proposal_id` returns an owner/session-scoped
-`tracked_proposal` independently of the pending page and its cursor. This
-projection retains custody and the immutable terminal receipt after local work
-leaves the pending inbox. An unrelated session, owner, or unassociated source
+`tracked_proposal` independently of the history page and its cursor. This
+projection keeps the selected assignment visible when paging through other
+requests. An unrelated session, owner, or unassociated source
 shadow cannot inspect it. Selecting an assignment grants no execution authority.
-The pending page keeps its one-MiB budget; the combined response with progress
+The history page keeps its one-MiB budget; the combined response with progress
 and the extra selected record is capped at two MiB.
 
 Assigned records may include an optional `progress` observation with

@@ -314,17 +314,36 @@ async fn prepare_worker_coder(
             project.repo_id
         )));
     }
-    super::super::daemon_interactive_turn::prepare_attached_native_coder_handoff(
-        forge.as_ref(),
-        &work_id,
-        &record.session_id,
-        &record.work_id,
-    )
-    .map_err(|error| {
-        stasis::prelude::StasisError::PortFailure(format!(
-            "cannot hand the destination checkout to Coder: {error}"
-        ))
+    let admission = forge.execution().ok_or_else(|| {
+        stasis::prelude::StasisError::PortFailure(
+            "destination Coder project has no Forge execution admission".into(),
+        )
     })?;
+    admission
+        .run(
+            medousa_forge::execution::ExecutionClass::StoreIo,
+            64 * 1024,
+            {
+                let forge = forge.clone();
+                let work_id = work_id.clone();
+                let session_id = record.session_id.clone();
+                let turn_id = record.work_id.clone();
+                move || {
+                    super::super::daemon_interactive_turn::prepare_native_coder_handoff(
+                        &forge,
+                        &work_id,
+                        &session_id,
+                        &turn_id,
+                    )
+                }
+            },
+        )
+        .await
+        .map_err(|error| {
+            stasis::prelude::StasisError::PortFailure(format!(
+                "cannot hand the destination workspace to Coder: {error}"
+            ))
+        })?;
     let executor = medousa_forge::model::ExecutorDescriptor {
         kind: "medousa-coder".to_string(),
         detail: json!({

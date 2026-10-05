@@ -643,7 +643,11 @@ pub async fn finalize_coder_memory_lineage(
         .cloned()
         .collect::<Vec<_>>();
     environments.reverse();
+    let execution = forge
+        .execution()
+        .unwrap_or_else(|| Arc::new(medousa_forge::execution::ForgeExecutionService::new()));
     let archive_futures = environments.into_iter().map(|environment| {
+        let execution = execution.clone();
         let registry = registry.clone();
         let forge = forge.clone();
         let work_id = item.id.to_string();
@@ -656,9 +660,14 @@ pub async fn finalize_coder_memory_lineage(
                 &environment.branch,
                 environment.generation,
             );
-            let current_head = forge
-                .git()
-                .head_oid(&environment.worktree)
+            let head_worktree = environment.worktree.clone();
+            let current_head = execution
+                .run(
+                    medousa_forge::execution::ExecutionClass::Observation,
+                    16 * 1024,
+                    move || forge.git().head_oid(&head_worktree),
+                )
+                .await
                 .map(|head| head.to_string())
                 .unwrap_or_else(|_| environment.baseline_oid.to_string());
             let identity = CoderAgentIdentity::for_turn(

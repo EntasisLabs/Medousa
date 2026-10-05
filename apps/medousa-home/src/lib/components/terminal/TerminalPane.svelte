@@ -265,7 +265,7 @@
       provideLinks(bufferLineNumber, callback) {
         const active = terminal?.buffer.active;
         const line = active?.getLine(bufferLineNumber - 1);
-        if (!line || !terminal) {
+        if (!line || !terminal || currentSession?.argv?.[0] === "ssh") {
           callback(undefined);
           return;
         }

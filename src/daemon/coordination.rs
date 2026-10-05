@@ -37,6 +37,7 @@ pub mod http;
 mod owner_intake;
 mod progress;
 mod proposals;
+mod project_lifecycle;
 pub use host::{local_coordination_host, start_local_coordination_host};
 pub use owner_intake::OwnerIntakeResult;
 

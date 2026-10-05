@@ -27,6 +27,20 @@ Integrator contract: [interactive-streaming.md](../engine/interactive-streaming.
 
 Transport: `daemon/sdk.rs` → `medousa-sdk-iroh` for JSON; SSE bytes may still use legacy workshop helpers for `interactive_stream_start`.
 
+Native Iroh handshakes try direct and relayed paths without waiting for
+`Endpoint::online()` first; that relay-only readiness check remains browser-only.
+A failed handshake notifies Iroh of a possible network change and retries once
+before any HTTP request bytes are sent. Foreground route invalidation also
+notifies the cached endpoint. Transport failures invalidate the selected route;
+GET requests may retry over reachable LAN, while writes are not replayed from
+Iroh onto LAN.
+
+An initial or foreground health failure has a separate backoff recovery owner,
+because startup can fail before any SSE pipe exists. Recovery pauses while the
+document is hidden and is cancelled by workshop switching or shell teardown.
+Successful recovery refreshes projections and streams without clearing drafts
+or unsaved notes.
+
 ---
 
 ## Reconnect discipline

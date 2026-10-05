@@ -36437,6 +36437,379 @@
         }
       }
     },
+    "/v1/ssh/inspect": {
+      "post": {
+        "operationId": "ssh.inspect.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_INSPECT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.inspect.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.inspect.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.inspect.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/targets": {
+      "get": {
+        "operationId": "ssh.targets.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TARGETS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.targets.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "post": {
+        "operationId": "ssh.targets.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TARGETS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.targets.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/targets/{id}": {
+      "delete": {
+        "operationId": "ssh.targets.by_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TARGETS_BY_ID_DELETEResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/targets/{id}/access": {
+      "post": {
+        "operationId": "ssh.targets.by_id.access.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TARGETS_BY_ID_ACCESS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.access.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.access.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.targets.by_id.access.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/terminal": {
+      "post": {
+        "operationId": "ssh.terminal.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TERMINAL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.terminal.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.terminal.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.terminal.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/ssh/test": {
+      "post": {
+        "operationId": "ssh.test.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SSH_TEST_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "ssh.test.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.test.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "ssh.test.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/stats": {
       "get": {
         "operationId": "stats.get",

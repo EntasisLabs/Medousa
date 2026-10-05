@@ -148,6 +148,7 @@ pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEve
         },
         "error" => TurnEvent::Error {
             message: event.message.clone(),
+            turn: None,
         },
         _ => stream_mirror_from_event(event),
     }
@@ -340,7 +341,7 @@ pub fn sequenced_to_v2(sequenced: &SequencedTurnEvent) -> Result<TurnStreamEnvel
             title: title.clone(),
             opened_by_agent: *opened_by_agent,
         },
-        TurnEvent::Error { message } => TurnStreamEventV2::Error {
+        TurnEvent::Error { message, .. } => TurnStreamEventV2::Error {
             operator_message: message.clone(),
             debug_message: None,
         },
@@ -697,6 +698,7 @@ pub fn journal_turn_event_for_v3(envelope: &TurnStreamEnvelopeV3) -> TurnEvent {
                 message: operator_message
                     .clone()
                     .unwrap_or_else(|| "turn did not complete".to_string()),
+                turn: None,
             },
         },
         TurnStreamEventV3::Reaction { reaction } => {
@@ -860,7 +862,7 @@ fn typed_turn_event_to_stream(
             base.message = message.clone();
             base.debug_message = Some(message.clone());
         }
-        TurnEvent::Error { message } => {
+        TurnEvent::Error { message, .. } => {
             base.event_type = "error".to_string();
             base.phase = "failed".to_string();
             base.message = message.clone();
@@ -1542,6 +1544,7 @@ pub fn journal_turn_event_for_v2(envelope: &TurnStreamEnvelopeV2) -> TurnEvent {
             operator_message, ..
         } => TurnEvent::Error {
             message: operator_message.clone(),
+            turn: None,
         },
         _ => journal_turn_event_for_stream(&v2_to_v1(envelope), None),
     }

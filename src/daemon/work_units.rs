@@ -27,6 +27,8 @@ pub mod participant;
 mod peer_coordination;
 mod provider_dispatch;
 mod provider_events;
+mod project_lifecycle;
+pub use project_lifecycle::ProjectLifecycleMutation;
 pub use native_content::WorkContentResolveInput;
 pub use native_project::{WorkProjectCreateInput, WorkProjectResolveInput};
 pub use native_vault::{WorkNativeReconcileInput, WorkNativeResolveInput};

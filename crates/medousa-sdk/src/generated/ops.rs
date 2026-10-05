@@ -2893,6 +2893,55 @@ pub const SHELL_SESSIONS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const SSH_INSPECT_POST: Operation = Operation {
+    id: "ssh.inspect.post",
+    method: "POST",
+    path: "/v1/ssh/inspect",
+    streaming: false,
+};
+
+pub const SSH_TARGETS_BY_ID_ACCESS_POST: Operation = Operation {
+    id: "ssh.targets.by_id.access.post",
+    method: "POST",
+    path: "/v1/ssh/targets/{id}/access",
+    streaming: false,
+};
+
+pub const SSH_TARGETS_BY_ID_DELETE: Operation = Operation {
+    id: "ssh.targets.by_id.delete",
+    method: "DELETE",
+    path: "/v1/ssh/targets/{id}",
+    streaming: false,
+};
+
+pub const SSH_TARGETS_GET: Operation = Operation {
+    id: "ssh.targets.get",
+    method: "GET",
+    path: "/v1/ssh/targets",
+    streaming: false,
+};
+
+pub const SSH_TARGETS_POST: Operation = Operation {
+    id: "ssh.targets.post",
+    method: "POST",
+    path: "/v1/ssh/targets",
+    streaming: false,
+};
+
+pub const SSH_TERMINAL_POST: Operation = Operation {
+    id: "ssh.terminal.post",
+    method: "POST",
+    path: "/v1/ssh/terminal",
+    streaming: false,
+};
+
+pub const SSH_TEST_POST: Operation = Operation {
+    id: "ssh.test.post",
+    method: "POST",
+    path: "/v1/ssh/test",
+    streaming: false,
+};
+
 pub const STATS_GET: Operation = Operation {
     id: "stats.get",
     method: "GET",
@@ -3817,6 +3866,13 @@ pub static ALL: &[Operation] = &[
     SHARED_MODE_GET,
     SHARED_MODE_PUT,
     SHELL_SESSIONS_GET,
+    SSH_INSPECT_POST,
+    SSH_TARGETS_BY_ID_ACCESS_POST,
+    SSH_TARGETS_BY_ID_DELETE,
+    SSH_TARGETS_GET,
+    SSH_TARGETS_POST,
+    SSH_TERMINAL_POST,
+    SSH_TEST_POST,
     STATS_GET,
     STT_STATUS_GET,
     STT_TRANSCRIBE_POST,
