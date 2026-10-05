@@ -369,10 +369,7 @@ impl SessionManager {
     fn session_cwd(&self, cwd: Option<PathBuf>) -> anyhow::Result<PathBuf> {
         match cwd {
             Some(cwd) => Ok(cwd),
-            None => {
-                std::fs::create_dir_all(&self.default_workspace)?;
-                Ok(self.default_workspace.clone())
-            }
+            None => confined_workspace(&self.default_workspace),
         }
     }
 
@@ -417,6 +414,58 @@ impl SessionManager {
         }
         count
     }
+}
+
+fn confined_workspace(requested: &std::path::Path) -> anyhow::Result<PathBuf> {
+    if let Ok(existing) = requested.canonicalize() {
+        if existing.is_dir() {
+            return Ok(existing);
+        }
+        anyhow::bail!(
+            "session workspace must be a directory ({})",
+            existing.display()
+        );
+    }
+    let mut cursor = requested.to_path_buf();
+    let mut missing = Vec::new();
+    let ancestor = loop {
+        match cursor.canonicalize() {
+            Ok(canon) => break canon,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let component = cursor
+                    .file_name()
+                    .ok_or_else(|| anyhow::anyhow!("session workspace path has no parent"))?;
+                missing.push(component.to_os_string());
+                cursor = cursor
+                    .parent()
+                    .ok_or_else(|| anyhow::anyhow!("session workspace path has no parent"))?
+                    .to_path_buf();
+            }
+            Err(error) => return Err(error.into()),
+        }
+    };
+    missing.reverse();
+    let mut workspace = ancestor.clone();
+    for component in missing {
+        let component = component.to_string_lossy();
+        if component.is_empty()
+            || component == "."
+            || component == ".."
+            || component.contains('/')
+            || component.contains('\\')
+        {
+            anyhow::bail!("session workspace path contains an invalid component");
+        }
+        workspace.push(component.as_ref());
+        if !workspace.starts_with(&ancestor) {
+            anyhow::bail!("session workspace path escapes its directory");
+        }
+    }
+    if !workspace.starts_with(&ancestor) {
+        anyhow::bail!("session workspace path escapes its directory");
+    }
+    std::fs::create_dir_all(&workspace)?;
+    Ok(workspace)
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "notes": "FRONT-001 regression ceilings for kit.output.bundleStrategy=single (one packaged client JS/CSS payload). Platform shell isolation is enforced by source-level H09 tests, not chunk walks. 2026-10-05: 0.11.0 undertakings, companions, and SSH-target UI landed in that single packaged payload (JS 12923967→13094840, gzip 3708625→3761184, CSS 1477979→1487156, CSS gzip 200638→202731), including the DOMPurify 3.4.16 bump.",
+  "notes": "FRONT-001 regression ceilings for kit.output.bundleStrategy=single (one packaged client JS/CSS payload). Platform shell isolation is enforced by source-level H09 tests, not chunk walks. 2026-10-05: 0.11.0 undertakings, companions, and SSH-target UI landed in that single packaged payload (local JS 13094840). GitHub Actions run 37322929441 measured desktop.jsBytes 13094845, five bytes above that local build. Ceilings sit 256 bytes above the higher measurement so runner drift does not fail the ratchet.",
   "manifest": ".svelte-kit/output/client/.vite/manifest.json",
   "bundleStrategy": "single",
   "ceilings": {
@@ -8,21 +8,21 @@
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 13094840,
-      "jsGzipBytes": 3761184,
-      "cssBytes": 1487156,
-      "cssGzipBytes": 202731,
-      "largestJsChunkBytes": 13094840
+      "jsBytes": 13095101,
+      "jsGzipBytes": 3761440,
+      "cssBytes": 1487412,
+      "cssGzipBytes": 202987,
+      "largestJsChunkBytes": 13095101
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 13094840,
-      "jsGzipBytes": 3761184,
-      "cssBytes": 1487156,
-      "cssGzipBytes": 202731,
-      "largestJsChunkBytes": 13094840
+      "jsBytes": 13095101,
+      "jsGzipBytes": 3761440,
+      "cssBytes": 1487412,
+      "cssGzipBytes": 202987,
+      "largestJsChunkBytes": 13095101
     }
   },
   "measured": {

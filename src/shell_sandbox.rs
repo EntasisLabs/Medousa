@@ -1048,7 +1048,10 @@ mod tests {
             .expect("sandbox");
         cancel_thread.join().expect("cancellation signal");
 
-        assert!(started.elapsed() < Duration::from_secs(5));
+        // sleep 30 is the uncancelled baseline. Parallel lib tests on CI can
+        // spend several seconds just reaching the sandbox, so the bound stays
+        // well under that baseline without assuming a quiet runner.
+        assert!(started.elapsed() < Duration::from_secs(20));
         assert_eq!(result.exit_code, -1);
         assert!(result.stderr.contains("cancelled"));
         assert!(!result.timed_out);

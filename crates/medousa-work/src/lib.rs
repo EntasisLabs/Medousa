@@ -17,6 +17,22 @@ use medousa_types::work_unit::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+fn lock_exclusive_briefly(file: &std::fs::File) -> std::io::Result<()> {
+    let started = std::time::Instant::now();
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    && started.elapsed() < std::time::Duration::from_millis(500) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 mod budget;
 mod coordinator;
 mod coordinator_wakes;
@@ -259,7 +275,7 @@ impl WorkGraphStore {
             .transaction
             .root()
             .open_lock_file(&Self::path(domain, "lock")?)?;
-        lock.try_lock_exclusive().map_err(|e| {
+        lock_exclusive_briefly(&lock).map_err(|e| {
             error(
                 if e.kind() == std::io::ErrorKind::WouldBlock {
                     PersistenceErrorKind::Overloaded

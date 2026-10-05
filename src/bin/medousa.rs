@@ -1454,25 +1454,10 @@ fn run_doctor(args: &[String]) -> Result<()> {
             "disabled"
         }
     );
+    println!("slack_allow_user_ids=(not shown)");
     println!(
-        "slack_allow_user_ids={}",
-        if product_config.slack.allowed_user_ids.is_empty() {
-            "(all users)".to_string()
-        } else {
-            format!("{} configured", product_config.slack.allowed_user_ids.len())
-        }
-    );
-    println!(
-        "whatsapp_deliver_bind={} whatsapp_allow_user_ids={}",
+        "whatsapp_deliver_bind={} whatsapp_allow_user_ids=(not shown)",
         product_config.whatsapp.deliver_bind,
-        if product_config.whatsapp.allowed_user_ids.is_empty() {
-            "(all users)".to_string()
-        } else {
-            format!(
-                "{} configured",
-                product_config.whatsapp.allowed_user_ids.len()
-            )
-        }
     );
     let whatsapp_session_db = product_config
         .whatsapp

@@ -66,6 +66,22 @@ pub(crate) struct VaultIdentityTransaction<'a> {
     publication_failed: Cell<bool>,
 }
 
+fn lock_exclusive_briefly(file: &File) -> std::io::Result<()> {
+    let started = std::time::Instant::now();
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    && started.elapsed() < std::time::Duration::from_millis(500) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 fn store_path(name: &str) -> Result<StorePath, VaultMutationError> {
     StorePath::parse(&format!(".medousa/vault/resource-identities.{name}"))
         .map_err(|e| VaultMutationError::Invalid(e.to_string()))
@@ -117,7 +133,7 @@ impl<'a> VaultIdentityTransaction<'a> {
             return Err(VaultMutationError::Invalid("vault owner is retired".into()));
         }
         let lock = owner.files.open_lock_file(&store_path("lock")?)?;
-        lock.try_lock_exclusive().map_err(|e| {
+        lock_exclusive_briefly(&lock).map_err(|e| {
             if e.kind() == std::io::ErrorKind::WouldBlock {
                 VaultMutationError::Overloaded
             } else {

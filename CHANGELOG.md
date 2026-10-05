@@ -62,8 +62,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - **Stasis 0.13.0** — the runtime pin moves from 0.12.0, with `locus-sdk` 0.5.0.
   `locus-core-rs` stays 0.5.1.
 - Identity profile commands print the active profile id and display name. They
-  no longer echo the resolved user id. Slack and WhatsApp allow-list status
-  reports how many users are configured.
+  no longer echo the resolved user id. Slack and WhatsApp status lines do not
+  print allow-list user ids.
 
 ### Fixed
 
