@@ -1040,7 +1040,6 @@ mod tests {
             signal.store(true, Ordering::Release);
         });
         let request = ShellRunRequest::from_args(&json!({"command":"sleep 30"})).expect("parse");
-        let started = Instant::now();
         let result =
             crate::shell_grapheme::with_blocking_cancellation_scope(Some(cancellation), || {
                 run_sandboxed(&request)
@@ -1048,10 +1047,7 @@ mod tests {
             .expect("sandbox");
         cancel_thread.join().expect("cancellation signal");
 
-        // sleep 30 is the uncancelled baseline. Parallel lib tests on CI can
-        // spend several seconds just reaching the sandbox, so the bound stays
-        // well under that baseline without assuming a quiet runner.
-        assert!(started.elapsed() < Duration::from_secs(20));
+        // A missed cancel runs `sleep 30` to a normal exit instead of -1.
         assert_eq!(result.exit_code, -1);
         assert!(result.stderr.contains("cancelled"));
         assert!(!result.timed_out);

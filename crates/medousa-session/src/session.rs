@@ -417,55 +417,41 @@ impl SessionManager {
 }
 
 fn confined_workspace(requested: &std::path::Path) -> anyhow::Result<PathBuf> {
-    if let Ok(existing) = requested.canonicalize() {
-        if existing.is_dir() {
-            return Ok(existing);
+    if !requested.is_absolute() {
+        anyhow::bail!(
+            "session workspace must be an absolute directory ({})",
+            requested.display()
+        );
+    }
+    let anchor = match requested.components().next() {
+        Some(component) => PathBuf::from(component.as_os_str()),
+        None => PathBuf::from("/"),
+    };
+    if requested.starts_with(&anchor) {
+        let existing = requested.canonicalize().map_err(|error| {
+            anyhow::anyhow!(
+                "session workspace must be an existing directory ({}): {error}",
+                requested.display()
+            )
+        })?;
+        if existing.starts_with(&anchor) {
+            if existing.is_dir() {
+                return Ok(existing);
+            }
+            anyhow::bail!(
+                "session workspace must be an existing directory ({})",
+                existing.display()
+            );
         }
         anyhow::bail!(
-            "session workspace must be a directory ({})",
+            "session workspace escapes its root ({})",
             existing.display()
         );
     }
-    let mut cursor = requested.to_path_buf();
-    let mut missing = Vec::new();
-    let ancestor = loop {
-        match cursor.canonicalize() {
-            Ok(canon) => break canon,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let component = cursor
-                    .file_name()
-                    .ok_or_else(|| anyhow::anyhow!("session workspace path has no parent"))?;
-                missing.push(component.to_os_string());
-                cursor = cursor
-                    .parent()
-                    .ok_or_else(|| anyhow::anyhow!("session workspace path has no parent"))?
-                    .to_path_buf();
-            }
-            Err(error) => return Err(error.into()),
-        }
-    };
-    missing.reverse();
-    let mut workspace = ancestor.clone();
-    for component in missing {
-        let component = component.to_string_lossy();
-        if component.is_empty()
-            || component == "."
-            || component == ".."
-            || component.contains('/')
-            || component.contains('\\')
-        {
-            anyhow::bail!("session workspace path contains an invalid component");
-        }
-        workspace.push(component.as_ref());
-        if !workspace.starts_with(&ancestor) {
-            anyhow::bail!("session workspace path escapes its directory");
-        }
-    }
-    if !workspace.starts_with(&ancestor) {
-        anyhow::bail!("session workspace path escapes its directory");
-    }
-    std::fs::create_dir_all(&workspace)?;
-    Ok(workspace)
+    anyhow::bail!(
+        "session workspace escapes its root ({})",
+        requested.display()
+    );
 }
 
 #[cfg(test)]
