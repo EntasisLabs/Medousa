@@ -33,6 +33,22 @@ pub(super) struct ProjectRegistry {
 fn path(extension: &str) -> Result<StorePath> {
     Ok(StorePath::parse(&format!("resource-projects.{extension}"))?)
 }
+
+fn lock_exclusive_briefly(file: &std::fs::File) -> std::io::Result<()> {
+    let started = std::time::Instant::now();
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    && started.elapsed() < std::time::Duration::from_millis(500) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
 fn nonce() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
@@ -46,7 +62,7 @@ impl ProjectRegistry {
     pub(super) fn open(forge: &Forge) -> Result<Self> {
         let root = forge.store().store_root_arc().clone();
         let lock = root.open_lock_file(&path("lock")?)?;
-        lock.try_lock_exclusive()
+        lock_exclusive_briefly(&lock)
             .map_err(|e| anyhow::anyhow!("project identity custody unavailable: {e}"))?;
         let root_file = VaultFileIdentity::from(root.root_metadata()?);
         let snapshot = match root.read_limited(&path("json")?, MAX_SNAPSHOT_BYTES as u64) {
