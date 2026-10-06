@@ -1,0 +1,38 @@
+/** Live editor list indentation, paragraph rhythm, and folding controls. */
+@layer features {
+  /* Keep list controls in the marker gutter, without shifting the text line. */
+  .vault-live-fold-btn--list-item {
+    position: absolute;
+    inset-inline-start: -2.5rem;
+    top: 0.3em;
+    margin: 0;
+  }
+
+  .vault-live-prose ul {
+    @apply list-disc list-outside mb-3;
+    padding-inline-start: 2rem;
+  }
+
+  .vault-live-prose ol {
+    @apply list-decimal list-outside mb-3;
+    padding-inline-start: 2rem;
+  }
+
+  .vault-live-prose li {
+    margin-block: 0.25rem;
+  }
+
+  .vault-live-prose li > p:first-child {
+    position: relative;
+    margin-block: 0;
+  }
+
+  .vault-live-prose li > ul,
+  .vault-live-prose li > ol {
+    margin-block: 0.25rem;
+  }
+
+  .vault-live-prose li > p + p {
+    margin-block: 0.5rem;
+  }
+}

@@ -35,7 +35,8 @@ export function listItemFoldEnd(doc: EditorState["doc"], itemPos: number): numbe
   const node = doc.nodeAt(itemPos);
   if (!node || node.type.name !== "listItem") return null;
   if (node.childCount <= 1) return null;
-  return itemPos + node.nodeSize;
+  // Exclude the item closing token; the item itself must remain visible.
+  return itemPos + node.nodeSize - 1;
 }
 
 function foldBodyRange(
@@ -90,14 +91,19 @@ function buildDecorations(state: EditorState): DecorationSet {
     if (isInsideHidden(pos)) return true;
 
     const headingPos = pos;
+    // Lists are block containers. Put their widget *inside* the first paragraph,
+    // not between the item and paragraph (which adds a separate visual line).
+    const widgetOffset = isListItem ? 2 : 1;
     const isFolded = folded.has(headingPos);
     decos.push(
       Decoration.widget(
-        headingPos + 1,
+        headingPos + widgetOffset,
         (view, getPos) => {
           const el = document.createElement("button");
           el.type = "button";
-          el.className = "vault-live-fold-btn";
+          el.className = isListItem
+            ? "vault-live-fold-btn vault-live-fold-btn--list-item"
+            : "vault-live-fold-btn";
           el.setAttribute("aria-label", isFolded ? "Expand section" : "Collapse section");
           el.setAttribute("aria-expanded", isFolded ? "false" : "true");
           // Dash = collapsed; chevron down = open/expanded.
@@ -110,9 +116,9 @@ function buildDecorations(state: EditorState): DecorationSet {
             event.preventDefault();
             event.stopPropagation();
             const widgetPos = typeof getPos === "function" ? getPos() : null;
-            // Widget sits at headingPos + 1.
+            // Resolve the current item from the mapped inline widget position.
             const target =
-              typeof widgetPos === "number" ? widgetPos - 1 : headingPos;
+              typeof widgetPos === "number" ? widgetPos - widgetOffset : headingPos;
             if (target < 0) return;
             view.dispatch(toggleFold(view.state, target));
           });
@@ -129,14 +135,21 @@ function buildDecorations(state: EditorState): DecorationSet {
     if (!range || range.from >= range.to) return true;
 
     state.doc.nodesBetween(range.from, range.to, (child, childPos) => {
-      if (child.isBlock) {
+      // nodesBetween also visits ancestors intersecting the range. Hiding one
+      // of those would hide the parent item and every sibling in its list.
+      if (
+        child.isBlock &&
+        childPos >= range.from &&
+        childPos + child.nodeSize <= range.to
+      ) {
         decos.push(
           Decoration.node(childPos, childPos + child.nodeSize, {
             class: "vault-live-section-folded",
           }),
         );
+        return false;
       }
-      return false;
+      return true;
     });
     return true;
   });

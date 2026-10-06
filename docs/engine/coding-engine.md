@@ -22,8 +22,18 @@ isolated projects). `GET /v1/sessions/shell` refreshes this context for workspac
 sessions; a failed refresh returns `workspace_context_error` without terminating
 an existing PTY. The response is folder context, not verification evidence.
 Tracked task/agent sessions retain their existing `/v1/sessions/shell` path and
-attachment validation. The session sidecar API revision is 6; older daemons or
+attachment validation. The session sidecar API revision is 7; older daemons or
 sidecars do not downgrade this request into a tracked attempt.
+
+SSH terminals use a separate sidecar-only `POST /v1/sessions/ssh` launch route.
+The daemon validates the saved target and owner access through `/v1/ssh/terminal`,
+then supplies the pinned SSH command. The sidecar accepts only the `ssh` program
+and terminal dimensions, derives its cwd from `--ssh-root`, and reports
+`root_kind: "ssh"` without a Forge work ID. Requests cannot supply cwd, work IDs,
+or lease fields. This directory is not added to the generic shell allowlist.
+Existing shell WebSocket and signal routes still attach to the resulting PTY.
+Sidecar health includes `ssh_root`; the daemon rejects mismatched state roots or
+older sidecars. Rebuild/update both the daemon and Shell session host together.
 
 `GET /v1/coding-engine` and `GET /v1/shell-sessions` report `available` and
 `starting`. When `starting: true`, the managed process is alive but has not
@@ -62,6 +72,7 @@ the daemon and `medousa-code` together when changing this contract.
 `format`, `code_actions`, and `organize_imports`. Results remain native LSP
 values so the caller can preserve provider-specific detail. Home checks the
 initialize capabilities before revealing an action.
+
 
 ## Project and language roots
 

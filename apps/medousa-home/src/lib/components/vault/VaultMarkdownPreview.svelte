@@ -347,11 +347,12 @@
   }
 </script>
 
+<!-- Paper's auto margins disable flex cross-axis stretching; w-full keeps it inside the pane. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <article
   bind:this={scrollEl}
-  class="markdown-content vault-markdown-preview vault-paper-width min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-auto {compact
+  class="markdown-content vault-markdown-preview vault-paper-width w-full min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-auto {compact
     ? 'px-4 py-3'
     : 'px-5 py-4'}"
   data-paper-width={vault.paperWidth}

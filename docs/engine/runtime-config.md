@@ -139,3 +139,28 @@ Daemon is **probe-only** for `medousa_local`. Spawn/load via:
 - `medousa_host::spawn_medousa_local` (Rust)
 
 Not via daemon `POST /v1/local/engine/load` (removed).
+
+## Iroh relay configuration
+
+When built with `iroh-transport`, the workshop gateway uses the Iroh default
+relay set unless `MEDOUSA_IROH_RELAYS` is set. Operators can supply one to eight
+comma-separated HTTPS root URLs, for example:
+
+```bash
+MEDOUSA_IROH_RELAYS=https://relay.example.com/,https://backup.example.com/ medousa_daemon
+```
+
+An explicit list replaces the default relay set; there is no implicit fallback
+to public relays. Empty or invalid entries, credentials, query strings, and
+fragments are rejected. Restart the daemon to apply a changed list. Gateway
+relay registration waits up to ten seconds; direct connectivity and daemon
+startup remain available if registration is slow. Invitations retain the
+configured relay addresses so browsers can connect after registration recovers.
+Restarting or reconnecting does not reset pairing trust or endpoint identity.
+When moving to a different relay set, existing clients need its updated
+invitation: scan the workshop's new QR code.
+
+Deploy an Iroh-compatible relay with HTTPS and WebSocket support reachable from
+both the workshop and its clients. This setting configures routing; it does not
+install a relay or change pairing authentication. See the
+[Iroh relay deployment guide](https://docs.iroh.computer/add-a-relay).

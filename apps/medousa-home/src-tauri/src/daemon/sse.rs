@@ -84,6 +84,27 @@ enum StreamStep<T> {
     Cancelled,
 }
 
+/// Cancel the connection/credential phase too, so replaced streams cannot emit
+/// late errors or snapshots into the next connection generation.
+pub(super) async fn open_unless_cancelled<F: std::future::Future>(
+    opening: F,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+) -> Option<F::Output> {
+    if *cancel.borrow() {
+        return None;
+    }
+    tokio::pin!(opening);
+    loop {
+        tokio::select! {
+            biased;
+            changed = cancel.changed() => {
+                if changed.is_err() || *cancel.borrow() { return None; }
+            }
+            result = &mut opening => return Some(result),
+        }
+    }
+}
+
 async fn next_stream_step<S>(
     stream: &mut S,
     cancel: &mut tokio::sync::watch::Receiver<bool>,
@@ -242,13 +263,14 @@ pub async fn stream_sse_json<T>(
     url: &str,
     event_name: &str,
     error_event: &str,
-    cancel: tokio::sync::watch::Receiver<bool>,
+    mut cancel: tokio::sync::watch::Receiver<bool>,
 ) where
     T: serde::de::DeserializeOwned + serde::Serialize,
 {
-    let response = match client.get(url).send().await {
-        Ok(response) => response,
-        Err(err) => {
+    let response = match open_unless_cancelled(client.get(url).send(), &mut cancel).await {
+        None => return,
+        Some(Ok(response)) => response,
+        Some(Err(err)) => {
             emit_stream_error(app, error_event, &err.to_string(), true, "http", "connect");
             return;
         }
@@ -418,6 +440,31 @@ mod tests {
             decoder.feed(chunk, |frame| frames.push(frame))?;
         }
         Ok(frames)
+    }
+
+    #[tokio::test]
+    async fn cancellation_drops_a_pending_open_without_waiting_for_its_timeout() {
+        let (tx, mut rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move {
+            open_unless_cancelled(std::future::pending::<()>(), &mut rx).await
+        });
+        tokio::task::yield_now().await;
+        tx.send(true).unwrap();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn already_cancelled_open_is_never_polled_even_if_ready() {
+        let (_tx, mut rx) = tokio::sync::watch::channel(true);
+        let result =
+            open_unless_cancelled(async { panic!("obsolete open was polled") }, &mut rx).await;
+        assert!(result.is_none());
     }
 
     #[test]

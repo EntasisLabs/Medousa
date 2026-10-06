@@ -155,6 +155,11 @@ impl WorkshopTransport {
                     && is_connect_error(&err.to_string()) =>
             {
                 invalidate_route_cache();
+                // A timeout may arrive after the server accepted a mutation.
+                // Re-pick for the next request, but only replay reads now.
+                if method != "GET" {
+                    return Err(err);
+                }
                 let hook = self
                     .iroh
                     .as_ref()
@@ -567,6 +572,62 @@ mod tests {
             ]
         );
         crate::invalidate_route_cache();
+    }
+
+    #[tokio::test]
+    async fn lan_disconnect_after_accepting_a_mutation_does_not_replay_it_over_iroh() {
+        use std::io::{Read, Write};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while std::time::Instant::now() < deadline {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    continue;
+                };
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+                    .unwrap();
+                let mut bytes = [0; 4096];
+                let read = stream.read(&mut bytes).unwrap();
+                let line = String::from_utf8_lossy(&bytes[..read])
+                    .lines()
+                    .next()
+                    .unwrap()
+                    .to_string();
+                if line.starts_with("POST") {
+                    return line;
+                } // Accepted, but no response.
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                    )
+                    .unwrap();
+            }
+            panic!("mutation was never received");
+        });
+        let hook = Arc::new(UnavailableIroh(AtomicUsize::new(0)));
+        let transport =
+            super::WorkshopTransport::new(super::WorkshopTransportConfig::from_workshop_parts(
+                base,
+                None,
+                Some("test-ticket".into()),
+            ))
+            .with_iroh_hook(hook.clone());
+        assert!(
+            transport
+                .request_json("POST", "/connections", None)
+                .await
+                .is_err()
+        );
+        assert_eq!(hook.0.load(Ordering::SeqCst), 0);
+        assert_eq!(server.join().unwrap(), "POST /connections HTTP/1.1");
     }
 
     #[test]

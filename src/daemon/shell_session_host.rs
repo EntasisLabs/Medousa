@@ -29,7 +29,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
-const EXPECTED_API_REVISION: u32 = 6;
+const EXPECTED_API_REVISION: u32 = 7;
 /// Windows Defender / cold start often exceeds the old 1s probe window.
 const HEALTH_WAIT_ATTEMPTS: u32 = 100;
 const HEALTH_WAIT_INTERVAL_MS: u64 = 50;
@@ -130,6 +130,8 @@ struct SessionHealth {
     allowed_roots: Vec<PathBuf>,
     #[serde(default)]
     forge_root: Option<PathBuf>,
+    #[serde(default)]
+    ssh_root: Option<PathBuf>,
 }
 
 enum HealthProbe {
@@ -142,6 +144,7 @@ async fn probe_health(
     health_url: &str,
     required_roots: &[PathBuf],
     forge_root: &std::path::Path,
+    ssh_root: &std::path::Path,
 ) -> HealthProbe {
     let Ok(client) = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(400))
@@ -158,6 +161,15 @@ async fn probe_health(
     let Ok(health) = response.json::<SessionHealth>().await else {
         return HealthProbe::Incompatible("health response uses an unknown format".into());
     };
+    validate_session_health(health, required_roots, forge_root, ssh_root)
+}
+
+fn validate_session_health(
+    health: SessionHealth,
+    required_roots: &[PathBuf],
+    forge_root: &std::path::Path,
+    ssh_root: &std::path::Path,
+) -> HealthProbe {
     if health.name != "medousa-session" {
         return HealthProbe::Incompatible(format!("unexpected service {}", health.name));
     }
@@ -185,6 +197,11 @@ async fn probe_health(
             "attached-checkout authority uses a different or missing Forge store".into(),
         );
     }
+    if health.ssh_root.as_deref() != Some(ssh_root) {
+        return HealthProbe::Incompatible(
+            "SSH session authority uses a different or missing SSH state directory".into(),
+        );
+    }
     HealthProbe::Compatible
 }
 
@@ -200,6 +217,9 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
         .await
         .unwrap_or(forge_root);
 
+    let ssh_root = medousa_data_dir().join("ssh");
+    let ssh_root = tokio::fs::canonicalize(&ssh_root).await.unwrap_or(ssh_root);
+
     let info = |available: bool, message: String| ShellSessionInfo {
         available,
         starting: false,
@@ -211,7 +231,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
         message,
     };
 
-    match probe_health(&health_url, &required_roots, &forge_root).await {
+    match probe_health(&health_url, &required_roots, &forge_root, &ssh_root).await {
         HealthProbe::Compatible => return info(true, "session host reachable".into()),
         HealthProbe::Incompatible(reason) => {
             return info(
@@ -256,6 +276,8 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
                 .arg(&workspace_root)
                 .arg("--forge-root")
                 .arg(&forge_root)
+                .arg("--ssh-root")
+                .arg(&ssh_root)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::inherit())
@@ -298,7 +320,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(HEALTH_WAIT_INTERVAL_MS)).await;
-        match probe_health(&health_url, &required_roots, &forge_root).await {
+        match probe_health(&health_url, &required_roots, &forge_root, &ssh_root).await {
             HealthProbe::Compatible => return info(true, "session host started".into()),
             HealthProbe::Incompatible(reason) => {
                 return info(
@@ -596,15 +618,14 @@ pub async fn create_project_task_session(
 
 pub async fn create_ssh_session(
     host: &ShellSessionHost,
-    cwd: &std::path::Path,
     argv: &[String],
 ) -> Result<String, (axum::http::StatusCode, String)> {
     let response = proxy_shell_host(
         host,
         "POST",
-        "/v1/sessions/shell",
+        "/v1/sessions/ssh",
         Some(serde_json::json!({
-            "cwd": cwd, "argv": argv, "cols": 100, "rows": 30,
+            "argv": argv, "cols": 100, "rows": 30,
         })),
     )
     .await?;
@@ -838,6 +859,37 @@ pub fn parse_bind(bind: &str) -> Option<SocketAddr> {
 mod tests {
     use super::{SessionAttachQuery, proxy_upstream_status, session_attach_query_suffix};
     use axum::http::StatusCode;
+
+    #[test]
+    fn session_host_health_requires_separate_ssh_authority() {
+        let health = || super::SessionHealth {
+            name: "medousa-session".into(),
+            api_revision: Some(super::EXPECTED_API_REVISION),
+            allowed_roots: vec!["/worktrees".into()],
+            forge_root: Some("/forge".into()),
+            ssh_root: Some("/ssh".into()),
+        };
+        let validate = |health| {
+            super::validate_session_health(
+                health,
+                &["/worktrees".into()],
+                std::path::Path::new("/forge"),
+                std::path::Path::new("/ssh"),
+            )
+        };
+        assert!(matches!(validate(health()), super::HealthProbe::Compatible));
+        for ssh_root in [None, Some("/other-ssh".into())] {
+            let mut health = health();
+            health.ssh_root = ssh_root;
+            assert!(matches!(
+                validate(health),
+                super::HealthProbe::Incompatible(_)
+            ));
+        }
+        let mut old = health();
+        old.api_revision = Some(6);
+        assert!(matches!(validate(old), super::HealthProbe::Incompatible(_)));
+    }
 
     #[test]
     fn session_host_client_errors_preserve_their_status() {

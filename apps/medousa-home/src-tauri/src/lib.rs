@@ -450,6 +450,7 @@ fn run_home() {
             daemon::contract_bridge::daemon_stream_start,
             daemon::contract_bridge::daemon_stream_cancel,
             daemon::invalidate_route_caches,
+            daemon::workshop_transport_diagnostics,
             daemon::chatgpt::chatgpt_oauth_request,
             daemon::code::code_read,
             daemon::code::code_request,

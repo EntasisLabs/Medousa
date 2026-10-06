@@ -31,6 +31,10 @@ struct Args {
     /// Daemon-owned Forge store used to authorize attached-checkout projects.
     #[arg(long)]
     forge_root: Option<PathBuf>,
+
+    /// Daemon-owned SSH state directory for dedicated SSH sessions.
+    #[arg(long)]
+    ssh_root: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -56,6 +60,10 @@ async fn main() -> anyhow::Result<()> {
         bind: args.bind,
         workspace_root: workspace,
         allowed_roots: allowed,
+        ssh_root: match args.ssh_root {
+            Some(root) => Some(tokio::fs::canonicalize(root).await?),
+            None => None,
+        },
         forge_root: match args.forge_root {
             Some(root) => Some(tokio::fs::canonicalize(root).await?),
             None => None,

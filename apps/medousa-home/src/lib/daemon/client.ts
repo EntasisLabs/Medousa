@@ -37,6 +37,22 @@ export async function invalidateRouteCaches(): Promise<void> {
   return invoke("invalidate_route_caches");
 }
 
+export interface TransportDiagnostic {
+  sequence: number;
+  phase: string;
+  outcome: string;
+  elapsed_ms: number;
+  peer: string | null;
+  path: string | null;
+  rtt_ms: number | null;
+}
+
+/** Local, bounded transport evidence; this does not contact the workshop. */
+export async function getWorkshopTransportDiagnostics(): Promise<TransportDiagnostic[]> {
+  if (!isTauri()) return [];
+  return invoke("workshop_transport_diagnostics");
+}
+
 /** Plain JSON clone — strips Svelte proxies before Tauri IPC serialization. */
 export function invokePlain<T>(value: T): T {
   if (value === null || value === undefined) return value;

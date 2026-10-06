@@ -11,10 +11,10 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
-use crate::daemon::DaemonState;
 use crate::daemon::generated_ops::DaemonOperation;
-use crate::daemon::sse::stream_sse_json_workshop;
+use crate::daemon::sse::{open_unless_cancelled, stream_sse_json_workshop};
 use crate::daemon::workshop_http;
+use crate::daemon::DaemonState;
 use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
 
@@ -199,7 +199,7 @@ pub async fn daemon_stream_start(
             STREAM_SEQ.fetch_add(1, Ordering::Relaxed)
         ),
     };
-    let (tx, rx) = watch::channel(false);
+    let (tx, mut rx) = watch::channel(false);
     let mut streams = state.contract_streams.lock().expect("contract stream lock");
     if streams.contains_key(&handle) {
         return Err("daemon stream handle is already active".into());
@@ -218,12 +218,18 @@ pub async fn daemon_stream_start(
     let event_name = format!("daemon-stream://{handle}/event");
     let error_event = format!("daemon-stream://{handle}/error");
     tokio::spawn(async move {
-        match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
-            Ok(source) => {
+        match open_unless_cancelled(
+            workshop_transport::workshop_get_bytes_stream(&config, &path),
+            &mut rx,
+        )
+        .await
+        {
+            None => return,
+            Some(Ok(source)) => {
                 stream_sse_json_workshop::<Value>(&app, source, &event_name, &error_event, rx)
                     .await;
             }
-            Err(err) => {
+            Some(Err(err)) => {
                 let _ = app.emit(&error_event, serde_json::json!({ "message": err }));
             }
         }

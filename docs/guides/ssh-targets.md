@@ -17,7 +17,9 @@ server and authenticate as the account you choose.
    the server's host keys, then select **Trust this server identity** and save.
    Checking retrieves public host keys; it does not authenticate your account.
 6. Select **Test** to check authentication. On desktop, **Terminal** opens the
-   same saved connection in Medousa's existing terminal view.
+   same saved connection in Medousa's existing terminal view. SSH terminals
+   use the saved server access independently of coding projects; they do not
+   require an undertaking or a sealed Forge environment.
 
 The workshop needs `ssh` and `ssh-keyscan` available on its PATH. Targets use
 explicit addresses and pinned host keys. Existing SSH config aliases,

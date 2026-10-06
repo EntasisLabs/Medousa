@@ -43,7 +43,18 @@ or letting a session expire does not require another QR scan.
 When a launch or foreground health check cannot reach the workshop, Medousa
 retries automatically while the app is visible. It rechecks the network route
 and resumes the selected conversation and streams when the workshop returns.
-You can also choose **Retry connection** on the offline screen.
+A missed health check never opens a dialog over your chat. Loaded messages stay
+readable and scrollable, and you can keep editing your draft while reconnection
+runs in the background. A quiet **Reconnecting…** line near the composer offers
+**Retry** and **Connection settings**; sending resumes once connected.
+A dropped background stream reconnects from its saved revision without a
+health-check preflight or reloading the screen. Retry delays grow until stream
+data confirms that the connection has recovered. On foreground resume, remote
+streams reopen before health and snapshot refreshes finish. Device heartbeats
+run in the background; expired sessions are renewed when a request needs them.
+A successful stream event also restores sending, even if an older health probe
+timed out. Replaced stream connections are cancelled while opening, so their
+late errors cannot start another recovery cycle.
 
 If a paired connection becomes stale, open the workshop menu and choose
 **Refresh connection**, or use **Refresh** on the active workshop in
@@ -52,6 +63,14 @@ reloads current workshop data, and reconnects its streams. Your selected
 workshop, conversation draft, open notes, tabs, and running work stay in place.
 If the host is offline, bring it back online and refresh again. Revoked or
 expired device trust still requires pairing again.
+
+For connection troubleshooting, open **Settings → Connection → More on this
+device → Connection diagnostics**. It shows recent Iroh connection reuse,
+direct or relay paths, RTT, and failed or timed-out request stages. **Refresh**
+reads local records without a network probe; **Copy diagnostics** copies the
+bounded recent history. Request text, URLs, pairing tokens, and tickets are not
+included. Operators can configure a dedicated relay set on the workshop; see
+[relay configuration](../engine/runtime-config.md#iroh-relay-configuration).
 
 Under **Settings → Phone**, expand a paired device to choose its trust policy:
 
