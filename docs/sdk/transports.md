@@ -104,3 +104,20 @@ over Iroh. This requires an Urspace host proxying the daemon; a Medousa Iroh
 ticket cannot be passed to the Urspace SDK. See the [Instinct guide](../guides/instinct-agent.md),
 [Dots guide](../guides/dots.md), and [credential API](../engine/external-conversations.md#instinct-and-dots-api-credentials).
 The gateway must preserve Authorization and JSON request/response bodies.
+
+## Iroh connection lifetime and deadlines
+
+The shared `medousa-iroh-http` client retains an endpoint per relay set and a
+QUIC connection per workshop peer. Concurrent requests share the connection
+but use separate HTTP streams and authentication headers. Switching workshops
+or receiving another relay set does not close an active stream. A closed
+connection is redialed; HTTP requests are never replayed by this client after
+request bytes have been sent.
+
+Iroh health requests have a 10-second total deadline, ordinary GET/HEAD requests
+30 seconds, and mutations 120 seconds, including response body reads. SSE has
+20 seconds to open and a 75-second idle deadline between body chunks; active
+streams can remain open indefinitely. Native Medousa also bounds its remote
+health command to 10 seconds across LAN/Iroh route selection. Network-change
+notifications preserve paired identity and existing connections. Native direct
+connections do not require a healthy relay first.

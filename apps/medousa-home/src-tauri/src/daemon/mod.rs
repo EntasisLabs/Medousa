@@ -295,10 +295,18 @@ pub async fn daemon_health(
     }
 
     let endpoint = crate::active_workshop::display_url()?;
-    Ok(match self::sdk::client(&state)?.health().get().await {
-        Ok(detail) => connected_health(detail, &endpoint),
-        Err(error) => disconnected_health(self::sdk::sdk_error(error)),
-    })
+    // Bound the entire remote probe, including route selection and HTTP body.
+    let client = self::sdk::client(&state)?;
+    Ok(
+        match tokio::time::timeout(std::time::Duration::from_secs(10), client.health().get()).await
+        {
+            Ok(Ok(detail)) => connected_health(detail, &endpoint),
+            Ok(Err(error)) => disconnected_health(self::sdk::sdk_error(error)),
+            Err(_) => {
+                disconnected_health("Workshop health check timed out after 10 seconds.".into())
+            }
+        },
+    )
 }
 
 #[tauri::command]

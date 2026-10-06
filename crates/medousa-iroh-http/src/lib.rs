@@ -1,13 +1,15 @@
 //! HTTP/1.1 client tunneled over Iroh (`medousa-http/1` ALPN).
 
 use std::str::FromStr;
-use std::sync::OnceLock;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use httparse::{EMPTY_HEADER, Response, Status};
 use iroh::{Endpoint, EndpointAddr, RelayMode, RelayUrl, TransportAddr, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
-use tokio::sync::Mutex;
+use n0_future::time::{Duration, Instant, timeout};
+
+mod session;
 
 /// Application-layer protocol identifier for Medousa HTTP tunneling.
 pub const ALPN: &[u8] = b"medousa-http/1";
@@ -15,12 +17,11 @@ pub const ALPN: &[u8] = b"medousa-http/1";
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 const MAX_BODY_CHUNK: usize = 64 * 1024;
 
-struct CachedEndpoint {
-    key: String,
-    endpoint: Endpoint,
-}
-
-static WORKSHOP_CLIENT: OnceLock<Mutex<Option<CachedEndpoint>>> = OnceLock::new();
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(10);
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(20);
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 
 pub struct IrohHttpResponse {
     pub status: u16,
@@ -32,6 +33,9 @@ pub struct IrohHttpBody {
     recv: iroh::endpoint::RecvStream,
     buffer: Vec<u8>,
     finished: bool,
+    deadline: Option<Instant>,
+    // Keep the pool entry alive while a stream uses it, including across cache eviction.
+    _session: Arc<session::ClientSession>,
 }
 
 impl IrohHttpBody {
@@ -44,10 +48,12 @@ impl IrohHttpBody {
             return Ok(Some(chunk));
         }
         let mut chunk = vec![0u8; MAX_BODY_CHUNK];
-        let read = self
-            .recv
-            .read(&mut chunk)
+        let budget = self.deadline.map_or(STREAM_IDLE_TIMEOUT, |deadline| {
+            deadline.saturating_duration_since(Instant::now())
+        });
+        let read = timeout(budget, self.recv.read(&mut chunk))
             .await
+            .map_err(|_| anyhow::anyhow!("timed out reading iroh HTTP body"))?
             .context("read iroh HTTP body")?;
         let Some(read) = read else {
             self.finished = true;
@@ -62,55 +68,10 @@ impl IrohHttpBody {
     }
 }
 
-fn client_slot() -> &'static Mutex<Option<CachedEndpoint>> {
-    WORKSHOP_CLIENT.get_or_init(|| Mutex::new(None))
-}
-
-/// Bind one client for this ticket's relays.
-///
-/// `Endpoint::bind(presets::N0)` probes every public n0 relay. In a browser
-/// those hostnames end in `.`, and `GET /ping` then fails closed and keeps
-/// retrying. Urspace dials only the relays named in the ticket, with that
-/// trailing dot removed, so the probe hits a host the browser can open.
-async fn endpoint_for_relays(relays: &[RelayUrl]) -> Result<Endpoint> {
-    let key = if relays.is_empty() {
-        "default".to_string()
-    } else {
-        relays
-            .iter()
-            .map(|url| url.as_str().to_string())
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let mut guard = client_slot().lock().await;
-    if let Some(cached) = guard.as_ref()
-        && cached.key == key
-        && !cached.endpoint.is_closed()
-    {
-        return Ok(cached.endpoint.clone());
-    }
-    let endpoint = bind_client(relays).await?;
-    if let Some(previous) = guard.take() {
-        previous.endpoint.close().await;
-    }
-    *guard = Some(CachedEndpoint {
-        key,
-        endpoint: endpoint.clone(),
-    });
-    Ok(endpoint)
-}
-
 /// Re-probe sockets/relays after a foreground resume or network handoff without
 /// closing streams or replacing the client's identity underneath other requests.
 pub async fn notify_network_change() {
-    let endpoint = client_slot()
-        .lock()
-        .await
-        .as_ref()
-        .map(|cached| cached.endpoint.clone());
-    if let Some(endpoint) = endpoint {
-        endpoint.network_change().await;
-    }
+    session::notify_network_change().await;
 }
 
 async fn bind_client(relays: &[RelayUrl]) -> Result<Endpoint> {
@@ -175,12 +136,8 @@ async fn connect_workshop(
     endpoint: &Endpoint,
     addr: EndpointAddr,
 ) -> Result<iroh::endpoint::Connection> {
-    let dial = endpoint.connect(addr, ALPN);
-    #[cfg(target_arch = "wasm32")]
-    let result = n0_future::time::timeout(std::time::Duration::from_secs(12), dial).await;
-    #[cfg(not(target_arch = "wasm32"))]
-    let result = tokio::time::timeout(std::time::Duration::from_secs(12), dial).await;
-    result
+    timeout(Duration::from_secs(12), endpoint.connect(addr, ALPN))
+        .await
         .map_err(|_| anyhow::anyhow!("timed out connecting to workshop over iroh"))?
         .context("connect to workshop over iroh")
 }
@@ -192,25 +149,105 @@ pub async fn iroh_http_request(
     headers: &[(&str, &str)],
     body: Option<&[u8]>,
 ) -> Result<IrohHttpResponse> {
+    request_with_budget(
+        ticket,
+        method,
+        path,
+        headers,
+        body,
+        request_budget(method, path, headers),
+    )
+    .await
+}
+
+fn request_budget(method: &str, path: &str, headers: &[(&str, &str)]) -> Duration {
+    if headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("accept") && value.contains("text/event-stream")
+    }) {
+        STREAM_OPEN_TIMEOUT
+    } else if matches!(
+        path.split('?')
+            .next()
+            .unwrap_or(path)
+            .trim_start_matches('/'),
+        "health" | "v1/health"
+    ) {
+        HEALTH_TIMEOUT
+    } else if method == "GET" || method == "HEAD" {
+        READ_TIMEOUT
+    } else {
+        REQUEST_TIMEOUT
+    }
+}
+
+async fn request_with_budget(
+    ticket: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+    budget: Duration,
+) -> Result<IrohHttpResponse> {
+    let deadline = Instant::now() + budget;
+    timeout(
+        budget,
+        request_inner(ticket, method, path, headers, body, deadline),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("timed out opening iroh HTTP response"))?
+}
+
+async fn request_inner(
+    ticket: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+    deadline: Instant,
+) -> Result<IrohHttpResponse> {
     let (addr, relays) = dial_target(ticket)?;
     #[cfg(target_arch = "wasm32")]
     if relays.is_empty() {
         bail!("invitation does not contain a browser relay");
     }
-    let endpoint = endpoint_for_relays(&relays).await?;
+    let session = session::client_for_relays(&relays).await?;
+    let endpoint = session.endpoint(&relays).await?;
     #[cfg(target_arch = "wasm32")]
     wait_for_relay(&endpoint).await?;
     // Native iroh can dial directly while its relay is recovering. Waiting for
     // `online()` first incorrectly makes a working direct path depend on a relay.
     // Retry only the handshake: no HTTP bytes have been sent at this point.
-    let conn = match connect_workshop(&endpoint, addr.clone()).await {
-        Ok(conn) => conn,
+    exchange(
+        session, &endpoint, addr, method, path, headers, body, deadline,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn exchange(
+    session: Arc<session::ClientSession>,
+    endpoint: &Endpoint,
+    addr: EndpointAddr,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+    deadline: Instant,
+) -> Result<IrohHttpResponse> {
+    let conn = session.connection(endpoint, addr.clone()).await?;
+    let (mut send, mut recv) = match conn.open_bi().await {
+        Ok(stream) => stream,
         Err(_) => {
-            endpoint.network_change().await;
-            connect_workshop(&endpoint, addr).await?
+            // Opening failed before any HTTP bytes were sent: a safe redial.
+            session.invalidate(addr.id, conn.stable_id()).await;
+            session
+                .connection(endpoint, addr)
+                .await?
+                .open_bi()
+                .await
+                .context("open bi stream")?
         }
     };
-    let (mut send, mut recv) = conn.open_bi().await.context("open bi stream")?;
 
     let normalized = normalize_path(path);
     let mut request = format!("{method} {normalized} HTTP/1.1\r\nHost: medousa-workshop\r\n");
@@ -232,6 +269,9 @@ pub async fn iroh_http_request(
     let (status, response_headers, header_end, mut raw) =
         read_http_response_headers(&mut recv).await?;
     raw.drain(..header_end.saturating_add(4));
+    let streaming = response_headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("content-type") && value.contains("text/event-stream")
+    });
 
     Ok(IrohHttpResponse {
         status,
@@ -240,6 +280,8 @@ pub async fn iroh_http_request(
             recv,
             buffer: raw,
             finished: false,
+            deadline: (!streaming).then_some(deadline),
+            _session: session,
         },
     })
 }
@@ -366,3 +408,6 @@ mod tests {
         assert_eq!(normalize_relay_host(&relay).unwrap(), relay);
     }
 }
+
+#[cfg(test)]
+mod transport_tests;
