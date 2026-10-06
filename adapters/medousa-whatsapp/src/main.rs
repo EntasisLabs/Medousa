@@ -384,13 +384,7 @@ async fn handle_event(
                 } else {
                     msg.text_content().map(str::to_owned)
                 };
-                let reaction = msg.reaction_message.as_option().and_then(|message| {
-                    let target_message_id = message.key.as_ref()?.id.as_ref()?.trim();
-                    let emoji = message.text.as_ref()?.trim();
-                    (!target_message_id.is_empty() && !emoji.is_empty()).then(|| {
-                        (target_message_id.to_string(), emoji.to_string())
-                    })
-                });
+                let reaction = msg.reaction_message.as_option().and_then(parsed_reaction);
                 let text = extracted
                     .as_deref()
                     .map(str::trim)
@@ -603,6 +597,17 @@ async fn route_external_agent_message(
         .await
         .context("decode external conversation routing response")?
         .claimed)
+}
+
+/// Target message id and emoji from a WhatsApp reaction, when both are present.
+///
+/// `ReactionMessage.key` is a buffa `MessageField`, not an `Option`, so presence
+/// is `as_option()`. `id` and `text` are plain `Option<String>`.
+fn parsed_reaction(message: &wa::message::ReactionMessage) -> Option<(String, String)> {
+    let target_message_id = message.key.as_option()?.id.as_ref()?.trim();
+    let emoji = message.text.as_ref()?.trim();
+    (!target_message_id.is_empty() && !emoji.is_empty())
+        .then(|| (target_message_id.to_string(), emoji.to_string()))
 }
 
 async fn route_external_agent_reaction(
@@ -845,4 +850,40 @@ fn print_usage() {
     println!();
     println!("NOTE: First run prints a QR code for WhatsApp Linked Devices pairing.");
     println!("WhatsApp Web clients are unofficial — review Meta ToS before production use.");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use buffa::MessageField;
+
+    fn reaction(id: Option<&str>, emoji: Option<&str>) -> wa::message::ReactionMessage {
+        let mut message = wa::message::ReactionMessage {
+            text: emoji.map(str::to_string),
+            ..Default::default()
+        };
+        if let Some(id) = id {
+            message.key = MessageField::some(wa::MessageKey {
+                id: Some(id.to_string()),
+                ..Default::default()
+            });
+        }
+        message
+    }
+
+    #[test]
+    fn parsed_reaction_extracts_target_id_and_emoji() {
+        let parsed =
+            parsed_reaction(&reaction(Some("  ABC123  "), Some("  👍  "))).expect("reaction");
+        assert_eq!(parsed.0, "ABC123");
+        assert_eq!(parsed.1, "👍");
+    }
+
+    #[test]
+    fn parsed_reaction_requires_both_fields() {
+        assert!(parsed_reaction(&reaction(None, Some("👍"))).is_none());
+        assert!(parsed_reaction(&reaction(Some("ABC123"), None)).is_none());
+        assert!(parsed_reaction(&reaction(Some("   "), Some("👍"))).is_none());
+        assert!(parsed_reaction(&reaction(Some("ABC123"), Some("  "))).is_none());
+    }
 }
