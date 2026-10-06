@@ -5559,7 +5559,7 @@ dependencies = [
 
 [[package]]
 name = "medousa"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5691,7 +5691,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-home"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "async-trait",
  "axum",

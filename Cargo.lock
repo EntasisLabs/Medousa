@@ -7574,7 +7574,7 @@ dependencies = [
 
 [[package]]
 name = "medousa"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "a2",
  "anyhow",
@@ -8089,7 +8089,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-session"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "anyhow",
  "async-trait",
