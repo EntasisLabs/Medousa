@@ -5,12 +5,20 @@ class ConnectionStore {
   health = $state<DaemonHealth | null>(null);
   recovering = $state(false);
   private trafficOnline = $state(false);
+  private trafficExpiry: ReturnType<typeof setTimeout> | null = null;
   trafficRevision = 0;
 
   /** Real stream data is stronger evidence than an older failed probe. */
   noteTraffic() {
     this.trafficRevision += 1;
     this.trafficOnline = true;
+    if (this.trafficExpiry !== null) clearTimeout(this.trafficExpiry);
+    // Stream heartbeats normally arrive every 30 seconds. A single failed
+    // probe must not override fresh authenticated traffic on a working pipe.
+    this.trafficExpiry = setTimeout(() => {
+      this.trafficOnline = false;
+      this.trafficExpiry = null;
+    }, 75_000);
   }
 
   get checking(): boolean {
@@ -30,7 +38,9 @@ class ConnectionStore {
     if (health === null) {
       this.trafficRevision += 1;
       this.trafficOnline = false;
-    } else if (!health.ok && probeTrafficRevision === this.trafficRevision) {
+      if (this.trafficExpiry !== null) clearTimeout(this.trafficExpiry);
+      this.trafficExpiry = null;
+    } else if (!health.ok && probeTrafficRevision === this.trafficRevision && this.trafficExpiry === null) {
       this.trafficOnline = false;
     }
   }

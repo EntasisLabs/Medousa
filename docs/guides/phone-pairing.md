@@ -64,6 +64,14 @@ workshop, conversation draft, open notes, tabs, and running work stay in place.
 If the host is offline, bring it back online and refresh again. Revoked or
 expired device trust still requires pairing again.
 
+For connection troubleshooting, open **Settings → Connection → More on this
+device → Connection diagnostics**. It shows recent Iroh connection reuse,
+direct or relay paths, RTT, and failed or timed-out request stages. **Refresh**
+reads local records without a network probe; **Copy diagnostics** copies the
+bounded recent history. Request text, URLs, pairing tokens, and tickets are not
+included. Operators can configure a dedicated relay set on the workshop; see
+[relay configuration](../engine/runtime-config.md#iroh-relay-configuration).
+
 Under **Settings → Phone**, expand a paired device to choose its trust policy:
 
 - **Until removed** (default) keeps the device trusted until you choose

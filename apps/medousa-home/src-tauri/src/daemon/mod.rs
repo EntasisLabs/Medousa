@@ -239,6 +239,12 @@ pub async fn invalidate_route_caches() {
     .await;
 }
 
+/// Read-only, local transport evidence. No daemon request or health probe.
+#[tauri::command]
+pub fn workshop_transport_diagnostics() -> Vec<medousa_iroh_http::TransportDiagnostic> {
+    medousa_iroh_http::transport_diagnostics()
+}
+
 fn connected_health(detail: medousa_types::HealthResponse, endpoint: &str) -> DaemonHealth {
     DaemonHealth {
         ok: true,
@@ -301,12 +307,20 @@ pub async fn daemon_health(
 
     let endpoint = crate::active_workshop::display_url()?;
     // Bound the entire remote probe, including route selection and HTTP body.
-    let client = self::sdk::client(&state)?;
+    let config = self::sdk::transport_config(&state)?;
+    let probe = async {
+        // Heartbeats no longer gate recovery. Renew only when credentials are due.
+        let effective = crate::pairing_client::ensure_fresh_session(&config).await?;
+        self::sdk::client_from_config(&effective)
+            .health()
+            .get()
+            .await
+            .map_err(self::sdk::sdk_error)
+    };
     Ok(
-        match tokio::time::timeout(std::time::Duration::from_secs(10), client.health().get()).await
-        {
+        match tokio::time::timeout(std::time::Duration::from_secs(10), probe).await {
             Ok(Ok(detail)) => connected_health(detail, &endpoint),
-            Ok(Err(error)) => disconnected_health(self::sdk::sdk_error(error)),
+            Ok(Err(error)) => disconnected_health(error),
             Err(_) => {
                 disconnected_health("Workshop health check timed out after 10 seconds.".into())
             }

@@ -4,6 +4,8 @@ export {
   getDaemonUrl,
   setDaemonUrl,
   invalidateRouteCaches,
+  getWorkshopTransportDiagnostics,
+  type TransportDiagnostic,
   type StreamErrorPayload,
   daemonWebSocketUrl,
 } from "./daemon/client";

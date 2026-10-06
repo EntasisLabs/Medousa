@@ -22,6 +22,7 @@
   import SettingsAppUpdateCard from "$lib/components/settings/SettingsAppUpdateCard.svelte";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
+  import SettingsTransportDiagnostics from "$lib/components/settings/SettingsTransportDiagnostics.svelte";
   import SettingsSshSection from "$lib/components/settings/SettingsSshSection.svelte";
   import SettingsRemoteWorkersSection from "$lib/components/settings/SettingsRemoteWorkersSection.svelte";
   import { isTauri } from "$lib/window";
@@ -483,6 +484,7 @@
       <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
     </summary>
     <div class="prefs-more-body prefs-stack">
+      {#if isTauri()}<SettingsTransportDiagnostics />{/if}
       <button
         type="button"
         class="prefs-tile prefs-tile-action"

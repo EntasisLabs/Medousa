@@ -122,7 +122,7 @@ function scheduleWorkshopConnectionRecovery(
         if (health.ok) await bootstrapWorkshopObserver();
       }
       if (!health.ok) {
-        if (recoveryIsCurrent(generation)) scheduleWorkshopConnectionRecovery(onHealthChange);
+        if (recoveryIsCurrent(generation) && !connection.online) scheduleWorkshopConnectionRecovery(onHealthChange);
         return;
       }
       connectionReconnect.noteSuccess();
@@ -239,7 +239,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     onEnvironmentEvent<EnvironmentStreamEvent>((event) => {
       if (workshopTransitioning || workshopTeardown) return;
       connection.noteTraffic();
-      connectionReconnect.noteSuccess();
+      connectionReconnect.cancel();
       environmentReconnect.noteSuccess();
       environment.applyEvent(event);
     }),
@@ -255,7 +255,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
       if (workshopTransitioning || workshopTeardown) return;
       connection.noteTraffic();
-      connectionReconnect.noteSuccess();
+      connectionReconnect.cancel();
       workspaceReconnect.noteSuccess();
       workspace.applyEvent(event);
       if (awaitingWorkspaceRecoverySnapshot && event.stream_event_type === "snapshot") {
@@ -284,7 +284,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     onInteractiveEvent<TurnStreamEnvelopeV3>((envelope) => {
       if (workshopTransitioning || workshopTeardown) return;
       connection.noteTraffic();
-      connectionReconnect.noteSuccess();
+      connectionReconnect.cancel();
       chat.applyStreamEvent(envelope);
       if (!isTauriMobilePlatform()) return;
 
@@ -424,7 +424,7 @@ export async function resumeWorkshopObserver(
     connection.setHealth(health, probeTrafficRevision);
     onHealthChange(health);
     if (!health.ok) {
-      scheduleWorkshopConnectionRecovery(onHealthChange);
+      if (!connection.online) scheduleWorkshopConnectionRecovery(onHealthChange);
       return;
     }
 
@@ -485,7 +485,7 @@ export async function resumeWorkshop(
     connection.setHealth(health, probeTrafficRevision);
     onHealthChange(health);
     if (!health.ok) {
-      scheduleWorkshopConnectionRecovery(onHealthChange);
+      if (!connection.online) scheduleWorkshopConnectionRecovery(onHealthChange);
       return;
     }
 
@@ -509,8 +509,10 @@ export async function resumeWorkshop(
         : Promise.resolve(),
     ]);
 
+    if (!recoveryIsCurrent(generation)) return;
     // History merge may link workers missed while SSE was detached.
     await workspace.recoverPendingWorkerResults();
+    if (!recoveryIsCurrent(generation)) return;
 
     // Glance surfaces (Live Activity / home widget) need a forced quiet/working sync
     // after cards refresh — otherwise they stay stuck on the pre-background snapshot.
@@ -590,15 +592,16 @@ async function refreshCurrentWorkshop(
     connection.setHealth(health, probeTrafficRevision);
     onHealthChange(health);
     if (!health.ok) {
-      scheduleWorkshopConnectionRecovery(onHealthChange);
+      if (!connection.online) scheduleWorkshopConnectionRecovery(onHealthChange);
       return health;
     }
 
     cancelScheduledStreamRecovery();
+    const refreshGeneration = workshopRecoveryGeneration;
     await Promise.all([
       stopWorkspaceStream(), stopEnvironmentSync(), chat.stopOwnedInteractiveStreams(),
     ]);
-    const refreshGeneration = workshopRecoveryGeneration;
+    if (!recoveryIsCurrent(refreshGeneration)) throw new Error("The workshop connection changed while refreshing.");
     await restartWorkshopStreamsLite();
     if (!recoveryIsCurrent(refreshGeneration)) throw new Error("The workshop connection changed while refreshing.");
     await workspace.reconcileCardsFromSnapshot();

@@ -34,9 +34,9 @@ fn build_sdk_transport(config: &WorkshopTransportConfig) -> Arc<dyn Transport> {
 
 pub fn client(state: &State<DaemonState>) -> Result<MedousaClient, String> {
     let config = transport_config(state)?;
-    let base_url = config.lan_base.clone();
-    Ok(MedousaClient::with_transport(
-        build_sdk_transport(&config),
-        base_url,
-    ))
+    Ok(client_from_config(&config))
+}
+
+pub(super) fn client_from_config(config: &WorkshopTransportConfig) -> MedousaClient {
+    MedousaClient::with_transport(build_sdk_transport(config), config.lan_base.clone())
 }

@@ -258,6 +258,7 @@
     "daemon::workflow::workflow_plan",
     "daemon::workflow::workflow_run",
     "daemon::workflow::workflow_schedule",
+    "daemon::workshop_transport_diagnostics",
     "daemon::workspace_card::workspace_archive_card",
     "daemon::workspace_card::workspace_cancel_card",
     "daemon::workspace_card::workspace_fetch_snapshot",

@@ -5797,6 +5797,7 @@ dependencies = [
  "iroh",
  "iroh-tickets",
  "n0-future",
+ "serde",
  "tokio",
  "url",
 ]

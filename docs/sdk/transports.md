@@ -64,6 +64,9 @@ Diagram: [medousa-client-transport.mmd](../../architecture/medousa-client-transp
 can also select this transport. It sends the paired bearer and conversation
 callback key over `medousa-http/1`, with no direct HTTP probe or fallback.
 This explicit routing differs from `WorkshopTransport`'s LAN-first policy.
+Connectivity failures invalidate that transport's route cache. Only GET requests
+may be replayed on the other route; a timed-out mutation must be reconciled with
+its existing work handle rather than automatically sent again.
 See the [provider conversation guide](../guides/provider-conversations.md)
 for raw-ticket and saved-worker examples.
 
@@ -121,3 +124,11 @@ streams can remain open indefinitely. Native Medousa also bounds its remote
 health command to 10 seconds across LAN/Iroh route selection. Network-change
 notifications preserve paired identity and existing connections. Native direct
 connections do not require a healthy relay first.
+
+`medousa_iroh_http::transport_diagnostics()` returns at most 128 recent,
+content-free client events. Entries include phase, outcome, duration, a short
+public peer identifier, selected direct/relay path, and RTT when available.
+Connection closure is recorded when discovered during reuse; snapshots do not
+actively probe peers. Tickets, URLs, headers, payloads, and peer-supplied close
+reasons are never recorded. This is an in-memory diagnostic history, not a
+durable work or delivery receipt.

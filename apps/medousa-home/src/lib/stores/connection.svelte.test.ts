@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { connection } from "./connection.svelte";
 
-beforeEach(() => connection.setHealth(null));
+beforeEach(() => { vi.useFakeTimers(); connection.setHealth(null); });
+afterEach(() => { connection.setHealth(null); vi.useRealTimers(); });
 
 describe("connection liveness", () => {
   it("real traffic restores connectivity without another health request", () => {
@@ -19,6 +20,19 @@ describe("connection liveness", () => {
     connection.setHealth({ ok: false, message: "Older timeout" }, revision);
     expect(connection.online).toBe(true);
     connection.setHealth({ ok: false, message: "New failure" });
+    expect(connection.online).toBe(true);
+    vi.advanceTimersByTime(75_000);
+    expect(connection.offline).toBe(true);
+  });
+
+  it("a heartbeat renews liveness without polling health", () => {
+    connection.setHealth({ ok: false, message: "Probe failed" });
+    connection.noteTraffic();
+    vi.advanceTimersByTime(60_000);
+    connection.noteTraffic();
+    vi.advanceTimersByTime(60_000);
+    expect(connection.online).toBe(true);
+    vi.advanceTimersByTime(15_000);
     expect(connection.offline).toBe(true);
   });
 

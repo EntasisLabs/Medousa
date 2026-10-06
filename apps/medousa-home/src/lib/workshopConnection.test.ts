@@ -185,6 +185,18 @@ describe("foreground recovery", () => {
 });
 
 describe("initial workshop connection recovery", () => {
+  it("cancels a queued health retry when real stream traffic has already recovered", async () => {
+    f.probe.mockResolvedValueOnce({ ok: false, message: "Old health timeout" });
+    const detach = connectWorkshop({ onHealthChange: f.notify });
+    try {
+      await vi.waitFor(() => expect(f.notify).toHaveBeenCalledWith(expect.objectContaining({ ok: false })));
+      f.workspaceEvent!({ workspace_revision: 42, stream_event_type: "snapshot", emitted_at_utc: "" });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(f.probe).toHaveBeenCalledTimes(1);
+      expect(f.noteTraffic).toHaveBeenCalled();
+    } finally { detach(); }
+  });
+
   it("recovers a failed first health probe without an SSE error or another foreground event", async () => {
     f.probe.mockResolvedValueOnce({ ok: false, message: "Iroh handshake timed out" });
     const detach = connectWorkshop({ onHealthChange: f.notify });

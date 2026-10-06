@@ -235,12 +235,11 @@ async fn workshop_get_bytes_stream_once(
 ) -> Result<WorkshopByteStream, String> {
     let route = pick_route(config).await;
     let mut headers = auth_headers(config);
-    if let Some(accept) = accept {
-        headers.insert(
-            reqwest::header::ACCEPT,
-            reqwest::header::HeaderValue::from_str(accept).map_err(|err| err.to_string())?,
-        );
-    }
+    headers.insert(
+        reqwest::header::ACCEPT,
+        reqwest::header::HeaderValue::from_str(accept.unwrap_or("text/event-stream"))
+            .map_err(|err| err.to_string())?,
+    );
     let result = match route {
         WorkshopRoute::Lan => lan_get_stream(config, path, &headers).await,
         WorkshopRoute::Iroh => iroh_open_stream(config, path, &headers)
@@ -376,9 +375,12 @@ async fn workshop_request_once(
                 && config.iroh_ticket.is_some()
                 && is_connect_error(&err) =>
         {
-            // LAN failed with a connectivity error: flush the shared route cache
-            // so the next request re-probes, then retry this one over Iroh.
+            // Never replay a potentially accepted mutation after a timeout.
+            // The next request still re-probes the route.
             invalidate_workshop_route_cache();
+            if method != "GET" {
+                return Err(err);
+            }
             iroh_request(config, method, path, &headers, payload).await
         }
         Err(err) if route == WorkshopRoute::Iroh && is_connect_error(&err) => {

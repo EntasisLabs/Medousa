@@ -64,20 +64,33 @@ impl ClientSession {
             connections.entry(addr.id).or_default().clone()
         };
         let mut guard = slot.lock().await;
+        let started = Instant::now();
         if let Some(connection) = guard
             .as_ref()
             .filter(|connection| connection.close_reason().is_none())
         {
+            diagnostics::record("connection", "reused", started, Some(connection));
             return Ok(connection.clone());
         }
+        if let Some(connection) = guard.as_ref() {
+            diagnostics::record("connection", "closed", started, Some(connection));
+        }
         // Only retry before an HTTP stream has been written. Never replay a mutation.
+        diagnostics::record("dial", "started", started, None);
         let connection = match connect_workshop(endpoint, addr.clone()).await {
             Ok(connection) => connection,
             Err(_) => {
                 endpoint.network_change().await;
-                connect_workshop(endpoint, addr).await?
+                match connect_workshop(endpoint, addr).await {
+                    Ok(connection) => connection,
+                    Err(error) => {
+                        diagnostics::record("dial", "failed", started, None);
+                        return Err(error);
+                    }
+                }
             }
         };
+        diagnostics::record("dial", "connected", started, Some(&connection));
         *guard = Some(connection.clone());
         Ok(connection)
     }
@@ -110,6 +123,7 @@ pub(super) async fn client_for_relays(relays: &[RelayUrl]) -> Result<Arc<ClientS
 }
 
 pub(super) async fn notify_network_change() {
+    diagnostics::record("network_change", "requested", Instant::now(), None);
     let sessions: Vec<_> = clients().lock().await.values().cloned().collect();
     for session in sessions {
         let endpoint = session.endpoint.lock().await.clone();

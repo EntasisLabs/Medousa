@@ -97,6 +97,16 @@ async fn concurrent_requests_share_one_connection_and_closed_connection_redials(
     assert_eq!(response.body.read_chunk().await.unwrap().unwrap(), b"ok");
     assert_eq!(accepts.load(Ordering::SeqCst), 2);
     assert_eq!(requests.load(Ordering::SeqCst), 3);
+    let peer: String = server.id().to_string().chars().take(12).collect();
+    let events: Vec<_> = transport_diagnostics()
+        .into_iter()
+        .filter(|event| event.peer.as_deref() == Some(&peer))
+        .collect();
+    assert!(events.iter().any(|event| event.outcome == "reused"));
+    assert!(events.iter().any(|event| event.outcome == "closed"));
+    assert!(events.iter().any(|event| event.phase == "response_headers"
+        && event.path == Some("direct")
+        && event.rtt_ms.is_some()));
     handler.abort();
     client.close().await;
     server.close().await;

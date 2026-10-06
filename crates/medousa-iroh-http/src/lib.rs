@@ -9,7 +9,11 @@ use iroh::{Endpoint, EndpointAddr, RelayMode, RelayUrl, TransportAddr, endpoint:
 use iroh_tickets::endpoint::EndpointTicket;
 use n0_future::time::{Duration, Instant, timeout};
 
+mod diagnostics;
+mod relay;
 mod session;
+pub use diagnostics::{TransportDiagnostic, transport_diagnostics};
+pub use relay::parse_relay_urls;
 
 /// Application-layer protocol identifier for Medousa HTTP tunneling.
 pub const ALPN: &[u8] = b"medousa-http/1";
@@ -34,6 +38,7 @@ pub struct IrohHttpBody {
     buffer: Vec<u8>,
     finished: bool,
     deadline: Option<Instant>,
+    connection: iroh::endpoint::Connection,
     // Keep the pool entry alive while a stream uses it, including across cache eviction.
     _session: Arc<session::ClientSession>,
 }
@@ -51,10 +56,18 @@ impl IrohHttpBody {
         let budget = self.deadline.map_or(STREAM_IDLE_TIMEOUT, |deadline| {
             deadline.saturating_duration_since(Instant::now())
         });
-        let read = timeout(budget, self.recv.read(&mut chunk))
-            .await
-            .map_err(|_| anyhow::anyhow!("timed out reading iroh HTTP body"))?
-            .context("read iroh HTTP body")?;
+        let started = Instant::now();
+        let read = match timeout(budget, self.recv.read(&mut chunk)).await {
+            Ok(Ok(read)) => read,
+            Ok(Err(error)) => {
+                diagnostics::record("body", "failed", started, Some(&self.connection));
+                return Err(error).context("read iroh HTTP body");
+            }
+            Err(_) => {
+                diagnostics::record("body", "timeout", started, Some(&self.connection));
+                bail!("timed out reading iroh HTTP body");
+            }
+        };
         let Some(read) = read else {
             self.finished = true;
             return Ok(None);
@@ -189,12 +202,24 @@ async fn request_with_budget(
     budget: Duration,
 ) -> Result<IrohHttpResponse> {
     let deadline = Instant::now() + budget;
-    timeout(
+    let started = Instant::now();
+    match timeout(
         budget,
         request_inner(ticket, method, path, headers, body, deadline),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("timed out opening iroh HTTP response"))?
+    {
+        Ok(result) => {
+            if result.is_err() {
+                diagnostics::record("response_open", "failed", started, None);
+            }
+            result
+        }
+        Err(_) => {
+            diagnostics::record("response_open", "timeout", started, None);
+            bail!("timed out opening iroh HTTP response");
+        }
+    }
 }
 
 async fn request_inner(
@@ -234,18 +259,15 @@ async fn exchange(
     body: Option<&[u8]>,
     deadline: Instant,
 ) -> Result<IrohHttpResponse> {
-    let conn = session.connection(endpoint, addr.clone()).await?;
+    let started = Instant::now();
+    let mut conn = session.connection(endpoint, addr.clone()).await?;
     let (mut send, mut recv) = match conn.open_bi().await {
         Ok(stream) => stream,
         Err(_) => {
             // Opening failed before any HTTP bytes were sent: a safe redial.
             session.invalidate(addr.id, conn.stable_id()).await;
-            session
-                .connection(endpoint, addr)
-                .await?
-                .open_bi()
-                .await
-                .context("open bi stream")?
+            conn = session.connection(endpoint, addr).await?;
+            conn.open_bi().await.context("open bi stream")?
         }
     };
 
@@ -273,6 +295,7 @@ async fn exchange(
         name.eq_ignore_ascii_case("content-type") && value.contains("text/event-stream")
     });
 
+    diagnostics::record("response_headers", "ok", started, Some(&conn));
     Ok(IrohHttpResponse {
         status,
         headers: response_headers,
@@ -281,6 +304,7 @@ async fn exchange(
             buffer: raw,
             finished: false,
             deadline: (!streaming).then_some(deadline),
+            connection: conn,
             _session: session,
         },
     })

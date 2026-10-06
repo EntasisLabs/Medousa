@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use httparse::{EMPTY_HEADER, Request, Status};
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler, Router};
-use iroh::{Endpoint, SecretKey, endpoint::presets};
+use iroh::{Endpoint, EndpointAddr, RelayMode, RelayUrl, SecretKey, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
 use tokio::sync::Semaphore;
 use tracing::Instrument;
@@ -117,13 +117,31 @@ pub async fn spawn_workshop_gateway_with_secret(
     secret_key: SecretKey,
 ) -> Result<WorkshopGateway> {
     let upstream = normalize_upstream(upstream)?;
+    let mut relay_mode = iroh::endpoint::default_relay_mode();
+    match std::env::var("MEDOUSA_IROH_RELAYS") {
+        Ok(raw) => {
+            let relays = medousa_iroh_http::parse_relay_urls(&raw)?;
+            relay_mode = RelayMode::custom(relays);
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        Err(_) => bail!("MEDOUSA_IROH_RELAYS must contain valid UTF-8"),
+    }
+    let relay_urls = relay_mode.relay_map().urls::<Vec<_>>();
     let endpoint = Endpoint::builder(presets::N0)
         .secret_key(secret_key)
+        .relay_mode(relay_mode)
         .bind()
         .await
         .context("bind iroh endpoint")?;
-    endpoint.online().await;
-    let ticket = EndpointTicket::new(endpoint.addr());
+    if tokio::time::timeout(Duration::from_secs(10), endpoint.online())
+        .await
+        .is_err()
+    {
+        tracing::warn!("Iroh relay registration timed out; direct connections remain available");
+    }
+    // Include backups too, so saved invitations survive a home-relay change.
+    // Browsers cannot use the native endpoint's direct IP paths.
+    let ticket = EndpointTicket::new(with_relay_discovery(endpoint.addr(), relay_urls));
     let endpoint_id = endpoint.addr().id.to_string();
     let info = IrohWorkshopInfo {
         ticket: ticket.to_string(),
@@ -144,6 +162,13 @@ pub fn workshop_ticket_from_router(router: &Router) -> Result<IrohWorkshopInfo> 
         ticket: ticket.to_string(),
         endpoint_id: router.endpoint().addr().id.to_string(),
     })
+}
+
+fn with_relay_discovery(mut addr: EndpointAddr, relays: Vec<RelayUrl>) -> EndpointAddr {
+    for relay in relays {
+        addr = addr.with_relay_url(relay);
+    }
+    addr
 }
 
 async fn proxy_stream(
@@ -378,6 +403,20 @@ fn normalize_upstream(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invitation_preserves_relay_discovery_while_registration_is_pending() {
+        let peer = SecretKey::from_bytes(&[9; 32]).public();
+        let relay: RelayUrl = "https://relay.example.com/".parse().unwrap();
+        let backup: RelayUrl = "https://backup.example.com/".parse().unwrap();
+        let addr =
+            with_relay_discovery(EndpointAddr::new(peer), vec![relay.clone(), backup.clone()]);
+        assert_eq!(addr.id, peer);
+        assert_eq!(addr.relay_urls().count(), 2);
+        let selected =
+            with_relay_discovery(EndpointAddr::new(peer).with_relay_url(relay), vec![backup]);
+        assert_eq!(selected.relay_urls().count(), 2);
+    }
 
     #[test]
     fn request_complete_waits_for_post_body() {
