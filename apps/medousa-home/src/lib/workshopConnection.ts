@@ -220,17 +220,26 @@ async function recoverInteractiveStreams(): Promise<void> {
 
 /** Restart SSE pipes without a full settings/runtime reload. */
 async function restartWorkshopStreamsLite(): Promise<void> {
+  const generation = workshopRecoveryGeneration;
   await stopWorkspaceStream();
+  if (!recoveryIsCurrent(generation)) return;
   await stopEnvironmentSync();
+  if (!recoveryIsCurrent(generation)) return;
   await startWorkspaceStream(workspace.revision || undefined);
+  if (!recoveryIsCurrent(generation)) return;
   await startEnvironmentSync();
-  await chat.tryReattachActiveTurn(workspace.cards);
+  if (!recoveryIsCurrent(generation)) return;
+  void chat.tryReattachActiveTurn(workspace.cards).catch((error) => {
+    if (recoveryIsCurrent(generation)) chat.noteResumeFailure(error);
+  });
 }
 
 function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(
     onEnvironmentEvent<EnvironmentStreamEvent>((event) => {
-      if (workshopTransitioning) return;
+      if (workshopTransitioning || workshopTeardown) return;
+      connection.noteTraffic();
+      connectionReconnect.noteSuccess();
       environmentReconnect.noteSuccess();
       environment.applyEvent(event);
     }),
@@ -244,7 +253,9 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   );
   unlisteners.push(
     onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
-      if (workshopTransitioning) return;
+      if (workshopTransitioning || workshopTeardown) return;
+      connection.noteTraffic();
+      connectionReconnect.noteSuccess();
       workspaceReconnect.noteSuccess();
       workspace.applyEvent(event);
       if (awaitingWorkspaceRecoverySnapshot && event.stream_event_type === "snapshot") {
@@ -271,7 +282,9 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   );
   unlisteners.push(
     onInteractiveEvent<TurnStreamEnvelopeV3>((envelope) => {
-      if (workshopTransitioning) return;
+      if (workshopTransitioning || workshopTeardown) return;
+      connection.noteTraffic();
+      connectionReconnect.noteSuccess();
       chat.applyStreamEvent(envelope);
       if (!isTauriMobilePlatform()) return;
 
@@ -403,11 +416,12 @@ export async function resumeWorkshopObserver(
 
   try {
     await invalidateRouteCaches().catch(() => {});
-    await sendPairingHeartbeat().catch(() => {});
+    void sendPairingHeartbeat().catch(() => {});
     // Observer does not own spawn — main window / connectWorkshop does.
+    const probeTrafficRevision = connection.trafficRevision;
     const health = await checkDaemonHealth();
     if (!recoveryIsCurrent(generation)) return;
-    connection.setHealth(health);
+    connection.setHealth(health, probeTrafficRevision);
     onHealthChange(health);
     if (!health.ok) {
       scheduleWorkshopConnectionRecovery(onHealthChange);
@@ -456,18 +470,19 @@ export async function resumeWorkshop(
   const generation = workshopRecoveryGeneration;
 
   try {
-    // Every paired Home surface renews the same durable device trust. Waiting
-    // here prevents the health probe from racing an expired bearer on resume.
-    // A network handoff (WiFi↔LTE, Mac sleep/DHCP) may have happened while we were
-    // backgrounded. Flush both route caches so the health probe below re-picks
-    // LAN vs Iroh instead of riding a stale cached route for the rest of its TTL.
     await invalidateRouteCaches().catch(() => {});
-    await sendPairingHeartbeat().catch(() => {});
-
-    // P0.3 — if the sidecar died over sleep, spawn again before giving up.
-    const health = await ensureWorkshopEngineHealthy({ allowSpawn: true });
     if (!recoveryIsCurrent(generation)) return;
-    connection.setHealth(health);
+    void sendPairingHeartbeat().catch(() => {});
+    const remote = workshops.activeWorkshop?.kind !== "local";
+    if (remote) {
+      try { await restartWorkshopStreamsLite(); }
+      catch { scheduleWorkspaceStreamReconnect(); scheduleEnvironmentStreamReconnect(); }
+    }
+    if (!recoveryIsCurrent(generation)) return;
+    const probeTrafficRevision = connection.trafficRevision;
+    const health = await ensureWorkshopEngineHealthy({ allowSpawn: !remote });
+    if (!recoveryIsCurrent(generation)) return;
+    connection.setHealth(health, probeTrafficRevision);
     onHealthChange(health);
     if (!health.ok) {
       scheduleWorkshopConnectionRecovery(onHealthChange);
@@ -476,8 +491,12 @@ export async function resumeWorkshop(
 
     void registerBrowserHostClient(health);
 
-    // Cards first so handoff synthesis recovery has an authoritative board.
+    if (!remote) {
+      try { await restartWorkshopStreamsLite(); }
+      catch { scheduleWorkspaceStreamReconnect(); scheduleEnvironmentStreamReconnect(); }
+    }
     await workspace.reconcileCardsFromSnapshot();
+    if (!recoveryIsCurrent(generation)) return;
 
     await Promise.all([
       chat.reconcileOnResume({ notice: false }, workspace.cards),
@@ -492,12 +511,6 @@ export async function resumeWorkshop(
 
     // History merge may link workers missed while SSE was detached.
     await workspace.recoverPendingWorkerResults();
-
-    try {
-      await restartWorkshopStreamsLite();
-    } catch {
-      scheduleWorkspaceStreamReconnect();
-    }
 
     // Glance surfaces (Live Activity / home widget) need a forced quiet/working sync
     // after cards refresh — otherwise they stay stuck on the pre-background snapshot.
@@ -565,15 +578,16 @@ async function refreshCurrentWorkshop(
   try {
     await ensureMobileDaemonUrl();
     await invalidateRouteCaches();
-    // The transport renews expired/rejected paired sessions using the saved key.
-    await sendPairingHeartbeat().catch(() => {});
+    // Registration is best-effort. The stream transport renews due sessions.
+    void sendPairingHeartbeat().catch(() => {});
+    const probeTrafficRevision = connection.trafficRevision;
     const health = await ensureWorkshopEngineHealthy({
       allowSpawn: workshops.activeWorkshop?.kind === "local",
     });
     if (!recoveryIsCurrent(generation)) {
       throw new Error("The workshop connection changed while refreshing.");
     }
-    connection.setHealth(health);
+    connection.setHealth(health, probeTrafficRevision);
     onHealthChange(health);
     if (!health.ok) {
       scheduleWorkshopConnectionRecovery(onHealthChange);
@@ -584,20 +598,21 @@ async function refreshCurrentWorkshop(
     await Promise.all([
       stopWorkspaceStream(), stopEnvironmentSync(), chat.stopOwnedInteractiveStreams(),
     ]);
-    try {
-      await workspace.reconcileCardsFromSnapshot();
-      await Promise.all([
-        environment.load(), vault.refreshVaultRoots(), vault.refreshNotes(),
-        chat.refreshSessions({ force: true }),
-        chat.reconcileOnResume({ notice: false }, workspace.cards),
-        chat.hydrateAskThreads(workspace.cards),
-        userProfiles.syncOnResume(health),
-        executionTargets.refresh({ force: true }), bots.refresh({ force: true }),
-      ]);
-      await workspace.recoverPendingWorkerResults();
-    } finally {
-      await restartWorkshopStreamsLite();
-    }
+    const refreshGeneration = workshopRecoveryGeneration;
+    await restartWorkshopStreamsLite();
+    if (!recoveryIsCurrent(refreshGeneration)) throw new Error("The workshop connection changed while refreshing.");
+    await workspace.reconcileCardsFromSnapshot();
+    if (!recoveryIsCurrent(refreshGeneration)) throw new Error("The workshop connection changed while refreshing.");
+    await Promise.all([
+      environment.load(), vault.refreshVaultRoots(), vault.refreshNotes(),
+      chat.refreshSessions({ force: true }),
+      chat.reconcileOnResume({ notice: false }, workspace.cards),
+      chat.hydrateAskThreads(workspace.cards),
+      userProfiles.syncOnResume(health),
+      executionTargets.refresh({ force: true }), bots.refresh({ force: true }),
+    ]);
+    if (!recoveryIsCurrent(refreshGeneration)) throw new Error("The workshop connection changed while refreshing.");
+    await workspace.recoverPendingWorkerResults();
     void registerBrowserHostClient(health);
     return health;
   } catch (error) {
@@ -719,11 +734,11 @@ export function connectWorkshop(options: {
       connection.setHealth(null);
       options.onHealthChange(null);
       await ensureMobileDaemonUrl();
-      await sendPairingHeartbeat().catch(() => {});
+      void sendPairingHeartbeat().catch(() => {});
       // P0.1 — day-2+ launch: spawn local engine when health is down (wizard warm
       // only runs while the first-run sheet is visible).
       health = await ensureWorkshopEngineHealthy({
-        allowSpawn: mode === "full",
+        allowSpawn: mode === "full" && workshops.activeWorkshop?.kind === "local",
       });
       if (!recoveryIsCurrent(generation)) return;
       connection.setHealth(health);

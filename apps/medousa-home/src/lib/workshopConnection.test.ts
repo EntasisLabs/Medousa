@@ -5,7 +5,7 @@ import type { EnvironmentStreamEvent } from "$lib/types/environment";
 const f = vi.hoisted(() => ({
   calls: [] as string[],
   health: { ok: true, message: "Connected" },
-  probe: vi.fn(),
+  probe: vi.fn(), heartbeat: vi.fn(), snapshot: vi.fn(), noteTraffic: vi.fn(),
   loadEnvironment: vi.fn(),
   notify: vi.fn(),
   directHealth: vi.fn(), setHealth: vi.fn(), startWorkspace: vi.fn(), startEnvironment: vi.fn(), recoverWorkers: vi.fn(),
@@ -18,13 +18,13 @@ const f = vi.hoisted(() => ({
 }));
 vi.mock("$lib/daemonConnection", () => ({ ensureMobileDaemonUrl: async () => {} }));
 vi.mock("$lib/utils/pairingClient", () => ({
-  sendPairingHeartbeat: async () => { f.calls.push("credentials"); },
+  sendPairingHeartbeat: f.heartbeat,
 }));
 vi.mock("$lib/utils/ensureWorkshopEngine", () => ({ ensureWorkshopEngineHealthy: f.probe }));
 vi.mock("$lib/stores/connection.svelte", () => ({
   connection: {
     setRecovering: (value: boolean) => { f.calls.push(`recovering:${value}`); },
-    setHealth: f.setHealth,
+    setHealth: f.setHealth, noteTraffic: f.noteTraffic, trafficRevision: 0,
   },
 }));
 vi.mock("$lib/stores/workshops.svelte", () => ({ workshops: {
@@ -45,7 +45,7 @@ vi.mock("$lib/stores/vault.svelte", () => ({ vault: {
 vi.mock("$lib/stores/workspace.svelte", () => ({ workspace: {
   cards: [], revision: 42, applyEvent: vi.fn(), setError: vi.fn(),
   syncTurnWorkerCardsToChat: async () => {},
-  reconcileCardsFromSnapshot: async () => { f.calls.push("snapshot"); },
+  reconcileCardsFromSnapshot: f.snapshot,
   recoverPendingWorkerResults: f.recoverWorkers,
 } }));
 vi.mock("$lib/stores/environment.svelte", () => ({
@@ -78,7 +78,7 @@ vi.mock("$lib/daemon", async () => ({
   startWorkspaceStream: f.startWorkspace,
 }));
 
-import { connectWorkshop, refreshWorkshopConnection } from "./workshopConnection";
+import { connectWorkshop, refreshWorkshopConnection, resumeWorkshop } from "./workshopConnection";
 import { chat } from "$lib/stores/chat.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 
@@ -87,6 +87,9 @@ beforeEach(() => {
   vi.stubGlobal("document", { visibilityState: "visible", addEventListener: vi.fn(), removeEventListener: vi.fn() });
   f.calls.length = 0;
   f.health = { ok: true, message: "Connected" };
+  f.heartbeat.mockReset(); f.snapshot.mockReset(); f.noteTraffic.mockClear();
+  f.heartbeat.mockImplementation(async () => { f.calls.push("credentials"); });
+  f.snapshot.mockImplementation(async () => { f.calls.push("snapshot"); });
   f.probe.mockReset();
   f.loadEnvironment.mockReset();
   f.probe.mockImplementation(async () => { f.calls.push("health"); return f.health; });
@@ -108,6 +111,7 @@ describe("refreshWorkshopConnection", () => {
     expect(f.calls.indexOf("routes")).toBeLessThan(f.calls.indexOf("credentials"));
     expect(f.calls.indexOf("credentials")).toBeLessThan(f.calls.indexOf("health"));
     expect(f.probe).toHaveBeenCalledWith({ allowSpawn: false });
+    expect(f.calls.indexOf("start-workspace")).toBeLessThan(f.calls.indexOf("snapshot"));
     expect(f.calls).toEqual(expect.arrayContaining(["stop-interactive", "snapshot", "start-workspace", "start-environment", "reattach"]));
     expect(chat.sessionId).toBe("session-1");
     expect(chat.draft).toBe("Keep this draft");
@@ -116,6 +120,18 @@ describe("refreshWorkshopConnection", () => {
     expect(vault.selectedPath).toBe("notes/draft.md");
     expect(vault.dirty).toBe(true);
     expect(f.calls.at(-1)).toBe("recovering:false");
+  });
+
+  it("opens streams while heartbeat and projection requests are still pending", async () => {
+    f.heartbeat.mockReturnValueOnce(new Promise(() => {}));
+    let resolve!: () => void;
+    f.snapshot.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+    const refresh = refreshWorkshopConnection(f.notify);
+    await vi.waitFor(() => expect(f.startWorkspace).toHaveBeenCalled());
+    expect(f.startEnvironment).toHaveBeenCalled();
+    await vi.waitFor(() => expect(resolve).toBeDefined());
+    resolve();
+    await refresh;
   });
 
   it("keeps existing pipes and open work when the workshop is unreachable", async () => {
@@ -146,6 +162,25 @@ describe("refreshWorkshopConnection", () => {
     expect(f.calls.filter((call) => call === "routes")).toHaveLength(1);
     expect(f.calls.filter((call) => call === "start-workspace")).toHaveLength(1);
     expect(f.notify).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("foreground recovery", () => {
+  it("remote streams reopen before a stalled health probe finishes", async () => {
+    const detach = connectWorkshop({ onHealthChange: f.notify });
+    await vi.waitFor(() => expect(f.calls).toContain("theme"));
+    f.calls.length = 0;
+    f.probe.mockClear();
+    let resolve!: (health: typeof f.health) => void;
+    f.probe.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const resume = resumeWorkshop(f.notify);
+    await vi.waitFor(() => expect(f.probe).toHaveBeenCalled());
+    expect(f.calls).toContain("start-workspace");
+    expect(f.calls).toContain("start-environment");
+    expect(f.calls).not.toContain("snapshot");
+    resolve(f.health);
+    await resume;
+    await detach();
   });
 });
 
@@ -210,6 +245,7 @@ describe("quiet background stream recovery", () => {
       expect(f.calls).not.toContain("reattach");
       expect(f.recoverWorkers).not.toHaveBeenCalled();
       f.workspaceEvent!({ workspace_revision: 42, stream_event_type: "snapshot", emitted_at_utc: "" });
+      expect(f.noteTraffic).toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(0);
       expect(f.recoverWorkers).toHaveBeenCalledOnce();
       expect(f.calls).toContain("reattach");

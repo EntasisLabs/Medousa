@@ -49,7 +49,12 @@ runs in the background. A quiet **Reconnecting…** line near the composer offer
 **Retry** and **Connection settings**; sending resumes once connected.
 A dropped background stream reconnects from its saved revision without a
 health-check preflight or reloading the screen. Retry delays grow until stream
-data confirms that the connection has recovered.
+data confirms that the connection has recovered. On foreground resume, remote
+streams reopen before health and snapshot refreshes finish. Device heartbeats
+run in the background; expired sessions are renewed when a request needs them.
+A successful stream event also restores sending, even if an older health probe
+timed out. Replaced stream connections are cancelled while opening, so their
+late errors cannot start another recovery cycle.
 
 If a paired connection becomes stale, open the workshop menu and choose
 **Refresh connection**, or use **Refresh** on the active workshop in

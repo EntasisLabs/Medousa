@@ -38,7 +38,7 @@ pub mod workflow;
 pub mod workshop_http;
 pub mod workspace_card;
 
-use crate::daemon::sse::stream_sse_json_workshop;
+use crate::daemon::sse::{open_unless_cancelled, stream_sse_json_workshop};
 use crate::daemon::types::{
     AgentModeId, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
     InteractiveTurnRequest, StageRoutingMatrix, TurnSurfaceContext, TurnWorldSelection,
@@ -231,7 +231,12 @@ pub fn apply_daemon_url(state: &DaemonState, url: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn invalidate_route_caches() {
     workshop_transport::invalidate_all_route_caches();
-    medousa_iroh_http::notify_network_change().await;
+    // Socket re-probing must not hold up stream recovery on an unavailable relay.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        medousa_iroh_http::notify_network_change(),
+    )
+    .await;
 }
 
 fn connected_health(detail: medousa_types::HealthResponse, endpoint: &str) -> DaemonHealth {
@@ -355,11 +360,17 @@ pub async fn workspace_stream_start(
     );
 
     let config = self::sdk::transport_config(&state)?;
-    let cancel_rx = replace_cancel_slot(&state.workspace_cancel);
+    let mut cancel_rx = replace_cancel_slot(&state.workspace_cancel);
 
     tokio::spawn(async move {
-        match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
-            Ok(source) => {
+        match open_unless_cancelled(
+            workshop_transport::workshop_get_bytes_stream(&config, &path),
+            &mut cancel_rx,
+        )
+        .await
+        {
+            None => return,
+            Some(Ok(source)) => {
                 stream_sse_json_workshop::<WorkspaceStreamEvent>(
                     &app,
                     source,
@@ -369,7 +380,7 @@ pub async fn workspace_stream_start(
                 )
                 .await;
             }
-            Err(err) => {
+            Some(Err(err)) => {
                 let _ = app.emit("workspace://error", serde_json::json!({ "message": err }));
             }
         }
@@ -417,11 +428,17 @@ pub async fn environment_stream_start(
     );
 
     let config = self::sdk::transport_config(&state)?;
-    let cancel_rx = replace_cancel_slot(&state.environment_cancel);
+    let mut cancel_rx = replace_cancel_slot(&state.environment_cancel);
 
     tokio::spawn(async move {
-        match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
-            Ok(source) => {
+        match open_unless_cancelled(
+            workshop_transport::workshop_get_bytes_stream(&config, &path),
+            &mut cancel_rx,
+        )
+        .await
+        {
+            None => return,
+            Some(Ok(source)) => {
                 stream_sse_json_workshop::<EnvironmentStreamEvent>(
                     &app,
                     source,
@@ -431,7 +448,7 @@ pub async fn environment_stream_start(
                 )
                 .await;
             }
-            Err(err) => {
+            Some(Err(err)) => {
                 let _ = app.emit("environment://error", serde_json::json!({ "message": err }));
             }
         }
@@ -665,7 +682,7 @@ pub async fn interactive_stream_start(
     let stream_url = rewrite_stream_url_for_client(&stream_url, &daemon_url);
     let turn_id = extract_turn_id_from_stream_url(&stream_url)
         .ok_or_else(|| "stream URL missing turn id".to_string())?;
-    let cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
+    let mut cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
 
     let path = reqwest::Url::parse(&stream_url)
         .ok()
@@ -680,14 +697,18 @@ pub async fn interactive_stream_start(
         .unwrap_or_else(|| stream_url.clone());
 
     tokio::spawn(async move {
-        match workshop_transport::workshop_get_bytes_stream_with_accept(
-            &config,
-            &path,
-            Some(TURN_STREAM_V3_MEDIA_TYPE),
+        match open_unless_cancelled(
+            workshop_transport::workshop_get_bytes_stream_with_accept(
+                &config,
+                &path,
+                Some(TURN_STREAM_V3_MEDIA_TYPE),
+            ),
+            &mut cancel_rx,
         )
         .await
         {
-            Ok(source) => {
+            None => return,
+            Some(Ok(source)) => {
                 stream_sse_json_workshop::<TurnStreamEnvelopeV3>(
                     &app,
                     source,
@@ -697,7 +718,7 @@ pub async fn interactive_stream_start(
                 )
                 .await;
             }
-            Err(err) => {
+            Some(Err(err)) => {
                 let _ = app.emit("interactive://error", serde_json::json!({ "message": err }));
             }
         }

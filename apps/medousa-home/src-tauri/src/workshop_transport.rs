@@ -199,14 +199,30 @@ pub async fn workshop_get_bytes_stream_with_accept(
     path: &str,
     accept: Option<&str>,
 ) -> Result<WorkshopByteStream, String> {
+    tokio::time::timeout(
+        Duration::from_secs(20),
+        open_authenticated_stream(config, path, accept),
+    )
+    .await
+    .map_err(|_| "Workshop stream opening timed out after 20 seconds.".to_string())?
+}
+
+async fn open_authenticated_stream(
+    config: &WorkshopTransportConfig,
+    path: &str,
+    accept: Option<&str>,
+) -> Result<WorkshopByteStream, String> {
     let effective = crate::pairing_client::ensure_fresh_session(config)
         .await
         .unwrap_or_else(|_| config.clone());
     let result = workshop_get_bytes_stream_once(&effective, path, accept).await;
-    if result.as_ref().is_err_and(|error| is_unauthorized_error(error))
+    if result
+        .as_ref()
+        .is_err_and(|error| is_unauthorized_error(error))
         && !effective.pairing_id.trim().is_empty()
     {
-        let refreshed = crate::pairing_client::refresh_session_after_unauthorized(&effective).await?;
+        let refreshed =
+            crate::pairing_client::refresh_session_after_unauthorized(&effective).await?;
         return workshop_get_bytes_stream_once(&refreshed, path, accept).await;
     }
     result
@@ -225,21 +241,32 @@ async fn workshop_get_bytes_stream_once(
             reqwest::header::HeaderValue::from_str(accept).map_err(|err| err.to_string())?,
         );
     }
-    match route {
+    let result = match route {
         WorkshopRoute::Lan => lan_get_stream(config, path, &headers).await,
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        WorkshopRoute::Iroh => {
-            let body = iroh_open_stream(config, path, &headers).await?;
-            Ok(WorkshopByteStream::Iroh(body))
+        WorkshopRoute::Iroh => iroh_open_stream(config, path, &headers)
+            .await
+            .map(WorkshopByteStream::Iroh),
+    };
+    match result {
+        Err(error) if is_connect_error(&error) => {
+            invalidate_workshop_route_cache();
+            // GET stream opens may safely switch transport after a network handoff.
+            if route == WorkshopRoute::Lan && config.iroh_ticket.is_some() {
+                return iroh_open_stream(config, path, &headers)
+                    .await
+                    .map(WorkshopByteStream::Iroh);
+            }
+            if route == WorkshopRoute::Iroh && pick_route(config).await == WorkshopRoute::Lan {
+                return lan_get_stream(config, path, &headers).await;
+            }
+            Err(error)
         }
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        WorkshopRoute::Iroh => Err("iroh transport is only available on mobile".to_string()),
+        result => result,
     }
 }
 
 pub enum WorkshopByteStream {
     Lan(reqwest::Response),
-    #[cfg(any(target_os = "ios", target_os = "android"))]
     Iroh(medousa_iroh_http::IrohHttpBody),
 }
 
@@ -251,7 +278,6 @@ impl WorkshopByteStream {
                 .await
                 .map_err(|err| err.to_string())
                 .map(|chunk| chunk.map(|bytes| bytes.to_vec())),
-            #[cfg(any(target_os = "ios", target_os = "android"))]
             WorkshopByteStream::Iroh(body) => {
                 body.read_chunk().await.map_err(|err| err.to_string())
             }
@@ -317,10 +343,13 @@ async fn workshop_request(
         .await
         .unwrap_or_else(|_| config.clone());
     let result = workshop_request_once(&effective, method, path, &payload, is_stream).await;
-    if result.as_ref().is_err_and(|error| is_unauthorized_error(error))
+    if result
+        .as_ref()
+        .is_err_and(|error| is_unauthorized_error(error))
         && !effective.pairing_id.trim().is_empty()
     {
-        let refreshed = crate::pairing_client::refresh_session_after_unauthorized(&effective).await?;
+        let refreshed =
+            crate::pairing_client::refresh_session_after_unauthorized(&effective).await?;
         return workshop_request_once(&refreshed, method, path, &payload, is_stream).await;
     }
     result
@@ -336,9 +365,7 @@ async fn workshop_request_once(
     let route = pick_route(config).await;
     let headers = auth_headers(config);
     let result = match route {
-        WorkshopRoute::Lan => {
-            lan_request(config, method, path, &headers, payload, is_stream).await
-        }
+        WorkshopRoute::Lan => lan_request(config, method, path, &headers, payload, is_stream).await,
         WorkshopRoute::Iroh => iroh_request(config, method, path, &headers, payload).await,
     };
 
@@ -638,7 +665,6 @@ fn build_multipart_body(fields: &[MultipartField]) -> (Vec<u8>, String) {
     (body, format!("multipart/form-data; boundary={boundary}"))
 }
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 async fn iroh_open_stream(
     config: &WorkshopTransportConfig,
     path: &str,
