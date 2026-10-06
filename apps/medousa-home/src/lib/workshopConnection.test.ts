@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WorkspaceStreamEvent } from "$lib/types/workspace";
+import type { EnvironmentStreamEvent } from "$lib/types/environment";
 
 const f = vi.hoisted(() => ({
   calls: [] as string[],
@@ -6,6 +8,11 @@ const f = vi.hoisted(() => ({
   probe: vi.fn(),
   loadEnvironment: vi.fn(),
   notify: vi.fn(),
+  directHealth: vi.fn(), setHealth: vi.fn(), startWorkspace: vi.fn(), startEnvironment: vi.fn(), recoverWorkers: vi.fn(),
+  workspaceError: undefined as ((error: { message: string }) => void) | undefined,
+  environmentError: undefined as ((error: { message: string }) => void) | undefined,
+  workspaceEvent: undefined as ((event: WorkspaceStreamEvent) => void) | undefined,
+  environmentEvent: undefined as ((event: EnvironmentStreamEvent) => void) | undefined,
   chat: { sessionId: "session-1", draft: "Keep this draft", messages: [{ content: "Keep this conversation" }] },
   vault: { selectedPath: "notes/draft.md", content: "Unsaved edits", dirty: true },
 }));
@@ -17,39 +24,41 @@ vi.mock("$lib/utils/ensureWorkshopEngine", () => ({ ensureWorkshopEngineHealthy:
 vi.mock("$lib/stores/connection.svelte", () => ({
   connection: {
     setRecovering: (value: boolean) => { f.calls.push(`recovering:${value}`); },
-    setHealth: () => {},
+    setHealth: f.setHealth,
   },
 }));
 vi.mock("$lib/stores/workshops.svelte", () => ({ workshops: {
   activeWorkshop: { kind: "portal" }, load: async () => {},
-  restoreLastSession: async () => {}, applyThemeForActiveWorkshop: () => {},
+  restoreLastSession: async () => {}, applyThemeForActiveWorkshop: () => { f.calls.push("theme"); },
 } }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: {
   ...f.chat,
   sessionPristine: true, setStreamRole: () => {}, noteResumeFailure: vi.fn(),
   stopOwnedInteractiveStreams: async () => { f.calls.push("stop-interactive"); },
-  refreshSessions: async () => {}, reconcileOnResume: async () => {}, hydrateAskThreads: async () => {},
+  ensureSessionHydrated: async () => {}, hydrateAskThreads: async () => {},
+  refreshSessions: async () => {}, reconcileOnResume: async () => {},
   tryReattachActiveTurn: async () => { f.calls.push("reattach"); return true; },
 } }));
 vi.mock("$lib/stores/vault.svelte", () => ({ vault: {
   ...f.vault, refreshVaultRoots: async () => {}, refreshNotes: async () => {},
 } }));
 vi.mock("$lib/stores/workspace.svelte", () => ({ workspace: {
-  cards: [], revision: 42,
+  cards: [], revision: 42, applyEvent: vi.fn(), setError: vi.fn(),
+  syncTurnWorkerCardsToChat: async () => {},
   reconcileCardsFromSnapshot: async () => { f.calls.push("snapshot"); },
-  recoverPendingWorkerResults: async () => {},
+  recoverPendingWorkerResults: f.recoverWorkers,
 } }));
 vi.mock("$lib/stores/environment.svelte", () => ({
-  environment: { load: f.loadEnvironment },
+  environment: { load: f.loadEnvironment, applyEvent: vi.fn(), setError: vi.fn() },
   stopEnvironmentSync: async () => { f.calls.push("stop-environment"); },
-  startEnvironmentSync: async () => { f.calls.push("start-environment"); },
+  startEnvironmentSync: f.startEnvironment,
 }));
 vi.mock("$lib/platform", () => ({ isBrowserWorkshop: () => true, isTauriMobilePlatform: () => false }));
 vi.mock("$lib/stores/bots.svelte", () => ({ bots: { refresh: async () => {} } }));
 vi.mock("$lib/stores/executionTargets.svelte", () => ({ executionTargets: { refresh: async () => {} } }));
-vi.mock("$lib/stores/userProfiles.svelte", () => ({ userProfiles: { syncOnResume: async () => {} } }));
+vi.mock("$lib/stores/userProfiles.svelte", () => ({ userProfiles: { syncOnResume: async () => {}, load: async () => {} } }));
 // Unused bootstrap/reset dependencies must not be touched by same-workshop refresh.
-vi.mock("$lib/stores/automations.svelte", () => ({ automations: {} }));
+vi.mock("$lib/stores/automations.svelte", () => ({ automations: { refresh: async () => {} } }));
 vi.mock("$lib/stores/runtime.svelte", () => ({ runtime: { loadWorkshopRuntime: async () => {}, refresh: async () => {} } }));
 vi.mock("$lib/stores/settings.svelte", () => ({ settings: { applyTheme: () => {}, hydrateWorkRetentionFromDaemon: async () => {} } }));
 vi.mock("$lib/stores/workshopDefaults.svelte", () => ({ workshopDefaults: { load: async () => {}, loaded: false } }));
@@ -58,12 +67,15 @@ vi.mock("$lib/stores/identity.svelte", () => ({ identity: {} }));
 
 // The workspace pipe wrappers below delegate through daemon's exported functions.
 vi.mock("$lib/daemon", async () => ({
-  onEnvironmentEvent: async () => () => {}, onEnvironmentError: async () => () => {},
-  onWorkspaceEvent: async () => () => {}, onWorkspaceError: async () => () => {},
+  checkDaemonHealth: f.directHealth,
+  onEnvironmentEvent: async (handler: typeof f.environmentEvent) => { f.environmentEvent = handler; return () => {}; },
+  onEnvironmentError: async (handler: typeof f.environmentError) => { f.environmentError = handler; return () => {}; },
+  onWorkspaceEvent: async (handler: typeof f.workspaceEvent) => { f.workspaceEvent = handler; return () => {}; },
+  onWorkspaceError: async (handler: typeof f.workspaceError) => { f.workspaceError = handler; return () => {}; },
   onInteractiveEvent: async () => () => {}, onInteractiveError: async () => () => {},
   invalidateRouteCaches: async () => { f.calls.push("routes"); },
   stopWorkspaceStream: async () => { f.calls.push("stop-workspace"); },
-  startWorkspaceStream: async () => { f.calls.push("start-workspace"); },
+  startWorkspaceStream: f.startWorkspace,
 }));
 
 import { connectWorkshop, refreshWorkshopConnection } from "./workshopConnection";
@@ -79,7 +91,13 @@ beforeEach(() => {
   f.loadEnvironment.mockReset();
   f.probe.mockImplementation(async () => { f.calls.push("health"); return f.health; });
   f.loadEnvironment.mockResolvedValue(undefined);
-  f.notify.mockClear();
+  f.notify.mockClear(); f.directHealth.mockReset(); f.setHealth.mockClear();
+  f.startWorkspace.mockReset(); f.startEnvironment.mockReset(); f.recoverWorkers.mockReset();
+  f.startWorkspace.mockImplementation(async () => { f.calls.push("start-workspace"); });
+  f.startEnvironment.mockImplementation(async () => { f.calls.push("start-environment"); });
+  f.recoverWorkers.mockResolvedValue(undefined);
+  f.workspaceError = undefined; f.environmentError = undefined;
+  f.workspaceEvent = undefined; f.environmentEvent = undefined;
 });
 
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -165,5 +183,95 @@ describe("initial workshop connection recovery", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(f.notify).not.toHaveBeenCalledWith(f.health);
     expect(f.calls).not.toContain("start-workspace");
+  });
+});
+
+
+describe("quiet background stream recovery", () => {
+  async function connected() {
+    const detach = connectWorkshop({ onHealthChange: f.notify });
+    await vi.waitFor(() => expect(f.calls).toContain("theme"));
+    f.calls.length = 0;
+    f.loadEnvironment.mockClear(); f.setHealth.mockClear(); f.notify.mockClear(); f.recoverWorkers.mockClear();
+    return detach;
+  }
+
+  it("reconnects a failed workspace stream from its cursor without health checks or UI refreshes", async () => {
+    const detach = await connected();
+    try {
+      f.workspaceError!({ message: "Connection closed" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(f.startWorkspace).toHaveBeenLastCalledWith(42);
+      expect(f.probe).toHaveBeenCalledTimes(1);
+      expect(f.directHealth).not.toHaveBeenCalled();
+      expect(f.setHealth).not.toHaveBeenCalled();
+      expect(f.notify).not.toHaveBeenCalled();
+      expect(f.calls).not.toContain("snapshot");
+      expect(f.calls).not.toContain("reattach");
+      expect(f.recoverWorkers).not.toHaveBeenCalled();
+      f.workspaceEvent!({ workspace_revision: 42, stream_event_type: "snapshot", emitted_at_utc: "" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.recoverWorkers).toHaveBeenCalledOnce();
+      expect(f.calls).toContain("reattach");
+      expect(chat.draft).toBe("Keep this draft");
+      expect(chat.messages).toEqual(f.chat.messages);
+    } finally { detach(); }
+  });
+
+  it("recovers environment and workspace independently without reloading the loaded environment", async () => {
+    const detach = await connected();
+    try {
+      f.environmentError!({ message: "Connection closed" });
+      f.workspaceError!({ message: "Connection closed" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(f.calls.filter(call => call === "start-workspace")).toHaveLength(1);
+      expect(f.calls.filter(call => call === "start-environment")).toHaveLength(1);
+      expect(f.loadEnvironment).not.toHaveBeenCalled();
+      expect(f.directHealth).not.toHaveBeenCalled();
+      expect(f.setHealth).not.toHaveBeenCalled();
+      expect(vault.content).toBe("Unsaved edits");
+    } finally { detach(); }
+  });
+
+  it.each(["workspace", "environment"] as const)("backs off %s failures until real stream data confirms recovery", async (stream) => {
+    const detach = await connected();
+    const fail = stream === "workspace" ? f.workspaceError! : f.environmentError!;
+    const start = stream === "workspace" ? f.startWorkspace : f.startEnvironment;
+    start.mockClear();
+    try {
+      fail({ message: "Handshake failed" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(start).toHaveBeenCalledTimes(1);
+      fail({ message: "Handshake failed after native start returned" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(start).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1338);
+      expect(start).toHaveBeenCalledTimes(2);
+      if (stream === "workspace") {
+        f.workspaceEvent!({ workspace_revision: 42, stream_event_type: "heartbeat", emitted_at_utc: "" });
+      } else {
+        f.environmentEvent!({ revision: 42, eventType: "heartbeat", emittedAtUtc: "" });
+      }
+      fail({ message: "New interruption" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(start).toHaveBeenCalledTimes(3);
+      expect(f.probe).toHaveBeenCalledTimes(1);
+      expect(f.directHealth).not.toHaveBeenCalled();
+    } finally { detach(); }
+  });
+
+  it("does no background reconnection while the app is hidden, and cancels retries on disposal", async () => {
+    const detach = await connected();
+    f.workspaceError!({ message: "Disconnected" });
+    f.environmentError!({ message: "Disconnected" });
+    Object.assign(document, { visibilityState: "hidden" });
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(f.calls).not.toContain("start-workspace");
+    expect(f.calls).not.toContain("start-environment");
+    Object.assign(document, { visibilityState: "visible" });
+    f.workspaceError!({ message: "Disconnected" });
+    detach(); await vi.advanceTimersByTimeAsync(10000);
+    expect(f.calls).not.toContain("start-workspace");
+    expect(f.directHealth).not.toHaveBeenCalled();
   });
 });

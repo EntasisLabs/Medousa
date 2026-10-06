@@ -73,15 +73,17 @@ let workshopTeardown = false;
 let workshopTransitioning = false;
 let workshopConnectMode: WorkshopConnectMode = "full";
 let connectionReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
-const workspaceReconnect = new ReconnectScheduler({
+let environmentReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
+let workspaceReconnect = new ReconnectScheduler({
   policy: DEFAULT_WORKSPACE_BACKOFF,
 });
-const interactiveReconnect = new ReconnectScheduler({
+let interactiveReconnect = new ReconnectScheduler({
   policy: DEFAULT_INTERACTIVE_BACKOFF,
 });
 let resumeWorkshopInFlight = false;
 let workshopRefreshTask: Promise<DaemonHealth> | null = null;
 let lastResumeWorkshopAt = 0;
+let awaitingWorkspaceRecoverySnapshot = false;
 const RESUME_DEBOUNCE_MS = 3_000;
 const TRUST_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const BROWSER_CLIENT_HEARTBEAT_INTERVAL_MS = 45_000;
@@ -89,8 +91,10 @@ const BROWSER_CLIENT_HEARTBEAT_INTERVAL_MS = 45_000;
 function cancelScheduledStreamRecovery() {
   workshopRecoveryGeneration += 1;
   connectionReconnect.cancel();
+  environmentReconnect.cancel();
   workspaceReconnect.cancel();
   interactiveReconnect.cancel();
+  awaitingWorkspaceRecoverySnapshot = false;
 }
 
 function recoveryIsCurrent(generation: number): boolean {
@@ -134,24 +138,16 @@ function scheduleWorkshopConnectionRecovery(
 
 function scheduleEnvironmentStreamReconnect() {
   if (workshopTeardown || workshopTransitioning || workshopConnectMode === "observer") return;
-  workspaceReconnect.schedule(() => recoverEnvironmentStream());
+  environmentReconnect.schedule(() => recoverEnvironmentStream());
 }
 
 async function recoverEnvironmentStream(): Promise<void> {
   const generation = workshopRecoveryGeneration;
-  if (!recoveryIsCurrent(generation)) return;
+  if (!recoveryIsCurrent(generation) || document.visibilityState === "hidden") return;
   try {
-    const health = await checkDaemonHealth();
-    if (!recoveryIsCurrent(generation)) return;
-    connection.setHealth(health);
-    if (!health.ok) {
-      scheduleEnvironmentStreamReconnect();
-      return;
-    }
-    await stopEnvironmentSync();
-    if (!recoveryIsCurrent(generation)) return;
-    await environment.load();
-    if (!recoveryIsCurrent(generation)) return;
+    // The stream sends a newer spec snapshot from its revision cursor. A health
+    // preflight and full environment load add traffic and can replace loaded UI
+    // with defaults when the network is slow.
     await startEnvironmentSync();
     if (!recoveryIsCurrent(generation)) return;
   } catch {
@@ -167,24 +163,15 @@ function scheduleWorkspaceStreamReconnect() {
 
 async function recoverWorkspaceStream(): Promise<void> {
   const generation = workshopRecoveryGeneration;
-  if (!recoveryIsCurrent(generation)) return;
+  if (!recoveryIsCurrent(generation) || document.visibilityState === "hidden") return;
 
   try {
-    const health = await checkDaemonHealth();
-    if (!recoveryIsCurrent(generation)) return;
-    connection.setHealth(health);
-    if (!health.ok) {
-      scheduleWorkspaceStreamReconnect();
-      return;
-    }
-
     await stopWorkspaceStream();
     if (!recoveryIsCurrent(generation)) return;
+    awaitingWorkspaceRecoverySnapshot = true;
     await startWorkspaceStream(workspace.revision || undefined);
-    if (!recoveryIsCurrent(generation)) return;
-    workspaceReconnect.noteSuccess();
-    await workspace.recoverPendingWorkerResults();
-    void chat.tryReattachActiveTurn(workspace.cards);
+    // Native start returns after spawning the connection task, not after the
+    // handshake. Reset backoff and reconcile workers only on real stream data.
   } catch {
     if (!recoveryIsCurrent(generation)) return;
     scheduleWorkspaceStreamReconnect();
@@ -244,6 +231,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(
     onEnvironmentEvent<EnvironmentStreamEvent>((event) => {
       if (workshopTransitioning) return;
+      environmentReconnect.noteSuccess();
       environment.applyEvent(event);
     }),
   );
@@ -257,7 +245,13 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(
     onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
       if (workshopTransitioning) return;
+      workspaceReconnect.noteSuccess();
       workspace.applyEvent(event);
+      if (awaitingWorkspaceRecoverySnapshot && event.stream_event_type === "snapshot") {
+        awaitingWorkspaceRecoverySnapshot = false;
+        void workspace.recoverPendingWorkerResults().catch((error) => chat.noteResumeFailure(error));
+        void chat.tryReattachActiveTurn(workspace.cards);
+      }
       const kind = event.feed_event?.kind;
       if (kind === "vault_note_created" || kind === "vault_note_updated") {
         if (event.feed_event) {
@@ -686,6 +680,13 @@ export function connectWorkshop(options: {
   workshopTeardown = false;
   connectionReconnect.teardown();
   connectionReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
+  cancelScheduledStreamRecovery();
+  environmentReconnect.teardown();
+  workspaceReconnect.teardown();
+  interactiveReconnect.teardown();
+  environmentReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
+  workspaceReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
+  interactiveReconnect = new ReconnectScheduler({ policy: DEFAULT_INTERACTIVE_BACKOFF });
   const generation = workshopRecoveryGeneration;
   chat.setStreamRole(mode === "observer" ? "observer" : "owner");
   settings.applyTheme();
@@ -780,6 +781,7 @@ export function connectWorkshop(options: {
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     if (mode === "full") {
       cancelScheduledStreamRecovery();
+      environmentReconnect.teardown();
       workspaceReconnect.teardown();
       interactiveReconnect.teardown();
       void (async () => {

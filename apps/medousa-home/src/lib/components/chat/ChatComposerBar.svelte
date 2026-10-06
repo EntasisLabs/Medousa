@@ -46,6 +46,8 @@
   interface Props {
     mobile?: boolean;
     disabled?: boolean;
+    /** Network actions are unavailable, but the draft remains editable. */
+    offline?: boolean;
     composerBlocked?: boolean;
     /** Hide attachment hint + model picker (Presence empty landing). */
     quietChrome?: boolean;
@@ -71,6 +73,7 @@
   let {
     mobile = false,
     disabled = false,
+    offline = false,
     composerBlocked = false,
     quietChrome = false,
     modelPickerEnabled = true,
@@ -143,7 +146,8 @@
       ? "Microphone capture unavailable"
       : sttReason ?? "Voice input unavailable",
   );
-  const blocked = $derived(disabled || composerBlocked || runtime.savingControls);
+  const draftBlocked = $derived(disabled || composerBlocked || runtime.savingControls);
+  const blocked = $derived(draftBlocked || offline);
   const providerConversation = $derived(isProviderConversationRuntime(agentRuntime) || Boolean(activeBot?.external_agent));
   const canSend = $derived(
     !blocked && !chat.pendingMediaUploading &&
@@ -407,7 +411,7 @@
   </div>
 {/if}
 
-{#if !providerConversation || chat.pendingMediaRefs.length > 0}<ChatAttachmentChips {disabled} />{/if}
+{#if !providerConversation || chat.pendingMediaRefs.length > 0}<ChatAttachmentChips disabled={disabled || offline} />{/if}
 
 {#if voiceError}
   <p class="composer-voice-status composer-voice-status-error" role="alert">{voiceError}</p>
@@ -438,7 +442,7 @@
         bind:value={chat.draft}
         bind:element
         placeholder={placeholder}
-        disabled={blocked}
+        disabled={draftBlocked}
         maxHeight={360}
         minHeight={34}
         class="mobile-composer-dock-input"
@@ -553,6 +557,7 @@
             class="composer-bar-send"
             disabled={!canSend}
             aria-label="Send message"
+          title={offline ? "Waiting for connection" : "Send message"}
             onmousedown={(event) => event.preventDefault()}
           >
             {composerBlocked ? "…" : "↑"}
@@ -586,7 +591,7 @@
       bind:value={chat.draft}
       bind:element
       placeholder={placeholder}
-      disabled={blocked}
+      disabled={draftBlocked}
       maxHeight={400}
       minHeight={36}
       class="composer-bar-stacked-input"
@@ -682,6 +687,7 @@
           class="composer-bar-send"
           disabled={!canSend}
           aria-label="Send message"
+          title={offline ? "Waiting for connection" : "Send message"}
           onmousedown={(event) => event.preventDefault()}
         >
           {composerBlocked ? "…" : "↑"}

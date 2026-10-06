@@ -43,7 +43,13 @@ or letting a session expire does not require another QR scan.
 When a launch or foreground health check cannot reach the workshop, Medousa
 retries automatically while the app is visible. It rechecks the network route
 and resumes the selected conversation and streams when the workshop returns.
-You can also choose **Retry connection** on the offline screen.
+A missed health check never opens a dialog over your chat. Loaded messages stay
+readable and scrollable, and you can keep editing your draft while reconnection
+runs in the background. A quiet **Reconnecting…** line near the composer offers
+**Retry** and **Connection settings**; sending resumes once connected.
+A dropped background stream reconnects from its saved revision without a
+health-check preflight or reloading the screen. Retry delays grow until stream
+data confirms that the connection has recovered.
 
 If a paired connection becomes stale, open the workshop menu and choose
 **Refresh connection**, or use **Refresh** on the active workshop in

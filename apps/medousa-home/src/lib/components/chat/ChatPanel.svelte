@@ -89,7 +89,7 @@
     type SlashMenuAnchor,
   } from "$lib/utils/slashMenuPlacement";
   import { shouldSubmitComposerKey } from "$lib/utils/composerKeyboard";
-  import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
+  import ChatConnectionStatus from "$lib/components/chat/ChatConnectionStatus.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
@@ -1109,6 +1109,7 @@
         : 'chat-composer'}"
       onsubmit={submit}
     >
+      <ChatConnectionStatus {onOpenConnection} />
       {#if !providerRuntime && chat.scriptWorkbenchContext}
         <ScriptChatContextChip compact={workshop || scriptWorkbench} class={embedded ? "mb-2" : "mx-4 mb-2"} />
       {:else if !providerRuntime && chat.vaultNoteContext}
@@ -1133,7 +1134,8 @@
       {#if panelBot?.external_agent}<RuntimeBotStatus sessionId={panelSessionId} />{/if}
       <ChatComposerBar
         mobile={workshop || useMobileChatLayout}
-        disabled={connection.offline || externalConversation.busy}
+        disabled={externalConversation.busy}
+        offline={connection.offline}
         composerBlocked={chat.composerBlocked || runtimeBotJobPending(panelSessionId)}
         modelPickerEnabled
         agentRuntime={agentSession.sessionRuntime}
@@ -1173,10 +1175,6 @@
     </form>
   </ChatPresenceDock>
   </div>
-
-  {#if visible && connection.offline}
-    <OfflineChatGate {mobile} {onOpenConnection} />
-  {/if}
 
   <LiquidCardDetailSheet
     open={cardDetailOpen}
