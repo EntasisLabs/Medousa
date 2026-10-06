@@ -42,6 +42,7 @@ pub enum SessionRootKind {
     Scripts,
     Forge,
     Workspace,
+    Ssh,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -308,6 +309,7 @@ fn normalized_pty_size(cols: u16, rows: u16) -> PtySize {
 pub struct SessionManager {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
     default_workspace: PathBuf,
+    execution: medousa_forge::execution::ForgeExecutionService,
 }
 
 impl SessionManager {
@@ -315,6 +317,7 @@ impl SessionManager {
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
             default_workspace,
+            execution: medousa_forge::execution::ForgeExecutionService::new(),
         })
     }
 
@@ -353,15 +356,19 @@ impl SessionManager {
     ) -> anyhow::Result<Arc<Session>> {
         let cwd = self.session_cwd(cwd)?;
         let id = SessionId::new();
-        let session = Session::spawn_command_with_size(
-            id.clone(),
-            cwd,
-            root_kind,
-            work_id,
-            argv,
-            cols,
-            rows,
-        )?;
+        let spawn_id = id.clone();
+        let session = self
+            .execution
+            .run(
+                medousa_forge::execution::ExecutionClass::WorkEnvironment,
+                256 * 1024,
+                move || {
+                    Ok(Session::spawn_command_with_size(
+                        spawn_id, cwd, root_kind, work_id, argv, cols, rows,
+                    ))
+                },
+            )
+            .await??;
         self.sessions.write().await.insert(id, Arc::clone(&session));
         Ok(session)
     }

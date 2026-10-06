@@ -426,7 +426,7 @@ impl SshHost {
             let known_hosts = process::prepare_known_hosts(&self.root, &target).await?;
             let mut argv = vec!["ssh".into()];
             argv.extend(process::argv(&target, &known_hosts, None));
-            super::shell_session_host::create_ssh_session(&self.shell, &self.root, &argv)
+            super::shell_session_host::create_ssh_session(&self.shell, &argv)
                 .await
                 .map_err(|(_, message)| anyhow::anyhow!(message))
         }

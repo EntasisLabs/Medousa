@@ -31,6 +31,8 @@ pub struct SessionHostConfig {
     pub allowed_roots: Vec<PathBuf>,
     /// Daemon-owned Forge store. Required only for attached-checkout sessions.
     pub forge_root: Option<PathBuf>,
+    /// Daemon-owned SSH state directory; never a generic shell cwd grant.
+    pub ssh_root: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -124,6 +126,7 @@ pub struct HealthResponse {
     pub workspace_root: String,
     pub allowed_roots: Vec<String>,
     pub forge_root: Option<PathBuf>,
+    pub ssh_root: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -139,6 +142,16 @@ pub struct CreateSessionBody {
     pub cols: u16,
     #[serde(default = "default_rows")]
     pub rows: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateSshSessionBody {
+    argv: Vec<String>,
+    #[serde(default = "default_cols")]
+    cols: u16,
+    #[serde(default = "default_rows")]
+    rows: u16,
 }
 
 #[derive(Deserialize)]
@@ -185,6 +198,7 @@ pub fn app(state: SessionHostState) -> Router {
             "/v1/sessions/workspace-shell",
             post(create_workspace_session),
         )
+        .route("/v1/sessions/ssh", post(create_ssh_session))
         .route("/v1/sessions/shell/{id}", get(session_ws))
         .route("/v1/sessions/shell/{id}/signal", post(signal_session))
         .layer(CorsLayer::permissive())
@@ -213,6 +227,7 @@ async fn health(State(state): State<Arc<SessionHostState>>) -> Json<HealthRespon
             .map(|p| p.display().to_string())
             .collect(),
         forge_root: state.config.forge_root.clone(),
+        ssh_root: state.config.ssh_root.clone(),
     })
 }
 
@@ -224,6 +239,7 @@ fn meta_json(m: &SessionMeta) -> Value {
             SessionRootKind::Scripts => "scripts",
             SessionRootKind::Forge => "forge",
             SessionRootKind::Workspace => "workspace",
+            SessionRootKind::Ssh => "ssh",
         },
         "work_id": m.work_id,
         "argv": m.argv,
@@ -298,6 +314,20 @@ async fn create_session(
         .await
         .map_err(|error| (axum::http::StatusCode::FORBIDDEN, error))?;
     let argv = body.argv.unwrap_or_default();
+    validate_hosted_argv(&argv)?;
+    create_hosted_session(
+        &state,
+        root_kind,
+        cwd,
+        body.work_id,
+        argv,
+        body.cols,
+        body.rows,
+    )
+    .await
+}
+
+fn validate_hosted_argv(argv: &[String]) -> Result<(), (axum::http::StatusCode, String)> {
     if argv.len() > 64
         || argv
             .iter()
@@ -309,16 +339,54 @@ async fn create_session(
             "argv is empty or exceeds the hosted-command limit".into(),
         ));
     }
+    Ok(())
+}
+
+async fn create_ssh_session(
+    State(state): State<Arc<SessionHostState>>,
+    Json(body): Json<CreateSshSessionBody>,
+) -> Result<Json<CreateSessionResponse>, (axum::http::StatusCode, String)> {
+    validate_hosted_argv(&body.argv)?;
+    if body.argv.first().map(String::as_str) != Some("ssh") {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "SSH sessions require the ssh program".into(),
+        ));
+    }
+    let root = state.config.ssh_root.as_ref().ok_or((
+        axum::http::StatusCode::FORBIDDEN,
+        "SSH session hosting is not configured".into(),
+    ))?;
+    let cwd = tokio::fs::canonicalize(root).await.map_err(|error| {
+        (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            format!("SSH state directory is unavailable: {error}"),
+        )
+    })?;
+    create_hosted_session(
+        &state,
+        SessionRootKind::Ssh,
+        cwd,
+        None,
+        body.argv,
+        body.cols,
+        body.rows,
+    )
+    .await
+}
+
+async fn create_hosted_session(
+    state: &SessionHostState,
+    root_kind: SessionRootKind,
+    cwd: PathBuf,
+    work_id: Option<String>,
+    argv: Vec<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<Json<CreateSessionResponse>, (axum::http::StatusCode, String)> {
     let session = state
         .manager
-        .create_command_with_size(
-            root_kind,
-            Some(cwd),
-            body.work_id.clone(),
-            argv.clone(),
-            body.cols,
-            body.rows,
-        )
+        .create_command_with_size(root_kind, Some(cwd), work_id, argv.clone(), cols, rows)
         .await
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let size = session
@@ -332,6 +400,7 @@ async fn create_session(
             SessionRootKind::Scripts => "scripts".into(),
             SessionRootKind::Forge => "forge".into(),
             SessionRootKind::Workspace => "workspace".into(),
+            SessionRootKind::Ssh => "ssh".into(),
         },
         work_id: session.meta.work_id.clone(),
         argv,
@@ -686,6 +755,7 @@ mod tests {
             workspace_root: root.join("scripts"),
             allowed_roots: vec![root.join("forge/worktrees")],
             forge_root: Some(root.join("forge")),
+            ssh_root: Some(root.join("ssh")),
         })
     }
 
@@ -699,6 +769,101 @@ mod tests {
         assert!(state.cwd_allowed(&root.path().join("forge/worktrees/repo/work-new")));
         assert!(!state.cwd_allowed(root.path()));
         assert!(!state.cwd_allowed(&root.path().join("missing")));
+    }
+
+    #[tokio::test]
+    async fn ssh_terminal_has_its_own_root_without_granting_local_shell_access() {
+        let root = tempfile::tempdir().unwrap();
+        let state = std::sync::Arc::new(state(root.path()));
+        let ssh_root = root.path().join("ssh");
+        std::fs::create_dir_all(&ssh_root).unwrap();
+        assert!(!state.cwd_allowed(&ssh_root));
+        assert!(
+            state
+                .resolve_session_cwd(ssh_root.clone(), None)
+                .await
+                .is_err()
+        );
+
+        // -V prints the installed client version and exits without contacting a server.
+        let response = super::create_ssh_session(
+            axum::extract::State(state.clone()),
+            axum::Json(super::CreateSshSessionBody {
+                argv: vec!["ssh".into(), "-V".into()],
+                cols: 101,
+                rows: 31,
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert_eq!(response.root_kind, "ssh");
+        assert_eq!(response.work_id, None);
+        assert_eq!(
+            std::path::PathBuf::from(&response.cwd),
+            ssh_root.canonicalize().unwrap()
+        );
+        assert_eq!((response.cols, response.rows), (101, 31));
+        let session = state
+            .manager
+            .get(&crate::session::SessionId(response.session_id.clone()))
+            .await
+            .unwrap();
+        assert_eq!(super::meta_json(&session.meta)["root_kind"], "ssh");
+        assert!(!state.cwd_allowed(&ssh_root));
+        state
+            .manager
+            .destroy(&crate::session::SessionId(response.session_id))
+            .await;
+    }
+
+    #[tokio::test]
+    async fn ssh_terminal_rejects_local_commands_and_missing_authority() {
+        let root = tempfile::tempdir().unwrap();
+        let mut state = state(root.path());
+        state.config.ssh_root = None;
+        let state = std::sync::Arc::new(state);
+        for argv in [
+            vec![],
+            vec!["sh".into()],
+            vec!["/usr/bin/ssh".into()],
+            vec!["ssh".into(), "".into()],
+        ] {
+            let error = super::create_ssh_session(
+                axum::extract::State(state.clone()),
+                axum::Json(super::CreateSshSessionBody {
+                    argv,
+                    cols: 80,
+                    rows: 24,
+                }),
+            )
+            .await
+            .err()
+            .unwrap();
+            assert_eq!(error.0, axum::http::StatusCode::BAD_REQUEST);
+        }
+        let error = super::create_ssh_session(
+            axum::extract::State(state.clone()),
+            axum::Json(super::CreateSshSessionBody {
+                argv: vec!["ssh".into(), "-V".into()],
+                cols: 80,
+                rows: 24,
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(error.0, axum::http::StatusCode::FORBIDDEN);
+        assert!(state.manager.list().await.is_empty());
+    }
+
+    #[test]
+    fn ssh_requests_cannot_supply_project_authority_or_a_local_cwd() {
+        for field in ["cwd", "work_id", "lease_id", "root_kind"] {
+            let mut body = serde_json::json!({ "argv": ["ssh", "-V"] });
+            body[field] = serde_json::json!("injected");
+            assert!(serde_json::from_value::<super::CreateSshSessionBody>(body).is_err());
+        }
     }
 
     #[tokio::test]
