@@ -8,15 +8,15 @@
 # engine = medousa + medousa_daemon + medousa_cli + medousa_tui
 
 [packages]
-engine = "0.11.0"
+engine = "0.11.1"
 adapter-telegram = "0.11.0"
 adapter-discord = "0.11.0"
 adapter-slack = "0.11.0"
 adapter-whatsapp = "0.11.0"
 mcp-gateway = "0.11.0"
 coding-engine = "0.11.0"
-shell-session = "0.11.0"
+shell-session = "0.11.1"
 computer-driver = "0.11.0"
 local-brain = "0.11.0"
-desktop = "0.11.0"
+desktop = "0.11.1"
 installer = "0.11.0"

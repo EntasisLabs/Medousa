@@ -7,6 +7,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-10-06
+
+### Fixed
+
+- Mobile chat keeps loaded messages visible during workshop reconnects instead
+  of repeatedly covering the conversation with connection errors.
+- Remote workshops reuse Iroh connections, bound request deadlines, resume
+  streams promptly, and cancel obsolete connection attempts. Transport
+  diagnostics and configurable relay sets help troubleshoot remote access.
+- Note previews wrap within the mobile viewport, wide tables scroll within
+  their own bounds, and live Markdown lists indent and fold without hiding
+  parent items or siblings.
+- Saved SSH terminals launch through their dedicated session authority rather
+  than inheriting Forge workspace restrictions.
+
+This hotfix ships the engine, Medousa app, and shell-session packages at
+**0.11.1**. Other package release stamps remain at **0.11.0**.
+
 ## [0.11.0] — 2026-10-05
 
 ### Added
