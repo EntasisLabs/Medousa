@@ -12,6 +12,24 @@
     overflow-wrap: anywhere;
   }
 
+  /* Streaming wrappers carry identity, not visual layout or extra spacing. */
+  .markdown-content > [data-stable-markdown-block],
+  .markdown-content > [data-streaming-markdown-tail] {
+    display: contents;
+  }
+
+  .markdown-content-streaming-blocks > :not(:first-child) > p:first-child {
+    margin-top: 0.5rem;
+  }
+
+  .markdown-content-streaming-blocks > :not(:last-child) > p:last-child {
+    margin-bottom: 0.5rem;
+  }
+
+  .markdown-content-streaming-blocks > :not(:first-child) > :is(h1, h2, h3, h4, h5, h6):first-child {
+    margin-top: 1.25rem;
+  }
+
   .markdown-content h1,
   .markdown-content h2,
   .markdown-content h3,

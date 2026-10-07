@@ -1,6 +1,6 @@
 <script lang="ts">
   import "$lib/styles/markdown-content.postcss";
-  /** `prose` atom — narrative text. Uses the parse renderer, not MarkdownContent. */
+  /** `prose` atom — use the surface's Markdown view when one is provided. */
   import { renderMarkdown } from "$lib/markdown/render";
   import { codeBlockControls } from "$lib/markdown/codeBlocks";
   import { getLiquidContext } from "$lib/liquid/render/context";
@@ -11,8 +11,10 @@
 
   const content = $derived(typeof node.props.markdown === "string" ? node.props.markdown : "");
   const plain = $derived(node.props.plain === true);
+  const streaming = $derived(node.props.streaming === true);
+  const MarkdownView = ctx.markdownView;
   const html = $derived(
-    plain
+    plain || MarkdownView
       ? ""
       : renderMarkdown(content, {
           titleByPath: ctx.titleByPath,
@@ -23,6 +25,8 @@
 <div class="liquid-prose">
   {#if plain}
     <p class="liquid-prose-plain">{content}</p>
+  {:else if MarkdownView}
+    <MarkdownView {content} {streaming} titleByPath={ctx.titleByPath} openLinksInWeb={ctx.openLinksInWeb} />
   {:else}
     <div class="markdown-content min-w-0 max-w-full" use:codeBlockControls>{@html html}</div>
   {/if}

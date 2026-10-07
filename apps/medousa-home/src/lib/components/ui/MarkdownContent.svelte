@@ -6,14 +6,14 @@
     type MarkdownRenderSession,
   } from "$lib/markdown/render";
   import { StreamingMarkdownBlocks } from "$lib/markdown/streamingBlocks";
-  import { handleCodeBlockControlClick } from "$lib/markdown/codeBlocks";
+  import { captureCodeBlockState, restoreCodeBlockState, handleCodeBlockControlClick, type CodeBlockState } from "$lib/markdown/codeBlocks";
   import { hydrateMarkdownContainer, destroyMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
   import {
     getLiquidContext,
     type LiquidRenderContext,
   } from "$lib/liquid/render/context";
   import { openInBrowser, isHttpUrl } from "$lib/utils/openInBrowser";
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import HydratedMarkdownBlock from "$lib/components/ui/HydratedMarkdownBlock.svelte";
   import { getMarkdownViewComponent } from "$lib/components/ui/markdownView";
 
@@ -45,6 +45,8 @@
   let nextBlockId = 0;
   const streamingBlocks = new StreamingMarkdownBlocks();
   let renderSession: MarkdownRenderSession = createStreamingRenderSession();
+  let codeState: CodeBlockState[] = [];
+  let restoreVersion = 0;
 
   function resolveContext(): LiquidRenderContext {
     return {
@@ -86,8 +88,11 @@
     if (streaming) stableMode = true;
     if (!stableMode) return;
 
+    // Capture before publishing new HTML, including suffix → stable promotion.
+    if (container) codeState = captureCodeBlockState(container);
     const update = streamingBlocks.update(source, terminal);
     if (update.reset) {
+      codeState = [];
       stableBlocks = [];
       nextBlockId = 0;
       renderSession = createStreamingRenderSession();
@@ -127,6 +132,19 @@
     handleLinkClick(event as unknown as MouseEvent);
   }
 
+  // The mutable suffix can become a stable block. Carry explicit code choices
+  // across that move and subsequent suffix replacements after the DOM flush.
+  $effect(() => {
+    void stableBlocks;
+    void tailHtml;
+    const root = container;
+    const snapshot = codeState;
+    const version = ++restoreVersion;
+    if (root && stableMode) void tick().then(() => {
+      if (root.isConnected && version === restoreVersion) restoreCodeBlockState(root, snapshot);
+    });
+  });
+
   $effect(() => {
     if (stableMode) return;
     html;
@@ -143,6 +161,7 @@
   });
 
   onDestroy(() => {
+    restoreVersion += 1;
     if (container) {
       void destroyMarkdownContainer(container);
     }
@@ -154,6 +173,7 @@
 <div
   bind:this={container}
   class="markdown-content min-w-0 max-w-full"
+  class:markdown-content-streaming-blocks={stableMode}
   role="document"
   onclick={handleClick}
   onkeydown={handleLinkKeydown}

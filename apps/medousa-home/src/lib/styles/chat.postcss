@@ -307,7 +307,8 @@
   /* Timeline shell: prose keeps a soft measure; embeds use the full column */
   .chat-voice-full .markdown-content > p,
   .chat-voice-full .markdown-content > ul,
-  .chat-voice-full .markdown-content > ol {
+  .chat-voice-full .markdown-content > ol,
+  .chat-voice-full .markdown-content > :is([data-stable-markdown-block], [data-streaming-markdown-tail]) > :is(p, ul, ol) {
     max-width: min(100%, 44rem);
   }
 
@@ -529,6 +530,10 @@
 
   .chat-voice .markdown-content h3 {
     @apply mt-5 mb-2 text-[0.95rem] font-medium normal-case tracking-tight text-surface-200;
+  }
+
+  .chat-voice .markdown-content-streaming-blocks > :not(:first-child) > h2:first-child {
+    margin-top: 1.75rem;
   }
 
   .chat-voice .markdown-content h2 + .liquid-md-embed,
