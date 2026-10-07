@@ -209,7 +209,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write",
+                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write|artifacts.present",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
@@ -404,7 +404,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write",
+                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write|artifacts.present",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",

@@ -626,6 +626,7 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
             crate::turn_worker_notify::publish_worker_ui_side_effects_to_parent_turn(
                 &record,
                 &tool_name,
+                &tool_input,
                 &tool_output,
             )
             .await;

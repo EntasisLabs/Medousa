@@ -711,7 +711,8 @@ impl EmbeddedChronologicalTurn {
                         artifact.height_px,
                     );
                 } else {
-                    parts.push_attachment_ref(
+                    parts.replace_attachment_ref(
+                        &artifact.artifact_id,
                         &artifact.artifact_id,
                         &artifact.mime,
                         &artifact.label,

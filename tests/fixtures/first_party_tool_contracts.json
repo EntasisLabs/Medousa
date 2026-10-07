@@ -1921,6 +1921,7 @@
               "enum": [
                 "artifacts.delete",
                 "artifacts.list",
+                "artifacts.present",
                 "artifacts.read",
                 "artifacts.search",
                 "artifacts.write",
@@ -2205,13 +2206,14 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
               "artifacts.delete",
+              "artifacts.present",
               "artifacts.write",
               "code.write",
               "scripts.write",
@@ -5692,6 +5694,7 @@
               "enum": [
                 "artifacts.delete",
                 "artifacts.list",
+                "artifacts.present",
                 "artifacts.read",
                 "artifacts.search",
                 "artifacts.write",
@@ -6152,13 +6155,14 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
               "artifacts.delete",
+              "artifacts.present",
               "artifacts.write",
               "code.write",
               "scripts.write",

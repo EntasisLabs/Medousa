@@ -137,6 +137,7 @@ pub async fn publish_worker_synthesis_to_parent_turn(
 pub async fn publish_worker_ui_side_effects_to_parent_turn(
     record: &TurnWorkRecord,
     tool_name: &str,
+    tool_input: &serde_json::Value,
     tool_output: &serde_json::Value,
 ) {
     let Some(parent_turn_id) = record
@@ -165,17 +166,15 @@ pub async fn publish_worker_ui_side_effects_to_parent_turn(
         return;
     }
 
-    if (tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
-        || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE)
+    if crate::ui_tool_output::is_ui_artifact_stream_tool(tool_name, tool_input)
         && let Some(ui_artifact) =
             crate::agent_runtime::tool_stream::ui_artifact_from_tool_output(tool_output)
     {
-        if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
-            && let Some(previous) = tool_output
-                .get("previous_artifact_id")
-                .and_then(|value| value.as_str())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
+        if let Some(previous) = tool_output
+            .get("previous_artifact_id")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
         {
             let root = tool_output
                 .get("root_artifact_id")

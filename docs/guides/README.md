@@ -33,6 +33,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Drawing](drawing.md) | Sketch inside notes or use a full drawing note |
 | [Chat drawings and generated images](chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
 | [Interactive recipes](interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
+| [Saved artifacts](artifacts.md) | Find and show earlier HTML artifacts in chat |
 | [Undertakings & ForgeLens](undertakings.md) | Governed work, seal, review, World observe |
 | [Delegation approvals](delegation-approvals.md) | Review immutable agent-work proposals (native preview) |
 

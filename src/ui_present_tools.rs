@@ -54,6 +54,53 @@ impl CognitionUiPresentTool {
             .await
             .is_some_and(|scope| scope.supports_ui_artifacts)
     }
+
+    pub(crate) async fn present_existing(
+        &self,
+        artifact_id: String,
+        presentation: Option<String>,
+        height: Option<u64>,
+    ) -> StasisResult<UiPresentOutput> {
+        if !self.active_surface_supports_ui_artifacts().await {
+            return Err(StasisError::PortFailure(
+                "This channel does not support HTML UI artifacts (supports_ui_artifacts=false)."
+                    .to_string(),
+            ));
+        }
+        let artifact_id = TrimmedText::new(artifact_id)
+            .map_err(|_| StasisError::PortFailure("artifact path is required".to_string()))?;
+        let presentation = crate::artifact_tools::ArtifactPresentation::parse(presentation)?;
+        let session_id = self.resolve_session_id().await?;
+        let record = tokio::task::spawn_blocking(move || {
+            crate::artifact_store::resolve_ui_artifact_for_presentation(
+                &session_id,
+                artifact_id.as_str(),
+            )
+        })
+        .await
+        .map_err(|err| StasisError::PortFailure(format!("artifact present join error: {err}")))?
+        .ok_or_else(|| {
+            StasisError::PortFailure("Saved HTML artifact not found or unavailable".to_string())
+        })?;
+        Ok(UiPresentOutput::Presented {
+            ok: true,
+            artifact_id: record.artifact_id,
+            label: record.label,
+            mime: "text/html".to_string(),
+            presentation: Some(presentation.as_str().to_string()),
+            height_px: height
+                .map(|value| value.clamp(120, 1200) as u32)
+                .or(record.height_px),
+            byte_size: record.byte_size,
+            persisted: None,
+            errors: None,
+            persisted_component_id: None,
+            environment_revision: None,
+            live: None,
+            nav_visible: None,
+            hint: None,
+        })
+    }
 }
 
 #[allow(dead_code)]
@@ -363,7 +410,8 @@ impl CognitionUiPresentTool {
             persisted = Some(true);
             persisted_component_id = Some(component_id.to_string());
             environment_revision = Some(updated.revision);
-            let visible = crate::environment_navigation::surface_nav_visible(&updated.spec, surface_id);
+            let visible =
+                crate::environment_navigation::surface_nav_visible(&updated.spec, surface_id);
             live = Some(true);
             nav_visible = Some(visible);
             if !visible {

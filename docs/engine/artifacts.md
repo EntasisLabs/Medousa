@@ -10,19 +10,40 @@ HTML UI artifacts are versioned documents the agent can present inline, in a sid
 
 | Layer | When to use |
 |-------|-------------|
-| **Agent tools** (`cognition_store_read` / `cognition_store_write`, `store=artifacts`) | Agent reads/writes HTML during a turn |
+| **Agent tools** (`cognition_store_read` / `cognition_store_write`, `action=artifacts.*`) | Agent reads/writes HTML during a turn |
 | **HTTP** (`/v1/runtime/artifact/*`) | Clients fetch bodies, list catalog, TUI slash commands |
 
 ### Agent tools
 
 | Tool | Purpose |
 |------|---------|
-| `cognition_store_read` | `store=artifacts`, `op=list\|read\|search` (`search` needs artifact id in `path`) |
-| `cognition_store_write` | `store=artifacts`, `op=write\|delete` |
+| `cognition_store_read` | `action=artifacts.list\|artifacts.read\|artifacts.search` (`search` needs artifact id in `path`) |
+| `cognition_store_write` | `action=artifacts.write\|artifacts.present\|artifacts.delete` |
 
 Registered via `src/store_tools.rs` (backends in `src/artifact_tools.rs`). Requires `supports_ui_artifacts=true` on the turn surface for artifact ops; vault/code still work without it.
 
-Vault uses the same primitives with `store=vault` — see [vault.md](vault.md).
+Successful `artifacts.write` calls publish an artifact card in the active chat
+and keep its attachment reference in the saved turn. Creating an artifact emits
+`artifact_presented`; revising one emits `artifact_updated`. Workshop workers
+forward these presentation events to their parent interactive turn as well.
+
+To show an existing artifact, list by title or id with `artifacts.list`. Its
+default scope is the current chat; `scope=workshop` searches all chats on the
+active workshop and returns each artifact's source `session_id`.
+
+Then call `cognition_store_write` with:
+
+```json
+{"action":"artifacts.present","path":"art:…","presentation":"inline"}
+```
+
+Only `path` is required. This resolves the latest available HTML revision and
+emits `artifact_presented` with a saved chat attachment. It neither copies HTML
+nor creates a revision. `presentation` defaults to `inline`; `panel` and
+`fullscreen` are also supported. An optional `height` override affects this
+presentation only. Missing, deleted, and non-HTML artifacts return an error.
+
+Vault uses the same primitives with `action=vault.*` — see [vault.md](vault.md).
 
 ### HTTP routes
 
