@@ -14,6 +14,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Chat follows actual content growth and preserves your reading position when
+  you scroll up, including delayed layout changes and turn completion.
 - Streaming chat retains completed Markdown blocks and code controls while
   updating the unfinished response.
 - HTML artifacts created or revised through the public store tool now emit
