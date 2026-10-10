@@ -53,7 +53,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Saved artifacts](guides/artifacts.md) | Find and show earlier HTML artifacts in chat |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
-| [Delegation approvals](guides/delegation-approvals.md) | Review agent-work proposals and queue remote background workers |
+| [Delegation approvals](guides/delegation-approvals.md) | Track grouped agents in chat, review proposals, and queue remote background workers |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---

@@ -11,6 +11,9 @@ import type { WorkCardDetail, WorkerToolActivity } from "$lib/types/card";
  */
 export interface SubagentRow {
   workId: string;
+  /** Spawn coordinates, retained when the worker's result arrives later. */
+  parentTurnId?: string | null;
+  parentMessageId?: string | null;
   title: string;
   disposition: "bound" | "parallel";
   model?: string | null;
@@ -22,6 +25,7 @@ export interface SubagentRow {
   thinkingSeconds: number | null;
   streaming: boolean;
   terminal: boolean;
+  attention?: boolean;
 }
 
 /** Worker tool runs share the host's `ToolRunState` shape so evidence renders once. */
@@ -65,7 +69,7 @@ function rowFromTranscript(
   transcript: WorkerTranscript | null,
   base: Pick<
     SubagentRow,
-    "title" | "disposition" | "model" | "executionRuntimeId" | "statusLine" | "terminal"
+    "title" | "disposition" | "model" | "executionRuntimeId" | "statusLine" | "terminal" | "attention"
   >,
 ): SubagentRow {
   return {
@@ -96,19 +100,24 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
       card.column === "done" || (card.column === "blocked" && detail.terminal);
     seen.add(workId);
     rows.push(
-      rowFromTranscript(workId, transcript, {
-        title: titleForDetail(detail),
-        disposition: dispositionForDetail(detail),
-        model: detail.model?.trim() || transcript?.model || null,
-        executionRuntimeId:
-          detail.execution_runtime_id?.trim() || transcript?.executionRuntimeId || null,
-        statusLine:
-          transcript?.statusLine?.trim() ||
-          detail.live_status_line?.trim() ||
-          card.status_label ||
-          "Working…",
-        terminal,
-      }),
+      {
+        ...rowFromTranscript(workId, transcript, {
+          title: titleForDetail(detail),
+          disposition: dispositionForDetail(detail),
+          model: detail.model?.trim() || transcript?.model || null,
+          executionRuntimeId:
+            detail.execution_runtime_id?.trim() || transcript?.executionRuntimeId || null,
+          statusLine:
+            transcript?.statusLine?.trim() ||
+            detail.live_status_line?.trim() ||
+            card.status_label ||
+            "Working…",
+          terminal,
+          attention: card.column === "blocked",
+        }),
+        parentTurnId: chat.workers.get(workId)?.parentTurnId,
+        parentMessageId: chat.workers.get(workId)?.messageId,
+      },
     );
   }
 
@@ -119,14 +128,18 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
     if (link.sessionId !== sessionId) continue;
     const transcript = workerTranscripts.transcriptFor(workId);
     rows.push(
-      rowFromTranscript(workId, transcript, {
-        title: transcript?.title ?? "Subagent",
-        disposition: transcript?.disposition ?? "parallel",
-        model: transcript?.model ?? null,
-        executionRuntimeId: transcript?.executionRuntimeId ?? null,
-        statusLine: transcript?.statusLine ?? "Working…",
-        terminal: transcript?.terminal ?? false,
-      }),
+      {
+        ...rowFromTranscript(workId, transcript, {
+          title: transcript?.title ?? "Subagent",
+          disposition: transcript?.disposition ?? "parallel",
+          model: transcript?.model ?? null,
+          executionRuntimeId: transcript?.executionRuntimeId ?? null,
+          statusLine: transcript?.statusLine ?? "Working…",
+          terminal: transcript?.terminal ?? false,
+        }),
+        parentTurnId: link.parentTurnId,
+        parentMessageId: link.messageId,
+      },
     );
   }
 

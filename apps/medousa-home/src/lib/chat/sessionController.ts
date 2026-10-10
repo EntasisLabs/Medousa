@@ -129,6 +129,7 @@ export function mapTurns(
         ? `${sessionId}:${entryId}`
         : `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
       role: normalizeRole(turn.role),
+      createdAt: turn.timestamp,
       turnId: turn.role === "assistant" ? turn.caused_by?.execution_id : undefined,
       content: turn.content,
       reactions: turn.reactions?.length ? turn.reactions : undefined,

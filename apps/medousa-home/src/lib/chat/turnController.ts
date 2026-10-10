@@ -42,6 +42,7 @@ export function beginTurnMessages(input: {
   return [
     {
       id: input.userMessageId,
+      createdAt: input.ticket.accepted_at_utc,
       role: "user",
       content: input.userContent,
       turnId: input.ticket.turn_id,

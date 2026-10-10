@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PeerProposalReviewRecord } from '$lib/types/generated/daemon_api';
-import { peerHandoffPresentation } from './peerHandoffPresentation';
+import { peerHandoffPresentation, peerWorkTitle } from './peerHandoffPresentation';
 
 function work(): PeerProposalReviewRecord {
   const sender = { authority_id: 'sender-authority', session_id: 'sender' };
@@ -37,5 +37,15 @@ describe('sender-controlled handoff presentation', () => {
     const result = peerHandoffPresentation(row, Date.now());
     expect(result.status).toBe('Work failed');
     expect(result.attention).toBe(true);
+  });
+});
+
+describe('agent task titles', () => {
+  it('keeps distinct task titles on the same project', () => {
+    expect(peerWorkTitle('Validate rollback\nFull instructions', 'Hashmap')).toBe('Validate rollback');
+    expect(peerWorkTitle('Update operator guide', 'Hashmap')).toBe('Update operator guide');
+  });
+  it('extracts the named undertaking from a scoped assignment', () => {
+    expect(peerWorkTitle('Work only in the isolated Forge undertaking "Prepare Hashmap deployment". Full instructions')).toBe('Prepare Hashmap deployment');
   });
 });
