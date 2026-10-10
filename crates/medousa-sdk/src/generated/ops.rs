@@ -177,6 +177,13 @@ pub const AUTH_CHATGPT_REFRESH_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const AUTH_CHATGPT_SELECT_POST: Operation = Operation {
+    id: "auth.chatgpt.select.post",
+    method: "POST",
+    path: "/v1/auth/chatgpt/select",
+    streaming: false,
+};
+
 pub const BOTS_ASK_BY_JOB_ID_CANCEL_POST: Operation = Operation {
     id: "bots.ask.by_job_id.cancel.post",
     method: "POST",
@@ -3478,6 +3485,7 @@ pub static ALL: &[Operation] = &[
     AUTH_CHATGPT_GET,
     AUTH_CHATGPT_MODELS_GET,
     AUTH_CHATGPT_REFRESH_POST,
+    AUTH_CHATGPT_SELECT_POST,
     BOTS_ASK_BY_JOB_ID_CANCEL_POST,
     BOTS_ASK_BY_JOB_ID_GET,
     BOTS_ASK_POST,

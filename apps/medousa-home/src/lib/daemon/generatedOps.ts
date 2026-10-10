@@ -33,6 +33,7 @@ export const OPERATIONS = {
   "auth.chatgpt.get": { id: "auth.chatgpt.get", method: "GET", path: "/v1/auth/chatgpt", streaming: false },
   "auth.chatgpt.models.get": { id: "auth.chatgpt.models.get", method: "GET", path: "/v1/auth/chatgpt/models", streaming: false },
   "auth.chatgpt.refresh.post": { id: "auth.chatgpt.refresh.post", method: "POST", path: "/v1/auth/chatgpt/refresh", streaming: false },
+  "auth.chatgpt.select.post": { id: "auth.chatgpt.select.post", method: "POST", path: "/v1/auth/chatgpt/select", streaming: false },
   "bots.ask.by_job_id.cancel.post": { id: "bots.ask.by_job_id.cancel.post", method: "POST", path: "/v1/bots/ask/{job_id}/cancel", streaming: false },
   "bots.ask.by_job_id.get": { id: "bots.ask.by_job_id.get", method: "GET", path: "/v1/bots/ask/{job_id}", streaming: false },
   "bots.ask.post": { id: "bots.ask.post", method: "POST", path: "/v1/bots/ask", streaming: false },

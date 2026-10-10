@@ -48,11 +48,11 @@ export async function resolveModelsForProvider(
         accountCatalog.models,
         "chatgpt-account",
       );
-      const compatible = filterRecordsForCapability(records, options?.capability);
-      if (compatible.length > 0) return compatible;
+      for (const record of records) record.displayName = accountCatalog.display_names?.[record.modelId] ?? record.displayName;
+      return filterRecordsForCapability(records, options?.capability);
     } catch {
-      // The account may be signed out or temporarily offline. Continue through
-      // the daemon snapshot before falling back to the provider default.
+      // Account-specific choices must never fall back to another saved account's catalog.
+      return [];
     }
   }
 

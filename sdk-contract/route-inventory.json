@@ -631,6 +631,22 @@
       "trust_group": "administration"
     },
     {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "auth.chatgpt.select.post",
+      "path": "/v1/auth/chatgpt/select",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",

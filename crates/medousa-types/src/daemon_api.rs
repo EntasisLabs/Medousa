@@ -3696,57 +3696,103 @@ pub struct AgentRuntimeListResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct ChatGptOAuthStatusResponse {
-    /// `signed_out`, `connected`, `refresh_required`, or `reauth_required`.
-    pub status: String,
-    pub connected: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+pub struct ChatGptAccountProfile {
+    pub client_id: String,
     pub account_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expires_at_utc: Option<DateTime<Utc>>,
+    pub email: Option<String>,
+    pub connected: bool,
+    pub plan_usage_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct BeginChatGptOAuthResponse {
-    /// Opaque daemon-local handle. It contains no OAuth credential material.
-    pub login_id: String,
-    pub verification_url: String,
-    pub user_code: String,
-    pub expires_at_utc: DateTime<Utc>,
-    pub poll_interval_seconds: u64,
+pub struct ChatGptOAuthStatusResponse {
+    /// signed_out, connected, refresh_required, reauth_required, or plan_usage_disabled.
+    pub status: String,
+    pub connected: bool,
+    pub account_id: Option<String>,
+    pub expires_at_utc: Option<DateTime<Utc>>,
+    pub client_id: Option<String>,
+    pub email: Option<String>,
+    pub plan_usage_enabled: bool,
+    pub profiles: Vec<ChatGptAccountProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BeginChatGptOAuthRequest {
+    /// Native host's already-bound HTTP loopback listener.
+    pub redirect_uri: String,
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub enable_plan_usage: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BeginChatGptOAuthResponse {
+    pub login_id: String,
+    /// Native-only: may contain an ID-token hint. Never log or forward to browser JS.
+    pub authorization_url: String,
+    pub expires_at_utc: DateTime<Utc>,
+}
+
+impl std::fmt::Debug for BeginChatGptOAuthResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BeginChatGptOAuthResponse")
+            .field("login_id", &self.login_id)
+            .field("authorization_url", &"<redacted>")
+            .field("expires_at_utc", &self.expires_at_utc)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CompleteChatGptOAuthRequest {
     pub login_id: String,
+    /// Native-only callback, containing the one-time code and state.
+    pub callback_url: String,
+}
+
+impl std::fmt::Debug for CompleteChatGptOAuthRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompleteChatGptOAuthRequest")
+            .field("login_id", &self.login_id)
+            .field("callback_url", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SelectChatGptAccountRequest {
+    pub client_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CompleteChatGptOAuthResponse {
-    /// `pending` or `connected`.
     pub status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retry_after_seconds: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub connection: Option<ChatGptOAuthStatusResponse>,
+    pub first_connection: bool,
+    pub connection: ChatGptOAuthStatusResponse,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct DisconnectChatGptOAuthResponse {
     pub disconnected: bool,
-    /// Revocation is best-effort; local credentials are always removed.
+    /// Local tokens are cleared even when remote revocation cannot be confirmed.
     pub revoked: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ChatGptModelListResponse {
-    /// Account-entitled model slugs returned by the ChatGPT Codex backend.
+    /// Account-entitled model slugs, in server order.
     pub models: Vec<String>,
+    pub display_names: std::collections::BTreeMap<String, String>,
 }
 
 /// Bounded, user-intent-oriented context carried from the permanent Code

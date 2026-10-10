@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "kid": "medousa-test-only",
+      "alg": "RS256",
+      "use": "sig",
+      "n": "xq5QYqweTJHi1WdUk-Sj4cWAiGTbx81dqQiI8DmtK3DuhjOxmKQMUWME2D7ijb-KaMpzbsXbviFkVo5Uie_uTk8MkYt2yP3lPC24UK0ZfRjAGyO8KQi3rqXg9xuTdFKcWZkfmQBHF7lJzTfMSsV2HFtajWogZRxlooKxS3b0JLMWYJVV_zKIZCWGmKkbmXIPN7c3ktr9eI5cWX_GhmIUNhiNKE9C6tTYkQb7hEByuNQw1d_aFBqLMOiekz72K26ijFKmzlL8dPF4U6OiPr0YGN_asME10H40nY2lzj2q9cJ5ykkzouXdwcFngTDVsXq41BnXA1Ie7qHHgez9bqEZ_w",
+      "e": "AQAB"
+    }
+  ]
+}

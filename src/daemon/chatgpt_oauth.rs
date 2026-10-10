@@ -1,12 +1,13 @@
-//! Secret-free daemon HTTP surface for the native ChatGPT account route.
+//! Native-only daemon HTTP surface for ChatGPT sign-in and account metadata.
 
 use axum::Json;
 use axum::http::StatusCode;
 
 use crate::chatgpt_oauth::OAuthError;
 use crate::daemon_api::{
-    BeginChatGptOAuthResponse, ChatGptModelListResponse, ChatGptOAuthStatusResponse,
-    CompleteChatGptOAuthRequest, CompleteChatGptOAuthResponse, DisconnectChatGptOAuthResponse,
+    BeginChatGptOAuthRequest, BeginChatGptOAuthResponse, ChatGptModelListResponse,
+    ChatGptOAuthStatusResponse, CompleteChatGptOAuthRequest, CompleteChatGptOAuthResponse,
+    DisconnectChatGptOAuthResponse, SelectChatGptAccountRequest,
 };
 
 type ApiError = (StatusCode, String);
@@ -15,8 +16,10 @@ pub async fn status() -> Json<ChatGptOAuthStatusResponse> {
     Json(crate::chatgpt_oauth::status())
 }
 
-pub async fn begin() -> Result<Json<BeginChatGptOAuthResponse>, ApiError> {
-    crate::chatgpt_oauth::begin()
+pub async fn begin(
+    Json(request): Json<BeginChatGptOAuthRequest>,
+) -> Result<Json<BeginChatGptOAuthResponse>, ApiError> {
+    crate::chatgpt_oauth::begin(request)
         .await
         .map(Json)
         .map_err(api_error)
@@ -25,7 +28,7 @@ pub async fn begin() -> Result<Json<BeginChatGptOAuthResponse>, ApiError> {
 pub async fn complete(
     Json(request): Json<CompleteChatGptOAuthRequest>,
 ) -> Result<Json<CompleteChatGptOAuthResponse>, ApiError> {
-    crate::chatgpt_oauth::complete(request.login_id.trim())
+    crate::chatgpt_oauth::complete(request)
         .await
         .map(Json)
         .map_err(api_error)
@@ -52,6 +55,15 @@ pub async fn models() -> Result<Json<ChatGptModelListResponse>, ApiError> {
         .map_err(api_error)
 }
 
+pub async fn select(
+    Json(request): Json<SelectChatGptAccountRequest>,
+) -> Result<Json<ChatGptOAuthStatusResponse>, ApiError> {
+    crate::chatgpt_oauth::select(&request.client_id)
+        .await
+        .map(Json)
+        .map_err(api_error)
+}
+
 fn api_error(error: OAuthError) -> ApiError {
     let status = match error {
         OAuthError::LoginNotFound => StatusCode::NOT_FOUND,
@@ -60,7 +72,9 @@ fn api_error(error: OAuthError) -> ApiError {
         | OAuthError::InvalidAuthorizationResponse
         | OAuthError::AccountIdentityMissing
         | OAuthError::TokenExpiryMissing => StatusCode::BAD_REQUEST,
-        OAuthError::NotConnected | OAuthError::ReauthenticationRequired => StatusCode::UNAUTHORIZED,
+        OAuthError::NotConnected
+        | OAuthError::ReauthenticationRequired
+        | OAuthError::PlanUsageDisabled => StatusCode::UNAUTHORIZED,
         OAuthError::AuthorizationUnavailable(_)
         | OAuthError::AuthorizationFailed(_)
         | OAuthError::TokenExchangeFailed(_)

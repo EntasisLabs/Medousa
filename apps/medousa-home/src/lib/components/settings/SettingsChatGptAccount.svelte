@@ -1,16 +1,14 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { ArrowUpRight, X } from "@lucide/svelte";
+  import { X } from "@lucide/svelte";
   import SettingsListRow from "$lib/components/settings/SettingsListRow.svelte";
   import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import {
-    beginChatGptOAuth,
+    signInChatGptOAuth, selectChatGptAccount, CHATGPT_USAGE_URL,
     chatGptOAuthReady,
-    completeChatGptOAuth,
     disconnectChatGptOAuth,
     getChatGptOAuthConnection,
     listChatGptOAuthModels,
-    type BeginChatGptOAuthResponse,
     type ChatGptOAuthConnection,
   } from "$lib/utils/chatgptOAuth";
 
@@ -27,7 +25,7 @@
   let connection = $state<ChatGptOAuthConnection | null>(null);
   let loading = $state(false);
   let loaded = $state(false);
-  let login = $state<BeginChatGptOAuthResponse | null>(null);
+  let welcome = $state(false);
   let accountModels = $state<string[]>([]);
   let modelsLoading = $state(false);
   let sheetOpen = $state(false);
@@ -39,6 +37,7 @@
     if (actionBusy === "login") return "Waiting…";
     if (loading && !connection) return "Checking…";
     if (ready) return "Connected";
+    if (connection?.status === "plan_usage_disabled") return "Plan usage disabled";
     if (connection?.status === "reauth_required") return "Reconnect";
     return "Not connected";
   });
@@ -113,48 +112,38 @@
     }
   }
 
-  async function signIn() {
+  async function signIn(newAccount = false) {
     await withAction("login", async () => {
       loginCancelled = false;
-      login = await beginChatGptOAuth();
-      await openUrlInDefaultBrowser(login.verification_url);
-      actionNote = `Enter code ${login.user_code} in the browser. Waiting for approval…`;
-
-      while (!loginCancelled && Date.now() < Date.parse(login.expires_at_utc)) {
-        const result = await completeChatGptOAuth(login.login_id);
-        if (result.status === "connected") {
-          connection = result.connection ?? (await getChatGptOAuthConnection());
-          await refreshAccountModels();
-          login = null;
-          return "Connected. Subscription models are now available under Model roles.";
-        }
-        const delaySeconds = Math.max(
-          1,
-          result.retry_after_seconds ?? login.poll_interval_seconds,
-        );
-        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
-      }
-
-      login = null;
+      const result = await signInChatGptOAuth(newAccount ? undefined : connection?.client_id ?? undefined,
+        connection?.status === "plan_usage_disabled");
       if (loginCancelled) return null;
-      throw new Error("ChatGPT sign-in expired. Start it again to receive a new code.");
+      connection = result.connection;
+      welcome = result.first_connection;
+      if (chatGptOAuthReady(connection)) await refreshAccountModels();
+      else accountModels = [];
+      return connection.plan_usage_enabled ? "ChatGPT plan usage is enabled." : "Signed in. Enable ChatGPT plan usage to use account models.";
+    });
+  }
+
+  async function selectAccount(clientId: string) {
+    await withAction("select", async () => {
+      accountModels = [];
+      connection = await selectChatGptAccount(clientId);
+      if (chatGptOAuthReady(connection)) await refreshAccountModels();
+      return null;
     });
   }
 
   async function signOut() {
     await withAction("logout", async () => {
       loginCancelled = true;
-      await disconnectChatGptOAuth();
+      const result = await disconnectChatGptOAuth();
       connection = await getChatGptOAuthConnection();
       accountModels = [];
-      login = null;
-      return "Signed out from ChatGPT on this workshop.";
+      return result.revoked ? "Signed out from ChatGPT on this workshop." :
+        "Signed out locally. Remote revocation was not confirmed; disconnect Medousa in ChatGPT Settings.";
     });
-  }
-
-  async function reopenLogin() {
-    if (!login) return;
-    await openUrlInDefaultBrowser(login.verification_url);
   }
 
   async function refreshAll() {
@@ -213,19 +202,29 @@
           <span class:chatgpt-account-status-ready={ready}>{sheetStatus}</span>
         </div>
 
-        {#if login}
-          <div class="chatgpt-device-auth">
-            <p>Enter this code on the ChatGPT sign-in page:</p>
-            <code class="chatgpt-device-code font-mono">{login.user_code}</code>
-            <p>Medousa will finish connecting after approval.</p>
+        {#if welcome}
+          <div role="status" class="chatgpt-account-copy">
+            <strong>You're using your ChatGPT plan</strong>
+            <p>Medousa requests will count toward your ChatGPT plan and any credits you allow in ChatGPT Settings.</p>
+            <button type="button" class="btn variant-filled-primary btn-sm" onclick={() => (welcome = false)}>Got it</button>
           </div>
-          <button
-            type="button"
-            class="model-catalog-manual-btn chatgpt-account-primary"
-            onclick={() => void reopenLogin()}
-          >
-            Open sign-in page <ArrowUpRight size={13} strokeWidth={2} />
-          </button>
+        {/if}
+
+        {#if connection?.profiles?.length}
+          <label class="chatgpt-account-copy">
+            ChatGPT account
+            <select value={connection.client_id ?? ""} disabled={actionBusy != null}
+              onchange={(event) => void selectAccount(event.currentTarget.value)}>
+              {#each connection.profiles as profile (profile.client_id)}
+                <option value={profile.client_id}>{profile.email ?? profile.account_id ?? "Registration"} · {profile.client_id.slice(-8)}</option>
+              {/each}
+            </select>
+          </label>
+          <button type="button" class="btn variant-ghost-surface btn-sm" disabled={actionBusy != null} onclick={() => void signIn(true)}>Add account</button>
+        {/if}
+
+        {#if actionBusy === "login"}
+          <p class="chatgpt-account-copy">Finish signing in in your browser, then return to Medousa.</p>
         {:else if ready}
           <p class="chatgpt-account-copy">
             {#if modelsLoading}
@@ -258,7 +257,7 @@
           </div>
         {:else}
           <p class="chatgpt-account-copy">
-            {connection?.status === "reauth_required"
+            {connection?.status === "plan_usage_disabled" ? "Signed in. Enable ChatGPT plan usage to use account models." : connection?.status === "reauth_required"
               ? "The saved session can no longer refresh. Sign in again to restore account models."
               : "Sign in to make your ChatGPT subscription models available under Model roles."}
           </p>
@@ -268,9 +267,18 @@
             disabled={actionBusy != null || loading}
             onclick={() => void signIn()}
           >
-            {connection?.status === "reauth_required" ? "Reconnect" : "Sign in with ChatGPT"}
+            <img src="/brand/external-agents/openai-blossom-white.svg" alt="" width="18" height="18" />
+            {connection?.status === "plan_usage_disabled" ? "Enable ChatGPT plan usage" : "Continue with ChatGPT"}
           </button>
         {/if}
+
+        {#if connection?.connected && !ready}
+          <button type="button" class="btn variant-ghost-surface btn-sm" disabled={actionBusy != null} onclick={() => void signOut()}>Sign out</button>
+        {/if}
+        {#if ready}
+          <p class="chatgpt-account-copy">Using ChatGPT plan</p>
+        {/if}
+        <button type="button" class="btn variant-ghost-surface btn-sm" onclick={() => void openUrlInDefaultBrowser(CHATGPT_USAGE_URL)}>Manage usage</button>
 
         {#if actionNote}
           <p class="chatgpt-account-feedback text-content-success" role="status">{actionNote}</p>
@@ -312,28 +320,11 @@
   }
 
   .chatgpt-account-copy,
-  .chatgpt-account-feedback,
-  .chatgpt-device-auth p {
+  .chatgpt-account-feedback {
     margin: 0;
     color: rgb(var(--theme-text-tertiary));
     font-size: 0.75rem;
     line-height: 1.5;
-  }
-
-  .chatgpt-device-auth {
-    display: grid;
-    gap: 0.45rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.3);
-    border-radius: 0.55rem;
-    background: rgb(var(--color-surface-900) / 0.28);
-    padding: 0.75rem;
-  }
-
-  .chatgpt-device-code {
-    color: rgb(var(--color-surface-100));
-    font-size: 1rem;
-    font-weight: 650;
-    letter-spacing: 0.12em;
   }
 
   .chatgpt-account-actions {

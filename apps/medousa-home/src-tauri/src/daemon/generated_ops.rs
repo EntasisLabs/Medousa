@@ -52,6 +52,8 @@ pub enum DaemonOperation {
     AuthChatgptModelsGet,
     #[serde(rename = "auth.chatgpt.refresh.post")]
     AuthChatgptRefreshPost,
+    #[serde(rename = "auth.chatgpt.select.post")]
+    AuthChatgptSelectPost,
     #[serde(rename = "bots.ask.by_job_id.cancel.post")]
     BotsAskByJobIdCancelPost,
     #[serde(rename = "bots.ask.by_job_id.get")]
@@ -1017,6 +1019,7 @@ impl DaemonOperation {
             Self::AuthChatgptGet => "auth.chatgpt.get",
             Self::AuthChatgptModelsGet => "auth.chatgpt.models.get",
             Self::AuthChatgptRefreshPost => "auth.chatgpt.refresh.post",
+            Self::AuthChatgptSelectPost => "auth.chatgpt.select.post",
             Self::BotsAskByJobIdCancelPost => "bots.ask.by_job_id.cancel.post",
             Self::BotsAskByJobIdGet => "bots.ask.by_job_id.get",
             Self::BotsAskPost => "bots.ask.post",

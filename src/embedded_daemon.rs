@@ -2839,19 +2839,32 @@ impl EmbeddedDaemonClient {
         Ok(self.chatgpt_oauth()?.status())
     }
 
-    pub async fn begin_chatgpt_oauth(&self) -> Result<BeginChatGptOAuthResponse> {
+    pub async fn begin_chatgpt_oauth(
+        &self,
+        request: crate::daemon_api::BeginChatGptOAuthRequest,
+    ) -> Result<BeginChatGptOAuthResponse> {
         self.chatgpt_oauth()?
-            .begin()
+            .begin(request)
             .await
             .map_err(anyhow::Error::new)
     }
 
     pub async fn complete_chatgpt_oauth(
         &self,
-        login_id: &str,
+        request: crate::daemon_api::CompleteChatGptOAuthRequest,
     ) -> Result<CompleteChatGptOAuthResponse> {
         self.chatgpt_oauth()?
-            .complete(login_id)
+            .complete(request)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn select_chatgpt_account(
+        &self,
+        client_id: &str,
+    ) -> Result<ChatGptOAuthStatusResponse> {
+        self.chatgpt_oauth()?
+            .select(client_id)
             .await
             .map_err(anyhow::Error::new)
     }

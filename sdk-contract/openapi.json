@@ -379,6 +379,52 @@
       "AuthorityId": {
         "type": "string"
       },
+      "BeginChatGptOAuthRequest": {
+        "properties": {
+          "client_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enable_plan_usage": {
+            "default": false,
+            "type": "boolean"
+          },
+          "redirect_uri": {
+            "description": "Native host's already-bound HTTP loopback listener.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirect_uri"
+        ],
+        "title": "BeginChatGptOAuthRequest",
+        "type": "object"
+      },
+      "BeginChatGptOAuthResponse": {
+        "properties": {
+          "authorization_url": {
+            "description": "Native-only: may contain an ID-token hint. Never log or forward to browser JS.",
+            "type": "string"
+          },
+          "expires_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "login_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url",
+          "expires_at_utc",
+          "login_id"
+        ],
+        "title": "BeginChatGptOAuthResponse",
+        "type": "object"
+      },
       "BeginMcpOAuthRequest": {
         "description": "Begin OAuth for one configured remote MCP server.",
         "properties": {
@@ -1260,6 +1306,112 @@
         ],
         "type": "object"
       },
+      "ChatGptAccountProfile": {
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan_usage_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_id",
+          "connected",
+          "plan_usage_enabled"
+        ],
+        "type": "object"
+      },
+      "ChatGptModelListResponse": {
+        "properties": {
+          "display_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "models": {
+            "description": "Account-entitled model slugs, in server order.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_names",
+          "models"
+        ],
+        "title": "ChatGptModelListResponse",
+        "type": "object"
+      },
+      "ChatGptOAuthStatusResponse": {
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at_utc": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan_usage_enabled": {
+            "type": "boolean"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ChatGptAccountProfile"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "signed_out, connected, refresh_required, reauth_required, or plan_usage_disabled.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connected",
+          "plan_usage_enabled",
+          "profiles",
+          "status"
+        ],
+        "type": "object"
+      },
       "CodeIntentContext": {
         "description": "Bounded, user-intent-oriented context carried from the permanent Code workspace into an external coding-agent prompt. Paths are relative to the governed Forge worktree; the daemon remains authoritative for the cwd.",
         "properties": {
@@ -1350,6 +1502,43 @@
           "repository"
         ],
         "type": "string"
+      },
+      "CompleteChatGptOAuthRequest": {
+        "properties": {
+          "callback_url": {
+            "description": "Native-only callback, containing the one-time code and state.",
+            "type": "string"
+          },
+          "login_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "callback_url",
+          "login_id"
+        ],
+        "title": "CompleteChatGptOAuthRequest",
+        "type": "object"
+      },
+      "CompleteChatGptOAuthResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/ChatGptOAuthStatusResponse"
+          },
+          "first_connection": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "first_connection",
+          "status"
+        ],
+        "title": "CompleteChatGptOAuthResponse",
+        "type": "object"
       },
       "CompleteMcpOAuthRequest": {
         "properties": {
@@ -2935,6 +3124,23 @@
           "compact"
         ],
         "type": "string"
+      },
+      "DisconnectChatGptOAuthResponse": {
+        "properties": {
+          "disconnected": {
+            "type": "boolean"
+          },
+          "revoked": {
+            "description": "Local tokens are cleared even when remote revocation cannot be confirmed.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "disconnected",
+          "revoked"
+        ],
+        "title": "DisconnectChatGptOAuthResponse",
+        "type": "object"
       },
       "DisconnectMcpOAuthResponse": {
         "description": "Result of dropping one MCP server's locally held OAuth grant.",
@@ -6627,6 +6833,18 @@
           "callback_key"
         ],
         "title": "RotateExternalCallbackResponse",
+        "type": "object"
+      },
+      "SelectChatGptAccountRequest": {
+        "properties": {
+          "client_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id"
+        ],
+        "title": "SelectChatGptAccountRequest",
         "type": "object"
       },
       "SessionAgentModeResponse": {
@@ -14863,8 +15081,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "AUTH_CHATGPT_DELETEResponse",
-                  "x-medousa-opaque": true
+                  "$ref": "#/components/schemas/DisconnectChatGptOAuthResponse"
                 }
               }
             },
@@ -14912,8 +15129,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "AUTH_CHATGPT_GETResponse",
-                  "x-medousa-opaque": true
+                  "$ref": "#/components/schemas/ChatGptOAuthStatusResponse"
                 }
               }
             },
@@ -14958,13 +15174,22 @@
       "post": {
         "operationId": "auth.chatgpt.begin.post",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginChatGptOAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "AUTH_CHATGPT_BEGIN_POSTResponse",
-                  "x-medousa-opaque": true
+                  "$ref": "#/components/schemas/BeginChatGptOAuthResponse"
                 }
               }
             },
@@ -15009,13 +15234,22 @@
       "post": {
         "operationId": "auth.chatgpt.complete.post",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteChatGptOAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "AUTH_CHATGPT_COMPLETE_POSTResponse",
-                  "x-medousa-opaque": true
+                  "$ref": "#/components/schemas/CompleteChatGptOAuthResponse"
                 }
               }
             },
@@ -15065,8 +15299,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "AUTH_CHATGPT_MODELS_GETResponse",
-                  "x-medousa-opaque": true
+                  "$ref": "#/components/schemas/ChatGptModelListResponse"
                 }
               }
             },
@@ -15116,8 +15349,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "AUTH_CHATGPT_REFRESH_POSTResponse",
-                  "x-medousa-opaque": true
+                  "$ref": "#/components/schemas/ChatGptOAuthStatusResponse"
                 }
               }
             },
@@ -15142,6 +15374,66 @@
               }
             },
             "description": "auth.chatgpt.refresh.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/auth/chatgpt/select": {
+      "post": {
+        "operationId": "auth.chatgpt.select.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectChatGptAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatGptOAuthStatusResponse"
+                }
+              }
+            },
+            "description": "auth.chatgpt.select.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "auth.chatgpt.select.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "auth.chatgpt.select.post"
           }
         },
         "x-medousa-policy": {

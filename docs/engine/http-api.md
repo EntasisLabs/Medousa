@@ -625,26 +625,45 @@ See [vault.md](vault.md).
 
 ## Native ChatGPT account authentication
 
-These endpoints connect a ChatGPT account to the daemon-owned native Medousa
-runtime. They do not use or modify the Codex CLI login. Tokens and the device
-authorization secret never leave the daemon; clients receive only the user code,
-an opaque login id, connection status, account id, and expiry.
+These native-only, service-admin endpoints connect a ChatGPT registration to the
+workshop's Medousa runtime. The native app must bind an HTTP listener on
+`127.0.0.1` with path `/oauth/callback` before calling `begin`. The app presents
+the returned authorization URL in the system browser, then forwards the callback
+to `complete` through the authenticated workshop connection. Do not pass either
+URL into browser JavaScript or logs; they may contain credentials or a one-time
+code. Access and refresh tokens remain in the workshop's protected secret store.
 
 | Method | Path | Types / purpose |
 |--------|------|-----------------|
-| GET | `/v1/auth/chatgpt` | `ChatGptOAuthStatusResponse` |
-| POST | `/v1/auth/chatgpt/begin` | Start device authorization → `BeginChatGptOAuthResponse` |
-| POST | `/v1/auth/chatgpt/complete` | Poll once with `CompleteChatGptOAuthRequest` → `CompleteChatGptOAuthResponse` |
+| GET | `/v1/auth/chatgpt` | `ChatGptOAuthStatusResponse`, including safe profile metadata |
+| POST | `/v1/auth/chatgpt/begin` | `BeginChatGptOAuthRequest` → `BeginChatGptOAuthResponse` |
+| POST | `/v1/auth/chatgpt/complete` | `CompleteChatGptOAuthRequest` → `CompleteChatGptOAuthResponse` |
+| POST | `/v1/auth/chatgpt/select` | `SelectChatGptAccountRequest` → `ChatGptOAuthStatusResponse` |
 | POST | `/v1/auth/chatgpt/refresh` | Refresh now → `ChatGptOAuthStatusResponse` |
-| DELETE | `/v1/auth/chatgpt` | Revoke best-effort and delete local credentials → `DisconnectChatGptOAuthResponse` |
+| GET | `/v1/auth/chatgpt/models` | `ChatGptModelListResponse`; slugs in server order and display names |
+| DELETE | `/v1/auth/chatgpt` | Revoke selected session and clear its tokens → `DisconnectChatGptOAuthResponse` |
 
-`complete` is intentionally non-blocking. While authorization is pending, the
-response includes `retry_after_seconds`; clients should wait and call it again.
-This makes the same flow usable when Home and the workshop daemon are on
-different machines. The daemon refreshes within five minutes of expiry and
-deduplicates concurrent refreshes. An upstream authentication failure permits
-one refresh-and-retry; a permanent refresh failure changes status to
-`reauth_required`.
+`begin` takes `redirect_uri`, an optional saved `client_id`, and explicit
+`enable_plan_usage` to request consent again. `complete` takes `login_id` and the
+native callback URL, consumes the pending attempt once, validates state, exchanges
+PKCE using the issued client ID, and validates the ID-token signature, issuer,
+audience, expiry, and nonce before activating the registration. Registration and
+host identifiers survive sign-out; sessions remain separate per client and
+verified identity. Returning sign-in must match that identity.
+
+`plan_usage_disabled` means identity sign-in succeeded without the direct-use
+scope. It cannot authorize model discovery or inference. Refreshes are serialized,
+and unusable refresh-token errors clear tokens while retaining registration for
+reauthorization. Temporary failures preserve credentials. `revoked: false` on
+sign-out means remote revocation was not confirmed; tell the user to disconnect
+the app in ChatGPT Settings. Old Codex-compatible credentials require a new sign-in.
+
+The legacy configuration provider ID `openai-codex` continues to identify native
+ChatGPT account inference. It now uses `GET https://api.openai.com/v1/models` and
+`POST https://api.openai.com/v1/responses`, without Codex identity headers.
+Requests carry full history, `store: false`, `stream: true`, and namespaced local
+tools. Only `response.completed` succeeds; failures retain their status, body,
+code/param, and request ID and never silently fall back to API-key billing.
 
 ---
 

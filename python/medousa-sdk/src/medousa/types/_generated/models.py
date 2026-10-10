@@ -366,6 +366,28 @@ class CapabilityRecommendation(MedousaModel):
     source: str
 
 
+class ChatGptAccountProfile(MedousaModel):
+    account_id: str | None = None
+    client_id: str
+    connected: bool
+    email: str | None = None
+    plan_usage_enabled: bool
+
+
+class ChatGptOAuthStatusResponse(MedousaModel):
+    account_id: str | None = None
+    client_id: str | None = None
+    connected: bool
+    email: str | None = None
+    expires_at_utc: AwareDatetime | None = None
+    plan_usage_enabled: bool
+    profiles: list[ChatGptAccountProfile]
+    status: str = Field(
+        ...,
+        description='signed_out, connected, refresh_required, reauth_required, or plan_usage_disabled.',
+    )
+
+
 class McpOAuthStatusResponse(MedousaModel):
     connected: bool
     issuer: str | None = None
@@ -3436,6 +3458,23 @@ class AskJobCompleteActionsResponse(MedousaModel):
     ok: bool
 
 
+class BeginChatGptOAuthRequest(MedousaModel):
+    client_id: str | None = None
+    enable_plan_usage: bool | None = False
+    redirect_uri: str = Field(
+        ..., description="Native host's already-bound HTTP loopback listener."
+    )
+
+
+class BeginChatGptOAuthResponse(MedousaModel):
+    authorization_url: str = Field(
+        ...,
+        description='Native-only: may contain an ID-token hint. Never log or forward to browser JS.',
+    )
+    expires_at_utc: AwareDatetime
+    login_id: str
+
+
 class BeginMcpOAuthRequest(MedousaModel):
     challenge: str | None = None
     client_id: str | None = None
@@ -3530,12 +3569,30 @@ class CapabilityResolveResponse(MedousaModel):
     title: str
 
 
+class ChatGptModelListResponse(MedousaModel):
+    display_names: dict[str, str]
+    models: list[str] = Field(..., description='Account-entitled model slugs, in server order.')
+
+
 class CodingRuntimePreferences(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     fallbacks: list[ExternalPeerRuntime] | None = []
     preferred: ExternalPeerRuntime
+
+
+class CompleteChatGptOAuthRequest(MedousaModel):
+    callback_url: str = Field(
+        ..., description='Native-only callback, containing the one-time code and state.'
+    )
+    login_id: str
+
+
+class CompleteChatGptOAuthResponse(MedousaModel):
+    connection: ChatGptOAuthStatusResponse
+    first_connection: bool
+    status: str
 
 
 class CompleteMcpOAuthRequest(MedousaModel):
@@ -3704,6 +3761,13 @@ class DeletePromptStashResponse(MedousaModel):
 class DeleteRecurringResponse(MedousaModel):
     deleted: bool
     recurring_id: str
+
+
+class DisconnectChatGptOAuthResponse(MedousaModel):
+    disconnected: bool
+    revoked: bool = Field(
+        ..., description='Local tokens are cleared even when remote revocation cannot be confirmed.'
+    )
 
 
 class DisconnectMcpOAuthResponse(MedousaModel):
@@ -4117,6 +4181,10 @@ class RuntimeConfigCommandResponse(MedousaModel):
     should_apply_settings: bool
     should_persist_depth_defaults: bool
     should_persist_reasoning_defaults: bool
+
+
+class SelectChatGptAccountRequest(MedousaModel):
+    client_id: str
 
 
 class SessionAgentModeResponse(MedousaModel):

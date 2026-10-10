@@ -1,6 +1,42 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ProviderCatalogEntry } from "$lib/types/providers";
 import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
-import { filterRecordsForCapability, pickModelFromRecords } from "./resolveProviderModels";
+import { filterRecordsForCapability, pickModelFromRecords, resolveModelsForProvider } from "./resolveProviderModels";
+
+const accountModels = vi.hoisted(() => vi.fn());
+vi.mock("./chatgptOAuth", () => ({ listChatGptOAuthModels: accountModels }));
+vi.mock("./providerSettings", () => ({
+  resolveRuntimeProviderId: async (id: string) => id,
+  resolveProviderBaseUrl: async () => null,
+}));
+
+const accountProvider: ProviderCatalogEntry = {
+  id: "openai-codex", label: "ChatGPT account", category: "cloud",
+  defaultModel: "unavailable-default", needsApiKey: false,
+  supportsCustomBaseUrl: false, defaultBaseUrl: null, keyHint: null, blurb: "",
+};
+
+describe("ChatGPT account catalog", () => {
+  it("preserves account ordering and display names", async () => {
+    accountModels.mockResolvedValueOnce({
+      models: ["gpt-6-luna", "gpt-6.1-sol"],
+      display_names: { "gpt-6-luna": "Account Luna", "gpt-6.1-sol": "Account Sol" },
+    });
+    const records = await resolveModelsForProvider(accountProvider);
+    expect(records.map((record) => record.modelId)).toEqual(["gpt-6-luna", "gpt-6.1-sol"]);
+    expect(records.map((record) => record.displayName)).toEqual(["Account Luna", "Account Sol"]);
+  });
+
+  it("does not restore cached or default models after discovery fails", async () => {
+    accountModels.mockRejectedValueOnce(new Error("account changed"));
+    expect(await resolveModelsForProvider(accountProvider)).toEqual([]);
+  });
+
+  it("keeps an empty account catalog empty", async () => {
+    accountModels.mockResolvedValueOnce({ models: [], display_names: {} });
+    expect(await resolveModelsForProvider(accountProvider)).toEqual([]);
+  });
+});
 
 function rec(modelId: string): ModelCapabilityRecord {
   return {

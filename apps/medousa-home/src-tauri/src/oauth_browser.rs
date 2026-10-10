@@ -146,7 +146,7 @@ async fn wait_for_callback(
     };
     tokio::time::timeout(CALLBACK_TIMEOUT, wait)
         .await
-        .map_err(|_| "MCP sign-in timed out".to_string())?
+        .map_err(|_| "Sign-in timed out".to_string())?
 }
 
 async fn write_browser_response(stream: &mut TcpStream, success: bool) {

@@ -1,12 +1,8 @@
 //! Native ChatGPT-account Responses transport with Medousa loop ownership.
 
 use async_trait::async_trait;
-use futures_util::StreamExt;
-use genai::chat::{
-    ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent, MessageContent, ReasoningEffort, Usage,
-};
-use genai::resolver::AuthData;
-use genai::{Client, Headers};
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, ReasoningEffort};
+mod direct;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 #[cfg(feature = "full-daemon")]
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
@@ -16,7 +12,7 @@ use tokio::sync::mpsc;
 
 use crate::chatgpt_oauth::ChatGptOAuthBroker;
 
-const DEFAULT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+const DEFAULT_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const RESPONSES_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const RESPONSES_READ_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const RESPONSES_MAX_ATTEMPTS: usize = 3;
@@ -33,6 +29,12 @@ enum StreamOnceError {
         observable_output_delivered: bool,
     },
     Delivery(StasisError),
+    Failure {
+        status: u16,
+        body: serde_json::Value,
+        request_id: Option<String>,
+        observable_output_delivered: bool,
+    },
 }
 
 impl From<genai::Error> for StreamOnceError {
@@ -47,6 +49,20 @@ impl From<genai::Error> for StreamOnceError {
 impl StreamOnceError {
     fn can_retry_before_output(&self) -> bool {
         match self {
+            Self::Failure {
+                status,
+                body,
+                observable_output_delivered,
+                ..
+            } => {
+                let code = body["error"]["code"]
+                    .as_str()
+                    .or(body["code"].as_str())
+                    .unwrap_or_default();
+                !observable_output_delivered
+                    && code != "subscription_sharing_usage_limit_exceeded"
+                    && matches!(status, 429 | 500 | 502 | 503 | 504)
+            }
             Self::Transport {
                 error,
                 observable_output_delivered: false,
@@ -59,6 +75,14 @@ impl StreamOnceError {
     }
 
     fn unauthorized_before_output(&self) -> bool {
+        if let Self::Failure {
+            status,
+            observable_output_delivered,
+            ..
+        } = self
+        {
+            return *status == 401 && !observable_output_delivered;
+        }
         matches!(
             self,
             Self::Transport {
@@ -67,17 +91,6 @@ impl StreamOnceError {
             } if is_unauthorized(error)
         )
     }
-}
-
-/// Version of the Codex backend contract implemented by this adapter. This is
-/// intentionally independent from Medousa's product version: the ChatGPT Codex
-/// backend gates newer models on this protocol identity.
-/// Astra catalog baseline: https://learn.chatgpt.com/docs/changelog (0.153.4).
-pub(crate) const CODEX_COMPAT_VERSION: &str = "0.153.4";
-pub(crate) const CODEX_COMPAT_ORIGINATOR: &str = "codex_cli_rs";
-
-pub(crate) fn codex_compat_user_agent() -> String {
-    format!("{CODEX_COMPAT_ORIGINATOR}/{CODEX_COMPAT_VERSION}")
 }
 
 #[derive(Clone)]
@@ -99,11 +112,7 @@ impl OpenAiCodexChatClient {
     pub fn new(model: impl Into<String>) -> Self {
         Self {
             model: model.into(),
-            responses_url: std::env::var("MEDOUSA_CHATGPT_RESPONSES_URL")
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| DEFAULT_RESPONSES_URL.to_string()),
+            responses_url: DEFAULT_RESPONSES_URL.to_string(),
             credentials: ChatGptCredentialSource::Daemon,
         }
     }
@@ -114,11 +123,7 @@ impl OpenAiCodexChatClient {
     ) -> Self {
         Self {
             model: model.into(),
-            responses_url: std::env::var("MEDOUSA_CHATGPT_RESPONSES_URL")
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| DEFAULT_RESPONSES_URL.to_string()),
+            responses_url: DEFAULT_RESPONSES_URL.to_string(),
             credentials: ChatGptCredentialSource::Broker(broker),
         }
     }
@@ -144,20 +149,7 @@ impl OpenAiCodexChatClient {
         }
     }
 
-    fn client(&self, access_token: &str, account_id: &str) -> Client {
-        let headers = request_headers(access_token, account_id);
-        let url = self.responses_url.clone();
-        Client::builder()
-            .with_web_config(responses_web_config())
-            .with_auth_resolver_fn(move |_| {
-                Ok(Some(AuthData::RequestOverride {
-                    url: url.clone(),
-                    headers: headers.clone(),
-                }))
-            })
-            .build()
-    }
-
+    #[cfg(test)]
     fn model_target(&self) -> String {
         let (_, model) = ReasoningEffort::from_model_name(self.model.trim());
         format!("openai_resp::{model}")
@@ -222,98 +214,7 @@ impl OpenAiCodexChatClient {
         options: Option<&ChatOptions>,
         chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> Result<ChatResponse, StreamOnceError> {
-        let stream_options = self.stream_options(options);
-
-        let mut stream_response = self
-            .client(&credentials.0, &credentials.1)
-            .exec_chat_stream(self.model_target(), request, Some(&stream_options))
-            .await?;
-        let model_iden = stream_response.model_iden.clone();
-        let mut streamed_text = String::new();
-        let mut reasoning_text = String::new();
-        let mut captured_content: Option<MessageContent> = None;
-        let mut captured_reasoning_content: Option<String> = None;
-        let mut captured_stop_reason = None;
-        let mut captured_response_id = None;
-        let mut usage = Usage::default();
-        let mut observable_output_delivered = false;
-
-        while let Some(event) = stream_response.stream.next().await {
-            let event = event.map_err(|error| StreamOnceError::Transport {
-                error,
-                observable_output_delivered,
-            })?;
-            match event {
-                ChatStreamEvent::Chunk(chunk) => {
-                    if !chunk.content.is_empty() {
-                        streamed_text.push_str(&chunk.content);
-                        if let Some(tx) = chunk_tx {
-                            send_stream_delta(tx, StreamDelta::Content(chunk.content))
-                                .await
-                                .map_err(StreamOnceError::Delivery)?;
-                            observable_output_delivered = true;
-                        }
-                    }
-                }
-                ChatStreamEvent::ReasoningChunk(chunk) => {
-                    if !chunk.content.is_empty() {
-                        reasoning_text.push_str(&chunk.content);
-                        if let Some(tx) = chunk_tx {
-                            send_stream_delta(tx, StreamDelta::Reasoning(chunk.content))
-                                .await
-                                .map_err(StreamOnceError::Delivery)?;
-                            observable_output_delivered = true;
-                        }
-                    }
-                }
-                ChatStreamEvent::ThoughtSignatureChunk(chunk) => {
-                    if !chunk.content.is_empty()
-                        && let Some(tx) = chunk_tx
-                    {
-                        send_stream_delta(tx, StreamDelta::ThoughtSignature(chunk.content))
-                            .await
-                            .map_err(StreamOnceError::Delivery)?;
-                        observable_output_delivered = true;
-                    }
-                }
-                ChatStreamEvent::End(end) => {
-                    // This client only talks to the Responses API. GenAI emits
-                    // an End event at both a terminal response and raw SSE EOF;
-                    // only terminal Responses events carry the response ID.
-                    let Some(response_id) = end.captured_response_id else {
-                        return Err(StreamOnceError::IncompleteStream {
-                            observable_output_delivered,
-                        });
-                    };
-                    captured_response_id = Some(response_id);
-                    captured_stop_reason = end.captured_stop_reason;
-                    captured_content = end.captured_content;
-                    captured_reasoning_content = end.captured_reasoning_content;
-                    usage = end.captured_usage.unwrap_or_default();
-                }
-                _ => {}
-            }
-        }
-
-        let response_id = captured_response_id.ok_or(StreamOnceError::IncompleteStream {
-            observable_output_delivered,
-        })?;
-        let mut content = captured_content.unwrap_or_default();
-        if content.first_text().is_none() && !streamed_text.is_empty() {
-            content.extend_front(MessageContent::from_text(streamed_text));
-        }
-        let reasoning_content = captured_reasoning_content
-            .or_else(|| (!reasoning_text.trim().is_empty()).then_some(reasoning_text));
-        Ok(ChatResponse {
-            content,
-            reasoning_content,
-            model_iden: model_iden.clone(),
-            provider_model_iden: model_iden,
-            stop_reason: captured_stop_reason,
-            usage,
-            captured_raw_body: None,
-            response_id: Some(response_id),
-        })
+        direct::stream_once(self, credentials, request, options, chunk_tx).await
     }
 
     async fn stream_with_retries(
@@ -339,16 +240,6 @@ impl OpenAiCodexChatClient {
             }
         }
         unreachable!("at least one Responses attempt is configured")
-    }
-}
-
-fn responses_web_config() -> genai::WebConfig {
-    // reqwest's read timeout is an idle bound: it covers waiting for the initial
-    // response and resets after each successful response-body read. Leave the
-    // total request timeout unset so long but active reasoning streams can finish.
-    genai::WebConfig {
-        read_timeout: Some(RESPONSES_READ_IDLE_TIMEOUT),
-        ..genai::WebConfig::default().with_connect_timeout(RESPONSES_CONNECT_TIMEOUT)
     }
 }
 
@@ -484,18 +375,6 @@ fn provider_stream_options(options: Option<&ChatOptions>) -> ChatOptions {
         .with_capture_tool_calls(true)
 }
 
-fn request_headers(access_token: &str, account_id: &str) -> Headers {
-    Headers::from([
-        ("Authorization", format!("Bearer {access_token}")),
-        ("ChatGPT-Account-ID", account_id.to_string()),
-        ("Content-Type", "application/json".to_string()),
-        ("Accept", "text/event-stream, application/json".to_string()),
-        ("Originator", CODEX_COMPAT_ORIGINATOR.to_string()),
-        ("User-Agent", codex_compat_user_agent()),
-        ("Version", CODEX_COMPAT_VERSION.to_string()),
-    ])
-}
-
 fn is_unauthorized(error: &genai::Error) -> bool {
     match error {
         genai::Error::HttpError { status, .. } => status.as_u16() == 401,
@@ -564,6 +443,23 @@ fn stream_once_error(model: &str, error: StreamOnceError) -> StasisError {
         StreamOnceError::IncompleteStream { .. } => StasisError::PortFailure(format!(
             "ChatGPT Responses stream ended before a terminal response for model '{model}'"
         )),
+        StreamOnceError::Failure {
+            status,
+            body,
+            request_id,
+            ..
+        } => {
+            let usage_limit = body["error"]["code"] == "subscription_sharing_usage_limit_exceeded";
+            StasisError::PortFailure(format!(
+                "ChatGPT Responses failed (HTTP {status}, request {}): {body}{}",
+                request_id.as_deref().unwrap_or("unknown"),
+                if usage_limit {
+                    ". Manage usage: https://chatgpt.com/settings/usage"
+                } else {
+                    ""
+                }
+            ))
+        }
         StreamOnceError::Delivery(error) => error,
     }
 }
@@ -597,36 +493,6 @@ mod tests {
             RoutedChatClient::new(OPENAI_CODEX_PROVIDER_ID, "gpt-5.6-sol", None),
             RoutedChatClient::ChatGpt(_)
         ));
-    }
-
-    #[test]
-    fn request_headers_have_account_auth_without_api_key_aliases() {
-        let headers = request_headers("oauth-secret", "acct_123");
-        let headers = headers.iter().collect::<std::collections::HashMap<_, _>>();
-        assert_eq!(
-            headers.get(&"Authorization".to_string()).unwrap().as_str(),
-            "Bearer oauth-secret"
-        );
-        assert_eq!(
-            headers
-                .get(&"ChatGPT-Account-ID".to_string())
-                .unwrap()
-                .as_str(),
-            "acct_123"
-        );
-        assert!(!headers.contains_key(&"X-API-Key".to_string()));
-        assert_eq!(
-            headers.get(&"Originator".to_string()).unwrap().as_str(),
-            CODEX_COMPAT_ORIGINATOR
-        );
-        assert_eq!(
-            headers.get(&"Version".to_string()).unwrap().as_str(),
-            CODEX_COMPAT_VERSION
-        );
-        assert_eq!(
-            headers.get(&"User-Agent".to_string()).unwrap().as_str(),
-            codex_compat_user_agent()
-        );
     }
 
     #[test]
@@ -827,8 +693,9 @@ mod tests {
 
         let (headers, body) = capture.0.lock().unwrap().take().unwrap();
         assert_eq!(headers.get("authorization").unwrap(), "Bearer oauth-secret");
-        assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
-        assert_eq!(headers.get("version").unwrap(), CODEX_COMPAT_VERSION);
+        assert!(headers.get("chatgpt-account-id").is_none());
+        assert!(headers.get("version").is_none());
+        assert!(headers.get("originator").is_none());
         assert_eq!(body["model"], expected_model);
         assert_eq!(body["reasoning"]["effort"].as_str(), expected_effort);
         assert!(body.get("temperature").is_none());
@@ -944,10 +811,8 @@ mod tests {
                 request_headers["authorization"].to_str().unwrap(),
                 format!("Bearer {token}")
             );
-            assert_eq!(
-                request_headers["chatgpt-account-id"].to_str().unwrap(),
-                account
-            );
+            assert!(!request_headers.contains_key("chatgpt-account-id"));
+            assert!(!request_headers.contains_key("originator"));
             assert!(!request_headers.contains_key("x-api-key"));
         }
     }
@@ -1022,7 +887,10 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(calls.load(Ordering::SeqCst), RESPONSES_MAX_ATTEMPTS);
-        assert!(matches!(error, StreamOnceError::Transport { .. }));
+        assert!(matches!(
+            error,
+            StreamOnceError::Failure { status: 502, .. }
+        ));
     }
 
     #[tokio::test]
@@ -1165,3 +1033,6 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod direct_tests;

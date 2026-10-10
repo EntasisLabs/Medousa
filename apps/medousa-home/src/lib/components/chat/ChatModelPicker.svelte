@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import { composerModel, selectComposerModel } from "$lib/chat/composerModel";
   import { onMount, tick } from "svelte";
   import {
@@ -51,6 +52,7 @@
     modelSourceLabel,
   } from "$lib/utils/chatModelRoute";
   import {
+    CHATGPT_USAGE_URL,
     chatGptOAuthReady,
     getChatGptOAuthConnection,
     listChatGptOAuthModels,
@@ -108,6 +110,9 @@
   let chatGptConnectionError = $state(false);
 
   let loadingLiveModels = $state(false);
+  let chatGptModels = $state<string[]>([]);
+  let chatGptModelNames = $state<Record<string, string>>({});
+  let liveModelsGeneration = 0;
   let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
   const providerChoices = $derived(
     isProviderConversationRuntime(agentRuntime)
@@ -205,9 +210,19 @@
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") open = false;
     };
+    const onAccountChanged = () => {
+      liveModelsGeneration += 1;
+      chatGptModels = [];
+      chatGptModelNames = {};
+      options = options.filter((option) => option.provider !== "openai-codex");
+      void refreshChatGptConnection();
+      if (catalogSnapshot) void refreshLiveModelsForProvider("openai-codex");
+    };
+    window.addEventListener("medousa:chatgpt-account-changed", onAccountChanged);
     document.addEventListener("click", onDocClick);
     document.addEventListener("keydown", onKey);
     return () => {
+      window.removeEventListener("medousa:chatgpt-account-changed", onAccountChanged);
       document.removeEventListener("click", onDocClick);
       document.removeEventListener("keydown", onKey);
     };
@@ -313,27 +328,49 @@
     liveModels: string[] = [],
     liveProvider = chatModel.provider,
   ) {
-    const base = buildChatModelOptions(
+    let base = buildChatModelOptions(
       catalog,
       probe,
       chatModel.provider,
       chatModel.model,
       nextFavorites,
     );
+    if (chatGptModels.length) {
+      base = mergeLiveProviderModels(base, "openai-codex", chatGptModels, catalog);
+    }
     options = liveModels.length
       ? mergeLiveProviderModels(base, liveProvider, liveModels, catalog)
       : base;
     options = applyCapabilityData(options);
+    const accountOptions = new Map(
+      options.filter((option) => option.provider === "openai-codex")
+        .map((option) => [option.model, option]),
+    );
+    options = [
+      ...options.filter((option) => option.provider !== "openai-codex"),
+      ...chatGptModels.flatMap((model) => {
+        const option = accountOptions.get(model);
+        return option ? [{ ...option, label: chatGptModelNames[model] ?? option.label }] : [];
+      }),
+    ];
   }
 
   async function refreshLiveModelsForProvider(provider: string) {
     if (pickerReadonly || !catalogSnapshot) return;
+    const generation = ++liveModelsGeneration;
     loadingLiveModels = true;
     try {
       const chatGptAccount = provider.trim().toLowerCase() === "openai-codex";
       const result = chatGptAccount
         ? await listChatGptOAuthModels()
         : await listProviderModels({ provider });
+      if (generation !== liveModelsGeneration) return;
+      if (chatGptAccount) {
+        chatGptModels = result.models;
+        chatGptModelNames = "display_names" in result ? result.display_names ?? {} : {};
+        rebuildOptions(catalogSnapshot, probeSnapshot, favorites);
+      }
+      if (!result.models.length && chatGptAccount) return;
       if (result.models.length > 0) {
         const discovered = recordsFromModelIds(
           provider,
@@ -344,6 +381,9 @@
               ? result.source
               : "provider.models",
         );
+        if ("display_names" in result) {
+          for (const record of discovered) record.displayName = result.display_names?.[record.modelId] ?? record.displayName;
+        }
         capabilityMap = new Map([
           ...capabilityMap,
           ...capabilityMapFromCatalog(discovered),
@@ -351,9 +391,15 @@
         rebuildOptions(catalogSnapshot, probeSnapshot, favorites, result.models, provider);
       }
     } catch {
-      // Catalog picks still work when live listing is unavailable.
+      if (generation !== liveModelsGeneration) return;
+      if (provider.trim().toLowerCase() === "openai-codex") {
+        chatGptModels = [];
+        chatGptModelNames = {};
+        options = options.filter((option) => option.provider !== "openai-codex");
+      }
+      // Other provider catalog picks still work when live listing is unavailable.
     } finally {
-      loadingLiveModels = false;
+      if (generation === liveModelsGeneration) loadingLiveModels = false;
     }
   }
 
@@ -567,6 +613,9 @@
   >
     <span class="composer-model-trigger-copy">
       <span class="composer-model-trigger-name">{displayName}</span>
+      {#if agentRuntime === "medousa" && nativeChatGptReady && chatModel.provider === "openai-codex"}
+        <span class="text-[10px] text-content-quiet">Using ChatGPT plan</span>
+      {/if}
     </span>
     {#if runtime.savingControls || agentRuntimePending}
       <LoaderCircle size={13} class="composer-model-trigger-spinner animate-spin" />
@@ -584,6 +633,9 @@
       tabindex="-1"
       onkeydown={handlePickerKeydown}
     >
+      {#if agentRuntime === "medousa" && nativeChatGptReady && chatModel.provider === "openai-codex"}
+        <button type="button" class="btn variant-ghost-surface btn-sm" onclick={() => void openUrlInDefaultBrowser(CHATGPT_USAGE_URL)}>Manage usage</button>
+      {/if}
       {#if !pickerReadonly}
         {#if agentRuntime === "medousa"}
           <div class="composer-model-panel-search">

@@ -357,19 +357,26 @@ agent chats may remain unbound.
 
 ### Native ChatGPT account connection
 
-Until a dedicated SDK accessor lands, integrations use the SDK's raw HTTP
-client for the daemon-owned device flow:
+The generated operations expose the native-only, service-admin account surface:
 
 | HTTP | Types |
 |------|-------|
 | `GET /v1/auth/chatgpt` | `ChatGptOAuthStatusResponse` |
-| `POST /v1/auth/chatgpt/begin` | `BeginChatGptOAuthResponse` |
+| `POST /v1/auth/chatgpt/begin` | `BeginChatGptOAuthRequest` → `BeginChatGptOAuthResponse` |
 | `POST /v1/auth/chatgpt/complete` | `CompleteChatGptOAuthRequest` → `CompleteChatGptOAuthResponse` |
+| `POST /v1/auth/chatgpt/select` | `SelectChatGptAccountRequest` → `ChatGptOAuthStatusResponse` |
 | `POST /v1/auth/chatgpt/refresh` | `ChatGptOAuthStatusResponse` |
+| `GET /v1/auth/chatgpt/models` | `ChatGptModelListResponse` |
 | `DELETE /v1/auth/chatgpt` | `DisconnectChatGptOAuthResponse` |
 
-The SDK client must poll `complete` according to `retry_after_seconds`; it must
-not persist the returned user code or attempt to obtain daemon token material.
+A native host starts its `127.0.0.1` listener at `/oauth/callback`, passes the
+exact `redirect_uri` to `begin`, opens the authorization URL in the system
+browser, and submits the callback URL to `complete` once. Keep URLs out of logs
+and browser JavaScript. The daemon owns PKCE, verified identity, protected
+credentials, and serialized token refresh. Select saved accounts by issued client
+ID; display metadata contains no tokens. Check `plan_usage_enabled` before using
+account models. See [HTTP authentication details](../engine/http-api.md#native-chatgpt-account-authentication)
+for recovery, retained registrations, and migration behavior.
 
 ---
 

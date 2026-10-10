@@ -337,6 +337,12 @@ where
                 &target,
                 reason,
             ));
+            if target.provider.eq_ignore_ascii_case("openai-codex") {
+                return Err(TurnFailure::validation(
+                    "Connect ChatGPT and enable plan usage before using account models.",
+                    reason,
+                ));
+            }
             continue;
         }
 
@@ -363,6 +369,11 @@ where
                 }
                 Err(raw) => {
                     last_failure = TurnFailure::from_debug(&raw);
+                    // Plan-usage failures must not silently move a request to API-key billing.
+                    // The ChatGPT transport already owns bounded retries before output.
+                    if target.provider.eq_ignore_ascii_case("openai-codex") {
+                        return Err(last_failure);
+                    }
                     if should_retry_same_target(last_failure.category) && same_target_retries < 1 {
                         same_target_retries += 1;
                         on_notice(telemetry_line(

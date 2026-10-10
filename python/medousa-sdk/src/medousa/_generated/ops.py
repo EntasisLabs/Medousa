@@ -36,6 +36,7 @@ OPERATIONS: dict[str, Operation] = {
     "auth.chatgpt.get": Operation("auth.chatgpt.get", "GET", "/v1/auth/chatgpt", False),
     "auth.chatgpt.models.get": Operation("auth.chatgpt.models.get", "GET", "/v1/auth/chatgpt/models", False),
     "auth.chatgpt.refresh.post": Operation("auth.chatgpt.refresh.post", "POST", "/v1/auth/chatgpt/refresh", False),
+    "auth.chatgpt.select.post": Operation("auth.chatgpt.select.post", "POST", "/v1/auth/chatgpt/select", False),
     "bots.ask.by_job_id.cancel.post": Operation("bots.ask.by_job_id.cancel.post", "POST", "/v1/bots/ask/{job_id}/cancel", False),
     "bots.ask.by_job_id.get": Operation("bots.ask.by_job_id.get", "GET", "/v1/bots/ask/{job_id}", False),
     "bots.ask.post": Operation("bots.ask.post", "POST", "/v1/bots/ask", False),

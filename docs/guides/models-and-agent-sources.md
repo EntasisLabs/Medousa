@@ -104,23 +104,39 @@ as ready only when the workshop daemon has a connected native account. Medousa
 never silently moves credentials between these routes.
 
 To connect the native route, open **Settings → Medousa Agent → Providers**, select
-**ChatGPT account**, and choose **Sign in with ChatGPT**. Medousa opens the
-verification page and displays the device code to enter. The provider row updates when
-authorization completes. This connection is stored and refreshed by the
-workshop daemon—including Embedded Personal on phone—and remains available
-through that workshop's secure credential store. It is separate from the
-desktop-only **Codex runtime** card and can be disconnected independently.
+**ChatGPT account**, and choose **Continue with ChatGPT**. Finish sign-in in your
+system browser and approve ChatGPT plan usage. Medousa confirms **You're using
+your ChatGPT plan**; choose **Got it**. Identity sign-in alone does not enable AI
+requests. If plan permission was declined, choose **Enable ChatGPT plan usage**
+in the account sheet to request it again.
 
-While connected, the picker refreshes from the ChatGPT account's Codex model
-catalog. The list therefore follows that account's current entitlements; if the
-catalog cannot be reached, Medousa keeps its curated fallback choices available.
-Compatible account models can accept both text and image input through
-Medousa's native loop, while continuing to use Medousa modes and tools. The
-Codex account transport currently produces text responses; dedicated image
-generation, speech generation, and transcription routes remain separate rather
-than being falsely advertised as account-model capabilities.
-The adapter carries a separately versioned Codex-backend compatibility identity;
-Medousa's own app version is never sent as the Codex protocol version.
+The native app receives the browser callback, and the workshop daemon exchanges,
+protects, and refreshes the credentials—including Embedded Personal on phone.
+This works with a self-hosted remote workshop through the authenticated native
+connection. Tokens and callback codes never enter the webview. The connection
+is separate from the desktop-only **Codex runtime** card.
+
+Use the account picker to switch saved registrations, or **Add account** to connect
+another account or workspace. Separate registrations remain separate even when
+their emails match. **Sign out** clears the selected session's tokens and attempts
+remote revocation; its registration is retained for reconnecting. If revocation
+cannot be confirmed, disconnect Medousa in ChatGPT Settings. Existing connections
+from the older Codex-compatible flow need one new sign-in after this upgrade.
+
+The picker uses the selected account's current public model catalog, including
+its display names and ordering. Models vary with account access. If discovery
+fails, retry it before selecting an account model. Text, image, and file input
+are supported when the selected model accepts them. Medousa executes its own
+tools; hosted image generation, computer use, speech, and transcription are not
+supported by this preview. Requests use OpenAI's public Responses endpoint and
+succeed only after a completed response.
+
+**Using ChatGPT plan** identifies this route. **Manage usage** opens
+[ChatGPT Settings → Usage](https://chatgpt.com/settings/usage) to manage app access,
+plan limits, and permitted credits. A plan-usage limit pauses the request and
+shows that link. Medousa does not automatically move a failed ChatGPT request to
+API-key billing. See OpenAI's [Sign in with ChatGPT guide](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
+and [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
 
 Choose **GPT-6.1 Sol**, **GPT-6 Astra**, **GPT-6 Sol**, or **GPT-6 Luna** under **OpenAI ·
 ChatGPT account** when your account has access. These models support streamed
