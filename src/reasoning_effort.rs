@@ -157,7 +157,7 @@ pub fn reasoning_capability(provider: &str, model: &str) -> ReasoningCapability 
     };
     match provider.as_str() {
         "openai" | "openai-codex" => {
-            if is(&["gpt-6-astra"]) {
+            if is(&["gpt-6-astra", "gpt-6.1-sol"]) {
                 return ReasoningCapability::effort(&["low", "medium", "high", "xhigh", "max"]);
             }
             if is(&["gpt-6-sol", "gpt-6-luna"]) {
@@ -295,6 +295,12 @@ mod capability_tests {
     #[test]
     fn profiles_respect_model_and_adapter_boundaries() {
         assert!(!reasoning_capability("openai-codex", "gpt-6-astra").accepts("minimal"));
+        for provider in ["openai", "openai-codex"] {
+            let sol = reasoning_capability(provider, "gpt-6.1-sol");
+            assert_eq!(sol.levels, ["low", "medium", "high", "xhigh", "max"]);
+            assert!(!sol.accepts("none"));
+            assert!(!sol.accepts("minimal"));
+        }
         assert!(reasoning_capability("openai", "gpt-6-sol").accepts("none"));
         assert!(reasoning_capability("openai-codex", "gpt-6-luna").accepts("none"));
         assert!(reasoning_capability("openai", "gpt-5.6-sol").accepts("none"));

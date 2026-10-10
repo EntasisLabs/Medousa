@@ -82,7 +82,7 @@ describe("modelHasVision", () => {
 });
 
 describe("live model capability fallback", () => {
-  it.each(["gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"])(
+  it.each(["gpt-5.6-sol", "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"])(
     "keeps ChatGPT account %s multimodal when the account catalog returns ids",
     (model) => {
       const [record] = recordsFromModelIds("openai-codex", [model], "chatgpt-account");
@@ -96,6 +96,8 @@ describe("live model capability fallback", () => {
   );
 
   it("recognizes GPT-6 image input without guessing about unknown models", () => {
+    expect(inferModelSupportsVision("openai", "gpt-6.1-sol")).toBe(true);
+    expect(inferModelSupportsVision("openrouter", "openai/gpt-6.1-sol")).toBe(true);
     expect(inferModelSupportsVision("openai", "gpt-6-astra")).toBe(true);
     expect(inferModelSupportsVision("openrouter", "openai/gpt-6-astra")).toBe(true);
     expect(inferModelSupportsVision("openai", "gpt-6-sol")).toBe(true);

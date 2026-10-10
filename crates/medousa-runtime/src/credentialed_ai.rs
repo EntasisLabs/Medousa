@@ -310,7 +310,8 @@ impl CredentialedAiChatClient {
         );
         if config.provider == "openai"
             && config.base_url.is_none()
-            && (config.model.starts_with("gpt-6-astra")
+            && (config.model.starts_with("gpt-6.1-sol")
+                || config.model.starts_with("gpt-6-astra")
                 || config.model.starts_with("gpt-6-sol")
                 || config.model.starts_with("gpt-6-luna"))
         {
@@ -870,22 +871,25 @@ mod tests {
 
     #[test]
     fn gpt6_responses_options_drop_sampling_controls() {
-        let client = client(
-            config("gpt-6-luna", None),
-            Arc::new(MissingCredentialProvider::default()),
-        );
-        let options = client.stream_options(Some(
-            &ChatOptions::default()
-                .with_temperature(0.2)
-                .with_top_p(0.8)
-                .with_reasoning_effort(ReasoningEffort::High),
-        ));
-        assert!(options.temperature.is_none());
-        assert!(options.top_p.is_none());
-        assert!(matches!(
-            options.reasoning_effort,
-            Some(ReasoningEffort::High)
-        ));
+        for model in ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"] {
+            let client = client(
+                config(model, None),
+                Arc::new(MissingCredentialProvider::default()),
+            );
+            assert_eq!(client.adapter_kind(), AdapterKind::OpenAIResp);
+            let options = client.stream_options(Some(
+                &ChatOptions::default()
+                    .with_temperature(0.2)
+                    .with_top_p(0.8)
+                    .with_reasoning_effort(ReasoningEffort::High),
+            ));
+            assert!(options.temperature.is_none());
+            assert!(options.top_p.is_none());
+            assert!(matches!(
+                options.reasoning_effort,
+                Some(ReasoningEffort::High)
+            ));
+        }
     }
 
     #[tokio::test]

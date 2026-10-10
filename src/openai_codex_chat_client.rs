@@ -170,7 +170,8 @@ impl OpenAiCodexChatClient {
             options,
         );
         let (_, model) = ReasoningEffort::from_model_name(self.model.trim());
-        if model.starts_with("gpt-6-astra")
+        if model.starts_with("gpt-6.1-sol")
+            || model.starts_with("gpt-6-astra")
             || model.starts_with("gpt-6-sol")
             || model.starts_with("gpt-6-luna")
         {
@@ -703,6 +704,15 @@ mod tests {
     #[tokio::test]
     async fn gpt6_requests_use_supported_options_and_preserve_stream_content() {
         for (model, effort, expected_effort) in [
+            ("gpt-6.1-sol", None, None),
+            ("gpt-6.1-sol", Some(ReasoningEffort::None), None),
+            ("gpt-6.1-sol", Some(ReasoningEffort::Minimal), None),
+            ("gpt-6.1-sol", Some(ReasoningEffort::Low), Some("low")),
+            ("gpt-6.1-sol", Some(ReasoningEffort::Medium), Some("medium")),
+            ("gpt-6.1-sol", Some(ReasoningEffort::High), Some("high")),
+            ("gpt-6.1-sol", Some(ReasoningEffort::XHigh), Some("xhigh")),
+            ("gpt-6.1-sol", Some(ReasoningEffort::Max), Some("max")),
+            ("gpt-6.1-sol-max", None, Some("max")),
             ("gpt-6-astra", None, None),
             ("gpt-6-astra", Some(ReasoningEffort::None), None),
             ("gpt-6-astra", Some(ReasoningEffort::Minimal), None),
