@@ -5824,7 +5824,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_shell_run",
-      "description": "Run a command in Medousa's OS-native sandbox via the Grapheme shell.run module. Prefer argv or a short command; network is denied by default. Power users can call shell.run directly inside Grapheme scripts.",
+      "description": "Run a command in Medousa's OS-native sandbox and terminal. Prefer argv or a short command; network is denied by default. Power users can call shell.run directly inside Grapheme scripts.",
       "input_schema": {
         "properties": {
           "allowed_binaries": {
@@ -5852,7 +5852,7 @@
             "type": "boolean"
           },
           "timeout_ms": {
-            "description": "Optional command execution deadline. Omitting it waits for command completion; it does not bound how long the workflow caller waits.",
+            "description": "Optional command execution deadline. Omitting it leaves lifetime to the owning turn; output observation yields independently.",
             "type": "integer"
           },
           "writable_roots": {
@@ -5892,6 +5892,12 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:execute",
+        "general:authorized",
+        "general:domain:execute",
+        "workshop:authorized:general",
+        "workshop:authorized:research",
         "workshop:domain:coding"
       ]
     },
@@ -5942,6 +5948,12 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:execute",
+        "general:authorized",
+        "general:domain:execute",
+        "workshop:authorized:general",
+        "workshop:authorized:research",
         "workshop:domain:coding"
       ]
     },

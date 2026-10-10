@@ -27,6 +27,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create native and runtime Bots, search them in Spotlight, and continue their memory |
+| [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands in an owned native terminal |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
 | [Phone pairing](guides/phone-pairing.md) | Name paired workshops, refresh stale connections, and add optional portals |

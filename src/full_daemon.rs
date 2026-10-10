@@ -191,6 +191,7 @@ pub mod schema_api;
 pub mod shell_grapheme;
 pub mod shell_sandbox;
 pub mod shell_tools;
+pub(crate) mod native_shell;
 pub mod skill_execution;
 pub mod skill_import;
 pub mod skill_ingest;

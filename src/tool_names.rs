@@ -191,7 +191,12 @@ mod tests {
         assert_eq!(set.len(), names.len());
     }
 }
-pub const SHELL_COGNITION_TOOLS: &[&str] = &["cognition_shell_status", "cognition_shell_run"];
+pub const SHELL_COGNITION_TOOLS: &[&str] = &[
+    "cognition_shell_status",
+    "cognition_shell_run",
+    "cognition_shell_session_run",
+    "cognition_shell_session_interrupt",
+];
 
 pub fn is_shell_cognition_tool(name: &str) -> bool {
     name.starts_with("cognition_shell_")

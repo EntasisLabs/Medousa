@@ -1,4 +1,4 @@
-//! Cognition tools for Medousa OS-native shell (`shell.run` Grapheme module).
+//! Cognition tools for Medousa OS-native shell.
 
 use std::sync::Arc;
 
@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
-use crate::shell_grapheme::synthesize_shell_run_source;
 use crate::shell_sandbox::{ShellSandboxStatus, probe_shell_sandbox, shell_agent_tools_enabled};
-use crate::tools::run_grapheme_via_runtime;
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_SHELL_STATUS: &str = "cognition_shell_status";
@@ -60,9 +58,9 @@ impl CognitionShellStatusTool {
         _input: ShellStatusInput,
     ) -> stasis::prelude::Result<ShellSandboxStatus> {
         ensure_shell_agent_tools_enabled()?;
-        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
-            COGNITION_SHELL_STATUS,
-        ) {
+        if let Some(invocation) =
+            crate::work_environment_tools::EnvironmentToolInvocation::active(COGNITION_SHELL_STATUS)
+        {
             let (ready, phase) = crate::work_environment_tools::status(&invocation).await?;
             return Ok(ShellSandboxStatus {
                 os: "oci".to_string(),
@@ -82,13 +80,11 @@ impl CognitionShellStatusTool {
     }
 }
 
-pub struct CognitionShellRunTool {
-    runtime: Arc<RuntimeComposition>,
-}
+pub struct CognitionShellRunTool {}
 
 impl CognitionShellRunTool {
-    pub fn new(runtime: Arc<RuntimeComposition>) -> Self {
-        Self { runtime }
+    pub fn new(_runtime: Arc<RuntimeComposition>) -> Self {
+        Self {}
     }
 }
 
@@ -112,7 +108,7 @@ pub struct ShellRunInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
     network: Option<bool>,
-    /// Optional command execution deadline. Omitting it waits for command completion; it does not bound how long the workflow caller waits.
+    /// Optional command execution deadline. Omitting it leaves lifetime to the owning turn; output observation yields independently.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
     timeout_ms: Option<u64>,
@@ -181,7 +177,7 @@ impl<'de> Deserialize<'de> for ShellRunInput {
 }
 
 impl ShellRunInput {
-    fn into_grapheme_args(self) -> Value {
+    fn into_shell_args(self) -> Value {
         let mut args = Map::new();
         if let Some(value) = self.command {
             args.insert("command".to_string(), Value::String(value));
@@ -236,12 +232,12 @@ pub struct ShellRunOutput {
 
 #[medousa_tool(id = COGNITION_SHELL_RUN_ID)]
 impl CognitionShellRunTool {
-    /// Run a command in Medousa's OS-native sandbox via the Grapheme shell.run module. Prefer argv or a short command; network is denied by default. Power users can call shell.run directly inside Grapheme scripts.
+    /// Run a command in Medousa's OS-native sandbox and terminal. Prefer argv or a short command; network is denied by default. Power users can call shell.run directly inside Grapheme scripts.
     async fn invoke_typed(&self, input: ShellRunInput) -> stasis::prelude::Result<ShellRunOutput> {
         ensure_shell_agent_tools_enabled()?;
-        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
-            COGNITION_SHELL_RUN,
-        ) {
+        if let Some(invocation) =
+            crate::work_environment_tools::EnvironmentToolInvocation::active(COGNITION_SHELL_RUN)
+        {
             if input.network == Some(true) {
                 return Err(StasisError::PortFailure(
                     "the bound work environment denies network access".to_string(),
@@ -256,9 +252,7 @@ impl CognitionShellRunTool {
                 crate::work_environment_tools::workspace_directory(Some(root))?;
             }
             let (program, args) = match (input.argv.as_ref(), input.command.as_ref()) {
-                (Some(argv), _) if !argv.is_empty() => {
-                    (argv[0].clone(), argv[1..].to_vec())
-                }
+                (Some(argv), _) if !argv.is_empty() => (argv[0].clone(), argv[1..].to_vec()),
                 (_, Some(command)) if !command.trim().is_empty() => (
                     "/bin/sh".to_string(),
                     vec!["-lc".to_string(), command.clone()],
@@ -310,33 +304,16 @@ impl CognitionShellRunTool {
                 shell: ExternalJson::new(shell),
             });
         }
-        let args = input.into_grapheme_args();
-        let source = synthesize_shell_run_source(&args).map_err(StasisError::PortFailure)?;
-        let result = run_grapheme_via_runtime(&self.runtime, &source, COGNITION_SHELL_RUN).await?;
-
-        // Surface shell.run fields when the grapheme diagnostics carry final_state.
-        let shell = extract_shell_result(&result);
+        let shell = crate::native_shell::run(input.into_shell_args()).await?;
         Ok(ShellRunOutput {
-            mode: "grapheme_shell_run".to_string(),
-            source,
-            runtime: ExternalJson::new(result),
+            mode: "native_shell_run".to_string(),
+            source: String::new(),
+            runtime: ExternalJson::new(
+                json!({"transport": if shell.get("session_id").is_some() { "native_terminal" } else { "native_process" }}),
+            ),
             shell: ExternalJson::new(shell),
         })
     }
-}
-
-fn extract_shell_result(runtime_result: &Value) -> Value {
-    let diagnostics = runtime_result
-        .get("diagnostics")
-        .cloned()
-        .unwrap_or(Value::Null);
-    if let Some(final_state) = diagnostics.get("final_state") {
-        return final_state.clone();
-    }
-    if let Some(execution) = diagnostics.get("execution") {
-        return execution.clone();
-    }
-    diagnostics
 }
 
 #[cfg(test)]
