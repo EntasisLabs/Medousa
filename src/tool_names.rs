@@ -31,6 +31,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_active_work_discover",
     "cognition_assistant_placement",
     "cognition_peer_discover",
+    "cognition_agent_message",
     "cognition_peer_delegate",
     "cognition_peer_propose",
     "cognition_peer_handoff",

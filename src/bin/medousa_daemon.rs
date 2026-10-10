@@ -1150,6 +1150,14 @@ async fn start_daemon() -> Result<()> {
             None
         }
     };
+    let _agent_messages =
+        match medousa::agent_messaging::start(state.clone(), shutdown_rx.clone()).await {
+            Ok(host) => Some(host),
+            Err(error) => {
+                tracing::warn!(%error, "agent messaging unavailable; chat remains active");
+                None
+            }
+        };
     let scheduler_ctx = SchedulerHeartbeatContext {
         platform: state.platform.clone(),
         heartbeat_policy: state.heartbeat_policy,

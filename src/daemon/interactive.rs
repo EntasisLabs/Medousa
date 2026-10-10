@@ -123,6 +123,11 @@ pub async fn spawn_turn_ticket(
         .profile_id()
         .map(str::to_string)
         .unwrap_or_else(|| state.workshop_identity_user_id());
+    if turn_id.starts_with("agent_message_") {
+        crate::agent_messaging::verify_admission(&principal, &turn_id, &interactive_request)
+            .await
+            .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
+    }
     if turn_id.starts_with("handoff_wake_") || session_id.as_str().starts_with("ses_handoff_") {
         crate::daemon::coordination::local_coordination_host()
             .ok_or((

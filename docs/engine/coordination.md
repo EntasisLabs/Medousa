@@ -312,3 +312,38 @@ visibility, and immutable-write conflicts return 409. This increment exposes no
 model grant-issuance tool or autonomous follow-up authority. The signed mesh
 proposal route is peer-only and destination-policy-gated; it is not a native
 operator proposal-creation endpoint.
+
+## Native agent chat messages
+
+`cognition_agent_message` supports `discover`, `send`, `inbox`, `reply`, and
+`status`. It requires an admitted turn with a bound owner profile,
+`peer.exchange`, and `workshop.interact`. Names resolve exactly (case
+insensitive); stable Bot/chat IDs disambiguate names. Visibility and Bot
+archival/executor policy are checked at send and delivery. Replies derive the
+destination from the received message and cannot substitute another return
+route. External-runtime Bots and internal coordination sessions are excluded.
+
+The workshop's `agent_messages.sqlite3` transactionally stores immutable sender,
+recipient, body, exchange root, retry key identity, and mutable delivery state.
+A message key is bound to owner, source chat, and exact source turn. Reusing a
+key with different content is rejected. The store caps pending messages at 64,
+sends per turn at eight, and messages per exchange at sixteen. Native message
+wakes inherit the exchange budget even when forwarding rather than replying.
+Bodies are limited to 8000 UTF-8 bytes. Database I/O is admitted through
+`ForgeExecutionService`; pending and inbox reads are bounded.
+
+`inbox` consumes up to eight queued messages for the calling chat, avoiding a
+second delivery wake. The background dispatcher defers busy recipients and
+persists the `delivering` claim before turn admission. Native
+`agent_message_…` turns validate the exact journal record, prompt, recipient,
+profile, Assistant mode, and non-human attribution. They use a continuation
+principal with member capabilities. They never manufacture operator approval,
+persist a human request, or reuse a Forge execution grant. Bot binding is
+resolved by normal interactive admission.
+
+Successful recipient turns become `delivered`; errors/cancellation become
+`failed`. An admitted delivery with a missing ticket becomes `uncertain` after
+restart and is not automatically replayed. Only a provably rejected admission
+can return to `queued`. Sender and recipient can inspect their own message's
+status. Replies are explicit messages, not inferred from arbitrary final text.
+No new public HTTP or SDK routes are introduced by this local service.

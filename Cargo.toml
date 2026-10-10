@@ -98,6 +98,7 @@ medousa-acp-client = { path = "crates/medousa-acp-client", optional = true }
 medousa-forge = { path = "crates/medousa-forge", optional = true }
 medousa-session = { path = "crates/medousa-session", optional = true }
 portable-pty = { version = "0.9", optional = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 detamu = { version = "0.2.0", default-features = false, features = ["code", "surreal"], optional = true }
 detamu-source-git = { version = "0.2.0", optional = true }
 detamu-language-rust = { version = "0.2.0", optional = true }
@@ -258,6 +259,7 @@ full-daemon = [
     "dep:medousa-forge",
     "dep:medousa-session",
     "dep:portable-pty",
+    "dep:rusqlite",
     "dep:detamu",
     "dep:detamu-source-git",
     "dep:detamu-language-rust",

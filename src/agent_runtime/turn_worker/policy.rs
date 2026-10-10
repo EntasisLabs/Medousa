@@ -134,6 +134,7 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
         &mut names,
         &[
             "cognition_tools_discover",
+            "cognition_agent_message",
             "cognition_utility_time_now",
             "cognition_utility_day_of_week",
             "cognition_utility_uuid",
@@ -239,6 +240,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_peer_propose",
             "cognition_peer_handoff",
             "cognition_peer_review",
+            "cognition_agent_message",
             "cognition_utility_time_now",
             "cognition_utility_day_of_week",
             "cognition_utility_uuid",

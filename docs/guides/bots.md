@@ -67,6 +67,37 @@ The status line lets you cancel a job or retry an uncertain submission using
 the original request ID. Responses are saved to the Bot conversation on the
 workshop. Execution administration is required to configure these bindings.
 
+## Message a Bot or another agent chat
+
+Ask your assistant, for example: “Message Taco and tell it the API review is
+ready,” or “Ask the backend coder which tests are still failing.” Native Bots
+with an open primary conversation and existing native agent chats on the current
+workshop can receive these messages. A Bot's name or a chat's title identifies
+it; if names collide, the assistant needs the exact Bot or chat ID.
+
+Messages identify the sending chat and carry only the supplied text. They do
+not copy the sender's entire conversation. A busy recipient can read its inbox
+while working; otherwise the message waits and wakes an Assistant turn when the
+chat is free. Native Bots retain their profile, archetype, and memory. The
+recipient can reply through the saved return route, waking the originating chat
+when it is free. Replies are explicit: delivery alone does not mean a reply has
+been sent.
+
+Messages and delivery states survive daemon restarts. Retrying the same message
+with the same request key does not send it twice. If a restart interrupts an
+already admitted delivery and its outcome cannot be established, the assistant
+reports an uncertain delivery instead of silently running it again.
+
+A message is another agent's communication, not a human instruction or an
+execution approval. Sending one does not create a Forge assignment or grant new
+permissions. Message wakes use Assistant mode; continuing Coder work still needs
+its normal scoped admission. Exchanges have bounded message budgets to prevent
+unattended reply loops.
+
+This messaging route currently covers the active workshop's native chats.
+Codex, Cursor, and Hermes Bots use their existing job/handoff route. Sending a
+message to another workshop requires a transport adapter beyond this local inbox.
+
 ## Edit, duplicate, and archive
 
 Select the Bot’s name in the conversation header to view its profile and edit it.

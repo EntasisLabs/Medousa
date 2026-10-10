@@ -22,6 +22,7 @@ pub mod delegated_task;
 pub mod delegation;
 pub mod delegation_tools;
 pub mod coordination_tools;
+pub mod agent_messaging;
 pub mod engine_adapters;
 pub mod engine_recovery;
 pub mod feed_sink;
