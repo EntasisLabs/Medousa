@@ -146,8 +146,6 @@
   let cardDetail = $state<CardDetailPayload | null>(null);
   let workerTranscriptWorkId = $state<string | null>(null);
   let loadingOlderForScroll = $state(false);
-  let previousChatFirstId = "";
-  let previousChatLastId = "";
 
   function openCardDetail(detail: CardDetailPayload) {
     cardDetail = detail;
@@ -183,8 +181,6 @@
     chat.draft = trimmed;
     window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
   }
-
-  const scrollPinThresholdPx = $derived(mobile ? 24 : 96);
 
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
@@ -440,31 +436,6 @@
   $effect(() => {
     void panelSessionId;
     resetScrollSession();
-  });
-
-  $effect(() => {
-    if (!scrollEl) return;
-    void chatMessages
-      .map((message) =>
-        [
-          message.content.length,
-          message.segments?.length ?? -1,
-          message.toolRuns?.map((run) => `${run.runId}:${run.status}`).join(",") ?? "",
-        ].join(":"),
-      )
-      .join("\0");
-    void subagentRows.map((row) => row.statusLine).join("\0");
-    void chat.hasTurnActivity;
-    const firstId = chatMessages[0]?.id ?? "";
-    const lastId = chatMessages.at(-1)?.id ?? "";
-    const prepended =
-      Boolean(previousChatFirstId) &&
-      previousChatLastId === lastId &&
-      previousChatFirstId !== firstId;
-    previousChatFirstId = firstId;
-    previousChatLastId = lastId;
-    if (!prepended) scrollToLatest(false);
-    void tick().then(scheduleChatNavigationMeasure);
   });
 
   $effect(() => {
@@ -916,7 +887,6 @@
   <div class="relative flex min-h-0 flex-1 flex-col">
   <ChatScrollChrome
     {mobile}
-    pinThresholdPx={scrollPinThresholdPx}
     showFab={showScrollFab && visible}
     showTurnRail={showChatTurnRail}
     {showCurrentTurnAnchor}
@@ -969,19 +939,26 @@
             onOpenSource={openDerivationSource}
           />
         {/if}
-        <ChatMessageList
-          messages={chatMessages}
-          sessionId={panelSessionId}
-          {mobile}
-          navigation
-          onPromoteToFlow={handlePromoteToFlow}
-          onSubmitIntent={submitChatIntent}
-          onSaveToVault={handleSaveToVault}
-          onOpenCardDetail={openCardDetail}
-          subagentRows={subagentRowsByWorkId}
-          onOpenSubagent={openWorkerTranscript}
-          onStopSubagent={stopWorker}
-        />
+        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile}>
+          {#snippet children(peerProposals, peerControls)}
+            <ChatMessageList
+              {peerProposals}
+              {peerControls}
+              messages={chatMessages}
+              sessionId={panelSessionId}
+              authorityId={connection.health?.runtime?.authority_id}
+              {mobile}
+              navigation
+              onPromoteToFlow={handlePromoteToFlow}
+              onSubmitIntent={submitChatIntent}
+              onSaveToVault={handleSaveToVault}
+              onOpenCardDetail={openCardDetail}
+              subagentRows={subagentRowsByWorkId}
+              onOpenSubagent={openWorkerTranscript}
+              onStopSubagent={stopWorker}
+            />
+          {/snippet}
+        </PeerProposalBar>
       {:else if showChatEmptyState}
         {#if panelBot}
           <div class="flex min-h-[240px] flex-col items-center justify-center gap-3 px-6 py-10 text-center"><BotAvatar reference={panelBot.avatar_ref} size={76} /><h2 class="text-xl font-semibold">{panelBot.display_name}</h2><p class="max-w-md text-sm leading-relaxed text-content-secondary">{panelBot.role_description || "Start a conversation. Your Bot will remember your work together."}</p></div>
@@ -1041,7 +1018,7 @@
         <LoaderCircle size={22} class="animate-spin text-content-quiet/80" aria-label="Loading" />
       </div>
       {/if}
-      {#if !embedded}
+      {#if !embedded && !providerRuntime && chatMessages.length === 0}
         <PeerProposalBar sessionId={panelSessionId} {mobile} />
       {/if}
       {#if chatCodeProject && !embedded}

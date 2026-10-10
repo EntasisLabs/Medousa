@@ -1,99 +1,92 @@
-//! Daemon-owned ChatGPT OAuth credentials for native Medousa inference.
-//!
-//! This store is intentionally separate from both provider API keys and the
-//! Codex CLI credential store. Public status objects never contain tokens.
+//! Sign in with ChatGPT: daemon-owned public-client registration and plan usage.
+//! Tokens and callback codes stay in native runtimes, never in the webview.
 
-use std::collections::HashMap;
-#[cfg(feature = "full-daemon")]
-use std::sync::OnceLock;
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
-
+use crate::daemon_api::{
+    BeginChatGptOAuthRequest, BeginChatGptOAuthResponse, ChatGptAccountProfile,
+    ChatGptModelListResponse, ChatGptOAuthStatusResponse, CompleteChatGptOAuthRequest,
+    CompleteChatGptOAuthResponse, DisconnectChatGptOAuthResponse,
+};
 use base64::Engine;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashMap, HashSet};
+#[cfg(feature = "full-daemon")]
+use std::sync::OnceLock;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use tokio::sync::Mutex;
 
-use crate::daemon_api::{
-    BeginChatGptOAuthResponse, ChatGptModelListResponse, ChatGptOAuthStatusResponse,
-    CompleteChatGptOAuthResponse, DisconnectChatGptOAuthResponse,
-};
-use crate::openai_codex_chat_client::{
-    CODEX_COMPAT_ORIGINATOR, CODEX_COMPAT_VERSION, codex_compat_user_agent,
-};
-
 const DEFAULT_ISSUER: &str = "https://auth.openai.com";
-const DEFAULT_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+const RESOURCE: &str = "https://api.openai.com/v1";
+const DIRECT_SCOPE: &str = "chatgpt.tokens.use.direct";
+const SCOPES: &str =
+    "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 #[cfg(feature = "full-daemon")]
 const CREDENTIAL_SERVICE: &str = "medousa.chatgpt";
 #[cfg(feature = "full-daemon")]
 const CREDENTIAL_ACCOUNT: &str = "native_oauth";
-const DEVICE_CODE_LIFETIME_MINUTES: i64 = 15;
-const REFRESH_WINDOW_MINUTES: i64 = 5;
-const DEFAULT_MODELS_URL: &str = "https://chatgpt.com/backend-api/codex/models";
 
 #[derive(Clone)]
 struct OAuthConfig {
     issuer: String,
-    client_id: String,
 }
-
 impl OAuthConfig {
     fn from_env() -> Self {
         Self {
-            issuer: std::env::var("MEDOUSA_CHATGPT_OAUTH_ISSUER")
-                .ok()
-                .map(|value| value.trim_end_matches('/').to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| DEFAULT_ISSUER.to_string()),
-            client_id: std::env::var("MEDOUSA_CHATGPT_OAUTH_CLIENT_ID")
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string()),
+            issuer: DEFAULT_ISSUER.into(),
         }
     }
-
-    fn user_code_url(&self) -> String {
-        format!("{}/api/accounts/deviceauth/usercode", self.issuer)
-    }
-
-    fn device_token_url(&self) -> String {
-        format!("{}/api/accounts/deviceauth/token", self.issuer)
-    }
-
     fn token_url(&self) -> String {
-        format!("{}/oauth/token", self.issuer)
-    }
-
-    fn revoke_url(&self) -> String {
-        format!("{}/oauth/revoke", self.issuer)
+        format!("{}/api/accounts/oauth/token", self.issuer)
     }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-struct CredentialEnvelope {
+struct Credentials {
     access_token: String,
     refresh_token: String,
     id_token: String,
-    account_id: String,
+    scopes: Vec<String>,
     expires_at_utc: DateTime<Utc>,
+    #[serde(default)]
+    earliest_refresh_at: Option<serde_json::Value>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct Registration {
+    client_id: String,
+    subject: Option<String>,
+    email: Option<String>,
+    credentials: Option<Credentials>,
+    #[serde(default)]
+    welcomed: bool,
+    #[serde(default)]
+    previous_access_digest: Option<String>,
     #[serde(default)]
     reauth_required: bool,
 }
-
-impl std::fmt::Debug for CredentialEnvelope {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("CredentialEnvelope")
-            .field("access_token", &"<redacted>")
-            .field("refresh_token", &"<redacted>")
-            .field("id_token", &"<redacted>")
-            .field("account_id", &self.account_id)
-            .field("expires_at_utc", &self.expires_at_utc)
-            .field("reauth_required", &self.reauth_required)
-            .finish()
+#[derive(Clone, Serialize, Deserialize)]
+struct Connections {
+    version: u8,
+    issuer: String,
+    ext_agent_host_id: String,
+    active_client_id: Option<String>,
+    profiles: Vec<Registration>,
+}
+impl Connections {
+    fn new(issuer: &str) -> Self {
+        Self {
+            version: 2,
+            issuer: issuer.into(),
+            ext_agent_host_id: format!("urn:uuid:{}", uuid::Uuid::new_v4()),
+            active_client_id: None,
+            profiles: Vec::new(),
+        }
+    }
+    fn active(&self) -> Option<&Registration> {
+        self.profiles
+            .iter()
+            .find(|p| Some(&p.client_id) == self.active_client_id.as_ref())
     }
 }
 
@@ -111,27 +104,22 @@ pub trait ChatGptCredentialStore: Send + Sync {
 struct DaemonCredentialStore;
 
 #[cfg(feature = "full-daemon")]
-impl DaemonCredentialStore {
-    fn load_raw() -> Option<String> {
-        crate::integration_connection::load_kind_secret(
+impl ChatGptCredentialStore for DaemonCredentialStore {
+    fn load_bundle(&self) -> Result<Option<String>, String> {
+        crate::integration_connection::try_load_kind_secret(
             "chatgpt",
             medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
         )
-    }
-}
-
-#[cfg(feature = "full-daemon")]
-impl ChatGptCredentialStore for DaemonCredentialStore {
-    fn load_bundle(&self) -> Result<Option<String>, String> {
-        Ok(Self::load_raw())
+        .map_err(|_| "ChatGPT credential storage failed".into())
     }
 
     fn save_bundle(&self, bundle: Option<&str>) -> Result<(), String> {
-        crate::integration_connection::save_kind_secret(
+        crate::integration_connection::try_save_kind_secret(
             "chatgpt",
             medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
             bundle,
-        );
+        )
+        .map_err(|_| "ChatGPT credential storage failed")?;
         let _ = keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT)
             .ok()
             .map(|entry| entry.delete_password());
@@ -143,482 +131,699 @@ impl ChatGptCredentialStore for DaemonCredentialStore {
     }
 }
 
-#[derive(Clone)]
-struct PendingDeviceLogin {
-    device_auth_id: String,
-    user_code: String,
+struct PendingLogin {
+    state: String,
+    nonce: String,
+    verifier: String,
+    redirect_uri: String,
+    client_id: Option<String>,
     expires_at_utc: DateTime<Utc>,
-    next_poll_at_utc: DateTime<Utc>,
-    poll_interval_seconds: u64,
 }
 
 pub struct ChatGptOAuthBroker {
     client: reqwest::Client,
     config: OAuthConfig,
     store: Arc<dyn ChatGptCredentialStore>,
-    cached: RwLock<Option<CredentialEnvelope>>,
-    pending: Mutex<HashMap<String, PendingDeviceLogin>>,
-    refresh_lock: Mutex<()>,
+    cached: RwLock<Connections>,
+    storage_invalid: bool,
+    pending: Mutex<HashMap<String, PendingLogin>>,
+    lifecycle: Mutex<()>,
 }
-
 impl ChatGptOAuthBroker {
-    /// Bind the canonical OAuth lifecycle to a deployment's secret authority.
     pub fn new(store: Arc<dyn ChatGptCredentialStore>) -> Self {
         Self::with_config(OAuthConfig::from_env(), store)
     }
-
     fn with_config(config: OAuthConfig, store: Arc<dyn ChatGptCredentialStore>) -> Self {
-        let cached = store
-            .load_bundle()
-            .ok()
-            .flatten()
-            .and_then(|value| serde_json::from_str(&value).ok());
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+        let (cached, storage_invalid) = match store.load_bundle() {
+            Ok(Some(raw)) => match serde_json::from_str::<Connections>(&raw) {
+                Ok(value) if value.version == 2 && value.issuer == config.issuer => (value, false),
+                // Previous Codex credentials cannot authorize the new public route.
+                _ if serde_json::from_str::<serde_json::Value>(&raw)
+                    .is_ok_and(|v| v.get("account_id").is_some()) =>
+                {
+                    (Connections::new(&config.issuer), false)
+                }
+                _ => (Connections::new(&config.issuer), true),
+            },
+            Ok(None) => (Connections::new(&config.issuer), false),
+            Err(_) => (Connections::new(&config.issuer), true),
+        };
         Self {
-            client,
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("OAuth HTTP client"),
             config,
             store,
             cached: RwLock::new(cached),
+            storage_invalid,
             pending: Mutex::new(HashMap::new()),
-            refresh_lock: Mutex::new(()),
+            lifecycle: Mutex::new(()),
         }
     }
-
+    fn snapshot(&self) -> Result<Connections, OAuthError> {
+        if self.storage_invalid {
+            return Err(OAuthError::StoredCredentialsInvalid);
+        }
+        Ok(self.cached.read().expect("ChatGPT cache").clone())
+    }
+    fn persist(&self, value: Connections) -> Result<(), OAuthError> {
+        let raw =
+            serde_json::to_string(&value).map_err(|_| OAuthError::StoredCredentialsInvalid)?;
+        self.store
+            .save_bundle(Some(&raw))
+            .map_err(|_| OAuthError::CredentialStorage)?;
+        *self.cached.write().expect("ChatGPT cache") = value;
+        Ok(())
+    }
     pub fn status(&self) -> ChatGptOAuthStatusResponse {
-        let credentials = self.cached.read().expect("ChatGPT credential cache lock");
-        status_for(credentials.as_ref(), Utc::now())
+        let data = self.cached.read().expect("ChatGPT cache");
+        let active = data.active();
+        let credentials = active.and_then(|p| p.credentials.as_ref());
+        let connected = credentials.is_some();
+        let plan_usage_enabled =
+            credentials.is_some_and(|c| c.scopes.iter().any(|s| s == DIRECT_SCOPE));
+        let status = if !connected {
+            if active.is_some_and(|p| p.reauth_required) {
+                "reauth_required"
+            } else {
+                "signed_out"
+            }
+        } else if !plan_usage_enabled {
+            "plan_usage_disabled"
+        } else if credentials.is_some_and(near_expiry) {
+            "refresh_required"
+        } else {
+            "connected"
+        };
+        ChatGptOAuthStatusResponse {
+            status: status.into(),
+            connected,
+            account_id: active.and_then(|p| p.subject.clone()),
+            expires_at_utc: credentials.map(|c| c.expires_at_utc),
+            client_id: active.map(|p| p.client_id.clone()),
+            email: active.and_then(|p| p.email.clone()),
+            plan_usage_enabled,
+            profiles: data
+                .profiles
+                .iter()
+                .map(|p| ChatGptAccountProfile {
+                    client_id: p.client_id.clone(),
+                    account_id: p.subject.clone(),
+                    email: p.email.clone(),
+                    connected: p.credentials.is_some(),
+                    plan_usage_enabled: p
+                        .credentials
+                        .as_ref()
+                        .is_some_and(|c| c.scopes.iter().any(|s| s == DIRECT_SCOPE)),
+                })
+                .collect(),
+        }
     }
-
-    pub async fn begin(&self) -> Result<BeginChatGptOAuthResponse, OAuthError> {
-        #[derive(Serialize)]
-        struct Request<'a> {
-            client_id: &'a str,
-        }
-        #[derive(Deserialize)]
-        struct Response {
-            device_auth_id: String,
-            #[serde(alias = "usercode")]
-            user_code: String,
-            #[serde(default, deserialize_with = "deserialize_u64_string_or_number")]
-            interval: u64,
-        }
-
-        let response = self
-            .client
-            .post(self.config.user_code_url())
-            .json(&Request {
-                client_id: &self.config.client_id,
+    pub async fn begin(
+        &self,
+        request: BeginChatGptOAuthRequest,
+    ) -> Result<BeginChatGptOAuthResponse, OAuthError> {
+        validate_redirect(&request.redirect_uri)?;
+        let _guard = self.lifecycle.lock().await;
+        let data = self.snapshot()?;
+        let profile = request
+            .client_id
+            .as_ref()
+            .map(|id| {
+                data.profiles
+                    .iter()
+                    .find(|p| &p.client_id == id)
+                    .ok_or(OAuthError::LoginNotFound)
             })
-            .send()
-            .await
-            .map_err(|_| OAuthError::Transport)?;
-        if !response.status().is_success() {
-            return Err(OAuthError::AuthorizationUnavailable(
-                response.status().as_u16(),
-            ));
-        }
-        let response: Response = response
-            .json()
-            .await
-            .map_err(|_| OAuthError::InvalidAuthorizationResponse)?;
-        if response.device_auth_id.trim().is_empty() || response.user_code.trim().is_empty() {
-            return Err(OAuthError::InvalidAuthorizationResponse);
-        }
-
-        let now = Utc::now();
-        let expires_at_utc = now + ChronoDuration::minutes(DEVICE_CODE_LIFETIME_MINUTES);
-        let poll_interval_seconds = response.interval.clamp(1, 30);
+            .transpose()?;
+        // Persist the host before starting authorization, including a first failed/declined attempt.
+        self.persist(data.clone())?;
+        let state = random_value();
+        let nonce = random_value();
+        let verifier = random_value();
+        let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(Sha256::digest(verifier.as_bytes()));
+        let expires_at_utc = Utc::now() + ChronoDuration::minutes(10);
         let login_id = uuid::Uuid::new_v4().to_string();
-        self.pending.lock().await.insert(
+        let mut url =
+            reqwest::Url::parse(&format!("{}/api/accounts/authorize", self.config.issuer))
+                .map_err(|_| OAuthError::InvalidAuthorizationResponse)?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.extend_pairs([
+                (
+                    "client_id",
+                    profile
+                        .map(|p| p.client_id.as_str())
+                        .unwrap_or("dynamic_agent_client"),
+                ),
+                ("ext_agent_host_id", data.ext_agent_host_id.as_str()),
+                ("response_type", "code"),
+                ("redirect_uri", request.redirect_uri.as_str()),
+                ("scope", SCOPES),
+                ("resource", RESOURCE),
+                ("state", state.as_str()),
+                ("nonce", nonce.as_str()),
+                ("code_challenge_method", "S256"),
+                ("code_challenge", challenge.as_str()),
+            ]);
+            if let Some(profile) = profile {
+                if let Some(credentials) = &profile.credentials {
+                    query.append_pair("id_token_hint", &credentials.id_token);
+                }
+                if let Some(email) = &profile.email {
+                    query.append_pair("login_hint", email);
+                }
+            } else {
+                query.append_pair("agent_name_hint", "Medousa");
+            }
+            if request.enable_plan_usage {
+                query.append_pair("prompt", "consent");
+            }
+        }
+        let mut pending = self.pending.lock().await;
+        pending.retain(|_, p| p.expires_at_utc > Utc::now());
+        if pending.len() >= 16 {
+            return Err(OAuthError::AuthorizationUnavailable(429));
+        }
+        pending.insert(
             login_id.clone(),
-            PendingDeviceLogin {
-                device_auth_id: response.device_auth_id,
-                user_code: response.user_code.clone(),
+            PendingLogin {
+                state,
+                nonce,
+                verifier,
+                redirect_uri: request.redirect_uri,
+                client_id: request.client_id,
                 expires_at_utc,
-                next_poll_at_utc: now,
-                poll_interval_seconds,
             },
         );
         Ok(BeginChatGptOAuthResponse {
             login_id,
-            verification_url: format!("{}/codex/device", self.config.issuer),
-            user_code: response.user_code,
+            authorization_url: url.into(),
             expires_at_utc,
-            poll_interval_seconds,
         })
     }
-
     pub async fn complete(
         &self,
-        login_id: &str,
+        request: CompleteChatGptOAuthRequest,
     ) -> Result<CompleteChatGptOAuthResponse, OAuthError> {
-        let pending = {
-            let mut pending_logins = self.pending.lock().await;
-            let Some(login) = pending_logins.get_mut(login_id) else {
-                return Err(OAuthError::LoginNotFound);
-            };
-            let now = Utc::now();
-            if now >= login.expires_at_utc {
-                pending_logins.remove(login_id);
-                return Err(OAuthError::LoginExpired);
-            }
-            if now < login.next_poll_at_utc {
-                let retry_after_seconds =
-                    (login.next_poll_at_utc - now).num_seconds().max(1) as u64;
-                return Ok(CompleteChatGptOAuthResponse {
-                    status: "pending".to_string(),
-                    retry_after_seconds: Some(retry_after_seconds),
-                    connection: None,
-                });
-            }
-            login.next_poll_at_utc =
-                now + ChronoDuration::seconds(login.poll_interval_seconds as i64);
-            login.clone()
-        };
-
-        #[derive(Serialize)]
-        struct PollRequest<'a> {
-            device_auth_id: &'a str,
-            user_code: &'a str,
+        let pending = self
+            .pending
+            .lock()
+            .await
+            .remove(&request.login_id)
+            .ok_or(OAuthError::LoginNotFound)?;
+        if pending.expires_at_utc <= Utc::now() {
+            return Err(OAuthError::LoginExpired);
         }
-        #[derive(Deserialize)]
-        struct PollResponse {
-            authorization_code: String,
-            code_challenge: String,
-            code_verifier: String,
+        let callback = reqwest::Url::parse(&request.callback_url)
+            .map_err(|_| OAuthError::PkceValidationFailed)?;
+        let mut base = callback.clone();
+        base.set_query(None);
+        if base.as_str() != pending.redirect_uri {
+            return Err(OAuthError::PkceValidationFailed);
         }
-
+        let mut params = HashMap::new();
+        for (key, value) in callback.query_pairs() {
+            if params
+                .insert(key.into_owned(), value.into_owned())
+                .is_some()
+            {
+                return Err(OAuthError::PkceValidationFailed);
+            }
+        }
+        if params.get("state") != Some(&pending.state) {
+            return Err(OAuthError::PkceValidationFailed);
+        }
+        if params.contains_key("error") {
+            return Err(OAuthError::AuthorizationFailed(403));
+        }
+        let issued = params
+            .get("client_id")
+            .or(pending.client_id.as_ref())
+            .ok_or(OAuthError::AccountIdentityMissing)?;
+        if !issued.starts_with("oaiapp_")
+            || pending.client_id.as_ref().is_some_and(|id| id != issued)
+        {
+            return Err(OAuthError::AccountIdentityMissing);
+        }
+        let code = params
+            .get("code")
+            .filter(|c| !c.is_empty())
+            .ok_or(OAuthError::InvalidAuthorizationResponse)?;
+        let _guard = self.lifecycle.lock().await;
+        let mut data = self.snapshot()?;
+        // Retain registration before exchange so an expired code does not register another client.
+        if !data.profiles.iter().any(|p| &p.client_id == issued) {
+            data.profiles.push(Registration {
+                client_id: issued.clone(),
+                subject: None,
+                email: None,
+                credentials: None,
+                welcomed: false,
+                previous_access_digest: None,
+                reauth_required: false,
+            });
+            self.persist(data.clone())?;
+        }
+        let tokens = parse_tokens(
+            self.client
+                .post(self.config.token_url())
+                .form(&[
+                    ("grant_type", "authorization_code"),
+                    ("client_id", issued.as_str()),
+                    ("code", code.as_str()),
+                    ("code_verifier", pending.verifier.as_str()),
+                    ("redirect_uri", pending.redirect_uri.as_str()),
+                    ("resource", RESOURCE),
+                ])
+                .send()
+                .await
+                .map_err(|_| OAuthError::Transport)?,
+        )
+        .await?;
+        let id_token = tokens
+            .id_token
+            .as_deref()
+            .ok_or(OAuthError::InvalidAuthorizationResponse)?;
+        let identity = self
+            .verify_identity(id_token, issued, Some(&pending.nonce))
+            .await?;
+        let profile = data
+            .profiles
+            .iter_mut()
+            .find(|p| &p.client_id == issued)
+            .expect("registration");
+        if profile.subject.as_ref().is_some_and(|s| s != &identity.sub) {
+            return Err(OAuthError::AccountIdentityMissing);
+        }
+        profile.credentials = Some(credentials_from_tokens(tokens, None)?);
+        profile.previous_access_digest = None;
+        profile.reauth_required = false;
+        profile.subject = Some(identity.sub);
+        profile.email = identity.email;
+        let first_connection = !profile.welcomed
+            && profile
+                .credentials
+                .as_ref()
+                .is_some_and(|c| c.scopes.iter().any(|s| s == DIRECT_SCOPE));
+        profile.welcomed |= first_connection;
+        data.active_client_id = Some(issued.clone());
+        self.persist(data)?;
+        update_catalog(Vec::new()).await?;
+        let connection = self.status();
+        Ok(CompleteChatGptOAuthResponse {
+            status: connection.status.clone(),
+            first_connection,
+            connection,
+        })
+    }
+    async fn discovery(&self) -> Result<serde_json::Value, OAuthError> {
         let response = self
             .client
-            .post(self.config.device_token_url())
-            .json(&PollRequest {
-                device_auth_id: &pending.device_auth_id,
-                user_code: &pending.user_code,
-            })
+            .get(format!(
+                "{}/.well-known/openid-configuration",
+                self.config.issuer
+            ))
             .send()
             .await
             .map_err(|_| OAuthError::Transport)?;
-        if matches!(response.status().as_u16(), 403 | 404) {
-            return Ok(CompleteChatGptOAuthResponse {
-                status: "pending".to_string(),
-                retry_after_seconds: Some(pending.poll_interval_seconds),
-                connection: None,
-            });
-        }
-        if !response.status().is_success() {
-            return Err(OAuthError::AuthorizationFailed(response.status().as_u16()));
-        }
-        let code: PollResponse = response
+        let value: serde_json::Value = response
+            .error_for_status()
+            .map_err(|_| OAuthError::InvalidAuthorizationResponse)?
             .json()
             .await
             .map_err(|_| OAuthError::InvalidAuthorizationResponse)?;
-        validate_pkce(&code.code_verifier, &code.code_challenge)?;
-        let tokens = self
-            .exchange_authorization_code(&code.authorization_code, &code.code_verifier)
-            .await?;
-        let credentials = credentials_from_tokens(tokens, None)?;
-        self.persist(credentials)?;
-        self.pending.lock().await.remove(login_id);
-
-        Ok(CompleteChatGptOAuthResponse {
-            status: "connected".to_string(),
-            retry_after_seconds: None,
-            connection: Some(self.status()),
-        })
+        if value["issuer"].as_str() != Some(&self.config.issuer) {
+            return Err(OAuthError::InvalidAuthorizationResponse);
+        }
+        Ok(value)
     }
-
-    async fn exchange_authorization_code(
+    fn discovery_endpoint(
         &self,
-        code: &str,
-        code_verifier: &str,
-    ) -> Result<TokenResponse, OAuthError> {
-        let redirect_uri = format!("{}/deviceauth/callback", self.config.issuer);
-        let response = self
+        discovery: &serde_json::Value,
+        key: &str,
+    ) -> Result<reqwest::Url, OAuthError> {
+        let url = reqwest::Url::parse(
+            discovery[key]
+                .as_str()
+                .ok_or(OAuthError::InvalidAuthorizationResponse)?,
+        )
+        .map_err(|_| OAuthError::InvalidAuthorizationResponse)?;
+        let issuer = reqwest::Url::parse(&self.config.issuer)
+            .map_err(|_| OAuthError::InvalidAuthorizationResponse)?;
+        if url.origin() != issuer.origin() {
+            return Err(OAuthError::InvalidAuthorizationResponse);
+        }
+        Ok(url)
+    }
+    async fn verify_identity(
+        &self,
+        token: &str,
+        client_id: &str,
+        nonce: Option<&str>,
+    ) -> Result<Identity, OAuthError> {
+        let discovery = self.discovery().await?;
+        let jwks: jsonwebtoken::jwk::JwkSet = self
             .client
-            .post(self.config.token_url())
-            .form(&[
-                ("grant_type", "authorization_code"),
-                ("code", code),
-                ("redirect_uri", redirect_uri.as_str()),
-                ("client_id", self.config.client_id.as_str()),
-                ("code_verifier", code_verifier),
-            ])
+            .get(self.discovery_endpoint(&discovery, "jwks_uri")?)
             .send()
             .await
-            .map_err(|_| OAuthError::Transport)?;
-        parse_token_response(response).await
+            .map_err(|_| OAuthError::Transport)?
+            .error_for_status()
+            .map_err(|_| OAuthError::InvalidAuthorizationResponse)?
+            .json()
+            .await
+            .map_err(|_| OAuthError::InvalidAuthorizationResponse)?;
+        validate_identity(token, client_id, &self.config.issuer, nonce, &jwks)
     }
-
-    pub async fn refresh(&self) -> Result<ChatGptOAuthStatusResponse, OAuthError> {
-        let _guard = self.refresh_lock.lock().await;
-        let current = self
-            .cached
-            .read()
-            .expect("ChatGPT credential cache lock")
-            .clone()
-            .ok_or(OAuthError::NotConnected)?;
-        self.refresh_locked(current).await?;
+    pub async fn select(&self, client_id: &str) -> Result<ChatGptOAuthStatusResponse, OAuthError> {
+        let _guard = self.lifecycle.lock().await;
+        let mut data = self.snapshot()?;
+        if !data.profiles.iter().any(|p| p.client_id == client_id) {
+            return Err(OAuthError::LoginNotFound);
+        }
+        data.active_client_id = Some(client_id.into());
+        self.persist(data)?;
+        update_catalog(Vec::new()).await?;
         Ok(self.status())
     }
-
-    /// Returns request credentials, refreshing once when expiry is within five
-    /// minutes. Phase 3's transport consumes this method without owning tokens.
-    pub(crate) async fn credentials_for_request(&self) -> Result<(String, String), OAuthError> {
-        let snapshot = self
-            .cached
-            .read()
-            .expect("ChatGPT credential cache lock")
-            .clone()
-            .ok_or(OAuthError::NotConnected)?;
-        if snapshot.reauth_required {
-            return Err(OAuthError::ReauthenticationRequired);
-        }
-        if !expires_within(&snapshot, Utc::now(), REFRESH_WINDOW_MINUTES) {
-            return Ok((snapshot.access_token, snapshot.account_id));
-        }
-
-        let original_access_token = snapshot.access_token.clone();
-        let _guard = self.refresh_lock.lock().await;
-        let current = self
-            .cached
-            .read()
-            .expect("ChatGPT credential cache lock")
-            .clone()
-            .ok_or(OAuthError::NotConnected)?;
-        if current.access_token != original_access_token
-            && !expires_within(&current, Utc::now(), REFRESH_WINDOW_MINUTES)
-        {
-            return Ok((current.access_token, current.account_id));
-        }
-        let refreshed = self.refresh_locked(current).await?;
-        Ok((refreshed.access_token, refreshed.account_id))
+    pub async fn refresh(&self) -> Result<ChatGptOAuthStatusResponse, OAuthError> {
+        let _guard = self.lifecycle.lock().await;
+        let data = self.snapshot()?;
+        let id = data.active_client_id.ok_or(OAuthError::NotConnected)?;
+        self.refresh_locked(&id).await?;
+        Ok(self.status())
     }
-
-    /// Refreshes after one upstream authentication failure, but only if the
-    /// failing token is still current. Concurrent 401s therefore share one
-    /// refresh and one persisted token rotation.
+    pub(crate) async fn credentials_for_request(&self) -> Result<(String, String), OAuthError> {
+        let _guard = self.lifecycle.lock().await;
+        let data = self.snapshot()?;
+        let profile = data.active().ok_or(OAuthError::NotConnected)?;
+        let current = profile
+            .credentials
+            .as_ref()
+            .ok_or(OAuthError::ReauthenticationRequired)?;
+        require_plan_usage(current)?;
+        let token = if near_expiry(current) {
+            self.refresh_locked(&profile.client_id).await?
+        } else {
+            current.clone()
+        };
+        require_plan_usage(&token)?;
+        Ok((token.access_token, profile.client_id.clone()))
+    }
     pub(crate) async fn refresh_after_unauthorized(
         &self,
-        rejected_access_token: &str,
+        rejected: &str,
     ) -> Result<(String, String), OAuthError> {
-        let _guard = self.refresh_lock.lock().await;
-        let current = self
-            .cached
-            .read()
-            .expect("ChatGPT credential cache lock")
-            .clone()
-            .ok_or(OAuthError::NotConnected)?;
-        if current.access_token != rejected_access_token {
-            return Ok((current.access_token, current.account_id));
+        let _guard = self.lifecycle.lock().await;
+        let data = self.snapshot()?;
+        let profile = data.active().ok_or(OAuthError::NotConnected)?;
+        let current = profile
+            .credentials
+            .as_ref()
+            .ok_or(OAuthError::ReauthenticationRequired)?;
+        // Never replay a request as a different account after a concurrent account switch.
+        if current.access_token != rejected {
+            if profile.previous_access_digest.as_deref() == Some(&access_digest(rejected)) {
+                require_plan_usage(current)?;
+                return Ok((current.access_token.clone(), profile.client_id.clone()));
+            }
+            return Err(OAuthError::ReauthenticationRequired);
         }
-        let refreshed = self.refresh_locked(current).await?;
-        Ok((refreshed.access_token, refreshed.account_id))
+        let credentials = self.refresh_locked(&profile.client_id).await?;
+        require_plan_usage(&credentials)?;
+        Ok((credentials.access_token, profile.client_id.clone()))
     }
-
-    async fn refresh_locked(
-        &self,
-        current: CredentialEnvelope,
-    ) -> Result<CredentialEnvelope, OAuthError> {
+    async fn refresh_locked(&self, client_id: &str) -> Result<Credentials, OAuthError> {
+        let mut data = self.snapshot()?;
+        let profile = data
+            .profiles
+            .iter_mut()
+            .find(|p| p.client_id == client_id)
+            .ok_or(OAuthError::NotConnected)?;
+        let current = profile
+            .credentials
+            .as_ref()
+            .ok_or(OAuthError::ReauthenticationRequired)?
+            .clone();
         let response = self
             .client
             .post(self.config.token_url())
             .form(&[
                 ("grant_type", "refresh_token"),
+                ("client_id", client_id),
                 ("refresh_token", current.refresh_token.as_str()),
-                ("client_id", self.config.client_id.as_str()),
+                ("resource", RESOURCE),
             ])
             .send()
             .await
             .map_err(|_| OAuthError::Transport)?;
-        if matches!(response.status().as_u16(), 400 | 401) {
-            let mut invalid = current;
-            invalid.reauth_required = true;
-            self.persist(invalid)?;
-            return Err(OAuthError::ReauthenticationRequired);
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let error: serde_json::Value = response.json().await.unwrap_or_default();
+            let code = error["error"]
+                .as_str()
+                .or(error["error"]["code"].as_str())
+                .unwrap_or_default();
+            if matches!(
+                code,
+                "invalid_grant"
+                    | "invalid_refresh_token"
+                    | "token_expired"
+                    | "refresh_token_expired"
+                    | "refresh_token_invalidated"
+                    | "refresh_token_reused"
+            ) {
+                profile.credentials = None;
+                profile.previous_access_digest = None;
+                profile.reauth_required = true;
+                self.persist(data)?;
+                return Err(OAuthError::ReauthenticationRequired);
+            }
+            return Err(OAuthError::TokenExchangeFailed(status));
         }
-        let tokens = parse_token_response(response).await?;
-        let refreshed = credentials_from_tokens(tokens, Some(&current))?;
-        self.persist(refreshed.clone())?;
-        Ok(refreshed)
+        let tokens = parse_tokens(response).await?;
+        if let Some(token) = tokens.id_token.as_deref() {
+            let identity = self.verify_identity(token, client_id, None).await?;
+            if Some(&identity.sub) != profile.subject.as_ref() {
+                return Err(OAuthError::AccountIdentityMissing);
+            }
+        }
+        let credentials = credentials_from_tokens(tokens, Some(&current))?;
+        profile.previous_access_digest = Some(access_digest(&current.access_token));
+        profile.credentials = Some(credentials.clone());
+        self.persist(data)?;
+        Ok(credentials)
     }
-
     pub async fn disconnect(&self) -> Result<DisconnectChatGptOAuthResponse, OAuthError> {
-        let credentials = self
-            .cached
-            .read()
-            .expect("ChatGPT credential cache lock")
-            .clone();
-        let revoked = if let Some(credentials) = credentials.as_ref() {
-            self.client
-                .post(self.config.revoke_url())
-                .json(&serde_json::json!({
-                    "token": credentials.refresh_token,
-                    "token_type_hint": "refresh_token",
-                    "client_id": self.config.client_id,
-                }))
-                .send()
-                .await
-                .map(|response| response.status().is_success())
-                .unwrap_or(false)
-        } else {
-            false
-        };
-        self.store
-            .save_bundle(None)
-            .map_err(|_| OAuthError::CredentialStorage)?;
-        *self.cached.write().expect("ChatGPT credential cache lock") = None;
+        let _guard = self.lifecycle.lock().await;
+        let mut data = self.snapshot()?;
+        let mut revoked = false;
+        if let Some(id) = data.active_client_id.clone()
+            && let Some(profile) = data.profiles.iter_mut().find(|p| p.client_id == id)
+        {
+            if let Some(credentials) = &profile.credentials
+                && let Ok(discovery) = self.discovery().await
+                && let Ok(url) = self.discovery_endpoint(&discovery, "revocation_endpoint")
+            {
+                for attempt in 0..3 {
+                    match self
+                        .client
+                        .post(url.clone())
+                        .form(&[
+                            ("token", credentials.refresh_token.as_str()),
+                            ("token_type_hint", "refresh_token"),
+                            ("client_id", profile.client_id.as_str()),
+                        ])
+                        .send()
+                        .await
+                    {
+                        Ok(response) if response.status() == reqwest::StatusCode::OK => {
+                            revoked = true;
+                            break;
+                        }
+                        Ok(response) if !response.status().is_server_error() => break,
+                        _ => {
+                            if attempt < 2 {
+                                tokio::time::sleep(Duration::from_millis(250 << attempt)).await;
+                            }
+                        }
+                    }
+                }
+            }
+            profile.credentials = None;
+            profile.previous_access_digest = None;
+            profile.reauth_required = false;
+        }
+        self.persist(data)?;
         self.pending.lock().await.clear();
+        update_catalog(Vec::new()).await?;
         Ok(DisconnectChatGptOAuthResponse {
             disconnected: true,
             revoked,
         })
     }
-
     pub async fn list_models(&self) -> Result<ChatGptModelListResponse, OAuthError> {
-        let url = std::env::var("MEDOUSA_CHATGPT_MODELS_URL")
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| DEFAULT_MODELS_URL.to_string());
-        self.list_models_from_url(&url).await
+        self.list_models_from_url("https://api.openai.com/v1/models")
+            .await
     }
-
     async fn list_models_from_url(
         &self,
         url: &str,
     ) -> Result<ChatGptModelListResponse, OAuthError> {
-        let credentials = self.credentials_for_request().await?;
-        let response = self
-            .request_models_once(url, &credentials.0, &credentials.1)
-            .await?;
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            let refreshed = self.refresh_after_unauthorized(&credentials.0).await?;
-            return self
-                .parse_models_response(
-                    self.request_models_once(url, &refreshed.0, &refreshed.1)
-                        .await?,
-                )
-                .await;
-        }
-        self.parse_models_response(response).await
-    }
-
-    async fn request_models_once(
-        &self,
-        url: &str,
-        access_token: &str,
-        account_id: &str,
-    ) -> Result<reqwest::Response, OAuthError> {
-        self.client
+        let (token, client_id) = self.credentials_for_request().await?;
+        let mut response = self
+            .client
             .get(url)
-            .query(&[("client_version", CODEX_COMPAT_VERSION)])
-            .bearer_auth(access_token)
-            .header("ChatGPT-Account-ID", account_id)
-            .header("Originator", CODEX_COMPAT_ORIGINATOR)
-            .header("User-Agent", codex_compat_user_agent())
-            .header("Version", CODEX_COMPAT_VERSION)
+            .bearer_auth(&token)
             .send()
             .await
-            .map_err(|_| OAuthError::Transport)
-    }
-
-    async fn parse_models_response(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<ChatGptModelListResponse, OAuthError> {
-        #[derive(Deserialize)]
-        struct ModelsResponse {
-            models: Vec<ModelInfo>,
+            .map_err(|_| OAuthError::Transport)?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            let (refreshed, refreshed_client) = self.refresh_after_unauthorized(&token).await?;
+            if refreshed_client != client_id {
+                return Err(OAuthError::AccountIdentityMissing);
+            }
+            response = self
+                .client
+                .get(url)
+                .bearer_auth(refreshed)
+                .send()
+                .await
+                .map_err(|_| OAuthError::Transport)?;
         }
-        #[derive(Deserialize)]
-        struct ModelInfo {
-            slug: String,
-            #[serde(default)]
-            visibility: String,
-            #[serde(default)]
-            priority: i32,
-            #[serde(default)]
-            supported_reasoning_levels: Option<Vec<ReasoningLevel>>,
-            #[serde(default)]
-            default_reasoning_level: Option<String>,
-        }
-
-        #[derive(Deserialize)]
-        struct ReasoningLevel {
-            effort: String,
-        }
-
         if !response.status().is_success() {
             return Err(OAuthError::ModelCatalogUnavailable(
                 response.status().as_u16(),
             ));
         }
-        let mut models = response
-            .json::<ModelsResponse>()
+        let response: serde_json::Value = response
+            .json()
             .await
-            .map_err(|_| OAuthError::InvalidModelCatalogResponse)?
-            .models;
-        models.retain(|model| model.visibility.is_empty() || model.visibility == "list");
-        models.sort_by(|left, right| {
-            right
-                .priority
-                .cmp(&left.priority)
-                .then_with(|| left.slug.cmp(&right.slug))
-        });
-        models.dedup_by(|left, right| left.slug == right.slug);
-        let capabilities = models
-            .iter()
-            .map(|model| {
-                let capability = model.supported_reasoning_levels.as_ref().map(|levels| {
-                    crate::reasoning_effort::ReasoningCapability::advertised(
-                        &levels
-                            .iter()
-                            .map(|level| level.effort.clone())
-                            .collect::<Vec<_>>(),
-                        model.default_reasoning_level.clone(),
-                    )
-                });
-                (model.slug.trim().to_string(), capability)
-            })
-            .filter(|(slug, _)| !slug.is_empty())
-            .collect();
-        tokio::task::spawn_blocking(move || {
-            crate::model_capability_registry::registry().record_chatgpt_reasoning(capabilities);
-        })
-        .await
-        .map_err(|_| OAuthError::InvalidModelCatalogResponse)?;
+            .map_err(|_| OAuthError::InvalidModelCatalogResponse)?;
+        let mut seen = HashSet::new();
+        let mut models = Vec::new();
+        let mut display_names = BTreeMap::new();
+        let mut capabilities = Vec::new();
+        for model in response["models"]
+            .as_array()
+            .ok_or(OAuthError::InvalidModelCatalogResponse)?
+        {
+            if model["visibility"].as_str() != Some("list") {
+                continue;
+            }
+            if let Some(slug) = model["slug"].as_str().filter(|s| !s.trim().is_empty())
+                && seen.insert(slug.to_string())
+            {
+                let reasoning = model["supported_reasoning_levels"]
+                    .as_array()
+                    .map(|levels| {
+                        crate::reasoning_effort::ReasoningCapability::advertised(
+                            &levels
+                                .iter()
+                                .filter_map(|level| level["effort"].as_str().map(str::to_owned))
+                                .collect::<Vec<_>>(),
+                            model["default_reasoning_level"].as_str().map(str::to_owned),
+                        )
+                    });
+                capabilities.push((
+                    slug.to_string(),
+                    model["display_name"].as_str().map(str::to_owned),
+                    reasoning,
+                ));
+                models.push(slug.to_string());
+                display_names.insert(
+                    slug.into(),
+                    model["display_name"].as_str().unwrap_or(slug).into(),
+                );
+            }
+        }
+        let _guard = self.lifecycle.lock().await;
+        if self.snapshot()?.active_client_id.as_deref() != Some(&client_id) {
+            return Err(OAuthError::AccountIdentityMissing);
+        }
+        update_catalog(capabilities).await?;
         Ok(ChatGptModelListResponse {
-            models: models
-                .into_iter()
-                .map(|model| model.slug.trim().to_string())
-                .filter(|slug| !slug.is_empty())
-                .collect(),
+            models,
+            display_names,
         })
-    }
-
-    fn persist(&self, credentials: CredentialEnvelope) -> Result<(), OAuthError> {
-        let serialized = serde_json::to_string(&credentials)
-            .map_err(|_| OAuthError::StoredCredentialsInvalid)?;
-        self.store
-            .save_bundle(Some(&serialized))
-            .map_err(|_| OAuthError::CredentialStorage)?;
-        *self.cached.write().expect("ChatGPT credential cache lock") = Some(credentials);
-        Ok(())
     }
 }
+type CatalogEntry = (
+    String,
+    Option<String>,
+    Option<crate::reasoning_effort::ReasoningCapability>,
+);
+async fn update_catalog(models: Vec<CatalogEntry>) -> Result<(), OAuthError> {
+    // Unit brokers must never mutate the installation's catalog on disk.
+    #[cfg(not(test))]
+    tokio::task::spawn_blocking(move || {
+        crate::model_capability_registry::registry().record_chatgpt_catalog(models)
+    })
+    .await
+    .map_err(|_| OAuthError::InvalidModelCatalogResponse)?;
+    #[cfg(test)]
+    let _ = models;
+    Ok(())
+}
 
+#[derive(Clone, Deserialize)]
+struct Identity {
+    sub: String,
+    nonce: Option<String>,
+    email: Option<String>,
+}
+fn validate_identity(
+    token: &str,
+    client_id: &str,
+    issuer: &str,
+    nonce: Option<&str>,
+    jwks: &jsonwebtoken::jwk::JwkSet,
+) -> Result<Identity, OAuthError> {
+    let header =
+        jsonwebtoken::decode_header(token).map_err(|_| OAuthError::InvalidAuthorizationResponse)?;
+    // Never accept unsigned/symmetric tokens, or an algorithm supplied only by the token.
+    if header.alg != jsonwebtoken::Algorithm::RS256 {
+        return Err(OAuthError::InvalidAuthorizationResponse);
+    }
+    let key = jwks
+        .find(
+            header
+                .kid
+                .as_deref()
+                .ok_or(OAuthError::InvalidAuthorizationResponse)?,
+        )
+        .ok_or(OAuthError::InvalidAuthorizationResponse)?;
+    let key = jsonwebtoken::DecodingKey::from_jwk(key)
+        .map_err(|_| OAuthError::InvalidAuthorizationResponse)?;
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_issuer(&[issuer]);
+    validation.set_audience(&[client_id]);
+    validation.leeway = 5;
+    validation.set_required_spec_claims(&["sub", "iss", "aud", "exp", "iat"]);
+    let identity = jsonwebtoken::decode::<Identity>(token, &key, &validation)
+        .map_err(|_| OAuthError::InvalidAuthorizationResponse)?
+        .claims;
+    if identity.sub.is_empty() || nonce.is_some_and(|n| identity.nonce.as_deref() != Some(n)) {
+        return Err(OAuthError::AccountIdentityMissing);
+    }
+    Ok(identity)
+}
 #[derive(Deserialize)]
 struct TokenResponse {
     access_token: String,
     refresh_token: Option<String>,
     id_token: Option<String>,
-    expires_in: Option<i64>,
+    expires_in: i64,
+    scope: Option<String>,
+    token_type: String,
+    #[serde(default)]
+    earliest_refresh_at: Option<serde_json::Value>,
 }
-
-async fn parse_token_response(response: reqwest::Response) -> Result<TokenResponse, OAuthError> {
+async fn parse_tokens(response: reqwest::Response) -> Result<TokenResponse, OAuthError> {
     if !response.status().is_success() {
         return Err(OAuthError::TokenExchangeFailed(response.status().as_u16()));
     }
@@ -627,135 +832,78 @@ async fn parse_token_response(response: reqwest::Response) -> Result<TokenRespon
         .await
         .map_err(|_| OAuthError::InvalidAuthorizationResponse)
 }
-
 fn credentials_from_tokens(
     tokens: TokenResponse,
-    previous: Option<&CredentialEnvelope>,
-) -> Result<CredentialEnvelope, OAuthError> {
-    if tokens.access_token.trim().is_empty() {
+    previous: Option<&Credentials>,
+) -> Result<Credentials, OAuthError> {
+    if tokens.access_token.is_empty()
+        || !tokens.token_type.eq_ignore_ascii_case("bearer")
+        || tokens.expires_in <= 0
+        || tokens.expires_in > 31536000
+    {
         return Err(OAuthError::InvalidAuthorizationResponse);
     }
-    let id_token = tokens
-        .id_token
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| previous.map(|value| value.id_token.clone()))
-        .ok_or(OAuthError::InvalidAuthorizationResponse)?;
-    let refresh_token = tokens
-        .refresh_token
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| previous.map(|value| value.refresh_token.clone()))
-        .ok_or(OAuthError::InvalidAuthorizationResponse)?;
-    let account_id = jwt_string_claim(&id_token, "chatgpt_account_id")
-        .or_else(|| jwt_string_claim(&tokens.access_token, "chatgpt_account_id"))
-        .or_else(|| previous.map(|value| value.account_id.clone()))
-        .ok_or(OAuthError::AccountIdentityMissing)?;
-    let expires_at_utc = jwt_i64_claim(&tokens.access_token, "exp")
-        .and_then(|value| DateTime::from_timestamp(value, 0))
-        .or_else(|| {
-            tokens
-                .expires_in
-                .map(|seconds| Utc::now() + ChronoDuration::seconds(seconds))
-        })
-        .ok_or(OAuthError::TokenExpiryMissing)?;
-    Ok(CredentialEnvelope {
+    Ok(Credentials {
         access_token: tokens.access_token,
-        refresh_token,
-        id_token,
-        account_id,
-        expires_at_utc,
-        reauth_required: false,
+        refresh_token: tokens
+            .refresh_token
+            .filter(|s| !s.is_empty())
+            .or_else(|| previous.map(|c| c.refresh_token.clone()))
+            .ok_or(OAuthError::InvalidAuthorizationResponse)?,
+        id_token: tokens
+            .id_token
+            .filter(|s| !s.is_empty())
+            .or_else(|| previous.map(|c| c.id_token.clone()))
+            .ok_or(OAuthError::InvalidAuthorizationResponse)?,
+        scopes: tokens
+            .scope
+            .map(|s| s.split_whitespace().map(str::to_owned).collect())
+            .unwrap_or_else(|| previous.map(|c| c.scopes.clone()).unwrap_or_default()),
+        expires_at_utc: Utc::now() + ChronoDuration::seconds(tokens.expires_in),
+        earliest_refresh_at: tokens.earliest_refresh_at,
     })
 }
-
-fn status_for(
-    credentials: Option<&CredentialEnvelope>,
-    now: DateTime<Utc>,
-) -> ChatGptOAuthStatusResponse {
-    let Some(credentials) = credentials else {
-        return ChatGptOAuthStatusResponse {
-            status: "signed_out".to_string(),
-            connected: false,
-            account_id: None,
-            expires_at_utc: None,
-        };
-    };
-    let status = if credentials.reauth_required {
-        "reauth_required"
-    } else if expires_within(credentials, now, REFRESH_WINDOW_MINUTES) {
-        "refresh_required"
-    } else {
-        "connected"
-    };
-    ChatGptOAuthStatusResponse {
-        status: status.to_string(),
-        connected: !credentials.reauth_required,
-        account_id: Some(credentials.account_id.clone()),
-        expires_at_utc: Some(credentials.expires_at_utc),
+fn access_digest(token: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
+}
+fn near_expiry(c: &Credentials) -> bool {
+    c.expires_at_utc <= Utc::now() + ChronoDuration::minutes(5)
+}
+fn require_plan_usage(c: &Credentials) -> Result<(), OAuthError> {
+    if !c.scopes.iter().any(|s| s == DIRECT_SCOPE) {
+        return Err(OAuthError::PlanUsageDisabled);
     }
+    Ok(())
 }
-
-fn expires_within(credentials: &CredentialEnvelope, now: DateTime<Utc>, minutes: i64) -> bool {
-    credentials.expires_at_utc <= now + ChronoDuration::minutes(minutes)
+fn random_value() -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+        [
+            uuid::Uuid::new_v4().as_bytes().as_slice(),
+            uuid::Uuid::new_v4().as_bytes().as_slice(),
+        ]
+        .concat(),
+    )
 }
-
-fn validate_pkce(verifier: &str, expected_challenge: &str) -> Result<(), OAuthError> {
-    if verifier.is_empty() || expected_challenge.is_empty() {
+fn validate_redirect(uri: &str) -> Result<(), OAuthError> {
+    let url = reqwest::Url::parse(uri).map_err(|_| OAuthError::PkceValidationFailed)?;
+    if url.scheme() != "http"
+        || url.host_str() != Some("127.0.0.1")
+        || url.port().is_none()
+        || url.path() != "/oauth/callback"
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
         return Err(OAuthError::PkceValidationFailed);
     }
-    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(Sha256::digest(verifier.as_bytes()));
-    if challenge == expected_challenge {
-        Ok(())
-    } else {
-        Err(OAuthError::PkceValidationFailed)
-    }
-}
-
-fn jwt_payload(token: &str) -> Option<serde_json::Value> {
-    let payload = token.split('.').nth(1)?;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(payload)
-        .ok()?;
-    serde_json::from_slice(&bytes).ok()
-}
-
-fn jwt_string_claim(token: &str, name: &str) -> Option<String> {
-    let payload = jwt_payload(token)?;
-    payload
-        .get(name)
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| {
-            payload
-                .get("https://api.openai.com/auth")
-                .and_then(|auth| auth.get(name))
-                .and_then(serde_json::Value::as_str)
-        })
-        .map(str::to_string)
-}
-
-fn jwt_i64_claim(token: &str, name: &str) -> Option<i64> {
-    jwt_payload(token)?.get(name)?.as_i64()
-}
-
-fn deserialize_u64_string_or_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Value {
-        Number(u64),
-        String(String),
-    }
-    match Value::deserialize(deserializer)? {
-        Value::Number(value) => Ok(value),
-        Value::String(value) => value.trim().parse().map_err(serde::de::Error::custom),
-    }
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum OAuthError {
     NotConnected,
+    PlanUsageDisabled,
     ReauthenticationRequired,
     AuthorizationUnavailable(u16),
     AuthorizationFailed(u16),
@@ -776,6 +924,7 @@ pub enum OAuthError {
 impl std::fmt::Display for OAuthError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
+            Self::PlanUsageDisabled => "Enable ChatGPT plan usage in account settings".to_string(),
             Self::NotConnected => "ChatGPT account is not connected".to_string(),
             Self::ReauthenticationRequired => "ChatGPT sign-in must be completed again".to_string(),
             Self::AuthorizationUnavailable(status) => {
@@ -823,7 +972,7 @@ pub(crate) fn broker() -> &'static ChatGptOAuthBroker {
 
 #[cfg(feature = "full-daemon")]
 pub fn configured() -> bool {
-    broker().status().connected
+    broker().status().plan_usage_enabled
 }
 
 // Embedded hosts own their OAuth broker instance so credentials never pass
@@ -840,13 +989,17 @@ pub fn status() -> ChatGptOAuthStatusResponse {
 }
 
 #[cfg(feature = "full-daemon")]
-pub async fn begin() -> Result<BeginChatGptOAuthResponse, OAuthError> {
-    broker().begin().await
+pub async fn begin(
+    request: BeginChatGptOAuthRequest,
+) -> Result<BeginChatGptOAuthResponse, OAuthError> {
+    broker().begin(request).await
 }
 
 #[cfg(feature = "full-daemon")]
-pub async fn complete(login_id: &str) -> Result<CompleteChatGptOAuthResponse, OAuthError> {
-    broker().complete(login_id).await
+pub async fn complete(
+    request: CompleteChatGptOAuthRequest,
+) -> Result<CompleteChatGptOAuthResponse, OAuthError> {
+    broker().complete(request).await
 }
 
 #[cfg(feature = "full-daemon")]
@@ -878,385 +1031,10 @@ pub(crate) async fn refresh_request_credentials(
         .await
 }
 
-#[cfg(all(test, feature = "full-daemon"))]
-mod tests {
-    use super::*;
-    use axum::{Json, http::StatusCode};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    #[test]
-    fn hermetic_suite_refuses_the_live_oauth_broker() {
-        if !crate::test_env::hermetic() {
-            return;
-        }
-        let panicked = std::panic::catch_unwind(|| {
-            let _ = configured();
-        })
-        .is_err();
-        assert!(
-            panicked,
-            "live ChatGPT OAuth broker must not initialize during hermetic tests"
-        );
-    }
-
-    #[derive(Default)]
-    struct MemoryStore(RwLock<Option<String>>);
-
-    impl ChatGptCredentialStore for MemoryStore {
-        fn load_bundle(&self) -> Result<Option<String>, String> {
-            Ok(self.0.read().unwrap().clone())
-        }
-
-        fn save_bundle(&self, bundle: Option<&str>) -> Result<(), String> {
-            *self.0.write().unwrap() = bundle.map(str::to_string);
-            Ok(())
-        }
-    }
-
-    async fn mock_server(
-        refresh_count: Arc<AtomicUsize>,
-        revoke_count: Arc<AtomicUsize>,
-    ) -> String {
-        async fn token(
-            axum::extract::State(count): axum::extract::State<Arc<AtomicUsize>>,
-        ) -> Json<serde_json::Value> {
-            count.fetch_add(1, Ordering::SeqCst);
-            tokio::time::sleep(Duration::from_millis(40)).await;
-            let access_token = jwt(serde_json::json!({
-                "exp": (Utc::now() + ChronoDuration::hours(1)).timestamp(),
-                "chatgpt_account_id": "acct_123"
-            }));
-            Json(serde_json::json!({
-                "access_token": access_token,
-                "refresh_token": "rotated-refresh"
-            }))
-        }
-
-        async fn revoke(
-            axum::extract::State(count): axum::extract::State<Arc<AtomicUsize>>,
-        ) -> StatusCode {
-            count.fetch_add(1, Ordering::SeqCst);
-            StatusCode::OK
-        }
-
-        let token_router = axum::Router::new()
-            .route("/oauth/token", axum::routing::post(token))
-            .with_state(refresh_count);
-        let revoke_router = axum::Router::new()
-            .route("/oauth/revoke", axum::routing::post(revoke))
-            .with_state(revoke_count);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            axum::serve(listener, token_router.merge(revoke_router))
-                .await
-                .unwrap();
-        });
-        format!("http://{address}")
-    }
-
-    async fn mock_device_server() -> String {
-        #[derive(Clone)]
-        struct State {
-            challenge: String,
-            id_token: String,
-            access_token: String,
-        }
-
-        async fn user_code() -> Json<serde_json::Value> {
-            Json(serde_json::json!({
-                "device_auth_id": "device-secret",
-                "user_code": "ABCD-EFGH",
-                "interval": "1"
-            }))
-        }
-
-        async fn device_token(
-            axum::extract::State(state): axum::extract::State<State>,
-        ) -> Json<serde_json::Value> {
-            Json(serde_json::json!({
-                "authorization_code": "authorization-secret",
-                "code_challenge": state.challenge,
-                "code_verifier": "remote-workshop-verifier"
-            }))
-        }
-
-        async fn exchange(
-            axum::extract::State(state): axum::extract::State<State>,
-        ) -> Json<serde_json::Value> {
-            Json(serde_json::json!({
-                "access_token": state.access_token,
-                "refresh_token": "refresh-secret",
-                "id_token": state.id_token
-            }))
-        }
-
-        let verifier = "remote-workshop-verifier";
-        let state = State {
-            challenge: base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(Sha256::digest(verifier.as_bytes())),
-            id_token: jwt(serde_json::json!({
-                "https://api.openai.com/auth": { "chatgpt_account_id": "acct_remote" }
-            })),
-            access_token: jwt(serde_json::json!({
-                "exp": (Utc::now() + ChronoDuration::hours(1)).timestamp()
-            })),
-        };
-        let router = axum::Router::new()
-            .route(
-                "/api/accounts/deviceauth/usercode",
-                axum::routing::post(user_code),
-            )
-            .route(
-                "/api/accounts/deviceauth/token",
-                axum::routing::post(device_token),
-            )
-            .route("/oauth/token", axum::routing::post(exchange))
-            .with_state(state);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        format!("http://{address}")
-    }
-
-    fn jwt(payload: serde_json::Value) -> String {
-        let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
-        format!(
-            "{}.{}.sig",
-            encode(br#"{"alg":"none"}"#),
-            encode(serde_json::to_string(&payload).unwrap().as_bytes())
-        )
-    }
-
-    fn credentials(expiry: DateTime<Utc>) -> CredentialEnvelope {
-        CredentialEnvelope {
-            access_token: "access-secret".to_string(),
-            refresh_token: "refresh-secret".to_string(),
-            id_token: "id-secret".to_string(),
-            account_id: "acct_123".to_string(),
-            expires_at_utc: expiry,
-            reauth_required: false,
-        }
-    }
-
-    fn save_credentials(store: &MemoryStore, credentials: &CredentialEnvelope) {
-        store
-            .save_bundle(Some(&serde_json::to_string(credentials).unwrap()))
-            .unwrap();
-    }
-
-    #[test]
-    fn validates_device_flow_pkce_pair() {
-        let verifier = "correct-horse-battery-staple";
-        let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(Sha256::digest(verifier.as_bytes()));
-        assert_eq!(validate_pkce(verifier, &challenge), Ok(()));
-        assert_eq!(
-            validate_pkce(verifier, "wrong"),
-            Err(OAuthError::PkceValidationFailed)
-        );
-    }
-
-    #[test]
-    fn expiry_boundary_enters_refresh_window() {
-        let now = Utc::now();
-        assert!(!expires_within(
-            &credentials(now + ChronoDuration::minutes(6)),
-            now,
-            REFRESH_WINDOW_MINUTES
-        ));
-        assert!(expires_within(
-            &credentials(now + ChronoDuration::minutes(5)),
-            now,
-            REFRESH_WINDOW_MINUTES
-        ));
-    }
-
-    #[test]
-    fn refresh_rotation_preserves_omitted_refresh_and_id_tokens() {
-        let now = Utc::now();
-        let previous = credentials(now);
-        let access_token = jwt(serde_json::json!({
-            "exp": (now + ChronoDuration::hours(1)).timestamp(),
-            "chatgpt_account_id": "acct_123"
-        }));
-        let refreshed = credentials_from_tokens(
-            TokenResponse {
-                access_token,
-                refresh_token: None,
-                id_token: None,
-                expires_in: None,
-            },
-            Some(&previous),
-        )
-        .unwrap();
-        assert_eq!(refreshed.refresh_token, "refresh-secret");
-        assert_eq!(refreshed.id_token, "id-secret");
-        assert_eq!(refreshed.account_id, "acct_123");
-    }
-
-    #[test]
-    fn debug_output_redacts_every_token() {
-        let rendered = format!("{:?}", credentials(Utc::now()));
-        assert!(!rendered.contains("access-secret"));
-        assert!(!rendered.contains("refresh-secret"));
-        assert!(!rendered.contains("id-secret"));
-        assert!(rendered.contains("<redacted>"));
-    }
-
-    #[test]
-    fn nested_openai_account_claim_is_supported() {
-        let token = jwt(serde_json::json!({
-            "https://api.openai.com/auth": { "chatgpt_account_id": "acct_nested" }
-        }));
-        assert_eq!(
-            jwt_string_claim(&token, "chatgpt_account_id").as_deref(),
-            Some("acct_nested")
-        );
-    }
-
-    #[tokio::test]
-    async fn account_model_catalog_uses_oauth_identity_and_picker_visibility() {
-        async fn models(
-            headers: axum::http::HeaderMap,
-            axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>,
-        ) -> Json<serde_json::Value> {
-            assert_eq!(
-                headers.get("authorization").unwrap(),
-                "Bearer access-secret"
-            );
-            assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
-            assert_eq!(headers.get("originator").unwrap(), CODEX_COMPAT_ORIGINATOR);
-            assert_eq!(headers.get("version").unwrap(), CODEX_COMPAT_VERSION);
-            // Pin the Astra-capable contract so a version regression is visible.
-            assert_eq!(headers.get("version").unwrap(), "0.153.4");
-            assert_eq!(
-                headers.get("user-agent").unwrap(),
-                codex_compat_user_agent().as_str()
-            );
-            assert_eq!(
-                query.get("client_version").map(String::as_str),
-                Some(CODEX_COMPAT_VERSION)
-            );
-            Json(serde_json::json!({
-                "models": [
-                    { "slug": "gpt-6-astra", "visibility": "list", "priority": 30 },
-                    { "slug": "gpt-6-sol", "visibility": "list", "priority": 25 },
-                    { "slug": "gpt-6-luna", "visibility": "list", "priority": 24 },
-                    { "slug": "gpt-visible-slow", "visibility": "list", "priority": 10 },
-                    { "slug": "gpt-hidden", "visibility": "hide", "priority": 100 },
-                    { "slug": "gpt-visible-fast", "visibility": "list", "priority": 20,
-                      "supported_reasoning_levels": [{"effort":"low"}, {"effort":"high"}],
-                      "default_reasoning_level": "low" }
-                ]
-            }))
-        }
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let router = axum::Router::new().route("/models", axum::routing::get(models));
-        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-
-        let store = Arc::new(MemoryStore::default());
-        save_credentials(&store, &credentials(Utc::now() + ChronoDuration::hours(1)));
-        let broker = ChatGptOAuthBroker::with_config(
-            OAuthConfig {
-                issuer: "http://unused".to_string(),
-                client_id: "test-client".to_string(),
-            },
-            store,
-        );
-        let result = broker
-            .list_models_from_url(&format!("http://{address}/models"))
-            .await
-            .unwrap();
-        assert_eq!(
-            result.models,
-            vec![
-                "gpt-6-astra",
-                "gpt-6-sol",
-                "gpt-6-luna",
-                "gpt-visible-fast",
-                "gpt-visible-slow"
-            ]
-        );
-        let reasoning = crate::model_capability_registry::registry()
-            .reasoning("openai-codex", "gpt-visible-fast");
-        assert_eq!(reasoning.levels, ["low", "high"]);
-        assert_eq!(reasoning.default_level.as_deref(), Some("low"));
-    }
-
-    #[tokio::test]
-    async fn concurrent_expiry_refreshes_share_one_rotation() {
-        let refresh_count = Arc::new(AtomicUsize::new(0));
-        let issuer = mock_server(refresh_count.clone(), Arc::new(AtomicUsize::new(0))).await;
-        let store = Arc::new(MemoryStore::default());
-        let stale = credentials(Utc::now() - ChronoDuration::minutes(1));
-        save_credentials(&store, &stale);
-        let broker = ChatGptOAuthBroker::with_config(
-            OAuthConfig {
-                issuer,
-                client_id: "test-client".to_string(),
-            },
-            store,
-        );
-
-        let (first, second) = tokio::join!(
-            broker.credentials_for_request(),
-            broker.credentials_for_request()
-        );
-        assert_eq!(first.unwrap().1, "acct_123");
-        assert_eq!(second.unwrap().1, "acct_123");
-        assert_eq!(refresh_count.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn disconnect_revokes_refresh_token_and_clears_local_store() {
-        let revoke_count = Arc::new(AtomicUsize::new(0));
-        let issuer = mock_server(Arc::new(AtomicUsize::new(0)), revoke_count.clone()).await;
-        let store = Arc::new(MemoryStore::default());
-        save_credentials(&store, &credentials(Utc::now() + ChronoDuration::hours(1)));
-        let broker = ChatGptOAuthBroker::with_config(
-            OAuthConfig {
-                issuer,
-                client_id: "test-client".to_string(),
-            },
-            store.clone(),
-        );
-
-        let response = broker.disconnect().await.unwrap();
-        assert!(response.disconnected);
-        assert!(response.revoked);
-        assert_eq!(revoke_count.load(Ordering::SeqCst), 1);
-        assert!(store.load_bundle().unwrap().is_none());
-        assert_eq!(broker.status().status, "signed_out");
-    }
-
-    #[tokio::test]
-    async fn device_flow_completes_through_daemon_without_exposing_tokens() {
-        let issuer = mock_device_server().await;
-        let store = Arc::new(MemoryStore::default());
-        let broker = ChatGptOAuthBroker::with_config(
-            OAuthConfig {
-                issuer: issuer.clone(),
-                client_id: "test-client".to_string(),
-            },
-            store.clone(),
-        );
-
-        let started = broker.begin().await.unwrap();
-        assert_eq!(started.verification_url, format!("{issuer}/codex/device"));
-        assert_eq!(started.user_code, "ABCD-EFGH");
-        let completed = broker.complete(&started.login_id).await.unwrap();
-        assert_eq!(completed.status, "connected");
-        assert_eq!(
-            completed.connection.as_ref().unwrap().account_id.as_deref(),
-            Some("acct_remote")
-        );
-        let public_json = serde_json::to_string(&(started, completed)).unwrap();
-        assert!(!public_json.contains("device-secret"));
-        assert!(!public_json.contains("authorization-secret"));
-        assert!(!public_json.contains("refresh-secret"));
-        assert!(store.load_bundle().unwrap().is_some());
-    }
+#[cfg(feature = "full-daemon")]
+pub async fn select(client_id: &str) -> Result<ChatGptOAuthStatusResponse, OAuthError> {
+    broker().select(client_id).await
 }
+
+#[cfg(test)]
+mod tests;

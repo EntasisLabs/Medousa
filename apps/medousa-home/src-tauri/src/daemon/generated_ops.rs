@@ -52,6 +52,8 @@ pub enum DaemonOperation {
     AuthChatgptModelsGet,
     #[serde(rename = "auth.chatgpt.refresh.post")]
     AuthChatgptRefreshPost,
+    #[serde(rename = "auth.chatgpt.select.post")]
+    AuthChatgptSelectPost,
     #[serde(rename = "bots.ask.by_job_id.cancel.post")]
     BotsAskByJobIdCancelPost,
     #[serde(rename = "bots.ask.by_job_id.get")]
@@ -618,6 +620,8 @@ pub enum DaemonOperation {
     MediaUploadPost,
     #[serde(rename = "mesh.active_work.post")]
     MeshActiveWorkPost,
+    #[serde(rename = "mesh.agents.messages.post")]
+    MeshAgentsMessagesPost,
     #[serde(rename = "mesh.execution_target.post")]
     MeshExecutionTargetPost,
     #[serde(rename = "mesh.inbox.get")]
@@ -1017,6 +1021,7 @@ impl DaemonOperation {
             Self::AuthChatgptGet => "auth.chatgpt.get",
             Self::AuthChatgptModelsGet => "auth.chatgpt.models.get",
             Self::AuthChatgptRefreshPost => "auth.chatgpt.refresh.post",
+            Self::AuthChatgptSelectPost => "auth.chatgpt.select.post",
             Self::BotsAskByJobIdCancelPost => "bots.ask.by_job_id.cancel.post",
             Self::BotsAskByJobIdGet => "bots.ask.by_job_id.get",
             Self::BotsAskPost => "bots.ask.post",
@@ -1300,6 +1305,7 @@ impl DaemonOperation {
             Self::MediaByMediaIdGet => "media.by_media_id.get",
             Self::MediaUploadPost => "media.upload.post",
             Self::MeshActiveWorkPost => "mesh.active_work.post",
+            Self::MeshAgentsMessagesPost => "mesh.agents.messages.post",
             Self::MeshExecutionTargetPost => "mesh.execution_target.post",
             Self::MeshInboxGet => "mesh.inbox.get",
             Self::MeshIntrosByIntroIdAcceptPost => "mesh.intros.by_intro_id.accept.post",

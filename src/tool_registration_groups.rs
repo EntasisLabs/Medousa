@@ -111,6 +111,7 @@ pub fn register_shared_interactive_tools(
     )?;
     crate::workshop_api::register_workshop_tools(registry, bindings.worker_scheduler.clone())?;
     crate::coordination_tools::register_coordination_tools(registry)?;
+    crate::agent_messaging::register_agent_message_tool(registry)?;
     Ok(())
 }
 

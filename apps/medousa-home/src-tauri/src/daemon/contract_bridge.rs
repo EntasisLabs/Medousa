@@ -11,14 +11,24 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
+use crate::daemon::DaemonState;
 use crate::daemon::generated_ops::DaemonOperation;
 use crate::daemon::sse::{open_unless_cancelled, stream_sse_json_workshop};
 use crate::daemon::workshop_http;
-use crate::daemon::DaemonState;
 use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
 
 static STREAM_SEQ: AtomicU64 = AtomicU64::new(1);
+
+fn ensure_webview_operation_allowed(operation: DaemonOperation) -> Result<(), String> {
+    if matches!(
+        operation,
+        DaemonOperation::AuthChatgptBeginPost | DaemonOperation::AuthChatgptCompletePost
+    ) {
+        return Err("Use native ChatGPT sign-in; authorization URLs and callbacks stay in the native runtime".into());
+    }
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn daemon_unary(
@@ -30,6 +40,7 @@ pub async fn daemon_unary(
     execution_runtime_id: Option<String>,
     query: Option<HashMap<String, String>>,
 ) -> Result<Value, String> {
+    ensure_webview_operation_allowed(operation)?;
     let execution_runtime_id = execution_runtime_id
         .as_deref()
         .map(str::trim)
@@ -288,8 +299,22 @@ pub(crate) fn expand_operation_path(
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_operation_path, validate_client_stream_handle};
+    use super::{
+        DaemonOperation, ensure_webview_operation_allowed, expand_operation_path,
+        validate_client_stream_handle,
+    };
     use std::collections::HashMap;
+
+    #[test]
+    fn webview_dispatcher_rejects_sensitive_chatgpt_oauth_operations() {
+        for operation in [
+            DaemonOperation::AuthChatgptBeginPost,
+            DaemonOperation::AuthChatgptCompletePost,
+        ] {
+            assert!(ensure_webview_operation_allowed(operation).is_err());
+        }
+        assert!(ensure_webview_operation_allowed(DaemonOperation::AuthChatgptGet).is_ok());
+    }
 
     #[test]
     fn client_stream_handles_are_bounded_and_event_name_safe() {

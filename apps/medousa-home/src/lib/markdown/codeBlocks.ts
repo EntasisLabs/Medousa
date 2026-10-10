@@ -31,12 +31,65 @@ export function handleCodeBlockControlClick(event: MouseEvent): void {
   if (button.classList.contains("markdown-code-copy")) {
     void copyCode(button, code.textContent ?? "");
   } else if (button.classList.contains("markdown-code-wrap")) {
-    button.setAttribute("aria-pressed", String(block.classList.toggle("markdown-code-wrapped")));
+    const wrapped = block.classList.toggle("markdown-code-wrapped");
+    block.dataset.codeWrapped = String(wrapped);
+    button.setAttribute("aria-pressed", String(wrapped));
   } else {
     const collapsed = block.classList.toggle("markdown-code-collapsed");
+    block.dataset.codeExpanded = String(!collapsed);
     button.setAttribute("aria-expanded", String(!collapsed));
     button.textContent = collapsed ? "Show all" : "Show less";
   }
+}
+
+export interface CodeBlockState {
+  source: string;
+  wrapped?: string;
+  expanded?: string;
+  scrollTop: number;
+  scrollLeft: number;
+}
+
+/** Code order remains stable in an append-only Markdown stream. */
+export function captureCodeBlockState(root: HTMLElement): CodeBlockState[] {
+  return [...root.querySelectorAll<HTMLElement>(".markdown-code-block")].map((block) => {
+    const pre = block.querySelector("pre");
+    return {
+      source: block.querySelector("code")?.textContent ?? "",
+      wrapped: block.dataset.codeWrapped,
+      expanded: block.dataset.codeExpanded,
+      scrollTop: pre?.scrollTop ?? 0,
+      scrollLeft: pre?.scrollLeft ?? 0,
+    };
+  });
+}
+
+export function restoreCodeBlockState(root: HTMLElement, states: CodeBlockState[]): void {
+  root.querySelectorAll<HTMLElement>(".markdown-code-block").forEach((block, index) => {
+    const state = states[index];
+    const source = block.querySelector("code")?.textContent ?? "";
+    // Canonical replacements must not inherit choices from unrelated code.
+    if (!state || !source.startsWith(state.source)) return;
+    if (state.wrapped !== undefined) {
+      block.dataset.codeWrapped = state.wrapped;
+      block.classList.toggle("markdown-code-wrapped", state.wrapped === "true");
+      block.querySelector(".markdown-code-wrap")?.setAttribute("aria-pressed", state.wrapped);
+    }
+    if (state.expanded !== undefined) {
+      block.dataset.codeExpanded = state.expanded;
+      block.classList.toggle("markdown-code-collapsed", state.expanded !== "true");
+      const expand = block.querySelector(".markdown-code-expand");
+      if (expand) {
+        expand.setAttribute("aria-expanded", state.expanded);
+        expand.textContent = state.expanded === "true" ? "Show less" : "Show all";
+      }
+    }
+    const pre = block.querySelector("pre");
+    if (pre) {
+      pre.scrollTop = state.scrollTop;
+      pre.scrollLeft = state.scrollLeft;
+    }
+  });
 }
 
 async function copyCode(button: HTMLButtonElement, source: string): Promise<void> {

@@ -47,6 +47,35 @@ pub(crate) fn stream_spec(transport: StreamTransport, item_name: &str) -> Stream
 
 pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
     Some(match operation_id {
+        "auth.chatgpt.get" => WireBinding {
+            request: None,
+            response: "ChatGptOAuthStatusResponse",
+        },
+        "auth.chatgpt.delete" => WireBinding {
+            request: None,
+            response: "DisconnectChatGptOAuthResponse",
+        },
+        "auth.chatgpt.begin.post" => WireBinding {
+            request: Some("BeginChatGptOAuthRequest"),
+            response: "BeginChatGptOAuthResponse",
+        },
+        "auth.chatgpt.complete.post" => WireBinding {
+            request: Some("CompleteChatGptOAuthRequest"),
+            response: "CompleteChatGptOAuthResponse",
+        },
+        "auth.chatgpt.select.post" => WireBinding {
+            request: Some("SelectChatGptAccountRequest"),
+            response: "ChatGptOAuthStatusResponse",
+        },
+        "auth.chatgpt.refresh.post" => WireBinding {
+            request: None,
+            response: "ChatGptOAuthStatusResponse",
+        },
+        "auth.chatgpt.models.get" => WireBinding {
+            request: None,
+            response: "ChatGptModelListResponse",
+        },
+
         "work.query.post" => WireBinding {
             request: Some("WorkParticipantQuery"),
             response: "WorkParticipantResponse",

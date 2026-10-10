@@ -83,6 +83,26 @@ pub fn is_shell_session_tool(name: &str) -> bool {
     )
 }
 
+/// Sidecar sessions retain their existing executor/admin boundary. Publishing
+/// terminal controls for native Assistant commands must not let a continuation
+/// use the daemon's self credential to take over an unrelated human terminal.
+fn ensure_shared_shell_authority() -> StasisResult<()> {
+    if CODER_SHELL_STATE.try_with(|_| ()).is_ok() {
+        return Ok(());
+    }
+    let allowed = crate::agent_runtime::execution_context::active_turn_execution_context()
+        .is_some_and(|turn| {
+            turn.principal()
+                .capabilities()
+                .contains(crate::request_principal::Capability::AdminExecute)
+        });
+    if allowed {
+        Ok(())
+    } else {
+        Err(StasisError::PortFailure("shared shell sessions require an admitted Coder or execution administration; native Assistant terminals are controlled by their owning turn".into()))
+    }
+}
+
 fn daemon_base() -> String {
     crate::daemon_self_url::daemon_self_base_url()
 }
@@ -1532,6 +1552,7 @@ impl CognitionShellSessionStatusTool {
         {
             return Err(crate::work_environment_tools::pty_unavailable());
         }
+        ensure_shared_shell_authority()?;
         let create = input.create.into_option().unwrap_or(false);
         let work_id = input.work_id.into_option();
         let lease_id = input.lease_id.into_option();
@@ -1623,7 +1644,7 @@ struct ShellSessionRunInput {
     after_sequence: CompatOption<u64>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 struct ShellSessionRunOutput {
     ok: bool,
     session_id: String,
@@ -1664,6 +1685,12 @@ impl CognitionShellSessionRunTool {
             .into_option()
             .unwrap_or(1500)
             .clamp(100, 15_000);
+        if !session_id_input
+            .as_deref()
+            .is_some_and(crate::native_shell::is_native_session)
+        {
+            ensure_shared_shell_authority()?;
+        }
         let session_id = match session_id_input
             .as_deref()
             .filter(|session_id| !session_id.trim().is_empty())
@@ -1681,6 +1708,17 @@ impl CognitionShellSessionRunTool {
                 daemon_session_id(&created)?
             }
         };
+        if crate::native_shell::is_native_session(&session_id) {
+            let payload = if poll {
+                None
+            } else {
+                command.map(|command| format!("{command}\n")).or(raw_input)
+            };
+            let value =
+                crate::native_shell::observe(&session_id, payload, wait_ms, after_sequence).await?;
+            return serde_json::from_value(value)
+                .map_err(|error| StasisError::PortFailure(error.to_string()));
+        }
         if let Ok(state) = CODER_SHELL_STATE.try_with(Clone::clone) {
             let slot = state.lock().await.commands.get(&session_id).cloned();
             if let Some(slot) = slot {
@@ -1989,6 +2027,12 @@ impl CognitionShellSessionInterruptTool {
         if session_id.is_empty() {
             return Err(StasisError::PortFailure("session_id is required".into()));
         }
+        if crate::native_shell::is_native_session(session_id) {
+            return crate::native_shell::interrupt(session_id)
+                .await
+                .map(ExternalJson::new);
+        }
+        ensure_shared_shell_authority()?;
         let response = daemon_post(
             &format!("/v1/sessions/shell/{session_id}/signal"),
             json!({ "signal": "interrupt" }),

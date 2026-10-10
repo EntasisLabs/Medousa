@@ -4,6 +4,7 @@
   import { haptic } from "$lib/haptics";
   import { scrollTopAfterHistoryPrepend } from "$lib/utils/chatScrollPosition";
   import { resolveChatTurnNavigation } from "$lib/utils/chatTurnNavigation";
+  import { ChatScrollFollower } from "$lib/utils/chatScrollFollower";
   import { tick, type Snippet } from "svelte";
 
   interface TurnItem {
@@ -14,7 +15,6 @@
 
   interface Props {
     mobile: boolean;
-    pinThresholdPx: number;
     showFab: boolean;
     showTurnRail: boolean;
     showCurrentTurnAnchor: boolean;
@@ -37,7 +37,6 @@
 
   let {
     mobile,
-    pinThresholdPx,
     showFab,
     showTurnRail,
     showCurrentTurnAnchor,
@@ -58,7 +57,9 @@
     resetForSession = $bindable(() => {}),
   }: Props = $props();
 
-  let atBottom = $state(true);
+  let follower: ChatScrollFollower | undefined;
+  let contentEl: HTMLDivElement | undefined = $state();
+  const contentSpacing = $derived(scrollClass.split(" ").filter((name) => name.startsWith("space-y-")).join(" "));
   let pinnedUserTurnId = $state<string | null>(null);
   const pinnedUserPreview = $derived(
     chatTurnItems.find((item) => item.id === pinnedUserTurnId)?.text ?? "",
@@ -98,6 +99,7 @@
     }
 
     historyLoadInFlight = true;
+    follower?.stopFollowing();
     historyLoadFailed = false;
     try {
       // Disable browser anchoring before the prepend so WebKit and our explicit
@@ -134,18 +136,34 @@
   }
 
   function scrollToLatestFn(force = false, behavior: ScrollBehavior = "auto") {
-    if (!scrollEl) return;
-    if (!force && !atBottom) return;
-    requestAnimationFrame(() => {
-      if (!scrollEl) return;
-      if (!force && !atBottom) return;
-      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior });
-      atBottom = true;
-      onAtBottomChange(true);
+    follower?.request(force, behavior);
+  }
+
+  $effect(() => {
+    const root = scrollEl;
+    const content = contentEl;
+    if (!root || !content) return;
+    const controller = new ChatScrollFollower(root, onAtBottomChange, () => {
       historyNavigationReady = true;
+      scheduleChatNavigationMeasureFn();
       if (shouldLoadOlderAtTop()) void requestOlder();
     });
-  }
+    follower = controller;
+    const observer = new ResizeObserver(() => {
+      if (!historyLoadInFlight) controller.layoutChanged();
+    });
+    observer.observe(content);
+    observer.observe(root);
+    controller.layoutChanged();
+    return () => {
+      observer.disconnect();
+      controller.destroy();
+      follower = undefined;
+      if (chatNavigationFrame) cancelAnimationFrame(chatNavigationFrame);
+      chatNavigationFrame = 0;
+      if (chatScrollEndTimer) clearTimeout(chatScrollEndTimer);
+    };
+  });
 
   function measureChatNavigation() {
     chatNavigationFrame = 0;
@@ -182,10 +200,7 @@
 
   function onScroll() {
     if (!scrollEl) return;
-    const distanceFromBottom =
-      scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
-    atBottom = distanceFromBottom <= pinThresholdPx;
-    onAtBottomChange(atBottom);
+    follower?.onScroll();
     chatScrolling = true;
     if (chatScrollEndTimer) clearTimeout(chatScrollEndTimer);
     chatScrollEndTimer = setTimeout(() => {
@@ -202,6 +217,7 @@
       (element) => element.dataset.chatTurnUserId === id,
     );
     if (!target) return;
+    follower?.stopFollowing();
     const rootRect = scrollEl.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
     scrollEl.scrollTo({
@@ -220,7 +236,7 @@
   }
 
   function resetForSessionFn() {
-    atBottom = true;
+    follower?.reset();
     historyNavigationReady = false;
     onAtBottomChange(true);
     activeChatTurnId = null;
@@ -295,7 +311,9 @@
           </button>
         {/if}
       </div>
-      {@render children?.()}
+      <div bind:this={contentEl} class="chat-scroll-content {contentSpacing}">
+        {@render children?.()}
+      </div>
     </div>
     {#if showTurnRail}
       <MarkdownHeadingOutline
@@ -336,6 +354,17 @@
     align-items: center;
     justify-content: center;
     color: rgb(var(--theme-text-tertiary));
+  }
+
+  .chat-scroll-content {
+    display: flow-root;
+    min-width: 0;
+  }
+
+  :global(.chat-scroll--presence) > .chat-scroll-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
   }
 
   .chat-scroll-prepending-history {

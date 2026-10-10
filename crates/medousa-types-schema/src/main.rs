@@ -21,6 +21,47 @@ macro_rules! export_type {
 
 fn main() {
     let mut schemas: BTreeMap<String, RootSchema> = BTreeMap::new();
+    export_type!(schemas, ChatGptAccountProfile, "ChatGptAccountProfile");
+    export_type!(
+        schemas,
+        ChatGptOAuthStatusResponse,
+        "ChatGptOAuthStatusResponse"
+    );
+    export_type!(
+        schemas,
+        BeginChatGptOAuthRequest,
+        "BeginChatGptOAuthRequest"
+    );
+    export_type!(
+        schemas,
+        BeginChatGptOAuthResponse,
+        "BeginChatGptOAuthResponse"
+    );
+    export_type!(
+        schemas,
+        CompleteChatGptOAuthRequest,
+        "CompleteChatGptOAuthRequest"
+    );
+    export_type!(
+        schemas,
+        CompleteChatGptOAuthResponse,
+        "CompleteChatGptOAuthResponse"
+    );
+    export_type!(
+        schemas,
+        SelectChatGptAccountRequest,
+        "SelectChatGptAccountRequest"
+    );
+    export_type!(
+        schemas,
+        DisconnectChatGptOAuthResponse,
+        "DisconnectChatGptOAuthResponse"
+    );
+    export_type!(
+        schemas,
+        ChatGptModelListResponse,
+        "ChatGptModelListResponse"
+    );
     export_type!(
         schemas,
         medousa_types::coordination::CodingRuntimePreferences,

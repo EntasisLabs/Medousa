@@ -10,8 +10,8 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::artifact_tools::{
-    ArtifactDeleteInput, ArtifactGrepInput, ArtifactListInput, ArtifactReadInput,
-    ArtifactWriteInput, CognitionArtifactDeleteTool, CognitionArtifactGrepTool,
+    ArtifactDeleteInput, ArtifactGrepInput, ArtifactListInput, ArtifactListScope,
+    ArtifactReadInput, ArtifactWriteInput, CognitionArtifactDeleteTool, CognitionArtifactGrepTool,
     CognitionArtifactListTool, CognitionArtifactReadTool, CognitionArtifactWriteTool,
 };
 #[cfg(feature = "full-daemon")]
@@ -81,6 +81,8 @@ pub enum StoreWriteAction {
     VaultMove(VaultMove),
     #[serde(rename = "artifacts.write")]
     ArtifactsWrite(ArtifactsWrite),
+    #[serde(rename = "artifacts.present")]
+    ArtifactsPresent(ArtifactsPresent),
     #[serde(rename = "artifacts.delete")]
     ArtifactsDelete(ArtifactsDelete),
     #[serde(rename = "code.write")]
@@ -144,6 +146,9 @@ pub struct VaultSearch {
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct ArtifactsList {
+    /// Search this chat (default) or the entire workshop artifact library.
+    #[serde(default)]
+    scope: Option<ArtifactListScope>,
     /// Title/id substring
     #[serde(default)]
     query: Option<String>,
@@ -306,6 +311,18 @@ pub struct ArtifactsDelete {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct ArtifactsPresent {
+    /// Saved artifact id from artifacts.list. Shows its latest available revision without rewriting HTML.
+    path: String,
+    /// inline (default), panel, or fullscreen. Only affects this presentation.
+    #[serde(default)]
+    presentation: Option<String>,
+    /// Optional height override for this presentation.
+    #[serde(default)]
+    height: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CodeWrite {
     /// Batch of 1–128 nonoverlapping exact replacements against the original digest. Exclusive with content/find/replace.
     #[serde(default)]
@@ -391,6 +408,7 @@ impl JsonSchema for StoreWriteAction {
                 "vault.delete",
                 "vault.move",
                 "artifacts.write",
+                "artifacts.present",
                 "artifacts.delete",
                 "code.write",
                 "scripts.write",
@@ -457,6 +475,11 @@ pub fn store_type_schemas() -> Vec<TypedActionSchema> {
             "artifacts.write",
             "Create or revise an HTML artifact",
         ),
+        typed_action_schema::<ArtifactsPresent>(
+            STORE_WRITE_ID,
+            "artifacts.present",
+            "Show a saved HTML artifact in chat without creating a revision",
+        ),
         typed_action_schema::<ArtifactsDelete>(
             STORE_WRITE_ID,
             "artifacts.delete",
@@ -514,7 +537,7 @@ impl CognitionStoreReadTool {
 
 #[medousa_tool(id = STORE_WRITE_ID)]
 impl CognitionStoreWriteTool {
-    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].
+    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: StoreWriteAction,
@@ -551,6 +574,7 @@ async fn dispatch_write(
         StoreWriteAction::VaultDelete(params) => params.execute(tool).await,
         StoreWriteAction::VaultMove(params) => params.execute(tool).await,
         StoreWriteAction::ArtifactsWrite(params) => params.execute(tool).await,
+        StoreWriteAction::ArtifactsPresent(params) => params.execute(tool).await,
         StoreWriteAction::ArtifactsDelete(params) => params.execute(tool).await,
         StoreWriteAction::CodeWrite(params) => params.execute().await,
         StoreWriteAction::ScriptsWrite(params) => params.execute(tool).await,
@@ -626,6 +650,7 @@ impl ArtifactsList {
     async fn execute(self, tool: &CognitionStoreReadTool) -> stasis::prelude::Result<Value> {
         let output = CognitionArtifactListTool::new(tool.event_tx.clone(), tool.turn_scope.clone())
             .invoke_typed(ArtifactListInput {
+                scope: self.scope,
                 limit: CompatOption::from(self.limit),
                 query: CompatOption::from(self.query),
             })
@@ -700,9 +725,9 @@ impl CodeRead {
 impl CodeSearch {
     async fn execute(self) -> stasis::prelude::Result<Value> {
         #[cfg(feature = "full-daemon")]
-        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
-            COGNITION_STORE_READ,
-        ) {
+        if let Some(invocation) =
+            crate::work_environment_tools::EnvironmentToolInvocation::active(COGNITION_STORE_READ)
+        {
             return crate::work_environment_tools::code_search(
                 &invocation,
                 &self.query,
@@ -835,6 +860,18 @@ impl ArtifactsDelete {
     }
 }
 
+impl ArtifactsPresent {
+    async fn execute(self, tool: &CognitionStoreWriteTool) -> stasis::prelude::Result<Value> {
+        let output = crate::ui_present_tools::CognitionUiPresentTool::new(tool.turn_scope.clone())
+            .present_existing(self.path, self.presentation, self.height)
+            .await?;
+        serialize_output(
+            crate::ui_present_tools::CognitionUiPresentTool::tool_id(),
+            output,
+        )
+    }
+}
+
 impl CodeWrite {
     async fn execute(self) -> stasis::prelude::Result<Value> {
         let expected_sha256 = self.expected_sha256.into_option().unwrap_or_default();
@@ -898,6 +935,212 @@ fn present(value: Option<&str>) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn artifact_tools_for_session(
+        session_id: &str,
+        supported: bool,
+    ) -> (CognitionStoreReadTool, CognitionStoreWriteTool) {
+        let turn_scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(
+            crate::turn_continuation::TurnContinuationScope {
+                turn_correlation_id: "test-artifact-present".into(),
+                session_id: session_id.into(),
+                identity_user_id: None,
+                original_prompt: "Show my saved diagram".into(),
+                delivery_target: None,
+                provider: "test".into(),
+                model: "test".into(),
+                response_depth_mode: "standard".into(),
+                supports_ui_artifacts: supported,
+                supports_liquid_markdown: true,
+                supports_browser_host: false,
+                browser_driver_id: None,
+                selected_worlds: Vec::new(),
+                channel_surface: Some("home-desktop".into()),
+            },
+        );
+        let (event_tx, _) = mpsc::channel(16);
+        (
+            CognitionStoreReadTool {
+                event_tx: event_tx.clone(),
+                turn_scope: turn_scope.clone(),
+            },
+            CognitionStoreWriteTool {
+                event_tx,
+                turn_scope,
+                fallback_chat_session_id: session_id.into(),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn saved_artifact_can_be_found_and_presented_in_another_chat_without_a_revision() {
+        let source = format!("artifact-present-source-{}", uuid::Uuid::new_v4());
+        let target = format!("artifact-present-target-{}", uuid::Uuid::new_v4());
+        let title = format!("Saved diagram {}", uuid::Uuid::new_v4());
+        let source_for_store = source.clone();
+        let title_for_store = title.clone();
+        let (first, latest, original_body) = tokio::task::spawn_blocking(move || {
+            let first = crate::artifact_store::persist_ui_artifact(
+                &source_for_store,
+                &format!("<p>{title_for_store}: first</p>"),
+                &title_for_store,
+                "panel",
+                Some(420),
+            )
+            .unwrap();
+            let latest = crate::artifact_store::persist_ui_artifact_revision(
+                &source_for_store,
+                &format!("<p>{title_for_store}: latest</p>"),
+                &title_for_store,
+                "panel",
+                Some(480),
+                Some(&first.artifact_id),
+            )
+            .unwrap();
+            crate::artifact_store::register_artifact_alias(
+                &source_for_store,
+                "saved-diagram",
+                &first.artifact_id,
+            )
+            .unwrap();
+            let original_body =
+                crate::artifact_store::fetch_artifact(&source_for_store, &latest.artifact_id)
+                    .unwrap()
+                    .body;
+            (first, latest, original_body)
+        })
+        .await
+        .unwrap();
+        let (read, write) = artifact_tools_for_session(&target, true);
+        let local = dispatch_read(
+            &read,
+            serde_json::from_value(json!({"action": "artifacts.list", "query": title})).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(local["count"], 0);
+        let library = dispatch_read(
+            &read,
+            serde_json::from_value(
+                json!({"action": "artifacts.list", "scope": "workshop", "query": title}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(library["count"], 1);
+        assert_eq!(library["artifacts"][0]["session_id"], source);
+        assert_eq!(library["artifacts"][0]["artifact_id"], latest.artifact_id);
+
+        let presented = dispatch_write(
+            &write,
+            serde_json::from_value(
+                json!({"action": "artifacts.present", "path": first.artifact_id}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(presented["artifact_id"], latest.artifact_id);
+        assert_eq!(presented["presentation"], "inline");
+        assert_eq!(presented["height_px"], 480);
+        assert_eq!(presented["label"], title);
+        assert!(presented.get("previous_artifact_id").is_none());
+        let (_, source_write) = artifact_tools_for_session(&source, true);
+        let alias = dispatch_write(&source_write, serde_json::from_value(json!({"action": "artifacts.present", "path": "saved-diagram", "presentation": "fullscreen", "height": 2000})).unwrap()).await.unwrap();
+        assert_eq!(alias["artifact_id"], latest.artifact_id);
+        assert_eq!(alias["presentation"], "fullscreen");
+        assert_eq!(alias["height_px"], 1200);
+
+        tokio::task::spawn_blocking(move || {
+            let fetched =
+                crate::artifact_store::fetch_artifact(&source, &first.artifact_id).unwrap();
+            assert_eq!(fetched.body, original_body);
+            assert_eq!(fetched.record.stored_at_utc, latest.stored_at_utc);
+            assert_eq!(fetched.record.presentation.as_deref(), Some("panel"));
+            assert_eq!(fetched.record.height_px, Some(480));
+            assert!(crate::artifact_store::list_ui_artifacts(Some(&target), 100, None).is_empty());
+            let listed = crate::artifact_store::list_ui_artifacts(Some(&source), 100, None);
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].artifact_id, latest.artifact_id);
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn artifact_present_rejects_missing_non_html_and_unsupported_presentations() {
+        let session = format!("artifact-present-errors-{}", uuid::Uuid::new_v4());
+        let (_, write) = artifact_tools_for_session(&session, true);
+        for input in [
+            json!({"action": "artifacts.present", "path": ""}),
+            json!({"action": "artifacts.present", "path": "missing"}),
+            json!({"action": "artifacts.present", "path": "missing", "presentation": "popup"}),
+        ] {
+            assert!(
+                dispatch_write(&write, serde_json::from_value(input).unwrap())
+                    .await
+                    .is_err()
+            );
+        }
+        let source = session.clone();
+        let receipt = tokio::task::spawn_blocking(move || {
+            crate::artifact_store::persist_tool_artifact(
+                &source,
+                "test-receipt",
+                "output",
+                "artifact-present-receipt",
+                2,
+                &json!({}),
+            )
+            .unwrap()
+        })
+        .await
+        .unwrap();
+        assert!(
+            dispatch_write(
+                &write,
+                serde_json::from_value(
+                    json!({"action": "artifacts.present", "path": receipt.artifact_id})
+                )
+                .unwrap()
+            )
+            .await
+            .is_err()
+        );
+        let (_, unsupported) = artifact_tools_for_session(&session, false);
+        let error = dispatch_write(
+            &unsupported,
+            serde_json::from_value(json!({"action": "artifacts.present", "path": "missing"}))
+                .unwrap(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("supports_ui_artifacts=false"));
+    }
+
+    #[test]
+    fn artifact_present_is_advertised_and_needs_only_an_id() {
+        let action: StoreWriteAction =
+            serde_json::from_value(json!({"action": "artifacts.present", "path": "saved-id"}))
+                .unwrap();
+        assert!(matches!(action, StoreWriteAction::ArtifactsPresent(_)));
+        let schema = serde_json::to_value(schemars::schema_for!(ArtifactsPresent)).unwrap();
+        assert_eq!(schema["required"], json!(["path"]));
+        assert!(schema["properties"].get("content").is_none());
+        let actions = serde_json::to_value(schemars::schema_for!(StoreWriteAction)).unwrap();
+        assert!(
+            actions["properties"]["action"]["enum"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("artifacts.present"))
+        );
+        assert!(
+            store_type_schemas()
+                .iter()
+                .any(|schema| schema.name == "artifacts.present")
+        );
+    }
 
     #[test]
     fn store_actions_carry_their_params() {

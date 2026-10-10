@@ -112,6 +112,9 @@ impl CognitionArtifactListTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ArtifactListInput {
+    /// Search this chat (default) or all chats on this workshop.
+    #[serde(default)]
+    pub(crate) scope: Option<ArtifactListScope>,
     #[serde(default)]
     #[schemars(
         with = "usize",
@@ -128,8 +131,17 @@ pub struct ArtifactListInput {
     pub(crate) query: CompatOption<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactListScope {
+    #[default]
+    Session,
+    Workshop,
+}
+
 #[derive(Debug)]
 struct ArtifactListCommand {
+    scope: ArtifactListScope,
     limit: usize,
     query: Option<TrimmedText>,
 }
@@ -139,6 +151,7 @@ impl TryFrom<ArtifactListInput> for ArtifactListCommand {
 
     fn try_from(input: ArtifactListInput) -> Result<Self, Self::Error> {
         Ok(Self {
+            scope: input.scope.unwrap_or_default(),
             limit: input.limit.into_option().unwrap_or(20).clamp(1, 100),
             query: input
                 .query
@@ -152,6 +165,7 @@ impl TryFrom<ArtifactListInput> for ArtifactListCommand {
 #[derive(Debug, Serialize, JsonSchema)]
 struct ArtifactListItem {
     artifact_id: String,
+    session_id: String,
     label: Option<String>,
     presentation: Option<String>,
     byte_size: usize,
@@ -169,7 +183,7 @@ pub struct ArtifactListOutput {
 
 #[medousa_tool(id = COGNITION_ARTIFACT_LIST_ID)]
 impl CognitionArtifactListTool {
-    /// List HTML presentation artifacts for the current chat session (newest first). Workflow: list → grep/read → cognition_artifact_write to revise.
+    /// List saved HTML artifacts (newest first). scope=workshop searches across chats on this workshop. Use cognition_store_write action=artifacts.present with an artifact id to show it again without rewriting HTML.
     pub(crate) async fn invoke_typed(
         &self,
         input: ArtifactListInput,
@@ -177,6 +191,7 @@ impl CognitionArtifactListTool {
         self.ctx.require_ui_artifacts().await?;
         let session_id = self.ctx.session_id(COGNITION_ARTIFACT_LIST).await?;
         let command = ArtifactListCommand::try_from(input)?;
+        let scope = command.scope;
         let limit = command.limit;
         let query_owned = command.query.map(TrimmedText::into_string);
         emit_invoked(
@@ -186,7 +201,10 @@ impl CognitionArtifactListTool {
         );
         let records = tokio::task::spawn_blocking(move || {
             crate::artifact_store::list_ui_artifacts(
-                Some(&session_id),
+                match scope {
+                    ArtifactListScope::Session => Some(session_id.as_str()),
+                    ArtifactListScope::Workshop => None,
+                },
                 limit,
                 query_owned.as_deref(),
             )
@@ -197,6 +215,7 @@ impl CognitionArtifactListTool {
             .into_iter()
             .map(|record| ArtifactListItem {
                 artifact_id: record.artifact_id,
+                session_id: record.session_id,
                 label: record.label,
                 presentation: record.presentation,
                 byte_size: record.byte_size,
@@ -560,14 +579,14 @@ impl<'de> Deserialize<'de> for ArtifactWriteInput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ArtifactPresentation {
+pub(crate) enum ArtifactPresentation {
     Inline,
     Panel,
     Fullscreen,
 }
 
 impl ArtifactPresentation {
-    fn parse(value: Option<String>) -> stasis::prelude::Result<Self> {
+    pub(crate) fn parse(value: Option<String>) -> stasis::prelude::Result<Self> {
         let value = value.unwrap_or_else(|| "inline".to_string());
         match value.trim().to_ascii_lowercase().as_str() {
             "" | "inline" => Ok(Self::Inline),
@@ -579,7 +598,7 @@ impl ArtifactPresentation {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Inline => "inline",
             Self::Panel => "panel",

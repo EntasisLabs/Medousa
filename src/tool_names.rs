@@ -31,6 +31,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_active_work_discover",
     "cognition_assistant_placement",
     "cognition_peer_discover",
+    "cognition_agent_message",
     "cognition_peer_delegate",
     "cognition_peer_propose",
     "cognition_peer_handoff",
@@ -191,7 +192,12 @@ mod tests {
         assert_eq!(set.len(), names.len());
     }
 }
-pub const SHELL_COGNITION_TOOLS: &[&str] = &["cognition_shell_status", "cognition_shell_run"];
+pub const SHELL_COGNITION_TOOLS: &[&str] = &[
+    "cognition_shell_status",
+    "cognition_shell_run",
+    "cognition_shell_session_run",
+    "cognition_shell_session_interrupt",
+];
 
 pub fn is_shell_cognition_tool(name: &str) -> bool {
     name.starts_with("cognition_shell_")

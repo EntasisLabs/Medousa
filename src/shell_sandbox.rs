@@ -421,6 +421,36 @@ pub fn probe_shell_sandbox() -> ShellSandboxStatus {
 }
 
 pub fn run_sandboxed(request: &ShellRunRequest) -> Result<ShellRunResult, String> {
+    #[cfg(not(windows))]
+    {
+        let launch = prepare_shell_command(request)?;
+        wait_command(
+            launch.command,
+            &request.profile,
+            launch.backend,
+            launch.sandboxed,
+            launch.warning,
+        )
+    }
+    #[cfg(windows)]
+    {
+        run_windows(request)
+    }
+}
+
+/// The same jail launch plan is used by Grapheme pipe runs and native PTYs.
+#[cfg(not(windows))]
+pub(crate) struct ShellLaunch {
+    pub command: Command,
+    pub backend: &'static str,
+    pub sandboxed: bool,
+    pub warning: Option<String>,
+    #[cfg(target_os = "macos")]
+    pub(crate) _profile_file: Option<TempSeatbelt>,
+}
+
+#[cfg(not(windows))]
+pub(crate) fn prepare_shell_command(request: &ShellRunRequest) -> Result<ShellLaunch, String> {
     enforce_binary_allowlist(&request.argv, &request.profile.allowed_binaries)?;
     let cwd = request.profile.resolve_cwd();
     if !cwd.is_dir() {
@@ -430,12 +460,12 @@ pub fn run_sandboxed(request: &ShellRunRequest) -> Result<ShellRunResult, String
     #[cfg(target_os = "linux")]
     {
         if which_bin("bwrap").is_some() {
-            return run_with_bwrap(request, &cwd);
+            return prepare_bwrap(request, &cwd);
         }
         if which_bin("systemd-run").is_some() {
-            return run_with_systemd_run(request, &cwd);
+            return prepare_systemd_run(request, &cwd);
         }
-        run_unsandboxed(
+        prepare_unsandboxed(
             request,
             &cwd,
             "process",
@@ -445,14 +475,32 @@ pub fn run_sandboxed(request: &ShellRunRequest) -> Result<ShellRunResult, String
     #[cfg(target_os = "macos")]
     {
         if Path::new("/usr/bin/sandbox-exec").is_file() {
-            return run_with_seatbelt(request, &cwd);
+            return prepare_seatbelt(request, &cwd);
         }
-        run_unsandboxed(
+        prepare_unsandboxed(
             request,
             &cwd,
             "process",
             Some("sandbox-exec missing; ran without OS jail".to_string()),
         )
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        prepare_unsandboxed(
+            request,
+            &cwd,
+            "process",
+            Some("unsupported OS; timeout-only".to_string()),
+        )
+    }
+}
+
+#[cfg(windows)]
+fn run_windows(request: &ShellRunRequest) -> Result<ShellRunResult, String> {
+    enforce_binary_allowlist(&request.argv, &request.profile.allowed_binaries)?;
+    let cwd = request.profile.resolve_cwd();
+    if !cwd.is_dir() {
+        return Err(format!("shell.run cwd does not exist: {}", cwd.display()));
     }
     #[cfg(target_os = "windows")]
     {
@@ -467,15 +515,6 @@ pub fn run_sandboxed(request: &ShellRunRequest) -> Result<ShellRunResult, String
                 )),
             ),
         }
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        run_unsandboxed(
-            request,
-            &cwd,
-            "process",
-            Some("unsupported OS; timeout-only".to_string()),
-        )
     }
 }
 
@@ -519,6 +558,7 @@ fn which_bin(name: &str) -> Option<PathBuf> {
     None
 }
 
+#[cfg(windows)]
 fn run_unsandboxed(
     request: &ShellRunRequest,
     cwd: &Path,
@@ -544,8 +584,41 @@ fn run_unsandboxed(
     wait_command(cmd, &request.profile, backend, false, warning)
 }
 
+#[cfg(not(windows))]
+fn prepare_unsandboxed(
+    request: &ShellRunRequest,
+    cwd: &Path,
+    backend: &'static str,
+    warning: Option<String>,
+) -> Result<ShellLaunch, String> {
+    let mut cmd = Command::new(&request.argv[0]);
+    if request.argv.len() > 1 {
+        cmd.args(&request.argv[1..]);
+    }
+    cmd.current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_clear()
+        .env("PATH", default_path())
+        .env(
+            "HOME",
+            dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
+        )
+        .env("TMPDIR", std::env::temp_dir())
+        .env("LANG", "C.UTF-8");
+    Ok(ShellLaunch {
+        command: cmd,
+        backend,
+        sandboxed: false,
+        warning,
+        #[cfg(target_os = "macos")]
+        _profile_file: None,
+    })
+}
+
 #[cfg(target_os = "linux")]
-fn run_with_bwrap(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunResult, String> {
+fn prepare_bwrap(request: &ShellRunRequest, cwd: &Path) -> Result<ShellLaunch, String> {
     let mut args = vec![
         "--die-with-parent".to_string(),
         "--new-session".to_string(),
@@ -584,11 +657,16 @@ fn run_with_bwrap(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunResul
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    wait_command(cmd, &request.profile, "bubblewrap", true, None)
+    Ok(ShellLaunch {
+        command: cmd,
+        backend: "bubblewrap",
+        sandboxed: true,
+        warning: None,
+    })
 }
 
 #[cfg(target_os = "linux")]
-fn run_with_systemd_run(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunResult, String> {
+fn prepare_systemd_run(request: &ShellRunRequest, cwd: &Path) -> Result<ShellLaunch, String> {
     let mut args = vec![
         "--user".to_string(),
         "--wait".to_string(),
@@ -627,11 +705,16 @@ fn run_with_systemd_run(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRu
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    wait_command(cmd, &request.profile, "systemd-run", true, None)
+    Ok(ShellLaunch {
+        command: cmd,
+        backend: "systemd-run",
+        sandboxed: true,
+        warning: None,
+    })
 }
 
 #[cfg(target_os = "macos")]
-fn run_with_seatbelt(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunResult, String> {
+fn prepare_seatbelt(request: &ShellRunRequest, cwd: &Path) -> Result<ShellLaunch, String> {
     let profile = build_seatbelt_profile(&request.profile, cwd)?;
     let profile_file = tempfile_seatbelt(&profile)?;
     let profile_path = profile_file.path().to_path_buf();
@@ -653,10 +736,13 @@ fn run_with_seatbelt(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunRe
         .env("PATH", default_path())
         .env("LANG", "C.UTF-8");
 
-    let result = wait_command(cmd, &request.profile, "seatbelt", true, None);
-    // Keep profile file alive until process exits.
-    drop(profile_file);
-    result
+    Ok(ShellLaunch {
+        command: cmd,
+        backend: "seatbelt",
+        sandboxed: true,
+        warning: None,
+        _profile_file: Some(profile_file),
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -705,7 +791,7 @@ fn escape_sb_path(path: &Path) -> String {
 }
 
 #[cfg(target_os = "macos")]
-struct TempSeatbelt {
+pub(crate) struct TempSeatbelt {
     path: PathBuf,
 }
 

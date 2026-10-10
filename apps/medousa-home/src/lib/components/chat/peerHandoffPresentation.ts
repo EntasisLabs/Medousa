@@ -44,7 +44,9 @@ export function peerHandoffPresentation(row: PeerProposalReviewRecord, now: numb
 
 /** A title-sized fallback for workshops whose project is not loaded in Home. */
 export function peerWorkTitle(instructions: string, projectTitle?: string | null): string {
-  if (projectTitle?.trim()) return projectTitle.trim();
   const firstLine = instructions.split(/\r?\n/).find(line => line.trim())?.trim() || "Delegated work";
+  const undertaking = firstLine.match(/undertaking\s+["“]([^"”]+)["”]/i)?.[1];
+  if (undertaking) return undertaking;
+  if (firstLine.length > 80 && projectTitle?.trim()) return projectTitle.trim();
   return firstLine.length > 80 ? `${firstLine.slice(0, 77).trimEnd()}…` : firstLine;
 }

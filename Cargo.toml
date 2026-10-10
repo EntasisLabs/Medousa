@@ -96,10 +96,13 @@ medousa-work = { path = "crates/medousa-work", optional = true }
 medousa-sdk = { path = "crates/medousa-sdk", optional = true }
 medousa-acp-client = { path = "crates/medousa-acp-client", optional = true }
 medousa-forge = { path = "crates/medousa-forge", optional = true }
-detamu = { version = "0.1.1", default-features = false, features = ["code", "surreal"], optional = true }
-detamu-source-git = { version = "0.1.1", optional = true }
-detamu-language-rust = { version = "0.1.1", optional = true }
-detamu-language = { version = "0.1.1", optional = true }
+medousa-session = { path = "crates/medousa-session", optional = true }
+portable-pty = { version = "0.9", optional = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+detamu = { version = "0.2.0", default-features = false, features = ["code", "surreal"], optional = true }
+detamu-source-git = { version = "0.2.0", optional = true }
+detamu-language-rust = { version = "0.2.0", optional = true }
+detamu-language = { version = "0.2.0", optional = true }
 medousa-browser-lite = { path = "crates/medousa-browser-lite", optional = true }
 medousa-browser-bridge = { path = "crates/medousa-browser-bridge", optional = true }
 medousa-computer-bridge = { path = "crates/medousa-computer-bridge", optional = true }
@@ -117,6 +120,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 axum = { version = "0.8", features = ["multipart", "ws"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream", "blocking"], optional = true }
+jsonwebtoken = { version = "10.4", default-features = false, features = ["aws_lc_rs", "use_pem"], optional = true }
+eventsource-stream = { version = "0.2", optional = true }
 genai-reqwest = { package = "reqwest", version = "0.13", default-features = false, optional = true }
 zeroize = { version = "1", optional = true }
 uuid = { version = "1", features = ["v4"] }
@@ -252,6 +257,9 @@ full-daemon = [
     "dep:medousa-sdk",
     "dep:medousa-acp-client",
     "dep:medousa-forge",
+    "dep:medousa-session",
+    "dep:portable-pty",
+    "dep:rusqlite",
     "dep:detamu",
     "dep:detamu-source-git",
     "dep:detamu-language-rust",
@@ -266,6 +274,8 @@ full-daemon = [
     "dep:icalendar",
     "dep:axum",
     "dep:reqwest",
+    "dep:jsonwebtoken",
+    "dep:eventsource-stream",
     "dep:genai-reqwest",
     "dep:zeroize",
     "dep:dirs",
@@ -342,6 +352,8 @@ embedded-daemon = [
     "dep:medousa-tool-macros",
     "dep:pdf-extract",
     "dep:reqwest",
+    "dep:jsonwebtoken",
+    "dep:eventsource-stream",
     "dep:genai-reqwest",
     "dep:schemars",
     "dep:serde_yaml",

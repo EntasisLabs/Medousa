@@ -9,11 +9,22 @@ discovery.
 
 ## Tracking work in chat
 
-Delegated work appears as a compact context line above the composer. Open it to
-see the worker, workshop, sender responsibility, and review status. The full
-assignment, agent result, and shared context each stay behind a disclosure.
-Peer and workshop background workers use the same compact treatment inside the
-conversation, with their transcript and tool activity available on expansion.
+Delegated agents and workshop background workers appear in an **agent group**
+inside the turn that requested their work. The group shows how many agents are
+working, ready for review, accepted, or need attention. Each row leads with its
+task, status, and current activity. Results update those rows in place; finishing
+does not move an agent to the bottom of the conversation.
+
+Groups show four tasks initially. Open **more agents** to see the rest together,
+or collapse the whole group. Open a task to see its worker, workshop, sender
+responsibility, result, and review. The full assignment and technical provenance
+stay behind **Assignment** and **Details**. Workshop workers also offer their
+transcript and tool activity. If more requests are available from the workshop,
+choose **More requests** to load them into their corresponding groups.
+Assignments whose originating entries are outside the loaded history remain
+available together before the visible turns.
+Workshop worker results include **View agent**, which opens the originating
+group and task so you can reconnect the result with its assignment.
 
 Local sender-controlled handoffs can start directly when your request authorizes
 the work. Only proposals needing your decision show **Approve & start** (or
@@ -24,12 +35,12 @@ worker stays **Awaiting sender review** until the sender records its decision;
 completion without review, the line says **Work completed** instead.
 
 Ownership transfer, review, sender wakeups, and user follow-up are separate
-choices captured by the sender. Inspect them under **Shared context and scope**.
+choices captured by the sender. Inspect them under **Details**.
 Choosing no user follow-up does not suppress the sender's requested callbacks.
 An unavailable workshop leaves the last observed work visible. Refresh errors
 and delayed progress do not turn a working assignment into a failed one.
 
-On the execution workshop, the expanded line offers **Open project**, and native
+On the execution workshop, the expanded task offers **Open project**, and native
 Medousa Coder assignments offer **Open chat**. For another connected workshop,
 open that workshop first; session and project ids remain scoped to its daemon.
 
@@ -78,7 +89,7 @@ immutable provenance, not a separate model-authored transcript. Discovery
 suggests the most recent 32 entries; one proposal can share at most 256 entries.
 Review that selection before starting.
 
-On a supported workshop, a proposal appears above the composer. Expand it to review the
+On a supported workshop, a proposal appears in its chat turn's agent group. Expand it to review the
 agent, instructions, channel, governed work item, execution workshop, exact
 shared conversation ranges, expiry, and owner-continuation choice.
 

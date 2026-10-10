@@ -67,13 +67,14 @@ impl ModelCapabilityRegistry {
         crate::reasoning_effort::reasoning_capability(&provider, model)
     }
 
-    pub fn record_chatgpt_reasoning(
+    pub fn record_chatgpt_catalog(
         &self,
-        models: Vec<(String, Option<crate::reasoning_effort::ReasoningCapability>)>,
+        models: Vec<(String, Option<String>, Option<crate::reasoning_effort::ReasoningCapability>)>,
     ) {
-        let records = models.into_iter().map(|(model, reasoning)| {
+        let records = models.into_iter().map(|(model, display_name, reasoning)| {
             let mut record = infer_capability("openai-codex", &model);
-            record.reasoning = reasoning;
+            record.reasoning = reasoning.or(record.reasoning);
+            record.display_name = display_name;
             record.source = "chatgpt_account".into();
             record
         }).collect();

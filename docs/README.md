@@ -26,7 +26,8 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
-| [Bots](guides/bots.md) | Create native and runtime Bots, search them in Spotlight, and continue their memory |
+| [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |
+| [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands in an owned native terminal |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
 | [Phone pairing](guides/phone-pairing.md) | Name paired workshops, refresh stale connections, and add optional portals |
@@ -51,8 +52,9 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
 | [Coding runtimes](guides/coding-runtimes.md) | Choose a preferred coder, ordered fallbacks, and follow assigned work |
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
+| [Saved artifacts](guides/artifacts.md) | Find and show earlier HTML artifacts in chat |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
-| [Delegation approvals](guides/delegation-approvals.md) | Review agent-work proposals and queue remote background workers |
+| [Delegation approvals](guides/delegation-approvals.md) | Track grouped agents in chat, review proposals, and queue remote background workers |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---

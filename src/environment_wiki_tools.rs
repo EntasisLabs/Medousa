@@ -272,6 +272,7 @@ const TOPICS: &[WikiTopic] = &[
         surface_exists(.99): "custom surface must be applied before persist"
     },
     revise(.97): "cognition_store_write action=artifacts.write with existing artifact_id — not repeat ui_present for same content",
+    show_saved(.98): "cognition_store_read action=artifacts.list scope=workshop to find earlier chats; cognition_store_write action=artifacts.present path=artifact_id shows saved HTML without a new revision",
     html_discipline(.95): {
         inline(.95): "compact card; optional height px cap",
         panel_fullscreen(.94): "transparent outer background; ~900px content — avoid full-page #000 body"

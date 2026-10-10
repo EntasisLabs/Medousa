@@ -66,6 +66,8 @@ struct PtyHandles {
     kill: Mutex<Box<dyn portable_pty::ChildKiller + Send>>,
     exited: Arc<AtomicBool>,
     exit_code: Arc<Mutex<Option<i32>>>,
+    output_finished: Arc<AtomicBool>,
+    process_id: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -120,25 +122,6 @@ impl Session {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Self>> {
-        // The directory must already exist. Creating it here would let a
-        // caller-supplied cwd materialize arbitrary filesystem locations.
-        let cwd = cwd.canonicalize().map_err(|error| {
-            anyhow::anyhow!(
-                "session cwd must be an existing directory ({}): {error}",
-                cwd.display()
-            )
-        })?;
-        if !cwd.is_dir() {
-            anyhow::bail!(
-                "session cwd must be an existing directory ({})",
-                cwd.display()
-            );
-        }
-        let size = normalized_pty_size(cols, rows);
-
-        let pty_system = native_pty_system();
-        let pair = pty_system.openpty(size)?;
-
         let mut cmd = if let Some(program) = argv.first() {
             let mut command = CommandBuilder::new(program);
             for arg in &argv[1..] {
@@ -162,8 +145,47 @@ impl Session {
         cmd.cwd(&cwd);
         cmd.env("TERM", "xterm-256color");
 
+        Self::spawn_prepared_command(session_id, cwd, root_kind, work_id, argv, cmd, cols, rows)
+    }
+
+    /// Host-only entry point for a daemon-prepared sandbox command. This is not
+    /// an HTTP request field; the host owns argv, environment, and jail policy.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_prepared_command(
+        session_id: SessionId,
+        cwd: PathBuf,
+        root_kind: SessionRootKind,
+        work_id: Option<String>,
+        argv: Vec<String>,
+        mut cmd: CommandBuilder,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<Arc<Self>> {
+        // The directory must already exist. Creating it here would let a
+        // caller-supplied cwd materialize arbitrary filesystem locations.
+        let cwd = cwd.canonicalize().map_err(|error| {
+            anyhow::anyhow!(
+                "session cwd must be an existing directory ({}): {error}",
+                cwd.display()
+            )
+        })?;
+        if !cwd.is_dir() {
+            anyhow::bail!(
+                "session cwd must be an existing directory ({})",
+                cwd.display()
+            );
+        }
+        let size = normalized_pty_size(cols, rows);
+
+        let pty_system = native_pty_system();
+        let pair = pty_system.openpty(size)?;
+
+        let mut reader = pair.master.try_clone_reader()?;
+        let writer = pair.master.take_writer()?;
+        cmd.cwd(&cwd);
         let mut child = pair.slave.spawn_command(cmd)?;
         let killer = child.clone_killer();
+        let process_id = child.process_id();
 
         let exited = Arc::new(AtomicBool::new(false));
         let exited_reader = Arc::clone(&exited);
@@ -178,8 +200,6 @@ impl Session {
             exited_reader.store(true, Ordering::SeqCst);
         });
 
-        let mut reader = pair.master.try_clone_reader()?;
-        let writer = pair.master.take_writer()?;
         let master = pair.master;
 
         let (output, _) = broadcast::channel(4096);
@@ -188,6 +208,8 @@ impl Session {
         let history_reader = Arc::clone(&output_history);
         let next_sequence = Arc::new(AtomicU64::new(1));
         let sequence_reader = Arc::clone(&next_sequence);
+        let output_finished = Arc::new(AtomicBool::new(false));
+        let reader_finished = output_finished.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
@@ -213,6 +235,8 @@ impl Session {
                     Err(_) => break,
                 }
             }
+
+            reader_finished.store(true, Ordering::SeqCst);
         });
 
         Ok(Arc::new(Self {
@@ -233,6 +257,8 @@ impl Session {
                 kill: Mutex::new(killer),
                 exited,
                 exit_code,
+                output_finished,
+                process_id,
             },
         }))
     }
@@ -282,6 +308,14 @@ impl Session {
         self.pty.exited.load(Ordering::SeqCst)
     }
 
+    pub fn process_id(&self) -> Option<u32> {
+        self.pty.process_id
+    }
+
+    pub fn output_finished(&self) -> bool {
+        self.pty.output_finished.load(Ordering::SeqCst)
+    }
+
     pub fn exit_code(&self) -> Option<i32> {
         self.pty.exit_code.lock().ok().and_then(|code| *code)
     }
@@ -294,6 +328,14 @@ impl Session {
 
     pub async fn touch(&self) {
         *self.meta.last_activity.write().await = Instant::now();
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        if !self.exited() {
+            self.kill();
+        }
     }
 }
 

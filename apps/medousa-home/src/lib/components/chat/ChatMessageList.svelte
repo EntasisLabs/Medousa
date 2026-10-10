@@ -5,8 +5,11 @@
    * User→assistant pairs render as timeline beats (whisper + full-width voice).
    */
   import { onMount } from "svelte";
-  import { Copy, Library, Share2, Square, Volume2 } from "@lucide/svelte";
-  import ChatSubagentRow from "$lib/components/chat/ChatSubagentRow.svelte";
+  import { Copy, CornerDownRight, Library, Share2, Square, Volume2 } from "@lucide/svelte";
+  import ChatAgentGroup from "$lib/components/chat/ChatAgentGroup.svelte";
+  import { chatAgentGroups } from "$lib/utils/chatAgentGroups";
+  import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
+  import type { PeerProposalControls } from "./peerProposalControls";
   import ChatForkMenu from "$lib/components/chat/ChatForkMenu.svelte";
   import ChatUserWhisper from "$lib/components/chat/ChatUserWhisper.svelte";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
@@ -31,6 +34,7 @@
   interface Props {
     messages: ChatMessage[];
     sessionId: string;
+    authorityId?: string | null;
     mobile?: boolean;
     compact?: boolean;
     /** When true, collapse worker handoff+synthesis into one visual turn. */
@@ -48,6 +52,8 @@
     onOpenCardDetail?: (detail: import("$lib/markdown/liquidEmbeds").CardDetailPayload) => void;
     /** Sub-agent beats keyed by work id, anchored on their worker-lane message. */
     subagentRows?: Map<string, SubagentRow>;
+    peerProposals?: PeerProposalReviewRecord[];
+    peerControls?: PeerProposalControls;
     onOpenSubagent?: (workId: string) => void;
     onStopSubagent?: (workId: string) => void;
   }
@@ -55,6 +61,7 @@
   let {
     messages,
     sessionId,
+    authorityId,
     mobile = false,
     compact = false,
     workerThread = false,
@@ -64,22 +71,40 @@
     onSaveToVault,
     onOpenCardDetail,
     subagentRows,
+    peerProposals = [],
+    peerControls,
     onOpenSubagent,
     onStopSubagent,
   }: Props = $props();
-
-  /** Worker-lane turns carry the sub-agent beat that produced them. */
-  function subagentFor(message: ChatMessage): SubagentRow | null {
-    if (message.lane !== "worker") return null;
-    const workId = message.workId?.trim();
-    if (!workId) return null;
-    return subagentRows?.get(workId) ?? null;
-  }
 
   const painted = $derived(
     workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages),
   );
   const beats = $derived(groupChatTurnBeats(painted));
+  const agentGroups = $derived(chatAgentGroups(messages, painted, peerProposals, subagentRows ?? new Map(),
+    authorityId ? { authority_id: authorityId, session_id: sessionId } : undefined));
+  const groupPrefix = $props.id();
+  function groupId(anchor: string | null) { return `${groupPrefix}-agents-${encodeURIComponent(anchor ?? "earlier")}`; }
+  function workerReturn(message: ChatMessage) {
+    if (message.lane !== "worker" || !message.workId || !message.content.trim() || message.streaming) return null;
+    for (const [anchor, group] of agentGroups) {
+      const row = group.workers.find(worker => worker.workId === message.workId);
+      if (row) return { anchor, row };
+    }
+    return null;
+  }
+  function revealAgent(anchor: string | null, workId: string) {
+    const element = document.getElementById(groupId(anchor)) as HTMLDetailsElement | null;
+    if (!element) return;
+    element.open = true;
+    const row = [...element.querySelectorAll<HTMLElement>("[data-worker-id]")].find(item => item.dataset.workerId === workId);
+    const more = row?.closest(".more-agents") as HTMLDetailsElement | null;
+    if (more) more.open = true;
+    const details = row?.querySelector("details");
+    if (details) details.open = true;
+    (row?.querySelector("summary") ?? element.querySelector("summary"))?.focus();
+    (row ?? element).scrollIntoView({ block: "nearest" });
+  }
   let forkingEntryId = $state<string | null>(null);
 
   onMount(() => narration.initialize());
@@ -242,16 +267,25 @@
   {/if}
 {/snippet}
 
-{#snippet subagentBeat(row: SubagentRow)}
-  <ChatSubagentRow
-    {row}
-    {compact}
-    onOpen={() => onOpenSubagent?.(row.workId)}
-    onStop={onStopSubagent ? () => onStopSubagent(row.workId) : undefined}
-  />
+{#snippet agentGroup(anchor: string | null)}
+  {@const group = agentGroups.get(anchor)}
+  {#if group}
+    <ChatAgentGroup id={groupId(anchor)} {group} controls={peerControls} {compact} {onOpenSubagent} {onStopSubagent} />
+  {/if}
 {/snippet}
 
-{#each beats as beat, beatIndex (beat.kind === "pair" ? `${beat.user.id}:${beat.assistant.id}` : beat.message.id)}
+{#snippet resultReceipt(message: ChatMessage)}
+  {@const result = workerReturn(message)}
+  {#if result}
+    <button class="agent-return" type="button" onclick={() => revealAgent(result.anchor, result.row.workId)}>
+      <CornerDownRight size={13} aria-hidden="true" /><span>{result.row.title} returned a result</span><span class="return-link">View agent ↑</span>
+    </button>
+  {/if}
+{/snippet}
+
+{@render agentGroup(null)}
+
+{#each beats as beat, beatIndex (beat.kind === "pair" ? beat.user.id : beat.message.id)}
   {@const previousBeat = beatIndex > 0 ? beats[beatIndex - 1] : null}
   {@const turnBreak =
     previousBeat != null &&
@@ -278,10 +312,8 @@
         forkBusy={forkingEntryId === beat.user.transcript?.entryId}
         forkHasDraft={canCarryDraft(beat.user)}
       />
-      {#if subagentFor(beat.assistant)}
-        {@render subagentBeat(subagentFor(beat.assistant)!)}
-      {/if}
       <article class="group relative {assistantClass(beat.assistant)}">
+        {@render resultReceipt(beat.assistant)}
         <LiquidChatMessage
           message={beat.assistant}
           {sessionId}
@@ -316,13 +348,11 @@
       />
     </div>
   {:else}
-    {#if subagentFor(beat.message)}
-      {@render subagentBeat(subagentFor(beat.message)!)}
-    {/if}
     <article
       class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}"
       data-chat-history-anchor
     >
+      {@render resultReceipt(beat.message)}
       <LiquidChatMessage
         message={beat.message}
         {sessionId}
@@ -338,4 +368,13 @@
       {/if}
     </article>
   {/if}
+  {@render agentGroup(beat.kind === "pair" ? beat.user.id : beat.message.id)}
 {/each}
+
+<style>
+  .agent-return { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-block: 8px; padding: 4px 0; border: 0; background: transparent; font-size: 12px; text-align: left; color: rgb(var(--theme-text-secondary)); }
+  .agent-return > :global(svg) { flex-shrink: 0; }
+  .agent-return span { min-width: 0; overflow-wrap: anywhere; }
+  .return-link { color: rgb(var(--theme-link)); white-space: nowrap; }
+  @media (pointer: coarse) { .agent-return { min-height: 44px; } }
+</style>

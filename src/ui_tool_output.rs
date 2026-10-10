@@ -1,5 +1,16 @@
 //! Shared projection from canonical UI tool output into turn-stream events.
 
+/// Artifact publishing includes the public store-write route, not just legacy tools.
+pub fn is_ui_artifact_stream_tool(tool_name: &str, tool_input: &serde_json::Value) -> bool {
+    tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
+        || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+        || (tool_name == crate::public_api::COGNITION_STORE_WRITE
+            && matches!(
+                tool_input.get("action").and_then(serde_json::Value::as_str),
+                Some("artifacts.write" | "artifacts.present")
+            ))
+}
+
 /// Extract a renderable artifact from a successful UI tool result.
 pub fn ui_artifact_from_tool_output(
     tool_output: &serde_json::Value,

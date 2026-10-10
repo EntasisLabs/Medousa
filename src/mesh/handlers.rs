@@ -272,6 +272,7 @@ pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
             ),
             post(decline_mesh_intro),
         )
+        .merge(crate::agent_messaging::mesh_surface())
 }
 
 fn peer_policy(method: axum::http::Method, path: &'static str, body_limit: usize) -> RoutePolicy {
@@ -1902,7 +1903,7 @@ mod tests {
     #[test]
     fn mesh_inventory_is_complete_and_peer_scoped() {
         let entries = mesh_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 19);
+        assert_eq!(entries.len(), 20);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::PeerExchange
                 && entry.required_capability == Some("peer.exchange")

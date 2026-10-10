@@ -555,6 +555,32 @@ pub fn is_ui_html_record(record: &ArtifactRecord) -> bool {
             || artifact_media_type(&record.content_type).eq_ignore_ascii_case("text/html"))
 }
 
+/// Resolve a saved presentation to its latest available revision without loading HTML.
+/// Canonical ids may refer to another chat on this workshop, as in artifact fetch.
+pub fn resolve_ui_artifact_for_presentation(
+    session_id: &str,
+    artifact_ref: &str,
+) -> Option<ArtifactRecord> {
+    let id = resolve_artifact_reference(session_id, artifact_ref);
+    let records = read_index_records();
+    let source = records
+        .iter()
+        .find(|record| record.session_id == session_id && record.artifact_id == id)
+        .or_else(|| records.iter().find(|record| record.artifact_id == id))?;
+    if !is_ui_html_record(source) {
+        return None;
+    }
+    let source_session_id = source.session_id.clone();
+    let latest_id = resolve_latest_artifact_id(&source_session_id, &source.artifact_id)
+        .unwrap_or_else(|| source.artifact_id.clone());
+    records.into_iter().find(|record| {
+        record.session_id == source_session_id
+            && record.artifact_id == latest_id
+            && is_ui_html_record(record)
+            && artifact_payload_exists(record)
+    })
+}
+
 fn artifact_media_type(content_type: &str) -> &str {
     content_type.split(';').next().unwrap_or_default().trim()
 }

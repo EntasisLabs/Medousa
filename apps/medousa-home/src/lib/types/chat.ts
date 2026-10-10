@@ -76,6 +76,8 @@ import type {
 
 export interface ChatMessage {
   id: string;
+  /** Daemon occurrence time, including an admitted turn's optimistic user row. */
+  createdAt?: string;
   role: "user" | "assistant" | "system";
   content: string;
   /** Agent-emitted effects attached to this message's user turn. */

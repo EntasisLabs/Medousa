@@ -1153,16 +1153,14 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 output_summary.clone(),
                 artifact_refs_from_stream(&artifact_refs),
             );
-            if (tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
-                || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE)
+            if crate::ui_tool_output::is_ui_artifact_stream_tool(&tool_name, &tool_input)
                 && let Some(ui_artifact) =
                     super::tool_stream::ui_artifact_from_tool_output(&tool_output)
             {
-                if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
-                    && tool_output
-                        .get("previous_artifact_id")
-                        .and_then(|value| value.as_str())
-                        .is_some_and(|value| !value.trim().is_empty())
+                if tool_output
+                    .get("previous_artifact_id")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|value| !value.trim().is_empty())
                 {
                     let previous = tool_output
                         .get("previous_artifact_id")
@@ -1178,7 +1176,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                         ui_artifact.height_px,
                     );
                 } else {
-                    parts.push_attachment_ref(
+                    parts.replace_attachment_ref(
+                        &ui_artifact.artifact_id,
                         &ui_artifact.artifact_id,
                         &ui_artifact.mime,
                         &ui_artifact.label,
@@ -1194,22 +1193,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 );
             }
         }
-        if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
-            && let Some(ui_artifact) =
-                super::tool_stream::ui_artifact_from_tool_output(&tool_output)
-        {
-            self.publish_tracked(TurnStreamEventV3::ArtifactPresented {
-                artifact: ui_artifact,
-            })
-            .await;
-        }
         if crate::ui_build_tools::is_ui_scene_stream_tool(&tool_name)
             && let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output)
         {
             self.publish_tracked(TurnStreamEventV3::UiScene { scene })
                 .await;
         }
-        if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+        if crate::ui_tool_output::is_ui_artifact_stream_tool(&tool_name, &tool_input)
             && let Some(ui_artifact) =
                 super::tool_stream::ui_artifact_from_tool_output(&tool_output)
         {
@@ -3164,6 +3154,145 @@ mod chronological_sink_tests {
             .collect::<Vec<_>>();
         assert_eq!(text, ["I found the likely cause.", "The fix is ready."]);
 
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn store_artifact_writes_stream_cards_and_keep_revisions_in_history() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+
+        for (id, previous) in [
+            ("artifact-first", None),
+            ("artifact-revised", Some("artifact-first")),
+        ] {
+            let mut result = serde_json::json!({
+                "ok": true,
+                "artifact_id": id,
+                "label": "Network topology",
+                "mime": "text/html",
+                "presentation": "inline",
+                "height_px": 360,
+                "byte_size": 100
+            });
+            if let Some(previous) = previous {
+                result["previous_artifact_id"] = previous.into();
+                result["root_artifact_id"] = "artifact-first".into();
+            }
+            sink.tool_run_finished(
+                id.into(),
+                crate::public_api::COGNITION_STORE_WRITE.into(),
+                "succeeded".into(),
+                "Network topology".into(),
+                None,
+                serde_json::json!({"action": "artifacts.write"}),
+                result,
+                None,
+                None,
+                1,
+            )
+            .await;
+        }
+
+        let parts = sink.parts.lock().unwrap().preview_parts();
+        let attachments = parts
+            .iter()
+            .filter(|part| matches!(part, TurnPart::AttachmentRef { .. }))
+            .collect::<Vec<_>>();
+        assert!(
+            matches!(attachments.as_slice(), [TurnPart::AttachmentRef { artifact_id, presentation: Some(presentation), .. }]
+            if artifact_id == "artifact-revised" && presentation == "inline")
+        );
+        let events = output.events.lock().unwrap();
+        assert_eq!(events.iter().filter(|event| matches!(event,
+            TurnPipelineEnvelope::V3(envelope) if matches!(&envelope.event,
+                TurnStreamEventV3::ArtifactPresented { artifact } if artifact.artifact_id == "artifact-first"))).count(), 1);
+        assert_eq!(events.iter().filter(|event| matches!(event,
+            TurnPipelineEnvelope::V3(envelope) if matches!(&envelope.event,
+                TurnStreamEventV3::ArtifactUpdated { previous_artifact_id, artifact, root_artifact_id }
+                    if previous_artifact_id == "artifact-first" && artifact.artifact_id == "artifact-revised"
+                        && root_artifact_id.as_deref() == Some("artifact-first")))).count(), 1);
+        drop(events);
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn saved_artifact_presentations_survive_turn_reload_without_duplicate_cards() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+        for run in ["show-first", "show-again"] {
+            sink.tool_run_finished(
+                run.into(),
+                crate::public_api::COGNITION_STORE_WRITE.into(),
+                "succeeded".into(),
+                "Show saved diagram".into(),
+                None,
+                serde_json::json!({"action": "artifacts.present", "path": "saved-diagram"}),
+                serde_json::json!({"ok": true, "artifact_id": "saved-diagram", "label": "Saved diagram", "mime": "text/html", "presentation": "inline"}),
+                None,
+                None,
+                1,
+            ).await;
+        }
+        let turn = sink.parts.lock().unwrap().finalize_chronological_turn(
+            "Here is your diagram.".into(),
+            Vec::new(),
+            None,
+        );
+        let restored: crate::session::ConversationTurn =
+            serde_json::from_value(serde_json::to_value(turn).unwrap()).unwrap();
+        let attachments = restored
+            .parts
+            .unwrap()
+            .into_iter()
+            .filter(|part| matches!(part, TurnPart::AttachmentRef { .. }))
+            .collect::<Vec<_>>();
+        assert!(
+            matches!(attachments.as_slice(), [TurnPart::AttachmentRef { artifact_id, presentation: Some(presentation), .. }]
+            if artifact_id == "saved-diagram" && presentation == "inline")
+        );
+        assert!(output.events.lock().unwrap().iter().any(|event| matches!(event,
+            TurnPipelineEnvelope::V3(envelope) if matches!(&envelope.event,
+                TurnStreamEventV3::ArtifactPresented { artifact } if artifact.artifact_id == "saved-diagram"))));
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn failed_artifact_writes_and_other_store_actions_do_not_publish_cards() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+        for (action, ok) in [
+            ("artifacts.write", false),
+            ("artifacts.present", false),
+            ("artifacts.delete", true),
+            ("vault.write", true),
+        ] {
+            sink.tool_run_finished(
+                action.into(),
+                crate::public_api::COGNITION_STORE_WRITE.into(),
+                if ok { "succeeded" } else { "failed" }.into(),
+                action.into(),
+                None,
+                serde_json::json!({"action": action}),
+                serde_json::json!({"ok": ok, "artifact_id": "artifact-existing"}),
+                None,
+                None,
+                1,
+            )
+            .await;
+        }
+        assert!(
+            !sink
+                .parts
+                .lock()
+                .unwrap()
+                .preview_parts()
+                .iter()
+                .any(|part| matches!(part, TurnPart::AttachmentRef { .. }))
+        );
+        assert!(!output.events.lock().unwrap().iter().any(|event| matches!(event,
+            TurnPipelineEnvelope::V3(envelope) if matches!(&envelope.event,
+                TurnStreamEventV3::ArtifactPresented { .. } | TurnStreamEventV3::ArtifactUpdated { .. }))));
         sink.pipeline.cancel();
     }
 

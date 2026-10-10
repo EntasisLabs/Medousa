@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import {
-    ArrowUpRight,
     Brain,
     ChevronRight,
     LoaderCircle,
@@ -13,12 +12,10 @@
   import type { ProviderCatalogEntry } from "$lib/types/providers";
   import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import {
-    beginChatGptOAuth,
+    signInChatGptOAuth, CHATGPT_USAGE_URL,
     chatGptOAuthReady,
-    completeChatGptOAuth,
     getChatGptOAuthConnection,
     listChatGptOAuthModels,
-    type BeginChatGptOAuthResponse,
     type ChatGptOAuthConnection,
   } from "$lib/utils/chatgptOAuth";
   import { validateProviderKey } from "$lib/utils/providersApi";
@@ -32,7 +29,7 @@
   let needsApiKey = $state(true);
   let validating = $state(false);
   let chatGptBusy = $state(false);
-  let chatGptLogin = $state<BeginChatGptOAuthResponse | null>(null);
+  let chatGptWelcome = $state(false);
   let statusMessage = $state<string | null>(null);
   let chatGptLoginCancelled = false;
 
@@ -56,25 +53,26 @@
   }
 
   async function finishWithChatGpt() {
-    let selectedModel = CHATGPT_DEFAULT_MODEL;
+    chatGptBusy = true;
     try {
       const result = await listChatGptOAuthModels();
       const available = result.models.map((entry) => entry.trim()).filter(Boolean);
-      if (available.length > 0 && !available.includes(selectedModel)) {
-        selectedModel = available[0];
+      if (!available.length) {
+        throw new Error("No models are available for this ChatGPT account. Check plan access or choose another provider.");
       }
-    } catch {
-      // The runtime default remains valid if model discovery is temporarily unavailable.
+      await wizard.applyScreen1Setup({
+        path: "managed",
+        provider: "openai-codex",
+        model: available.includes(CHATGPT_DEFAULT_MODEL) ? CHATGPT_DEFAULT_MODEL : available[0],
+        baseUrl: null,
+        apiKey: null,
+        startCore: false,
+      });
+    } catch (err) {
+      statusMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      chatGptBusy = false;
     }
-
-    await wizard.applyScreen1Setup({
-      path: "managed",
-      provider: "openai-codex",
-      model: selectedModel,
-      baseUrl: null,
-      apiKey: null,
-      startCore: false,
-    });
   }
 
   async function continueWithChatGpt() {
@@ -88,46 +86,22 @@
     try {
       let connection: ChatGptOAuthConnection = await getChatGptOAuthConnection();
       if (!chatGptOAuthReady(connection)) {
-        chatGptLogin = await beginChatGptOAuth();
-        await openUrlInDefaultBrowser(chatGptLogin.verification_url);
-
-        while (
-          !chatGptLoginCancelled &&
-          Date.now() < Date.parse(chatGptLogin.expires_at_utc)
-        ) {
-          const result = await completeChatGptOAuth(chatGptLogin.login_id);
-          if (result.status === "connected") {
-            connection = result.connection ?? (await getChatGptOAuthConnection());
-            break;
-          }
-          const delaySeconds = Math.max(
-            1,
-            result.retry_after_seconds ?? chatGptLogin.poll_interval_seconds,
-          );
-          await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
-        }
+        const result = await signInChatGptOAuth(connection.client_id ?? undefined,
+          connection.status === "plan_usage_disabled");
+        connection = result.connection;
+        chatGptWelcome = result.first_connection;
       }
 
       if (chatGptLoginCancelled) return;
       if (!chatGptOAuthReady(connection)) {
-        throw new Error("ChatGPT sign-in expired. Try again to receive a new code.");
+        throw new Error("ChatGPT plan usage is not enabled. Enable it in ChatGPT account settings, or choose another provider.");
       }
 
-      chatGptLogin = null;
-      await finishWithChatGpt();
+      if (!chatGptWelcome) await finishWithChatGpt();
     } catch (err) {
       statusMessage = err instanceof Error ? err.message : String(err);
     } finally {
       chatGptBusy = false;
-    }
-  }
-
-  async function reopenChatGptLogin() {
-    if (!chatGptLogin) return;
-    try {
-      await openUrlInDefaultBrowser(chatGptLogin.verification_url);
-    } catch (err) {
-      statusMessage = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -244,32 +218,19 @@
       >
         {#if chatGptBusy}
           <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
-          {chatGptLogin ? "Waiting for ChatGPT…" : "Connecting…"}
+          Waiting for ChatGPT…
         {:else}
-          <Sparkles class="h-4 w-4" aria-hidden="true" />
-          Sign in with ChatGPT
+          <img src="/brand/external-agents/openai-blossom-white.svg" alt="" width="18" height="18" />
+          Continue with ChatGPT
         {/if}
       </button>
 
-      {#if chatGptLogin}
-        <div class="mt-3 rounded-lg border border-surface-500/30 bg-surface-950/30 p-3">
-          <p class="text-xs text-content-quiet">Enter this code on the ChatGPT sign-in page:</p>
-          <div class="mt-2 flex items-center justify-between gap-3">
-            <code class="font-mono text-lg font-semibold tracking-[0.12em] text-surface-50">
-              {chatGptLogin.user_code}
-            </code>
-            <button
-              type="button"
-              class="workshop-text-action inline-flex min-h-9 items-center gap-1.5 text-xs"
-              onclick={() => void reopenChatGptLogin()}
-            >
-              Open again
-              <ArrowUpRight class="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          </div>
-          <p class="mt-2 text-xs leading-relaxed text-content-quiet">
-            Finish in the browser, then return here. Medousa will continue automatically.
-          </p>
+      {#if chatGptWelcome}
+        <div class="mt-3 rounded-lg border border-surface-500/30 p-3" role="status">
+          <p class="font-semibold">You're using your ChatGPT plan</p>
+          <p class="mt-2 text-sm">Medousa requests count toward your ChatGPT plan and any credits you allow.</p>
+          <button type="button" class="btn variant-filled-primary btn-sm mt-2" onclick={() => { chatGptWelcome = false; void finishWithChatGpt(); }}>Got it</button>
+          <button type="button" class="btn variant-ghost-surface btn-sm mt-2" onclick={() => void openUrlInDefaultBrowser(CHATGPT_USAGE_URL)}>Manage usage</button>
         </div>
       {/if}
     </div>

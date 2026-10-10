@@ -8,9 +8,16 @@ HTML artifacts created by the agent and browsed from the **Artifacts** rail door
 
 ## During chat
 
-The agent uses `cognition_store_write` (`store=artifacts`) to create/revise HTML. Stream emits `ui_artifact` or `artifact_updated` events.
+The agent uses `cognition_store_write` (`action=artifacts.write`) to create/revise HTML. Stream emits `artifact_presented` or `artifact_updated` events.
 
 Presentation modes: `inline`, `panel`, `fullscreen`.
+
+To show saved HTML again, find it with `cognition_store_read`
+`action=artifacts.list`, `query="diagram title"`, `scope=workshop`. Then use
+`cognition_store_write` `action=artifacts.present`, `path="art:…"`. This displays
+the latest revision in the current chat without rewriting it. The default
+presentation is inline; an optional mode or height override leaves the saved
+artifact metadata unchanged.
 
 Engine: [artifacts.md](../engine/artifacts.md)
 
@@ -47,8 +54,8 @@ Writes include `if_match_hash64` and `supersedes_artifact_id`. `fetch` always re
 
 | Tool | Use |
 |------|-----|
-| `cognition_store_read` | `store=artifacts` — list, read, or search HTML |
-| `cognition_store_write` | `store=artifacts` — publish a revision or delete |
+| `cognition_store_read` | `action=artifacts.list\|artifacts.read\|artifacts.search` |
+| `cognition_store_write` | `action=artifacts.write\|artifacts.present\|artifacts.delete` |
 
 Requires `supports_ui_artifacts` on the turn surface.
 

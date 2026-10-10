@@ -50,6 +50,7 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
                 || model.starts_with("gpt-4.1")
                 || model.starts_with("gpt-4-turbo")
                 || model.starts_with("gpt-5")
+                || model.starts_with("gpt-6.1-sol")
                 || model.starts_with("gpt-6-astra")
                 || model.starts_with("gpt-6-sol")
                 || model.starts_with("gpt-6-luna")
@@ -57,6 +58,7 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
                 || model.contains("openai/gpt-4o")
                 || model.contains("openai/gpt-4.1")
                 || model.contains("openai/gpt-5")
+                || model.contains("openai/gpt-6.1-sol")
                 || model.contains("openai/gpt-6-astra")
                 || model.contains("openai/gpt-6-sol")
                 || model.contains("openai/gpt-6-luna")
@@ -93,6 +95,8 @@ mod tests {
     fn chatgpt_account_gpt_models_support_vision() {
         assert!(infer_supports_vision("openai-codex", "gpt-5.6-sol"));
         assert!(infer_supports_vision("openai-codex", "gpt-5.6-luna"));
+        assert!(infer_supports_vision("openai-codex", "gpt-6.1-sol"));
+        assert!(infer_supports_vision("openrouter", "openai/gpt-6.1-sol"));
         assert!(infer_supports_vision("openai-codex", "gpt-6-sol"));
         assert!(infer_supports_vision("openai-codex", "gpt-6-luna"));
     }

@@ -403,6 +403,64 @@ fn set_slot_presence_sync(
     Ok(Some(cloned))
 }
 
+/// Checked credential operations for flows with rotating tokens. Storage failures
+/// must not be mistaken for a missing session or a completed token rotation.
+fn checked_file_doc(path: &Path) -> anyhow::Result<FileStoreDocument> {
+    match std::fs::read_to_string(path) {
+        Ok(raw) => Ok(serde_json::from_str(&raw)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(FileStoreDocument::default())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn try_load_kind_secret(
+    kind: &str,
+    slot: IntegrationSecretSlot,
+) -> anyhow::Result<Option<String>> {
+    let matches = checked_file_doc(&file_store_path())?
+        .connections
+        .into_values()
+        .filter(|connection| connection.kind == kind)
+        .collect::<Vec<_>>();
+    let installation_id = ensure_secrets_bootstrapped()?;
+    let Some(connection) = matches
+        .iter()
+        .find(|c| c.secrets.slot(slot))
+        .cloned()
+        .or_else(|| matches.into_iter().next())
+    else {
+        return Ok(None);
+    };
+    let path = integration_path(&installation_id, &connection.connection_id, slot);
+    Ok(load_daemon_secret(&medousa_data_dir(), &path)?.map(|r| r.value))
+}
+
+pub fn try_save_kind_secret(
+    kind: &str,
+    slot: IntegrationSecretSlot,
+    value: Option<&str>,
+) -> anyhow::Result<()> {
+    // Fail before helpers that treat corrupt connection metadata as an empty store.
+    checked_file_doc(&file_store_path())?;
+    let installation_id = ensure_secrets_bootstrapped()?;
+    let connection = ensure_kind_sync(kind, None, None)?;
+    let path = integration_path(&installation_id, &connection.connection_id, slot);
+    let value = value.map(str::trim).filter(|v| !v.is_empty());
+    if let Some(value) = value {
+        save_daemon_secret(&medousa_data_dir(), &path, value)?;
+    } else {
+        delete_daemon_secret(&medousa_data_dir(), &path)?;
+    }
+    // Presence metadata is a projection. Once the protected bundle is saved,
+    // report success so its rotating credentials become the current cache too.
+    if set_slot_presence_sync(&connection.connection_id, slot, value.is_some()).is_err() {
+        tracing::warn!("failed to update integration secret presence metadata");
+    }
+    Ok(())
+}
+
 /// Load a secret for a catalog kind + slot (exactly-one connection semantics).
 pub fn load_kind_secret(kind: &str, slot: IntegrationSecretSlot) -> Option<String> {
     let installation_id = ensure_secrets_bootstrapped().ok()?;
@@ -798,4 +856,20 @@ fn seed_secret(
     save_daemon_secret(data_dir, &path, value)?;
     set_slot_presence_sync(&connection.connection_id, slot, true)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod checked_storage_tests {
+    use super::checked_file_doc;
+
+    #[test]
+    fn unreadable_metadata_is_not_treated_as_a_new_installation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("integration_connections.json");
+        assert!(checked_file_doc(&path).unwrap().connections.is_empty());
+        std::fs::write(&path, "corrupt metadata").unwrap();
+        assert!(checked_file_doc(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "corrupt metadata");
+        assert!(checked_file_doc(dir.path()).is_err());
+    }
 }

@@ -209,7 +209,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write",
+                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write|artifacts.present",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
@@ -248,6 +248,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_peer_propose",
                     "cognition_peer_handoff",
                     "cognition_peer_review",
+                    "cognition_agent_message",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -319,6 +320,12 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "coding",
                 summary: "Workshop shared shell sessions (opt-in). Read/patch files with cognition_store_read/write action=code.read|code.write.",
                 tools: crate::coding_tools::CODING_COGNITION_TOOLS,
+            },
+            #[cfg(feature = "full-daemon")]
+            ToolDomainCatalogEntry {
+                domain: "messages",
+                summary: "Exchange attributed messages with existing native agent chats and Bots",
+                tools: &["cognition_agent_message"],
             },
             ToolDomainCatalogEntry {
                 domain: "execute",
@@ -404,7 +411,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write",
+                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write|artifacts.present",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",

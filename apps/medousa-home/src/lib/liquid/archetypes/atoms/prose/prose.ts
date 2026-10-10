@@ -8,6 +8,7 @@ export const prose = defineArchetype({
   props: {
     markdown: { type: "string", required: true },
     plain: { type: "boolean" },
+    streaming: { type: "boolean" },
   },
   acceptsBindings: ["inline", "vault:path", "vault:query"],
   writeCapable: false,

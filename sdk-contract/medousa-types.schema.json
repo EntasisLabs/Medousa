@@ -2054,6 +2054,54 @@
     "title": "AuthorityId",
     "type": "string"
   },
+  "BeginChatGptOAuthRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BeginChatGptOAuthRequest",
+    "type": "object",
+    "required": [
+      "redirect_uri"
+    ],
+    "properties": {
+      "client_id": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "enable_plan_usage": {
+        "default": false,
+        "type": "boolean"
+      },
+      "redirect_uri": {
+        "description": "Native host's already-bound HTTP loopback listener.",
+        "type": "string"
+      }
+    }
+  },
+  "BeginChatGptOAuthResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BeginChatGptOAuthResponse",
+    "type": "object",
+    "required": [
+      "authorization_url",
+      "expires_at_utc",
+      "login_id"
+    ],
+    "properties": {
+      "authorization_url": {
+        "description": "Native-only: may contain an ID-token hint. Never log or forward to browser JS.",
+        "type": "string"
+      },
+      "expires_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "login_id": {
+        "type": "string"
+      }
+    }
+  },
   "BeginMcpOAuthRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "BeginMcpOAuthRequest",
@@ -4189,6 +4237,150 @@
       }
     }
   },
+  "ChatGptAccountProfile": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatGptAccountProfile",
+    "type": "object",
+    "required": [
+      "client_id",
+      "connected",
+      "plan_usage_enabled"
+    ],
+    "properties": {
+      "account_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "client_id": {
+        "type": "string"
+      },
+      "connected": {
+        "type": "boolean"
+      },
+      "email": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "plan_usage_enabled": {
+        "type": "boolean"
+      }
+    }
+  },
+  "ChatGptModelListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatGptModelListResponse",
+    "type": "object",
+    "required": [
+      "display_names",
+      "models"
+    ],
+    "properties": {
+      "display_names": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "models": {
+        "description": "Account-entitled model slugs, in server order.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "ChatGptOAuthStatusResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatGptOAuthStatusResponse",
+    "type": "object",
+    "required": [
+      "connected",
+      "plan_usage_enabled",
+      "profiles",
+      "status"
+    ],
+    "properties": {
+      "account_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "client_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "connected": {
+        "type": "boolean"
+      },
+      "email": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "expires_at_utc": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "plan_usage_enabled": {
+        "type": "boolean"
+      },
+      "profiles": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ChatGptAccountProfile"
+        }
+      },
+      "status": {
+        "description": "signed_out, connected, refresh_required, reauth_required, or plan_usage_disabled.",
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "ChatGptAccountProfile": {
+        "type": "object",
+        "required": [
+          "client_id",
+          "connected",
+          "plan_usage_enabled"
+        ],
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan_usage_enabled": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
   "CodeProjectSource": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CodeProjectSource",
@@ -4228,6 +4420,130 @@
           "cursor",
           "hermes"
         ]
+      }
+    }
+  },
+  "CompleteChatGptOAuthRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CompleteChatGptOAuthRequest",
+    "type": "object",
+    "required": [
+      "callback_url",
+      "login_id"
+    ],
+    "properties": {
+      "callback_url": {
+        "description": "Native-only callback, containing the one-time code and state.",
+        "type": "string"
+      },
+      "login_id": {
+        "type": "string"
+      }
+    }
+  },
+  "CompleteChatGptOAuthResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CompleteChatGptOAuthResponse",
+    "type": "object",
+    "required": [
+      "connection",
+      "first_connection",
+      "status"
+    ],
+    "properties": {
+      "connection": {
+        "$ref": "#/definitions/ChatGptOAuthStatusResponse"
+      },
+      "first_connection": {
+        "type": "boolean"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "ChatGptAccountProfile": {
+        "type": "object",
+        "required": [
+          "client_id",
+          "connected",
+          "plan_usage_enabled"
+        ],
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan_usage_enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ChatGptOAuthStatusResponse": {
+        "type": "object",
+        "required": [
+          "connected",
+          "plan_usage_enabled",
+          "profiles",
+          "status"
+        ],
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "plan_usage_enabled": {
+            "type": "boolean"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ChatGptAccountProfile"
+            }
+          },
+          "status": {
+            "description": "signed_out, connected, refresh_required, reauth_required, or plan_usage_disabled.",
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -7201,6 +7517,24 @@
           "string",
           "null"
         ]
+      }
+    }
+  },
+  "DisconnectChatGptOAuthResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DisconnectChatGptOAuthResponse",
+    "type": "object",
+    "required": [
+      "disconnected",
+      "revoked"
+    ],
+    "properties": {
+      "disconnected": {
+        "type": "boolean"
+      },
+      "revoked": {
+        "description": "Local tokens are cleared even when remote revocation cannot be confirmed.",
+        "type": "boolean"
       }
     }
   },
@@ -22001,6 +22335,19 @@
             "type": "string"
           }
         }
+      }
+    }
+  },
+  "SelectChatGptAccountRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SelectChatGptAccountRequest",
+    "type": "object",
+    "required": [
+      "client_id"
+    ],
+    "properties": {
+      "client_id": {
+        "type": "string"
       }
     }
   },

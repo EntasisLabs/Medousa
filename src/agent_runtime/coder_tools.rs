@@ -133,6 +133,7 @@ const CODER_DISCOVERABLE_DOMAINS: &[&str] = &[
     "research",
     "capabilities",
     "workspace",
+    "messages",
 ];
 
 const CODER_DISCOVERABLE_DOMAIN_IDS: &[ToolDomainId] = &[
@@ -146,6 +147,7 @@ const CODER_DISCOVERABLE_DOMAIN_IDS: &[ToolDomainId] = &[
     ToolDomainId::new("research"),
     ToolDomainId::new("capabilities"),
     ToolDomainId::new("workspace"),
+    ToolDomainId::new("messages"),
 ];
 
 const CODER_RUNTIME_TOOLS: &[&str] = &[
@@ -2743,6 +2745,7 @@ fn coder_domain_tool_ids(domain: ToolDomainId) -> Option<Vec<ToolId>> {
         ],
         "memory" => CODER_ADVANCED_MEMORY_TOOLS,
         "research" => CODER_RESEARCH_TOOLS,
+        "messages" => &[crate::agent_messaging::COGNITION_AGENT_MESSAGE],
         "capabilities" => CODER_CAPABILITY_TOOLS,
         "workspace" => CODER_WORKSPACE_TOOLS,
         _ => return None,

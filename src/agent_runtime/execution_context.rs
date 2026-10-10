@@ -44,6 +44,10 @@ impl BotTurnIdentity {
         &self.bot_id
     }
 
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
     pub fn profile_revision(&self) -> u64 {
         self.profile_revision
     }

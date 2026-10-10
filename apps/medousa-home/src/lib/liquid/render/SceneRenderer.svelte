@@ -21,7 +21,9 @@
   const rootContext = untrack(() => context);
   if (rootContext) setLiquidContext(rootContext);
 
-  const renderer = $derived(loadComponent(node.type));
+  // Prop patches keep the same resolved component/promise and child instance.
+  const archetype = $derived(node.type);
+  const renderer = $derived(loadComponent(archetype));
 </script>
 
 {#if node.fillState === "skeleton"}

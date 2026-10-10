@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { ArrowUpRight, Bot, Folder, MessageSquareText } from "@lucide/svelte";
-  import AgentWorkContextLine from "./AgentWorkContextLine.svelte";
+  import type { Snippet } from "svelte";
+  import ChatAgentGroup from "./ChatAgentGroup.svelte";
+  import type { PeerProposalControls } from "./peerProposalControls";
   import { chat } from "$lib/stores/chat.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { actOnPeerProposal, listPeerProposals, proposalExecutionTransport } from "$lib/daemon/coordination";
@@ -11,9 +12,8 @@
   import { isTauri } from "$lib/platform";
   import { requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
   import { peerRuntimeLabel } from "./peerProgress";
-  import { peerHandoffPresentation, peerWorkTitle } from "./peerHandoffPresentation";
 
-  let { sessionId, mobile = false }: { sessionId: string | null; mobile?: boolean } = $props();
+  let { sessionId, mobile = false, children }: { sessionId: string | null; mobile?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]> } = $props();
   let rows = $state<PeerProposalReviewRecord[]>([]);
   let cursors = $state<{ runtime: string | null; cursor: string }[]>([]);
   let busy = $state(false);
@@ -21,28 +21,12 @@
   let now = $state(Date.now());
   let epoch = 0;
   let revision = 0;
-  let pageAfter = new Map<string | null, string>();
+  let loadedPages = new Map<string | null, Set<string>>();
   let selectedRuntime: string | null = null;
   let selectedId: string | undefined;
   let proposalOrigins = new Map<string, string | null>();
   let loadedScope: { session: string | null; workshop: string | null; profile: string } | undefined;
-  const current = $derived(rows[0] ?? null);
-  const completed = $derived(current?.receipt ?? null);
-  const progress = $derived(current ? peerHandoffPresentation(current, now) : null);
-  const executionWorkshop = $derived(current ? proposalWorkshop(current.proposal.request.target.execution_runtime_id) : null);
-  const onExecutionWorkshop = $derived(Boolean(current && (
-    current.proposal.request.target.authority_id === connection.health?.runtime?.authority_id
-    || executionWorkshop?.id === workshops.activeWorkshopId
-  )));
-  const projectTitle = $derived(current && onExecutionWorkshop
-    ? (undertakings.active?.workId === current.proposal.request.forge_work_id ? undertakings.active.title
-      : undertakings.items.find(item => item.id === current.proposal.request.forge_work_id)?.title)
-    : null);
-  const workTitle = $derived(current ? peerWorkTitle(current.proposal.request.instructions, projectTitle) : "Delegated work");
-  const senderLabel = $derived(chat.sessions.find(session => session.session_id === sessionId)?.display_name || "Sender");
-  const agentLabel = $derived(current ? peerRuntimeLabel(current.proposal.request.target.runtime) : "Agent");
-  const workshopLabel = $derived(executionWorkshop?.label ?? (onExecutionWorkshop ? workshops.activeLabel : "Execution workshop"));
-  const adopting = $derived(Boolean(current?.proposal.request.existing_agent_session_id));
+  let busyId = $state<string | null>(null);
   const profileScope = $derived(connection.health?.active_profile_id ?? "");
   const proposalRuntimes = $derived([
     null,
@@ -55,7 +39,6 @@
     Boolean(connection.health?.runtime?.advertised_capabilities.includes("coordination.operator_proposals.v1"))
     || proposalRuntimes.length > 1
   ));
-  const expired = $derived(current ? Date.parse(current.proposal.expires_at) <= now : false);
   function proposalWorkshop(runtimeId: string) {
     return workshops.workshops.find(workshop => workshop.pairing?.workshopDeviceId === runtimeId);
   }
@@ -70,11 +53,11 @@
       || Boolean(profile && loadedScope.profile && loadedScope.profile !== profile);
     if (scopeChanged) {
       rows = []; cursors = []; feedback = null;
-      pageAfter = new Map(); selectedId = undefined; selectedRuntime = null; proposalOrigins = new Map();
+      loadedPages = new Map(); selectedId = undefined; selectedRuntime = null; proposalOrigins = new Map();
     }
     // Missing health during reconnect is not a change of owner.
     loadedScope = { session, workshop, profile: profile || (scopeChanged ? "" : loadedScope?.profile ?? "") };
-    busy = false;
+    busy = false; busyId = null;
     if (!session || !enabled) return;
     let loading = false;
     const refresh = async () => {
@@ -84,20 +67,27 @@
       const requestRevision = revision;
       try {
         const settled = await Promise.allSettled(
-          proposalRuntimes.map(async runtime => ({ runtime, response: await listPeerProposals(
-            session, runtime, pageAfter.get(runtime), runtime === selectedRuntime ? selectedId : undefined,
-          ) })),
+          proposalRuntimes.flatMap(runtime => [undefined, ...(loadedPages.get(runtime) ?? [])].map(async after => ({
+            runtime, response: await listPeerProposals(session, runtime, after,
+              !after && runtime === selectedRuntime ? selectedId : undefined),
+          }))),
         );
         const responses = settled
           .filter((result): result is PromiseFulfilledResult<{ runtime: string | null; response: PeerProposalInboxResponse }> => result.status === "fulfilled")
           .map(result => result.value);
+        if (token !== epoch || requestRevision !== revision) return;
+        const observed = untrack(() => [...rows]);
+        const updates = await Promise.allSettled(observed.filter(row => !responses.some(({ response }) =>
+          response.proposals.some(item => item.proposal.proposal_id === row.proposal.proposal_id)
+          || response.tracked_proposal?.proposal.proposal_id === row.proposal.proposal_id))
+          .map(async row => ({ runtime: proposalOrigins.get(row.proposal.proposal_id) ?? null,
+            response: await listPeerProposals(session, proposalOrigins.get(row.proposal.proposal_id) ?? null, undefined, row.proposal.proposal_id) })));
+        const tracked = updates.filter((result): result is PromiseFulfilledResult<{ runtime: string | null; response: PeerProposalInboxResponse }> => result.status === "fulfilled").map(result => result.value);
         if (!responses.length) throw settled.find(result => result.status === "rejected")?.reason ?? new Error("Proposal inbox unavailable");
         if (token === epoch && requestRevision === revision) {
-          applyResponses(responses);
-          const selectedIndex = proposalRuntimes.indexOf(selectedRuntime);
-          feedback = selectedId && settled[selectedIndex]?.status === "rejected"
-            ? "Progress could not be refreshed on the execution workshop. Showing the last known activity."
-            : null;
+          applyResponses(responses, tracked);
+          feedback = settled.some(result => result.status === "rejected") || updates.some(result => result.status === "rejected")
+            ? "Some agent progress could not be refreshed. Showing the last known activity." : null;
         }
       } catch (error) {
         if (token === epoch && requestRevision === revision && untrack(() => rows.length > 0)) feedback = String(error);
@@ -109,10 +99,10 @@
     return () => { ++epoch; clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
   });
 
-  function applyResponses(responses: { runtime: string | null; response: PeerProposalInboxResponse }[]) {
-    const byId = new Map<string, PeerProposalReviewRecord>();
+  function applyResponses(responses: { runtime: string | null; response: PeerProposalInboxResponse }[], tracked: { runtime: string | null; response: PeerProposalInboxResponse }[] = []) {
+    const byId = new Map(rows.map(row => [row.proposal.proposal_id, row]));
 
-    for (const { runtime, response } of responses) {
+    for (const { runtime, response } of [...responses, ...tracked]) {
       for (const row of [...response.proposals, ...(response.tracked_proposal ? [response.tracked_proposal] : [])]) {
         const previous = byId.get(row.proposal.proposal_id);
         if (!previous?.receipt || row.receipt) {
@@ -121,32 +111,24 @@
         }
       }
     }
-    // A failed workshop refresh cannot erase the already observed assignment.
-    for (const row of rows) {
-      const origin = proposalOrigins.get(row.proposal.proposal_id) ?? null;
-      if (!responses.some(result => result.runtime === origin) && !byId.has(row.proposal.proposal_id)) {
-        byId.set(row.proposal.proposal_id, row);
-      }
-    }
-    const proposals = [...byId.values()];
-    const index = proposals.findIndex(row => row.proposal.proposal_id === selectedId);
-    rows = index > 0 ? [proposals[index], ...proposals.slice(0, index), ...proposals.slice(index + 1)] : proposals;
+    // Keep every observed agent in spawn order, including terminal results.
+    rows = [...byId.values()].sort((a, b) => Date.parse(a.proposal.request.context.created_at) - Date.parse(b.proposal.request.context.created_at));
     selectedId = rows[0]?.proposal.proposal_id;
     selectedRuntime = selectedId ? proposalOrigins.get(selectedId) ?? null : null;
     const successful = new Set(responses.map(result => result.runtime));
-    cursors = [
+    cursors = [...new Map([
       ...cursors.filter(page => !successful.has(page.runtime)),
-      ...responses.flatMap(({ runtime, response }) => response.next_cursor ? [{ runtime, cursor: response.next_cursor }] : []),
-    ];
+      ...responses.flatMap(({ runtime, response }) => response.next_cursor && !loadedPages.get(runtime)?.has(response.next_cursor) ? [{ runtime, cursor: response.next_cursor }] : []),
+    ].map(page => [JSON.stringify([page.runtime, page.cursor]), page])).values()];
     now = Date.now();
   }
 
-  async function action(kind: "approve_and_dispatch" | "deny" | "dispatch") {
-    if (!current || busy || !available) return;
+  async function action(current: PeerProposalReviewRecord, kind: "approve_and_dispatch" | "deny" | "dispatch") {
+    if (busy || !available) return;
     const token = epoch;
     const proposal = current.proposal;
     ++revision;
-    busy = true; feedback = null;
+    busy = true; busyId = proposal.proposal_id; feedback = null;
     try {
       // Pin paired portals; local workshops use the normal authenticated route.
       const targetWorkshop = proposalWorkshop(proposal.request.target.execution_runtime_id);
@@ -174,11 +156,10 @@
       }
     } catch (error) {
       if (token === epoch) feedback = error instanceof Error ? error.message : String(error);
-    } finally { if (token === epoch) busy = false; }
+    } finally { if (token === epoch) { busy = false; busyId = null; } }
   }
-  async function next(more = false) {
+  async function next() {
     if (busy || !sessionId) return;
-    if (!more && rows.length > 1) { ++revision; rows = [...rows.slice(1), rows[0]]; selectedId = rows[0].proposal.proposal_id; selectedRuntime = proposalOrigins.get(selectedId) ?? null; feedback = null; return; }
     if (!cursors.length || !available) return;
     const token = epoch;
     ++revision;
@@ -192,16 +173,22 @@
       if (token !== epoch) return;
       const responses = settled.filter((result): result is PromiseFulfilledResult<{ runtime: string | null; response: PeerProposalInboxResponse }> => result.status === "fulfilled").map(result => result.value);
       if (!responses.length) throw settled.find(result => result.status === "rejected")?.reason ?? new Error("Proposal inbox unavailable");
-      for (const page of pages) if (responses.some(result => result.runtime === page.runtime)) pageAfter.set(page.runtime, page.cursor);
+      for (const page of pages) if (responses.some(result => result.runtime === page.runtime)) {
+        const loaded = loadedPages.get(page.runtime) ?? new Set<string>();
+        loaded.add(page.cursor); loadedPages.set(page.runtime, loaded);
+      }
       selectedId = undefined;
       applyResponses(responses);
       feedback = settled.some(result => result.status === "rejected") ? "Some workshop requests could not be loaded." : null;
     } catch (error) { if (token === epoch) feedback = String(error); }
-    finally { if (token === epoch) busy = false; }
+    finally { if (token === epoch) { busy = false; busyId = null; } }
   }
-  async function openExecution(kind: "chat" | "project" | "workshop") {
-    if (!current || busy) return;
-    const row = current;
+  async function openExecution(row: PeerProposalReviewRecord, kind: "chat" | "project" | "workshop") {
+    if (busy) return;
+    const executionWorkshop = proposalWorkshop(row.proposal.request.target.execution_runtime_id);
+    const onExecutionWorkshop = row.proposal.request.target.authority_id === connection.health?.runtime?.authority_id || executionWorkshop?.id === workshops.activeWorkshopId;
+    const projectTitle = onExecutionWorkshop ? (undertakings.active?.workId === row.proposal.request.forge_work_id ? undertakings.active.title : undertakings.items.find(item => item.id === row.proposal.request.forge_work_id)?.title) : null;
+    const agentLabel = peerRuntimeLabel(row.proposal.request.target.runtime);
     const token = epoch;
     try {
       if (kind === "workshop" && executionWorkshop) {
@@ -225,114 +212,26 @@
       if (token === epoch) feedback = error instanceof Error ? error.message : String(error);
     }
   }
+  const controls = $derived<PeerProposalControls>({ now, available, busy, busyId, feedback,
+    hasMore: cursors.length > 0, loadMore: next, action, openExecution });
 </script>
 
-{#if current && progress}
-  <section class="delegation-context {mobile ? 'mobile' : ''}" aria-label="Delegated work">
-    {#key current.proposal.proposal_id}
-      <AgentWorkContextLine title={workTitle} status={progress.status} attention={progress.attention}>
-        {#if progress.activity}<p class="activity">{progress.activity}</p>{/if}
-        <div class="participants">
-          <div class="participant">
-            <Bot size={16} aria-hidden="true" />
-            <div class="participant-info"><p>{agentLabel}</p><small>{progress.workerStatus} · {workshopLabel}{adopting ? ' · existing work' : ''}</small></div>
-            {#if current.binding && onExecutionWorkshop && current.proposal.request.target.runtime === 'medousa'}
-              <button type="button" class="text-action" onclick={() => void openExecution('chat')}>Open chat <ArrowUpRight size={13} aria-hidden="true" /></button>
-            {/if}
-          </div>
-          <div class="participant">
-            <MessageSquareText size={16} aria-hidden="true" />
-            <div class="participant-info"><p>{senderLabel}</p><small>{progress.senderResponsible ? 'Owns the request' : current.handoff ? 'Ownership passed to agent' : 'Requested this work'} · {progress.senderStatus}</small></div>
-          </div>
-        </div>
-        <div class="detail-actions">
-          {#if onExecutionWorkshop}
-            <button type="button" class="detail-action" onclick={() => void openExecution('project')}><Folder size={13} aria-hidden="true" /> Open project</button>
-          {:else if executionWorkshop}
-            <button type="button" class="detail-action" onclick={() => void openExecution('workshop')}><ArrowUpRight size={13} aria-hidden="true" /> Open {workshopLabel}</button>
-          {/if}
-        </div>
-        {#if completed}
-          <details class="secondary-details"><summary>Agent result</summary><p class="long-text">{completed.result}</p></details>
-        {/if}
-        {#if current.handoff?.review}
-          <p class="review-reason">{current.handoff.review.reason}</p>
-        {/if}
-        {#if progress.lastActivity && progress.lastActivity !== current.progress?.current_activity}
-          <p class="last-activity">Last action: {progress.lastActivity}{progress.lastActivityStatus ? ` · ${progress.lastActivityStatus}` : ''}</p>
-        {/if}
-        {#if progress.lastUpdate}<p class="last-activity">Updated {progress.lastUpdate}</p>{/if}
-        {#if progress.notice}<p class="notice">{progress.notice}</p>{/if}
-        <details class="secondary-details"><summary>Assignment</summary><p class="long-text">{current.proposal.request.instructions}</p></details>
-        <details class="secondary-details">
-          <summary>Shared context and scope</summary>
-          <dl>
-            <dt>Work item</dt><dd>{current.proposal.request.forge_work_id}</dd>
-            <dt>Shared conversation ranges</dt>
-            {#each current.proposal.request.context.sources as source}
-              <dd>{source.selection.session.session_id} · entries {(source.selection.after_entry_seq ?? 0) + 1}–{source.selection.through_entry_seq} · {source.selection_digest}</dd>
-            {/each}
-            {#if current.handoff}
-              <dt>Responsibility</dt><dd>{(current.handoff.policy.responsibility ?? 'retain') === 'retain' ? 'Sender retains responsibility' : 'Agent takes responsibility after acceptance'}</dd>
-              <dt>Completion</dt><dd>{(current.handoff.policy.completion ?? 'sender_review') === 'sender_review' ? 'Sender reviews the returned result' : 'Worker result completes the request'}</dd>
-              <dt>Sender updates</dt><dd>{current.handoff.policy.wake_on_accepted !== false ? 'On acceptance' : 'No acceptance update'} · {current.handoff.policy.wake_on_terminal !== false ? 'On completion' : 'No completion update'}</dd>
-              <dt>Contact</dt><dd>{current.handoff.policy.contact?.kind === 'silent' ? 'No user follow-up' : current.handoff.policy.contact?.kind === 'participant' ? 'Selected participant' : current.handoff.policy.contact?.kind === 'channel' ? 'Selected channel' : 'Return to the originating conversation'}</dd>
-            {:else}
-              <dt>Owner continuation</dt><dd>{current.proposal.continue_owner ? 'Report the verified result in the originating conversation' : 'No owner continuation requested'}</dd>
-            {/if}
-            <dt>Execution workshop</dt><dd>{current.proposal.request.target.execution_runtime_id} · {current.proposal.request.target.authority_id}</dd>
-            <dt>Channel</dt><dd>{current.proposal.request.channel.channel_id}</dd>
-            {#if current.binding}<dt>Agent session</dt><dd>{current.binding.agent_session_id}</dd>{/if}
-            <dt>Expires</dt><dd>{new Date(current.proposal.expires_at).toLocaleString()}{expired ? ' · expired' : ''}</dd>
-            <dt>Request</dt><dd>{current.proposal.proposal_id}</dd>
-          </dl>
-        </details>
-      </AgentWorkContextLine>
-    {/key}
-    {#if feedback}<p class="feedback" role="status">{feedback}</p>{/if}
-    {#if !completed && !current.binding && progress.needsApproval}
-      <div class="approval-actions">
-        {#if current.decision?.approved}
-          <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired || !available} onclick={() => void action('dispatch')}>{busy ? 'Starting…' : 'Start approved work'}</button>
-        {:else}
-          <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired || !available} onclick={() => void action('approve_and_dispatch')}>{busy ? 'Starting…' : adopting ? 'Approve & adopt' : 'Approve & start'}</button>
-          <button type="button" class="btn btn-sm variant-ghost-surface" disabled={busy || !available} onclick={() => void action('deny')}>Decline</button>
-        {/if}
-        {#if expired}<span class="notice">Expired</span>{/if}
-      </div>
-    {/if}
-    {#if rows.length > 1 || cursors.length}
-      <div class="request-navigation">
-        {#if rows.length > 1}<button type="button" class="text-action" disabled={busy} onclick={() => void next()}>Next request · {rows.length}</button>{/if}
-        {#if cursors.length}<button type="button" class="text-action" disabled={busy || !available} onclick={() => void next(true)}>More requests</button>{/if}
-      </div>
-    {/if}
+{#if children}
+  {@render children(rows, controls)}
+{:else if rows.length}
+  <section class="delegation-context" class:mobile aria-label="Delegated work">
+    <ChatAgentGroup group={{ proposals: rows, workers: [] }} {controls} />
   </section>
+{/if}
+{#if feedback}<p class="feedback" role="status">{feedback}</p>{/if}
+{#if cursors.length}
+  <button type="button" class="more-requests" disabled={busy || !available} onclick={() => void next()}>More requests</button>
 {/if}
 
 <style>
   .delegation-context { min-width: 0; margin: 0 16px 8px; }
   .delegation-context.mobile { margin-inline: 12px; }
-  .activity { margin-bottom: 12px; font-size: 13px; color: rgb(var(--theme-text-primary)); }
-  .participants { display: flex; flex-direction: column; gap: 12px; }
-  .participant { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .participant > :global(svg) { flex-shrink: 0; color: rgb(var(--theme-text-tertiary)); }
-  .participant-info { flex: 1; min-width: 0; }
-  .participant-info p { font-size: 13px; color: rgb(var(--theme-text-primary)); }
-  .participant-info small { display: block; font-size: 12px; color: rgb(var(--theme-text-secondary)); overflow-wrap: anywhere; }
-  .text-action { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; border: 0; background: transparent; padding: 4px 0; font-size: 12px; color: rgb(var(--theme-text-secondary)); }
-  .text-action:hover { color: rgb(var(--theme-text-primary)); }
-  .detail-actions, .approval-actions, .request-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
-  .detail-action { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgb(var(--theme-border)); border-radius: 7px; padding: 6px 10px; background: transparent; color: rgb(var(--theme-text-secondary)); font-size: 12px; }
-  .detail-action:hover { background: rgb(var(--theme-card-hover)); }
-  .secondary-details { margin-top: 12px; color: rgb(var(--theme-text-secondary)); font-size: 12px; }
-  .secondary-details summary { cursor: pointer; }
-  .long-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; font-size: 13px; }
-  dl { margin-top: 8px; overflow-wrap: anywhere; }
-  dt { color: rgb(var(--theme-text-tertiary)); margin-top: 8px; }
-  .last-activity, .notice, .feedback, .review-reason { margin-top: 8px; color: rgb(var(--theme-text-secondary)); font-size: 12px; overflow-wrap: anywhere; }
-  .request-navigation { margin: 4px 8px 0; }
-  .approval-actions { margin-left: 8px; }
-  @media (max-width: 480px) { .participant { flex-wrap: wrap; } .participant-info { flex-basis: calc(100% - 26px); } .participant .text-action { margin-left: 26px; } }
-  @media (pointer: coarse) { .text-action, .detail-action, .secondary-details summary { min-height: 44px; } }
+  .feedback { margin: 8px 16px; color: rgb(var(--theme-text-secondary)); font-size: 12px; overflow-wrap: anywhere; }
+  .more-requests { display: block; margin: 8px 16px; border: 0; background: transparent; padding: 6px 0; font-size: 12px; color: rgb(var(--theme-text-secondary)); }
+  @media (pointer: coarse) { .more-requests { min-height: 44px; } }
 </style>

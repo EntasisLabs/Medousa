@@ -1186,6 +1186,14 @@ pub fn build_core_service_surface() -> DeclaredRouter<AppState> {
         .route(
             service_admin_policy(
                 axum::http::Method::POST,
+                "/v1/auth/chatgpt/select",
+                16 * 1024,
+            ),
+            post(crate::daemon::chatgpt_oauth::select),
+        )
+        .route(
+            service_admin_policy(
+                axum::http::Method::POST,
                 "/v1/auth/chatgpt/refresh",
                 16 * 1024,
             ),
@@ -1432,12 +1440,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 473);
-        assert_eq!(with_pairing.entries().len(), 492);
+        assert_eq!(without_pairing.entries().len(), 475);
+        assert_eq!(with_pairing.entries().len(), 494);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 492);
+        assert_eq!(rows.len(), 494);
         assert_eq!(rows[0]["path"], "/health");
         for method in ["POST", "DELETE"] {
             assert!(rows.iter().any(|row| {
@@ -1450,6 +1458,13 @@ mod tests {
             row["method"] == "POST"
                 && row["path"] == "/v1/mesh/outbox"
                 && row["required_capability"] == "peer.exchange"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["method"] == "POST"
+                && row["path"] == "/v1/mesh/agents/messages"
+                && row["required_capability"] == "peer.exchange"
+                && row["browser_policy"] == "native_only"
+                && row["body_limit"] == 64 * 1024
         }));
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1548,12 +1563,12 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 22);
+        assert_eq!(entries.len(), 23);
         for (capability, count) in [
             ("workshop.read", 6),
             ("workshop.interact", 3),
             ("admin.execute", 5),
-            ("admin.runtime", 6),
+            ("admin.runtime", 7),
             ("content.read", 1),
             ("content.write", 1),
         ] {

@@ -74,6 +74,11 @@ Connection**.
 Send a normal message. Medousa keeps work durable on the engine — closing the
 window does not throw away an accepted job.
 
+While a reply streams, completed paragraphs and blocks stay in place. Chat
+follows the growing reply until you scroll upward to read. Return to the bottom
+or select the down arrow to follow it again; finishing a reply does not pull
+you away from earlier text.
+
 Code snippets use a compact header with the language and **Copy**. Long
 snippets offer **Show all** / **Show less**, with thin scrollbars and optional
 **Wrap** for longer lines. Copy always includes the full code, including any
