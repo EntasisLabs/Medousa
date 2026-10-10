@@ -569,6 +569,29 @@ mod tests {
 
     #[tokio::test]
     async fn gpt6_requests_use_supported_options_and_preserve_stream_content() {
+        // The process-wide capability registry loads the account catalog once.
+        // Exercise fallback model options in a fresh process so a developer's
+        // cached account-specific reasoning levels cannot change this fixture.
+        const FIXTURE_ENV: &str = "MEDOUSA_GPT6_FALLBACK_FIXTURE";
+        if std::env::var_os(FIXTURE_ENV).is_none() {
+            let data = tempfile::tempdir().unwrap();
+            let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("openai_codex_chat_client::tests::gpt6_requests_use_supported_options_and_preserve_stream_content")
+                .arg("--nocapture")
+                .env("MEDOUSA_DATA_DIR", data.path())
+                .env(FIXTURE_ENV, "1")
+                .output()
+                .await
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "isolated GPT-6 fixture failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
         for (model, effort, expected_effort) in [
             ("gpt-6.1-sol", None, None),
             ("gpt-6.1-sol", Some(ReasoningEffort::None), None),
