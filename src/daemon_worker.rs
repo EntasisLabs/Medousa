@@ -366,6 +366,92 @@ impl DaemonWorkerPairing {
         })
     }
 }
+/// Prepared only by the admitted host I/O path; credentials never enter model output.
+pub(crate) struct AgentMessageRoute {
+    stored: Stored,
+    identity: Identity,
+    client: reqwest::Client,
+}
+impl DaemonWorkerPairing {
+    pub(crate) fn agent_message_route(
+        &self,
+        connection_id: &str,
+        client: reqwest::Client,
+    ) -> Result<AgentMessageRoute> {
+        let stored = self
+            .load()?
+            .connections
+            .into_iter()
+            .find(|stored| stored.summary.id == connection_id)
+            .context("agent message workshop connection was removed")?;
+        Ok(AgentMessageRoute {
+            stored,
+            identity: self.identity()?,
+            client,
+        })
+    }
+}
+impl AgentMessageRoute {
+    pub(crate) fn source_id(&self) -> &str {
+        &self.identity.device_id
+    }
+    pub(crate) fn target_id(&self) -> &str {
+        &self.stored.summary.workshop_device_id
+    }
+    pub(crate) async fn exchange<P: Serialize, R: Serialize + DeserializeOwned>(
+        &self,
+        path: &str,
+        payload: P,
+    ) -> Result<R> {
+        static SEQUENCE: once_cell::sync::Lazy<AtomicU64> = once_cell::sync::Lazy::new(|| {
+            AtomicU64::new(Utc::now().timestamp_millis().max(0) as u64)
+        });
+        let hash = payload_hash_hex(&payload)?;
+        let envelope = sign_envelope(
+            &self.identity.key,
+            &self.identity.device_id,
+            &self.stored.summary.workshop_device_id,
+            SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            MeshCapability::Message,
+            &hash,
+            chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+        );
+        let body = serde_json::to_vec(&MeshEnvelopedRequest { envelope, payload })?;
+        if body.len() > 64 * 1024 {
+            bail!("agent message request exceeds 64 KiB");
+        }
+        let (status, response) = tokio::time::timeout(
+            Duration::from_secs(6),
+            worker_request_bounded(
+                &self.client,
+                &self.stored.summary.daemon_url,
+                self.stored.summary.iroh_ticket.as_deref(),
+                Method::POST,
+                path,
+                Some(&self.stored.session_token),
+                Some(&body),
+                256 * 1024,
+            ),
+        )
+        .await
+        .context("agent message workshop request timed out")??;
+        if !(200..300).contains(&status) {
+            return Err(classify_destination_http_failure(status, &response).into());
+        }
+        let wrapped: MeshEnvelopedRequest<R> =
+            serde_json::from_slice(&response).context("decode signed agent message response")?;
+        verify_enveloped_payload(
+            &wrapped,
+            &self.stored.summary.daemon_public_key,
+            &self.stored.summary.workshop_device_id,
+            &self.identity.device_id,
+            MeshCapability::Message,
+            true,
+        )?;
+        Ok(wrapped.payload)
+    }
+}
+
 #[derive(Debug)]
 pub struct DaemonWorkerTransport {
     root: PathBuf,
@@ -869,6 +955,20 @@ async fn worker_request(
     bearer: Option<&str>,
     body: Option<&[u8]>,
 ) -> Result<(u16, Vec<u8>)> {
+    worker_request_bounded(client, base, ticket, method, path, bearer, body, usize::MAX).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn worker_request_bounded(
+    client: &reqwest::Client,
+    base: &str,
+    ticket: Option<&str>,
+    method: Method,
+    path: &str,
+    bearer: Option<&str>,
+    body: Option<&[u8]>,
+    response_limit: usize,
+) -> Result<(u16, Vec<u8>)> {
     if let Some(ticket) = ticket {
         #[cfg(feature = "iroh-transport")]
         {
@@ -891,6 +991,9 @@ async fn worker_request(
             .with_context(|| format!("reach worker over Iroh for {path}"))?;
             let mut bytes = Vec::new();
             while let Some(chunk) = response.body.read_chunk().await? {
+                if bytes.len() + chunk.len() > response_limit {
+                    bail!("worker response exceeds its byte budget");
+                }
                 bytes.extend_from_slice(&chunk);
             }
             return Ok((response.status, bytes));
@@ -912,12 +1015,19 @@ async fn worker_request(
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body.to_vec());
     }
-    let response = request
+    let mut response = request
         .send()
         .await
         .with_context(|| format!("reach worker at {base} for {path}"))?;
     let status = response.status().as_u16();
-    Ok((status, response.bytes().await?.to_vec()))
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if bytes.len() + chunk.len() > response_limit {
+            bail!("worker response exceeds its byte budget");
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok((status, bytes))
 }
 fn b64(x: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(x)
@@ -1116,6 +1226,78 @@ fn worker_api_error(error: anyhow::Error) -> (axum::http::StatusCode, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn agent_messages_use_saved_worker_identity_and_pin_signed_responses() {
+        let local_key = SigningKey::from_bytes(&[31; 32]);
+        let remote_key = SigningKey::from_bytes(&[32; 32]);
+        let public = |key: &SigningKey| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.verifying_key().as_bytes())
+        };
+        let source_public = public(&local_key);
+        let remote_public = public(&remote_key);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = axum::Router::new().route(
+            "/v1/mesh/agents/messages",
+            axum::routing::post(move |headers: axum::http::HeaderMap, axum::Json(wire): axum::Json<MeshEnvelopedRequest<serde_json::Value>>| {
+                let public = source_public.clone();
+                let key = remote_key.clone();
+                async move {
+                    assert_eq!(headers.get("authorization").unwrap(), "Bearer test-message-token");
+                    verify_enveloped_payload(&wire, &public, "worker-source", "abcd1234", MeshCapability::Message, true).unwrap();
+                    let payload = serde_json::json!({"schema_version":1,"request_hash":payload_hash_hex(&wire.payload).unwrap()});
+                    // Simulate a validly signed response sent to the wrong recipient.
+                    let recipient = if wire.payload["wrong_recipient"] == true { "someone-else" } else { "worker-source" };
+                    let envelope = sign_envelope(&key, "abcd1234", recipient, 1, MeshCapability::Message,
+                        &payload_hash_hex(&payload).unwrap(), chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS));
+                    axum::Json(MeshEnvelopedRequest { envelope, payload })
+                }
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut summary = sample();
+        summary.daemon_url = base;
+        summary.daemon_public_key = remote_public;
+        let mut route = AgentMessageRoute {
+            stored: Stored {
+                summary,
+                session_token: "test-message-token".into(),
+            },
+            identity: Identity {
+                device_id: "worker-source".into(),
+                key: local_key,
+            },
+            client: reqwest::Client::new(),
+        };
+        let payload =
+            serde_json::json!({"schema_version":1,"request":{"action":"discover","query":null}});
+        let response: serde_json::Value = route
+            .exchange("/v1/mesh/agents/messages", payload.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            response["request_hash"],
+            payload_hash_hex(&payload).unwrap()
+        );
+        assert!(
+            route
+                .exchange::<_, serde_json::Value>(
+                    "/v1/mesh/agents/messages",
+                    serde_json::json!({"wrong_recipient":true})
+                )
+                .await
+                .is_err()
+        );
+        route.stored.summary.daemon_public_key = public(&SigningKey::from_bytes(&[33; 32]));
+        assert!(
+            route
+                .exchange::<_, serde_json::Value>("/v1/mesh/agents/messages", payload)
+                .await
+                .is_err()
+        );
+        server.abort();
+    }
 
     #[test]
     fn destination_denial_is_terminal_but_transport_failure_is_retryable() {

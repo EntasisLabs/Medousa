@@ -72,7 +72,7 @@ workshop. Execution administration is required to configure these bindings.
 Ask your assistant, for example: “Message Taco and tell it the API review is
 ready,” or “Ask the backend coder which tests are still failing.” Native Bots
 with an open primary conversation and existing native agent chats on the current
-workshop can receive these messages. A Bot's name or a chat's title identifies
+or a paired workshop can receive these messages. A Bot's name or a chat's title identifies
 it; if names collide, the assistant needs the exact Bot or chat ID.
 
 Messages identify the sending chat and carry only the supplied text. They do
@@ -94,9 +94,21 @@ permissions. Message wakes use Assistant mode; continuing Coder work still needs
 its normal scoped admission. Exchanges have bounded message budgets to prevent
 unattended reply loops.
 
-This messaging route currently covers the active workshop's native chats.
-Codex, Cursor, and Hermes Bots use their existing job/handoff route. Sending a
-message to another workshop requires a transport adapter beyond this local inbox.
+For example, ask “Message Taco on Studio and ask how the review is going.” The
+assistant can discover connected workshops, then find native Bots and chats on
+the selected workshop. Repeated workshop names need an exact workshop ID.
+Starting a remote exchange requires the source workshop owner's profile and an
+active pairing. On the destination, enable Assistant work, agent targeting, and
+host shell in the paired workshop's execution policy, or use a full Portal pairing.
+
+Replies retain both workshop and chat identities. A one-way workshop connection
+works too: the originating workshop checks a durable reply mailbox, so the
+recipient does not need a connection back. Both daemons must be running and the
+pairing must remain valid for delivery. Offline connections keep messages queued;
+revoked or denied connections report delivery errors.
+
+Codex, Cursor, and Hermes Bots use their existing job/handoff route. Chat messages
+coordinate native agents; scoped Coder assignments still use the handoff flow.
 
 ## Edit, duplicate, and archive
 

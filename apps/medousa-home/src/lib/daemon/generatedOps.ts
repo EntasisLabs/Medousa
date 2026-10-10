@@ -317,6 +317,7 @@ export const OPERATIONS = {
   "media.by_media_id.get": { id: "media.by_media_id.get", method: "GET", path: "/v1/media/{media_id}", streaming: false },
   "media.upload.post": { id: "media.upload.post", method: "POST", path: "/v1/media/upload", streaming: false },
   "mesh.active_work.post": { id: "mesh.active_work.post", method: "POST", path: "/v1/mesh/active-work", streaming: false },
+  "mesh.agents.messages.post": { id: "mesh.agents.messages.post", method: "POST", path: "/v1/mesh/agents/messages", streaming: false },
   "mesh.execution_target.post": { id: "mesh.execution_target.post", method: "POST", path: "/v1/mesh/execution-target", streaming: false },
   "mesh.inbox.get": { id: "mesh.inbox.get", method: "GET", path: "/v1/mesh/inbox", streaming: false },
   "mesh.intros.by_intro_id.accept.post": { id: "mesh.intros.by_intro_id.accept.post", method: "POST", path: "/v1/mesh/intros/{intro_id}/accept", streaming: false },

@@ -1,6 +1,8 @@
 //! Attributed messages between existing, owner-visible native agent chats.
 //! This is conversation delivery, not a Forge assignment or execution grant.
+mod mesh;
 mod store;
+pub(crate) use mesh::surface as mesh_surface;
 
 use crate::{
     daemon::state::AppState,
@@ -13,7 +15,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::{Arc, OnceLock};
-use store::{Message, MessageStatus, MessageStore, TURN_PREFIX};
+use store::{Message, MessageStatus, MessageStore, TURN_PREFIX, TransportRoute};
 
 pub const COGNITION_AGENT_MESSAGE: &str = "cognition_agent_message";
 const TOOL_ID: ToolId = ToolId::new(COGNITION_AGENT_MESSAGE);
@@ -24,6 +26,9 @@ struct MessageHost {
     state: AppState,
     store: Arc<MessageStore>,
     wake: tokio::sync::Notify,
+    mesh: crate::mesh::MeshApiState,
+    client: reqwest::Client,
+    remote_cursor: std::sync::atomic::AtomicU64,
 }
 impl MessageHost {
     async fn stored<T: Send + 'static>(
@@ -40,13 +45,15 @@ impl MessageHost {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Target {
     target_id: String,
     session_id: Option<String>,
     name: String,
-    kind: &'static str,
+    kind: String,
     can_message: bool,
+    #[serde(default)]
+    workshop_id: Option<String>,
 }
 fn targets(profile: &str, query: Option<&str>) -> Result<Vec<Target>> {
     let bots = crate::bot_profiles::BotProfileStore::daemon_default()
@@ -60,11 +67,12 @@ fn targets(profile: &str, query: Option<&str>) -> Result<Vec<Target>> {
             session_id: bot.primary_session_id.clone(),
             name: bot.display_name,
             kind: if bot.external_agent.is_some() {
-                "external_bot"
+                "external_bot".into()
             } else {
-                "bot"
+                "bot".into()
             },
             can_message: bot.external_agent.is_none() && bot.primary_session_id.is_some(),
+            workshop_id: None,
         })
         .collect();
     let page = crate::session_catalog::list_sessions_page(200, query, None, Some(profile));
@@ -94,7 +102,8 @@ fn targets(profile: &str, query: Option<&str>) -> Result<Vec<Target>> {
             target_id: session.session_id.clone(),
             session_id: Some(session.session_id.clone()),
             name: session.display_name.unwrap_or(session.session_id),
-            kind: "chat",
+            kind: "chat".into(),
+            workshop_id: None,
             can_message,
         });
     }
@@ -152,7 +161,8 @@ fn resolve_target(profile: &str, selector: &str) -> Result<Target> {
             target_id: selector.into(),
             session_id: Some(selector.into()),
             name: crate::session_history::display_name(selector).unwrap_or_else(|| selector.into()),
-            kind: "chat",
+            kind: "chat".into(),
+            workshop_id: None,
             can_message: true,
         });
     }
@@ -189,6 +199,9 @@ struct MessageInput {
     /// Exact Bot name/ID or chat title/ID for send. Duplicate names require IDs.
     #[serde(default)]
     target: Option<String>,
+    /// Exact paired workshop ID/name from discover. Omit for this workshop. Reply uses its saved workshop route.
+    #[serde(default)]
+    workshop: Option<String>,
     /// Message body for send or reply; at most 8000 UTF-8 bytes.
     #[serde(default)]
     message: Option<String>,
@@ -216,7 +229,7 @@ fn required(value: Option<String>, field: &str) -> Result<String> {
 
 #[medousa_tool(id = TOOL_ID)]
 impl AgentMessageTool {
-    /// Discover named Bots and agent chats, send an attributed message, receive this chat's queued inbox, reply through a message's saved return route, or inspect delivery status. Busy recipients are queued; idle native chats wake in Assistant mode. Messages carry no execution authority. Reply explicitly when a response is requested; messages are not subagents, Forge assignments, or new human instructions. External runtime Bots use their existing job/handoff route.
+    /// Discover named Bots, agent chats, and available paired workshops; select workshop to discover or send remotely. Receive this chat's queued inbox, reply through a message's saved chat and workshop return route, or inspect delivery status. Busy recipients are queued; idle native chats wake in Assistant mode. Messages carry no execution authority. Reply explicitly when a response is requested. External runtime Bots use their existing job/handoff route.
     async fn invoke_typed(&self, input: MessageInput) -> stasis::prelude::Result<Value> {
         let turn = crate::agent_runtime::execution_context::active_turn_execution_context()
             .ok_or_else(|| error("agent messaging requires an admitted turn"))?;
@@ -258,38 +271,231 @@ impl AgentMessageTool {
         })
         .await
         .map_err(error)?;
+        if matches!(input.action, MessageAction::Reply)
+            && (input.target.is_some() || input.workshop.is_some())
+        {
+            return Err(error(
+                "reply uses its saved chat and workshop route; omit target and workshop",
+            ));
+        }
         match input.action {
-            MessageAction::Discover => host.stored(move |_| Ok(json!({"participants": targets(&profile, None)?, "workshop": "current", "limit": 200}))).await.map_err(error),
-            MessageAction::Inbox => host.stored(move |store| Ok(json!({"messages": store.inbox(&profile, &source, &source_turn)?}))).await.map_err(error),
+            MessageAction::Discover => {
+                if let Some(workshop) = input
+                    .workshop
+                    .filter(|id| id != "current" && id != &host.mesh.local_device_id)
+                {
+                    if profile != host.state.workshop_identity_user_id()
+                        && !principal.capabilities().contains(Capability::AdminExecute)
+                    {
+                        return Err(error(
+                            "cross-workshop discovery requires the workshop owner",
+                        ));
+                    }
+                    let host_lookup = host.clone();
+                    let peer = host
+                        .stored(move |_| mesh::resolve_workshop(&host_lookup, &workshop))
+                        .await
+                        .map_err(error)?;
+                    let id = peer.id.clone();
+                    let response = mesh::request(
+                        &host,
+                        peer,
+                        mesh::Request::Discover {
+                            query: input.target,
+                        },
+                    )
+                    .await
+                    .map_err(error)?;
+                    let mut participants = response
+                        .participants
+                        .ok_or_else(|| error("workshop participant response missing"))?;
+                    for target in &mut participants {
+                        target.workshop_id = Some(id.clone());
+                    }
+                    Ok(json!({"participants": participants, "workshop": id, "limit": 200}))
+                } else {
+                    let local = host.mesh.local_device_id.clone();
+                    let host_lookup = host.clone();
+                    host.stored(move |_| {
+                        let workshops: Vec<_> = mesh::available_workshops(&host_lookup)?.into_iter().map(|peer| json!({"workshop_id": peer.id, "name": peer.label})).collect();
+                        let mut participants = targets(&profile, input.target.as_deref())?;
+                        participants.truncate(200);
+                        for target in &mut participants { target.workshop_id = Some(local.clone()); }
+                        Ok(json!({"participants": participants, "workshop": local, "workshops": workshops, "limit": 200}))
+                    }).await.map_err(error)
+                }
+            }
+            MessageAction::Inbox => {
+                let host_lookup = host.clone();
+                host.stored(move |store| Ok(json!({"messages": store.inbox_allowed(&profile, &source, &source_turn, |message| mesh::may_receive(&host_lookup, message))?}))).await.map_err(error)
+            }
             MessageAction::Status => {
                 let id = required(input.message_id, "message_id").map_err(error)?;
                 host.stored(move |store| {
-                    let message = store.get(&id)?.ok_or_else(|| anyhow::anyhow!("message is unavailable"))?;
-                    if message.profile_id != profile || (message.source_session != source && message.target_session != source) { bail!("message is unavailable to this chat"); }
+                    let message = store
+                        .get(&id)?
+                        .ok_or_else(|| anyhow::anyhow!("message is unavailable"))?;
+                    if message.profile_id != profile
+                        || (message.source_session != source
+                            && (message.target_session != source
+                                || !message.remote_inbound && message.target_workshop.is_some()))
+                    {
+                        bail!("message is unavailable to this chat");
+                    }
                     Ok(json!({"message": message}))
-                }).await.map_err(error)
+                })
+                .await
+                .map_err(error)
             }
             action @ (MessageAction::Send | MessageAction::Reply) => {
                 let body = required(input.message, "message").map_err(error)?;
                 let key = required(input.request_key, "request_key").map_err(error)?;
-                let replying = matches!(action, MessageAction::Reply);
-                if replying && input.target.is_some() { return Err(error("reply uses its saved return route; omit target")); }
-                let message = host.stored(move |store| {
-                    let previous = if replying {
-                        let id = required(input.message_id, "message_id")?;
-                        let previous = store.get(&id)?.ok_or_else(|| anyhow::anyhow!("reply message is unavailable"))?;
-                        if previous.profile_id != profile || previous.target_session != source { bail!("only the recipient can reply to this message"); }
-                        Some(previous)
-                    } else { None };
-                    let selector = previous.as_ref().map(|message| message.source_session.clone()).map(Ok).unwrap_or_else(|| required(input.target, "target"))?;
-                    let target = resolve_target(&profile, &selector)?;
-                    let target_session = target.session_id.ok_or_else(|| anyhow::anyhow!("target chat is unavailable"))?;
-                    if !crate::session_history::session_visible_to_profile(&target_session, &profile) { bail!("target chat is unavailable to this profile"); }
-                    let name = identity_name.or_else(|| crate::session_history::display_name(&source)).unwrap_or_else(|| source.clone());
-                    store.enqueue(Message { id: String::new(), profile_id: profile, source_session: source, source_turn, source_name: name, target_session, target_name: target.name, body, root_id: String::new(), in_reply_to: previous.map(|previous| previous.id), created_at: chrono::Utc::now(), status: MessageStatus::Queued, delivery_turn: None, error: None }, &key)
-                }).await.map_err(error)?;
+                let previous = if matches!(action, MessageAction::Reply) {
+                    let id = required(input.message_id, "message_id").map_err(error)?;
+                    let owner = profile.clone();
+                    let session = source.clone();
+                    Some(
+                        host.stored(move |store| {
+                            let previous = store
+                                .get(&id)?
+                                .ok_or_else(|| anyhow::anyhow!("reply message is unavailable"))?;
+                            if previous.profile_id != owner
+                                || previous.target_session != session
+                                || !previous.remote_inbound && previous.target_workshop.is_some()
+                            {
+                                bail!("only the recipient can reply to this message");
+                            }
+                            Ok(previous)
+                        })
+                        .await
+                        .map_err(error)?,
+                    )
+                } else {
+                    None
+                };
+                let selector = previous
+                    .as_ref()
+                    .map(|message| message.source_session.clone())
+                    .map(Ok)
+                    .unwrap_or_else(|| required(input.target, "target"))
+                    .map_err(error)?;
+                let workshop = previous
+                    .as_ref()
+                    .and_then(|message| message.source_workshop.clone())
+                    .or(input.workshop)
+                    .filter(|id| id != "current" && id != &host.mesh.local_device_id);
+                let (target, target_workshop, transport_route, source_workshop) =
+                    if let Some(workshop) = workshop {
+                        if let Some(previous) = &previous {
+                            let target = Target {
+                                target_id: selector.clone(),
+                                session_id: Some(selector),
+                                name: previous.source_name.clone(),
+                                kind: "chat".into(),
+                                can_message: true,
+                                workshop_id: Some(workshop.clone()),
+                            };
+                            (
+                                target,
+                                Some(workshop),
+                                previous.transport_route.clone(),
+                                previous.target_workshop.clone(),
+                            )
+                        } else {
+                            if profile != host.state.workshop_identity_user_id()
+                                && !principal.capabilities().contains(Capability::AdminExecute)
+                            {
+                                return Err(error(
+                                    "cross-workshop initiation requires the workshop owner",
+                                ));
+                            }
+                            let host_lookup = host.clone();
+                            let peer = host
+                                .stored(move |_| mesh::resolve_workshop(&host_lookup, &workshop))
+                                .await
+                                .map_err(error)?;
+                            let id = peer.id.clone();
+                            let transport_route =
+                                peer.connection_id.clone().map(TransportRoute::Connection);
+                            let host_lookup = host.clone();
+                            let peer_lookup = peer.clone();
+                            let source_workshop = host
+                                .stored(move |_| mesh::source_workshop(&host_lookup, &peer_lookup))
+                                .await
+                                .map_err(error)?;
+                            let response = mesh::request(
+                                &host,
+                                peer,
+                                mesh::Request::Discover {
+                                    query: Some(selector.clone()),
+                                },
+                            )
+                            .await
+                            .map_err(error)?;
+                            let target = mesh::select_participant(
+                                response.participants.ok_or_else(|| {
+                                    error("workshop participant response missing")
+                                })?,
+                                &selector,
+                            )
+                            .map_err(error)?;
+                            (target, Some(id), transport_route, Some(source_workshop))
+                        }
+                    } else {
+                        let owner = profile.clone();
+                        let target = host
+                            .stored(move |_| resolve_target(&owner, &selector))
+                            .await
+                            .map_err(error)?;
+                        (target, None, None, None)
+                    };
+                let message = host
+                    .stored(move |store| {
+                        let target_session = target
+                            .session_id
+                            .ok_or_else(|| anyhow::anyhow!("target chat is unavailable"))?;
+                        if target_workshop.is_none()
+                            && !crate::session_history::session_visible_to_profile(
+                                &target_session,
+                                &profile,
+                            )
+                        {
+                            bail!("target chat is unavailable to this profile");
+                        }
+                        let name = identity_name
+                            .or_else(|| crate::session_history::display_name(&source))
+                            .unwrap_or_else(|| source.clone());
+                        store.enqueue(
+                            Message {
+                                id: String::new(),
+                                profile_id: profile,
+                                source_session: source,
+                                source_turn,
+                                source_name: name,
+                                target_session,
+                                target_name: target.name,
+                                body,
+                                root_id: String::new(),
+                                in_reply_to: previous.map(|previous| previous.id),
+                                created_at: chrono::Utc::now(),
+                                status: MessageStatus::Queued,
+                                delivery_turn: None,
+                                error: None,
+                                source_workshop,
+                                target_workshop,
+                                hop: 0,
+                                remote_inbound: false,
+                                transport_route,
+                            },
+                            &key,
+                        )
+                    })
+                    .await
+                    .map_err(error)?;
                 host.wake.notify_one();
-                Ok(json!({"queued": message.status == MessageStatus::Queued, "message": message, "authority": "none"}))
+                Ok(
+                    json!({"queued": message.status == MessageStatus::Queued, "message": message, "authority": "none"}),
+                )
             }
         }
     }
@@ -324,7 +530,12 @@ pub(crate) async fn verify_admission(
         .await?;
     let owner = message.profile_id.clone();
     let session = message.target_session.clone();
+    let host_lookup = host.clone();
+    let check_message = message.clone();
     host.stored(move |_| {
+        if !mesh::may_receive(&host_lookup, &check_message) {
+            bail!("remote sender policy no longer permits delivery");
+        }
         resolve_target(&owner, &session)?;
         if !crate::session_history::session_visible_to_profile(&session, &owner) {
             bail!("recipient is unavailable to this profile");
@@ -358,6 +569,7 @@ fn validate_admission(
 pub async fn start(
     state: AppState,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
+    mesh: crate::mesh::MeshApiState,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let host = Arc::new(MessageHost {
         state,
@@ -365,6 +577,13 @@ pub async fn start(
             crate::paths::medousa_data_dir().join("agent_messages.sqlite3"),
         )),
         wake: tokio::sync::Notify::new(),
+        mesh,
+        client: reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(6))
+            .connect_timeout(std::time::Duration::from_secs(2))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?,
+        remote_cursor: std::sync::atomic::AtomicU64::new(0),
     });
     HOST.set(host.clone())
         .map_err(|_| anyhow::anyhow!("agent message host already composed"))?;
@@ -386,6 +605,9 @@ pub async fn start(
 async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
     for pending in host.stored(|store| store.pending()).await? {
         let id = pending.id.clone();
+        if pending.remote_outbound {
+            continue;
+        }
         if pending.status == MessageStatus::Delivering {
             let ticket = crate::turn_ticket::get_turn(
                 &host.state.turn_tickets,
@@ -414,9 +636,15 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
         }
         let owner = pending.profile_id.clone();
         let target = pending.target_session.clone();
+        let host_lookup = host.clone();
+        let check_id = id.clone();
         let visible = host
-            .stored(move |_| {
-                Ok(resolve_target(&owner, &target).is_ok()
+            .stored(move |store| {
+                let allowed = store
+                    .get(&check_id)?
+                    .is_some_and(|message| mesh::may_receive(&host_lookup, &message));
+                Ok(allowed
+                    && resolve_target(&owner, &target).is_ok()
                     && crate::session_history::session_visible_to_profile(&target, &owner))
             })
             .await?;
@@ -491,6 +719,28 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
             .await?;
         }
     }
+    let after = host
+        .remote_cursor
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let mut remote = host
+        .stored(move |store| store.outbound_routes(after))
+        .await?;
+    if remote.is_empty() {
+        remote = host.stored(|store| store.outbound_routes(0)).await?;
+    }
+    if let Some((row, _)) = remote.last() {
+        host.remote_cursor
+            .store(*row, std::sync::atomic::Ordering::Relaxed);
+    }
+    use futures_util::StreamExt;
+    let mut sends =
+        futures_util::stream::iter(remote.into_iter().map(|(_, id)| mesh::deliver(host, id)))
+            .buffer_unordered(4);
+    while let Some(result) = sends.next().await {
+        if let Err(error) = result {
+            tracing::warn!(%error, "remote agent message retained for reconciliation");
+        }
+    }
     Ok(())
 }
 
@@ -513,6 +763,11 @@ mod tests {
             status: MessageStatus::Delivering,
             delivery_turn: Some("agent_message_msg_test".into()),
             error: None,
+            source_workshop: None,
+            target_workshop: None,
+            hop: 0,
+            remote_inbound: false,
+            transport_route: None,
         }
     }
     fn request(message: &Message) -> medousa_types::InteractiveTurnRequest {

@@ -5131,6 +5131,22 @@
       "trust_group": "peer_exchange"
     },
     {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "peer.exchange"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "mesh.agents.messages.post",
+      "path": "/v1/mesh/agents/messages",
+      "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "peer_exchange"
+    },
+    {
       "body_limit": 16384,
       "bootstrap_public": false,
       "browser_policy": "native_only",

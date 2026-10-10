@@ -320,6 +320,7 @@ OPERATIONS: dict[str, Operation] = {
     "media.by_media_id.get": Operation("media.by_media_id.get", "GET", "/v1/media/{media_id}", False),
     "media.upload.post": Operation("media.upload.post", "POST", "/v1/media/upload", False),
     "mesh.active_work.post": Operation("mesh.active_work.post", "POST", "/v1/mesh/active-work", False),
+    "mesh.agents.messages.post": Operation("mesh.agents.messages.post", "POST", "/v1/mesh/agents/messages", False),
     "mesh.execution_target.post": Operation("mesh.execution_target.post", "POST", "/v1/mesh/execution-target", False),
     "mesh.inbox.get": Operation("mesh.inbox.get", "GET", "/v1/mesh/inbox", False),
     "mesh.intros.by_intro_id.accept.post": Operation("mesh.intros.by_intro_id.accept.post", "POST", "/v1/mesh/intros/{intro_id}/accept", False),

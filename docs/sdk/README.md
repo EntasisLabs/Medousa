@@ -16,6 +16,12 @@ Assistant ownership queries and signed paired-workshop completion retrieval:
 query requires the exact saved proposal association and signed mesh envelopes;
 an ordinary bearer-only SDK request does not supply that authority.
 
+Native agent messages also use signed `mesh.agents.messages.post` exchanges
+between paired daemons. Discovery, durable delivery, status, and one-way reply
+mailboxes are documented in [Cross-workshop transport](../engine/coordination.md#cross-workshop-transport).
+Generated operation metadata includes the route; public SDK callers do not
+receive a bearer-only messaging API.
+
 Full-daemon assistant handoffs expose typed sender responsibility, completion,
 callback and contact policy. Direct admission is tied to the current human
 request; proposal admission remains available. Inbox records carry optional

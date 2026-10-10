@@ -48,6 +48,23 @@ pub(super) struct Message {
     pub status: MessageStatus,
     pub delivery_turn: Option<String>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub source_workshop: Option<String>,
+    #[serde(default)]
+    pub target_workshop: Option<String>,
+    #[serde(default)]
+    pub hop: usize,
+    #[serde(default)]
+    pub remote_inbound: bool,
+    #[serde(default)]
+    pub transport_route: Option<TransportRoute>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", content = "connection_id", rename_all = "snake_case")]
+pub(super) enum TransportRoute {
+    Connection(String),
+    Mailbox,
 }
 
 #[derive(Debug)]
@@ -57,6 +74,7 @@ pub(super) struct PendingMessage {
     pub target_session: String,
     pub status: MessageStatus,
     pub delivery_turn: Option<String>,
+    pub remote_outbound: bool,
 }
 
 pub(super) struct MessageStore {
@@ -107,6 +125,11 @@ impl MessageStore {
         let transaction =
             connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let mut digest = Sha256::new();
+        if let Some(workshop) = &message.source_workshop {
+            digest.update(b"medousa/agent-message/workshop/v1\0");
+            digest.update((workshop.len() as u64).to_be_bytes());
+            digest.update(workshop.as_bytes());
+        }
         for value in [
             &message.profile_id,
             &message.source_session,
@@ -121,12 +144,16 @@ impl MessageStore {
             if existing.target_session != message.target_session
                 || existing.body != message.body
                 || existing.in_reply_to != message.in_reply_to
+                || existing.source_workshop != message.source_workshop
+                || existing.target_workshop != message.target_workshop
             {
                 bail!("request_key was already used for a different message");
             }
             return Ok(existing);
         }
-        if message.source_session == message.target_session {
+        if message.source_session == message.target_session
+            && message.source_workshop == message.target_workshop
+        {
             bail!("an agent cannot message its own chat");
         }
         if message.body.trim().is_empty() || message.body.len() > 8000 {
@@ -141,6 +168,8 @@ impl MessageStore {
             if previous.profile_id != message.profile_id
                 || previous.target_session != message.source_session
                 || previous.source_session != message.target_session
+                || previous.source_workshop != message.target_workshop
+                || previous.target_workshop != message.source_workshop
             {
                 bail!("only the recipient can reply through this message's return route");
             }
@@ -157,9 +186,20 @@ impl MessageStore {
                 .optional()?;
             raw.map(|raw| decode(&raw)).transpose()?
         };
+        message.hop = previous.as_ref().map_or(0, |previous| previous.hop + 1);
+        if message.hop >= MAX_THREAD_MESSAGES {
+            bail!("this exchange's sixteen-message hop budget is exhausted; return to the user");
+        }
         message.root_id = previous
             .map(|previous| previous.root_id)
             .unwrap_or_else(|| message.id.clone());
+        Self::check_budgets(&transaction, &message)?;
+        message.status = MessageStatus::Queued;
+        Self::write(&transaction, &message)?;
+        transaction.commit()?;
+        Ok(message)
+    }
+    fn check_budgets(transaction: &Transaction<'_>, message: &Message) -> Result<()> {
         let pending: usize = transaction.query_row(
             "SELECT count(*) FROM agent_messages WHERE status IN ('queued','delivering')",
             [],
@@ -184,17 +224,110 @@ impl MessageStore {
         if exchange >= MAX_THREAD_MESSAGES {
             bail!("this exchange's sixteen-message budget is exhausted; return to the user");
         }
+        Ok(())
+    }
+    /// The signed transport has already bound both workshop identities. A
+    /// reply is additionally tied to the exact durable outbound return route.
+    pub fn accept_remote(&self, mut message: Message) -> Result<Message> {
+        let mut connection = self.connection()?;
+        let transaction =
+            connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        if let Some(id) = &message.in_reply_to {
+            let previous = Self::find(&transaction, id)?.ok_or_else(|| {
+                anyhow::anyhow!("remote reply has no saved outbound return route")
+            })?;
+            Self::validate_remote_reply(&message, &previous)?;
+            message.transport_route = previous.transport_route;
+        }
+        if let Some(existing) = Self::find(&transaction, &message.id)? {
+            if !existing.remote_inbound
+                || existing.profile_id != message.profile_id
+                || existing.source_workshop != message.source_workshop
+                || existing.target_workshop != message.target_workshop
+                || existing.source_session != message.source_session
+                || existing.source_turn != message.source_turn
+                || existing.source_name != message.source_name
+                || existing.target_session != message.target_session
+                || existing.target_name != message.target_name
+                || existing.body != message.body
+                || existing.root_id != message.root_id
+                || existing.in_reply_to != message.in_reply_to
+                || existing.hop != message.hop
+                || existing.created_at != message.created_at
+                || existing.transport_route != message.transport_route
+            {
+                bail!("remote message ID was already used for different content or route");
+            }
+            return Ok(existing);
+        }
+        Self::check_budgets(&transaction, &message)?;
         message.status = MessageStatus::Queued;
+        message.delivery_turn = None;
+        message.error = None;
+        message.remote_inbound = true;
         Self::write(&transaction, &message)?;
         transaction.commit()?;
         Ok(message)
+    }
+    pub fn validate_remote_reply(message: &Message, previous: &Message) -> Result<()> {
+        if previous.remote_inbound
+            || previous.profile_id != message.profile_id
+            || previous.target_workshop != message.source_workshop
+            || previous.source_workshop != message.target_workshop
+            || previous.target_session != message.source_session
+            || previous.source_session != message.target_session
+            || previous.root_id != message.root_id
+            || previous.hop + 1 != message.hop
+        {
+            bail!("remote reply does not match the saved outbound return route");
+        }
+        Ok(())
+    }
+    /// Round-robin pagination keeps old saved return routes reachable after
+    /// delivery, without loading an unbounded conversation history each tick.
+    pub fn outbound_routes(&self, after: u64) -> Result<Vec<(u64, String)>> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare("SELECT rowid,id FROM agent_messages WHERE rowid>?1 AND json_extract(payload,'$.target_workshop') IS NOT NULL AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0) AND status IN ('queued','delivering','delivered') ORDER BY rowid LIMIT 8")?;
+        Ok(statement
+            .query_map([after], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+    pub fn replies_for_route(
+        &self,
+        workshop: &str,
+        session: &str,
+        root: &str,
+    ) -> Result<Vec<Message>> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare("SELECT payload FROM agent_messages WHERE target_session=?1 AND root_id=?2 AND json_extract(payload,'$.target_workshop')=?3 AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0) AND json_extract(payload,'$.in_reply_to') IS NOT NULL AND status IN ('queued','delivering') ORDER BY rowid LIMIT 2")?;
+        statement
+            .query_map(params![session, root, workshop], |row| {
+                row.get::<_, String>(0)
+            })?
+            .map(|raw| decode(&raw?))
+            .collect()
+    }
+    pub fn received_reply_outcomes(&self, previous: &Message) -> Result<Vec<Message>> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare("SELECT payload FROM agent_messages WHERE target_session=?1 AND root_id=?2 AND json_extract(payload,'$.source_workshop')=?3 AND coalesce(json_extract(payload,'$.remote_inbound'),0) ORDER BY rowid LIMIT 16")?;
+        statement
+            .query_map(
+                params![
+                    previous.source_session,
+                    previous.root_id,
+                    previous.target_workshop
+                ],
+                |row| row.get::<_, String>(0),
+            )?
+            .map(|raw| decode(&raw?))
+            .collect()
     }
     pub fn get(&self, id: &str) -> Result<Option<Message>> {
         Self::find(&self.connection()?, id)
     }
     pub fn pending(&self) -> Result<Vec<PendingMessage>> {
         let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT id,profile_id,target_session,status,delivery_turn FROM agent_messages WHERE status IN ('queued','delivering') ORDER BY rowid LIMIT 64")?;
+        let mut statement = connection.prepare("SELECT id,profile_id,target_session,status,delivery_turn,(json_extract(payload,'$.target_workshop') IS NOT NULL AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0)) FROM agent_messages WHERE status IN ('queued','delivering') ORDER BY rowid LIMIT 64")?;
         Ok(statement
             .query_map([], |row| {
                 let status: String = row.get(3)?;
@@ -208,6 +341,7 @@ impl MessageStore {
                         MessageStatus::Delivering
                     },
                     delivery_turn: row.get(4)?,
+                    remote_outbound: row.get(5)?,
                 })
             })?
             .collect::<rusqlite::Result<_>>()?)
@@ -243,17 +377,28 @@ impl MessageStore {
         transaction.commit()?;
         Ok(())
     }
+    #[cfg(test)]
     pub fn inbox(&self, profile: &str, session: &str, turn: &str) -> Result<Vec<Message>> {
+        self.inbox_allowed(profile, session, turn, |_| true)
+    }
+    pub fn inbox_allowed(
+        &self,
+        profile: &str,
+        session: &str,
+        turn: &str,
+        allowed: impl Fn(&Message) -> bool,
+    ) -> Result<Vec<Message>> {
         let mut connection = self.connection()?;
         let transaction =
             connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let mut messages: Vec<Message> = {
-            let mut statement = transaction.prepare("SELECT payload FROM agent_messages WHERE profile_id=?1 AND target_session=?2 AND status='queued' ORDER BY rowid LIMIT 8")?;
+            let mut statement = transaction.prepare("SELECT payload FROM agent_messages WHERE profile_id=?1 AND target_session=?2 AND status='queued' AND (coalesce(json_extract(payload,'$.remote_inbound'),0)=1 OR json_extract(payload,'$.target_workshop') IS NULL) ORDER BY rowid LIMIT 8")?;
             statement
                 .query_map(params![profile, session], |row| row.get::<_, String>(0))?
                 .map(|raw| decode(&raw?))
                 .collect::<Result<_>>()?
         };
+        messages.retain(|message| allowed(message));
         for message in &mut messages {
             message.status = MessageStatus::Delivered;
             message.delivery_turn = Some(turn.to_string());
@@ -289,6 +434,11 @@ mod tests {
             status: MessageStatus::Queued,
             delivery_turn: None,
             error: None,
+            source_workshop: None,
+            target_workshop: None,
+            hop: 0,
+            remote_inbound: false,
+            transport_route: None,
         }
     }
     #[test]
@@ -407,5 +557,34 @@ mod tests {
         input.body = "\0".repeat(8000);
         let sent = store.enqueue(input, "one").unwrap();
         assert_eq!(store.get(&sent.id).unwrap().unwrap().body, sent.body);
+    }
+    #[test]
+    fn existing_local_records_keep_their_inbox_and_retry_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MessageStore::new(dir.path().join("messages.sqlite3"));
+        let sent = store.enqueue(message("a", "b", "t"), "one").unwrap();
+        let mut legacy = serde_json::to_value(&sent).unwrap();
+        for field in [
+            "source_workshop",
+            "target_workshop",
+            "hop",
+            "remote_inbound",
+            "transport_route",
+        ] {
+            legacy.as_object_mut().unwrap().remove(field);
+        }
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE agent_messages SET payload=?1 WHERE id=?2",
+                params![legacy.to_string(), sent.id],
+            )
+            .unwrap();
+        let retried = store.enqueue(message("a", "b", "t"), "one").unwrap();
+        assert_eq!(retried.id, sent.id);
+        assert!(!store.pending().unwrap()[0].remote_outbound);
+        assert!(store.outbound_routes(0).unwrap().is_empty());
+        assert_eq!(store.inbox("user:alice", "b", "active").unwrap().len(), 1);
     }
 }

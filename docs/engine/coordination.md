@@ -327,7 +327,7 @@ The workshop's `agent_messages.sqlite3` transactionally stores immutable sender,
 recipient, body, exchange root, retry key identity, and mutable delivery state.
 A message key is bound to owner, source chat, and exact source turn. Reusing a
 key with different content is rejected. The store caps pending messages at 64,
-sends per turn at eight, and messages per exchange at sixteen. Native message
+sends per turn at eight, and messages per exchange on each workshop at sixteen. Native message
 wakes inherit the exchange budget even when forwarding rather than replying.
 Bodies are limited to 8000 UTF-8 bytes. Database I/O is admitted through
 `ForgeExecutionService`; pending and inbox reads are bounded.
@@ -346,4 +346,66 @@ Successful recipient turns become `delivered`; errors/cancellation become
 restart and is not automatically replayed. Only a provably rejected admission
 can return to `queued`. Sender and recipient can inspect their own message's
 status. Replies are explicit messages, not inferred from arbitrary final text.
-No new public HTTP or SDK routes are introduced by this local service.
+The same tool also routes messages across paired workshops; the signed transport
+below is native-only and does not add a public SDK chat mutation API.
+
+### Cross-workshop transport
+
+`discover` without `workshop` returns local `participants`, the current
+`workshop` ID, and available `workshops` (IDs and names). Supply an exact workshop
+ID or unique name to discover remotely or send there. `target` on remote
+discovery selects an exact Bot/chat ID or unique name, avoiding truncation of
+the 200-participant listing. `reply` rejects `target` and `workshop` overrides and
+uses its saved route. Remote discovery and initiation require the source
+workshop's owner profile or execution administration.
+
+Native `POST /v1/mesh/agents/messages` requires `peer.exchange`, an active
+`mesh.message` pairing, and an Ed25519 `MeshCapability::Message` envelope. The
+authenticated pairing ID must match the signed sender. The recipient verifies
+the complete payload, sender, recipient, and envelope freshness; responses are
+signed and pinned to the paired destination key and originating request hash.
+New remote discovery and delivery require destination policy permitting
+unattended Assistant agent targeting (`enabled`, unexpired, `assistant_work`,
+`allow_agent_targeting`, `host_shell`), or a full Portal pairing. Queued inbound
+messages recheck pairing and policy before inbox consumption or wake admission.
+Replies require a still-valid pairing and an exact saved outbound return route.
+
+The signed payload has `schema_version: 1` and a tagged `request`:
+
+| Action | Fields |
+| --- | --- |
+| `discover` | `query`: optional exact participant ID/name |
+| `deliver` | `message`: immutable wire message |
+| `status` | `message_id`, `source_session`, `acknowledgments`: reply receipts |
+
+A wire message contains `id`, `source_session`, `source_turn`, `source_name`,
+`target_session`, `target_name`, `source_workshop`, `target_workshop`, `body`,
+`root_id`, `in_reply_to`, `created_at`, `hop`, and `mailbox_return`. The latter
+requests a durable reply mailbox for a one-way worker connection. It carries no profile, pairing
+credential, execution approval, or tool authority. New deliveries map to the
+locally saved pairing's profile, falling back to the workshop owner for unbound
+pairings; replies map to the original journal's owner. Native
+Bot/chat visibility and archival checks still apply. Workshop-qualified retry
+identities avoid collisions between equal chat IDs on different daemons.
+
+Responses contain `schema_version`, `request_hash`, nullable `participants` and
+`receipt`, and `replies`. A receipt contains `id`, `source_session`,
+`target_session`, `status`, and nullable `error`. Sender journals record remote
+receipts; the destination journal owns the native wake claim and final outcome.
+Network retries import the same immutable ID and cannot replay an admitted turn.
+Exchange roots and the sixteen-hop limit survive cross-workshop forwarding.
+
+Daemon-owned worker connections use their saved token, signing identity, pinned
+destination, and existing HTTP/Iroh transport. A saved connection cannot be
+replaced by a similarly named workshop. Direct mesh peers with a LAN endpoint
+use the signed mesh HTTP transport. Models select discovered workshop IDs/names
+and participants, never URLs or credentials.
+
+One-way worker links return replies through the originating daemon's status
+polls. The recipient keeps replies in a durable mailbox until an authenticated
+receipt acknowledges their native outcome. Lost responses, delayed replies
+after initial delivery, and daemon restarts retain that route. Each dispatcher
+cycle selects up to eight outbound routes in round-robin order with four
+concurrent exchanges. A response exports at most two replies and a status
+request acknowledges at most sixteen imported replies. Request bodies are
+bounded at 64 KiB and responses at 256 KiB; transport timeouts are six seconds.

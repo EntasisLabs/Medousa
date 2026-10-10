@@ -620,6 +620,8 @@ pub enum DaemonOperation {
     MediaUploadPost,
     #[serde(rename = "mesh.active_work.post")]
     MeshActiveWorkPost,
+    #[serde(rename = "mesh.agents.messages.post")]
+    MeshAgentsMessagesPost,
     #[serde(rename = "mesh.execution_target.post")]
     MeshExecutionTargetPost,
     #[serde(rename = "mesh.inbox.get")]
@@ -1303,6 +1305,7 @@ impl DaemonOperation {
             Self::MediaByMediaIdGet => "media.by_media_id.get",
             Self::MediaUploadPost => "media.upload.post",
             Self::MeshActiveWorkPost => "mesh.active_work.post",
+            Self::MeshAgentsMessagesPost => "mesh.agents.messages.post",
             Self::MeshExecutionTargetPost => "mesh.execution_target.post",
             Self::MeshInboxGet => "mesh.inbox.get",
             Self::MeshIntrosByIntroIdAcceptPost => "mesh.intros.by_intro_id.accept.post",

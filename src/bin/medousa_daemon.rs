@@ -1103,7 +1103,7 @@ async fn start_daemon() -> Result<()> {
         .merge(
             medousa::peer_message_handlers::peer_message_surface().with_state(peer_message_state),
         )
-        .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state));
+        .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state.clone()));
     if let Some(federation_state) = work_environment_federation_state {
         declared = declared.merge(
             medousa::mesh::work_environment_federation::surface().with_state(federation_state),
@@ -1151,7 +1151,9 @@ async fn start_daemon() -> Result<()> {
         }
     };
     let _agent_messages =
-        match medousa::agent_messaging::start(state.clone(), shutdown_rx.clone()).await {
+        match medousa::agent_messaging::start(state.clone(), shutdown_rx.clone(), mesh_api_state)
+            .await
+        {
             Ok(host) => Some(host),
             Err(error) => {
                 tracing::warn!(%error, "agent messaging unavailable; chat remains active");

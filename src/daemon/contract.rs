@@ -130,6 +130,11 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
             schema: SchemaRef::named("string"),
         });
     }
+    if operation_id == "mesh.agents.messages.post" {
+        let mut body = json_body("MeshAgentMessageRequest");
+        body.schema = SchemaRef::deferred("MeshAgentMessageRequest");
+        spec.request_body = Some(body);
+    }
     if operation_id == "coordination.proposals.get" {
         spec.parameters.extend([
             ParameterSpec {
@@ -387,12 +392,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 474);
-        assert_eq!(with_pairing.len(), 493);
+        assert_eq!(without_pairing.len(), 475);
+        assert_eq!(with_pairing.len(), 494);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 493);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 494);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 

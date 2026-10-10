@@ -2165,6 +2165,13 @@ pub const MESH_ACTIVE_WORK_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const MESH_AGENTS_MESSAGES_POST: Operation = Operation {
+    id: "mesh.agents.messages.post",
+    method: "POST",
+    path: "/v1/mesh/agents/messages",
+    streaming: false,
+};
+
 pub const MESH_EXECUTION_TARGET_POST: Operation = Operation {
     id: "mesh.execution_target.post",
     method: "POST",
@@ -3769,6 +3776,7 @@ pub static ALL: &[Operation] = &[
     MEDIA_BY_MEDIA_ID_GET,
     MEDIA_UPLOAD_POST,
     MESH_ACTIVE_WORK_POST,
+    MESH_AGENTS_MESSAGES_POST,
     MESH_EXECUTION_TARGET_POST,
     MESH_INBOX_GET,
     MESH_INTROS_BY_INTRO_ID_ACCEPT_POST,
