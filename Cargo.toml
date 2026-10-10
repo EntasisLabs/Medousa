@@ -96,10 +96,10 @@ medousa-work = { path = "crates/medousa-work", optional = true }
 medousa-sdk = { path = "crates/medousa-sdk", optional = true }
 medousa-acp-client = { path = "crates/medousa-acp-client", optional = true }
 medousa-forge = { path = "crates/medousa-forge", optional = true }
-detamu = { version = "0.1.1", default-features = false, features = ["code", "surreal"], optional = true }
-detamu-source-git = { version = "0.1.1", optional = true }
-detamu-language-rust = { version = "0.1.1", optional = true }
-detamu-language = { version = "0.1.1", optional = true }
+detamu = { version = "0.2.0", default-features = false, features = ["code", "surreal"], optional = true }
+detamu-source-git = { version = "0.2.0", optional = true }
+detamu-language-rust = { version = "0.2.0", optional = true }
+detamu-language = { version = "0.2.0", optional = true }
 medousa-browser-lite = { path = "crates/medousa-browser-lite", optional = true }
 medousa-browser-bridge = { path = "crates/medousa-browser-bridge", optional = true }
 medousa-computer-bridge = { path = "crates/medousa-computer-bridge", optional = true }

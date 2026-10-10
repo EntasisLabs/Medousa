@@ -254,7 +254,10 @@ impl DetamuHandle {
 }
 
 pub struct DetamuHost {
-    detamu: Detamu,
+    // Detamu 0.2 owns Send-only listeners, so its indexing future is !Send.
+    // Run it inside an admitted blocking worker rather than a Tokio worker.
+    detamu: Arc<StdMutex<Detamu>>,
+    execution: medousa_forge::execution::ForgeExecutionService,
     store: Arc<dyn DetamuStore>,
     root: PathBuf,
     /// Last successful index (any path), for status without a work_id.
@@ -296,7 +299,8 @@ impl DetamuHost {
         }
         let detamu = builder.build();
         Ok(Arc::new(Self {
-            detamu,
+            detamu: Arc::new(StdMutex::new(detamu)),
+            execution: medousa_forge::execution::ForgeExecutionService::new(),
             store,
             root,
             last_global: RwLock::new(None),
@@ -320,11 +324,24 @@ impl DetamuHost {
             locator: locator.to_string_lossy().into_owned(),
             version: revision.map(str::to_owned),
         };
+        let detamu = Arc::clone(&self.detamu);
+        let runtime = tokio::runtime::Handle::current();
         let report = self
-            .detamu
-            .index_source(&GitRepositorySource, &request)
+            .execution
+            .run(
+                medousa_forge::execution::ExecutionClass::Observation,
+                1024 * 1024,
+                move || {
+                    let engine = detamu.lock().map_err(|_| {
+                        medousa_forge::ForgeError::Store("Detamu indexing lock poisoned".into())
+                    })?;
+                    runtime
+                        .block_on(engine.index_source(&GitRepositorySource, &request))
+                        .map_err(|error| medousa_forge::ForgeError::Store(error.to_string()))
+                },
+            )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
         *self.last_global.write().await = Some(IndexSummary::from(&report));
         Ok(report)
     }
@@ -1176,6 +1193,78 @@ mod tests {
         let right = right.expect("open right");
         assert!(Arc::ptr_eq(&left, &right));
         assert!(handle.peek().is_some());
+    }
+
+    #[tokio::test]
+    async fn indexed_snapshot_survives_store_reopen() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path().join("repo");
+        let fixture_repo = repo.clone();
+        tokio::task::spawn_blocking(move || {
+            std::fs::create_dir_all(fixture_repo.join("src")).unwrap();
+            std::fs::write(
+                fixture_repo.join("src/lib.rs"),
+                "pub fn answer() -> u32 { 42 }\n",
+            )
+            .unwrap();
+            for args in [
+                vec!["init"],
+                vec!["add", "."],
+                vec![
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "commit",
+                    "-m",
+                    "fixture",
+                ],
+            ] {
+                let output = std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(&fixture_repo)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        })
+        .await
+        .unwrap();
+        let root = dir.path().join("detamu");
+        let host = DetamuHost::open(root.clone()).await.expect("open");
+        let report = host.index_path(&repo, None).await.expect("index");
+        assert!(report.entities > 0);
+        let before = host
+            .find_files(&report.snapshot, Some("src/lib.rs"), Some(10))
+            .await
+            .expect("files");
+        assert_eq!(before["files"].as_array().unwrap().len(), 1);
+        drop(host);
+        // SurrealKV releases its file lock asynchronously after the last client drops.
+        let mut reopened = None;
+        for _ in 0..50 {
+            match DetamuHost::open(root.clone()).await {
+                Ok(host) => {
+                    reopened = Some(host);
+                    break;
+                }
+                Err(error) if error.contains("already locked") => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+                Err(error) => panic!("reopen: {error}"),
+            }
+        }
+        let reopened = reopened.expect("store lock released after dropping host");
+        let after = reopened
+            .find_files(&report.snapshot, Some("src/lib.rs"), Some(10))
+            .await
+            .expect("persisted files");
+        assert_eq!(before, after);
+        assert!(reopened.code_avec_gaps(&report.snapshot).await.is_ok());
     }
 
     #[tokio::test]
