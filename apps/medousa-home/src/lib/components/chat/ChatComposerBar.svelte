@@ -505,18 +505,20 @@
           {#if isTauriMobilePlatform() && agentRuntime === "medousa"}
             <MobileComposerTurnSettings disabled={blocked} quiet />
           {:else}
-            <ChatModelPicker
-              disabled={blocked}
-              quiet
-              {agentRuntime}
-              {agentConfigOptions}
-              {agentRuntimePending}
-              onAgentConfigChange={onAgentConfigChange}
-              {externalConversations}
-              {externalConversationId}
-              {onExternalConversationChange}
-              {onExternalConversationsRefresh}
-            />
+            {#key `${chat.workshopScopeId}:${chat.workshopEpoch}`}
+              <ChatModelPicker
+                disabled={blocked}
+                quiet
+                {agentRuntime}
+                {agentConfigOptions}
+                {agentRuntimePending}
+                onAgentConfigChange={onAgentConfigChange}
+                {externalConversations}
+                {externalConversationId}
+                {onExternalConversationChange}
+                {onExternalConversationsRefresh}
+              />
+            {/key}
           {/if}
         {/if}
 
@@ -636,18 +638,20 @@
       {/if}
 
       {#if showModelPicker && !providerConversation}
-        <ChatModelPicker
-          disabled={blocked}
-          quiet
-          {agentRuntime}
-          {agentConfigOptions}
-          {agentRuntimePending}
-          onAgentConfigChange={onAgentConfigChange}
-          {externalConversations}
-          {externalConversationId}
-          {onExternalConversationChange}
-          {onExternalConversationsRefresh}
-        />
+        {#key `${chat.workshopScopeId}:${chat.workshopEpoch}`}
+          <ChatModelPicker
+            disabled={blocked}
+            quiet
+            {agentRuntime}
+            {agentConfigOptions}
+            {agentRuntimePending}
+            onAgentConfigChange={onAgentConfigChange}
+            {externalConversations}
+            {externalConversationId}
+            {onExternalConversationChange}
+            {onExternalConversationsRefresh}
+          />
+        {/key}
       {/if}
 
       <span class="composer-bar-footer-spacer" aria-hidden="true"></span>
