@@ -1150,6 +1150,16 @@ async fn start_daemon() -> Result<()> {
             None
         }
     };
+    let _remote_completions = match medousa::daemon::remote_peer_completions::start(
+        state.clone(),
+        shutdown_rx.clone(),
+    ) {
+        Ok(host) => Some(host),
+        Err(error) => {
+            tracing::warn!(%error, "remote completion retrieval unavailable; chat remains active");
+            None
+        }
+    };
     let _agent_messages =
         match medousa::agent_messaging::start(state.clone(), shutdown_rx.clone(), mesh_api_state)
             .await

@@ -264,18 +264,29 @@ the proposal again or starts an executor. A missing destination record stays
 pending rather than being treated as evidence that execution failed.
 
 On embedded mobile, Home performs a bounded rotating sweep on foreground,
-reconnect, and periodic refresh. Desktop daemons persist the same source
-associations; automatic completion retrieval is not yet wired there.
-The mobile sweep verifies the pinned workshop signature and the saved proposal,
+reconnect, and periodic refresh. Desktop daemons retrieve results in the
+background, including while Home is closed, and resume from saved associations
+after a restart. Every 15 seconds, a rotating page checks up to four assignments
+concurrently, with an eight-second network deadline per query and capped retry
+backoff for pending or unavailable workshops. Retrieval requires the original
+source authority, a still-available owner profile, source chat visibility, and
+the saved worker pairing. Changing the active profile does not change the
+assignment's owner.
+
+Both sweeps verify the pinned workshop signature and the saved proposal,
 assignment, session, receipt, and decision identities before appending to the
 canonical source transcript. The append carries the remote decision reference
 and a deterministic execution correlation. Exact replay after a restart is a
 no-op; conflicting content or revoked source visibility fails closed. The source
-marks delivery complete only after the transcript commit, and merges committed
-history into the visible chat without replacing an active response stream.
+marks delivery complete only after the transcript commit. Foreground desktop
+windows refresh and merge committed history every 15 seconds and on reconnect,
+without replacing an active response stream or reconciling a different chat,
+profile, or workshop selected during the refresh.
 
-This is foreground result retrieval, not background push or Live invitation
-delivery. Proposals without owner continuation retain their terminal result in
+Retrieval imports the remote owner's committed answer; it does not dispatch
+another assignment or start another source model turn. This is polling rather
+than background push or Live invitation delivery. Proposals without owner
+continuation retain their terminal result in
 the delegation card. Older proposals without a durable source association are
 not retroactively bound by title, session-name matching, or model inference.
 

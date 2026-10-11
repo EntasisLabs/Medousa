@@ -72,6 +72,12 @@ The status line lets you cancel a job or retry an uncertain submission using
 the original request ID. Responses are saved to the Bot conversation on the
 workshop. Execution administration is required to configure these bindings.
 
+For native coding handoffs across paired workshops with owner continuation,
+the desktop daemon retrieves the remote owner's final answer into the original
+coordinator chat. Retrieval continues while Medousa's window is closed and
+resumes after daemon restarts. An open window refreshes the answer automatically;
+offline workshops are retried without submitting the assignment again.
+
 ## Message a Bot or another agent chat
 
 Ask your assistant, for example: “Message Taco and tell it the API review is

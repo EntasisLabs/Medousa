@@ -13,9 +13,10 @@ export interface RemotePeerCompletionSyncResult {
 }
 
 export type RemotePeerCompletionSyncDependencies = {
-  invokeSync: () => Promise<RemotePeerCompletionSyncResult>;
+  invokeSync: () => Promise<RemotePeerCompletionSyncResult | null>;
   eligible: () => boolean;
   onApplied: (result: RemotePeerCompletionSyncResult) => Promise<void> | void;
+  onDaemonRefresh?: (stillCurrent: () => boolean) => Promise<void> | void;
   intervalMs?: number;
   setIntervalFn?: (callback: () => void, intervalMs: number) => number;
   clearIntervalFn?: (handle: number) => void;
@@ -42,13 +43,14 @@ export function createRemotePeerCompletionSync(deps: RemotePeerCompletionSyncDep
     const current = (async () => {
       try {
         const result = await deps.invokeSync();
-        if (
-          !stopped &&
-          requestGeneration === runGeneration &&
-          deps.eligible() &&
-          result.applied_session_ids.length > 0
-        ) {
-          await deps.onApplied(result);
+        const stillCurrent = () =>
+          !stopped && requestGeneration === runGeneration && deps.eligible();
+        if (stillCurrent()) {
+          if (result && result.applied_session_ids.length > 0) {
+            await deps.onApplied(result);
+          } else if (!result) {
+            await deps.onDaemonRefresh?.(stillCurrent);
+          }
         }
       } catch {
         // Completion sync is opportunistic; the next foreground/interval retries.
@@ -140,15 +142,51 @@ export async function applyRemotePeerCompletionResult(
 }
 
 let requestScope: PersonalScopeSnapshot | null = null;
+
+/** Desktop retrieval runs in the daemon; foreground windows merge its commits. */
+export async function refreshDesktopPeerCompletionHistory(deps: {
+  scope: () => PersonalScopeSnapshot;
+  scopeStillMatches: (snapshot: PersonalScopeSnapshot) => boolean;
+  focusedSessionId: () => string;
+  refreshSessions: () => Promise<unknown>;
+  reconcileOnResume: () => Promise<unknown>;
+}): Promise<void> {
+  const snapshot = deps.scope();
+  const focusedSessionId = deps.focusedSessionId();
+  await deps.refreshSessions();
+  if (
+    focusedSessionId &&
+    deps.scopeStillMatches(snapshot) &&
+    deps.focusedSessionId() === focusedSessionId
+  ) {
+    await deps.reconcileOnResume();
+  }
+}
+
 const singleton = createRemotePeerCompletionSync({
-  invokeSync: () => {
+  invokeSync: async () => {
+    if (!isTauriMobilePlatform()) {
+      return null;
+    }
     requestScope = personalScopeSnapshot();
     return invoke<RemotePeerCompletionSyncResult>("coordination_sync_remote_peer_completions");
   },
   eligible: () =>
-    isTauriMobilePlatform() &&
     typeof document !== "undefined" &&
-    document.visibilityState === "visible",
+    document.visibilityState === "visible" &&
+    chat.workshopScopeId === workshops.activeWorkshopId,
+  onDaemonRefresh: (stillCurrent) =>
+    refreshDesktopPeerCompletionHistory({
+      scope: () => ({
+        workshopId: workshops.activeWorkshopId,
+        profileId: userProfiles.activeProfileId,
+        workshopEpoch: chat.workshopEpoch,
+      }),
+      scopeStillMatches: (snapshot) => stillCurrent() && scopeStillMatches(snapshot),
+      focusedSessionId: () => chat.focusedSessionId,
+      refreshSessions: () => chat.refreshSessions({ force: true }),
+      reconcileOnResume: () => chat.reconcileOnResume({ notice: false }),
+    }),
   onApplied: (result) =>
     applyRemotePeerCompletionResult(result, {
       personalScope: personalScopeSnapshot,
@@ -175,7 +213,6 @@ const singleton = createRemotePeerCompletionSync({
 
 /** AppShell owns the poller; proposal refreshes can nudge the same serialized sync. */
 export function startRemotePeerCompletionSync(): () => void {
-  if (!isTauriMobilePlatform()) return () => {};
   return singleton.start();
 }
 
