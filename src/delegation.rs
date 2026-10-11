@@ -38,9 +38,11 @@ use crate::daemon_runtime_handlers::DaemonRuntimeRegistrar;
 use crate::delegated_task::{
     DELEGATED_TASK_SCHEMA_VERSION, DelegatedTaskControlAction, DelegatedTaskControlRequest,
     DelegatedTaskError, DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskStatus,
-    DelegatedTaskTransport, build_bounded_context_grant, source_execution_from_grant,
-    validate_task_control_observation, validate_task_control_request, validate_task_observation,
+    DelegatedTaskTransport, source_execution_from_grant, validate_task_control_observation,
+    validate_task_control_request, validate_task_observation,
 };
+
+mod continuity;
 use crate::delegation_tools::PendingRemoteWorker;
 use crate::execution_context::active_turn_execution_context;
 use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
@@ -1245,6 +1247,10 @@ pub struct DelegationService {
     runtime: Arc<RuntimeComposition>,
     authority_id: AuthorityId,
     session_store: Arc<dyn SessionStore>,
+    memory_reader: Option<
+        Arc<dyn stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader>,
+    >,
+    context_execution: Arc<medousa_forge::execution::ForgeExecutionService>,
     endpoints: Arc<dyn DeliveryEndpointStore>,
     waits: Arc<dyn TurnWaitStore>,
     delivery: Arc<DelegationResultDelivery>,
@@ -1254,6 +1260,45 @@ pub struct DelegationService {
 }
 
 impl DelegationService {
+    async fn export_context(
+        &self,
+        session: &SessionId,
+        created_by: &str,
+        correlation_key: &str,
+        created_at: DateTime<Utc>,
+        selection: Option<crate::delegated_task::DelegatedContextSelection>,
+        coding_peer: bool,
+    ) -> Result<crate::delegated_task::DelegatedContextGrant, DelegatedTaskError> {
+        let store = self.session_store.clone();
+        let authority = self.authority_id.clone();
+        let session = session.clone();
+        let created_by = created_by.to_string();
+        let correlation_key = correlation_key.to_string();
+        self.context_execution
+            .run(
+                medousa_forge::execution::ExecutionClass::StoreIo,
+                crate::delegated_task::MAX_DELEGATED_CONTEXT_BYTES,
+                move || {
+                    let build = if coding_peer {
+                        crate::delegated_task::build_peer_context_grant
+                    } else {
+                        crate::delegated_task::build_selected_context_grant
+                    };
+                    Ok(build(
+                        store.as_ref(),
+                        &authority,
+                        &session,
+                        &created_by,
+                        &correlation_key,
+                        created_at,
+                        selection,
+                    ))
+                },
+            )
+            .await
+            .map_err(|error| DelegatedTaskError::internal(error.to_string()))?
+    }
+
     pub async fn operator_bot_replay(
         self: &Arc<Self>,
         profile_id: &str,
@@ -1495,15 +1540,17 @@ impl DelegationService {
             occurred_at: now,
             payload: json!({ "user_prompt": prompt, "system_prompt": null }),
         };
-        let context = build_bounded_context_grant(
-            self.session_store.as_ref(),
-            &self.authority_id,
-            &source_session,
-            &format!("operator:{profile_id}"),
-            &turn_id,
-            now,
-        )
-        .map_err(port_failure)?;
+        let context = self
+            .export_context(
+                &source_session,
+                &format!("operator:{profile_id}"),
+                &turn_id,
+                now,
+                None,
+                false,
+            )
+            .await
+            .map_err(port_failure)?;
         let payload = DelegationJobPayload {
             work_id: work_id.clone(),
             target,
@@ -1688,15 +1735,17 @@ impl DelegationService {
             };
             let source_execution =
                 source_execution_from_grant(&self.authority_id, &grant).map_err(port_failure)?;
-            let context = build_bounded_context_grant(
-                self.session_store.as_ref(),
-                &self.authority_id,
-                execution.session_id(),
-                &format!("daemon:{}", self.authority_id),
-                &turn_id,
-                now,
-            )
-            .map_err(port_failure)?;
+            let context = self
+                .export_context(
+                    execution.session_id(),
+                    &format!("daemon:{}", self.authority_id),
+                    &turn_id,
+                    now,
+                    None,
+                    false,
+                )
+                .await
+                .map_err(port_failure)?;
             let payload = PendingDelegationSpawn {
                 work_id: work_id.clone(),
                 spawn: spawn.clone(),
@@ -1764,6 +1813,7 @@ impl DelegationService {
         instructions: &str,
         continue_owner: bool,
         existing_agent_session_id: Option<String>,
+        context_selection: Option<crate::delegated_task::DelegatedContextSelection>,
     ) -> Result<crate::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError> {
         let execution = active_turn_execution_context().ok_or_else(|| {
             DelegatedTaskError::invalid("remote peer proposal requires an admitted owner turn")
@@ -1783,14 +1833,32 @@ impl DelegationService {
                     "exact workshop is unavailable for agent-targeted Assistant work",
                 )
             })?;
-        let context = build_bounded_context_grant(
-            self.session_store.as_ref(),
-            &self.authority_id,
-            execution.session_id(),
-            &format!("daemon:{}", self.authority_id),
-            request_key,
-            Utc::now(),
-        )?;
+        let context = self
+            .export_context(
+                execution.session_id(),
+                &format!("daemon:{}", self.authority_id),
+                request_key,
+                Utc::now(),
+                context_selection,
+                true,
+            )
+            .await?;
+        let instructions = if context_selection.is_none() {
+            let owner = execution
+                .principal()
+                .profile_id()
+                .or(execution.legacy_scope().identity_user_id.as_deref());
+            continuity::with_locus_continuity(
+                self.memory_reader.as_deref(),
+                owner,
+                execution.memory_session_id(),
+                instructions,
+                context.entries.last().unwrap().turn.timestamp,
+            )
+            .await
+        } else {
+            instructions.to_string()
+        };
         let source_execution = medousa_types::ExecutionRef {
             authority_id: self.authority_id.clone(),
             session_id: execution.session_id().clone(),
@@ -1805,7 +1873,7 @@ impl DelegationService {
             forge_work_id: forge_work_id.to_string(),
             request_key: request_key.to_string(),
             runtime,
-            instructions: instructions.to_string(),
+            instructions,
             continue_owner,
             existing_agent_session_id,
             context,
@@ -1946,15 +2014,17 @@ impl DelegationService {
                     "system_prompt": null,
                 }),
             };
-            let context = build_bounded_context_grant(
-                self.session_store.as_ref(),
-                &self.authority_id,
-                execution.session_id(),
-                &format!("daemon:{}", self.authority_id),
-                &turn_id,
-                now,
-            )
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+            let context = self
+                .export_context(
+                    execution.session_id(),
+                    &format!("daemon:{}", self.authority_id),
+                    &turn_id,
+                    now,
+                    None,
+                    false,
+                )
+                .await
+                .map_err(|error| StasisError::PortFailure(error.to_string()))?;
             let source_execution = source_execution_from_grant(&self.authority_id, &grant)
                 .map_err(|error| StasisError::PortFailure(error.to_string()))?;
             let payload = DelegationJobPayload {
@@ -2456,6 +2526,18 @@ pub fn install_delegation_runtime(
     session_store: Arc<dyn SessionStore>,
     host: Arc<dyn DelegatedTaskTransport>,
 ) -> Result<Arc<DelegationService>> {
+    install_delegation_runtime_with_memory(runtime, authority_id, session_store, host, None)
+}
+
+pub fn install_delegation_runtime_with_memory(
+    runtime: Arc<RuntimeComposition>,
+    authority_id: AuthorityId,
+    session_store: Arc<dyn SessionStore>,
+    host: Arc<dyn DelegatedTaskTransport>,
+    memory_reader: Option<
+        Arc<dyn stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader>,
+    >,
+) -> Result<Arc<DelegationService>> {
     let waits: Arc<dyn TurnWaitStore> = Arc::new(RuntimeDelegationWaitStore::new(runtime.as_ref()));
     let delivery = Arc::new(DelegationResultDelivery::new(session_store.clone()));
     let raw_ingress: Arc<dyn AgentEventIngress> = Arc::new(InMemoryAgentEventIngress::new());
@@ -2481,6 +2563,8 @@ pub fn install_delegation_runtime(
         runtime,
         authority_id,
         session_store,
+        memory_reader,
+        context_execution: Arc::new(medousa_forge::execution::ForgeExecutionService::new()),
         endpoints,
         waits,
         delivery,
@@ -2518,6 +2602,8 @@ pub(crate) fn contract_fixture_delegation_service(
         authority_id: AuthorityId::parse(format!("auth_{}", "f".repeat(64)))
             .expect("static contract fixture authority"),
         session_store,
+        memory_reader: None,
+        context_execution: Arc::new(medousa_forge::execution::ForgeExecutionService::new()),
         endpoints,
         waits,
         delivery,

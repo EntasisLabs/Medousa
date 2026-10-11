@@ -5260,10 +5260,39 @@
     {
       "registry": "general_runtime",
       "name": "cognition_peer_delegate",
-      "description": "Delegate an immutable Medousa Coder/Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. This transfers a bounded, digest-checked slice of this chat. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Unless the user explicitly names a coding runtime, choose the first ready runtime in that workshop inventory's coding_runtime_preferences order; default to Medousa Coder when preferences are absent. Reuse request_key only for an exact retry.",
+      "description": "Delegate an immutable Medousa Coder/Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. Omit context to export a recent tail bounded by entries and serialized bytes, with available source-scoped Locus continuity. Put the complete task, constraints and acceptance criteria in instructions. To select older relevant history, supply context.after_entry_seq (exclusive) and context.through_entry_seq (inclusive) from this chat's committed history. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Unless the user explicitly names a coding runtime, choose the first ready runtime in that workshop inventory's coding_runtime_preferences order; default to Medousa Coder when preferences are absent. Reuse request_key only for an exact retry.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "description": "Exact committed coordinates in the admitted source chat, never another session.",
+                "properties": {
+                  "after_entry_seq": {
+                    "description": "Exclusive lower bound (zero selects from the beginning).",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "through_entry_seq": {
+                    "description": "Inclusive upper bound.",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "after_entry_seq",
+                  "through_entry_seq"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional exact committed range in this chat. Omit for a byte-bounded recent tail plus available Locus continuity. Explicit ranges are never silently shortened."
+          },
           "continue_owner": {
             "description": "Ask for a separately approved result-only continuation in this chat.",
             "type": "boolean"
