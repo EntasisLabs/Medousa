@@ -1140,10 +1140,17 @@ mod tests {
     }
 
     fn proposal_for(request: &RemotePeerProposalRequest) -> PeerAssignmentProposal {
+        proposal_for_source(request, "phone")
+    }
+
+    fn proposal_for_source(
+        request: &RemotePeerProposalRequest,
+        source_device_id: &str,
+    ) -> PeerAssignmentProposal {
         let authority = AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
         let owner_session = SessionRef {
             authority_id: authority.clone(),
-            session_id: remote_proposal_shadow_session(&authority, "phone", request),
+            session_id: remote_proposal_shadow_session(&authority, source_device_id, request),
         };
         let execution_session = SessionRef {
             authority_id: authority.clone(),
@@ -1200,6 +1207,220 @@ mod tests {
             expires_at: Utc::now(),
             continue_owner: request.continue_owner,
         }
+    }
+
+    #[cfg(feature = "full-daemon")]
+    #[tokio::test]
+    async fn daemon_peer_transport_dispatches_signed_proposals_and_persists_return_routes() {
+        // The admitted association store runs on blocking threads. Isolate its
+        // process-wide data root so this test never touches a developer's state.
+        const FIXTURE_ENV: &str = "MEDOUSA_DAEMON_PEER_TRANSPORT_FIXTURE";
+        if std::env::var_os(FIXTURE_ENV).is_none() {
+            let data = tempfile::tempdir().unwrap();
+            let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("peer_coordination_mesh::tests::daemon_peer_transport_dispatches_signed_proposals_and_persists_return_routes")
+                .arg("--nocapture")
+                .env("MEDOUSA_DATA_DIR", data.path())
+                .env(FIXTURE_ENV, "1")
+                .output()
+                .await
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "isolated daemon peer transport failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        use crate::mesh::{
+            DEFAULT_ENVELOPE_TTL_SECS, MeshCapability, MeshEnvelopedRequest, payload_hash_hex,
+            sign_envelope, verify_enveloped_payload,
+        };
+        use base64::Engine as _;
+        use ed25519_dalek::SigningKey;
+        use sha2::{Digest as _, Sha256};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let source_key = SigningKey::from_bytes(&[41; 32]);
+        let remote_key = SigningKey::from_bytes(&[42; 32]);
+        let public = |key: &SigningKey| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.verifying_key().as_bytes())
+        };
+        let source_id: String = Sha256::digest(source_key.verifying_key().as_bytes())[..4]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let source_public = public(&source_key);
+        let remote_public = public(&remote_key);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let handler_calls = calls.clone();
+        let handler_source = source_id.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = axum::Router::new().route(
+            "/v1/mesh/peer-proposals",
+            axum::routing::post(
+                move |headers: axum::http::HeaderMap,
+                      axum::Json(wire): axum::Json<
+                    MeshEnvelopedRequest<RemotePeerProposalRequest>,
+                >| {
+                    let source = handler_source.clone();
+                    let source_public = source_public.clone();
+                    let key = remote_key.clone();
+                    let calls = handler_calls.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::Relaxed);
+                        assert_eq!(
+                            headers.get("authorization").unwrap(),
+                            "Bearer peer-test-token"
+                        );
+                        verify_enveloped_payload(
+                            &wire,
+                            &source_public,
+                            &source,
+                            "runtime-mac",
+                            MeshCapability::TaskRequest,
+                            true,
+                        )
+                        .unwrap();
+                        // Durable origin evidence must precede the network dispatch.
+                        let pending = next_remote_peer_origin_sync_page_admitted(16)
+                            .await
+                            .unwrap();
+                        let digest = remote_peer_proposal_request_digest(&wire.payload).unwrap();
+                        assert!(
+                            pending
+                                .iter()
+                                .any(|origin| origin.source_device_id == source
+                                    && origin.request_digest == digest)
+                        );
+                        let mut proposal = proposal_for_source(&wire.payload, &source);
+                        proposal.expires_at =
+                            chrono::DateTime::parse_from_rfc3339("2030-01-01T00:00:00Z")
+                                .unwrap()
+                                .with_timezone(&Utc);
+                        let mut payload = RemotePeerProposalResponse {
+                            schema_version: REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+                            source_request_digest: Some(digest),
+                            proposal,
+                            binding: None,
+                        };
+                        match wire.payload.request_key.as_str() {
+                            "wrong-task" => {
+                                payload.proposal.request.instructions.push_str(" altered")
+                            }
+                            "wrong-digest" => {
+                                payload.source_request_digest =
+                                    Some(format!("sha256:{}", "0".repeat(64)))
+                            }
+                            _ => {}
+                        }
+                        let recipient = if wire.payload.request_key == "wrong-recipient" {
+                            "other-source"
+                        } else {
+                            &source
+                        };
+                        let key = if wire.payload.request_key == "wrong-key" {
+                            SigningKey::from_bytes(&[43; 32])
+                        } else {
+                            key
+                        };
+                        let envelope = sign_envelope(
+                            &key,
+                            "runtime-mac",
+                            recipient,
+                            1,
+                            MeshCapability::TaskResult,
+                            &payload_hash_hex(&payload).unwrap(),
+                            chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+                        );
+                        axum::Json(MeshEnvelopedRequest { envelope, payload })
+                    }
+                },
+            ),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let root = crate::paths::medousa_data_dir().join("delegation");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("identity.secret"), "29".repeat(32)).unwrap();
+        let connection = crate::daemon_worker::DaemonWorkerConnection {
+            id: "paired-runtime-mac".into(),
+            label: "Studio".into(),
+            workshop_device_id: "runtime-mac".into(),
+            daemon_url: base,
+            pairing_id: "pair-1".into(),
+            daemon_public_key: remote_public,
+            iroh_ticket: None,
+            connected_at: "now".into(),
+        };
+        let mut stored = serde_json::to_value(&connection).unwrap();
+        stored["sessionToken"] = "peer-test-token".into();
+        let credentials =
+            serde_json::to_vec(&serde_json::json!({"version": 1, "connections": [stored]}))
+                .unwrap();
+        fs::write(root.join("workers.json"), &credentials).unwrap();
+        // Exercise the exact trait object installed by the desktop daemon.
+        let transport = crate::daemon_worker::DaemonWorkerPairing::new(root.clone()).transport();
+        let target = crate::delegation::DelegationTarget {
+            route_ref: connection.id,
+            peer_device_id: connection.workshop_device_id,
+            label: Some(connection.label),
+        };
+        let request = request();
+        let response = transport
+            .propose_peer(&target, request.clone())
+            .await
+            .unwrap();
+        let replay = transport
+            .propose_peer(&target, request.clone())
+            .await
+            .unwrap();
+        assert_eq!(response.proposal, replay.proposal);
+        let saved = next_remote_peer_origin_sync_page_admitted(16)
+            .await
+            .unwrap();
+        let saved = saved
+            .iter()
+            .find(|origin| origin.request.request_key == request.request_key)
+            .unwrap();
+        assert_eq!(saved.source_device_id, source_id);
+        assert_eq!(saved.proposal_id.as_deref(), Some("proposal-1"));
+        assert_eq!(saved.assignment_id.as_deref(), Some("assignment-1"));
+        assert_eq!(
+            saved.remote_owner_session.as_ref(),
+            Some(&response.proposal.request.owner_session)
+        );
+        for key in ["wrong-task", "wrong-digest", "wrong-recipient", "wrong-key"] {
+            let mut request = request.clone();
+            request.request_key = key.into();
+            assert!(transport.propose_peer(&target, request).await.is_err());
+            let saved = next_remote_peer_origin_sync_page_admitted(16)
+                .await
+                .unwrap();
+            let saved = saved
+                .iter()
+                .find(|origin| origin.request.request_key == key)
+                .unwrap();
+            assert!(saved.proposal_id.is_none());
+            assert!(saved.assignment_id.is_none());
+        }
+        let unpaired = crate::delegation::DelegationTarget {
+            route_ref: "unpaired".into(),
+            ..target
+        };
+        assert!(transport.propose_peer(&unpaired, request).await.is_err());
+        assert_eq!(calls.load(Ordering::Relaxed), 6);
+        assert_eq!(fs::read(root.join("workers.json")).unwrap(), credentials);
+        assert_eq!(
+            fs::read_to_string(root.join("identity.secret")).unwrap(),
+            "29".repeat(32)
+        );
+        server.abort();
     }
 
     #[test]

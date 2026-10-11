@@ -661,6 +661,36 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
         }
         Ok(out)
     }
+    async fn propose_peer(
+        &self,
+        target: &DelegationTarget,
+        request: crate::peer_coordination_mesh::RemotePeerProposalRequest,
+    ) -> Result<crate::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError> {
+        let (identity, stored) = self.target_async(target.clone()).await?;
+        crate::peer_coordination_mesh::record_remote_peer_origin_pending_for_current_profile_admitted(
+            &identity.device_id,
+            &stored.summary.workshop_device_id,
+            &request,
+        )
+        .await
+        .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+        let response = self
+            .exchange(
+                &stored,
+                &identity,
+                "/v1/mesh/peer-proposals",
+                request.clone(),
+            )
+            .await?;
+        crate::peer_coordination_mesh::record_remote_peer_origin_response_admitted(
+            &stored.summary.workshop_device_id,
+            &request,
+            &response,
+        )
+        .await
+        .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+        Ok(response)
+    }
     async fn submit_or_observe(
         &self,
         t: &DelegationTarget,

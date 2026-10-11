@@ -194,14 +194,17 @@ the live registry after daemon restart is not invented from Forge metadata.
 Proposals use a one-hour expiry and a stable owner/session/authority-scoped
 request key. Exact retries reuse the immutable snapshot and repair its index;
 changed intent under the same key fails closed. Local discovery and proposal
-tools do not approve or launch work. On embedded mobile, `cognition_peer_delegate` accepts only an exact
+tools do not approve or launch work. On desktop daemons and embedded mobile,
+`cognition_peer_delegate` accepts only an exact
 agent-selectable runtime and Forge work id returned by active-work discovery. It
 sends a signed, bounded, digest-checked context grant to
-`/v1/mesh/peer-proposals`. The destination rechecks directional `assistant.work`
+`/v1/mesh/peer-proposals`. Desktop daemons use their saved worker pairing,
+credentials, pinned destination key, and existing HTTP/Iroh route.
+The destination rechecks directional `assistant.work`
 policy, agent targeting, exact runtime, work ownership, and context provenance
 before creating a request-scoped shadow session and the normal immutable local
 proposal. The transfer carries no approval or execution grant. Exact retries
-reuse the shadow; another request key from the same phone chat gets an independent
+reuse the shadow; another request key from the same source chat gets an independent
 immutable shadow. Worker and remote-delegated ceilings remain unchanged.
 An existing destination-owned trusted Assistant policy may approve and launch
 the remote proposal; otherwise the destination returns an approval card.
@@ -239,7 +242,7 @@ transcript evidence nor confer approval or execution authority.
 
 ## Returning a paired-workshop result
 
-New mobile proposals persist an exact source association before sending intent,
+Remote proposals persist an exact source association before sending intent,
 then bind it to the verified signed proposal response. The destination records
 the authenticated sender and expected assignment identity before dispatch.
 This association is independent of whichever chat the user currently has open.
@@ -260,8 +263,10 @@ through this read-only query before accepting a completion. Recovery never sends
 the proposal again or starts an executor. A missing destination record stays
 pending rather than being treated as evidence that execution failed.
 
-Home performs a bounded rotating sweep on foreground, reconnect, and periodic
-refresh. It verifies the pinned workshop signature and the saved proposal,
+On embedded mobile, Home performs a bounded rotating sweep on foreground,
+reconnect, and periodic refresh. Desktop daemons persist the same source
+associations; automatic completion retrieval is not yet wired there.
+The mobile sweep verifies the pinned workshop signature and the saved proposal,
 assignment, session, receipt, and decision identities before appending to the
 canonical source transcript. The append carries the remote decision reference
 and a deterministic execution correlation. Exact replay after a restart is a
