@@ -124,8 +124,11 @@ cannot be confirmed, disconnect Medousa in ChatGPT Settings. Existing connection
 from the older Codex-compatible flow need one new sign-in after this upgrade.
 
 The picker uses the selected account's current public model catalog, including
-its display names and ordering. Models vary with account access. If discovery
-fails, retry it before selecting an account model. Text, image, and file input
+its display names and ordering. Switching workshops reloads account status and
+models from that workshop's daemon. The ChatGPT provider stays visible while
+discovery is pending or unavailable. If discovery fails, its composer panel
+shows the error and offers **Refresh models**. Models vary with account access.
+Text, image, and file input
 are supported when the selected model accepts them. Medousa executes its own
 tools; hosted image generation, computer use, speech, and transcription are not
 supported by this preview. Requests use OpenAI's public Responses endpoint and

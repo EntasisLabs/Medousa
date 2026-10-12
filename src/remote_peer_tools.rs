@@ -26,6 +26,8 @@ struct PeerDelegateInput {
     continue_owner: bool,
     /// Exact adoptable ACP session id from inventory; omission starts new work.
     existing_agent_session_id: Option<String>,
+    /// Optional exact committed range in this chat. Omit for a byte-bounded recent tail plus available Locus continuity. Explicit ranges are never silently shortened.
+    context: Option<crate::delegated_task::DelegatedContextSelection>,
 }
 
 struct PeerDelegateTool {
@@ -34,7 +36,7 @@ struct PeerDelegateTool {
 
 #[medousa_tool(id = PEER_DELEGATE_ID)]
 impl PeerDelegateTool {
-    /// Delegate an immutable Medousa Coder/Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. This transfers a bounded, digest-checked slice of this chat. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Unless the user explicitly names a coding runtime, choose the first ready runtime in that workshop inventory's coding_runtime_preferences order; default to Medousa Coder when preferences are absent. Reuse request_key only for an exact retry.
+    /// Delegate an immutable Medousa Coder/Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. Omit context to export a recent tail bounded by entries and serialized bytes, with available source-scoped Locus continuity. Put the complete task, constraints and acceptance criteria in instructions. To select older relevant history, supply context.after_entry_seq (exclusive) and context.through_entry_seq (inclusive) from this chat's committed history. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Unless the user explicitly names a coding runtime, choose the first ready runtime in that workshop inventory's coding_runtime_preferences order; default to Medousa Coder when preferences are absent. Reuse request_key only for an exact retry.
     async fn invoke_typed(&self, input: PeerDelegateInput) -> Result<serde_json::Value> {
         let response = self
             .service
@@ -46,6 +48,7 @@ impl PeerDelegateTool {
                 &input.instructions,
                 input.continue_owner,
                 input.existing_agent_session_id,
+                input.context,
             )
             .await
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;

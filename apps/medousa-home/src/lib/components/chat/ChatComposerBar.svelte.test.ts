@@ -5,7 +5,7 @@ import { fromStore, writable } from "svelte/store";
 import ChatComposerBar from "./ChatComposerBar.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 
-const actions = vi.hoisted(() => ({ attach: vi.fn(), cancel: vi.fn() }));
+const actions = vi.hoisted(() => ({ attach: vi.fn(), cancel: vi.fn(), modelPicker: vi.fn() }));
 vi.mock("$lib/stores/chat.svelte", () => { const state = $state({ draft: "Unsent draft", focusedSessionId: "session", pendingMediaRefs: [], pendingMediaUploading: false, liveStreamActive: false, hasWorkshopHandoff: () => false, attachDroppedFiles: actions.attach, cancelActiveTurn: actions.cancel }); return { chat: state }; });
 vi.mock("$lib/stores/runtime.svelte", () => ({ runtime: { savingControls: false } }));
 vi.mock("$lib/stores/settings.svelte", () => ({ settings: { showChatModelPicker: false } }));
@@ -16,7 +16,7 @@ vi.mock("$lib/utils/composerStt", () => ({ composerSttStatus: async () => ({ ava
 vi.mock("$lib/utils/composerAudioCapture", () => ({ composerMicSupported: () => false, startComposerAudioCapture: vi.fn() }));
 vi.mock("$lib/platform", () => ({ isTauri: () => false, isTauriMobilePlatform: () => false, isTauriMacDesktop: () => false }));
 vi.mock("$lib/components/chat/ChatAttachmentChips.svelte", () => ({ default: () => {} }));
-vi.mock("$lib/components/chat/ChatModelPicker.svelte", () => ({ default: () => {} }));
+vi.mock("$lib/components/chat/ChatModelPicker.svelte", () => ({ default: () => { actions.modelPicker(); } }));
 vi.mock("$lib/components/chat/ChatRuntimePicker.svelte", () => ({ default: () => {} }));
 vi.mock("$lib/components/chat/ChatVoiceRecorder.svelte", () => ({ default: () => {} }));
 vi.mock("$lib/components/chat/ComposerAgentChip.svelte", () => ({ default: () => {} }));
@@ -28,7 +28,7 @@ vi.mock("$lib/components/workshops/WorkshopSwitcherCompact.svelte", () => ({ def
 
 let component: ReturnType<typeof mount> | undefined;
 async function settle() { flushSync(); await tick(); flushSync(); }
-beforeEach(() => { vi.clearAllMocks(); chat.draft = "Unsent draft"; Object.assign(chat, { liveStreamActive: false }); });
+beforeEach(() => { vi.clearAllMocks(); chat.draft = "Unsent draft"; Object.assign(chat, { liveStreamActive: false, workshopEpoch: 0, workshopScopeId: "local-mac" }); });
 afterEach(async () => { if (component) await unmount(component); component = undefined; document.body.replaceChildren(); });
 
 it.each([true, false])("keeps the %s mobile draft and caret editable across reconnects while blocking sends", async (mobile) => {
@@ -64,5 +64,22 @@ it("keeps cancellation available during an outage without submitting another mes
   const stop = document.querySelector<HTMLButtonElement>('[aria-label="Stop current turn"]')!;
   expect(stop.disabled).toBe(false); stop.click(); await settle();
   expect(actions.cancel).toHaveBeenCalledOnce();
+  expect(chat.draft).toBe("Unsent draft");
+});
+
+it.each([true, false])("recreates the %s mobile model picker for a newly selected workshop without remounting the draft", async (mobile) => {
+  component = mount(ChatComposerBar, { target: document.body, props: { mobile, onAgentRuntimeChange: vi.fn() } });
+  await settle();
+  const textarea = document.querySelector("textarea")!;
+  textarea.focus(); textarea.setSelectionRange(3, 3);
+  expect(actions.modelPicker).toHaveBeenCalledOnce();
+  chat.workshopEpoch += 1;
+  chat.workshopScopeId = "";
+  await settle();
+  chat.workshopScopeId = "remote-linux";
+  await settle();
+  expect(actions.modelPicker).toHaveBeenCalledTimes(3);
+  expect(document.querySelector("textarea")).toBe(textarea);
+  expect(textarea.selectionStart).toBe(3);
   expect(chat.draft).toBe("Unsent draft");
 });

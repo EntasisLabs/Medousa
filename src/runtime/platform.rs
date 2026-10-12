@@ -162,13 +162,14 @@ async fn build_platform_inner(
     let composition = Arc::new(composition);
     let delegation_service = delegated_task_transport
         .map(|transport| {
-            crate::delegation::install_delegation_runtime(
+            crate::delegation::install_delegation_runtime_with_memory(
                 composition.clone(),
                 crate::workshop_authority::current()
                     .map_err(anyhow::Error::msg)?
                     .clone(),
                 crate::session_store::get_session_store(),
                 transport,
+                Some(memory.memory_reader.clone()),
             )
         })
         .transpose()

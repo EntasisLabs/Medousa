@@ -14,14 +14,6 @@ use crate::embedded_daemon::EmbeddedDaemonState;
 use super::sdk::{client, sdk_error};
 use super::DaemonState;
 
-fn encode_note_path(path: &str) -> String {
-    path.split('/')
-        .map(urlencoding::encode)
-        .map(|segment| segment.into_owned())
-        .collect::<Vec<_>>()
-        .join("/")
-}
-
 #[tauri::command]
 pub async fn vault_list_notes(
     state: State<'_, DaemonState>,
@@ -120,10 +112,10 @@ pub async fn vault_get_note(
             .await
             .map_err(|error| error.to_string());
     }
-    let encoded = encode_note_path(path.trim());
+    // The SDK encodes path segments; pass the filesystem path unchanged.
     client(&state)?
         .vault()
-        .get_note(&encoded)
+        .get_note(path.trim())
         .await
         .map_err(sdk_error)
 }
@@ -141,10 +133,9 @@ pub async fn vault_get_file(
             .await
             .map_err(|error| error.to_string());
     }
-    let encoded = encode_note_path(path.trim());
     client(&state)?
         .vault()
-        .get_file(&encoded)
+        .get_file(path.trim())
         .await
         .map_err(sdk_error)
 }
@@ -177,7 +168,6 @@ pub async fn vault_save_note(
             .await
             .map_err(|error| error.to_string());
     }
-    let encoded = encode_note_path(path.trim());
     let query = VaultPutQuery {
         session_id: session_id.filter(|value| !value.trim().is_empty()),
         auto_workshop_tags,
@@ -185,7 +175,7 @@ pub async fn vault_save_note(
     client(&state)?
         .vault()
         .update_note(
-            &encoded,
+            path.trim(),
             &content,
             &query,
             content_hash
@@ -241,10 +231,9 @@ pub async fn vault_delete_note(
             .map(|response| serde_json::to_value(response).unwrap_or_default())
             .map_err(|error| error.to_string());
     }
-    let encoded = encode_note_path(path.trim());
     client(&state)?
         .vault()
-        .delete_note(&encoded)
+        .delete_note(path.trim())
         .await
         .map(|response| serde_json::to_value(response).unwrap_or_default())
         .map_err(sdk_error)

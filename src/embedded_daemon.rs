@@ -1976,11 +1976,12 @@ impl EmbeddedDaemon {
             .delegated_task_transport
             .clone()
             .map(|transport| {
-                crate::delegation::install_delegation_runtime(
+                crate::delegation::install_delegation_runtime_with_memory(
                     runtime.clone(),
                     authority_id.clone(),
                     session_store.clone(),
                     transport,
+                    Some(memory_reader.clone()),
                 )
             })
             .transpose()
