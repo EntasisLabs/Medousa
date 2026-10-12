@@ -79,6 +79,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_shell_session_status",
     "cognition_shell_status",
     "cognition_shell_run",
+    "cognition_process_status",
     "cognition_skill_discover",
     "cognition_skill_probe",
     "cognition_skill_propose",
