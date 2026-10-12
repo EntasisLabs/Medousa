@@ -1140,10 +1140,17 @@ mod tests {
     }
 
     fn proposal_for(request: &RemotePeerProposalRequest) -> PeerAssignmentProposal {
+        proposal_for_source(request, "phone")
+    }
+
+    fn proposal_for_source(
+        request: &RemotePeerProposalRequest,
+        source_device_id: &str,
+    ) -> PeerAssignmentProposal {
         let authority = AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
         let owner_session = SessionRef {
             authority_id: authority.clone(),
-            session_id: remote_proposal_shadow_session(&authority, "phone", request),
+            session_id: remote_proposal_shadow_session(&authority, source_device_id, request),
         };
         let execution_session = SessionRef {
             authority_id: authority.clone(),
@@ -1200,6 +1207,430 @@ mod tests {
             expires_at: Utc::now(),
             continue_owner: request.continue_owner,
         }
+    }
+
+    #[cfg(feature = "full-daemon")]
+    #[tokio::test]
+    async fn daemon_peer_transport_dispatches_signed_proposals_and_persists_return_routes() {
+        // The admitted association store runs on blocking threads. Isolate its
+        // process-wide data root so this test never touches a developer's state.
+        const FIXTURE_ENV: &str = "MEDOUSA_DAEMON_PEER_TRANSPORT_FIXTURE";
+        if std::env::var_os(FIXTURE_ENV).is_none() {
+            let data = tempfile::tempdir().unwrap();
+            let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("peer_coordination_mesh::tests::daemon_peer_transport_dispatches_signed_proposals_and_persists_return_routes")
+                .arg("--nocapture")
+                .env("MEDOUSA_DATA_DIR", data.path())
+                .env_remove("MEDOUSA_IDENTITY_USER_ID")
+                .env_remove("STASIS_DEFAULT_USER_ID")
+                .env(FIXTURE_ENV, "1")
+                .output()
+                .await
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "isolated daemon peer transport failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        use crate::mesh::{
+            DEFAULT_ENVELOPE_TTL_SECS, MeshCapability, MeshEnvelopedRequest, payload_hash_hex,
+            sign_envelope, verify_enveloped_payload,
+        };
+        use axum::response::IntoResponse;
+        use base64::Engine as _;
+        use ed25519_dalek::SigningKey;
+        use sha2::{Digest as _, Sha256};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let source_key = SigningKey::from_bytes(&[41; 32]);
+        let remote_key = SigningKey::from_bytes(&[42; 32]);
+        let public = |key: &SigningKey| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.verifying_key().as_bytes())
+        };
+        let source_id: String = Sha256::digest(source_key.verifying_key().as_bytes())[..4]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let source_public = public(&source_key);
+        let remote_public = public(&remote_key);
+        let request = request();
+        let query_request = request.clone();
+        let query_key = remote_key.clone();
+        let query_public = source_public.clone();
+        let query_source = source_id.clone();
+        let completion_mode = Arc::new(AtomicUsize::new(0));
+        let query_mode = completion_mode.clone();
+        let query_calls = Arc::new(AtomicUsize::new(0));
+        let handler_query_calls = query_calls.clone();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let handler_calls = calls.clone();
+        let handler_source = source_id.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = axum::Router::new().route(
+            "/v1/mesh/peer-proposals",
+            axum::routing::post(
+                move |headers: axum::http::HeaderMap,
+                      axum::Json(wire): axum::Json<
+                    MeshEnvelopedRequest<RemotePeerProposalRequest>,
+                >| {
+                    let source = handler_source.clone();
+                    let source_public = source_public.clone();
+                    let key = remote_key.clone();
+                    let calls = handler_calls.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::Relaxed);
+                        assert_eq!(
+                            headers.get("authorization").unwrap(),
+                            "Bearer peer-test-token"
+                        );
+                        verify_enveloped_payload(
+                            &wire,
+                            &source_public,
+                            &source,
+                            "runtime-mac",
+                            MeshCapability::TaskRequest,
+                            true,
+                        )
+                        .unwrap();
+                        // Durable origin evidence must precede the network dispatch.
+                        let pending = next_remote_peer_origin_sync_page_admitted(16)
+                            .await
+                            .unwrap();
+                        let digest = remote_peer_proposal_request_digest(&wire.payload).unwrap();
+                        assert!(
+                            pending
+                                .iter()
+                                .any(|origin| origin.source_device_id == source
+                                    && origin.request_digest == digest)
+                        );
+                        let mut proposal = proposal_for_source(&wire.payload, &source);
+                        proposal.expires_at =
+                            chrono::DateTime::parse_from_rfc3339("2030-01-01T00:00:00Z")
+                                .unwrap()
+                                .with_timezone(&Utc);
+                        let mut payload = RemotePeerProposalResponse {
+                            schema_version: REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+                            source_request_digest: Some(digest),
+                            proposal,
+                            binding: None,
+                        };
+                        match wire.payload.request_key.as_str() {
+                            "wrong-task" => {
+                                payload.proposal.request.instructions.push_str(" altered")
+                            }
+                            "wrong-digest" => {
+                                payload.source_request_digest =
+                                    Some(format!("sha256:{}", "0".repeat(64)))
+                            }
+                            _ => {}
+                        }
+                        let recipient = if wire.payload.request_key == "wrong-recipient" {
+                            "other-source"
+                        } else {
+                            &source
+                        };
+                        let key = if wire.payload.request_key == "wrong-key" {
+                            SigningKey::from_bytes(&[43; 32])
+                        } else {
+                            key
+                        };
+                        let envelope = sign_envelope(
+                            &key,
+                            "runtime-mac",
+                            recipient,
+                            1,
+                            MeshCapability::TaskResult,
+                            &payload_hash_hex(&payload).unwrap(),
+                            chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+                        );
+                        axum::Json(MeshEnvelopedRequest { envelope, payload })
+                    }
+                },
+            ),
+        );
+        let app = app.route(
+            "/v1/mesh/peer-assignment-results/query",
+            axum::routing::post(move |headers: axum::http::HeaderMap, axum::Json(wire): axum::Json<MeshEnvelopedRequest<RemotePeerCompletionQuery>>| {
+                let request = query_request.clone();
+                let key = query_key.clone();
+                let public = query_public.clone();
+                let source = query_source.clone();
+                let mode = query_mode.load(Ordering::Relaxed);
+                let calls = handler_query_calls.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    assert_eq!(headers.get("authorization").unwrap(), "Bearer peer-test-token");
+                    verify_enveloped_payload(&wire, &public, &source, "runtime-mac", MeshCapability::TaskRequest, true).unwrap();
+                    assert_eq!(wire.payload.source_device_id, source);
+                    assert_eq!(wire.payload.source_request_digest, remote_peer_proposal_request_digest(&request).unwrap());
+                    if mode == 6 {
+                        return "x".repeat(crate::peer_completion_delivery::MAX_REMOTE_COMPLETION_PAYLOAD_BYTES + 1).into_response();
+                    }
+                    let mut proposal = proposal_for_source(&request, &source);
+                    proposal.expires_at = chrono::DateTime::parse_from_rfc3339("2030-01-01T00:00:00Z").unwrap().with_timezone(&Utc);
+                    let binding = ExternalPeerAssignmentBinding {
+                        assignment_id: proposal.request.assignment_id.clone(),
+                        owner_principal_id: proposal.request.owner_principal_id.clone(),
+                        channel: proposal.request.channel.clone(), target: proposal.request.target.clone(),
+                        execution_session: proposal.request.execution_session.clone(), agent_session_id: "agent-one".into(),
+                    };
+                    let receipt = ExternalPeerAssignmentReceipt {
+                        receipt_id: crate::peer_completion_delivery::terminal_receipt_id(&binding),
+                        binding: binding.clone(), outcome: medousa_types::coordination::PeerAssignmentOutcome::Completed,
+                        result: "review complete".into(),
+                    };
+                    let decision = ConversationTurn::plain("assistant", "The remote review is complete.".into(),
+                        chrono::DateTime::parse_from_rfc3339("2026-10-10T00:00:00Z").unwrap().with_timezone(&Utc), vec![], None);
+                    let digest = crate::session_store::transcript_content_digest(&decision).unwrap();
+                    let mut completion = RemotePeerCompletionResult {
+                        schema_version: PEER_COMPLETION_RESULT_SCHEMA_VERSION, source_device_id: source.clone(),
+                        request_digest: remote_peer_proposal_request_digest(&request).unwrap(),
+                        proposal_id: proposal.proposal_id.clone(), proposal_request_digest: peer_proposal_digest(&proposal).unwrap(),
+                        binding, receipt: receipt.clone(),
+                        owner_acknowledgment: PeerOwnerIntakeAcknowledgment {
+                            intake: medousa_types::coordination::PeerOwnerIntakeAttempt {
+                                receipt: receipt.clone(), attempt: 0, turn_id: format!("{}-owner-0", receipt.receipt_id),
+                            },
+                            decision: TranscriptEntryRef { session: proposal.request.owner_session.clone(),
+                                entry_id: TranscriptEntryId::parse("ent_abcdef0123456789abcdef0123456789").unwrap(), entry_seq: 2 },
+                            decision_digest: digest.clone(),
+                        }, committed_decision: decision, committed_decision_digest: digest,
+                    };
+                    if mode == 2 { completion.receipt.result.push_str(" forged"); }
+                    if mode == 7 { completion.binding.assignment_id.push_str(" foreign"); }
+                    let proposal = RemotePeerProposalResponse { schema_version: REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+                        source_request_digest: Some(remote_peer_proposal_request_digest(&request).unwrap()), proposal, binding: None };
+                    let mut payload = RemotePeerCompletionResponse {
+                        schema_version: PEER_COMPLETION_QUERY_SCHEMA_VERSION,
+                        source_request_digest: remote_peer_proposal_request_digest(&request).unwrap(),
+                        proposal: Some(proposal), completion: (mode != 0).then_some(completion),
+                    };
+                    if mode == 3 { payload.source_request_digest = format!("sha256:{}", "0".repeat(64)); }
+                    if mode == 8 { payload.schema_version = 999; }
+                    let recipient = if mode == 4 { "other-source" } else { &source };
+                    let key = if mode == 5 { SigningKey::from_bytes(&[43; 32]) } else { key };
+                    let envelope = sign_envelope(&key, "runtime-mac", recipient, 1, MeshCapability::TaskResult,
+                        &payload_hash_hex(&payload).unwrap(), chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS));
+                    axum::Json(MeshEnvelopedRequest { envelope, payload }).into_response()
+                }
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let root = crate::paths::medousa_data_dir().join("delegation");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("identity.secret"), "29".repeat(32)).unwrap();
+        let connection = crate::daemon_worker::DaemonWorkerConnection {
+            id: "paired-runtime-mac".into(),
+            label: "Studio".into(),
+            workshop_device_id: "runtime-mac".into(),
+            daemon_url: base,
+            pairing_id: "pair-1".into(),
+            daemon_public_key: remote_public,
+            iroh_ticket: None,
+            connected_at: "now".into(),
+        };
+        let mut stored = serde_json::to_value(&connection).unwrap();
+        stored["sessionToken"] = "peer-test-token".into();
+        let credentials =
+            serde_json::to_vec(&serde_json::json!({"version": 1, "connections": [stored]}))
+                .unwrap();
+        fs::write(root.join("workers.json"), &credentials).unwrap();
+        // Exercise the exact trait object installed by the desktop daemon.
+        let transport = crate::daemon_worker::DaemonWorkerPairing::new(root.clone()).transport();
+        let target = crate::delegation::DelegationTarget {
+            route_ref: connection.id,
+            peer_device_id: connection.workshop_device_id,
+            label: Some(connection.label),
+        };
+        let response = transport
+            .propose_peer(&target, request.clone())
+            .await
+            .unwrap();
+        let replay = transport
+            .propose_peer(&target, request.clone())
+            .await
+            .unwrap();
+        assert_eq!(response.proposal, replay.proposal);
+        let saved = next_remote_peer_origin_sync_page_admitted(16)
+            .await
+            .unwrap();
+        let saved = saved
+            .iter()
+            .find(|origin| origin.request.request_key == request.request_key)
+            .unwrap();
+        assert_eq!(saved.source_device_id, source_id);
+        assert_eq!(saved.proposal_id.as_deref(), Some("proposal-1"));
+        assert_eq!(saved.assignment_id.as_deref(), Some("assignment-1"));
+        assert_eq!(
+            saved.remote_owner_session.as_ref(),
+            Some(&response.proposal.request.owner_session)
+        );
+        let origin = saved.clone();
+        let profiles = Arc::new(std::sync::RwLock::new(
+            crate::user_profiles::UserProfileRegistry::load_or_bootstrap(),
+        ));
+        profiles
+            .write()
+            .unwrap()
+            .create_profile("other", "Other")
+            .unwrap();
+        profiles
+            .write()
+            .unwrap()
+            .set_active_profile("user:other")
+            .unwrap();
+        let source_store_root = crate::paths::medousa_data_dir().join("source-transcript");
+        let store = crate::session_store::test_file_session_store_at(source_store_root.clone());
+        store
+            .append_transcript_batch(
+                &request.owner_session_id,
+                &[crate::session_store::TranscriptAppend::native(
+                    request.context.entries[0].turn.clone(),
+                    None,
+                )],
+            )
+            .await
+            .unwrap();
+        crate::session_catalog::replace_derived_session(
+            &request.owner_session_id,
+            None,
+            &origin.owner_profile_id,
+            &[request.context.entries[0].turn.clone()],
+        );
+        let pairing = Arc::new(crate::daemon_worker::DaemonWorkerPairing::new(root.clone()));
+        let authority = request.source_execution.authority_id.clone();
+        let mut puller = crate::daemon::remote_peer_completions::CompletionPuller::new(
+            pairing.clone(),
+            store.clone(),
+            authority.clone(),
+            profiles.clone(),
+        );
+        assert_eq!(puller.poll_once().await.unwrap().pending, 1);
+        assert_eq!(query_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(puller.poll_once().await.unwrap().pending, 1);
+        assert_eq!(
+            query_calls.load(Ordering::Relaxed),
+            1,
+            "pending query must back off"
+        );
+        completion_mode.store(1, Ordering::Relaxed);
+        let mut reopened = crate::daemon::remote_peer_completions::CompletionPuller::new(
+            pairing.clone(),
+            store.clone(),
+            authority.clone(),
+            profiles.clone(),
+        );
+        assert_eq!(reopened.poll_once().await.unwrap().applied, 1);
+        assert_eq!(
+            store
+                .load_transcript_entries(&request.owner_session_id)
+                .len(),
+            2
+        );
+        assert_eq!(reopened.poll_once().await.unwrap().checked, 0);
+        let reset_delivery = |clear_proposal: bool| {
+            let mut file = peer_completion_associations().unwrap();
+            let origin = &mut file.origins[0];
+            origin.completion_applied = false;
+            if clear_proposal {
+                origin.proposal_id = None;
+                origin.proposal_request_digest = None;
+                origin.assignment_id = None;
+                origin.expected_binding = None;
+                origin.remote_owner_session = None;
+            }
+            save_peer_completion_associations(&file).unwrap();
+        };
+        for clear_proposal in [false, true] {
+            reset_delivery(clear_proposal);
+            let store = crate::session_store::test_file_session_store_at(source_store_root.clone());
+            let mut restarted = crate::daemon::remote_peer_completions::CompletionPuller::new(
+                pairing.clone(),
+                store.clone(),
+                authority.clone(),
+                profiles.clone(),
+            );
+            assert_eq!(restarted.poll_once().await.unwrap().unavailable, 0);
+            assert_eq!(
+                store
+                    .load_transcript_entries(&request.owner_session_id)
+                    .len(),
+                2,
+                "crash/recovery must not duplicate the answer"
+            );
+            assert!(peer_completion_associations().unwrap().origins[0].completion_applied);
+        }
+        for mode in [2, 3, 4, 5, 6, 7, 8] {
+            completion_mode.store(mode, Ordering::Relaxed);
+            assert!(
+                puller.pull_origin(origin.clone()).await.is_err(),
+                "accepted forged completion mode {mode}"
+            );
+            assert_eq!(
+                store
+                    .load_transcript_entries(&request.owner_session_id)
+                    .len(),
+                2
+            );
+        }
+        completion_mode.store(1, Ordering::Relaxed);
+        let before = query_calls.load(Ordering::Relaxed);
+        let foreign = crate::daemon::remote_peer_completions::CompletionPuller::new(
+            pairing.clone(),
+            store.clone(),
+            AuthorityId::parse(format!("auth_{}", "c".repeat(64))).unwrap(),
+            profiles.clone(),
+        );
+        assert!(foreign.pull_origin(origin.clone()).await.is_err());
+        fs::write(root.join("identity.secret"), "2a".repeat(32)).unwrap();
+        assert!(puller.pull_origin(origin.clone()).await.is_err());
+        fs::write(root.join("identity.secret"), "29".repeat(32)).unwrap();
+        fs::write(
+            root.join("workers.json"),
+            br#"{"version":1,"connections":[]}"#,
+        )
+        .unwrap();
+        assert!(puller.pull_origin(origin.clone()).await.is_err());
+        fs::write(root.join("workers.json"), &credentials).unwrap();
+        assert_eq!(
+            query_calls.load(Ordering::Relaxed),
+            before,
+            "foreign/revoked routes must fail before the network query"
+        );
+        for key in ["wrong-task", "wrong-digest", "wrong-recipient", "wrong-key"] {
+            let mut request = request.clone();
+            request.request_key = key.into();
+            assert!(transport.propose_peer(&target, request).await.is_err());
+            let saved = next_remote_peer_origin_sync_page_admitted(16)
+                .await
+                .unwrap();
+            let saved = saved
+                .iter()
+                .find(|origin| origin.request.request_key == key)
+                .unwrap();
+            assert!(saved.proposal_id.is_none());
+            assert!(saved.assignment_id.is_none());
+        }
+        let unpaired = crate::delegation::DelegationTarget {
+            route_ref: "unpaired".into(),
+            ..target
+        };
+        assert!(transport.propose_peer(&unpaired, request).await.is_err());
+        assert_eq!(calls.load(Ordering::Relaxed), 6);
+        assert_eq!(fs::read(root.join("workers.json")).unwrap(), credentials);
+        assert_eq!(
+            fs::read_to_string(root.join("identity.secret")).unwrap(),
+            "29".repeat(32)
+        );
+        server.abort();
     }
 
     #[test]

@@ -109,10 +109,12 @@
   let chatGptConnectionLoading = $state(false);
   let chatGptConnectionError = $state(false);
 
-  let loadingLiveModels = $state(false);
+  let loadingLiveModels = $state<string | null>(null);
   let chatGptModels = $state<string[]>([]);
   let chatGptModelNames = $state<Record<string, string>>({});
+  let chatGptModelsError = $state<string | null>(null);
   let liveModelsGeneration = 0;
+  let disposed = false;
   let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
   const providerChoices = $derived(
     isProviderConversationRuntime(agentRuntime)
@@ -161,9 +163,19 @@
             selectedNativeProvider.trim().toLowerCase(),
         ),
   );
-  const nativeProviderGroups = $derived(
-    groupedOptions.filter((group) => group.options.length > 0),
-  );
+  const nativeProviderGroups = $derived.by(() => {
+    const groups = groupedOptions.filter((group) => group.options.length > 0);
+    // Account discovery can be pending, signed out, or unavailable. Keep the
+    // provider reachable without inventing models the account cannot use.
+    if (!groups.some((group) => group.provider === "openai-codex")) {
+      groups.push({
+        provider: "openai-codex",
+        label: resolveProviderLabel(catalogSnapshot, "openai-codex"),
+        options: [],
+      });
+    }
+    return groups;
+  });
   const pickerReadonly = $derived(readonly);
   const nativeChatGptSelected = $derived(
     selectedNativeProvider.trim().toLowerCase() === "openai-codex",
@@ -199,8 +211,7 @@
   }
 
   onMount(() => {
-    void bootstrap();
-    void refreshChatGptConnection();
+    void bootstrap().then(refreshChatGptConnection);
     const onDocClick = (event: MouseEvent) => {
       if (!open) return;
       const target = event.target as Node | null;
@@ -216,12 +227,13 @@
       chatGptModelNames = {};
       options = options.filter((option) => option.provider !== "openai-codex");
       void refreshChatGptConnection();
-      if (catalogSnapshot) void refreshLiveModelsForProvider("openai-codex");
     };
     window.addEventListener("medousa:chatgpt-account-changed", onAccountChanged);
     document.addEventListener("click", onDocClick);
     document.addEventListener("keydown", onKey);
     return () => {
+      disposed = true;
+      liveModelsGeneration += 1;
       window.removeEventListener("medousa:chatgpt-account-changed", onAccountChanged);
       document.removeEventListener("click", onDocClick);
       document.removeEventListener("keydown", onKey);
@@ -229,10 +241,20 @@
   });
 
   async function refreshChatGptConnection() {
+    if (disposed) return;
     chatGptConnectionLoading = true;
     chatGptConnectionError = false;
     try {
-      chatGptConnection = await getChatGptOAuthConnection();
+      const connection = await getChatGptOAuthConnection();
+      if (disposed) return;
+      chatGptConnection = connection;
+      if (chatGptOAuthReady(connection)) {
+        if (!chatGptModels.length) await refreshLiveModelsForProvider("openai-codex");
+      } else {
+        chatGptModels = [];
+        chatGptModelNames = {};
+        options = options.filter((option) => option.provider !== "openai-codex");
+      }
     } catch {
       chatGptConnection = null;
       chatGptConnectionError = true;
@@ -297,6 +319,7 @@
           ? Promise.resolve(null)
           : getEngineTuiDefaults().catch(() => null),
       ]);
+      if (disposed) return;
       catalogSnapshot = catalog;
       probeSnapshot = probe;
       favorites = normalizeFavoriteModels(summary?.favoriteModels);
@@ -356,9 +379,10 @@
   }
 
   async function refreshLiveModelsForProvider(provider: string) {
-    if (pickerReadonly || !catalogSnapshot) return;
+    if (disposed || pickerReadonly || !catalogSnapshot) return;
     const generation = ++liveModelsGeneration;
-    loadingLiveModels = true;
+    loadingLiveModels = provider.trim().toLowerCase();
+    if (provider.trim().toLowerCase() === "openai-codex") chatGptModelsError = null;
     try {
       const chatGptAccount = provider.trim().toLowerCase() === "openai-codex";
       const result = chatGptAccount
@@ -390,16 +414,17 @@
         ]);
         rebuildOptions(catalogSnapshot, probeSnapshot, favorites, result.models, provider);
       }
-    } catch {
+    } catch (error) {
       if (generation !== liveModelsGeneration) return;
       if (provider.trim().toLowerCase() === "openai-codex") {
+        chatGptModelsError = error instanceof Error ? error.message : String(error);
         chatGptModels = [];
         chatGptModelNames = {};
         options = options.filter((option) => option.provider !== "openai-codex");
       }
       // Other provider catalog picks still work when live listing is unavailable.
     } finally {
-      if (generation === liveModelsGeneration) loadingLiveModels = false;
+      if (generation === liveModelsGeneration) loadingLiveModels = null;
     }
   }
 
@@ -710,6 +735,8 @@
                     ? "Could not verify the ChatGPT connection"
                     : chatGptConnection?.status === "reauth_required"
                       ? "Reconnect your ChatGPT account to continue"
+                      : chatGptConnection?.status === "plan_usage_disabled"
+                        ? "Enable ChatGPT plan usage to use account models"
                       : "Connect a ChatGPT account to use subscription models"}</span>
                 <button type="button" class="composer-model-connect" onclick={openModelsSettings}>
                   {chatGptConnection?.status === "reauth_required"
@@ -717,10 +744,15 @@
                     : "Open Medousa Agent"}
                 </button>
               </li>
-            {:else if loading || loadingLiveModels}
+            {:else if loading || loadingLiveModels === selectedNativeProvider}
               <li class="composer-model-list-empty">
                 <LoaderCircle size={16} class="animate-spin opacity-60" />
                 <span>{loading ? "Loading models…" : "Refreshing models…"}</span>
+              </li>
+            {:else if nativeChatGptSelected && chatGptModelsError}
+              <li class="composer-model-list-empty">
+                <span>Could not load this workshop's ChatGPT models: {chatGptModelsError}</span>
+                <button type="button" class="composer-model-connect" onclick={() => void refreshChatGptConnection()}>Refresh models</button>
               </li>
             {:else if nativeVisibleOptions.length === 0}
               <li class="composer-model-list-empty">No models found for this provider</li>

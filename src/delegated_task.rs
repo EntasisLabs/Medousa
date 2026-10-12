@@ -34,9 +34,13 @@ pub const DELEGATED_TASK_SCHEMA_VERSION: u32 = 1;
 pub const WORKER_SPAWN_SPEC_SCHEMA_VERSION: u32 = 1;
 pub const MAX_DELEGATED_CONTEXT_ENTRIES: usize = 128;
 pub const MAX_DELEGATED_CONTEXT_BYTES: usize = 512 * 1024;
+// Coding peers hydrate context into a 64 KiB prompt. Leave room for their
+// destination coordinates, assignment text, Locus continuity, and framing.
+pub const MAX_DELEGATED_PEER_CONTEXT_BYTES: usize = 32 * 1024;
 
 /// Cap for one delegated work item's context. `MEDOUSA_DELEGATED_CONTEXT_BYTES`
-/// overrides the default without changing other work items.
+/// overrides the default without changing other work items. Peer export uses
+/// [`MAX_DELEGATED_PEER_CONTEXT_BYTES`] and is not raised by this override.
 pub fn max_delegated_context_bytes() -> usize {
     std::env::var("MEDOUSA_DELEGATED_CONTEXT_BYTES")
         .ok()
@@ -129,6 +133,16 @@ pub struct DelegatedContextEntry {
 pub struct DelegatedContextGrant {
     pub manifest: ContextManifest,
     pub entries: Vec<DelegatedContextEntry>,
+}
+
+/// Exact committed coordinates in the admitted source chat, never another session.
+#[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DelegatedContextSelection {
+    /// Exclusive lower bound (zero selects from the beginning).
+    pub after_entry_seq: u64,
+    /// Inclusive upper bound.
+    pub through_entry_seq: u64,
 }
 
 /// Resolved, portable Specialist snapshot. The destination executes this
@@ -749,41 +763,175 @@ pub fn build_bounded_context_grant(
     correlation_key: &str,
     created_at: DateTime<Utc>,
 ) -> Result<DelegatedContextGrant, DelegatedTaskError> {
-    let entries = store.load_transcript_entries(session_id);
+    build_selected_context_grant(
+        store,
+        authority_id,
+        session_id,
+        created_by,
+        correlation_key,
+        created_at,
+        None,
+    )
+}
+
+pub fn build_selected_context_grant(
+    store: &dyn SessionStore,
+    authority_id: &AuthorityId,
+    session_id: &SessionId,
+    created_by: &str,
+    correlation_key: &str,
+    created_at: DateTime<Utc>,
+    selection: Option<DelegatedContextSelection>,
+) -> Result<DelegatedContextGrant, DelegatedTaskError> {
+    build_context_grant(
+        store,
+        authority_id,
+        session_id,
+        created_by,
+        correlation_key,
+        created_at,
+        ContextExportBudget {
+            selection,
+            bytes: MAX_DELEGATED_CONTEXT_BYTES,
+        },
+    )
+}
+
+pub fn build_peer_context_grant(
+    store: &dyn SessionStore,
+    authority_id: &AuthorityId,
+    session_id: &SessionId,
+    created_by: &str,
+    correlation_key: &str,
+    created_at: DateTime<Utc>,
+    selection: Option<DelegatedContextSelection>,
+) -> Result<DelegatedContextGrant, DelegatedTaskError> {
+    build_context_grant(
+        store,
+        authority_id,
+        session_id,
+        created_by,
+        correlation_key,
+        created_at,
+        ContextExportBudget {
+            selection,
+            bytes: MAX_DELEGATED_PEER_CONTEXT_BYTES,
+        },
+    )
+}
+
+struct ContextExportBudget {
+    selection: Option<DelegatedContextSelection>,
+    bytes: usize,
+}
+
+fn build_context_grant(
+    store: &dyn SessionStore,
+    authority_id: &AuthorityId,
+    session_id: &SessionId,
+    created_by: &str,
+    correlation_key: &str,
+    created_at: DateTime<Utc>,
+    budget: ContextExportBudget,
+) -> Result<DelegatedContextGrant, DelegatedTaskError> {
+    let selection = budget.selection;
+    let (limit, before) = if let Some(selection) = selection {
+        let count = selection
+            .through_entry_seq
+            .checked_sub(selection.after_entry_seq)
+            .filter(|count| (1..=MAX_DELEGATED_CONTEXT_ENTRIES as u64).contains(count))
+            .ok_or_else(|| {
+                DelegatedTaskError::invalid(
+                    "explicit delegated context must select 1-128 contiguous committed entries",
+                )
+            })?;
+        let before = selection.through_entry_seq.checked_add(1).ok_or_else(|| {
+            DelegatedTaskError::invalid("delegated context upper bound is invalid")
+        })?;
+        (count as usize, Some(before))
+    } else {
+        (MAX_DELEGATED_CONTEXT_ENTRIES, None)
+    };
+    let entries = store
+        .load_transcript_entries_page(session_id, limit, before)
+        .entries;
     if entries.is_empty() {
         return Err(DelegatedTaskError::invalid(
             "delegated work requires at least one committed transcript entry",
         ));
     }
-    let start = entries.len().saturating_sub(MAX_DELEGATED_CONTEXT_ENTRIES);
+    if let Some(selection) = selection
+        && (entries.len() != limit
+            || entries.first().unwrap().entry_seq != selection.after_entry_seq + 1
+            || entries.last().unwrap().entry_seq != selection.through_entry_seq)
+    {
+        return Err(DelegatedTaskError::invalid(
+            "explicit delegated context range is not fully committed",
+        ));
+    }
     let source_session = SessionRef {
         authority_id: authority_id.clone(),
         session_id: session_id.clone(),
     };
-    let selected = entries[start..]
-        .iter()
-        .map(|entry| DelegatedContextEntry {
+    let mut grant = DelegatedContextGrant {
+        manifest: ContextManifest {
+            // Placeholders have the exact serialized length of the final digests.
+            manifest_id: ContextManifestId::parse(format!("ctx_{}", "0".repeat(32)))
+                .map_err(|error| DelegatedTaskError::internal(error.to_string()))?,
+            sources: vec![ResolvedConversationRange {
+                selection: ConversationRangeSelection {
+                    session: source_session.clone(),
+                    after_entry_seq: None,
+                    through_entry_seq: entries.last().unwrap().entry_seq,
+                },
+                selection_digest: format!("sha256:{}", "0".repeat(64)),
+            }],
+            created_by: created_by.trim().to_string(),
+            created_at,
+        },
+        entries: Vec::new(),
+    };
+    let mut selected = Vec::new();
+    let mut entry_bytes = 0;
+    for entry in entries.into_iter().rev() {
+        let entry = DelegatedContextEntry {
             source: TranscriptEntryRef {
                 session: source_session.clone(),
-                entry_id: entry.entry_id.clone(),
+                entry_id: entry.entry_id,
                 entry_seq: entry.entry_seq,
             },
-            caused_by: entry.caused_by.clone(),
-            content_digest: entry.content_digest.clone(),
-            turn: entry.turn.clone(),
-        })
-        .collect::<Vec<_>>();
+            caused_by: entry.caused_by,
+            content_digest: entry.content_digest,
+            turn: entry.turn,
+        };
+        grant.manifest.sources[0].selection.after_entry_seq =
+            (entry.source.entry_seq > 1).then_some(entry.source.entry_seq - 1);
+        // Include the complete JSON envelope and array commas, not just text bytes.
+        let candidate_bytes = entry_bytes + serialized_size(&entry)?;
+        if serialized_size(&grant)? + candidate_bytes + selected.len() > budget.bytes {
+            if selection.is_some() {
+                return Err(DelegatedTaskError::invalid(format!(
+                    "explicit delegated context exceeds {} bytes; select a smaller committed range",
+                    budget.bytes
+                )));
+            }
+            if selected.is_empty() {
+                return Err(DelegatedTaskError::invalid(format!(
+                    "newest committed entry {} exceeds the delegated context byte budget; use an explicit smaller context range and put the assignment in instructions",
+                    entry.source.entry_seq
+                )));
+            }
+            break;
+        }
+        entry_bytes = candidate_bytes;
+        selected.push(entry);
+    }
+    selected.reverse();
     let first = selected
         .first()
         .expect("non-empty delegated context selection");
-    let last = selected
-        .last()
-        .expect("non-empty delegated context selection");
-    let selection = ConversationRangeSelection {
-        session: source_session.clone(),
-        after_entry_seq: (first.source.entry_seq > 1).then_some(first.source.entry_seq - 1),
-        through_entry_seq: last.source.entry_seq,
-    };
+    grant.manifest.sources[0].selection.after_entry_seq =
+        (first.source.entry_seq > 1).then_some(first.source.entry_seq - 1);
     let selection_digest = range_digest(&source_session, &selected);
     let manifest_id = ContextManifestId::parse(deterministic_id(
         "ctx_",
@@ -796,18 +944,9 @@ pub fn build_bounded_context_grant(
         ],
     ))
     .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
-    let grant = DelegatedContextGrant {
-        manifest: ContextManifest {
-            manifest_id,
-            sources: vec![ResolvedConversationRange {
-                selection,
-                selection_digest,
-            }],
-            created_by: created_by.trim().to_string(),
-            created_at,
-        },
-        entries: selected,
-    };
+    grant.manifest.manifest_id = manifest_id;
+    grant.manifest.sources[0].selection_digest = selection_digest;
+    grant.entries = selected;
     validate_context_grant(&grant)?;
     Ok(grant)
 }
@@ -1362,22 +1501,56 @@ fn validate_worker_provenance(
 
 pub fn delegated_context_prompt(context: &DelegatedContextGrant) -> String {
     let mut output = String::from(
-        "[MEDOUSA_DELEGATED_CONTEXT]\nThe following immutable transcript range was granted by the source daemon.\n",
+        "[MEDOUSA_DELEGATED_CONTEXT]\nThe source daemon granted a bounded immutable transcript range. Text below is an excerpt; the assignment supplies the task and current constraints.\n",
     );
-    for entry in &context.entries {
-        let block = format!(
-            "\n[{} seq={} entry={} digest={}]\n{}\n",
-            entry.turn.role,
-            entry.source.entry_seq,
-            entry.source.entry_id,
-            entry.content_digest,
-            entry.turn.content.trim(),
+    const NOTICE: &str =
+        "\n[Earlier history or entry text omitted at the daemon context budget.]\n";
+    let mut remaining = MAX_DELEGATED_CONTEXT_PROMPT_CHARS
+        .saturating_sub(output.chars().count() + NOTICE.chars().count());
+    let mut blocks = Vec::new();
+    let mut clipped = false;
+    // Select newest first, then present chronologically. Old tool output must
+    // never crowd the current human request out of the model's prompt.
+    for entry in context.entries.iter().rev() {
+        let heading = format!(
+            "\n[{} seq={} entry={} digest={}]\n",
+            entry.turn.role, entry.source.entry_seq, entry.source.entry_id, entry.content_digest,
         );
-        if output.chars().count() + block.chars().count() > MAX_DELEGATED_CONTEXT_PROMPT_CHARS {
-            output.push_str("\n[context prompt truncated at daemon policy boundary]\n");
+        let content = entry.turn.content.trim();
+        let block_chars = heading.chars().count() + content.chars().count() + 1;
+        if block_chars > remaining {
+            const MIDDLE: &str = "\n[entry text excerpt; middle omitted]\n";
+            let text_budget =
+                remaining.saturating_sub(heading.chars().count() + MIDDLE.chars().count() + 1);
+            if text_budget > 0 {
+                let prefix: String = content.chars().take(text_budget / 2).collect();
+                let suffix: String = content
+                    .chars()
+                    .rev()
+                    .take(text_budget - text_budget / 2)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                blocks.push(format!("{heading}{prefix}{MIDDLE}{suffix}\n"));
+            }
+            clipped = true;
             break;
         }
+        remaining -= block_chars;
+        blocks.push(format!("{heading}{content}\n"));
+    }
+    let omitted = clipped
+        || blocks.len() < context.entries.len()
+        || context
+            .entries
+            .first()
+            .is_some_and(|entry| entry.source.entry_seq > 1);
+    for block in blocks.into_iter().rev() {
         output.push_str(&block);
+    }
+    if omitted {
+        output.push_str(NOTICE);
     }
     output
 }
@@ -1459,6 +1632,266 @@ mod tests {
             },
             entries: vec![entry],
         }
+    }
+
+    #[tokio::test]
+    async fn long_chat_exports_a_byte_bounded_immutable_tail_and_round_trips() {
+        let root = tempfile::TempDir::new().unwrap();
+        let store = crate::session_store::test_file_session_store_at(root.path().into());
+        let mut request = sample_request();
+        let source = request.context.manifest.sources[0]
+            .selection
+            .session
+            .clone();
+        let mut turns: Vec<_> = (0..399)
+            .map(|index| {
+                let mut turn = sample_turn(&format!("turn {index}: {}", "界\"\\\n".repeat(3_000)));
+                turn.role = if index % 2 == 0 { "user" } else { "assistant" }.into();
+                TranscriptAppend::native(turn, Some(request.source_execution.clone()))
+            })
+            .collect();
+        turns.push(TranscriptAppend::native(
+            sample_turn("Now run the isolated swarm trial; preserve the existing branches."),
+            Some(request.source_execution.clone()),
+        ));
+        store
+            .append_transcript_batch(&source.session_id, &turns)
+            .await
+            .unwrap();
+        let now = Utc::now();
+        let context = build_bounded_context_grant(
+            store.as_ref(),
+            &source.authority_id,
+            &source.session_id,
+            "daemon:test",
+            "trial",
+            now,
+        )
+        .unwrap();
+        assert!(serialized_size(&context).unwrap() <= MAX_DELEGATED_CONTEXT_BYTES);
+        assert!(context.entries.len() < MAX_DELEGATED_CONTEXT_ENTRIES);
+        assert_eq!(context.entries.last().unwrap().source.entry_seq, 400);
+        assert!(
+            context
+                .entries
+                .last()
+                .unwrap()
+                .turn
+                .content
+                .contains("isolated swarm trial")
+        );
+        validate_context_grant(&context).unwrap();
+        let original = store.load_transcript_entries(&source.session_id);
+        for entry in &context.entries {
+            let original = &original[entry.source.entry_seq as usize - 1];
+            assert_eq!(entry.turn, original.turn);
+            assert_eq!(entry.content_digest, original.content_digest);
+        }
+        let repeated = build_bounded_context_grant(
+            store.as_ref(),
+            &source.authority_id,
+            &source.session_id,
+            "daemon:test",
+            "trial",
+            now,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_vec(&context).unwrap(),
+            serde_json::to_vec(&repeated).unwrap()
+        );
+        let prompt = delegated_context_prompt(&context);
+        assert!(prompt.contains("isolated swarm trial"));
+        assert!(prompt.chars().count() <= MAX_DELEGATED_CONTEXT_PROMPT_CHARS);
+
+        request.context = context;
+        let destination_root = tempfile::TempDir::new().unwrap();
+        let destination =
+            crate::session_store::test_file_session_store_at(destination_root.path().into());
+        let authority = AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
+        let imported = materialize_delegated_context(
+            destination.as_ref(),
+            &authority,
+            "source-node",
+            &request,
+        )
+        .await
+        .unwrap();
+        let replay = materialize_delegated_context(
+            destination.as_ref(),
+            &authority,
+            "source-node",
+            &request,
+        )
+        .await
+        .unwrap();
+        assert_eq!(imported.derivation, replay.derivation);
+        let received =
+            destination.load_transcript_entries(&imported.derivation.target_session.session_id);
+        assert_eq!(received.len(), request.context.entries.len());
+        assert_eq!(
+            received.last().unwrap().turn,
+            request.context.entries.last().unwrap().turn
+        );
+
+        // Coding peers have a tighter rendered-context limit than the mesh
+        // transport. Exercise hydration against actual destination entries.
+        request.context = build_peer_context_grant(
+            store.as_ref(),
+            &source.authority_id,
+            &source.session_id,
+            "daemon:test",
+            "coding-trial",
+            now,
+            None,
+        )
+        .unwrap();
+        assert!(serialized_size(&request.context).unwrap() <= MAX_DELEGATED_PEER_CONTEXT_BYTES);
+        let imported = materialize_delegated_context(
+            destination.as_ref(),
+            &authority,
+            "coding-peer-node",
+            &request,
+        )
+        .await
+        .unwrap();
+        let owner_session = imported.derivation.target_session;
+        let received = destination.load_transcript_entries(&owner_session.session_id);
+        let mut context = request.context.manifest.clone();
+        let range = &mut context.sources[0];
+        range.selection.session = owner_session.clone();
+        range.selection.after_entry_seq = None;
+        range.selection.through_entry_seq = received.len() as u64;
+        let references: Vec<_> = received
+            .iter()
+            .map(|entry| TranscriptEntryRef {
+                session: owner_session.clone(),
+                entry_id: entry.entry_id.clone(),
+                entry_seq: entry.entry_seq,
+            })
+            .collect();
+        range.selection_digest = medousa_types::coordination::context::conversation_range_digest(
+            &owner_session,
+            references
+                .iter()
+                .zip(&received)
+                .map(|(reference, entry)| (reference, entry.content_digest.as_str())),
+        );
+        let assignment = medousa_types::coordination::ExternalPeerAssignmentRequest {
+            assignment_id: "assignment-1".into(),
+            idempotency_key: "coding-trial".into(),
+            owner_principal_id: "owner-principal".into(),
+            owner_session: owner_session.clone(),
+            channel: medousa_types::coordination::CoordinationChannelRef {
+                authority_id: authority.clone(),
+                channel_id: "channel-1".into(),
+            },
+            target: medousa_types::coordination::ExternalPeerTarget {
+                authority_id: authority.clone(),
+                execution_runtime_id: "runtime-1".into(),
+                runtime: medousa_types::coordination::ExternalPeerRuntime::Codex,
+            },
+            context,
+            execution_session: SessionRef {
+                authority_id: authority,
+                session_id: SessionId::parse("session-worker").unwrap(),
+            },
+            // This includes the maximum assignment plus advisory Locus budget.
+            instructions: "x".repeat(16 * 1024),
+            execution_grant_id: "grant-1".into(),
+            forge_work_id: "work-1".into(),
+            existing_agent_session_id: None,
+        };
+        let prompt = medousa_acp_client::coordination::context::hydrate_assignment_context(
+            &assignment,
+            |session| session == &owner_session,
+            |_| received.clone(),
+        )
+        .unwrap();
+        assert!(prompt.contains("isolated swarm trial"));
+        assert!(prompt.len() <= medousa_acp_client::coordination::context::MAX_PEER_CONTEXT_BYTES);
+    }
+
+    #[tokio::test]
+    async fn explicit_range_is_exact_and_oversized_entries_are_not_rewritten() {
+        let root = tempfile::TempDir::new().unwrap();
+        let store = crate::session_store::test_file_session_store_at(root.path().into());
+        let source = sample_context().manifest.sources[0]
+            .selection
+            .session
+            .clone();
+        let turns = vec![
+            TranscriptAppend::native(sample_turn("old relevant constraints"), None),
+            TranscriptAppend::native(sample_turn("agreed acceptance criteria"), None),
+            TranscriptAppend::native(sample_turn(&"x".repeat(MAX_DELEGATED_CONTEXT_BYTES)), None),
+        ];
+        store
+            .append_transcript_batch(&source.session_id, &turns)
+            .await
+            .unwrap();
+        let select = |after_entry_seq, through_entry_seq| {
+            build_selected_context_grant(
+                store.as_ref(),
+                &source.authority_id,
+                &source.session_id,
+                "daemon:test",
+                "trial",
+                Utc::now(),
+                Some(DelegatedContextSelection {
+                    after_entry_seq,
+                    through_entry_seq,
+                }),
+            )
+        };
+        let context = select(0, 2).unwrap();
+        assert_eq!(context.entries.len(), 2);
+        assert_eq!(context.entries[0].turn.content, "old relevant constraints");
+        assert!(
+            select(0, 3)
+                .unwrap_err()
+                .message
+                .contains("select a smaller")
+        );
+        assert!(
+            select(0, 4)
+                .unwrap_err()
+                .message
+                .contains("not fully committed")
+        );
+        assert!(select(2, 2).is_err());
+        assert!(select(0, 129).is_err());
+        assert!(
+            build_bounded_context_grant(
+                store.as_ref(),
+                &source.authority_id,
+                &source.session_id,
+                "daemon:test",
+                "trial",
+                Utc::now()
+            )
+            .unwrap_err()
+            .message
+            .contains("newest committed entry 3")
+        );
+        assert_eq!(
+            store.load_transcript_entries(&source.session_id)[2]
+                .turn
+                .content
+                .len(),
+            MAX_DELEGATED_CONTEXT_BYTES
+        );
+    }
+
+    #[test]
+    fn prompt_excerpt_keeps_the_start_and_end_of_a_large_recent_entry() {
+        let mut context = sample_context();
+        context.entries[0].turn.content =
+            format!("CURRENT TASK {} FINAL CONSTRAINT", "界".repeat(40_000));
+        let prompt = delegated_context_prompt(&context);
+        assert!(prompt.contains("CURRENT TASK"));
+        assert!(prompt.contains("FINAL CONSTRAINT"));
+        assert!(prompt.contains("middle omitted"));
+        assert!(prompt.chars().count() <= MAX_DELEGATED_CONTEXT_PROMPT_CHARS);
     }
 
     fn sample_request() -> DelegatedTaskRequest {

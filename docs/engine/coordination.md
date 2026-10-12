@@ -194,22 +194,55 @@ the live registry after daemon restart is not invented from Forge metadata.
 Proposals use a one-hour expiry and a stable owner/session/authority-scoped
 request key. Exact retries reuse the immutable snapshot and repair its index;
 changed intent under the same key fails closed. Local discovery and proposal
-tools do not approve or launch work. On embedded mobile, `cognition_peer_delegate` accepts only an exact
+tools do not approve or launch work. On desktop daemons and embedded mobile,
+`cognition_peer_delegate` accepts only an exact
 agent-selectable runtime and Forge work id returned by active-work discovery. It
 sends a signed, bounded, digest-checked context grant to
-`/v1/mesh/peer-proposals`. The destination rechecks directional `assistant.work`
+`/v1/mesh/peer-proposals`. Desktop daemons use their saved worker pairing,
+credentials, pinned destination key, and existing HTTP/Iroh route.
+The destination rechecks directional `assistant.work`
 policy, agent targeting, exact runtime, work ownership, and context provenance
 before creating a request-scoped shadow session and the normal immutable local
 proposal. The transfer carries no approval or execution grant. Exact retries
-reuse the shadow; another request key from the same phone chat gets an independent
+reuse the shadow; another request key from the same source chat gets an independent
 immutable shadow. Worker and remote-delegated ceilings remain unchanged.
 An existing destination-owned trusted Assistant policy may approve and launch
 the remote proposal; otherwise the destination returns an approval card.
 Discovery, pairing, and model-written instructions never create that policy.
 
+### Bounded handoff context
+
+Remote exports select the newest contiguous committed range that fits both
+128 entries and the serialized JSON budget, including manifest and entry
+metadata. Worker transfers allow **512 KiB**. Coding peer handoffs export at
+most **32 KiB**, leaving room within the peer's 64 KiB rendered-context ceiling
+for destination coordinates, the assignment, and Locus continuity.
+Large histories shorten the range rather than reject the whole chat.
+Entries retain their original contents, coordinates, and digests. Worker prompt
+excerpts favor recent entries within their separate 32 Ki-character budget and
+label omitted history or text.
+
+`cognition_peer_delegate` accepts optional `context: {after_entry_seq,
+through_entry_seq}` in the admitted source chat. The lower bound is exclusive;
+the upper bound is inclusive. Explicit ranges must be fully committed, contain
+1–128 entries, and fit the coding peer's 32 KiB export budget; they are never
+silently shortened.
+If the newest single entry cannot fit, select a smaller relevant range and put
+the complete assignment, constraints, and acceptance criteria in `instructions`.
+
+Automatic remote peer handoffs also reuse available source-owned Locus context
+summaries and compressed STTP nodes. Up to four snapshots, totaling at most
+8 KiB, are appended as labeled advisory continuity within the existing 16 KiB
+assignment limit. Recall uses the frozen owner profile and chat or Bot memory
+scope, excludes future-dated nodes, and has a one-second deadline. An unavailable
+memory backend leaves the assignment usable. This uses existing compression;
+handoffs do not wait for a new model-generated summary. Explicit transcript
+ranges skip automatic memory recall. Locus snapshots neither replace committed
+transcript evidence nor confer approval or execution authority.
+
 ## Returning a paired-workshop result
 
-New mobile proposals persist an exact source association before sending intent,
+Remote proposals persist an exact source association before sending intent,
 then bind it to the verified signed proposal response. The destination records
 the authenticated sender and expected assignment identity before dispatch.
 This association is independent of whichever chat the user currently has open.
@@ -230,17 +263,30 @@ through this read-only query before accepting a completion. Recovery never sends
 the proposal again or starts an executor. A missing destination record stays
 pending rather than being treated as evidence that execution failed.
 
-Home performs a bounded rotating sweep on foreground, reconnect, and periodic
-refresh. It verifies the pinned workshop signature and the saved proposal,
+On embedded mobile, Home performs a bounded rotating sweep on foreground,
+reconnect, and periodic refresh. Desktop daemons retrieve results in the
+background, including while Home is closed, and resume from saved associations
+after a restart. Every 15 seconds, a rotating page checks up to four assignments
+concurrently, with an eight-second network deadline per query and capped retry
+backoff for pending or unavailable workshops. Retrieval requires the original
+source authority, a still-available owner profile, source chat visibility, and
+the saved worker pairing. Changing the active profile does not change the
+assignment's owner.
+
+Both sweeps verify the pinned workshop signature and the saved proposal,
 assignment, session, receipt, and decision identities before appending to the
 canonical source transcript. The append carries the remote decision reference
 and a deterministic execution correlation. Exact replay after a restart is a
 no-op; conflicting content or revoked source visibility fails closed. The source
-marks delivery complete only after the transcript commit, and merges committed
-history into the visible chat without replacing an active response stream.
+marks delivery complete only after the transcript commit. Foreground desktop
+windows refresh and merge committed history every 15 seconds and on reconnect,
+without replacing an active response stream or reconciling a different chat,
+profile, or workshop selected during the refresh.
 
-This is foreground result retrieval, not background push or Live invitation
-delivery. Proposals without owner continuation retain their terminal result in
+Retrieval imports the remote owner's committed answer; it does not dispatch
+another assignment or start another source model turn. This is polling rather
+than background push or Live invitation delivery. Proposals without owner
+continuation retain their terminal result in
 the delegation card. Older proposals without a durable source association are
 not retroactively bound by title, session-name matching, or model inference.
 

@@ -28,6 +28,11 @@ request; proposal admission remains available. Inbox records carry optional
 `PeerHandoffSummary` metadata, and sender review requires the exact terminal receipt.
 See [Sender-owned handoffs](../engine/coordination.md#sender-owned-local-handoffs).
 
+Remote handoffs export a recent immutable transcript range bounded by both entry
+count and serialized bytes. The model-facing `cognition_peer_delegate` tool also
+accepts exact source entry bounds; automatic selection can include bounded,
+source-scoped Locus continuity. See [Bounded handoff context](../engine/coordination.md#bounded-handoff-context).
+
 Project Markdown images use `forge.items.by_work_id.source.get` with query
 `path=<project-relative-image>&image=true`. The JSON response is
 `{path,mime,bytes_base64}` instead of the text source response. PNG, JPEG, GIF,

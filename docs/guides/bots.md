@@ -63,9 +63,20 @@ none are available.
 
 Each request uses a fresh runtime process with the Bot’s purpose and bounded
 conversation context. Accepted requests keep running when you leave the chat.
+Long coordinator chats share a recent slice that fits the handoff budget.
+Remote coding assignments can also carry existing Locus summaries from the
+coordinator's memory scope. Include the task, constraints, and acceptance
+criteria in the assignment so the worker has a clear brief even when older
+history is omitted.
 The status line lets you cancel a job or retry an uncertain submission using
 the original request ID. Responses are saved to the Bot conversation on the
 workshop. Execution administration is required to configure these bindings.
+
+For native coding handoffs across paired workshops with owner continuation,
+the desktop daemon retrieves the remote owner's final answer into the original
+coordinator chat. Retrieval continues while Medousa's window is closed and
+resumes after daemon restarts. An open window refreshes the answer automatically;
+offline workshops are retried without submitting the assignment again.
 
 ## Message a Bot or another agent chat
 

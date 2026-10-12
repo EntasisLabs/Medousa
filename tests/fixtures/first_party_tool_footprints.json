@@ -4,8 +4,8 @@
     {
       "id": "general",
       "tool_count": 90,
-      "total_chars": 70690,
-      "tokens_estimate": 17673,
+      "total_chars": 71620,
+      "tokens_estimate": 17905,
       "tools_over_1000_chars": 20,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -30,6 +30,11 @@
           "tokens_estimate": 655
         },
         {
+          "name": "cognition_peer_delegate",
+          "chars": 2499,
+          "tokens_estimate": 625
+        },
+        {
           "name": "cognition_peer_propose",
           "chars": 2241,
           "tokens_estimate": 561
@@ -43,19 +48,14 @@
           "name": "cognition_runtime_mutate",
           "chars": 2060,
           "tokens_estimate": 515
-        },
-        {
-          "name": "cognition_environment_propose",
-          "chars": 1907,
-          "tokens_estimate": 477
         }
       ]
     },
     {
       "id": "host_bus_home",
       "tool_count": 49,
-      "total_chars": 43558,
-      "tokens_estimate": 10890,
+      "total_chars": 44488,
+      "tokens_estimate": 11122,
       "tools_over_1000_chars": 13,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -75,6 +75,11 @@
           "tokens_estimate": 655
         },
         {
+          "name": "cognition_peer_delegate",
+          "chars": 2499,
+          "tokens_estimate": 625
+        },
+        {
           "name": "cognition_peer_propose",
           "chars": 2241,
           "tokens_estimate": 561
@@ -93,19 +98,14 @@
           "name": "cognition_computer_act",
           "chars": 1772,
           "tokens_estimate": 443
-        },
-        {
-          "name": "cognition_shell_run",
-          "chars": 1576,
-          "tokens_estimate": 394
         }
       ]
     },
     {
       "id": "host_bus_thin",
       "tool_count": 46,
-      "total_chars": 39629,
-      "tokens_estimate": 9908,
+      "total_chars": 40559,
+      "tokens_estimate": 10140,
       "tools_over_1000_chars": 12,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -120,6 +120,11 @@
           "tokens_estimate": 727
         },
         {
+          "name": "cognition_peer_delegate",
+          "chars": 2499,
+          "tokens_estimate": 625
+        },
+        {
           "name": "cognition_peer_propose",
           "chars": 2241,
           "tokens_estimate": 561
@@ -143,11 +148,6 @@
           "name": "cognition_shell_run",
           "chars": 1576,
           "tokens_estimate": 394
-        },
-        {
-          "name": "cognition_peer_delegate",
-          "chars": 1569,
-          "tokens_estimate": 393
         }
       ]
     },

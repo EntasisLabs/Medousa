@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyRemotePeerCompletionResult,
   createRemotePeerCompletionSync,
+  refreshDesktopPeerCompletionHistory,
   type PersonalScopeSnapshot,
   type RemotePeerCompletionSyncResult,
 } from "./remotePeerCompletionSync";
@@ -14,6 +15,63 @@ const appliedResult: RemotePeerCompletionSyncResult = {
 };
 
 describe("remote peer completion sync", () => {
+  it("desktop merges daemon commits and skips reconciliation after a scope or focus switch", async () => {
+    let matches = true;
+    let focused = "source-session";
+    const reconcileOnResume = vi.fn(async () => {});
+    const deps = {
+      scope: () => ({ workshopId: "local-mac", profileId: "profile-a", workshopEpoch: 1 }),
+      scopeStillMatches: () => matches,
+      focusedSessionId: () => focused,
+      refreshSessions: async () => {},
+      reconcileOnResume,
+    };
+    await refreshDesktopPeerCompletionHistory(deps);
+    expect(reconcileOnResume).toHaveBeenCalledOnce();
+    reconcileOnResume.mockClear();
+    await refreshDesktopPeerCompletionHistory({ ...deps, refreshSessions: async () => { matches = false; } });
+    expect(reconcileOnResume).not.toHaveBeenCalled();
+    matches = true;
+    await refreshDesktopPeerCompletionHistory({ ...deps, refreshSessions: async () => { focused = "another-session"; } });
+    expect(reconcileOnResume).not.toHaveBeenCalled();
+  });
+
+  it("desktop refresh polls coalesce without invoking mobile result application", async () => {
+    const invokeSync = vi.fn(async () => null);
+    const onApplied = vi.fn();
+    const onDaemonRefresh = vi.fn();
+    const service = createRemotePeerCompletionSync({ invokeSync, eligible: () => true, onApplied, onDaemonRefresh });
+    const stop = service.start();
+    await service.request();
+    expect(invokeSync).toHaveBeenCalledOnce();
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(onDaemonRefresh).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  it("does not reconcile desktop history after the poller stops during list refresh", async () => {
+    let finishRefresh!: () => void;
+    const reconcileOnResume = vi.fn();
+    const service = createRemotePeerCompletionSync({
+      invokeSync: async () => null,
+      eligible: () => true,
+      onApplied: vi.fn(),
+      onDaemonRefresh: (stillCurrent) => refreshDesktopPeerCompletionHistory({
+        scope: () => ({ workshopId: "local-mac", profileId: "profile-a", workshopEpoch: 1 }),
+        scopeStillMatches: stillCurrent,
+        focusedSessionId: () => "source-session",
+        refreshSessions: () => new Promise<void>((resolve) => { finishRefresh = resolve; }),
+        reconcileOnResume,
+      }),
+    });
+    const stop = service.start();
+    const pending = service.request();
+    await Promise.resolve();
+    stop();
+    finishRefresh();
+    await pending;
+    expect(reconcileOnResume).not.toHaveBeenCalled();
+  });
   it("starts on visible mobile, skips hidden requests, and resumes on reconnect wake", async () => {
     let eligible = true;
     let wake = () => {};

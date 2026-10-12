@@ -197,6 +197,54 @@ impl DaemonWorkerPairing {
             self.client.clone(),
         ))
     }
+
+    /// Read the result of an existing handoff using its exact saved pairing.
+    /// This query never proposes, approves, or dispatches work.
+    pub async fn query_peer_completion(
+        &self,
+        origin: &crate::peer_coordination_mesh::RemotePeerOriginAssociation,
+    ) -> Result<crate::peer_coordination_mesh::RemotePeerCompletionResponse, DelegatedTaskError>
+    {
+        let transport = DaemonWorkerTransport::new(self.root.clone(), self.client.clone());
+        let (identity, connections) = transport.all_async().await?;
+        if identity.device_id != origin.source_device_id {
+            return Err(DelegatedTaskError::conflict(
+                "saved completion source identity no longer matches pairing",
+            ));
+        }
+        let stored = connections
+            .into_iter()
+            .find(|connection| connection.summary.workshop_device_id == origin.target_device_id)
+            .ok_or_else(|| {
+                DelegatedTaskError::conflict("completion workshop is no longer paired")
+            })?;
+        let query = crate::peer_coordination_mesh::RemotePeerCompletionQuery {
+            schema_version: crate::peer_coordination_mesh::PEER_COMPLETION_QUERY_SCHEMA_VERSION,
+            source_device_id: origin.source_device_id.clone(),
+            source_request_digest: origin.request_digest.clone(),
+            proposal_id: origin.proposal_id.clone(),
+            proposal_request_digest: origin.proposal_request_digest.clone(),
+            assignment_id: origin.assignment_id.clone(),
+        };
+        let response: crate::peer_coordination_mesh::RemotePeerCompletionResponse = transport
+            .exchange_bounded(
+                &stored,
+                &identity,
+                "/v1/mesh/peer-assignment-results/query",
+                query,
+                crate::peer_completion_delivery::MAX_REMOTE_COMPLETION_PAYLOAD_BYTES,
+            )
+            .await?;
+        if response.schema_version
+            != crate::peer_coordination_mesh::PEER_COMPLETION_QUERY_SCHEMA_VERSION
+            || response.source_request_digest != origin.request_digest
+        {
+            return Err(DelegatedTaskError::conflict(
+                "completion response does not match its saved source request",
+            ));
+        }
+        Ok(response)
+    }
     pub async fn pair_from_qr(
         &self,
         raw: &str,
@@ -475,7 +523,12 @@ impl DaemonWorkerTransport {
     }
     async fn all_async(&self) -> Result<(Identity, Vec<Stored>), DelegatedTaskError> {
         let transport = Self::new(self.root.clone(), self.client.clone());
-        tokio::task::spawn_blocking(move || transport.all())
+        crate::peer_completion_delivery::completion_execution_service()
+            .run(
+                medousa_forge::execution::ExecutionClass::StoreIo,
+                medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
+                move || Ok(transport.all()),
+            )
             .await
             .map_err(|error| DelegatedTaskError::internal(error.to_string()))?
             .map_err(|error| DelegatedTaskError::transport(error.to_string()))
@@ -510,6 +563,17 @@ impl DaemonWorkerTransport {
         path: &str,
         payload: P,
     ) -> Result<R, DelegatedTaskError> {
+        self.exchange_bounded(s, i, path, payload, usize::MAX).await
+    }
+
+    async fn exchange_bounded<P: Serialize, R: Serialize + DeserializeOwned>(
+        &self,
+        s: &Stored,
+        i: &Identity,
+        path: &str,
+        payload: P,
+        response_limit: usize,
+    ) -> Result<R, DelegatedTaskError> {
         let hash =
             payload_hash_hex(&payload).map_err(|e| DelegatedTaskError::internal(e.to_string()))?;
         let env = sign_envelope(
@@ -527,7 +591,7 @@ impl DaemonWorkerTransport {
         };
         let body = serde_json::to_vec(&request)
             .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
-        let (status, response) = worker_request(
+        let (status, response) = worker_request_bounded(
             &self.client,
             &s.summary.daemon_url,
             s.summary.iroh_ticket.as_deref(),
@@ -535,6 +599,7 @@ impl DaemonWorkerTransport {
             path,
             Some(&s.session_token),
             Some(&body),
+            response_limit,
         )
         .await
         .map_err(|e| DelegatedTaskError::transport(e.to_string()))?;
@@ -660,6 +725,51 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
             out.push(row)
         }
         Ok(out)
+    }
+    async fn propose_peer(
+        &self,
+        target: &DelegationTarget,
+        request: crate::peer_coordination_mesh::RemotePeerProposalRequest,
+    ) -> Result<crate::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError> {
+        let owner_profile =
+            crate::execution_context::active_turn_execution_context().and_then(|execution| {
+                execution
+                    .principal()
+                    .profile_id()
+                    .or(execution.legacy_scope().identity_user_id.as_deref())
+                    .map(str::to_owned)
+            });
+        let (identity, stored) = self.target_async(target.clone()).await?;
+        let pending = if let Some(owner_profile) = owner_profile {
+            crate::peer_coordination_mesh::record_remote_peer_origin_pending_admitted(
+                &identity.device_id,
+                &stored.summary.workshop_device_id,
+                &owner_profile,
+                &request,
+            )
+            .await
+        } else {
+            crate::peer_coordination_mesh::record_remote_peer_origin_pending_for_current_profile_admitted(
+                &identity.device_id, &stored.summary.workshop_device_id, &request,
+            ).await
+        };
+        pending.map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+        let response = self
+            .exchange(
+                &stored,
+                &identity,
+                "/v1/mesh/peer-proposals",
+                request.clone(),
+            )
+            .await?;
+        crate::peer_coordination_mesh::record_remote_peer_origin_response_admitted(
+            &stored.summary.workshop_device_id,
+            &request,
+            &response,
+        )
+        .await
+        .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+        Ok(response)
     }
     async fn submit_or_observe(
         &self,
