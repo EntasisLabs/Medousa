@@ -728,14 +728,17 @@ impl WorkshopSpawn {
             self.user_ack
         )
         .to_ascii_lowercase();
-        if blob.contains("review")
+        let mentions_review = blob.contains("review");
+        let mut value = tool.execution.spawn(self).await?;
+        if mentions_review
             && let Some(turn) =
                 crate::agent_runtime::execution_context::active_turn_execution_context()
-            && let Some(message) = crate::wake_runtime::review_block(turn.session_id().as_str())
+            && let Some(note) = crate::wake_runtime::review_note(turn.session_id().as_str())
+            && let Some(map) = value.as_object_mut()
         {
-            return Err(stasis::domain::errors::StasisError::PortFailure(message));
+            map.insert("review_context".to_string(), Value::String(note));
         }
-        tool.execution.spawn(self).await
+        Ok(value)
     }
 }
 

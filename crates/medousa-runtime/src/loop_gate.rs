@@ -69,9 +69,9 @@ pub struct ToolLoopCompletionGate<'a> {
     pub wake_hooks: Option<std::sync::Arc<WakeLoopHooks>>,
 }
 
-/// Host callbacks the foreground loop uses to enforce a wake without owning
-/// daemon stores. Round caps apply even when the compatibility tool-round
-/// limit is off.
+/// Host callbacks the foreground loop uses to describe a wake without owning
+/// daemon stores. `round_cap` is unused by the loop; remaining rounds stay in
+/// the wake prompt. The compatibility tool-round limit is a separate switch.
 pub struct WakeLoopHooks {
     pub round_cap: Option<usize>,
     pub open_gaps: std::sync::Arc<dyn Fn() -> Vec<String> + Send + Sync>,

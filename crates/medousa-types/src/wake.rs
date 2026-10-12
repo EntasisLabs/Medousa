@@ -1,10 +1,12 @@
-//! Typed authority for runtime-injected wakes.
+//! Typed description of runtime-injected wakes.
 //!
 //! A wake is evidence that something happened. It is not a fresh human goal.
-//! Prompt text may describe the event; this module decides which tools and how
-//! many rounds that event actually authorizes. Fits the work-unit epic's
-//! separation of scope from authority, and `WorkEventSubscription`'s admitted
-//! reaction policy: event data cannot mint execution.
+//! Every wake names its source and the expected response. The agent keeps its
+//! tools. A call past that expected response is logged, not refused. Hard
+//! refusals for live sends, destructive actions, and another party's budget
+//! stay in the existing admission checks. Fits the work-unit epic's separation
+//! of scope from authority: event data cannot mint execution, and it also
+//! cannot take tools away.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -45,14 +47,38 @@ impl WakeSource {
         }
     }
 
-    /// Inbox and peer wakes are non-executing. A peer terminal never spawns a
-    /// review on its own, and neither does an inbox delivery, a terminal
-    /// callback, a worker-result envelope, or a process wake.
+    /// Sources whose expected response includes opening a new safety review.
+    /// A peer terminal, inbox delivery, terminal callback, worker result, or
+    /// process wake is not one of those. Going past that is logged, not refused.
     pub fn can_spawn_review(self) -> bool {
         matches!(
             self,
             Self::Human | Self::SafetyReview | Self::CheckpointResume
         )
+    }
+
+    /// What this wake is telling the agent, before any tool choice.
+    pub fn situation(self) -> &'static str {
+        match self {
+            Self::Human => "The human asked for this turn.",
+            Self::NativeCallback => {
+                "A native callback continued saved work. Nothing new was asked beyond that."
+            }
+            Self::TerminalCallback => {
+                "The handoff reached a terminal state. Nothing new was asked."
+            }
+            Self::PeerTerminal => "The peer finished; here is the result. Nothing new was asked.",
+            Self::AgentInbox => "A message arrived. Nothing new was asked.",
+            Self::WorkerResult => "The worker finished; here is the result. Nothing new was asked.",
+            Self::CheckpointResume => {
+                "This resumes saved work. The human sentence is not a new goal."
+            }
+            Self::SafetyReview => "A safety review returned. Nothing new was asked.",
+            Self::ProcessCompleted => {
+                "The process finished; here is the result. Nothing new was asked."
+            }
+            Self::ProcessTimedOut => "The process timed out. Nothing new was asked.",
+        }
     }
 
     pub fn non_executing(self) -> bool {
@@ -88,7 +114,7 @@ impl WakeAuthority {
         }
     }
 
-    /// Hard round ceiling. `None` means the turn's ordinary budget applies.
+    /// Suggested remaining rounds. The loop reports this number; it does not stop there.
     pub fn round_cap(self) -> Option<u32> {
         match self {
             Self::Acknowledge => Some(2),
@@ -98,18 +124,14 @@ impl WakeAuthority {
         }
     }
 
-    pub fn allowed_action(self) -> &'static str {
+    pub fn expected_response(self) -> &'static str {
         match self {
-            Self::Acknowledge => {
-                "acknowledge the message and finish the turn, or reply with cognition_agent_message"
-            }
-            Self::Report => {
-                "report the outcome with read-only tools and finish the turn. Do not run shell, mutate, delegate, or spawn a review"
-            }
+            Self::Acknowledge => "acknowledge the message or reply, then finish",
+            Self::Report => "report the outcome, then finish",
             Self::ContinueBounded { .. } => {
                 "continue the saved work within the remaining rounds, then finish"
             }
-            Self::Execute => "use the tools this turn's human grant already allows",
+            Self::Execute => "carry out the human request",
         }
     }
 }
@@ -178,51 +200,20 @@ impl WakeGrant {
     }
 }
 
-/// Why a tool call is outside the wake. The message names the allowed action.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WakeRefusal {
-    pub message: String,
-}
-
-impl WakeRefusal {
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-}
-
-pub fn tool_refusal(grant: &WakeGrant, tool: &str, input: &Value) -> Option<WakeRefusal> {
-    if is_safety_review_spawn(tool, input) && !grant.source.can_spawn_review() {
-        return Some(WakeRefusal {
-            message: format!(
-                "wake authority is {} from a {}; spawning a review is outside this grant. Allowed action: {}. A {} wake cannot spawn a safety review.",
-                grant.authority.as_str(),
-                grant.source.as_str().replace('_', " "),
-                grant.authority.allowed_action(),
-                grant.source.as_str().replace('_', " "),
-            ),
-        });
-    }
-    if tool == "cognition_peer_review" && !source_may_record_acceptance(grant.source) {
-        return Some(WakeRefusal {
-            message: format!(
-                "wake authority is {} from a {}; spawning a review is outside this grant. Allowed action: {}. A {} wake cannot spawn a safety review.",
-                grant.authority.as_str(),
-                grant.source.as_str().replace('_', " "),
-                grant.authority.allowed_action(),
-                grant.source.as_str().replace('_', " "),
-            ),
-        });
+/// When a call is past the expected response, describe that. Callers log the
+/// note and still run the tool.
+pub fn beyond_expected_note(grant: &WakeGrant, tool: &str, input: &Value) -> Option<String> {
+    if grant.source == WakeSource::Human || matches!(grant.authority, WakeAuthority::Execute) {
+        return None;
     }
     if tool_allowed(grant, tool, input) {
         return None;
     }
-    Some(WakeRefusal {
-        message: format!(
-            "wake authority is {}; {tool} is outside this grant. Allowed action: {}.",
-            grant.authority.as_str(),
-            grant.authority.allowed_action(),
-        ),
-    })
+    Some(format!(
+        "{situation} Expected response: {expected}. {tool} is past that expected response. The call is allowed; say why if you meant to go further.",
+        situation = grant.source.situation(),
+        expected = grant.authority.expected_response(),
+    ))
 }
 
 /// Handoff acceptance is recorded on the native or terminal callback.
@@ -361,8 +352,8 @@ impl OpenGap {
     }
 }
 
-/// Gaps the scratchpad does not already mention. Finish and checkpoint must
-/// not drop these.
+/// Gaps the scratchpad does not already mention. The runtime records these
+/// itself; finish and checkpoint are not refused over them.
 pub fn untracked_gaps<'a>(scratch_gaps: &[String], known: &'a [OpenGap]) -> Vec<&'a OpenGap> {
     known
         .iter()
@@ -375,7 +366,7 @@ pub fn untracked_gaps<'a>(scratch_gaps: &[String], known: &'a [OpenGap]) -> Vec<
         .collect()
 }
 
-pub fn finish_refusal(scratch_gaps: &[String], known: &[OpenGap]) -> Option<String> {
+pub fn finish_reminder(scratch_gaps: &[String], known: &[OpenGap]) -> Option<String> {
     let missing = untracked_gaps(scratch_gaps, known);
     if missing.is_empty() {
         return None;
@@ -386,7 +377,7 @@ pub fn finish_refusal(scratch_gaps: &[String], known: &[OpenGap]) -> Option<Stri
         .collect::<Vec<_>>()
         .join("; ");
     Some(format!(
-        "finish refused: known work is untracked ({listed}). Keep these open_gaps visible, or resolve the work before finishing. Allowed action: report the unfinished work and checkpoint."
+        "The runtime recorded these open gaps: {listed}. The turn can end."
     ))
 }
 
@@ -410,29 +401,25 @@ pub struct WorkApproval {
     pub question_id: String,
     pub evidence_digest: String,
     pub approved_by: String,
+    /// RFC3339 time the approval was recorded. Older ledgers omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approved_at: Option<String>,
 }
 
-/// A new safety review is admitted only when no approval covers the current
-/// evidence, or the evidence changed since that approval.
-pub fn review_blocked_by_approval(
-    source: WakeSource,
-    approval: Option<&WorkApproval>,
-    current_digest: &str,
-) -> Option<String> {
-    if !source.can_spawn_review() {
-        return Some(format!(
-            "a {} wake cannot spawn a safety review. Allowed action: report the outcome and finish the turn.",
-            source.as_str().replace('_', " ")
-        ));
-    }
+/// Context for a re-review. Never a refusal. `None` when nothing was approved.
+pub fn review_context(approval: Option<&WorkApproval>, current_digest: &str) -> Option<String> {
     let approval = approval?;
+    let when = approval.approved_at.as_deref().unwrap_or("an earlier time");
     if approval.evidence_digest == current_digest {
         Some(format!(
-            "review question {} on work {} is already approved (evidence unchanged). A new safety review is only spawned when something material changed since the last approved review. Allowed action: report the existing approval.",
-            approval.question_id, approval.work_id
+            "approved at {when}, nothing material changed since. evidence_digest={} (unchanged).",
+            approval.evidence_digest
         ))
     } else {
-        None
+        Some(format!(
+            "approved at {when}. evidence_digest was {}, now {current_digest} (changed).",
+            approval.evidence_digest
+        ))
     }
 }
 
@@ -493,7 +480,7 @@ pub fn checkpoint_resume_prompt(
          saved_goal={goal}\n\
          open_gaps={gaps}\n\
          pending_work={pending}\n\
-         The saved human request is already in the transcript. It is not a new goal and it is not a fresh execution license. Continue only unfinished saved work within the remaining rounds, then finish."
+         The saved human request is already in the transcript. It is not a new goal. Expected response: continue unfinished saved work within the remaining rounds, then finish. You still have your tools. If you go past that, say why."
     )
 }
 
@@ -501,8 +488,8 @@ pub fn checkpoint_resume_prompt(
 pub enum ResumeTurnMessage {
     /// A different human sentence. Keep it as the turn's goal.
     NewHuman,
-    /// Do not append the human sentence. Hand the model the resume prompt and
-    /// cap the loop at `round_cap`.
+    /// Do not append the human sentence. Hand the model the resume prompt.
+    /// `round_cap` is the remaining budget named in that prompt, not a stop.
     CheckpointResume { prompt: String, round_cap: u32 },
 }
 
@@ -545,9 +532,13 @@ pub fn process_event_prompt(
          authority={}\n\
          handle={handle}\n\
          detail={detail}\n\
-         This event is not a new human goal. Allowed action: {}.",
+         This event is not a new human goal. {situation} Expected response: {}. You still have your tools. If you go past that, say why.",
         authority.as_str(),
-        authority.allowed_action(),
+        authority.expected_response(),
+        situation = match authority {
+            WakeAuthority::Report => "Nothing new was asked.",
+            _ => "Nothing new was asked beyond the saved work.",
+        },
     )
 }
 
@@ -557,31 +548,37 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn inbox_and_peer_wakes_are_non_executing_and_refuse_shell_and_review() {
+    fn inbox_and_peer_wakes_describe_the_expected_response() {
         let inbox = WakeGrant::for_source(WakeSource::AgentInbox);
         assert_eq!(inbox.authority, WakeAuthority::Acknowledge);
-        let shell = tool_refusal(&inbox, "cognition_shell_run", &json!({"command": "ls"})).unwrap();
-        assert!(shell.message.contains("Allowed action:"));
-        assert!(shell.message.contains("acknowledge"));
+        let shell =
+            beyond_expected_note(&inbox, "cognition_shell_run", &json!({"command": "ls"})).unwrap();
+        assert!(shell.contains("Expected response:"));
+        assert!(shell.contains("acknowledge"));
+        assert!(shell.contains("The call is allowed"));
+        assert!(shell.contains("Nothing new was asked"));
 
         let peer = WakeGrant::for_source(WakeSource::PeerTerminal);
         assert_eq!(peer.authority, WakeAuthority::Report);
         assert!(peer.source.non_executing());
-        let review = tool_refusal(
+        assert!(peer.source.situation().contains("peer finished"));
+        let review = beyond_expected_note(
             &peer,
             "cognition_workshop_mutate",
             &json!({"action": "workshop.spawn", "intent": "Stasis safety review"}),
         )
         .unwrap();
-        assert!(review.message.contains("cannot spawn a safety review"));
-        assert!(review.message.contains("Allowed action:"));
-        assert!(tool_refusal(&peer, "cognition_runtime_query", &json!({})).is_none());
-        assert!(tool_refusal(&peer, "cognition_shell_run", &json!({"argv": ["ls"]})).is_some());
-        assert!(tool_refusal(&peer, "cognition_peer_review", &json!({})).is_some());
-        let terminal = WakeGrant::for_source(WakeSource::TerminalCallback);
-        assert!(tool_refusal(&terminal, "cognition_peer_review", &json!({})).is_none());
+        assert!(review.contains("past that expected response"));
+        assert!(review.contains("The call is allowed"));
+        assert!(beyond_expected_note(&peer, "cognition_runtime_query", &json!({})).is_none());
         assert!(
-            tool_refusal(
+            beyond_expected_note(&peer, "cognition_shell_run", &json!({"argv": ["ls"]})).is_some()
+        );
+        assert!(beyond_expected_note(&peer, "cognition_peer_review", &json!({})).is_some());
+        let terminal = WakeGrant::for_source(WakeSource::TerminalCallback);
+        assert!(beyond_expected_note(&terminal, "cognition_peer_review", &json!({})).is_none());
+        assert!(
+            beyond_expected_note(
                 &terminal,
                 "cognition_workshop_mutate",
                 &json!({"action": "workshop.spawn", "intent": "safety review"}),
@@ -634,20 +631,18 @@ mod tests {
             question_id: "review-1".into(),
             evidence_digest: "head-abc".into(),
             approved_by: "human".into(),
+            approved_at: Some("2026-10-12T15:49:00Z".into()),
         };
+        assert!(review_context(None, "head-abc").is_none());
+        let same = review_context(Some(&approval), "head-abc").unwrap();
+        assert!(same.contains("approved at 2026-10-12T15:49:00Z"), "{same}");
+        assert!(same.contains("nothing material changed since"), "{same}");
         assert!(
-            review_blocked_by_approval(WakeSource::PeerTerminal, None, "head-abc")
-                .unwrap()
-                .contains("cannot spawn")
+            same.contains("evidence_digest=head-abc (unchanged)"),
+            "{same}"
         );
-        assert!(
-            review_blocked_by_approval(WakeSource::Human, Some(&approval), "head-abc")
-                .unwrap()
-                .contains("already approved")
-        );
-        assert!(
-            review_blocked_by_approval(WakeSource::Human, Some(&approval), "head-def").is_none()
-        );
+        let changed = review_context(Some(&approval), "head-def").unwrap();
+        assert!(changed.contains("now head-def (changed)"), "{changed}");
         assert!(is_approval_utterance("approved"));
         assert!(is_approval_utterance("  Approved. "));
         assert!(!is_approval_utterance(
@@ -656,16 +651,19 @@ mod tests {
     }
 
     #[test]
-    fn untracked_work_refuses_finish() {
+    fn untracked_work_is_a_reminder_not_a_refusal() {
         let known = vec![OpenGap {
             id: "msg_1".into(),
             kind: OpenGapKind::UndeliveredMessage,
             summary: "coder handback".into(),
         }];
-        assert!(finish_refusal(&[], &known).unwrap().contains("msg_1"));
+        let note = finish_reminder(&[], &known).unwrap();
+        assert!(note.contains("msg_1"), "{note}");
+        assert!(note.contains("The turn can end"), "{note}");
+        assert!(!note.contains("refused"), "{note}");
         let mut scratch = Vec::new();
         merge_gap_lines(&mut scratch, &known);
-        assert!(finish_refusal(&scratch, &known).is_none());
+        assert!(finish_reminder(&scratch, &known).is_none());
     }
 
     #[test]
@@ -676,6 +674,14 @@ mod tests {
             WakeAuthority::ContinueBounded { rounds: 2 }
         );
         assert_eq!(grant.authority.round_cap(), Some(2));
-        assert!(tool_refusal(&grant, "cognition_shell_run", &json!({})).is_none());
+        assert!(beyond_expected_note(&grant, "cognition_shell_run", &json!({})).is_none());
+        assert!(
+            beyond_expected_note(
+                &grant,
+                "cognition_workshop_mutate",
+                &json!({"action": "workshop.spawn", "intent": "safety review"}),
+            )
+            .is_some()
+        );
     }
 }

@@ -15,7 +15,6 @@ pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 pub const REPEATED_TOOL_FAILURE_WARNING_AT: usize = 2;
 pub const REPEATED_TOOL_FAILURE_STOP_AT: usize = 3;
 pub const REPEATED_SUCCESSFUL_CALL_WARNING_AT: usize = 4;
-pub const REPEATED_SUCCESSFUL_CALL_STOP_AT: usize = 6;
 
 pub fn resolve_max_text_only_stuck_continues(max_tool_rounds: usize) -> usize {
     max_tool_rounds.max(1)
@@ -534,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_successful_calls_count_input_only_and_stop_at_six() {
+    fn repeated_successful_calls_count_input_only_past_the_warning() {
         let mut guard = RepeatedSuccessfulCallGuard::default();
         let first = invocation(
             json!({"command": "cognition_runtime_query"}),
@@ -549,7 +548,7 @@ mod tests {
             guard.observe_batch(std::slice::from_ref(&same_input_different_output)),
             2
         );
-        for expected in 3..=REPEATED_SUCCESSFUL_CALL_STOP_AT {
+        for expected in 3..=8 {
             assert_eq!(guard.observe_batch(std::slice::from_ref(&first)), expected);
         }
         let failed = invocation(

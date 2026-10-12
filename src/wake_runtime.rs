@@ -1,9 +1,10 @@
-//! Session ledger for wake grants, durable open gaps, and approvals.
+//! Session ledger for wake grants, durable open gaps, approvals, and deviations.
 //!
 //! The grant is replaced on every turn so a peer wake cannot leak onto the
-//! next human turn. Gaps and approvals are written to disk and reloaded after
-//! a daemon restart. The tool loop reads [`hooks_for`]; the registry refuses
-//! calls the grant does not allow.
+//! next human turn. Gaps, approvals, and deviations are written to disk and
+//! reloaded after a daemon restart. The tool loop reads [`hooks_for`]. The
+//! registry keeps the full toolset and records a call that goes past the
+//! expected response.
 
 use std::collections::HashMap;
 use std::fs;
@@ -14,14 +15,26 @@ use async_trait::async_trait;
 use genai::chat::Tool;
 use medousa_runtime::WakeLoopHooks;
 use medousa_types::wake::{
-    OpenGap, OpenGapKind, WakeGrant, WakeSource, is_approval_utterance, is_material_tool,
-    is_safety_review_spawn, review_blocked_by_approval, tool_refusal,
+    OpenGap, OpenGapKind, WakeGrant, WakeSource, beyond_expected_note, is_approval_utterance,
+    is_material_tool, is_safety_review_spawn, review_context,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stasis::application::orchestration::tool_registry::ToolRegistry;
-use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
+
+const MAX_DEVIATIONS: usize = 200;
+
+/// A call that went past the wake's expected response. The tool still ran.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WakeDeviation {
+    pub at: String,
+    pub source: String,
+    pub expected: String,
+    pub tool: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct DiskSession {
@@ -31,6 +44,8 @@ struct DiskSession {
     approvals: Vec<medousa_types::wake::WorkApproval>,
     #[serde(default)]
     generation: u64,
+    #[serde(default)]
+    deviations: Vec<WakeDeviation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -212,6 +227,7 @@ fn record_approval_locked(state: &mut SessionState, approved_by: &str) {
                 question_id,
                 evidence_digest: digest.clone(),
                 approved_by: approved_by.to_string(),
+                approved_at: Some(chrono::Utc::now().to_rfc3339()),
             });
     }
     state
@@ -233,48 +249,76 @@ fn note_material(session_id: &str, tool: &str) {
     persist(&guard);
 }
 
-fn approval_refusal(session_id: &str, source: WakeSource) -> Option<String> {
+pub fn deviations(session_id: &str) -> Vec<WakeDeviation> {
+    let guard = ledger().lock().unwrap_or_else(|err| err.into_inner());
+    guard
+        .sessions
+        .get(session_id)
+        .map(|state| state.disk.deviations.clone())
+        .unwrap_or_default()
+}
+
+fn stated_reason(input: &Value) -> Option<String> {
+    for key in ["reason", "why", "rationale"] {
+        if let Some(text) = input.get(key).and_then(Value::as_str) {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.chars().take(500).collect());
+            }
+        }
+    }
+    None
+}
+
+fn record_deviation(session_id: &str, grant: &WakeGrant, tool: &str, reason: Option<String>) {
+    with_session(session_id, |state| {
+        state.disk.deviations.push(WakeDeviation {
+            at: chrono::Utc::now().to_rfc3339(),
+            source: grant.source.as_str().to_string(),
+            expected: grant.authority.expected_response().to_string(),
+            tool: tool.to_string(),
+            reason,
+        });
+        if state.disk.deviations.len() > MAX_DEVIATIONS {
+            let overflow = state.disk.deviations.len() - MAX_DEVIATIONS;
+            state.disk.deviations.drain(0..overflow);
+        }
+    });
+}
+
+/// Approval context for a review spawn. `None` when this session has no approval.
+pub fn review_note(session_id: &str) -> Option<String> {
     let guard = ledger().lock().unwrap_or_else(|err| err.into_inner());
     let state = guard.sessions.get(session_id)?;
     let digest = state.disk.generation.to_string();
-    let approval = state.disk.approvals.last();
-    review_blocked_by_approval(source, approval, &digest)
-}
-
-pub fn review_block(session_id: &str) -> Option<String> {
-    let source = current_grant(session_id)
-        .map(|grant| grant.source)
-        .unwrap_or(WakeSource::Human);
-    approval_refusal(session_id, source)
+    review_context(state.disk.approvals.last(), &digest)
 }
 
 pub fn hooks_for(session_id: &str) -> Arc<WakeLoopHooks> {
-    hooks(session_id, true)
+    hooks(session_id)
 }
 
 pub fn worker_hooks(session_id: &str) -> Arc<WakeLoopHooks> {
-    hooks(session_id, false)
+    hooks(session_id)
 }
 
-fn hooks(session_id: &str, apply_round_cap: bool) -> Arc<WakeLoopHooks> {
-    let session = session_id.to_string();
-    let round_cap = if apply_round_cap {
-        current_grant(session_id).and_then(|grant| {
-            grant
-                .remaining_rounds
-                .or_else(|| grant.authority.round_cap())
-                .map(|rounds| rounds as usize)
-        })
-    } else {
-        None
-    };
-    let gaps_session = session.clone();
-    let success_session = session;
+fn hooks(session_id: &str) -> Arc<WakeLoopHooks> {
+    let gaps_session = session_id.to_string();
+    let success_session = session_id.to_string();
     Arc::new(WakeLoopHooks {
-        round_cap,
+        round_cap: None,
         open_gaps: Arc::new(move || gap_lines(&gaps_session)),
         on_tool_success: Arc::new(move |tool| note_material(&success_session, tool)),
     })
+}
+
+fn attach_field(mut output: Value, key: &str, note: String) -> Value {
+    if let Some(map) = output.as_object_mut() {
+        map.insert(key.to_string(), Value::String(note));
+        output
+    } else {
+        serde_json::json!({"result": output, key: note})
+    }
 }
 
 pub struct WakeToolRegistry {
@@ -301,35 +345,32 @@ fn effective_grant(session_id: &str) -> WakeGrant {
 #[async_trait]
 impl ToolRegistry for WakeToolRegistry {
     async fn list_tools(&self) -> Result<Vec<Tool>> {
-        let grant = effective_grant(&self.session_id);
-        let tools = self.inner.list_tools().await?;
-        if current_grant(&self.session_id).is_none() {
-            return Ok(tools);
-        }
-        Ok(tools
-            .into_iter()
-            .filter(|tool| {
-                tool_refusal(
-                    &grant,
-                    tool.name.as_str(),
-                    &Value::Object(Default::default()),
-                )
-                .is_none()
-            })
-            .collect())
+        self.inner.list_tools().await
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
         let grant = effective_grant(&self.session_id);
-        if let Some(refusal) = tool_refusal(&grant, tool_name, &input) {
-            return Err(StasisError::PortFailure(refusal.message));
+        let beyond = beyond_expected_note(&grant, tool_name, &input);
+        let review = is_safety_review_spawn(tool_name, &input);
+        if beyond.is_some() {
+            let reason = stated_reason(&input);
+            tracing::info!(
+                session_id = %self.session_id,
+                source = grant.source.as_str(),
+                tool = tool_name,
+                reason = reason.as_deref().unwrap_or(""),
+                "wake deviation: call is past the expected response"
+            );
+            record_deviation(&self.session_id, &grant, tool_name, reason);
         }
-        if is_safety_review_spawn(tool_name, &input)
-            && let Some(message) = approval_refusal(&self.session_id, grant.source)
-        {
-            return Err(StasisError::PortFailure(message));
+        let mut output = self.inner.invoke_tool(tool_name, input).await?;
+        if let Some(note) = beyond {
+            output = attach_field(output, "wake_note", note);
         }
-        self.inner.invoke_tool(tool_name, input).await
+        if review && let Some(context) = review_note(&self.session_id) {
+            output = attach_field(output, "review_context", context);
+        }
+        Ok(output)
     }
 }
 
@@ -367,7 +408,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn peer_terminal_registry_refuses_a_review_spawn() {
+    async fn peer_terminal_registry_logs_a_review_spawn_and_still_runs_it() {
         let dir = tempfile::tempdir().unwrap();
         // SAFETY: unit tests set a private ledger path before touching the store.
         unsafe {
@@ -381,23 +422,43 @@ mod tests {
             false,
         );
         let registry = WakeToolRegistry::wrap(Arc::new(EchoRegistry), &session);
-        let error = registry
+        let tools = registry.list_tools().await.expect("full toolset");
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == "cognition_shell_run"),
+            "a peer wake keeps shell"
+        );
+        let value = registry
             .invoke_tool(
                 "cognition_workshop_mutate",
-                json!({"action": "workshop.spawn", "intent": "Stasis safety review"}),
+                json!({
+                    "action": "workshop.spawn",
+                    "intent": "Stasis safety review",
+                    "reason": "the peer result looks wrong"
+                }),
             )
             .await
-            .expect_err("peer wake must not spawn a review");
-        let message = error.to_string();
-        assert!(
-            message.contains("cannot spawn a safety review"),
-            "{message}"
+            .expect("peer wake keeps the tool");
+        assert_eq!(value["ok"], true);
+        let note = value["wake_note"].as_str().expect("deviation note");
+        assert!(note.contains("peer finished"), "{note}");
+        assert!(note.contains("The call is allowed"), "{note}");
+        let logged = deviations(&session);
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].tool, "cognition_workshop_mutate");
+        assert_eq!(logged[0].source, "peer_terminal");
+        assert_eq!(
+            logged[0].reason.as_deref(),
+            Some("the peer result looks wrong")
         );
-        assert!(message.contains("Allowed action:"), "{message}");
-        registry
+        assert_eq!(logged[0].expected, "report the outcome, then finish");
+        let query = registry
             .invoke_tool("cognition_runtime_query", json!({}))
             .await
             .expect("report tools stay available");
+        assert!(query.get("wake_note").is_none());
+        assert_eq!(deviations(&session).len(), 1);
     }
 
     #[test]
@@ -418,9 +479,12 @@ mod tests {
         );
         begin_turn(&session, None, "approved", true);
         assert!(gap_lines(&session).is_empty());
-        let blocked = review_block(&session).expect("approval holds");
-        assert!(blocked.contains("already approved"), "{blocked}");
+        let note = review_note(&session).expect("approval is context");
+        assert!(note.contains("approved at "), "{note}");
+        assert!(note.contains("nothing material changed since"), "{note}");
+        assert!(note.contains("(unchanged)"), "{note}");
         note_material(&session, "cognition_shell_run");
-        assert!(review_block(&session).is_none());
+        let changed = review_note(&session).expect("changed evidence is still context");
+        assert!(changed.contains("(changed)"), "{changed}");
     }
 }

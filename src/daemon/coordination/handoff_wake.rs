@@ -136,12 +136,12 @@ impl LocalPeerDispatcher {
             if acceptance {
                 "The destination accepted this assignment. Briefly acknowledge it and explain the agreed next step."
             } else {
-                "The assignment reached a terminal outcome. Return the result for the sender's decision. You may record sender acceptance for this exact handoff with cognition_peer_review. Do not spawn a new safety review."
+                "The assignment reached a terminal outcome. Return the result for the sender's decision. You may record sender acceptance for this exact handoff with cognition_peer_review. A new safety review is not the expected response."
             },
             if acceptance {
-                "Authority is continue_bounded for two rounds. Do not spawn a new safety review from this callback."
+                "Expected response: continue the saved work within two rounds, then finish. You still have your tools. If you go past that, say why."
             } else {
-                "Authority is report. Do not run shell, mutate, delegate, or spawn a new safety review."
+                "The peer's work is done. Nothing new was asked. Expected response: report the outcome, then finish. You still have your tools. If you go past that, say why."
             },
             if session == record.request.owner_session {
                 "Report naturally in the originating conversation."

@@ -101,10 +101,10 @@ pub fn host_resume_prompt(records: &[TurnWorkRecord]) -> String {
          source=worker_result\n\
          authority=report\n\
          audience=host\n\
-         The saved human request below is context, not a new goal and not a fresh execution license.\n\n\
+         The saved human request below is context, not a new goal.\n\n\
          SAVED_CONTEXT:\n{parent_prompt}\n\n\
          WORKERS:\n{}\n\n\
-         Report the outcome with read-only tools and finish. Do not run shell, mutate, delegate, or spawn a review.",
+         The worker finished; here is the result. Nothing new was asked. Expected response: report the outcome, then finish. You still have your tools. If you go past that, say why.",
         blocks.join("\n\n")
     )
 }

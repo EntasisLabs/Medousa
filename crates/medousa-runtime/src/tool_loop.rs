@@ -41,12 +41,12 @@ use crate::loop_gate::{
     DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS, ToolLoopCompletionGate, collect_tool_names,
 };
 use crate::loop_state::{
-    REPEATED_SUCCESSFUL_CALL_STOP_AT, REPEATED_SUCCESSFUL_CALL_WARNING_AT,
-    REPEATED_TOOL_FAILURE_STOP_AT, REPEATED_TOOL_FAILURE_WARNING_AT, RepeatedSuccessfulCallGuard,
-    RepeatedToolFailureGuard, TURN_CONTROL_PREFIX, TurnLedgerEventKind, TurnLedgerRecord,
-    TurnLoopAwareness, TurnLoopDiscipline, ledger_tool_names, push_turn_control_message,
-    record_finalized, record_fsm_continue, record_repeated_tool_failure, record_stuck,
-    record_tool_round, resolve_max_text_only_stuck_continues, stuck_turn_user_message,
+    REPEATED_SUCCESSFUL_CALL_WARNING_AT, REPEATED_TOOL_FAILURE_STOP_AT,
+    REPEATED_TOOL_FAILURE_WARNING_AT, RepeatedSuccessfulCallGuard, RepeatedToolFailureGuard,
+    TURN_CONTROL_PREFIX, TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness,
+    TurnLoopDiscipline, ledger_tool_names, push_turn_control_message, record_finalized,
+    record_fsm_continue, record_repeated_tool_failure, record_stuck, record_tool_round,
+    resolve_max_text_only_stuck_continues, stuck_turn_user_message,
 };
 use crate::perception::ToolPerceptionGovernor;
 use crate::ports::{
@@ -228,7 +228,7 @@ impl MedousaToolLoopPipeline {
         } = request;
 
         let mut effective_max_tool_rounds = max_tool_rounds.max(1);
-        let mut enforce_tool_round_limit = completion_gate
+        let enforce_tool_round_limit = completion_gate
             .as_ref()
             .map(|gate| gate.enforce_tool_round_limit)
             .unwrap_or(false);
@@ -414,18 +414,22 @@ impl MedousaToolLoopPipeline {
         let mut previous_request = None;
         let mut repeated_tool_failures = RepeatedToolFailureGuard::default();
         let mut repeated_successes = RepeatedSuccessfulCallGuard::default();
-        if let Some(cap) = resume_round_cap.or_else(|| {
-            completion_gate
-                .as_ref()
-                .and_then(|gate| gate.wake_hooks.as_ref())
-                .and_then(|hooks| hooks.round_cap)
-        }) {
-            effective_max_tool_rounds = effective_max_tool_rounds.min(cap.max(1));
-            enforce_tool_round_limit = true;
-        }
+        let mut past_budget_noted = false;
         if !tools.is_empty() {
             while !enforce_tool_round_limit || rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
+                if let Some(cap) = resume_round_cap
+                    && !past_budget_noted
+                    && rounds_executed > cap
+                {
+                    past_budget_noted = true;
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        &format!(
+                            "The checkpoint named {cap} remaining rounds. You are past that budget. The turn can finish; say why if you continue."
+                        ),
+                    );
+                }
                 if let Some(gate) = completion_gate.as_ref() {
                     if let Some(work_id) = gate.cancel_poll_work_id.as_deref() {
                         let control = gate.runtime_ports.delegation_control().ok_or_else(|| {
@@ -863,7 +867,7 @@ impl MedousaToolLoopPipeline {
                             &call.fn_name,
                             &call.fn_arguments,
                             tool_output_from_invoke(output),
-                            &turn_ctx.scratchpad.open_gaps,
+                            &mut turn_ctx.scratchpad.open_gaps,
                         );
                         let tool_output_text = perception_governor
                             .observe_for_call(
@@ -921,7 +925,7 @@ impl MedousaToolLoopPipeline {
                             &call.fn_name,
                             &call.fn_arguments,
                             tool_output_from_invoke(output),
-                            &turn_ctx.scratchpad.open_gaps,
+                            &mut turn_ctx.scratchpad.open_gaps,
                         );
 
                         let tool_output_text = perception_governor
@@ -1156,29 +1160,13 @@ impl MedousaToolLoopPipeline {
                 }
 
                 let repeated_success_count = repeated_successes.observe_batch(round_invocations);
-                if repeated_success_count == REPEATED_SUCCESSFUL_CALL_WARNING_AT {
+                if repeated_success_count >= REPEATED_SUCCESSFUL_CALL_WARNING_AT {
                     push_turn_control_message(
                         &mut turn_ctx.tool_lane.messages,
-                        "The last tool batch succeeded with exactly the same calls and arguments as the previous batch. Do not repeat it. Use the result you already have, register a background wake, or finish the turn.",
+                        &format!(
+                            "you ran this {repeated_success_count} times with the same result"
+                        ),
                     );
-                }
-                if repeated_success_count >= REPEATED_SUCCESSFUL_CALL_STOP_AT {
-                    let termination_reason = "repeated_successful_call";
-                    let text = format!(
-                        "I stopped after the same successful tool calls were repeated {repeated_success_count} times. The result is already in the transcript. Change the approach, register a wake for a long process, or tell me how you want to proceed."
-                    );
-                    return Ok(ToolLoopExecutionResponse {
-                        text: text.clone(),
-                        metadata: shared_inputs.context_clone(),
-                        tool_name: round_tool_names.last().cloned().unwrap_or_default(),
-                        tool_output: serde_json::json!({
-                            "ok": false,
-                            "error": text,
-                        }),
-                        tool_invocations: invocations,
-                        rounds_executed,
-                        termination_reason: termination_reason.to_string(),
-                    });
                 }
 
                 persist_checkpoint!(
@@ -2291,8 +2279,8 @@ fn apply_wake_tool_policy(
     gate: Option<&ToolLoopCompletionGate<'_>>,
     tool_name: &str,
     input: &Value,
-    output: Value,
-    scratch_gaps: &[String],
+    mut output: Value,
+    scratch_gaps: &mut Vec<String>,
 ) -> Value {
     let Some(hooks) = gate.and_then(|gate| gate.wake_hooks.as_ref()) else {
         return output;
@@ -2321,14 +2309,17 @@ fn apply_wake_tool_policy(
     if missing.is_empty() {
         return output;
     }
-    serde_json::json!({
-        "ok": false,
-        "finish_turn": false,
-        "error": format!(
-            "finish refused: known work is untracked ({}). Keep these open_gaps visible, or resolve the work before finishing. Allowed action: report the unfinished work and checkpoint.",
-            missing.join("; ")
-        ),
-    })
+    for gap in &missing {
+        scratch_gaps.push(gap.clone());
+    }
+    let note = format!(
+        "The runtime recorded these open gaps: {}. The turn can end.",
+        missing.join("; ")
+    );
+    if let Some(map) = output.as_object_mut() {
+        map.insert("open_gap_note".to_string(), Value::String(note));
+    }
+    output
 }
 
 fn recover_text_only_provider_error(

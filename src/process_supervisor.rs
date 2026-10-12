@@ -528,15 +528,20 @@ pub fn check(handle: &str) -> Result<Value, String> {
         ));
     };
     record.polls = record.polls.saturating_add(1);
-    let polls = record.polls;
     let running = record.status == ProcessStatus::Running;
     let wake_registered = record.wake_registered;
-    let payload = status_payload(record);
+    let mut payload = status_payload(record);
     persist(&guard.records);
-    if running && wake_registered && polls > 1 {
-        return Err(format!(
-            "process {handle} already has a wake registered. Do not poll. Allowed action: finish the turn and wait for the process_completed or timed_out wake."
-        ));
+    if running
+        && wake_registered
+        && let Some(map) = payload.as_object_mut()
+    {
+        map.insert(
+            "note".to_string(),
+            json!(
+                "A wakeup is registered for this process. The turn can end; process_completed or timed_out will resume it."
+            ),
+        );
     }
     Ok(payload)
 }
@@ -559,7 +564,7 @@ fn handle_payload(record: &ProcessRecord) -> Value {
         "wake": "process_completed",
         "deadline_at": record.deadline_at,
         "wait_id": record.wait.wait_id,
-        "guidance": "The turn can finish. A process_completed or timed_out wake will resume this session. Do not poll this handle.",
+        "guidance": "The turn can finish. A wakeup is registered; process_completed or timed_out will resume this session.",
     })
 }
 
@@ -731,13 +736,26 @@ mod tests {
         .await
         .expect("detached");
         let handle = value["handle"].as_str().unwrap().to_string();
-        assert!(value["guidance"].as_str().unwrap().contains("Do not poll"));
+        assert!(
+            value["guidance"]
+                .as_str()
+                .unwrap()
+                .contains("wakeup is registered")
+        );
         assert!(value["wait_id"].as_str().unwrap().contains("process-wait-"));
         let first = check(&handle).expect("first explicit check");
         assert_eq!(first["status"], "running");
-        let refused = check(&handle).expect_err("repeated poll");
-        assert!(refused.contains("Do not poll"), "{refused}");
-        assert!(refused.contains("Allowed action:"), "{refused}");
+        let note = first["note"].as_str().expect("wake note");
+        assert!(note.contains("wakeup is registered"), "{note}");
+        assert!(note.contains("The turn can end"), "{note}");
+        let again = check(&handle).expect("a later poll still returns status");
+        assert_eq!(again["status"], "running");
+        assert!(
+            again["note"]
+                .as_str()
+                .unwrap()
+                .contains("wakeup is registered")
+        );
         let deadline = std::time::Instant::now() + Duration::from_secs(4);
         loop {
             if pending_wakes().iter().any(|wake| wake.handle == handle) {
