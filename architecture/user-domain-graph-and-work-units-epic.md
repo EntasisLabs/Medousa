@@ -1366,8 +1366,12 @@ describes the expected response. The agent keeps its full toolset. A call past
 that expected response still runs. The registry writes a `WakeDeviation` (time,
 source, expected response, tool, and the agent's `reason` / `why` / `rationale`
 when it gave one) to the session wake ledger and attaches a `wake_note` on the
-tool result. `tracing` records the same fields. The next trial measures those
-deviations instead of treating them as refusals.
+tool result. `tracing` records the same fields. Each session keeps its last
+200 deviations, and the ledger keeps 2,000 across sessions. A session over
+its own cap, or the fullest session when the ledger is over the global cap,
+loses its oldest entry. One noisy session cannot erase another session's
+record. The next trial measures those deviations instead of treating them as
+refusals.
 
 | Source | Expected response | Signal |
 |---|---|---|

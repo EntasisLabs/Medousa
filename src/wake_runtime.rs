@@ -23,7 +23,8 @@ use serde_json::Value;
 use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::prelude::Result;
 
-const MAX_DEVIATIONS: usize = 200;
+const MAX_DEVIATIONS_PER_SESSION: usize = 200;
+const MAX_DEVIATIONS_GLOBAL: usize = 2_000;
 
 /// A call that went past the wake's expected response. The tool still ran.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -271,19 +272,81 @@ fn stated_reason(input: &Value) -> Option<String> {
 }
 
 fn record_deviation(session_id: &str, grant: &WakeGrant, tool: &str, reason: Option<String>) {
-    with_session(session_id, |state| {
-        state.disk.deviations.push(WakeDeviation {
-            at: chrono::Utc::now().to_rfc3339(),
-            source: grant.source.as_str().to_string(),
-            expected: grant.authority.expected_response().to_string(),
-            tool: tool.to_string(),
-            reason,
+    let mut guard = ledger().lock().unwrap_or_else(|err| err.into_inner());
+    let state = guard
+        .sessions
+        .entry(session_id.to_string())
+        .or_insert_with(|| SessionState {
+            grant: None,
+            disk: DiskSession::default(),
         });
-        if state.disk.deviations.len() > MAX_DEVIATIONS {
-            let overflow = state.disk.deviations.len() - MAX_DEVIATIONS;
+    state.disk.deviations.push(WakeDeviation {
+        at: chrono::Utc::now().to_rfc3339(),
+        source: grant.source.as_str().to_string(),
+        expected: grant.authority.expected_response().to_string(),
+        tool: tool.to_string(),
+        reason,
+    });
+    enforce_deviation_caps(
+        &mut guard.sessions,
+        session_id,
+        MAX_DEVIATIONS_PER_SESSION,
+        MAX_DEVIATIONS_GLOBAL,
+    );
+    guard.dirty = true;
+    persist(&guard);
+}
+
+/// Each session keeps at most `per_session` deviations. The ledger keeps at
+/// most `global` across sessions. Overflow drops the oldest entry from the
+/// session that currently holds the most, so one noisy session cannot erase
+/// a quieter session's record.
+fn enforce_deviation_caps(
+    sessions: &mut HashMap<String, SessionState>,
+    prefer_drop: &str,
+    per_session: usize,
+    global: usize,
+) {
+    for state in sessions.values_mut() {
+        let overflow = state.disk.deviations.len().saturating_sub(per_session);
+        if overflow > 0 {
             state.disk.deviations.drain(0..overflow);
         }
-    });
+    }
+    loop {
+        let total: usize = sessions
+            .values()
+            .map(|state| state.disk.deviations.len())
+            .sum();
+        if total <= global {
+            return;
+        }
+        let fullest = sessions
+            .iter()
+            .filter(|(_, state)| !state.disk.deviations.is_empty())
+            .max_by(|(left_id, left), (right_id, right)| {
+                left.disk
+                    .deviations
+                    .len()
+                    .cmp(&right.disk.deviations.len())
+                    .then_with(|| {
+                        (left_id.as_str() == prefer_drop).cmp(&(right_id.as_str() == prefer_drop))
+                    })
+                    .then_with(|| {
+                        let left_at = left.disk.deviations.first().map(|item| item.at.as_str());
+                        let right_at = right.disk.deviations.first().map(|item| item.at.as_str());
+                        // Older head loses the tie, so max_by selects it for removal.
+                        right_at.cmp(&left_at)
+                    })
+            })
+            .map(|(id, _)| id.clone());
+        let Some(id) = fullest else {
+            return;
+        };
+        if let Some(state) = sessions.get_mut(&id) {
+            state.disk.deviations.remove(0);
+        }
+    }
 }
 
 /// Approval context for a review spawn. `None` when this session has no approval.
@@ -486,5 +549,53 @@ mod tests {
         note_material(&session, "cognition_shell_run");
         let changed = review_note(&session).expect("changed evidence is still context");
         assert!(changed.contains("(changed)"), "{changed}");
+    }
+
+    fn sample_deviation(at: &str) -> WakeDeviation {
+        WakeDeviation {
+            at: at.to_string(),
+            source: "peer_terminal".into(),
+            expected: "report the outcome, then finish".into(),
+            tool: "cognition_shell_run".into(),
+            reason: None,
+        }
+    }
+
+    fn session_with(deviations: Vec<WakeDeviation>) -> SessionState {
+        SessionState {
+            grant: None,
+            disk: DiskSession {
+                deviations,
+                ..DiskSession::default()
+            },
+        }
+    }
+
+    #[test]
+    fn a_noisy_session_cannot_evict_a_quieter_sessions_deviations() {
+        let mut sessions = HashMap::new();
+        sessions.insert(
+            "quiet".into(),
+            session_with(vec![sample_deviation("2026-10-12T00:00:01Z")]),
+        );
+        sessions.insert(
+            "noisy".into(),
+            session_with(
+                (0..8)
+                    .map(|index| sample_deviation(&format!("2026-10-12T00:00:1{index}Z")))
+                    .collect(),
+            ),
+        );
+        enforce_deviation_caps(&mut sessions, "noisy", 3, 4);
+        assert_eq!(sessions["quiet"].disk.deviations.len(), 1);
+        assert_eq!(
+            sessions["quiet"].disk.deviations[0].at,
+            "2026-10-12T00:00:01Z"
+        );
+        assert_eq!(sessions["noisy"].disk.deviations.len(), 3);
+
+        enforce_deviation_caps(&mut sessions, "noisy", 10, 3);
+        assert_eq!(sessions["quiet"].disk.deviations.len(), 1);
+        assert_eq!(sessions["noisy"].disk.deviations.len(), 2);
     }
 }
