@@ -279,6 +279,9 @@ fn build_turn(wake: &WorkCoordinatorWake, owner: &str, prompt: String) -> Intera
         media_refs: vec![],
         liquid_interactions: vec![],
         identity_user_id: Some(owner.into()),
+        wake: Some(medousa_types::WakeGrant::for_source(
+            medousa_types::WakeSource::NativeCallback,
+        )),
     }
 }
 

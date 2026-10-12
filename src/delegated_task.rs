@@ -34,6 +34,16 @@ pub const DELEGATED_TASK_SCHEMA_VERSION: u32 = 1;
 pub const WORKER_SPAWN_SPEC_SCHEMA_VERSION: u32 = 1;
 pub const MAX_DELEGATED_CONTEXT_ENTRIES: usize = 128;
 pub const MAX_DELEGATED_CONTEXT_BYTES: usize = 512 * 1024;
+
+/// Cap for one delegated work item's context. `MEDOUSA_DELEGATED_CONTEXT_BYTES`
+/// overrides the default without changing other work items.
+pub fn max_delegated_context_bytes() -> usize {
+    std::env::var("MEDOUSA_DELEGATED_CONTEXT_BYTES")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(MAX_DELEGATED_CONTEXT_BYTES)
+}
 pub const MAX_DELEGATED_PROMPT_CHARS: usize = 64 * 1024;
 pub const MAX_DELEGATED_CONTEXT_PROMPT_CHARS: usize = 32 * 1024;
 pub const MAX_WORKER_SPAWN_SPEC_BYTES: usize = 128 * 1024;
@@ -284,6 +294,22 @@ pub struct DelegatedTaskResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_route: Option<WorkerRouteProvenance>,
     pub derivation: SessionDerivation,
+    /// Tool and termination summary from the remote worker, so the coordinator
+    /// ledger can show activity that never ran on this daemon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity_summary: Option<WorkerActivitySummary>,
+}
+
+/// Ledger excerpt a remote worker sends home with its terminal result.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerActivitySummary {
+    #[serde(default)]
+    pub tool_names: Vec<String>,
+    #[serde(default)]
+    pub tool_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub termination_reason: Option<String>,
 }
 
 /// Whether this exchange created the canonical remote worker or observed the
@@ -403,7 +429,7 @@ pub trait DelegatedTaskTransport: Send + Sync {
         _request: crate::peer_coordination_mesh::RemotePeerProposalRequest,
     ) -> Result<crate::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError> {
         Err(DelegatedTaskError::transport(
-            "remote peer proposal transport is unavailable",
+            "remote peer proposal transport is unavailable. Allowed path: queue a local proposal with cognition_peer_propose, or retry when the route is connected.",
         ))
     }
 
@@ -834,9 +860,11 @@ pub fn validate_context_grant(context: &DelegatedContextGrant) -> Result<(), Del
             "delegated context range digest does not match its entries",
         ));
     }
-    if serialized_size(context)? > MAX_DELEGATED_CONTEXT_BYTES {
+    let context_bytes = serialized_size(context)?;
+    let context_cap = max_delegated_context_bytes();
+    if context_bytes > context_cap {
         return Err(DelegatedTaskError::invalid(format!(
-            "delegated context exceeds {MAX_DELEGATED_CONTEXT_BYTES} bytes"
+            "delegated context is {context_bytes} bytes and this work item's cap is {context_cap} bytes (MEDOUSA_DELEGATED_CONTEXT_BYTES, default {MAX_DELEGATED_CONTEXT_BYTES}). Split the work item's context or raise the cap."
         )));
     }
     Ok(())
@@ -1689,6 +1717,7 @@ mod tests {
                 model_hint: None,
             }),
             derivation,
+            activity_summary: None,
         };
         validate_task_result(&request, &result).unwrap();
         let pending = DelegatedTaskObservation {

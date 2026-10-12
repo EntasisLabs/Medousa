@@ -131,7 +131,8 @@ pub async fn note_stream_event(
     };
     ticket.phase = next;
     ticket.updated_at = Utc::now();
-    if next.terminal() && ticket.mode == TurnTicketMode::Interactive {
+    let terminal = next.terminal();
+    if terminal && ticket.mode == TurnTicketMode::Interactive {
         let session_id = ticket.session_id.clone();
         if guard
             .interactive_by_session
@@ -140,6 +141,11 @@ pub async fn note_stream_event(
         {
             guard.interactive_by_session.remove(&session_id);
         }
+    }
+    drop(guard);
+    #[cfg(feature = "full-daemon")]
+    if terminal && turn_id.starts_with("agent_message_") {
+        crate::agent_messaging::observe_delivery_phase(turn_id, next.as_str()).await;
     }
 }
 
@@ -157,12 +163,24 @@ pub async fn mark_cancelled(registry: &TurnTicketRegistry, turn_id: &str) {
 }
 
 pub async fn clear_turn(registry: &TurnTicketRegistry, turn_id: &str) {
-    let mut guard = registry.write().await;
-    if let Some(ticket) = guard.by_id.remove(turn_id)
-        && ticket.mode == TurnTicketMode::Interactive
+    let phase = {
+        let mut guard = registry.write().await;
+        let phase = guard.by_id.get(turn_id).map(|ticket| ticket.phase);
+        if let Some(ticket) = guard.by_id.remove(turn_id)
+            && ticket.mode == TurnTicketMode::Interactive
+        {
+            guard.interactive_by_session.remove(&ticket.session_id);
+        }
+        phase
+    };
+    #[cfg(feature = "full-daemon")]
+    if let Some(phase) = phase
+        && turn_id.starts_with("agent_message_")
     {
-        guard.interactive_by_session.remove(&ticket.session_id);
+        crate::agent_messaging::observe_delivery_phase(turn_id, phase.as_str()).await;
     }
+    #[cfg(not(feature = "full-daemon"))]
+    let _ = phase;
 }
 
 /// Drop the turn ticket after the orchestrator returns unless handoff is still active.

@@ -1354,3 +1354,33 @@ round. Generated SDK/API contracts are current; frontend checking reports zero
 errors and warnings. Targeted library Clippy and strict docs verification pass.
 No real provider/model sends or live daemon deployment were performed. These
 receipts qualify the bounded local implementation, not the remaining phase exits.
+
+
+## Wake authority and background-and-wake (2026-10-12)
+
+A runtime wake is evidence, not a new human goal. `WorkEventSubscription`'s
+admitted reaction policy still holds: event data and model-written instructions
+cannot mint authority. Every runtime-injected turn now carries a `WakeGrant`
+(`source` + `authority`) and the tool registry refuses calls outside it. The
+refusal names the allowed action.
+
+| Source | Authority | What it may do |
+|---|---|---|
+| human | execute | The ordinary turn grant. No extra round cap. |
+| native callback (handoff accepted) | continue_bounded (2 rounds) | Continue the saved work. It may record handoff acceptance. It may not spawn a new safety review. |
+| terminal callback, peer terminal, worker result, process completed, timed out | report (4 rounds) | Read-only report, then finish. No shell, mutate, delegate, or new safety review. A peer terminal cannot spawn a review. A terminal callback may still record acceptance of that exact handoff. |
+| agent inbox | acknowledge (2 rounds) | Acknowledge or reply. Not an execution grant. |
+| checkpoint resume | continue_bounded for the rounds still left, or report when the budget is already spent | Saved gaps, pending work, and remaining rounds. The human sentence is context, not a new goal. |
+| safety review | report, and it may spawn the review it was asked to run | A later review is refused while the approval's evidence digest is unchanged. |
+
+Open gaps are derived into the scratchpad every round. Finish and checkpoint are refused while a known gap is missing from the scratchpad. A queued remote delegation registers an `in_flight_work` gap on the source session and closes it when the terminal receipt is committed. Undelivered agent messages, supervised processes, and pending approvals register the same way. A human "approved" is stored against the pending question and closes it. A material tool success (shell, mutate, and the other non-report tools) changes the evidence digest, which is the only thing that admits another safety review.
+
+Checkpoint resume inside the tool loop injects `[MEDOUSA_CHECKPOINT_RESUME]` and caps the loop at the saved remainder. It does not append the human sentence again. `AwaitingUser` and `BudgetExhausted` no longer become a fresh execution license.
+
+Agent delivery no longer treats a missing turn ticket as a terminal "admitted, recipient turn unavailable". The ticket phase is recorded before the in-memory ticket is cleared. A completed phase is delivered. A ticket that vanished with no completed phase is queued again, with an attempt count and a visible waiting state, until the recipient can take it or retries are exhausted. Remote workers attach a `WorkerActivitySummary` (tool names, count, termination) to `DelegatedTaskResult`. The coordinator transcript includes that as "Remote activity".
+
+Long shell runs can detach. `cognition_shell_run` with `background: true` returns a handle immediately. `background_after_ms` (or `MEDOUSA_SHELL_BACKGROUND_AFTER_MS` when no explicit timeout and no `foreground: true`) detaches only if the command is still running after the grace window. An explicit `timeout_ms` still kills a foreground command. The daemon supervises the process, writes a log, and stores a Stasis `DurableWaitRecord` (`signal_type=medousa.process`) beside the pid. Stasis does not own the OS process. Reconcile on startup probes the pid with `kill(pid, 0)` (a query-only handle on Windows), which works on the Mac coordinator as well as Linux workers. A pid that is already gone completes the wait. A pid that is still alive is watched again until it exits or its deadline elapses. Exit wakes the same session with `process_completed`. A deadline wakes it with `timed_out`. Both wakes are report authority. `cognition_process_status` is the explicit check; a second poll while the wake is registered is refused. A `home_session` different from the worker session delivers the wake through the agent-message path.
+
+Identical successful tool-call streaks warn at 4 and stop at 6 (`repeated_successful_call`). A provider error after `text_only_continue` is stored on the inference record and the turn falls back with `provider_error_after_text_only_continue` instead of a zero-token empty error. Forge's queued-byte budget and the delegated-context cap stay at 8 MiB and 512 KiB. `MEDOUSA_FORGE_QUEUED_BYTE_BUDGET` and `MEDOUSA_DELEGATED_CONTEXT_BYTES` override them. Errors name the limit, the size that did not fit, and which variable to change. The context cap is per delegated work item. The forge budget is process-wide.
+
+Live provider sends and multi-machine swarm runs remain manual gates.

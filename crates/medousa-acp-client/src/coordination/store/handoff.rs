@@ -122,7 +122,7 @@ impl CoordinationStore {
     ) -> Result<bool> {
         let record = self
             .handoff(channel, id)?
-            .ok_or_else(|| anyhow::anyhow!("handoff unavailable"))?;
+            .ok_or_else(|| anyhow::anyhow!("handoff unavailable. Allowed path: use cognition_peer_propose, or wait until the handoff is admitted."))?;
         let receipt = self.receipt(channel, id)?;
         if record.request.owner_principal_id != owner
             || record.request.owner_session != *sender
@@ -249,7 +249,7 @@ impl CoordinationStore {
         };
         let record = self
             .handoff(&event.channel, id)?
-            .ok_or_else(|| anyhow::anyhow!("handoff unavailable"))?;
+            .ok_or_else(|| anyhow::anyhow!("handoff unavailable. Allowed path: use cognition_peer_propose, or wait until the handoff is admitted."))?;
         if record.request.owner_session != event.owner_session
             || record.request.owner_principal_id != event.owner_principal_id
         {

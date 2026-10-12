@@ -363,12 +363,19 @@ pub fn build_turn_resume_prompt(
     job_output: &str,
 ) -> String {
     format!(
-        "A background job from an earlier turn has now completed successfully after a prior failure or dead-letter replay.\n\n\
-         [ORIGINAL_USER_REQUEST]\n{original_prompt}\n\n\
+        "{}\n\n\
+         A background job from an earlier turn has completed. The saved human request is context, not a new goal.\n\n\
+         [SAVED_CONTEXT]\n{original_prompt}\n\n\
          [COMPLETED_JOB]\njob_id={child_job_id} job_type={job_type} tool={tool_name}\n\n\
          [JOB_OUTPUT]\n{job_output}\n\n\
-         Continue helping the user: incorporate this job output into a complete, user-facing reply. \
-         Do not mention internal job IDs unless the user asked for operational detail."
+         Incorporate this job output into a user-facing reply, then finish. \
+         Do not mention internal job IDs unless the user asked for operational detail.",
+        medousa_types::wake::process_event_prompt(
+            "process_completed",
+            child_job_id,
+            job_type,
+            medousa_types::wake::WakeAuthority::Report,
+        )
     )
 }
 

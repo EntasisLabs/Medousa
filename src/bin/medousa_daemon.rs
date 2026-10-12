@@ -1160,6 +1160,7 @@ async fn start_daemon() -> Result<()> {
                 None
             }
         };
+    medousa::process_supervisor::bind_daemon(state.clone());
     let scheduler_ctx = SchedulerHeartbeatContext {
         platform: state.platform.clone(),
         heartbeat_policy: state.heartbeat_policy,

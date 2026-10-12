@@ -19,7 +19,6 @@ use stasis::application::orchestration::tool_loop_pipeline::{
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::channel_delivery;
-use medousa_types::MessageReaction;
 use crate::daemon_api::TurnSurfaceContext;
 use crate::engine_context::{EngineExecutionLane, RecallReadiness};
 use crate::session::ConversationTurn;
@@ -29,6 +28,7 @@ use crate::tui::settings::{
     OPERATOR_RETRY_LIMIT_MAX, OPERATOR_RETRY_LIMIT_MIN, OPERATOR_ROUND_LIMIT_MAX,
     OPERATOR_ROUND_LIMIT_MIN, RuntimeSettings, parse_usize_with_bounds,
 };
+use medousa_types::MessageReaction;
 use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 
 use super::continuation::{
@@ -70,14 +70,14 @@ async fn emit_turn_reactions(
     turn_id: u64,
     invocations: &[ToolInvocation],
 ) {
-    for (index, intent) in medousa_runtime::turn_control::reaction_intents_from_invocations(invocations)
-        .into_iter()
-        .enumerate()
+    for (index, intent) in
+        medousa_runtime::turn_control::reaction_intents_from_invocations(invocations)
+            .into_iter()
+            .enumerate()
     {
-        if let Some(reaction) = MessageReaction::from_intent(
-            format!("turn:{turn_id}:reaction:{index}"),
-            intent,
-        ) {
+        if let Some(reaction) =
+            MessageReaction::from_intent(format!("turn:{turn_id}:reaction:{index}"), intent)
+        {
             sink.agent_reaction(turn_id, reaction).await;
         }
     }
@@ -424,49 +424,48 @@ pub async fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> Assembl
         activation.reason = "coder_mode_requires_tool_capable_foreground_loop";
     }
 
-    let (hot_window_turns, cold_window_turns, prior_limits) =
-        if let Some(limits) = crate::agent_mode_context::context_limits_for_mode(
-            params.prepared.agent_mode.id,
-        ) {
-            (
-                limits.hot_window_turns,
-                limits.cold_window_turns,
-                PriorMessageLimits {
-                    max_prior_total_chars: limits.max_prior_total_chars,
-                    max_single_prior_message_chars: limits.max_single_prior_message_chars,
-                    hot_window_char_budget: limits.hot_window_char_budget,
-                    cold_window_char_budget: limits.cold_window_char_budget,
-                    cold_summary_line_chars: limits.cold_summary_line_chars,
-                    include_auxiliary_history: limits.include_auxiliary_history,
-                },
-            )
-        } else {
-            let hot_window_turns = parse_usize_with_bounds(
-                &params.settings.slice_hot_window_turns,
-                DEFAULT_HOT_WINDOW_TURNS,
-                MIN_HOT_WINDOW_TURNS,
-                MAX_HOT_WINDOW_TURNS,
-            );
-            let cold_window_turns = parse_usize_with_bounds(
-                &params.settings.slice_cold_window_turns,
-                DEFAULT_COLD_WINDOW_TURNS,
-                MIN_COLD_WINDOW_TURNS,
-                MAX_COLD_WINDOW_TURNS,
-            )
-            .max(hot_window_turns);
-            (
-                hot_window_turns,
-                cold_window_turns,
-                PriorMessageLimits {
-                    max_prior_total_chars: MAX_PRIOR_TOTAL_CHARS,
-                    max_single_prior_message_chars: MAX_SINGLE_PRIOR_MESSAGE_CHARS,
-                    hot_window_char_budget: HOT_WINDOW_CHAR_BUDGET,
-                    cold_window_char_budget: COLD_WINDOW_CHAR_BUDGET,
-                    cold_summary_line_chars: COLD_SUMMARY_LINE_CHARS,
-                    include_auxiliary_history: true,
-                },
-            )
-        };
+    let (hot_window_turns, cold_window_turns, prior_limits) = if let Some(limits) =
+        crate::agent_mode_context::context_limits_for_mode(params.prepared.agent_mode.id)
+    {
+        (
+            limits.hot_window_turns,
+            limits.cold_window_turns,
+            PriorMessageLimits {
+                max_prior_total_chars: limits.max_prior_total_chars,
+                max_single_prior_message_chars: limits.max_single_prior_message_chars,
+                hot_window_char_budget: limits.hot_window_char_budget,
+                cold_window_char_budget: limits.cold_window_char_budget,
+                cold_summary_line_chars: limits.cold_summary_line_chars,
+                include_auxiliary_history: limits.include_auxiliary_history,
+            },
+        )
+    } else {
+        let hot_window_turns = parse_usize_with_bounds(
+            &params.settings.slice_hot_window_turns,
+            DEFAULT_HOT_WINDOW_TURNS,
+            MIN_HOT_WINDOW_TURNS,
+            MAX_HOT_WINDOW_TURNS,
+        );
+        let cold_window_turns = parse_usize_with_bounds(
+            &params.settings.slice_cold_window_turns,
+            DEFAULT_COLD_WINDOW_TURNS,
+            MIN_COLD_WINDOW_TURNS,
+            MAX_COLD_WINDOW_TURNS,
+        )
+        .max(hot_window_turns);
+        (
+            hot_window_turns,
+            cold_window_turns,
+            PriorMessageLimits {
+                max_prior_total_chars: MAX_PRIOR_TOTAL_CHARS,
+                max_single_prior_message_chars: MAX_SINGLE_PRIOR_MESSAGE_CHARS,
+                hot_window_char_budget: HOT_WINDOW_CHAR_BUDGET,
+                cold_window_char_budget: COLD_WINDOW_CHAR_BUDGET,
+                cold_summary_line_chars: COLD_SUMMARY_LINE_CHARS,
+                include_auxiliary_history: true,
+            },
+        )
+    };
 
     let mut prior_build = turn_services::build_prior_messages(
         params.tui_rt.tool_catalog.as_ref(),
@@ -489,10 +488,13 @@ pub async fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> Assembl
     };
     let current_turn_user_message = params.vision_plan.build_user_message(&prompt_for_request);
 
-    let effective_tool_registry = params
-        .tool_registry_override
-        .clone()
-        .unwrap_or_else(|| params.tui_rt.tool_registry.clone());
+    let effective_tool_registry = crate::wake_runtime::WakeToolRegistry::wrap(
+        params
+            .tool_registry_override
+            .clone()
+            .unwrap_or_else(|| params.tui_rt.tool_registry.clone()),
+        params.session_id,
+    );
     let pipeline_selection = turn_services::select_pipeline_for_turn_with_registry_and_allowlist(
         effective_tool_registry.clone(),
         params.final_route,
@@ -1106,7 +1108,8 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         if system_one_mode == SystemOneMode::Disabled {
             sink.notice("◈ system_one mode=disabled; using heuristic".to_string())
                 .await;
-        } else if try_consume_classifier_budget(&sink, &mut orchestration_state, &turn_budget).await {
+        } else if try_consume_classifier_budget(&sink, &mut orchestration_state, &turn_budget).await
+        {
             let classification = classify_turn_intent_with_model(
                 &no_tools_pipeline,
                 &original_prompt,
@@ -1408,8 +1411,9 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             ),
         );
     let runtime_ports = runtime_ports.with_optional_tool_observation_hydration(
-        crate::model_capability_registry::registry().supports_vision(&provider, &model)
-        .then(|| tool_observation_hydration_port.clone()),
+        crate::model_capability_registry::registry()
+            .supports_vision(&provider, &model)
+            .then(|| tool_observation_hydration_port.clone()),
     );
     let completion_gate_config = ToolLoopCompletionGateConfig {
         stream_turn_id: turn_id,
@@ -1424,6 +1428,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         cancel_poll_work_id: None,
         steer_poll_work_id: None,
         round_context_provider: round_context_provider.clone(),
+        wake_hooks: Some(crate::wake_runtime::hooks_for(session_id.as_str())),
     };
     let mut last_tool_scratch: Option<TurnScratchpad> = None;
     let loop_max_rounds = pending_active_turn_resume
@@ -1494,7 +1499,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             .with_optional_tool_observation_hydration(
                 crate::model_capability_registry::registry()
                     .supports_vision(&target.provider, &target.model)
-                .then(|| tool_observation_hydration_port.clone()),
+                    .then(|| tool_observation_hydration_port.clone()),
             );
 
         let mut same_target_retries = 0u8;

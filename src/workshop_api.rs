@@ -721,6 +721,20 @@ impl WorkshopTargets {
 
 impl WorkshopSpawn {
     async fn execute(self, tool: &CognitionWorkshopMutateTool) -> stasis::prelude::Result<Value> {
+        let blob = format!(
+            "{} {} {}",
+            self.intent.as_deref().unwrap_or(""),
+            self.task,
+            self.user_ack
+        )
+        .to_ascii_lowercase();
+        if blob.contains("review")
+            && let Some(turn) =
+                crate::agent_runtime::execution_context::active_turn_execution_context()
+            && let Some(message) = crate::wake_runtime::review_block(turn.session_id().as_str())
+        {
+            return Err(stasis::domain::errors::StasisError::PortFailure(message));
+        }
         tool.execution.spawn(self).await
     }
 }

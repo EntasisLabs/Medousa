@@ -389,6 +389,11 @@ impl DaemonDelegatedTaskExecutor {
                 .as_ref()
                 .map(|_| Self::route_provenance(terminal_record)),
             derivation: derivation.clone(),
+            activity_summary: Some(crate::delegated_task::WorkerActivitySummary {
+                tool_count: u32::try_from(terminal_record.tool_names.len()).unwrap_or(u32::MAX),
+                tool_names: terminal_record.tool_names.clone(),
+                termination_reason: terminal_record.termination_reason.clone(),
+            }),
         }
     }
 }

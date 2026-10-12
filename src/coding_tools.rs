@@ -99,7 +99,7 @@ fn ensure_shared_shell_authority() -> StasisResult<()> {
     if allowed {
         Ok(())
     } else {
-        Err(StasisError::PortFailure("shared shell sessions require an admitted Coder or execution administration; native Assistant terminals are controlled by their owning turn".into()))
+        Err(StasisError::PortFailure("shared shell sessions require an admitted Coder or execution administration; native Assistant terminals are controlled by their owning turn. Allowed path: use cognition_shell_run, or admit a Coder with a bound undertaking.".into()))
     }
 }
 

@@ -83,8 +83,13 @@ pub fn host_resume_prompt(records: &[TurnWorkRecord]) -> String {
                 .unwrap_or("(worker produced no text)")
                 .to_string()
         };
+        let tools = if record.tool_names.is_empty() {
+            "(none recorded)".to_string()
+        } else {
+            record.tool_names.join(", ")
+        };
         blocks.push(format!(
-            "- work_id={}\n  status={status}\n  intent={}\n  task={}\n  result:\n{}",
+            "- work_id={}\n  status={status}\n  intent={}\n  tools={tools}\n  task={}\n  result:\n{}",
             record.work_id,
             record.intent,
             record.task_prompt.trim(),
@@ -93,10 +98,13 @@ pub fn host_resume_prompt(records: &[TurnWorkRecord]) -> String {
     }
     format!(
         "[MEDOUSA_WORKER_RESULTS]\n\
-         source=parallel_workers\n\
-         audience=host\n\n\
-         ORIGINAL_USER_MESSAGE:\n{parent_prompt}\n\n\
-         WORKERS:\n{}",
+         source=worker_result\n\
+         authority=report\n\
+         audience=host\n\
+         The saved human request below is context, not a new goal and not a fresh execution license.\n\n\
+         SAVED_CONTEXT:\n{parent_prompt}\n\n\
+         WORKERS:\n{}\n\n\
+         Report the outcome with read-only tools and finish. Do not run shell, mutate, delegate, or spawn a review.",
         blocks.join("\n\n")
     )
 }
@@ -281,6 +289,9 @@ async fn run_host_resume_turn(
         None,
     );
     request.persist_user_turn = false;
+    request.wake = Some(medousa_types::wake::WakeGrant::for_source(
+        medousa_types::wake::WakeSource::WorkerResult,
+    ));
     request.agent_mode = parent_agent_mode(cohort);
     request.code_context = parent_code_context(cohort);
     request.identity_user_id = Some(identity_user_id.clone());
@@ -916,7 +927,8 @@ mod tests {
         assert!(prompt.contains("Source A says 12."));
         assert!(prompt.contains("work-b"));
         assert!(prompt.contains("fetch timeout"));
-        assert!(prompt.contains("source=parallel_workers"));
+        assert!(prompt.contains("source=worker_result"));
+        assert!(prompt.contains("not a new goal"));
         assert!(!prompt.contains("Prose is delivered immediately"));
     }
 

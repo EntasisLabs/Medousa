@@ -184,6 +184,10 @@ impl WireMessage {
             status: MessageStatus::Queued,
             delivery_turn: None,
             error: None,
+            attempts: 0,
+            next_attempt_at: None,
+            observed_phase: None,
+            wake_source: None,
         }
     }
 }
@@ -948,6 +952,10 @@ mod tests {
             hop: 0,
             remote_inbound: false,
             transport_route: Some(TransportRoute::Connection("worker-b".into())),
+            attempts: 0,
+            next_attempt_at: None,
+            observed_phase: None,
+            wake_source: None,
         }
     }
     fn response() -> WireResponse {

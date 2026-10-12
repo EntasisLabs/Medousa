@@ -960,7 +960,7 @@ impl TurnWorkerScheduler {
                 .filter(|value| !value.trim().is_empty())
                 .ok_or_else(|| {
                     stasis::domain::errors::StasisError::PortFailure(
-                        "cognition_workshop_mutate: Coder worker requires a bound undertaking"
+                        "cognition_workshop_mutate: Coder worker requires a bound undertaking. Allowed path: bind the session to an undertaking, or use a proposal."
                             .to_string(),
                     )
                 })?;
@@ -1853,8 +1853,9 @@ async fn run_worker_turn_inner(
             intent,
             TurnWorkerIntent::Research | TurnWorkerIntent::General
         ) {
-            // Host-lane receipt gaps (e.g. calibrate) must not block workshop finalize.
-            scratch.open_gaps.clear();
+            // Host-lane receipt gaps (a missing calibrate tool) must not block
+            // workshop finalize. Durable gaps use kind:id and stay visible.
+            scratch.open_gaps.retain(|gap| gap.contains(':'));
         }
         scratch
     });
@@ -1952,6 +1953,7 @@ async fn run_worker_turn_inner(
         }),
         active_turn_checkpoint_sink: None,
         active_turn_resume: None,
+        wake_hooks: Some(crate::wake_runtime::worker_hooks(&record.session_id)),
     };
 
     if store.is_work_cancelled(&work_id) {
@@ -2517,6 +2519,7 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
         media_refs: Vec::new(),
         liquid_interactions: Vec::new(),
         identity_user_id: None,
+        wake: None,
     };
     let mut settings = runtime_settings_for_interactive_turn("worker", &request);
     settings.max_tool_rounds = record.max_tool_rounds.max(1).to_string();

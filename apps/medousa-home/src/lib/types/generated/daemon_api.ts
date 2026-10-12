@@ -962,6 +962,18 @@ export interface TurnSurfaceContext {
   user_id?: string | null;
 }
 
+export type WakeAuthority = { kind: "acknowledge" } | { kind: "report" } | { kind: "continue_bounded"; rounds: number } | { kind: "execute" };
+
+export type WakeSource = "human" | "native_callback" | "terminal_callback" | "peer_terminal" | "agent_inbox" | "worker_result" | "checkpoint_resume" | "safety_review" | "process_completed" | "timed_out";
+
+export interface WakeGrant {
+  authority: WakeAuthority;
+  open_gaps?: string[];
+  pending_work?: string[];
+  remaining_rounds?: number | null;
+  source: WakeSource;
+}
+
 export interface InteractiveTurnRequest {
   additional_manuscript_ids?: string[] | null;
   agent_mode?: AgentModeId | null;
@@ -987,6 +999,7 @@ export interface InteractiveTurnRequest {
   surface?: TurnSurfaceContext | null;
   voice_appendix?: string | null;
   voice_preset_id?: string | null;
+  wake?: WakeGrant | null;
   worker_execution_target?: ExecutionTargetSelection | null;
 }
 

@@ -209,7 +209,7 @@ impl LocalPeerDispatcher {
         let saved = self
             .stored(move |store| store.handoff(&saved_channel, &saved_id))
             .await?
-            .ok_or_else(|| anyhow::anyhow!("handoff unavailable"))?;
+            .ok_or_else(|| anyhow::anyhow!("handoff unavailable. Allowed path: use cognition_peer_propose, or wait until the handoff is admitted."))?;
         self.hydrate(
             &RequestPrincipal::worker(owner.clone()),
             &saved.request,
@@ -232,7 +232,7 @@ impl LocalPeerDispatcher {
                 Ok((|| -> Result<_> {
                     let record = store
                         .handoff(&input.channel, &input.assignment_id)?
-                        .ok_or_else(|| anyhow::anyhow!("handoff unavailable"))?;
+                        .ok_or_else(|| anyhow::anyhow!("handoff unavailable. Allowed path: use cognition_peer_propose, or wait until the handoff is admitted."))?;
                     if forge
                         .load(&medousa_forge::model::WorkId::from(
                             record.request.forge_work_id.clone(),
