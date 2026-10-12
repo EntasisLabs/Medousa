@@ -88,6 +88,10 @@ impl PeerReceiptSink {
 }
 
 fn actor(principal: &RequestPrincipal) -> Result<String> {
+    actor_in_mode(principal, crate::shared_mode::is_shared_mode())
+}
+
+fn actor_in_mode(principal: &RequestPrincipal, shared_mode: bool) -> Result<String> {
     if !principal.capabilities().contains(Capability::ContentRead)
         || !principal
             .capabilities()
@@ -95,13 +99,17 @@ fn actor(principal: &RequestPrincipal) -> Result<String> {
     {
         bail!("principal cannot coordinate workshop work");
     }
-    match principal.profile_id() {
-        Some(profile) => Ok(profile.to_string()),
-        None if principal.kind() == PrincipalKind::LocalApp => {
-            Ok(crate::user_profiles::resolve_workshop_identity_user_id())
-        }
-        _ => bail!("coordination requires a bound owner identity"),
+    if let Some(profile) = principal
+        .profile_id()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Ok(profile.to_string());
     }
+    if principal.kind() == PrincipalKind::LocalApp {
+        return Ok(crate::user_profiles::resolve_workshop_identity_user_id());
+    }
+    crate::request_principal::personal_portal_workshop_owner(principal, shared_mode)
+        .ok_or_else(|| anyhow::anyhow!("coordination requires a bound owner identity"))
 }
 
 fn executor_session(
@@ -623,5 +631,79 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
             return Err(error);
         }
         Ok(binding)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::request_principal::{RequestPrincipal, TransportClass};
+
+    fn workshop_owner() -> String {
+        crate::user_profiles::resolve_workshop_identity_user_id()
+    }
+
+    #[test]
+    fn personal_portal_without_a_profile_can_coordinate() {
+        let owner = actor_in_mode(&RequestPrincipal::portal_for_test(None, true), false)
+            .expect("personal portal");
+        assert_eq!(owner, workshop_owner());
+    }
+
+    #[test]
+    fn shared_portal_without_a_profile_cannot_coordinate() {
+        let error = actor_in_mode(&RequestPrincipal::portal_for_test(None, true), true)
+            .expect_err("shared portal");
+        assert!(
+            error
+                .to_string()
+                .contains("coordination requires a bound owner identity"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn unbound_non_portal_principals_cannot_coordinate() {
+        let member = actor_in_mode(&RequestPrincipal::portal_for_test(None, false), false);
+        assert!(
+            member
+                .unwrap_err()
+                .to_string()
+                .contains("bound owner identity")
+        );
+        for principal in [
+            RequestPrincipal::anonymous(TransportClass::Direct),
+            RequestPrincipal::peer_for_test(None),
+            RequestPrincipal::external_agent_without_profile_for_test(),
+        ] {
+            assert!(
+                actor_in_mode(&principal, false).is_err(),
+                "{:?} coordinated",
+                principal.kind()
+            );
+        }
+    }
+
+    #[test]
+    fn a_bound_portal_profile_is_the_coordination_actor() {
+        let owner = actor_in_mode(
+            &RequestPrincipal::portal_for_test(Some("user:seat"), true),
+            false,
+        )
+        .expect("bound portal");
+        assert_eq!(owner, "user:seat");
+    }
+
+    #[test]
+    fn local_app_still_coordinates_as_the_workshop_identity() {
+        let owner = actor_in_mode(
+            &RequestPrincipal::local_app(
+                std::sync::Arc::from("home-local"),
+                TransportClass::Loopback,
+            ),
+            false,
+        )
+        .expect("local app");
+        assert_eq!(owner, workshop_owner());
     }
 }

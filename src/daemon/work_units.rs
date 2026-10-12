@@ -79,6 +79,20 @@ fn domain_owner(
     admitted_identity: Option<&str>,
     write: bool,
 ) -> Result<String> {
+    domain_owner_in_mode(
+        principal,
+        admitted_identity,
+        write,
+        crate::shared_mode::is_shared_mode(),
+    )
+}
+
+fn domain_owner_in_mode(
+    principal: &RequestPrincipal,
+    admitted_identity: Option<&str>,
+    write: bool,
+    shared_mode: bool,
+) -> Result<String> {
     let capabilities = principal.capabilities();
     if !capabilities.contains(Capability::ContentRead)
         || !capabilities.contains(Capability::WorkshopInteract)
@@ -86,21 +100,26 @@ fn domain_owner(
     {
         bail!("principal cannot access this work domain");
     }
+    if let Some(owner) = principal
+        .profile_id()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Ok(owner.to_string());
+    }
     // LocalApp carries operator authority without a profile field. Its owner
     // must come from the frozen turn identity, never today's selected profile.
-    let owner = match principal.profile_id() {
-        Some(owner) => owner,
-        None if principal.kind() == PrincipalKind::LocalApp => {
-            admitted_identity.ok_or_else(|| {
+    if principal.kind() == PrincipalKind::LocalApp {
+        return admitted_identity
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| {
                 anyhow::anyhow!("work domain requires an identity captured at turn admission")
-            })?
-        }
-        _ => bail!("work domain requires a bound owner identity"),
-    };
-    if owner.trim().is_empty() {
-        bail!("work domain owner is empty");
+            });
     }
-    Ok(owner.to_string())
+    // A personal Portal operator whose pairing lost its profile resolves the
+    // same way the co-located app does. Shared mode does not.
+    crate::request_principal::personal_portal_workshop_owner(principal, shared_mode)
+        .ok_or_else(|| anyhow::anyhow!("work domain requires a bound owner identity"))
 }
 
 fn admitted_domain(turn: &TurnExecutionContext, write: bool) -> Result<UserDomainRef> {
@@ -350,7 +369,109 @@ impl WorkUnitHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::request_principal::TransportClass;
+    use crate::request_principal::{RequestPrincipal, TransportClass};
+
+    fn workshop_owner() -> String {
+        crate::user_profiles::resolve_workshop_identity_user_id()
+    }
+
+    #[test]
+    fn personal_portal_without_a_profile_owns_the_work_domain() {
+        let owner = domain_owner_in_mode(
+            &RequestPrincipal::portal_for_test(None, true),
+            None,
+            false,
+            false,
+        )
+        .expect("personal portal");
+        assert_eq!(owner, workshop_owner());
+    }
+
+    #[test]
+    fn shared_portal_without_a_profile_cannot_own_the_work_domain() {
+        let error = domain_owner_in_mode(
+            &RequestPrincipal::portal_for_test(None, true),
+            Some("user:admitted"),
+            true,
+            true,
+        )
+        .expect_err("shared portal");
+        assert!(
+            error
+                .to_string()
+                .contains("work domain requires a bound owner identity"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn unbound_non_portal_principals_cannot_own_the_work_domain() {
+        let member = domain_owner_in_mode(
+            &RequestPrincipal::portal_for_test(None, false),
+            None,
+            false,
+            false,
+        );
+        assert!(
+            member
+                .unwrap_err()
+                .to_string()
+                .contains("bound owner identity")
+        );
+        for principal in [
+            RequestPrincipal::anonymous(TransportClass::Direct),
+            RequestPrincipal::peer_for_test(None),
+            RequestPrincipal::external_agent_without_profile_for_test(),
+        ] {
+            assert!(
+                domain_owner_in_mode(&principal, None, false, false).is_err(),
+                "{:?} owned the domain",
+                principal.kind()
+            );
+        }
+    }
+
+    #[test]
+    fn a_bound_portal_profile_owns_the_work_domain() {
+        let owner = domain_owner_in_mode(
+            &RequestPrincipal::portal_for_test(Some("user:seat"), true),
+            Some("user:admitted"),
+            true,
+            true,
+        )
+        .expect("bound portal");
+        assert_eq!(owner, "user:seat");
+    }
+
+    #[test]
+    fn local_app_work_owner_stays_the_admitted_turn_identity() {
+        let owner = domain_owner_in_mode(
+            &RequestPrincipal::local_app(
+                std::sync::Arc::from("home-local"),
+                TransportClass::Loopback,
+            ),
+            Some("user:admitted"),
+            false,
+            false,
+        )
+        .expect("local app");
+        assert_eq!(owner, "user:admitted");
+        let missing = domain_owner_in_mode(
+            &RequestPrincipal::local_app(
+                std::sync::Arc::from("home-local"),
+                TransportClass::Loopback,
+            ),
+            None,
+            false,
+            false,
+        );
+        assert!(
+            missing
+                .unwrap_err()
+                .to_string()
+                .contains("identity captured at turn admission")
+        );
+    }
 
     pub(super) fn turn(owner: &str, session: &str) -> TurnExecutionContext {
         let scope = crate::turn_continuation::TurnContinuationScope {

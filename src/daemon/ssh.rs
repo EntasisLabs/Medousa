@@ -497,21 +497,33 @@ pub fn turn_owner() -> Result<String> {
 }
 
 fn owner(principal: &RequestPrincipal, admitted: Option<&str>) -> Result<String> {
+    owner_in_mode(principal, admitted, crate::shared_mode::is_shared_mode())
+}
+
+fn owner_in_mode(
+    principal: &RequestPrincipal,
+    admitted: Option<&str>,
+    shared_mode: bool,
+) -> Result<String> {
     if !principal
         .capabilities()
         .contains(Capability::WorkshopInteract)
     {
         bail!("principal cannot use SSH connections");
     }
-    principal
+    if let Some(profile) = principal
         .profile_id()
-        .or_else(|| {
-            (principal.kind() == PrincipalKind::LocalApp)
-                .then_some(admitted)
-                .flatten()
-        })
         .filter(|value| !value.trim().is_empty())
-        .map(str::to_string)
+    {
+        return Ok(profile.to_string());
+    }
+    if principal.kind() == PrincipalKind::LocalApp {
+        return admitted
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| anyhow::anyhow!("SSH requires a bound owner identity"));
+    }
+    crate::request_principal::personal_portal_workshop_owner(principal, shared_mode)
         .ok_or_else(|| anyhow::anyhow!("SSH requires a bound owner identity"))
 }
 

@@ -310,14 +310,16 @@ struct QrQuery {
     #[serde(default)]
     full: Option<bool>,
     /// Shared-mode seat invite: bind the pairing to this profile id.
-    #[serde(default)]
+    /// `profileId` is the app spelling; `profile_id` is the lab/HTTP spelling.
+    #[serde(default, alias = "profile_id")]
     profile_id: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RotateQrBody {
-    #[serde(default)]
+    /// `profileId` is the app spelling; `profile_id` is the lab/HTTP spelling.
+    #[serde(default, alias = "profile_id")]
     profile_id: Option<String>,
 }
 
@@ -903,5 +905,21 @@ mod tests {
             entry.method == "PUT" && entry.path == "/v1/peers/{device_id}/execution-policy"
         }));
         assert!(entries.iter().all(|entry| !entry.bootstrap_public));
+    }
+
+    #[test]
+    fn rotate_body_accepts_profile_id_and_profile_id_camel_case() {
+        let snake: RotateQrBody =
+            serde_json::from_str(r#"{"profile_id":"user:default"}"#).expect("snake_case body");
+        assert_eq!(snake.profile_id.as_deref(), Some("user:default"));
+        let camel: RotateQrBody =
+            serde_json::from_str(r#"{"profileId":"user:seat"}"#).expect("camelCase body");
+        assert_eq!(camel.profile_id.as_deref(), Some("user:seat"));
+        let query: QrQuery =
+            serde_json::from_str(r#"{"profile_id":"user:default"}"#).expect("snake_case query");
+        assert_eq!(query.profile_id.as_deref(), Some("user:default"));
+        let camel_query: QrQuery =
+            serde_json::from_str(r#"{"profileId":"user:seat"}"#).expect("camelCase query");
+        assert_eq!(camel_query.profile_id.as_deref(), Some("user:seat"));
     }
 }

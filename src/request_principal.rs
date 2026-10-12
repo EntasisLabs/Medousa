@@ -305,6 +305,68 @@ impl RequestPrincipal {
     }
 }
 
+/// Personal-mode Portal operators have no seat on the pairing record. They
+/// resolve to the workshop identity the same way a co-located app does.
+/// Shared mode stays strict, and so does any principal that is not an
+/// operator Portal or that already carries a profile.
+pub fn personal_portal_workshop_owner(
+    principal: &RequestPrincipal,
+    shared_mode: bool,
+) -> Option<String> {
+    if shared_mode || principal.kind() != PrincipalKind::Portal || principal.profile_id().is_some()
+    {
+        return None;
+    }
+    let capabilities = principal.capabilities();
+    if !(capabilities.contains(Capability::AdminExecute)
+        && capabilities.contains(Capability::AdminIdentity)
+        && capabilities.contains(Capability::AdminRuntime))
+    {
+        return None;
+    }
+    Some(crate::user_profiles::resolve_workshop_identity_user_id())
+}
+
+#[cfg(test)]
+impl RequestPrincipal {
+    pub fn portal_for_test(profile_id: Option<&str>, operator: bool) -> Self {
+        Self {
+            kind: PrincipalKind::Portal,
+            credential_id: Some(CredentialId(Arc::from("portal-test"))),
+            profile_id: profile_id.map(str::to_string),
+            capabilities: if operator {
+                CapabilitySet::operator()
+            } else {
+                CapabilitySet::member()
+            },
+            transport: TransportClass::Direct,
+            revocation_generation: 1,
+        }
+    }
+
+    pub fn peer_for_test(profile_id: Option<&str>) -> Self {
+        Self {
+            kind: PrincipalKind::Peer,
+            credential_id: Some(CredentialId(Arc::from("peer-test"))),
+            profile_id: profile_id.map(str::to_string),
+            capabilities: CapabilitySet::empty().with(Capability::PeerExchange),
+            transport: TransportClass::Direct,
+            revocation_generation: 1,
+        }
+    }
+
+    pub fn external_agent_without_profile_for_test() -> Self {
+        Self {
+            kind: PrincipalKind::ExternalAgent,
+            credential_id: Some(CredentialId(Arc::from("agent-test"))),
+            profile_id: None,
+            capabilities: CapabilitySet::member(),
+            transport: TransportClass::Direct,
+            revocation_generation: 1,
+        }
+    }
+}
+
 #[cfg(feature = "full-daemon")]
 fn is_root_portal(record: &PairedDeviceRecord) -> bool {
     record.role.allows_full_portal()
