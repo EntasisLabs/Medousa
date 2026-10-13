@@ -953,6 +953,7 @@ async fn attempt_daemon_interactive_turn(
         media_refs: Vec::new(),
         liquid_interactions: Vec::new(),
         identity_user_id: None,
+        wake: None,
     };
 
     daemon_start_interactive_turn(&state.daemon_url, &request)

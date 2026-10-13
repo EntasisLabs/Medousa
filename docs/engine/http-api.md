@@ -1022,6 +1022,12 @@ hard/inactivity policy expires; access sessions are short-lived and rotate.
 | PUT | `/pair/{pairing_id}/policy` — `admin.identity`; replace hard/inactivity expiration and expire the current access session |
 | DELETE | `/pair/{pairing_id}` — `admin.identity`, or the paired bearer revoking itself |
 
+`POST /qr/rotate` accepts `profileId` or `profile_id`. That owner stays on the
+active invite: `GET /qr`, `GET /qr/image`, `GET /qr.png`, and `medousa pair qr`
+keep the `p` parameter when a used or expired invite is replaced. A completed
+pairing stores the same profile on the device record. An explicit rotate that
+omits the profile mints an unbound invite.
+
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 
 ### Peer execution policy administration

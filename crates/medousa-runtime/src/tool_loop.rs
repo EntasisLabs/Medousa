@@ -41,7 +41,8 @@ use crate::loop_gate::{
     DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS, ToolLoopCompletionGate, collect_tool_names,
 };
 use crate::loop_state::{
-    REPEATED_TOOL_FAILURE_STOP_AT, REPEATED_TOOL_FAILURE_WARNING_AT, RepeatedToolFailureGuard,
+    REPEATED_SUCCESSFUL_CALL_WARNING_AT, REPEATED_TOOL_FAILURE_STOP_AT,
+    REPEATED_TOOL_FAILURE_WARNING_AT, RepeatedSuccessfulCallGuard, RepeatedToolFailureGuard,
     TURN_CONTROL_PREFIX, TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness,
     TurnLoopDiscipline, ledger_tool_names, push_turn_control_message, record_finalized,
     record_fsm_continue, record_repeated_tool_failure, record_stuck, record_tool_round,
@@ -249,18 +250,53 @@ impl MedousaToolLoopPipeline {
         let resume_state = completion_gate
             .as_mut()
             .and_then(|gate| gate.active_turn_resume.take());
+        let mut resume_round_cap: Option<usize> = None;
         if let Some(resume) = resume_state.as_ref() {
             turn_ctx.user_lane_prefix = resume.transcript.user_lane_prefix.clone();
-            if turn_ctx.user_lane_prefix.is_empty() {
-                turn_ctx
-                    .user_lane_prefix
-                    .push(ChatMessage::user(shared_inputs.user_prompt.to_string()));
-            }
             turn_ctx.tool_lane.messages = resume.transcript.tool_lane_messages.clone();
-            if resume.append_current_user_message {
-                turn_ctx.tool_lane.messages.push(user_message);
-            }
             turn_ctx.scratchpad = resume.scratch.clone();
+            if let Some(hooks) = completion_gate
+                .as_ref()
+                .and_then(|gate| gate.wake_hooks.as_ref())
+            {
+                turn_ctx.scratchpad.merge_open_gaps(&(hooks.open_gaps)());
+            }
+            let pending = resume
+                .scratch
+                .delegate
+                .as_ref()
+                .map(|delegate| format!("{} {}", delegate.work_id, delegate.intent))
+                .into_iter()
+                .collect::<Vec<_>>();
+            let remaining = resume.resume_round_cap.unwrap_or(0);
+            match medousa_types::wake::resume_turn_message(
+                &shared_inputs.user_prompt,
+                &resume.saved_human_prompt,
+                &turn_ctx.scratchpad.goal,
+                &turn_ctx.scratchpad.open_gaps,
+                &pending,
+                remaining,
+            ) {
+                medousa_types::wake::ResumeTurnMessage::CheckpointResume { prompt, round_cap } => {
+                    let message = ChatMessage::user(prompt);
+                    if turn_ctx.user_lane_prefix.is_empty() {
+                        turn_ctx.user_lane_prefix.push(message);
+                    } else {
+                        turn_ctx.tool_lane.messages.push(message);
+                    }
+                    resume_round_cap = Some(round_cap as usize);
+                }
+                medousa_types::wake::ResumeTurnMessage::NewHuman => {
+                    if turn_ctx.user_lane_prefix.is_empty() {
+                        turn_ctx
+                            .user_lane_prefix
+                            .push(ChatMessage::user(shared_inputs.user_prompt.to_string()));
+                    }
+                    if resume.append_current_user_message {
+                        turn_ctx.tool_lane.messages.push(user_message);
+                    }
+                }
+            }
         } else if let Some(gate) = completion_gate.as_ref()
             && let Some(seed) = gate.initial_worker_scratch.as_ref()
         {
@@ -377,9 +413,23 @@ impl MedousaToolLoopPipeline {
 
         let mut previous_request = None;
         let mut repeated_tool_failures = RepeatedToolFailureGuard::default();
+        let mut repeated_successes = RepeatedSuccessfulCallGuard::default();
+        let mut past_budget_noted = false;
         if !tools.is_empty() {
             while !enforce_tool_round_limit || rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
+                if let Some(cap) = resume_round_cap
+                    && !past_budget_noted
+                    && rounds_executed > cap
+                {
+                    past_budget_noted = true;
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        &format!(
+                            "The checkpoint named {cap} remaining rounds. You are past that budget. The turn can finish; say why if you continue."
+                        ),
+                    );
+                }
                 if let Some(gate) = completion_gate.as_ref() {
                     if let Some(work_id) = gate.cancel_poll_work_id.as_deref() {
                         let control = gate.runtime_ports.delegation_control().ok_or_else(|| {
@@ -428,6 +478,12 @@ impl MedousaToolLoopPipeline {
                 }
                 let tool_rounds_remaining = enforce_tool_round_limit
                     .then(|| effective_max_tool_rounds.saturating_sub(rounds_executed));
+                if let Some(hooks) = completion_gate
+                    .as_ref()
+                    .and_then(|gate| gate.wake_hooks.as_ref())
+                {
+                    turn_ctx.scratchpad.merge_open_gaps(&(hooks.open_gaps)());
+                }
                 turn_ctx.scratchpad.on_tool_round_start(rounds_executed);
                 if let Some(remaining) = tool_rounds_remaining {
                     push_turn_control_message(
@@ -472,7 +528,7 @@ impl MedousaToolLoopPipeline {
                 previous_request = Some(footprint);
                 let response = match chunk_tx {
                     Some(tx) => {
-                        match await_turn_result(
+                        match match await_turn_result(
                             "streaming model completion",
                             complete_chat_stream_once(
                                 &self.prompt_pipeline,
@@ -482,8 +538,20 @@ impl MedousaToolLoopPipeline {
                                 &mut observation,
                             ),
                         )
-                        .await?
+                        .await
                         {
+                            Ok(outcome) => outcome,
+                            Err(error) => {
+                                return recover_text_only_provider_error(
+                                    error,
+                                    discipline.text_only_continues(),
+                                    &turn_ctx.tool_lane.messages,
+                                    &invocations,
+                                    rounds_executed,
+                                    &shared_inputs,
+                                );
+                            }
+                        } {
                             ChatCompletionOutcome::Ok(response) => *response,
                             ChatCompletionOutcome::MalformedToolJson => {
                                 drop(observation);
@@ -512,7 +580,7 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                     None => {
-                        match await_turn_result(
+                        match match await_turn_result(
                             "model completion",
                             complete_chat_once(
                                 &self.prompt_pipeline,
@@ -521,8 +589,20 @@ impl MedousaToolLoopPipeline {
                                 &mut observation,
                             ),
                         )
-                        .await?
+                        .await
                         {
+                            Ok(outcome) => outcome,
+                            Err(error) => {
+                                return recover_text_only_provider_error(
+                                    error,
+                                    discipline.text_only_continues(),
+                                    &turn_ctx.tool_lane.messages,
+                                    &invocations,
+                                    rounds_executed,
+                                    &shared_inputs,
+                                );
+                            }
+                        } {
                             ChatCompletionOutcome::Ok(response) => *response,
                             ChatCompletionOutcome::MalformedToolJson => {
                                 drop(observation);
@@ -782,7 +862,13 @@ impl MedousaToolLoopPipeline {
                         let output = output.map_err(|error| {
                             turn_boundary_failure("parallel tool invocation", error)
                         })?;
-                        let tool_output = tool_output_from_invoke(output);
+                        let tool_output = apply_wake_tool_policy(
+                            completion_gate.as_deref(),
+                            &call.fn_name,
+                            &call.fn_arguments,
+                            tool_output_from_invoke(output),
+                            &mut turn_ctx.scratchpad.open_gaps,
+                        );
                         let tool_output_text = perception_governor
                             .observe_for_call(
                                 &call.fn_name,
@@ -834,7 +920,13 @@ impl MedousaToolLoopPipeline {
                         )
                         .await
                         .map_err(|error| turn_boundary_failure("tool invocation", error))?;
-                        let tool_output = tool_output_from_invoke(output);
+                        let tool_output = apply_wake_tool_policy(
+                            completion_gate.as_deref(),
+                            &call.fn_name,
+                            &call.fn_arguments,
+                            tool_output_from_invoke(output),
+                            &mut turn_ctx.scratchpad.open_gaps,
+                        );
 
                         let tool_output_text = perception_governor
                             .observe_for_call(
@@ -1065,6 +1157,16 @@ impl MedousaToolLoopPipeline {
                         rounds_executed,
                         termination_reason: termination_reason.to_string(),
                     });
+                }
+
+                let repeated_success_count = repeated_successes.observe_batch(round_invocations);
+                if repeated_success_count >= REPEATED_SUCCESSFUL_CALL_WARNING_AT {
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        &format!(
+                            "you ran this {repeated_success_count} times with the same result"
+                        ),
+                    );
                 }
 
                 persist_checkpoint!(
@@ -1565,7 +1667,9 @@ async fn apply_fsm_continue_loop(
     max_tool_rounds: usize,
 ) -> Result<Option<ToolLoopExecutionResponse>> {
     if !missing_tools.is_empty() {
+        let known = turn_ctx.scratchpad.open_gaps.clone();
         turn_ctx.scratchpad.set_open_gaps(missing_tools);
+        turn_ctx.scratchpad.merge_open_gaps(&known);
     }
     if let Some(gate) = completion_gate.as_mut() {
         let tools_invoked = if invocations.is_empty() {
@@ -2171,6 +2275,96 @@ async fn inject_malformed_tool_json_guidance(
     push_turn_control_message(messages, MALFORMED_TOOL_JSON_GUIDANCE);
 }
 
+fn apply_wake_tool_policy(
+    gate: Option<&ToolLoopCompletionGate<'_>>,
+    tool_name: &str,
+    input: &Value,
+    mut output: Value,
+    scratch_gaps: &mut Vec<String>,
+) -> Value {
+    let Some(hooks) = gate.and_then(|gate| gate.wake_hooks.as_ref()) else {
+        return output;
+    };
+    if output.get("ok") != Some(&Value::Bool(false)) {
+        (hooks.on_tool_success)(tool_name);
+    }
+    if !crate::turn_control::is_finish_turn_tool_name(tool_name, input)
+        && !crate::turn_control::is_checkpoint_turn_tool_name(tool_name, input)
+    {
+        return output;
+    }
+    if output.get("ok") == Some(&Value::Bool(false)) {
+        return output;
+    }
+    let known = (hooks.open_gaps)();
+    let missing = known
+        .iter()
+        .filter(|gap| {
+            !scratch_gaps
+                .iter()
+                .any(|existing| existing == *gap || existing.contains(gap.as_str()))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return output;
+    }
+    for gap in &missing {
+        scratch_gaps.push(gap.clone());
+    }
+    let note = format!(
+        "The runtime recorded these open gaps: {}. The turn can end.",
+        missing.join("; ")
+    );
+    if let Some(map) = output.as_object_mut() {
+        map.insert("open_gap_note".to_string(), Value::String(note));
+    }
+    output
+}
+
+fn recover_text_only_provider_error(
+    error: StasisError,
+    text_only_continues: usize,
+    messages: &[ChatMessage],
+    invocations: &[ToolInvocation],
+    rounds_executed: usize,
+    shared_inputs: &ToolLoopSharedInputs,
+) -> Result<ToolLoopExecutionResponse> {
+    if text_only_continues == 0 {
+        return Err(error);
+    }
+    let provider_error = error.to_string();
+    let prior = messages.iter().rev().find_map(|message| {
+        if message.role != ChatRole::Assistant {
+            return None;
+        }
+        message
+            .content
+            .first_text()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string)
+    });
+    let text = prior.unwrap_or_else(|| {
+        format!(
+            "The provider failed after a text-only continue ({provider_error}). No further text was generated."
+        )
+    });
+    Ok(ToolLoopExecutionResponse {
+        text,
+        metadata: shared_inputs.context_clone(),
+        tool_name: String::new(),
+        tool_output: serde_json::json!({
+            "ok": false,
+            "error": provider_error,
+            "fallback": "text_only_continue",
+        }),
+        tool_invocations: invocations.to_vec(),
+        rounds_executed,
+        termination_reason: "provider_error_after_text_only_continue".to_string(),
+    })
+}
+
 /// Complete chat once. A malformed tool call returns control to the loop so the
 /// model can self-correct with the failed round represented in turn state.
 async fn complete_chat_once(
@@ -2185,11 +2379,11 @@ async fn complete_chat_once(
             Ok(ChatCompletionOutcome::Ok(Box::new(completion.response)))
         }
         Err(err) if is_serde_json_completion_error(&err) => {
-            observation.failed(true);
+            observation.fail_with(true, Some(&err.to_string()));
             Ok(ChatCompletionOutcome::MalformedToolJson)
         }
         Err(err) => {
-            observation.failed(false);
+            observation.fail_with(false, Some(&err.to_string()));
             Err(err)
         }
     }
@@ -2211,11 +2405,11 @@ async fn complete_chat_stream_once(
             Ok(ChatCompletionOutcome::Ok(Box::new(completion.response)))
         }
         Err(err) if is_serde_json_completion_error(&err) => {
-            observation.failed(true);
+            observation.fail_with(true, Some(&err.to_string()));
             Ok(ChatCompletionOutcome::MalformedToolJson)
         }
         Err(err) => {
-            observation.failed(false);
+            observation.fail_with(false, Some(&err.to_string()));
             Err(err)
         }
     }

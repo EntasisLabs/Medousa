@@ -283,6 +283,9 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             media_refs: Vec::new(),
             liquid_interactions: Vec::new(),
             identity_user_id: Some(identity_user_id.clone()),
+            wake: Some(medousa_types::WakeGrant::for_source(
+                medousa_types::WakeSource::NativeCallback,
+            )),
         };
 
         let scope = crate::turn_continuation::TurnContinuationScope {
@@ -349,11 +352,9 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             .await
             .clone()
             .unwrap_or_else(|| CapturedAgentResult {
-                outcome: CapturedTurnOutcome::Failed(
-                    crate::turn_failure::TurnFailure::from_debug(
-                        "agent turn finished without a terminal result",
-                    ),
-                ),
+                outcome: CapturedTurnOutcome::Failed(crate::turn_failure::TurnFailure::from_debug(
+                    "agent turn finished without a terminal result",
+                )),
                 output_text: "The scheduled turn ended without a result.".to_string(),
             });
         let text = result.output_text.clone();
@@ -538,7 +539,10 @@ mod tests {
         let failure = crate::turn_failure::TurnFailure::from_debug(
             "provider returned an unexplained response",
         );
-        assert_eq!(CapturedTurnOutcome::Failed(failure.clone()).label(), "fatal");
+        assert_eq!(
+            CapturedTurnOutcome::Failed(failure.clone()).label(),
+            "fatal"
+        );
         assert!(matches!(
             job_execution_outcome(CapturedTurnOutcome::Failed(failure), None),
             JobExecutionOutcome::FatalFailure { .. }

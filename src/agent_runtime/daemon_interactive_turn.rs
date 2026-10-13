@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use crate::daemon::bounded_set::BoundedDedupSet;
 use chrono::{DateTime, Utc};
 use medousa_engine::TurnPipelineHandle;
-use medousa_types::turn_stream::{TurnCompletionOutcomeV3, TurnStreamEventV3, WorkerAckKind};
 use medousa_types::MessageReaction;
+use medousa_types::turn_stream::{TurnCompletionOutcomeV3, TurnStreamEventV3, WorkerAckKind};
 use serde_json::Value;
 use tokio::sync::RwLock;
 use tracing::Instrument;
@@ -309,8 +309,8 @@ impl InteractiveTurnStreamSink {
         assistant_turn: crate::session::ConversationTurn,
         event: super::turn_event::TurnEvent,
     ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
-        let mut projected =
-            super::turn_event_log::project_turn_to_history(&event).unwrap_or(assistant_turn.clone());
+        let mut projected = super::turn_event_log::project_turn_to_history(&event)
+            .unwrap_or(assistant_turn.clone());
         projected.reactions = assistant_turn.reactions.clone();
         self.persist_turn(projected).await
     }
@@ -607,7 +607,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         {
             tracing::warn!(turn_id = %self.turn_id, %error, "interactive reaction delivery failed");
         }
-        self.publish_tracked(TurnStreamEventV3::Reaction { reaction }).await;
+        self.publish_tracked(TurnStreamEventV3::Reaction { reaction })
+            .await;
     }
 
     async fn model_receipt(&self, _turn_id: u64, provider: String, model: String) {
@@ -1484,6 +1485,12 @@ async fn run_agent_turn_inner(
             .await;
         return;
     }
+    crate::wake_runtime::begin_turn(
+        &session_id,
+        request.wake.clone(),
+        &prompt,
+        request.persist_user_turn,
+    );
 
     let active_execution = super::execution_context::active_turn_execution_context();
     let bot_default_mode = active_execution
@@ -2097,6 +2104,44 @@ async fn run_agent_turn_inner(
         None
     };
     let active_turn_resume = active_turn_checkpoint_sink.as_ref().and(active_turn_resume);
+    if let Some(resume) = active_turn_resume.as_ref() {
+        let saved = resume.saved_human_prompt.as_str();
+        if medousa_types::wake::is_checkpoint_resume_prompt(&prompt)
+            || medousa_types::wake::replays_human_as_goal(&prompt, saved)
+        {
+            let pending = resume
+                .scratch
+                .delegate
+                .as_ref()
+                .map(|delegate| format!("{} {}", delegate.work_id, delegate.intent))
+                .into_iter()
+                .collect::<Vec<_>>();
+            let remaining = coder_resume_checkpoint.as_ref().map(|checkpoint| {
+                let left = checkpoint
+                    .counters
+                    .max_tool_rounds
+                    .saturating_sub(checkpoint.counters.model_rounds_executed);
+                if left == 0
+                    || matches!(
+                        checkpoint.status,
+                        medousa_runtime::ActiveTurnCheckpointStatus::BudgetExhausted
+                    )
+                {
+                    0
+                } else {
+                    left as u32
+                }
+            });
+            crate::wake_runtime::install_grant(
+                &session_id,
+                medousa_types::wake::WakeGrant::checkpoint(
+                    remaining.unwrap_or(resume.resume_round_cap.unwrap_or(0)),
+                    resume.scratch.open_gaps.clone(),
+                    pending,
+                ),
+            );
+        }
+    }
 
     if let Some(route) = final_route.as_ref() {
         sink.notice(format!(

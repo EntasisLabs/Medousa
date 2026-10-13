@@ -28,6 +28,19 @@ pub const MAX_NETWORK_GIT: usize = 2;
 pub const MAX_OBSERVATION_JOBS: usize = 2;
 pub const MAX_WORK_ENVIRONMENT_JOBS: usize = 4;
 pub const MAX_QUEUED_BYTES: usize = 8 * 1024 * 1024;
+
+/// Shared forge admission budget. `MEDOUSA_FORGE_QUEUED_BYTE_BUDGET` overrides
+/// the default. The limit is process-wide; each work item still has to fit.
+pub fn queued_byte_budget() -> usize {
+    static BUDGET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        std::env::var("MEDOUSA_FORGE_QUEUED_BYTE_BUDGET")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(MAX_QUEUED_BYTES)
+    })
+}
 pub const MAX_METADATA_BYTES: usize = 256 * 1024;
 pub const MAX_STORE_PAYLOAD_BYTES: usize = 1024 * 1024;
 pub const MAX_CAPTURE_BYTES: usize = 8 * 1024 * 1024;
@@ -107,7 +120,7 @@ impl ForgeExecutionService {
     pub fn new() -> Self {
         Self {
             global_commands: Arc::new(Semaphore::new(MAX_QUEUED_COMMANDS)),
-            queued_bytes: Arc::new(Semaphore::new(MAX_QUEUED_BYTES)),
+            queued_bytes: Arc::new(Semaphore::new(queued_byte_budget())),
             blocking: Arc::new(Semaphore::new(MAX_BLOCKING_JOBS)),
             network_git: Arc::new(Semaphore::new(MAX_NETWORK_GIT)),
             observation: Arc::new(Semaphore::new(MAX_OBSERVATION_JOBS)),
@@ -254,9 +267,10 @@ impl ForgeExecutionService {
             Err(_) => {
                 self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
                 drop(global);
-                return Err(ForgeError::Overloaded(
-                    "forge queued-byte budget is exhausted".into(),
-                ));
+                return Err(ForgeError::Overloaded(format!(
+                    "forge queued-byte budget is exhausted (limit {} bytes, this admission needs {bytes} bytes). Narrow this work item or set MEDOUSA_FORGE_QUEUED_BYTE_BUDGET. The budget is shared across queued forge jobs.",
+                    queued_byte_budget()
+                )));
             }
         };
 

@@ -14,6 +14,7 @@ pub const USER_RESPONSE_PREVIEW_MAX_CHARS: usize = 100;
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 pub const REPEATED_TOOL_FAILURE_WARNING_AT: usize = 2;
 pub const REPEATED_TOOL_FAILURE_STOP_AT: usize = 3;
+pub const REPEATED_SUCCESSFUL_CALL_WARNING_AT: usize = 4;
 
 pub fn resolve_max_text_only_stuck_continues(max_tool_rounds: usize) -> usize {
     max_tool_rounds.max(1)
@@ -79,6 +80,57 @@ impl RepeatedToolFailureGuard {
         self.last_fingerprint = None;
         self.repetitions = 0;
     }
+}
+
+/// Stops a long streak of identical successful calls. The failure guard ignores
+/// these; the swarm trial kept reissuing cognition_shell_run and runtime_query
+/// after every call had already succeeded.
+#[derive(Debug, Default)]
+pub struct RepeatedSuccessfulCallGuard {
+    last_fingerprint: Option<String>,
+    repetitions: usize,
+}
+
+impl RepeatedSuccessfulCallGuard {
+    pub fn observe_batch(&mut self, invocations: &[ToolInvocation]) -> usize {
+        if invocations.is_empty() || !invocations.iter().all(is_explicit_tool_success) {
+            self.reset();
+            return 0;
+        }
+        let mut calls = invocations
+            .iter()
+            .map(|invocation| {
+                serde_json::to_string(&(invocation.tool_name.as_str(), &invocation.tool_input))
+                    .expect("successful tool fingerprint serializes")
+            })
+            .collect::<Vec<_>>();
+        calls.sort_unstable();
+        let fingerprint = serde_json::to_string(&calls).expect("successful tool batch serializes");
+        if self.last_fingerprint.as_deref() == Some(fingerprint.as_str()) {
+            self.repetitions = self.repetitions.saturating_add(1);
+        } else {
+            self.last_fingerprint = Some(fingerprint);
+            self.repetitions = 1;
+        }
+        self.repetitions
+    }
+
+    pub fn reset(&mut self) {
+        self.last_fingerprint = None;
+        self.repetitions = 0;
+    }
+}
+
+fn is_explicit_tool_success(invocation: &ToolInvocation) -> bool {
+    if is_explicit_tool_failure(invocation) {
+        return false;
+    }
+    let status = invocation
+        .tool_output
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    !matches!(status, "pending" | "queued" | "running")
 }
 
 fn is_explicit_tool_failure(invocation: &ToolInvocation) -> bool {
@@ -260,6 +312,10 @@ impl TurnLoopDiscipline {
     }
 
     /// Returns true when the loop should stop with a user-visible stuck message.
+    pub fn text_only_continues(&self) -> usize {
+        self.text_only_continues_without_new_tools
+    }
+
     pub fn on_text_only_continue(&mut self, invocations_len: usize) -> bool {
         if invocations_len == self.invocations_at_last_text_continue {
             self.text_only_continues_without_new_tools =
@@ -474,6 +530,32 @@ mod tests {
             }),
         );
         assert_eq!(guard.observe_batch(&[success]), 0);
+    }
+
+    #[test]
+    fn repeated_successful_calls_count_input_only_past_the_warning() {
+        let mut guard = RepeatedSuccessfulCallGuard::default();
+        let first = invocation(
+            json!({"command": "cognition_runtime_query"}),
+            json!({"ok": true, "rows": 1}),
+        );
+        let same_input_different_output = invocation(
+            json!({"command": "cognition_runtime_query"}),
+            json!({"ok": true, "rows": 9}),
+        );
+        assert_eq!(guard.observe_batch(std::slice::from_ref(&first)), 1);
+        assert_eq!(
+            guard.observe_batch(std::slice::from_ref(&same_input_different_output)),
+            2
+        );
+        for expected in 3..=8 {
+            assert_eq!(guard.observe_batch(std::slice::from_ref(&first)), expected);
+        }
+        let failed = invocation(
+            json!({"command": "cognition_runtime_query"}),
+            json!({"ok": false, "error": "busy"}),
+        );
+        assert_eq!(guard.observe_batch(std::slice::from_ref(&failed)), 0);
     }
 
     #[test]

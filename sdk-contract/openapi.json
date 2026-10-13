@@ -5366,6 +5366,17 @@
               "null"
             ]
           },
+          "wake": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WakeGrant"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authority for a runtime-injected wake. Absent on a human turn, which executes under the ordinary grant. Present on callbacks, inbox, peer, resume, and process wakes; the runtime refuses tools outside it."
+          },
           "worker_execution_target": {
             "anyOf": [
               {
@@ -10154,6 +10165,123 @@
         ],
         "title": "VaultWriteResponse",
         "type": "object"
+      },
+      "WakeAuthority": {
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "acknowledge"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "report"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "continue_bounded"
+                ],
+                "type": "string"
+              },
+              "rounds": {
+                "format": "uint32",
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "rounds"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "execute"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "WakeGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "authority": {
+            "$ref": "#/components/schemas/WakeAuthority"
+          },
+          "open_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pending_work": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "remaining_rounds": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/WakeSource"
+          }
+        },
+        "required": [
+          "authority",
+          "source"
+        ],
+        "type": "object"
+      },
+      "WakeSource": {
+        "enum": [
+          "human",
+          "native_callback",
+          "terminal_callback",
+          "peer_terminal",
+          "agent_inbox",
+          "worker_result",
+          "checkpoint_resume",
+          "safety_review",
+          "process_completed",
+          "timed_out"
+        ],
+        "type": "string"
       },
       "WorkBoardColumn": {
         "enum": [

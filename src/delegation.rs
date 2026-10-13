@@ -604,6 +604,7 @@ impl DelegationResultDelivery {
         ))
         .map_err(|error| StasisError::PortFailure(error.to_string()))?;
         if entries.iter().any(|entry| entry.entry_id == entry_id) {
+            close_in_flight_work(source.session_id.as_str(), work_id);
             return Ok(true);
         }
 
@@ -641,7 +642,33 @@ impl DelegationResultDelivery {
                 tracing::warn!(error = %error, "delegated result committed without live delivery");
             }
         }
+        close_in_flight_work(source.session_id.as_str(), work_id);
         Ok(true)
+    }
+}
+
+fn register_in_flight_work(session_id: &str, work_id: &str, task: &str) {
+    #[cfg(feature = "full-daemon")]
+    crate::wake_runtime::register_gap(
+        session_id,
+        medousa_types::wake::OpenGap {
+            id: work_id.to_string(),
+            kind: medousa_types::wake::OpenGapKind::InFlightWork,
+            summary: format!("delegated {}", task.chars().take(180).collect::<String>()),
+        },
+    );
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        let _ = (session_id, work_id, task);
+    }
+}
+
+fn close_in_flight_work(session_id: &str, work_id: &str) {
+    #[cfg(feature = "full-daemon")]
+    crate::wake_runtime::close_gap(session_id, work_id);
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        let _ = (session_id, work_id);
     }
 }
 
@@ -696,6 +723,26 @@ impl DelegationTerminalDelivery for DelegationResultDelivery {
     }
 }
 
+fn with_remote_activity(
+    text: String,
+    result: &crate::delegated_task::DelegatedTaskResult,
+) -> String {
+    let Some(summary) = result.activity_summary.as_ref() else {
+        return text;
+    };
+    if summary.tool_names.is_empty() && summary.termination_reason.is_none() {
+        return text;
+    }
+    format!(
+        "{text}\nRemote activity: tools=[{}]; termination={}.",
+        summary.tool_names.join(", "),
+        summary
+            .termination_reason
+            .as_deref()
+            .unwrap_or("unspecified")
+    )
+}
+
 fn terminal_presentation(
     result: &crate::delegated_task::DelegatedTaskResult,
 ) -> (TurnWaitStatus, String, Vec<String>) {
@@ -703,37 +750,60 @@ fn terminal_presentation(
     match result.terminal.kind {
         AgentEnvelopeKind::TurnCompleted => (
             TurnWaitStatus::Completed,
-            payload
-                .get("text")
-                .and_then(Value::as_str)
-                .unwrap_or("Remote worker completed without a response.")
-                .to_string(),
-            payload
-                .get("tool_names")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect(),
+            with_remote_activity(
+                payload
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Remote worker completed without a response.")
+                    .to_string(),
+                result,
+            ),
+            result
+                .activity_summary
+                .as_ref()
+                .map(|summary| summary.tool_names.clone())
+                .unwrap_or_else(|| {
+                    payload
+                        .get("tool_names")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                }),
         ),
         AgentEnvelopeKind::Cancelled => (
             TurnWaitStatus::Cancelled,
-            payload
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("Remote worker was cancelled.")
-                .to_string(),
-            Vec::new(),
+            with_remote_activity(
+                payload
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Remote worker was cancelled.")
+                    .to_string(),
+                result,
+            ),
+            result
+                .activity_summary
+                .as_ref()
+                .map(|summary| summary.tool_names.clone())
+                .unwrap_or_default(),
         ),
         AgentEnvelopeKind::Failed => (
             TurnWaitStatus::Failed,
-            payload
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("Remote worker failed.")
-                .to_string(),
-            Vec::new(),
+            with_remote_activity(
+                payload
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Remote worker failed.")
+                    .to_string(),
+                result,
+            ),
+            result
+                .activity_summary
+                .as_ref()
+                .map(|summary| summary.tool_names.clone())
+                .unwrap_or_default(),
         ),
         _ => unreachable!("validated delegated terminal kind"),
     }
@@ -1775,6 +1845,7 @@ impl DelegationService {
                     backoff_policy: BackoffPolicy::default(),
                 })
                 .await?;
+            register_in_flight_work(execution.session_id().as_str(), &work_id, &spawn.task);
         }
         self.start_driver(job_id.clone(), turn_id);
         Ok(json!({
@@ -2891,6 +2962,7 @@ mod tests {
             worker_spec_digest: None,
             worker_route: None,
             derivation: derivation.clone(),
+            activity_summary: None,
         };
         DelegatedTaskObservation {
             schema_version: DELEGATED_TASK_SCHEMA_VERSION,

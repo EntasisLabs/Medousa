@@ -1811,6 +1811,11 @@ pub struct InteractiveTurnRequest {
     /// Optional identity principal override (debug/internal). Default: active workshop profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity_user_id: Option<String>,
+    /// Authority for a runtime-injected wake. Absent on a human turn, which
+    /// executes under the ordinary grant. Present on callbacks, inbox, peer,
+    /// resume, and process wakes; the runtime refuses tools outside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wake: Option<crate::wake::WakeGrant>,
 }
 
 /// Reference to a user file stored locally under medousa/media/ (not inline bytes).

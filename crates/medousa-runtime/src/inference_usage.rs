@@ -164,6 +164,10 @@ pub struct InferenceUsage {
     pub change: Option<RequestChange>,
     pub tokens: ReportedTokens,
     pub generated: GeneratedSizes,
+    /// Provider failure text. Absent on success. Zero token counts are not a
+    /// measurement when the provider returned no usage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// A guard also records cancelled requests, whose billed usage is unknown.
@@ -201,6 +205,7 @@ impl InferenceObservation {
                 change,
                 tokens: ReportedTokens::default(),
                 generated: GeneratedSizes::default(),
+                error: None,
             }),
         }
     }
@@ -268,6 +273,10 @@ impl InferenceObservation {
     }
 
     pub fn failed(&mut self, malformed: bool) {
+        self.fail_with(malformed, None);
+    }
+
+    pub fn fail_with(&mut self, malformed: bool, error: Option<&str>) {
         if let Some(usage) = self.usage.as_mut() {
             usage.outcome = if malformed {
                 "malformed_tool_json"
@@ -275,6 +284,20 @@ impl InferenceObservation {
                 "provider_error"
             }
             .into();
+            usage.error = error.map(|error| {
+                let mut text = error.trim().to_string();
+                if text.chars().count() > 500 {
+                    text = text.chars().take(500).collect();
+                }
+                if text.is_empty() {
+                    "provider returned an empty error".to_string()
+                } else {
+                    text
+                }
+            });
+            if usage.tokens.input == Some(0) && usage.tokens.output == Some(0) {
+                usage.tokens = ReportedTokens::default();
+            }
         }
         self.persist();
     }
@@ -291,7 +314,7 @@ impl InferenceObservation {
                 timestamp: chrono::Utc::now(),
                 stream_turn_id: self.stream_turn_id,
                 kind: TurnLedgerEventKind::Inference,
-                detail: usage.outcome.clone(),
+                detail: usage.error.clone().unwrap_or_else(|| usage.outcome.clone()),
                 tools_invoked: std::mem::take(&mut self.tools),
                 missing_tools: Vec::new(),
                 rounds_executed: self.round,

@@ -1292,6 +1292,9 @@ async fn spawn_continuation_agent_turn(
         None,
     );
     interactive_request.persist_user_turn = false;
+    interactive_request.wake = Some(medousa_types::wake::WakeGrant::for_source(
+        medousa_types::wake::WakeSource::ProcessCompleted,
+    ));
 
     let identity_user_id = record
         .identity_user_id

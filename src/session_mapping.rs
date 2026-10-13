@@ -586,6 +586,7 @@ pub fn build_interactive_turn_request_for_ingest(
         media_refs: Vec::new(),
         liquid_interactions: Vec::new(),
         identity_user_id: None,
+        wake: None,
     }
 }
 

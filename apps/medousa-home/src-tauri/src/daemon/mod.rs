@@ -16,8 +16,8 @@ pub mod grapheme;
 pub mod identity;
 pub mod iroh_hook;
 pub mod jobs;
-pub mod local_inference;
 pub mod liquid_state;
+pub mod local_inference;
 pub mod locus;
 pub mod maintenance;
 pub mod media;
@@ -40,13 +40,13 @@ pub mod workspace_card;
 
 use crate::daemon::sse::{open_unless_cancelled, stream_sse_json_workshop};
 use crate::daemon::types::{
-    AgentModeId, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
+    AgentModeId, DEFAULT_DAEMON_URL, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
     InteractiveTurnRequest, StageRoutingMatrix, TurnSurfaceContext, TurnWorldSelection,
-    WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
+    WorkspaceStreamEvent,
 };
 use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
-use medousa_types::turn_stream::{TurnStreamEnvelopeV3, TURN_STREAM_V3_MEDIA_TYPE};
+use medousa_types::turn_stream::{TURN_STREAM_V3_MEDIA_TYPE, TurnStreamEnvelopeV3};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -600,9 +600,8 @@ pub async fn interactive_turn_send(
             supports_ui_artifacts: true,
             supports_liquid_markdown: true,
             supports_browser_host,
-            browser_driver_id: browser_driver_id.or_else(|| {
-                supports_browser_host.then(|| crate::browser_driver::id().to_string())
-            }),
+            browser_driver_id: browser_driver_id
+                .or_else(|| supports_browser_host.then(|| crate::browser_driver::id().to_string())),
             selected_worlds: selected_worlds.unwrap_or_default(),
         }),
         host_context: None,
@@ -617,6 +616,7 @@ pub async fn interactive_turn_send(
         media_refs: Vec::new(),
         liquid_interactions: Vec::new(),
         identity_user_id: None,
+        wake: None,
     };
 
     let base = crate::active_workshop::transport_base_url()?;

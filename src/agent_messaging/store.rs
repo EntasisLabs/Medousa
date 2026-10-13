@@ -21,6 +21,21 @@ pub(super) enum MessageStatus {
     Failed,
     Uncertain,
 }
+impl Message {
+    pub(super) fn wake_grant(&self) -> medousa_types::wake::WakeGrant {
+        let source = match self.wake_source.as_deref() {
+            Some("process_completed") => medousa_types::wake::WakeSource::ProcessCompleted,
+            Some("timed_out") => medousa_types::wake::WakeSource::ProcessTimedOut,
+            Some("worker_result") => medousa_types::wake::WakeSource::WorkerResult,
+            Some("peer_terminal") => medousa_types::wake::WakeSource::PeerTerminal,
+            Some("terminal_callback") => medousa_types::wake::WakeSource::TerminalCallback,
+            Some("native_callback") => medousa_types::wake::WakeSource::NativeCallback,
+            _ => medousa_types::wake::WakeSource::AgentInbox,
+        };
+        medousa_types::wake::WakeGrant::for_source(source)
+    }
+}
+
 impl MessageStatus {
     fn as_str(&self) -> &'static str {
         match self {
@@ -58,6 +73,18 @@ pub(super) struct Message {
     pub remote_inbound: bool,
     #[serde(default)]
     pub transport_route: Option<TransportRoute>,
+    /// How many times delivery has been queued again after a missing turn.
+    #[serde(default)]
+    pub attempts: u32,
+    /// Visible retry schedule. Absent means the message can be claimed now.
+    #[serde(default)]
+    pub next_attempt_at: Option<DateTime<Utc>>,
+    /// Last turn-ticket phase observed before the in-memory ticket was cleared.
+    #[serde(default)]
+    pub observed_phase: Option<String>,
+    /// Wake to install on the recipient turn. Absent means an inbox acknowledgement.
+    #[serde(default)]
+    pub wake_source: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -75,6 +102,9 @@ pub(super) struct PendingMessage {
     pub status: MessageStatus,
     pub delivery_turn: Option<String>,
     pub remote_outbound: bool,
+    pub attempts: u32,
+    pub next_attempt_at: Option<DateTime<Utc>>,
+    pub observed_phase: Option<String>,
 }
 
 pub(super) struct MessageStore {
@@ -154,7 +184,9 @@ impl MessageStore {
         if message.source_session == message.target_session
             && message.source_workshop == message.target_workshop
         {
-            bail!("an agent cannot message its own chat");
+            bail!(
+                "an agent cannot message its own chat. Allowed path: reply to the other chat, or return the result to the user in this chat."
+            );
         }
         if message.body.trim().is_empty() || message.body.len() > 8000 {
             bail!("message must contain 1–8000 UTF-8 bytes");
@@ -327,24 +359,30 @@ impl MessageStore {
     }
     pub fn pending(&self) -> Result<Vec<PendingMessage>> {
         let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT id,profile_id,target_session,status,delivery_turn,(json_extract(payload,'$.target_workshop') IS NOT NULL AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0)) FROM agent_messages WHERE status IN ('queued','delivering') ORDER BY rowid LIMIT 64")?;
-        Ok(statement
+        let mut statement = connection.prepare("SELECT payload,(json_extract(payload,'$.target_workshop') IS NOT NULL AND NOT coalesce(json_extract(payload,'$.remote_inbound'),0)) FROM agent_messages WHERE status IN ('queued','delivering','uncertain') ORDER BY rowid LIMIT 64")?;
+        statement
             .query_map([], |row| {
-                let status: String = row.get(3)?;
-                Ok(PendingMessage {
-                    id: row.get(0)?,
-                    profile_id: row.get(1)?,
-                    target_session: row.get(2)?,
-                    status: if status == "queued" {
-                        MessageStatus::Queued
-                    } else {
-                        MessageStatus::Delivering
-                    },
-                    delivery_turn: row.get(4)?,
-                    remote_outbound: row.get(5)?,
-                })
+                let payload: String = row.get(0)?;
+                let remote_outbound: bool = row.get(1)?;
+                Ok((payload, remote_outbound))
             })?
-            .collect::<rusqlite::Result<_>>()?)
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .map(|(payload, remote_outbound)| {
+                let message = decode(&payload)?;
+                Ok(PendingMessage {
+                    id: message.id,
+                    profile_id: message.profile_id,
+                    target_session: message.target_session,
+                    status: message.status,
+                    delivery_turn: message.delivery_turn,
+                    remote_outbound,
+                    attempts: message.attempts,
+                    next_attempt_at: message.next_attempt_at,
+                    observed_phase: message.observed_phase,
+                })
+            })
+            .collect()
     }
     pub fn claim(&self, id: &str) -> Result<Option<Message>> {
         let mut connection = self.connection()?;
@@ -374,6 +412,86 @@ impl MessageStore {
         }
         message.error = error.map(|error| error.chars().take(500).collect());
         Self::write(&transaction, &message)?;
+        transaction.commit()?;
+        Ok(())
+    }
+    /// Remember the ticket phase before the in-memory ticket disappears.
+    /// A completed turn is delivered here so a later missing-ticket poll cannot
+    /// mark it uncertain.
+    pub fn observe_phase(&self, id: &str, phase: &str) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction =
+            connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let Some(mut message) = Self::find(&transaction, id)? else {
+            return Ok(());
+        };
+        if message.status == MessageStatus::Delivered {
+            return Ok(());
+        }
+        message.observed_phase = Some(phase.to_string());
+        match phase {
+            "done" => {
+                message.status = MessageStatus::Delivered;
+                message.error = None;
+            }
+            "error" => {
+                message.status = MessageStatus::Failed;
+                message.error = Some(
+                    "recipient turn ended with an error. Allowed path: resend with a new request_key."
+                        .into(),
+                );
+            }
+            "cancelled" => {
+                message.status = MessageStatus::Failed;
+                message.error = Some(
+                    "recipient turn was cancelled. Allowed path: resend with a new request_key."
+                        .into(),
+                );
+            }
+            _ => {}
+        }
+        Self::write(&transaction, &message)?;
+        transaction.commit()?;
+        Ok(())
+    }
+    /// Queue the message again. A missing ticket is not a terminal failure.
+    pub fn requeue_for_retry(&self, id: &str) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction =
+            connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut message = Self::find(&transaction, id)?
+            .ok_or_else(|| anyhow::anyhow!("message is unavailable"))?;
+        message.attempts = message.attempts.saturating_add(1);
+        if message.attempts > 8 {
+            message.status = MessageStatus::Failed;
+            message.error = Some(
+                "delivery exhausted 8 retries because the recipient turn never became visible. Allowed path: resend with a new request_key."
+                    .into(),
+            );
+        } else {
+            let delay = 2_u32.saturating_pow(message.attempts).min(60);
+            message.status = MessageStatus::Queued;
+            message.delivery_turn = None;
+            message.next_attempt_at = Some(Utc::now() + chrono::Duration::seconds(delay as i64));
+            message.error = Some(format!(
+                "queued until the recipient can take it (attempt {}); the previous admission's turn is unavailable",
+                message.attempts
+            ));
+        }
+        Self::write(&transaction, &message)?;
+        transaction.commit()?;
+        Ok(())
+    }
+    pub fn note_waiting(&self, id: &str) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction =
+            connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut message = Self::find(&transaction, id)?
+            .ok_or_else(|| anyhow::anyhow!("message is unavailable"))?;
+        if message.status == MessageStatus::Queued {
+            message.error = Some("waiting: recipient has an active turn".into());
+            Self::write(&transaction, &message)?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -439,7 +557,37 @@ mod tests {
             hop: 0,
             remote_inbound: false,
             transport_route: None,
+            attempts: 0,
+            next_attempt_at: None,
+            observed_phase: None,
+            wake_source: None,
         }
+    }
+    #[test]
+    fn a_missing_recipient_turn_is_queued_again_instead_of_uncertain() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MessageStore::new(dir.path().join("messages.sqlite3"));
+        let admitted = store.enqueue(message("a", "b", "t"), "handback").unwrap();
+        let claimed = store.claim(&admitted.id).unwrap().unwrap();
+        assert_eq!(claimed.status, MessageStatus::Delivering);
+        store.observe_phase(&admitted.id, "done").unwrap();
+        let delivered = store.get(&admitted.id).unwrap().unwrap();
+        assert_eq!(delivered.status, MessageStatus::Delivered);
+        assert!(store.pending().unwrap().is_empty());
+
+        let again = store.enqueue(message("a", "c", "t2"), "lost").unwrap();
+        store.claim(&again.id).unwrap();
+        store.requeue_for_retry(&again.id).unwrap();
+        let queued = store.get(&again.id).unwrap().unwrap();
+        assert_eq!(queued.status, MessageStatus::Queued);
+        assert!(queued.attempts >= 1);
+        assert!(
+            queued
+                .error
+                .unwrap()
+                .contains("queued until the recipient can take it")
+        );
+        assert_ne!(queued.status, MessageStatus::Uncertain);
     }
     #[test]
     fn retries_are_idempotent_and_cannot_change_payload() {

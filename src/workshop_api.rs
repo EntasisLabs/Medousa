@@ -721,7 +721,24 @@ impl WorkshopTargets {
 
 impl WorkshopSpawn {
     async fn execute(self, tool: &CognitionWorkshopMutateTool) -> stasis::prelude::Result<Value> {
-        tool.execution.spawn(self).await
+        let blob = format!(
+            "{} {} {}",
+            self.intent.as_deref().unwrap_or(""),
+            self.task,
+            self.user_ack
+        )
+        .to_ascii_lowercase();
+        let mentions_review = blob.contains("review");
+        let mut value = tool.execution.spawn(self).await?;
+        if mentions_review
+            && let Some(turn) =
+                crate::agent_runtime::execution_context::active_turn_execution_context()
+            && let Some(note) = crate::wake_runtime::review_note(turn.session_id().as_str())
+            && let Some(map) = value.as_object_mut()
+        {
+            map.insert("review_context".to_string(), Value::String(note));
+        }
+        Ok(value)
     }
 }
 

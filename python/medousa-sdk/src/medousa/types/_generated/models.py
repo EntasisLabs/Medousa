@@ -947,6 +947,56 @@ class IntegrationSecretSlot(Enum):
     auth_key = 'auth_key'
 
 
+class Kind3(Enum):
+    acknowledge = 'acknowledge'
+
+
+class WakeAuthority1(MedousaModel):
+    kind: Kind3
+
+
+class Kind4(Enum):
+    report = 'report'
+
+
+class WakeAuthority2(MedousaModel):
+    kind: Kind4
+
+
+class Kind5(Enum):
+    continue_bounded = 'continue_bounded'
+
+
+class WakeAuthority3(MedousaModel):
+    kind: Kind5
+    rounds: int = Field(..., ge=0)
+
+
+class Kind6(Enum):
+    execute = 'execute'
+
+
+class WakeAuthority4(MedousaModel):
+    kind: Kind6
+
+
+class WakeAuthority(RootModel[WakeAuthority1 | WakeAuthority2 | WakeAuthority3 | WakeAuthority4]):
+    root: WakeAuthority1 | WakeAuthority2 | WakeAuthority3 | WakeAuthority4
+
+
+class WakeSource(Enum):
+    human = 'human'
+    native_callback = 'native_callback'
+    terminal_callback = 'terminal_callback'
+    peer_terminal = 'peer_terminal'
+    agent_inbox = 'agent_inbox'
+    worker_result = 'worker_result'
+    checkpoint_resume = 'checkpoint_resume'
+    safety_review = 'safety_review'
+    process_completed = 'process_completed'
+    timed_out = 'timed_out'
+
+
 class ContextUsageLayer(MedousaModel):
     chars: int = Field(..., ge=0)
     id: str = Field(..., description='Stable machine id, e.g. `system_prompt`, `tool_definitions`.')
@@ -1338,7 +1388,7 @@ class ResourceRef(MedousaModel):
     kind: ResourceKind
 
 
-class Kind3(Enum):
+class Kind7(Enum):
     silent = 'silent'
 
 
@@ -1346,10 +1396,10 @@ class WorkContactPreference1(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind3
+    kind: Kind7
 
 
-class Kind4(Enum):
+class Kind8(Enum):
     return_to_origin = 'return_to_origin'
 
 
@@ -1357,10 +1407,10 @@ class WorkContactPreference2(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind4
+    kind: Kind8
 
 
-class Kind5(Enum):
+class Kind9(Enum):
     participant = 'participant'
 
 
@@ -1368,11 +1418,11 @@ class WorkContactPreference3(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind5
+    kind: Kind9
     participant: ResourceRef
 
 
-class Kind6(Enum):
+class Kind10(Enum):
     channel = 'channel'
 
 
@@ -1381,7 +1431,7 @@ class WorkContactPreference4(MedousaModel):
         extra='forbid',
     )
     channel: ResourceRef
-    kind: Kind6
+    kind: Kind10
 
 
 class WorkContactPreference(
@@ -1568,46 +1618,46 @@ class TurnArtifactRef(MedousaModel):
     role: str
 
 
-class Kind7(Enum):
+class Kind11(Enum):
     model_receipt = 'model_receipt'
 
 
 class TurnPart1(MedousaModel):
-    kind: Kind7
+    kind: Kind11
     model: str
     provider: str
 
 
-class Kind8(Enum):
+class Kind12(Enum):
     text = 'text'
 
 
 class TurnPart2(MedousaModel):
-    kind: Kind8
+    kind: Kind12
     markdown: str
     model_round: int | None = Field(None, ge=0)
     segment_id: str | None = None
 
 
-class Kind9(Enum):
+class Kind13(Enum):
     progress = 'progress'
 
 
 class TurnPart3(MedousaModel):
-    kind: Kind9
+    kind: Kind13
     markdown: str
 
 
-class Kind10(Enum):
+class Kind14(Enum):
     reasoning = 'reasoning'
 
 
 class TurnPart4(MedousaModel):
-    kind: Kind10
+    kind: Kind14
     markdown: str
 
 
-class Kind11(Enum):
+class Kind15(Enum):
     tool_run = 'tool_run'
 
 
@@ -1616,7 +1666,7 @@ class TurnPart5(MedousaModel):
     finished_at: AwareDatetime | None = None
     input_params: list[ToolInputParam] | None = None
     input_summary: str
-    kind: Kind11
+    kind: Kind15
     output_summary: str | None = None
     run_id: str
     started_at: AwareDatetime
@@ -1625,43 +1675,43 @@ class TurnPart5(MedousaModel):
     tool_round: int | None = Field(None, ge=0)
 
 
-class Kind12(Enum):
+class Kind16(Enum):
     handoff = 'handoff'
 
 
 class TurnPart6(MedousaModel):
     handoff_kind: str
-    kind: Kind12
+    kind: Kind16
     text: str
     work_id: str | None = None
 
 
-class Kind13(Enum):
+class Kind17(Enum):
     user_media = 'user_media'
 
 
 class TurnPart7(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind13
+    kind: Kind17
     label: str | None = None
     media_id: str
     mime: str
 
 
-class Kind14(Enum):
+class Kind18(Enum):
     user_drawing = 'user_drawing'
 
 
 class TurnPart8(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind14
+    kind: Kind18
     label: str | None = None
     media_id: str
     mime: str
     preview_media_id: str
 
 
-class Kind15(Enum):
+class Kind19(Enum):
     generated_media = 'generated_media'
 
 
@@ -1669,7 +1719,7 @@ class TurnPart9(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
     generation_id: str
     height_px: int | None = Field(None, ge=0)
-    kind: Kind15
+    kind: Kind19
     label: str
     media_id: str
     mime: str
@@ -1679,11 +1729,11 @@ class TurnPart9(MedousaModel):
     width_px: int | None = Field(None, ge=0)
 
 
-class Kind16(Enum):
+class Kind20(Enum):
     host_context = 'host_context'
 
 
-class Kind17(Enum):
+class Kind21(Enum):
     attachment_ref = 'attachment_ref'
 
 
@@ -1691,18 +1741,18 @@ class TurnPart11(MedousaModel):
     artifact_id: str
     byte_size: int | None = Field(None, ge=0)
     height_px: int | None = Field(None, ge=0)
-    kind: Kind17
+    kind: Kind21
     label: str
     mime: str
     presentation: str | None = None
 
 
-class Kind18(Enum):
+class Kind22(Enum):
     unknown = 'unknown'
 
 
 class TurnPart12(MedousaModel):
-    kind: Kind18
+    kind: Kind22
 
 
 class TurnSliceSummary(MedousaModel):
@@ -3201,48 +3251,48 @@ class WorldRecipe(MedousaModel):
     steps: list[WorldRecipeStep]
 
 
-class Kind19(Enum):
+class Kind23(Enum):
     text = 'text'
 
 
 class WorldRecipeRunInputValue1(MedousaModel):
-    kind: Kind19
+    kind: Kind23
     text: str
 
 
-class Kind20(Enum):
+class Kind24(Enum):
     selection = 'selection'
 
 
 class WorldRecipeRunInputValue2(MedousaModel):
-    kind: Kind20
+    kind: Kind24
     value: str
 
 
-class Kind21(Enum):
+class Kind25(Enum):
     key = 'key'
 
 
 class WorldRecipeRunInputValue3(MedousaModel):
     key: str
-    kind: Kind21
+    kind: Kind25
 
 
-class Kind22(Enum):
+class Kind26(Enum):
     scroll_delta = 'scroll_delta'
 
 
 class WorldRecipeRunInputValue4(MedousaModel):
     delta_y: int
-    kind: Kind22
+    kind: Kind26
 
 
-class Kind23(Enum):
+class Kind27(Enum):
     wait_duration = 'wait_duration'
 
 
 class WorldRecipeRunInputValue5(MedousaModel):
-    kind: Kind23
+    kind: Kind27
     milliseconds: int = Field(..., ge=0)
 
 
@@ -4891,6 +4941,17 @@ class WorkProviderRequestInput(MedousaModel):
     work_unit_id: str
 
 
+class WakeGrant(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    authority: WakeAuthority
+    open_gaps: list[str] | None = None
+    pending_work: list[str] | None = None
+    remaining_rounds: int | None = Field(None, ge=0)
+    source: WakeSource
+
+
 class LocalDeviceTelemetrySnapshot(MedousaModel):
     availability: LocalDeviceTelemetryAvailability
     backend: GpuBackend
@@ -5040,7 +5101,7 @@ class RuntimeConfigCommandSpec(
 
 class TurnPart10(MedousaModel):
     context: HostTurnContext
-    kind: Kind16
+    kind: Kind20
 
 
 class TurnPart(
@@ -5691,6 +5752,10 @@ class InteractiveTurnRequest(MedousaModel):
     voice_preset_id: str | None = Field(
         None,
         description='Composer voice stance — short appendix block (not a manuscript specialty).',
+    )
+    wake: WakeGrant | None = Field(
+        None,
+        description='Authority for a runtime-injected wake. Absent on a human turn, which executes under the ordinary grant. Present on callbacks, inbox, peer, resume, and process wakes; the runtime refuses tools outside it.',
     )
     worker_execution_target: ExecutionTargetSelection | None = Field(
         None,

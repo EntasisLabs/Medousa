@@ -54,7 +54,7 @@ pub use execution_boundary::{
 };
 pub use loop_gate::{
     DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS, TOOL_ROUND_LIMIT_ENV, ToolLoopCompletionGate,
-    ToolLoopCompletionGateConfig, collect_tool_names, tool_round_limit_enabled,
+    ToolLoopCompletionGateConfig, WakeLoopHooks, collect_tool_names, tool_round_limit_enabled,
 };
 pub use ports::{
     DelegationControlPort, HostHandoffPort, HydratedToolObservation, ModelResponseCompleted,

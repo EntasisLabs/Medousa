@@ -519,7 +519,13 @@ impl PairingService {
             .as_ref()
             .is_none_or(|session| session.used || session.expires_at <= Utc::now());
         if needs_refresh {
-            *guard = Some(self.build_qr_session(None)?);
+            // A used or expired invite is replaced in place. The replacement
+            // keeps the owner the previous invite was bound to; dropping it
+            // stored phone pairings with profile_id = None.
+            let bound = guard
+                .as_ref()
+                .and_then(|session| session.bound_profile_id.clone());
+            *guard = Some(self.build_qr_session(bound)?);
         }
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
@@ -1632,6 +1638,110 @@ mod tests {
             &signature,
         )
         .expect("QR signature verifies with embedded key");
+    }
+
+    #[tokio::test]
+    async fn owner_bound_invite_keeps_profile_through_refresh_and_accept() {
+        let service = test_service();
+        let rotated = service
+            .rotate_qr_for_profile(Some("user:default"))
+            .await
+            .expect("rotate");
+        assert_eq!(
+            extract_query_param(&rotated.url, "p").as_deref(),
+            Some("user:default")
+        );
+
+        let fetched = service.current_qr().await.expect("get qr");
+        assert_eq!(
+            extract_query_param(&fetched.url, "p").as_deref(),
+            Some("user:default")
+        );
+        assert_eq!(
+            extract_query_param(&rotated.url, "t"),
+            extract_query_param(&fetched.url, "t")
+        );
+        let public_key = extract_query_param(&fetched.url, "u").expect("public key");
+        let address = extract_query_param(&fetched.url, "a").expect("address");
+        let device_id = extract_query_param(&fetched.url, "d").expect("device id");
+        let token = extract_query_param(&fetched.url, "t").expect("token");
+        let signature = extract_query_param(&fetched.url, "s").expect("signature");
+        crate::pairing::crypto::verify_qr_url_signature_with_profile(
+            &parse_verifying_key(&public_key).expect("verifying key"),
+            &address,
+            &device_id,
+            &token,
+            Some("user:default"),
+            &signature,
+        )
+        .expect("owner-bound QR signature");
+
+        {
+            let mut guard = service.active_qr.write().await;
+            guard.as_mut().expect("session").expires_at = Utc::now() - chrono::Duration::seconds(5);
+        }
+        let refreshed = service.current_qr().await.expect("refreshed qr");
+        assert_ne!(
+            extract_query_param(&fetched.url, "t"),
+            extract_query_param(&refreshed.url, "t")
+        );
+        assert_eq!(
+            extract_query_param(&refreshed.url, "p").as_deref(),
+            Some("user:default")
+        );
+
+        let token = extract_query_param(&refreshed.url, "t").expect("token");
+        let phone = SigningKey::generate(&mut OsRng);
+        let phone_id = format!("phone-owner-{}", Uuid::new_v4());
+        let init = service
+            .pair_init(
+                PairInitRequest {
+                    qr_token: Some(token),
+                    short_code: None,
+                    phone_id: phone_id.clone(),
+                    phone_name: "Owner Phone".to_string(),
+                    public_key: verifying_key_to_b64(&phone.verifying_key()),
+                    role: None,
+                },
+                "127.0.0.1".parse().expect("source ip"),
+            )
+            .await
+            .expect("init");
+        assert_eq!(init.status, "challenge");
+
+        let after_use = service.current_qr().await.expect("qr after use");
+        assert_eq!(
+            extract_query_param(&after_use.url, "p").as_deref(),
+            Some("user:default")
+        );
+        assert_ne!(
+            extract_query_param(&refreshed.url, "t"),
+            extract_query_param(&after_use.url, "t")
+        );
+
+        let signed_nonce =
+            sign_message(&phone, init.server_nonce.as_deref().expect("server nonce"));
+        let mut phone_nonce = [0u8; 32];
+        OsRng.fill_bytes(&mut phone_nonce);
+        let verify = service
+            .pair_verify(
+                PairVerifyRequest {
+                    session_id: init.session_id.expect("session"),
+                    signed_nonce,
+                    phone_nonce: base64url_encode(&phone_nonce),
+                },
+                "127.0.0.1".parse().expect("source ip"),
+            )
+            .await
+            .expect("verify");
+        assert_eq!(verify.status, "paired");
+        let record = service
+            .list_paired_devices()
+            .expect("paired devices")
+            .into_iter()
+            .find(|record| record.phone_id == phone_id)
+            .expect("paired phone");
+        assert_eq!(record.profile_id.as_deref(), Some("user:default"));
     }
 
     #[tokio::test]

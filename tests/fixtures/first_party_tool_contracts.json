@@ -5740,6 +5740,24 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_process_status",
+      "description": "Read one supervised background process. The first check returns status. Further checks are refused while a completion wake is already registered; finish the turn and wait for process_completed or timed_out.",
+      "input_schema": {
+        "properties": {
+          "handle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": []
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_runtime_mutate",
       "description": "Mutate durable runtime work. SSH: discover granted targets with runtime query ssh.targets; use ssh.run then poll ssh.execution, reusing request_key on retries. ssh.open_terminal/ssh.terminal_input provide interactive access. Do not replay changes with an unknown remote outcome. Native undertaking lifecycle: work.prepare_merge, work.approve_project, work.apply_project, work.request_project_changes, work.discard_project. First inspect exact sealed evidence with runtime query work.project_review and work.project_review_file. Use existing user intent; do not repeatedly ask for approval already given. Callbacks can continue the owner lifecycle, but delegated executors cannot approve or integrate work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
@@ -6020,11 +6038,33 @@
             },
             "type": "array"
           },
+          "background": {
+            "description": "Return a handle immediately and wake this session when the process exits.",
+            "type": "boolean"
+          },
+          "background_after_ms": {
+            "description": "If the command is still running after this many milliseconds, detach it. Explicit timeout_ms keeps the foreground kill behavior.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "command": {
             "description": "Shell command string (wrapped in sh -c / cmd /C)",
             "type": "string"
           },
           "cwd": {
+            "type": "string"
+          },
+          "deadline_ms": {
+            "description": "Optional deadline for a detached process. Wakes the session with timed_out.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "foreground": {
+            "description": "Stay in the foreground even when auto-background is configured.",
+            "type": "boolean"
+          },
+          "home_session": {
+            "description": "Coordinator session that should receive a remote process wake.",
             "type": "string"
           },
           "network": {

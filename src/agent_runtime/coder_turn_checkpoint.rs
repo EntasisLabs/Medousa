@@ -149,7 +149,24 @@ impl ActiveTurnCheckpoint {
                 self.invocations.clone()
             },
             scratch: self.scratch.clone(),
+            saved_human_prompt: self.authoritative_prompt.clone(),
+            resume_round_cap: Some(checkpoint_resume_round_cap(&self.counters, self.status)),
         }
+    }
+}
+
+fn checkpoint_resume_round_cap(
+    counters: &ActiveTurnCounters,
+    status: ActiveTurnCheckpointStatus,
+) -> u32 {
+    let remaining = counters
+        .max_tool_rounds
+        .saturating_sub(counters.model_rounds_executed);
+    if remaining == 0 || matches!(status, ActiveTurnCheckpointStatus::BudgetExhausted) {
+        // Reporting the saved work is allowed. A fresh full budget is not.
+        2
+    } else {
+        remaining as u32
     }
 }
 

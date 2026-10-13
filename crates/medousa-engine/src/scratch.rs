@@ -65,6 +65,18 @@ impl TurnScratchpad {
         self.open_gaps = gaps.to_vec();
     }
 
+    /// Union durable gaps into the scratchpad. Known work stays visible when a
+    /// later writer replaces the checklist with something narrower.
+    pub fn merge_open_gaps(&mut self, gaps: &[String]) {
+        for gap in gaps {
+            let gap = gap.trim();
+            if gap.is_empty() || self.open_gaps.iter().any(|existing| existing == gap) {
+                continue;
+            }
+            self.open_gaps.push(gap.to_string());
+        }
+    }
+
     pub fn push_working_note(&mut self, note: impl Into<String>) {
         let note = truncate_field(&note.into(), WORKING_NOTE_MAX_CHARS);
         if note.trim().is_empty() {

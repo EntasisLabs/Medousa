@@ -115,6 +115,12 @@ pub struct ActiveTurnResumeState {
     pub transcript: ActiveTurnTranscript,
     pub invocations: Vec<CheckpointToolInvocation>,
     pub scratch: TurnScratchpad,
+    /// Human sentence saved with the checkpoint. A resume that repeats it is
+    /// not a new goal.
+    pub saved_human_prompt: String,
+    /// Rounds still authorized after this checkpoint. `None` keeps the lane's
+    /// ordinary budget (a genuinely new human message).
+    pub resume_round_cap: Option<u32>,
 }
 
 #[derive(Debug, Clone)]

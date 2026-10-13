@@ -1,5 +1,6 @@
 use super::process::{OUTPUT_LIMIT, argv, drain, validate};
 use super::*;
+use crate::request_principal::{RequestPrincipal, TransportClass};
 use tempfile::TempDir;
 
 fn config() -> TargetConfig {
@@ -41,6 +42,87 @@ async fn save(host: &SshHost) -> String {
         .as_str()
         .unwrap()
         .into()
+}
+
+#[test]
+fn personal_portal_without_a_profile_can_use_ssh() {
+    let owner = super::owner_in_mode(&RequestPrincipal::portal_for_test(None, true), None, false)
+        .expect("personal portal");
+    assert_eq!(
+        owner,
+        crate::user_profiles::resolve_workshop_identity_user_id()
+    );
+}
+
+#[test]
+fn shared_portal_without_a_profile_cannot_use_ssh() {
+    let error = super::owner_in_mode(
+        &RequestPrincipal::portal_for_test(None, true),
+        Some("user:admitted"),
+        true,
+    )
+    .expect_err("shared portal");
+    assert!(
+        error
+            .to_string()
+            .contains("SSH requires a bound owner identity"),
+        "{error}"
+    );
+}
+
+#[test]
+fn unbound_non_portal_principals_cannot_use_ssh() {
+    let member = super::owner_in_mode(&RequestPrincipal::portal_for_test(None, false), None, false);
+    assert!(
+        member
+            .unwrap_err()
+            .to_string()
+            .contains("bound owner identity")
+    );
+    for principal in [
+        RequestPrincipal::anonymous(TransportClass::Direct),
+        RequestPrincipal::peer_for_test(None),
+        RequestPrincipal::external_agent_without_profile_for_test(),
+    ] {
+        assert!(
+            super::owner_in_mode(&principal, None, false).is_err(),
+            "{:?} used SSH",
+            principal.kind()
+        );
+    }
+}
+
+#[test]
+fn a_bound_portal_profile_owns_ssh() {
+    let owner = super::owner_in_mode(
+        &RequestPrincipal::portal_for_test(Some("user:seat"), true),
+        None,
+        false,
+    )
+    .expect("bound portal");
+    assert_eq!(owner, "user:seat");
+}
+
+#[test]
+fn local_app_ssh_owner_stays_the_admitted_turn_identity() {
+    let owner = super::owner_in_mode(
+        &RequestPrincipal::local_app(std::sync::Arc::from("home-local"), TransportClass::Loopback),
+        Some("user:admitted"),
+        false,
+    )
+    .expect("local app");
+    assert_eq!(owner, "user:admitted");
+    assert!(
+        super::owner_in_mode(
+            &RequestPrincipal::local_app(
+                std::sync::Arc::from("home-local"),
+                TransportClass::Loopback,
+            ),
+            None,
+            false,
+        )
+        .is_err()
+    );
 }
 
 #[tokio::test]

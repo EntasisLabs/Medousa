@@ -64,6 +64,18 @@ pub struct ToolLoopCompletionGate<'a> {
     pub active_turn_checkpoint_sink: Option<Arc<dyn ActiveTurnCheckpointSink>>,
     /// Exact safe-boundary state consumed once when this loop starts.
     pub active_turn_resume: Option<ActiveTurnResumeState>,
+    /// Wake-authority round cap, durable open gaps, and material-change notes.
+    /// Absent on lanes that have not installed a wake.
+    pub wake_hooks: Option<std::sync::Arc<WakeLoopHooks>>,
+}
+
+/// Host callbacks the foreground loop uses to describe a wake without owning
+/// daemon stores. `round_cap` is unused by the loop; remaining rounds stay in
+/// the wake prompt. The compatibility tool-round limit is a separate switch.
+pub struct WakeLoopHooks {
+    pub round_cap: Option<usize>,
+    pub open_gaps: std::sync::Arc<dyn Fn() -> Vec<String> + Send + Sync>,
+    pub on_tool_success: std::sync::Arc<dyn Fn(&str) + Send + Sync>,
 }
 
 /// Owned, immutable context shared by primary, continuation, and retry loop
@@ -83,6 +95,7 @@ pub struct ToolLoopCompletionGateConfig {
     pub cancel_poll_work_id: Option<String>,
     pub steer_poll_work_id: Option<String>,
     pub round_context_provider: Option<Arc<dyn ToolRoundContextProvider>>,
+    pub wake_hooks: Option<Arc<WakeLoopHooks>>,
 }
 
 impl ToolLoopCompletionGateConfig {
@@ -119,6 +132,7 @@ impl ToolLoopCompletionGateConfig {
             round_context_provider: self.round_context_provider.clone(),
             active_turn_checkpoint_sink,
             active_turn_resume,
+            wake_hooks: self.wake_hooks.clone(),
         }
     }
 }
@@ -154,6 +168,7 @@ impl ToolLoopCompletionGate<'_> {
             round_context_provider: None,
             active_turn_checkpoint_sink: None,
             active_turn_resume: None,
+            wake_hooks: None,
         }
     }
 }

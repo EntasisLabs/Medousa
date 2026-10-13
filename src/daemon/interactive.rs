@@ -96,6 +96,7 @@ pub fn build_interactive_request_from_ticket(
         media_refs: request.media_refs.clone(),
         liquid_interactions: request.liquid_interactions.clone(),
         identity_user_id: request.identity_user_id.clone(),
+        wake: None,
     }
 }
 
