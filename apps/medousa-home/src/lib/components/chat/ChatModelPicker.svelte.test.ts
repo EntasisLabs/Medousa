@@ -2,10 +2,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushSync, mount, tick, unmount } from "svelte";
 import ChatModelPicker from "./ChatModelPicker.svelte";
+import { SessionModelSelections } from "$lib/chat/sessionModelSelection.svelte";
+import { defaultStageRouting } from "$lib/utils/stageRouting";
 
-const api = vi.hoisted(() => ({ status: vi.fn(), models: vi.fn(), select: vi.fn() }));
+const api = vi.hoisted(() => ({ status: vi.fn(), models: vi.fn(), select: vi.fn(), selection: vi.fn() }));
 vi.mock("$lib/chat/composerModel", () => ({
-  composerModel: () => ({ provider: "openai", model: "gpt-6-sol" }),
+  composerModel: api.selection,
   selectComposerModel: api.select,
 }));
 vi.mock("$lib/stores/runtime.svelte", () => ({ runtime: { savingControls: false } }));
@@ -46,6 +48,14 @@ async function openAccount() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  const store = new SessionModelSelections();
+  const scope = { sessionId: "picker-chat", workshopScopeId: "picker-workshop" };
+  localStorage.removeItem(`medousa-home-chat-model:${JSON.stringify([scope.workshopScopeId, scope.sessionId])}`);
+  const defaults = { provider: "openai", model: "gpt-6-sol", stageRouting: defaultStageRouting("openai", "gpt-6-sol") };
+  api.selection.mockImplementation(() => store.resolve({ ...scope, messages: [] }, defaults));
+  api.select.mockImplementation((provider: string, model: string) => store.set(scope, {
+    provider, model, stageRouting: defaultStageRouting(provider, model),
+  }));
   api.status.mockResolvedValue(connected);
   api.models.mockResolvedValue({ models: ["gpt-6.1-sol"], display_names: { "gpt-6.1-sol": "GPT-6.1 Sol" } });
   HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -65,6 +75,24 @@ it("loads an existing workshop sign-in and selects its account model from an API
   expect(model?.textContent).toContain("GPT-6.1 Sol");
   model!.click();
   expect(api.select).toHaveBeenCalledWith("openai-codex", "gpt-6.1-sol");
+});
+
+it("updates the composer label on the first selection in a chat without a saved preference", async () => {
+  component = mount(ChatModelPicker, { target: document.body });
+  await settle();
+  await openAccount();
+  document.querySelector<HTMLButtonElement>('[data-model-key="openai-codex:gpt-6.1-sol"]')!.click();
+  await settle();
+  expect(document.querySelector(".composer-model-trigger")?.textContent).toContain("GPT-6.1 Sol");
+  document.querySelector<HTMLButtonElement>(".composer-model-trigger")!.click();
+  await settle();
+  document.querySelector<HTMLButtonElement>('[data-provider-id="openai"]')!.click();
+  await settle();
+  document.querySelector<HTMLButtonElement>('[data-model-key="openai:gpt-6-sol"]')!.click();
+  await settle();
+  expect(api.select).toHaveBeenLastCalledWith("openai", "gpt-6-sol");
+  expect(api.selection()).toMatchObject({ provider: "openai", model: "gpt-6-sol" });
+  expect(document.querySelector(".composer-model-trigger")?.textContent).toContain("GPT-6 Sol");
 });
 
 it("keeps the ChatGPT provider reachable before its model query finishes", async () => {

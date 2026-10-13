@@ -51,7 +51,10 @@ export class SessionModelSelections {
 
   get(scope: SessionScope): ChatModelSelection | null {
     const key = storageKey(scope);
-    if (Object.hasOwn(this.selections, key)) return this.selections[key];
+    // Read the missing key too: Svelte must subscribe before the first pick.
+    // Object.hasOwn does not track additions to this reactive record.
+    const selection = this.selections[key];
+    if (selection !== undefined) return selection;
     try {
       return parseSelection(localStorage.getItem(key));
     } catch {
