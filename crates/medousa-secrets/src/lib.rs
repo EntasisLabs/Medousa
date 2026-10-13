@@ -4,7 +4,8 @@
 //! - `com.entasislabs.medousa.secrets.daemon`
 //! - `com.entasislabs.medousa.secrets.client`
 //!
-//! Keyring accounts are the typed `v1/…` path. File fallback names use the
+//! API keys and OAuth credentials use the keyring. Local runtime and pairing
+//! credentials use owner-only files. Keyring accounts are the typed `v1/…` path. File names use the
 //! H02 opaque `storage_key()` — never a nested `v1/` directory tree.
 //! Hermetic tests (`MEDOUSA_TEST_HERMETIC=1`) refuse the host keyring.
 
@@ -107,6 +108,22 @@ pub struct SecretRead {
 }
 
 pub fn load_daemon_secret(data_dir: &Path, path: &DaemonSecretPath) -> Result<Option<SecretRead>> {
+    if daemon_secret_uses_private_file(path) {
+        if matches!(
+            path,
+            DaemonSecretPath::LocalAuth { .. } | DaemonSecretPath::McpPolicy { .. }
+        ) {
+            // Generated local capabilities can be provisioned into files by
+            // their owning service; never unlock Keychain to recover them.
+            return load_private_secret_with(data_dir, path.storage_key().as_str(), || Ok(None));
+        }
+        return load_private_secret(
+            data_dir,
+            DAEMON_SERVICE,
+            &path.account(),
+            path.storage_key().as_str(),
+        );
+    }
     load_secret(
         data_dir,
         DAEMON_SERVICE,
@@ -120,6 +137,9 @@ pub fn save_daemon_secret(
     path: &DaemonSecretPath,
     value: &str,
 ) -> Result<SecretBackend> {
+    if daemon_secret_uses_private_file(path) {
+        return save_private_secret(data_dir, path.storage_key().as_str(), value);
+    }
     save_secret(
         data_dir,
         DAEMON_SERVICE,
@@ -130,6 +150,9 @@ pub fn save_daemon_secret(
 }
 
 pub fn delete_daemon_secret(data_dir: &Path, path: &DaemonSecretPath) -> Result<()> {
+    if daemon_secret_uses_private_file(path) {
+        return delete_private_secret(data_dir, path.storage_key().as_str());
+    }
     delete_secret(
         data_dir,
         DAEMON_SERVICE,
@@ -143,7 +166,7 @@ pub fn daemon_secret_present(data_dir: &Path, path: &DaemonSecretPath) -> Result
 }
 
 pub fn load_client_secret(data_dir: &Path, path: &ClientSecretPath) -> Result<Option<SecretRead>> {
-    load_secret(
+    load_private_secret(
         data_dir,
         CLIENT_SERVICE,
         &path.account(),
@@ -156,22 +179,81 @@ pub fn save_client_secret(
     path: &ClientSecretPath,
     value: &str,
 ) -> Result<SecretBackend> {
-    save_secret(
-        data_dir,
-        CLIENT_SERVICE,
-        &path.account(),
-        path.storage_key().as_str(),
-        value,
-    )
+    save_private_secret(data_dir, path.storage_key().as_str(), value)
 }
 
 pub fn delete_client_secret(data_dir: &Path, path: &ClientSecretPath) -> Result<()> {
-    delete_secret(
-        data_dir,
-        CLIENT_SERVICE,
-        &path.account(),
-        path.storage_key().as_str(),
+    delete_private_secret(data_dir, path.storage_key().as_str())
+}
+
+fn daemon_secret_uses_private_file(path: &DaemonSecretPath) -> bool {
+    matches!(
+        path,
+        DaemonSecretPath::LocalAuth { .. }
+            | DaemonSecretPath::McpPolicy { .. }
+            | DaemonSecretPath::SurrealPassword { .. }
     )
+}
+
+fn private_secret_marker(storage_key: &str) -> String {
+    format!("private-{storage_key}")
+}
+
+fn load_private_secret(
+    data_dir: &Path,
+    service: &str,
+    account: &str,
+    storage_key: &str,
+) -> Result<Option<SecretRead>> {
+    load_private_secret_with(data_dir, storage_key, || read_keyring(service, account))
+}
+
+fn load_private_secret_with(
+    data_dir: &Path,
+    storage_key: &str,
+    import: impl FnOnce() -> Result<Option<String>>,
+) -> Result<Option<SecretRead>> {
+    if let Some(value) = load_legacy_file(&secret_file_path(data_dir, storage_key))? {
+        mark_secret_migration_completed(data_dir, &private_secret_marker(storage_key))?;
+        return Ok(Some(SecretRead {
+            value,
+            backend: SecretBackend::FileFallback,
+        }));
+    }
+    // A deletion or completed migration must never resurrect a legacy Keychain token.
+    if secret_migration_completed(data_dir, &private_secret_marker(storage_key))? {
+        return Ok(None);
+    }
+    let Some(mut value) = import()? else {
+        mark_secret_migration_completed(data_dir, &private_secret_marker(storage_key))?;
+        return Ok(None);
+    };
+    let saved = save_private_secret(data_dir, storage_key, &value);
+    if let Err(error) = saved {
+        value.zeroize();
+        return Err(error);
+    }
+    Ok(Some(SecretRead {
+        value,
+        backend: SecretBackend::FileFallback,
+    }))
+}
+
+fn save_private_secret(data_dir: &Path, storage_key: &str, value: &str) -> Result<SecretBackend> {
+    let value = value.trim();
+    if value.is_empty() {
+        bail!("secret value must not be empty");
+    }
+    create_private_dir(&data_dir.join(SECRETS_DIR))?;
+    replace_private_file(&secret_file_path(data_dir, storage_key), value.as_bytes())?;
+    mark_secret_migration_completed(data_dir, &private_secret_marker(storage_key))?;
+    Ok(SecretBackend::FileFallback)
+}
+
+fn delete_private_secret(data_dir: &Path, storage_key: &str) -> Result<()> {
+    mark_secret_migration_completed(data_dir, &private_secret_marker(storage_key))?;
+    // Old Keychain copies are deliberately not touched by background operations.
+    delete_legacy_file(&secret_file_path(data_dir, storage_key))
 }
 
 /// Prove that the platform keyring can write, read, and delete a client-owned
@@ -426,7 +508,13 @@ fn create_private_dir(path: &Path) -> Result<()> {
     fs::create_dir_all(path).with_context(|| format!("create {}", path.display()))?;
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if let Some(parent) = path.parent() {
+            let owner = fs::metadata(parent)?.uid();
+            if fs::metadata(path)?.uid() != owner {
+                std::os::unix::fs::chown(path, Some(owner), None)?;
+            }
+        }
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))
             .with_context(|| format!("restrict {}", path.display()))?;
     }
@@ -458,6 +546,16 @@ fn create_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = options
         .open(path)
         .with_context(|| format!("create {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Some(parent) = path.parent() {
+            let owner = fs::metadata(parent)?.uid();
+            if file.metadata()?.uid() != owner {
+                std::os::unix::fs::chown(path, Some(owner), None)?;
+            }
+        }
+    }
     file.write_all(bytes)
         .with_context(|| format!("write {}", path.display()))?;
     file.sync_all()
@@ -474,6 +572,150 @@ pub fn zeroize_string(value: &mut String) {
 mod tests {
     use super::*;
     use medousa_types::secrets::{ConnectionId, IntegrationSecretSlot};
+
+    #[test]
+    fn private_credentials_import_once_and_do_not_resurrect_after_deletion() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = "test-local-token";
+        let first = load_private_secret_with(dir.path(), key, || Ok(Some("original-token".into())))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.value, "original-token");
+        let next =
+            load_private_secret_with(dir.path(), key, || panic!("must not unlock Keychain again"))
+                .unwrap()
+                .unwrap();
+        assert_eq!(next.value, first.value);
+        save_private_secret(dir.path(), key, "rotated-token").unwrap();
+        assert_eq!(
+            load_private_secret_with(dir.path(), key, || panic!("rotation is file-only"))
+                .unwrap()
+                .unwrap()
+                .value,
+            "rotated-token"
+        );
+        delete_private_secret(dir.path(), key).unwrap();
+        assert!(
+            load_private_secret_with(dir.path(), key, || panic!(
+                "deleted token must not be imported"
+            ))
+            .unwrap()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn missing_private_credentials_do_not_repeat_keychain_import() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            load_private_secret_with(dir.path(), "absent-token", || Ok(None))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            load_private_secret_with(dir.path(), "absent-token", || panic!(
+                "absence was already migrated"
+            ))
+            .unwrap()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn external_credentials_keep_keyring_storage_and_local_credentials_use_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let installation_id = ensure_installation_id(dir.path()).unwrap();
+        for path in [
+            DaemonSecretPath::McpPolicy {
+                installation_id: installation_id.clone(),
+            },
+            DaemonSecretPath::SurrealPassword {
+                installation_id: installation_id.clone(),
+            },
+            DaemonSecretPath::LocalAuth {
+                installation_id: installation_id.clone(),
+                client_kind: medousa_types::secrets::LocalClientKind::HomeLocal,
+                client_id: "test-client".into(),
+            },
+        ] {
+            assert!(daemon_secret_uses_private_file(&path));
+            assert_eq!(
+                save_daemon_secret(dir.path(), &path, "local-token").unwrap(),
+                SecretBackend::FileFallback
+            );
+            assert_eq!(
+                load_daemon_secret(dir.path(), &path)
+                    .unwrap()
+                    .unwrap()
+                    .value,
+                "local-token"
+            );
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(
+                    fs::metadata(secret_file_path(dir.path(), path.storage_key().as_str()))
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o600
+                );
+                assert_eq!(
+                    fs::metadata(dir.path().join(SECRETS_DIR))
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o700
+                );
+            }
+        }
+        for slot in [
+            IntegrationSecretSlot::ApiKey,
+            IntegrationSecretSlot::OauthBundle,
+            IntegrationSecretSlot::BotToken,
+            IntegrationSecretSlot::AppToken,
+            IntegrationSecretSlot::AuthKey,
+        ] {
+            assert!(!daemon_secret_uses_private_file(
+                &DaemonSecretPath::Integration {
+                    installation_id: installation_id.clone(),
+                    connection_id: ConnectionId::parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+                        .unwrap(),
+                    slot
+                }
+            ));
+        }
+        let server_id = medousa_types::McpServerId::parse("test-server").unwrap();
+        assert!(!daemon_secret_uses_private_file(
+            &DaemonSecretPath::McpOAuth {
+                installation_id: installation_id.clone(),
+                server_id: server_id.clone()
+            }
+        ));
+        assert!(!daemon_secret_uses_private_file(
+            &DaemonSecretPath::McpBearer {
+                installation_id,
+                server_id
+            }
+        ));
+        let pairing = ClientSecretPath::PairingToken {
+            remote_id: medousa_types::WorkshopScopeId::parse("test-workshop").unwrap(),
+            session_id: uuid::Uuid::new_v4().to_string(),
+        };
+        assert_eq!(
+            save_client_secret(dir.path(), &pairing, "pairing-token").unwrap(),
+            SecretBackend::FileFallback
+        );
+        assert_eq!(
+            load_client_secret(dir.path(), &pairing)
+                .unwrap()
+                .unwrap()
+                .value,
+            "pairing-token"
+        );
+    }
 
     #[cfg(target_os = "linux")]
     fn unavailable_secret_service_error() -> anyhow::Error {

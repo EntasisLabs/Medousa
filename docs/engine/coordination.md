@@ -116,6 +116,11 @@ policy but waits for the existing native approval/start flow. The legacy
 `cognition_peer_propose` and portable remote `cognition_peer_delegate` contracts
 remain available; legacy proposals are not silently upgraded into handoffs.
 
+Expired or revoked Coder execution authority blocks further workspace work,
+but does not block `turn.finish`, `turn.checkpoint`, `turn.request_input`, or
+`turn.update_user`. These controls remain available to report a blocker and
+hand the result back without repeatedly retrying rejected workspace tools.
+
 Acceptance and verified terminal receipts are durable native events. The runtime
 serializes callbacks with other callbacks targeting the sender session and
 waits while an interactive turn is active. If completion overtakes acceptance,

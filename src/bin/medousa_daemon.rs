@@ -401,7 +401,7 @@ async fn start_daemon() -> Result<()> {
     tracing::info!(requested = %addr, bound = %bound_addr, "acquired bind address, initializing runtime");
     // In-process tool proxies dial the API over loopback; point them at the
     // port we actually bound rather than the compiled-in default.
-    medousa::daemon_self_url::init_daemon_self_base_url(bound_addr);
+    medousa::daemon_self_url::init_daemon_self_base_url(bound_addr, &local_credentials)?;
 
     let webhook_client = heartbeat_notify
         .webhook_url

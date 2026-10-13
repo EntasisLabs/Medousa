@@ -29,10 +29,13 @@ Declared `/v1` failures use JSON `ApiErrorEnvelope` (`schema_version`, `code`,
 wrapped into the same envelope. SSE and binary bodies are left unchanged.
 
 Medousa, `medousa`, and `medousa tui` provision and load independent
-`home-local`, `medousa-cli`, and `medousa-tui` credentials without exposing the
+`home-local`, `medousa-cli`, and `medousa-tui` credentials in owner-only files without exposing the
 secrets to webview state or command-line arguments. External integrations must
 pair, retain the issued bearer in an OS secret store, and configure their SDK
-transport with it.
+transport with it. Existing private mirrors preserve their local token;
+Keychain-only local tokens are reissued at startup with the same credential
+ID and a newer generation, without unlocking Keychain. Internal daemon calls use a
+separate process-owned bearer held in memory, including Coder shell calls.
 
 Anonymous access is limited to constant `/health` liveness, the bounded
 `/pair/init` + `/pair/verify` ceremony while an operator pairing window is

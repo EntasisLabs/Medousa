@@ -35,19 +35,6 @@ pub fn authorization_header(base_url: &str, credential_name: &str) -> Result<Opt
     authorization_header_from_data_dir(base_url, credential_name, &crate::paths::medousa_data_dir())
 }
 
-/// Return a bearer for an endpoint already proven to belong to this daemon.
-///
-/// Unlike [`authorization_header`], this deliberately does not classify the
-/// URL. Callers must establish endpoint ownership out of band; today that is
-/// limited to `daemon_self_url`, whose live address is recorded from the
-/// daemon's bound listener.
-pub(crate) fn trusted_self_authorization_header(credential_name: &str) -> Result<HeaderValue> {
-    trusted_self_authorization_header_from_data_dir(
-        credential_name,
-        &crate::paths::medousa_data_dir(),
-    )
-}
-
 fn authorization_header_from_data_dir(
     base_url: &str,
     credential_name: &str,

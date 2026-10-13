@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use medousa_secrets::{
-    delete_client_secret, delete_legacy_file, delete_legacy_keyring, load_client_secret,
-    load_legacy_file, load_legacy_keyring, save_client_secret,
+    delete_client_secret, delete_legacy_file, load_client_secret, load_legacy_file,
+    load_legacy_keyring, mark_secret_migration_completed, save_client_secret,
+    secret_migration_completed,
 };
 use medousa_types::authority_id::{PairingDeviceId, WorkshopScopeId};
 use medousa_types::secrets::ClientSecretPath;
@@ -1199,12 +1200,16 @@ fn store_session_token(
 ) -> Result<(), String> {
     let path = pairing_token_path(workshop_device_id, pairing_id)?;
     save_client_secret(&medousa_data_dir(), &path, token).map_err(|err| err.to_string())?;
+    mark_secret_migration_completed(&medousa_data_dir(), &pairing_private_marker(&path))
+        .map_err(|err| err.to_string())?;
     delete_legacy_session_tokens(workshop_device_id);
     Ok(())
 }
 
 fn delete_session_token(workshop_device_id: &str, pairing_id: &str) {
     if let Ok(path) = pairing_token_path(workshop_device_id, pairing_id) {
+        let _ =
+            mark_secret_migration_completed(&medousa_data_dir(), &pairing_private_marker(&path));
         let _ = delete_client_secret(&medousa_data_dir(), &path);
     }
     delete_legacy_session_tokens(workshop_device_id);
@@ -1214,17 +1219,11 @@ fn delete_legacy_session_tokens(workshop_device_id: &str) {
     let Ok(device) = PairingDeviceId::parse(workshop_device_id) else {
         return;
     };
-    let account = session_token_account(&device);
-    let _ = delete_legacy_keyring(SESSION_TOKEN_SERVICE, &account);
+    // Routine refresh/disconnect must not unlock old Keychain items to delete them.
     let _ = delete_legacy_file(&session_token_file_path(&device));
-    let _ = delete_legacy_keyring(
-        SESSION_TOKEN_SERVICE,
-        &format!("session_token.{}", device.as_str()),
-    );
     if let Some(path) = legacy_session_token_file_path(device.as_str()) {
         let _ = delete_legacy_file(&path);
     }
-    let _ = delete_legacy_keyring(SESSION_TOKEN_SERVICE, LEGACY_SESSION_TOKEN_ACCOUNT);
     let _ = delete_legacy_file(
         &medousa_data_dir()
             .join("secrets")
@@ -1238,9 +1237,11 @@ pub fn remove_workshop_credentials(
 ) -> Result<(), String> {
     let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id)?;
     let credentials = read_credentials_for_workshop(workshop_id);
-    let device_id = workshop_device_id
-        .map(str::to_string)
-        .or_else(|| credentials.as_ref().map(|file| file.workshop_device_id.clone()));
+    let device_id = workshop_device_id.map(str::to_string).or_else(|| {
+        credentials
+            .as_ref()
+            .map(|file| file.workshop_device_id.clone())
+    });
     let pairing_id = credentials.map(|file| file.pairing_id);
     if path.exists() {
         fs::remove_file(&path).map_err(|err| err.to_string())?;
@@ -1266,14 +1267,30 @@ pub fn remove_workshop_credentials(
 fn read_session_token(workshop_device_id: &str, pairing_id: &str) -> Option<String> {
     let path = pairing_token_path(workshop_device_id, pairing_id).ok()?;
     let data_dir = medousa_data_dir();
-    if let Ok(Some(read)) = load_client_secret(&data_dir, &path) {
-        return Some(read.value);
+    match load_client_secret(&data_dir, &path) {
+        Ok(Some(read)) => {
+            mark_secret_migration_completed(&data_dir, &pairing_private_marker(&path)).ok()?;
+            return Some(read.value);
+        }
+        Err(_) => return None,
+        Ok(None) => {}
+    }
+    if secret_migration_completed(&data_dir, &pairing_private_marker(&path)).ok()? {
+        return None;
     }
 
     let legacy = read_legacy_session_token_for_device(workshop_device_id)
-        .or_else(read_legacy_global_session_token)?;
-    let _ = store_session_token(&legacy, workshop_device_id, pairing_id);
-    Some(legacy)
+        .or_else(read_legacy_global_session_token);
+    if let Some(legacy) = legacy {
+        store_session_token(&legacy, workshop_device_id, pairing_id).ok()?;
+        return Some(legacy);
+    }
+    mark_secret_migration_completed(&data_dir, &pairing_private_marker(&path)).ok()?;
+    None
+}
+
+fn pairing_private_marker(path: &ClientSecretPath) -> String {
+    format!("pairing-private-{}", path.storage_key().as_str())
 }
 
 fn read_legacy_session_token_for_device(workshop_device_id: &str) -> Option<String> {

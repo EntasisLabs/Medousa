@@ -174,7 +174,14 @@ pub fn load_kind_secret(kind: &str, slot: IntegrationSecretSlot) -> Option<Strin
 }
 
 pub fn kind_secret_configured(kind: &str, slot: IntegrationSecretSlot) -> bool {
-    load_kind_secret(kind, slot).is_some()
+    // Status displays do not consume the credential. Match the daemon's
+    // presence check so opening Home or Settings does not unlock Keychain.
+    if ensure_secrets_bootstrapped().is_err() {
+        return false;
+    }
+    find_by_kind_sync(kind)
+        .into_iter()
+        .any(|connection| connection.secrets.slot(slot))
 }
 
 pub fn save_kind_secret(

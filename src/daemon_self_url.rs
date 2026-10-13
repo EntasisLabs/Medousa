@@ -14,11 +14,33 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use crate::daemon_api::DEFAULT_DAEMON_URL;
 
 static SELF_BASE_URL: OnceLock<String> = OnceLock::new();
+static SELF_AUTHORIZATION: OnceLock<HeaderValue> = OnceLock::new();
 
 /// Record the address the listener actually bound, so in-process tool proxies
 /// dial the live port. Wildcard binds normalize to the matching loopback family.
-pub fn init_daemon_self_base_url(bound_addr: SocketAddr) {
+pub fn init_daemon_self_base_url(
+    bound_addr: SocketAddr,
+    credentials: &medousa_local_credential::LocalCredentialSet,
+) -> Result<()> {
+    let authorization = process_authorization_header(credentials)?;
+    SELF_AUTHORIZATION
+        .set(authorization)
+        .map_err(|_| anyhow::anyhow!("daemon self authorization already initialized"))?;
     let _ = SELF_BASE_URL.set(daemon_self_url_for_bound_addr(bound_addr));
+    Ok(())
+}
+
+fn process_authorization_header(
+    credentials: &medousa_local_credential::LocalCredentialSet,
+) -> Result<HeaderValue> {
+    use zeroize::Zeroize;
+    let secret = credentials.provision_process_credential();
+    let mut encoded = format!("Bearer {}", secret.token());
+    let result = HeaderValue::from_str(&encoded).context("encode daemon process authorization");
+    encoded.zeroize();
+    let mut value = result?;
+    value.set_sensitive(true);
+    Ok(value)
 }
 
 fn daemon_self_url_for_bound_addr(bound_addr: SocketAddr) -> String {
@@ -50,7 +72,7 @@ pub fn daemon_self_base_url() -> String {
 /// Build an authenticated client for calls back into this daemon.
 ///
 /// A live bound address is process-owned authority even when the daemon binds
-/// a specific LAN interface, so it may carry the provisioned local credential.
+/// a specific LAN interface, so it may carry its process-owned credential.
 /// Before daemon initialization, the normal local-client rules still apply and
 /// refuse to send that credential to a non-loopback URL from the environment.
 pub fn authenticated_http_client() -> Result<reqwest::Client> {
@@ -67,10 +89,11 @@ pub fn authenticated_http_client() -> Result<reqwest::Client> {
 /// Authorization value for an HTTP upgrade back into this daemon.
 pub fn self_authorization_header() -> Result<Option<HeaderValue>> {
     if SELF_BASE_URL.get().is_some() {
-        return crate::local_daemon_auth::trusted_self_authorization_header(
-            medousa_local_credential::CLI_LOCAL_NAME,
-        )
-        .map(Some);
+        return SELF_AUTHORIZATION
+            .get()
+            .cloned()
+            .map(Some)
+            .context("daemon self authorization is not initialized");
     }
     crate::local_daemon_auth::authorization_header(
         &daemon_self_base_url(),
@@ -81,6 +104,24 @@ pub fn self_authorization_header() -> Result<Option<HeaderValue>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn self_calls_use_process_credentials_without_persistent_client_secrets() {
+        let credentials = medousa_local_credential::LocalCredentialSet::new([]);
+        let header = process_authorization_header(&credentials).unwrap();
+        assert!(header.is_sensitive());
+        let token = header.to_str().unwrap().strip_prefix("Bearer ").unwrap();
+        let (id, generation) = credentials.resolve(token).unwrap();
+        assert_eq!(generation, 1);
+        assert!(!id.is_empty());
+        // Rotating/revoking the CLI cannot interrupt the daemon's own shell.
+        credentials.revoke(medousa_local_credential::CLI_LOCAL_NAME);
+        assert!(credentials.resolve(token).is_some());
+        let restarted = medousa_local_credential::LocalCredentialSet::new([]);
+        let next = process_authorization_header(&restarted).unwrap();
+        assert_ne!(header, next);
+        assert!(restarted.resolve(token).is_none());
+    }
 
     /// A daemon on a wildcard bind still has to call itself over loopback.
     #[test]

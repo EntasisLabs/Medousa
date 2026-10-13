@@ -88,16 +88,27 @@ The same Laya endpoint answers the Locus memory reflex (`cognition_memory_query 
 There is no `no_auth` or loopback bypass setting. Except for constant liveness,
 an active pairing ceremony, and scoped preview URLs, daemon routes require a
 named local-app or paired bearer. First-party native clients load their own
-credential from the platform keyring or owner-only data-directory file.
+credential from an owner-only file under the daemon's data directory.
 
-OS Keychain: Medousa uses two services —
-`com.entasislabs.medousa.secrets.daemon` (engine-owned material) and
-`com.entasislabs.medousa.secrets.client` (pairing session tokens). On first
-write after upgrade, expect **two** Keychain prompts, then silence. Legacy
-services such as `medousa.providers` / `medousa.discord` are migrated and
-deleted on daemon start. On Linux hosts without an activatable Secret Service,
-Medousa automatically uses owner-only files under the data directory instead;
-the secrets directory is mode `0700` and each secret file is mode `0600`.
+Provider API keys, OAuth tokens, messaging service credentials, and MCP server
+bearers keep their OS Keychain/keyring storage. First-party local credentials,
+pairing session tokens, the MCP gateway's local policy token, and the SurrealDB
+password use private files instead. On Unix, the directories are mode `0700`
+and secret files are mode `0600`. Existing local credentials with private
+mirrors keep their tokens. At daemon startup, local tokens stored only in
+Keychain are reissued into files with the same credential ID and a newer
+generation, which native clients reload automatically. This requires no
+Keychain unlock. The local MCP policy token is likewise provisioned directly into a file.
+Existing pairing and database credentials are
+imported once without changing their value; that import can require access
+to the old item. Later reads, writes, rotations, and deletions use files.
+Legacy Keychain copies are not deleted during routine background operations.
+
+The daemon authenticates its internal HTTP/WebSocket calls with a fresh
+process-owned credential held in memory. Opening or polling a Coder shell
+does not retrieve a CLI credential from Keychain. External HTTP clients still
+require their own bearer. On Linux hosts without an activatable Secret Service,
+external service credentials retain the existing private-file fallback.
 
 **Tauri app (desktop dev):**
 
