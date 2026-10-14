@@ -21,6 +21,7 @@
     type CompanionFeedback,
   } from "$lib/companion/companionState";
   import { sendCompanionPrompt } from "$lib/companion/companionTurn";
+  import { CompanionDraftState } from "$lib/companion/companionDraftState.svelte";
   import {
     anchoredCompanionPosition,
     companionWorkAreaForWindow,
@@ -59,7 +60,6 @@
   import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
 
   type WindowMode = "pet" | "bubble" | "toolbelt";
-  type ComposerMode = "chat" | "ask";
 
   const WINDOW_SIZES: Record<WindowMode, { width: number; height: number }> = {
     pet: { width: 112, height: 170 },
@@ -73,9 +73,7 @@
   let viewsOpen = $state(false);
   let sending = $state(false);
   let approvalBusy = $state(false);
-  let composerMode = $state<ComposerMode>("chat");
-  let chatPrompt = $state("");
-  let askPrompt = $state("");
+  const drafts = new CompanionDraftState();
   let health = $state<DaemonHealth | null>(null);
   let pendingApprovals = $state<TurnBudgetRequestRecord[]>([]);
   let activity = $state(initialCompanionActivity());
@@ -119,7 +117,7 @@
     environment.navSurfaces().filter((surface) => surface.kind === "custom"),
   );
   const companionMark = $derived(medousaMarkOption(settings.medousaMark));
-  const activePrompt = $derived(composerMode === "chat" ? chatPrompt : askPrompt);
+  const activePrompt = $derived(drafts.mode === "chat" ? drafts.chat : drafts.ask);
   const activeAskCard = $derived.by(() => {
     const selected = workspace.cards.find(
       (card) => card.id === workspace.selectedCardId && isAskJobId(card.id),
@@ -127,7 +125,7 @@
     return selected ?? workspace.railCards().find((card) => isAskJobId(card.id)) ?? null;
   });
   const toolbeltSubtitle = $derived(
-    composerMode === "chat"
+    drafts.mode === "chat"
       ? connected
         ? sessionLabel
         : health?.message || "Connecting…"
@@ -368,7 +366,7 @@
 
   async function submitPrompt(event: SubmitEvent) {
     event.preventDefault();
-    const submitMode = composerMode;
+    const submitMode = drafts.mode;
     const message = activePrompt.trim();
     if (!message || sending || !connected) return;
     sending = true;
@@ -379,7 +377,7 @@
           ...buildAskJobRequest(message, [], []),
           modelHint: runtime.model,
         });
-        askPrompt = "";
+        drafts.ask = "";
         setFeedback({
           tone: "success",
           message: "Ask queued. Medousa will keep working in the background.",
@@ -387,7 +385,7 @@
         return;
       }
       const ticket = await sendCompanionPrompt(message);
-      chatPrompt = "";
+      drafts.chat = "";
       activity = {
         activeTurnIds: new Set([...activity.activeTurnIds, ticket.turn_id]),
         feedback: null,
@@ -438,7 +436,7 @@
   async function startNewConversation() {
     try {
       await chat.newSession();
-      chatPrompt = "";
+      drafts.chat = "";
       setFeedback({ tone: "success", message: "New conversation ready." });
     } catch (error) {
       setFeedback({
@@ -456,8 +454,8 @@
         return;
       }
       const nextPrompt = `Use this clipboard context:\n\n${clipboard}`;
-      if (composerMode === "chat") chatPrompt = nextPrompt;
-      else askPrompt = nextPrompt;
+      if (drafts.mode === "chat") drafts.chat = nextPrompt;
+      else drafts.ask = nextPrompt;
       setFeedback({
         tone: "success",
         message: "Clipboard added. Review it before sending.",
@@ -472,8 +470,8 @@
 
   function updateActivePrompt(event: Event) {
     const value = (event.currentTarget as HTMLTextAreaElement).value;
-    if (composerMode === "chat") chatPrompt = value;
-    else askPrompt = value;
+    if (drafts.mode === "chat") drafts.chat = value;
+    else drafts.ask = value;
   }
 
   async function openChat() {
@@ -614,10 +612,10 @@
         <button
           type="button"
           role="tab"
-          aria-selected={composerMode === "chat"}
-          class:companion-mode-active={composerMode === "chat"}
+          aria-selected={drafts.mode === "chat"}
+          class:companion-mode-active={drafts.mode === "chat"}
           disabled={sending}
-          onclick={() => (composerMode = "chat")}
+          onclick={() => (drafts.mode = "chat")}
         >
           <MessageSquare size={14} strokeWidth={1.8} />
           Chat
@@ -625,22 +623,22 @@
         <button
           type="button"
           role="tab"
-          aria-selected={composerMode === "ask"}
-          class:companion-mode-active={composerMode === "ask"}
+          aria-selected={drafts.mode === "ask"}
+          class:companion-mode-active={drafts.mode === "ask"}
           disabled={sending}
-          onclick={() => (composerMode = "ask")}
+          onclick={() => (drafts.mode = "ask")}
         >
           <ListTodo size={14} strokeWidth={1.8} />
           Ask
         </button>
       </div>
 
-      {#if composerMode === "chat" && latestAssistantReply && !companionFeedback && !pendingApproval}
+      {#if drafts.mode === "chat" && latestAssistantReply && !companionFeedback && !pendingApproval}
         <section class="companion-recent" aria-label="Latest Medousa reply">
           <strong>Latest reply</strong>
           <p>{latestAssistantReply}</p>
         </section>
-      {:else if composerMode === "ask" && !companionFeedback && !pendingApproval}
+      {:else if drafts.mode === "ask" && !companionFeedback && !pendingApproval}
         <section class="companion-recent" aria-label="Background ask status">
           <strong>{activeAskCard ? "Current ask" : "Ask runs in Work"}</strong>
           <p>
@@ -653,10 +651,10 @@
 
       <form class="companion-composer" onsubmit={submitPrompt}>
         <label for="companion-prompt">
-          {composerMode === "chat" ? "Quick chat" : "Delegate to Medousa"}
+          {drafts.mode === "chat" ? "Quick chat" : "Delegate to Medousa"}
         </label>
         <div class="companion-quick-actions" aria-label="Conversation actions">
-          {#if composerMode === "chat"}
+          {#if drafts.mode === "chat"}
             <button type="button" onclick={() => void startNewConversation()}>
               <MessageSquarePlus size={14} strokeWidth={1.8} />
               New conversation
@@ -672,7 +670,7 @@
           value={activePrompt}
           rows="4"
           placeholder={connected
-            ? composerMode === "chat"
+            ? drafts.mode === "chat"
               ? "Talk something through without leaving your flow…"
               : "What should Medousa go do in the background?"
             : "Waiting for the workshop…"}
@@ -686,7 +684,7 @@
           }}
         ></textarea>
         <div class="companion-composer-footer">
-          {#if composerMode === "chat"}
+          {#if drafts.mode === "chat"}
             {#if chat.sessions.length > 0}
               <select
                 aria-label="Conversation"
@@ -712,10 +710,10 @@
             type="submit"
             class="companion-send-btn"
             disabled={!connected || sending || !activePrompt.trim()}
-            aria-label={composerMode === "chat" ? "Send chat message" : "Queue background ask"}
+            aria-label={drafts.mode === "chat" ? "Send chat message" : "Queue background ask"}
           >
             <Send size={15} strokeWidth={1.9} />
-            <span>{sending ? (composerMode === "chat" ? "Sending" : "Queuing") : (composerMode === "chat" ? "Send" : "Queue")}</span>
+            <span>{sending ? (drafts.mode === "chat" ? "Sending" : "Queuing") : (drafts.mode === "chat" ? "Send" : "Queue")}</span>
           </button>
         </div>
       </form>

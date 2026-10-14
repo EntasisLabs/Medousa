@@ -12,6 +12,8 @@
     beforeText?: string | null;
     /** Full after-file text for real gap expansion. */
     afterText?: string | null;
+    beforeLines?: string[];
+    afterLines?: string[];
     languageHint?: string | null;
     density?: "comfortable" | "compact";
     wrap?: boolean;
@@ -30,6 +32,8 @@
     mode = "inline",
     beforeText = null,
     afterText = null,
+    beforeLines: sharedBeforeLines,
+    afterLines: sharedAfterLines,
     languageHint = null,
     density = "comfortable",
     wrap = false,
@@ -61,8 +65,8 @@
   /** Gap reveal: lines shown from the start and end of each unmodified region. */
   let gapReveal = $state<Record<string, { head: number; tail: number }>>({});
 
-  const beforeLines = $derived(splitDiffFileLines(beforeText));
-  const afterLines = $derived(splitDiffFileLines(afterText));
+  const beforeLines = $derived(sharedBeforeLines ?? splitDiffFileLines(beforeText));
+  const afterLines = $derived(sharedAfterLines ?? splitDiffFileLines(afterText));
   const canExpandReal = $derived(beforeLines.length > 0 || afterLines.length > 0);
 
   const GAP_STEP = 20;

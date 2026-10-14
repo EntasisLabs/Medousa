@@ -819,6 +819,32 @@ impl BrowserHostState {
 
 static BROWSER_HOST_STATE: LazyLock<BrowserHostState> = LazyLock::new(BrowserHostState::new);
 
+// Wry's macOS URL getter unwraps WKWebView.URL, which is nil before first navigation.
+// Read it on the native UI thread and report loading instead of panicking the event loop.
+#[cfg(target_os = "macos")]
+fn native_browser_url<R: tauri::Runtime>(webview: &tauri::Webview<R>) -> Result<url::Url, String> {
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    webview
+        .with_webview(move |platform| {
+            let native: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
+            let url = unsafe { native.URL() }
+                .and_then(|url| url.absoluteString())
+                .map(|url| url.to_string());
+            let _ = tx.send(url);
+        })
+        .map_err(|err| err.to_string())?;
+    let url = rx
+        .recv()
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "browser document is still loading".to_string())?;
+    url.parse().map_err(|err: url::ParseError| err.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn native_browser_url<R: tauri::Runtime>(webview: &tauri::Webview<R>) -> Result<url::Url, String> {
+    webview.url().map_err(|err| err.to_string())
+}
+
 fn request_identity<R: tauri::Runtime>(
     webview: &tauri::Webview<R>,
     expected_surface: BrowserSurface,
@@ -828,7 +854,7 @@ fn request_identity<R: tauri::Runtime>(
     if identity.surface != expected_surface {
         return Err("browser webview surface mismatch".to_string());
     }
-    let native_url = webview.url().map_err(|err| err.to_string())?;
+    let native_url = native_browser_url(webview)?;
     if !is_allowed_browser_navigation(&native_url) || native_url.as_str() == "about:blank" {
         return Err("browser webview has no reportable HTTP(S) document".to_string());
     }
@@ -1392,6 +1418,17 @@ pub fn on_browser_popout_closed(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+pub fn on_browser_popout_destroyed() {
+    POPOUT_SHELL_READY.store(false, Ordering::SeqCst);
+    unregister_browser_webview(BROWSER_CONTENT_LABEL);
+    if let Ok(mut active) = POPOUT_ACTIVE_TAB_ID.lock() {
+        *active = None;
+    }
+    if let Ok(mut tabs) = POPOUT_TAB_IDS.lock() {
+        tabs.clear();
+    }
+}
+
 fn parse_external_url(url: &str) -> Result<url::Url, String> {
     let trimmed = url.trim();
     if trimmed.is_empty() || trimmed == "about:blank" {
@@ -1576,8 +1613,7 @@ fn content_builder(
                 let Some(title) = bounded_browser_title(&title) else {
                     return;
                 };
-                let url = webview
-                    .url()
+                let url = native_browser_url(&webview)
                     .ok()
                     .filter(is_allowed_browser_navigation)
                     .map(|url| url.to_string())
@@ -2542,7 +2578,7 @@ fn navigate_tab_webview(
     }
 
     if !force {
-        if let Ok(current) = content.url() {
+        if let Ok(current) = native_browser_url(&content) {
             if urls_match_for_snapshot(current.as_ref(), trimmed) {
                 emit_loading(app, surface, false);
                 return Ok(());
@@ -2660,7 +2696,7 @@ fn activate_popout_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Resu
     apply_popout_layout(app)?;
 
     let popout_visible = app
-        .get_webview_window(BROWSER_WINDOW_LABEL)
+        .get_window(BROWSER_WINDOW_LABEL)
         .and_then(|w| w.is_visible().ok())
         .unwrap_or(false);
 
@@ -2989,7 +3025,7 @@ fn apply_popout_layout(app: &AppHandle) -> Result<(), String> {
     }
 
     let popout_visible = app
-        .get_webview_window(BROWSER_WINDOW_LABEL)
+        .get_window(BROWSER_WINDOW_LABEL)
         .and_then(|w| w.is_visible().ok())
         .unwrap_or(false);
 

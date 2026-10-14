@@ -6,16 +6,6 @@ use tauri::{
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use crate::human_browser;
 
-/// Popout labels that are pre-declared on macOS/Linux and lazily created on Windows.
-const POPOUT_LABELS: &[&str] = &[
-    "chat-popout",
-    "vault-sticky",
-    "browser",
-    "desktop-toolbar",
-    "view-popout",
-    "guide",
-];
-
 /// Sync WebView2 controller visibility with the OS window.
 ///
 /// On Windows, `WebviewWindow::hide()` only hides the tao/OS window. The
@@ -24,42 +14,38 @@ const POPOUT_LABELS: &[&str] = &[
 /// WebView2) even while the window is invisible. Explicit `SetIsVisible(false)`
 /// lets Chromium throttle the page.
 #[cfg(windows)]
-fn set_webview_visibility(window: &WebviewWindow, visible: bool) {
-    let _ = window.with_webview(move |platform| {
+fn set_webview_visibility(webview: &tauri::Webview, visible: bool) {
+    let _ = webview.with_webview(move |platform| {
         let _ = unsafe { platform.controller().SetIsVisible(visible) };
     });
 }
 
 #[cfg(not(windows))]
-fn set_webview_visibility(_window: &WebviewWindow, _visible: bool) {}
+fn set_webview_visibility(_webview: &tauri::Webview, _visible: bool) {}
 
 /// Show/focus a window and resume its WebView2 controller (Windows).
 pub fn show_and_resume(window: &WebviewWindow) -> Result<(), String> {
-    set_webview_visibility(window, true);
+    set_webview_visibility(window.as_ref(), true);
     window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
     Ok(())
 }
 
-/// Hide a popout and suspend its WebView2 controller (Windows).
-pub fn hide_and_suspend(window: &WebviewWindow) -> Result<(), String> {
+/// Hide the main window and suspend its WebView2 controller (Windows).
+pub fn hide_main_window(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| "main window is not configured".to_string())?;
     window.hide().map_err(|err| err.to_string())?;
-    set_webview_visibility(window, false);
+    if let Some(webview) = app.get_webview("main") {
+        set_webview_visibility(&webview, false);
+    }
     Ok(())
 }
 
-/// Suspend WebView2 for every non-main popout that already exists.
-/// Call after startup when windows were pre-created hidden (macOS/Linux), and
-/// after Windows hide paths that go through CloseRequested.
-pub fn suspend_hidden_popouts(app: &AppHandle) {
-    for label in POPOUT_LABELS {
-        if let Some(window) = app.get_webview_window(label) {
-            let visible = window.is_visible().unwrap_or(false);
-            if !visible {
-                set_webview_visibility(&window, false);
-            }
-        }
-    }
+/// Release a secondary window and its WebViews. Show commands recreate it on demand.
+pub fn release_popout(window: &WebviewWindow) -> Result<(), String> {
+    window.destroy().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -71,7 +57,7 @@ pub async fn window_show_chat_popout(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn window_hide_chat_popout(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("chat-popout") {
-        hide_and_suspend(&window)?;
+        release_popout(&window)?;
     }
     Ok(())
 }
@@ -89,7 +75,7 @@ pub async fn window_show_vault_sticky(app: AppHandle) -> Result<(), String> {
 pub fn window_hide_vault_sticky(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("vault-sticky") {
         let _ = window.set_always_on_top(false);
-        hide_and_suspend(&window)?;
+        release_popout(&window)?;
     }
     Ok(())
 }
@@ -113,7 +99,7 @@ pub async fn window_show_browser(app: AppHandle) -> Result<(), String> {
     let window = ensure_browser(&app).await?;
     position_browser_beside_main(&app, &window)?;
     human_browser::prepare_browser_window(&app)?;
-    show_and_resume(&window)?;
+    show_browser_window(&window)?;
     human_browser::on_browser_popout_opened(&app)?;
     let _ = app.emit("browser-window-visibility", true);
     Ok(())
@@ -121,9 +107,9 @@ pub async fn window_show_browser(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn window_hide_browser(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("browser") {
-        hide_and_suspend(&window)?;
+    if let Some(window) = app.get_window("browser") {
         human_browser::on_browser_popout_closed(&app)?;
+        window.destroy().map_err(|err| err.to_string())?;
         let _ = app.emit("browser-window-visibility", false);
     }
     Ok(())
@@ -131,8 +117,12 @@ pub fn window_hide_browser(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn window_focus_browser(app: AppHandle) -> Result<(), String> {
-    let window = ensure_browser(&app).await?;
-    show_and_resume(&window)
+    window_show_browser(app).await
+}
+
+fn show_browser_window(window: &tauri::Window) -> Result<(), String> {
+    window.show().map_err(|err| err.to_string())?;
+    window.set_focus().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -145,7 +135,7 @@ pub async fn window_show_desktop_toolbar(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn window_hide_desktop_toolbar(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("desktop-toolbar") {
-        hide_and_suspend(&window)?;
+        release_popout(&window)?;
     }
     Ok(())
 }
@@ -155,7 +145,7 @@ pub async fn window_toggle_desktop_toolbar(app: AppHandle) -> Result<bool, Strin
     if let Some(window) = app.get_webview_window("desktop-toolbar") {
         let visible = window.is_visible().map_err(|err| err.to_string())?;
         if visible {
-            hide_and_suspend(&window)?;
+            release_popout(&window)?;
             return Ok(false);
         }
         prepare_desktop_toolbar(&window)?;
@@ -200,18 +190,20 @@ pub async fn window_show_view_popout(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn window_hide_view_popout(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("view-popout") {
-        hide_and_suspend(&window)?;
+        release_popout(&window)?;
     }
     Ok(())
 }
 
 #[tauri::command]
 pub fn window_show_main(app: AppHandle) -> Result<(), String> {
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_window("main") else {
         return Err("main window is not configured".to_string());
     };
     window.unminimize().map_err(|err| err.to_string())?;
-    set_webview_visibility(&window, true);
+    if let Some(webview) = app.get_webview("main") {
+        set_webview_visibility(&webview, true);
+    }
     window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
     Ok(())
@@ -226,7 +218,7 @@ pub async fn window_show_guide(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn window_hide_guide(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("guide") {
-        hide_and_suspend(&window)?;
+        release_popout(&window)?;
     }
     Ok(())
 }
@@ -256,7 +248,7 @@ pub async fn browser_window_present(
     let window = ensure_browser(&app).await?;
     position_browser_beside_main(&app, &window)?;
     human_browser::prepare_browser_window(&app)?;
-    show_and_resume(&window)?;
+    show_browser_window(&window)?;
     human_browser::on_browser_popout_opened(&app)?;
     let _ = app.emit("browser-window-visibility", true);
     if let Some(url) = options.url.as_deref().filter(|u| !u.trim().is_empty()) {
@@ -320,8 +312,9 @@ async fn ensure_vault_sticky(app: &AppHandle) -> Result<WebviewWindow, String> {
     .await
 }
 
-async fn ensure_browser(app: &AppHandle) -> Result<WebviewWindow, String> {
-    if let Some(window) = app.get_webview_window("browser") {
+async fn ensure_browser(app: &AppHandle) -> Result<tauri::Window, String> {
+    // The browser host has multiple child WebViews, so it is not a WebviewWindow.
+    if let Some(window) = app.get_window("browser") {
         return Ok(window);
     }
     create_popout_window(
@@ -342,7 +335,9 @@ async fn ensure_browser(app: &AppHandle) -> Result<WebviewWindow, String> {
             shadow: true,
         },
     )
-    .await
+    .await?;
+    app.get_window("browser")
+        .ok_or_else(|| "browser window was not created".to_string())
 }
 
 async fn ensure_desktop_toolbar(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -482,13 +477,13 @@ async fn create_popout_window(app: &AppHandle, spec: PopoutSpec) -> Result<Webvi
     let window = builder.build().map_err(|err| err.to_string())?;
     // Start suspended until the first explicit show — avoids WebView2 compositing
     // a freshly created but still-hidden window.
-    set_webview_visibility(&window, false);
+    set_webview_visibility(window.as_ref(), false);
     Ok(window)
 }
 
 /// Place the browser window to the right of main on first show (when still at default position).
-fn position_browser_beside_main(app: &AppHandle, browser: &WebviewWindow) -> Result<(), String> {
-    let Some(main) = app.get_webview_window("main") else {
+fn position_browser_beside_main(app: &AppHandle, browser: &tauri::Window) -> Result<(), String> {
+    let Some(main) = app.get_window("main") else {
         return Ok(());
     };
 

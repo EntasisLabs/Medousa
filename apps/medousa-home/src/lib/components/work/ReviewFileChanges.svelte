@@ -10,7 +10,8 @@
     type ReviewProjection,
     type ReviewSymbolScope,
   } from "$lib/forge";
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
+  import { ReviewDiffCache, ReviewFileLoadQueue, reviewComparisonKey, reviewDiffLines } from "$lib/code/reviewDiffCache";
 
   interface Props {
     review: ReviewProjection;
@@ -46,11 +47,16 @@
   let density = $state<"comfortable" | "compact">("compact");
   let wrap = $state(false);
   let mode = $state<"inline" | "side">("inline");
-  /** Non-reactive latch so seal changes reset local UI without an effect loop. */
   let resetForEvidenceId: string | null | undefined = undefined;
   let loadEpoch = 0;
   const fileLoadGenerations = new Map<string, number>();
   const MAX_BULK_EXPAND_FILES = 12;
+  const diffCache = new ReviewDiffCache();
+  const fileLoads = new ReviewFileLoadQueue();
+  onDestroy(() => {
+    loadEpoch += 1;
+    diffCache.clear();
+  });
 
   const riskPaths = $derived.by(() => {
     const paths = new Set<string>();
@@ -81,10 +87,12 @@
   const bulkExpandAvailable = $derived(files.length <= MAX_BULK_EXPAND_FILES);
 
   $effect(() => {
-    const evidenceId = review.evidence_id ?? null;
+    const evidenceId = reviewComparisonKey(review);
     if (evidenceId === resetForEvidenceId) return;
     resetForEvidenceId = evidenceId;
     loadEpoch += 1;
+    diffCache.clear();
+    fileLoadGenerations.clear();
     untrack(() => {
       expandedPaths = new Set();
       expandedScopeKeys = new Set();
@@ -153,15 +161,19 @@
   }
 
   async function ensureFileDiff(path: string): Promise<ReviewFileDiff | null> {
-    if (fileDiffs[path]) return fileDiffs[path]!;
+    const cached = diffCache.get(path);
+    if (cached) return cached;
     const epoch = loadEpoch;
     const generation = (fileLoadGenerations.get(path) ?? 0) + 1;
     fileLoadGenerations.set(path, generation);
     loadingPaths = new Set(loadingPaths).add(path);
+    const release = await fileLoads.acquire();
     try {
+      if (epoch !== loadEpoch || fileLoadGenerations.get(path) !== generation) return null;
       const diff = await getReviewFile(review.work_id, path, review.attempt_id ?? undefined);
       if (epoch !== loadEpoch || fileLoadGenerations.get(path) !== generation) return null;
-      fileDiffs = { ...fileDiffs, [path]: diff };
+      for (const evicted of diffCache.set(path, diff)) closeFile(evicted);
+      fileDiffs = diffCache.snapshot();
       const nextErrors = { ...fileErrors };
       delete nextErrors[path];
       fileErrors = nextErrors;
@@ -174,6 +186,7 @@
       };
       return null;
     } finally {
+      release();
       if (epoch === loadEpoch && fileLoadGenerations.get(path) === generation) {
         const next = new Set(loadingPaths);
         next.delete(path);
@@ -215,6 +228,7 @@
       let cursor = 0;
       const inspectNext = async () => {
         while (cursor < samples.length) {
+          if (epoch !== loadEpoch || fileLoadGenerations.get(path) !== generation) return;
           const line = samples[cursor++];
           if (line == null) return;
           try {
@@ -276,35 +290,40 @@
 
   async function toggleFile(path: string) {
     if (expandedPaths.has(path)) {
-      fileLoadGenerations.set(path, (fileLoadGenerations.get(path) ?? 0) + 1);
-      const next = new Set(expandedPaths);
-      next.delete(path);
-      expandedPaths = next;
-      const nextScopes = new Set(
-        [...expandedScopeKeys].filter((key) => !key.startsWith(`${path}\0`)),
-      );
-      expandedScopeKeys = nextScopes;
-      const nextFull = new Set(fullDiffPaths);
-      nextFull.delete(path);
-      fullDiffPaths = nextFull;
-      const nextDiffs = { ...fileDiffs };
-      delete nextDiffs[path];
-      fileDiffs = nextDiffs;
-      const nextErrors = { ...fileErrors };
-      delete nextErrors[path];
-      fileErrors = nextErrors;
-      const nextLoading = new Set(loadingPaths);
-      nextLoading.delete(path);
-      loadingPaths = nextLoading;
-      const nextScopeMap = { ...scopesByPath };
-      delete nextScopeMap[path];
-      scopesByPath = nextScopeMap;
-      const nextScopeLoading = { ...scopesLoading };
-      delete nextScopeLoading[path];
-      scopesLoading = nextScopeLoading;
+      closeFile(path);
       return;
     }
     await openFile(path);
+  }
+
+  function closeFile(path: string) {
+    diffCache.delete(path);
+    fileLoadGenerations.set(path, (fileLoadGenerations.get(path) ?? 0) + 1);
+    const next = new Set(expandedPaths);
+    next.delete(path);
+    expandedPaths = next;
+    const nextScopes = new Set(
+      [...expandedScopeKeys].filter((key) => !key.startsWith(`${path}\0`)),
+    );
+    expandedScopeKeys = nextScopes;
+    const nextFull = new Set(fullDiffPaths);
+    nextFull.delete(path);
+    fullDiffPaths = nextFull;
+    const nextDiffs = { ...fileDiffs };
+    delete nextDiffs[path];
+    fileDiffs = nextDiffs;
+    const nextErrors = { ...fileErrors };
+    delete nextErrors[path];
+    fileErrors = nextErrors;
+    const nextLoading = new Set(loadingPaths);
+    nextLoading.delete(path);
+    loadingPaths = nextLoading;
+    const nextScopeMap = { ...scopesByPath };
+    delete nextScopeMap[path];
+    scopesByPath = nextScopeMap;
+    const nextScopeLoading = { ...scopesLoading };
+    delete nextScopeLoading[path];
+    scopesLoading = nextScopeLoading;
   }
 
   async function expandAll() {
@@ -327,6 +346,8 @@
 
   function collapseAll() {
     loadEpoch += 1;
+    diffCache.clear();
+    fileLoadGenerations.clear();
     expandedPaths = new Set();
     expandedScopeKeys = new Set();
     fullDiffPaths = new Set();
@@ -349,6 +370,7 @@
       );
     }
     const scoped = scope ? countDiffStats(hunks) : stats;
+    const lines = reviewDiffLines(diff);
     return {
       id: scope ? `${diff.path}::${scope.id}` : diff.path,
       path: diff.path,
@@ -364,6 +386,8 @@
       reviewedExists: diff.reviewed.exists,
       beforeText: diff.baseline.content ?? null,
       afterText: diff.reviewed.content ?? null,
+      beforeLines: lines.before,
+      afterLines: lines.after,
     };
   }
 
@@ -497,7 +521,7 @@
                 {@const scopes = scopesByPath[file.path] ?? []}
                 {#if diff.truncated}
                   <p class="file-truncated">
-                    This preview is capped for safety. Open the file in Code to inspect the rest.
+                    Open the file in Code to view changes beyond this preview.
                   </p>
                 {/if}
                 {#if scopes.length > 0}

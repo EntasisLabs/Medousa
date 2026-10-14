@@ -233,11 +233,6 @@ fn run_home() {
         }
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         connection_prefs::refresh_autostart_if_enabled();
-        // macOS/Linux still pre-create hidden popouts; suspend their WebView
-        // controllers so they do not composite while invisible. Windows creates
-        // popouts lazily (see tauri.windows.conf.json + window.rs).
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        window::suspend_hidden_popouts(app.handle());
 
         #[cfg(any(windows, target_os = "linux"))]
         {
@@ -335,6 +330,10 @@ fn run_home() {
                     human_browser::on_main_window_resized(window.app_handle());
                 }
             }
+            if window.label() == "browser" && matches!(event, tauri::WindowEvent::Destroyed) {
+                human_browser::on_browser_popout_destroyed();
+                let _ = window.app_handle().emit("browser-window-visibility", false);
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 match window.label() {
                     "main" => {
@@ -342,51 +341,18 @@ fn run_home() {
                         hide_main_window(window.app_handle());
                     }
                     "browser" => {
-                        // Hide instead of destroy so Web nav can reopen the window.
-                        api.prevent_close();
-                        let app = window.app_handle().clone();
-                        if let Some(webview) = app.get_webview_window("browser") {
-                            let _ = window::hide_and_suspend(&webview);
-                        }
-                        let _ = human_browser::on_browser_popout_closed(&app);
+                        let app = window.app_handle();
+                        let _ = human_browser::on_browser_popout_closed(app);
                         let _ = app.emit("browser-window-visibility", false);
                     }
-                    "chat-popout" => {
+                    "chat-popout" | "vault-sticky" => {
+                        // Let the editor persist its draft/save before releasing the WebView.
                         api.prevent_close();
-                        if let Some(webview) = window.app_handle().get_webview_window("chat-popout")
-                        {
-                            let _ = window::hide_and_suspend(&webview);
-                        }
-                    }
-                    "vault-sticky" => {
-                        api.prevent_close();
-                        if let Some(webview) =
-                            window.app_handle().get_webview_window("vault-sticky")
-                        {
-                            let _ = webview.set_always_on_top(false);
-                            let _ = window::hide_and_suspend(&webview);
-                        }
-                    }
-                    "desktop-toolbar" => {
-                        api.prevent_close();
-                        if let Some(webview) =
-                            window.app_handle().get_webview_window("desktop-toolbar")
-                        {
-                            let _ = window::hide_and_suspend(&webview);
-                        }
-                    }
-                    "view-popout" => {
-                        api.prevent_close();
-                        if let Some(webview) = window.app_handle().get_webview_window("view-popout")
-                        {
-                            let _ = window::hide_and_suspend(&webview);
-                        }
-                    }
-                    "guide" => {
-                        api.prevent_close();
-                        if let Some(webview) = window.app_handle().get_webview_window("guide") {
-                            let _ = window::hide_and_suspend(&webview);
-                        }
+                        let _ = window.app_handle().emit_to(
+                            window.label(),
+                            "popout-close-requested",
+                            (),
+                        );
                     }
                     _ => {}
                 }
@@ -1142,15 +1108,10 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn show_main_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window::show_and_resume(&window);
-    }
+    let _ = window::window_show_main(app.clone());
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn hide_main_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window::hide_and_suspend(&window);
-    }
+    let _ = window::hide_main_window(app);
 }

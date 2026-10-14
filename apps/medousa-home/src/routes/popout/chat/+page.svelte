@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
+  import { chat } from "$lib/stores/chat.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
@@ -8,15 +10,29 @@
   import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
 
   onMount(() => {
-    return whenDocumentVisible(() =>
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    if (isTauri()) {
+      void listen("popout-close-requested", handleClose).then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      });
+    }
+    const detach = whenDocumentVisible(() =>
       connectWorkshop({
         onHealthChange: () => {},
         mode: "observer",
       }),
     );
+    return () => {
+      disposed = true;
+      unlisten?.();
+      detach();
+    };
   });
 
   async function handleClose() {
+    chat.flushDraftPersist();
     if (isTauri()) {
       await hideChatPopout();
     }
