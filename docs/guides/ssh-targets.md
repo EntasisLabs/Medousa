@@ -16,7 +16,9 @@ server and authenticate as the account you choose.
 5. Select **Check server identity**. Compare the displayed fingerprints with
    the server's host keys, then select **Trust this server identity** and save.
    Checking retrieves public host keys; it does not authenticate your account.
-6. Select **Test** to check authentication. On desktop, **Terminal** opens the
+6. Open the server's **More actions (⋯)** menu and select **Test connection**
+   to check authentication. **Remove server** is in the same menu.
+   On desktop, **Terminal** on the row opens the
    same saved connection in Medousa's existing terminal view. SSH terminals
    use the saved server access independently of coding projects; they do not
    require an undertaking or a sealed Forge environment.
