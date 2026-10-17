@@ -60,6 +60,15 @@ function stripInjectionById(html: string, scriptId: string): string {
   return html.replace(pattern, "");
 }
 
+function stripLegacyHostStyle(html: string): string {
+  // Saved artifacts can contain the daemon's old root reset, which replaced
+  // authored backgrounds with transparency. Embed chrome is supplied below.
+  return html.replace(
+    /<style\b[^>]*\bid=["']medousa-artifact-host["'][^>]*>[\s\S]*?<\/style>/gi,
+    "",
+  );
+}
+
 function buildMedousaFeedClientStyle(): string {
   return `<style id="${FEED_CLIENT_STYLE_ID}">medousa-feed,.medousa-feed-card{display:block;font:13px/1.45 system-ui,sans-serif;color:var(--medousa-host-fg,#f4f4f5)}.medousa-feed-phase{font-weight:600;text-transform:capitalize}.medousa-feed-status,.medousa-feed-time{font-size:12px;color:var(--medousa-host-muted,#a1a1aa)}.medousa-feed-excerpt{margin-top:6px;white-space:pre-wrap;word-break:break-word}</style>`;
 }
@@ -85,12 +94,13 @@ export function buildArtifactThemeStyle(theme: HostThemeTokens | boolean): strin
   return `<style id="${THEME_STYLE_ID}">:root{--medousa-host-bg:transparent;--medousa-host-fg:${tokens.fg};--medousa-host-muted:${tokens.muted};--medousa-host-accent:${tokens.accent};--medousa-host-surface:${tokens.surface};--medousa-host-brand:${tokens.brand}}</style>`;
 }
 
-/** Root-only embed chrome — never styles artifact markup. */
+/** Root-only embed chrome; spacing defaults yield to authored page styles. */
 export function buildArtifactModeStyle(mode: ArtifactEmbedMode): string {
+  const defaults = ":where(html,body){margin:0;padding:0}";
   if (mode === "inline") {
-    return `<style id="${MODE_STYLE_ID}">html,body{margin:0;padding:0;background:transparent;overflow:hidden}</style>`;
+    return `<style id="${MODE_STYLE_ID}">${defaults}html,body{overflow:hidden}</style>`;
   }
-  return `<style id="${MODE_STYLE_ID}">html,body{margin:0;padding:0;background:transparent;overflow:auto;scrollbar-width:thin;-ms-overflow-style:auto}html::-webkit-scrollbar,body::-webkit-scrollbar{width:8px;height:8px}</style>`;
+  return `<style id="${MODE_STYLE_ID}">${defaults}html,body{overflow:auto;scrollbar-width:thin;-ms-overflow-style:auto}html::-webkit-scrollbar,body::-webkit-scrollbar{width:8px;height:8px}</style>`;
 }
 
 export function prepareArtifactHtml(
@@ -102,7 +112,7 @@ export function prepareArtifactHtml(
 ): string {
   const themeStyle = buildArtifactThemeStyle(theme);
   const modeStyle = buildArtifactModeStyle(mode);
-  let html = raw;
+  let html = stripLegacyHostStyle(raw);
   if (!html.includes(THEME_STYLE_ID)) {
     html = injectBeforeHeadClose(html, themeStyle);
   }
