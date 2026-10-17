@@ -205,7 +205,6 @@
 
   .shell-tab-strip--titlebar {
     height: 100%;
-    max-width: min(100%, 70vw);
     flex: 0 1 auto;
     align-items: center;
     background: transparent;
