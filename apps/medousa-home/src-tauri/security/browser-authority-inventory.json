@@ -301,6 +301,7 @@
     "human_browser::human_browser_popout_navigate",
     "human_browser::human_browser_popout_query_nav_state",
     "human_browser::human_browser_popout_reload",
+    "human_browser::human_browser_popout_set_chrome_overlay",
     "human_browser::human_browser_popout_stop",
     "human_browser::human_browser_query_nav_state",
     "human_browser::human_browser_reload",

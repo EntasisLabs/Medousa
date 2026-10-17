@@ -6,6 +6,7 @@
   import { onDestroy, tick } from "svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
+  import { pushBrowserPopoverOverlay, popBrowserPopoverOverlay } from "$lib/utils/browserPopoverOverlay";
 
   interface Props {
     /** Controlled / bindable open state. */
@@ -48,6 +49,12 @@
   let triggerEl = $state<HTMLElement | null>(null);
   let panelEl = $state<HTMLDivElement | null>(null);
   let focusedIndex = $state(-1);
+
+  $effect(() => {
+    if (!open) return;
+    void pushBrowserPopoverOverlay();
+    return () => { void popBrowserPopoverOverlay(); };
+  });
 
   function setOpen(next: boolean) {
     if (open === next) return;

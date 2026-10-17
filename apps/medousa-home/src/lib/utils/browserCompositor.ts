@@ -406,7 +406,10 @@ export function createBrowserCompositor(
     attach,
     detach,
     scheduleLayout,
-    flushLayout: () => layoutChain.then(() => applyLayoutOnce()),
+    flushLayout: () => {
+      layoutChain = layoutChain.catch(() => {}).then(() => applyLayoutOnce());
+      return layoutChain;
+    },
     pushPopoverHide: () => {
       manualHide = true;
       scheduleLayout();

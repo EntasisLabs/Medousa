@@ -74,6 +74,8 @@ const CHROME_HEIGHT_LOGICAL: f64 = 96.0;
 const POPOUT_CHROME_HEIGHT_LOGICAL: f64 = 132.0;
 
 static POPOUT_SHELL_READY: AtomicBool = AtomicBool::new(false);
+/// Pop-out menus need more room than the native toolbar's normal frame.
+static POPOUT_CHROME_OVERLAY: AtomicBool = AtomicBool::new(false);
 static EMBED_READY: AtomicBool = AtomicBool::new(false);
 static EMBED_VISIBLE: AtomicBool = AtomicBool::new(false);
 /// When true, show/flush should apply `LAST_EMBED_ACTIVE_URL` once (cold open / pre-create nav).
@@ -1521,9 +1523,6 @@ fn embedded_content_webview(app: &AppHandle) -> Option<tauri::Webview> {
 pub fn on_browser_popout_opened(app: &AppHandle) -> Result<(), String> {
     ensure_popout_shell(app)?;
     apply_popout_layout(app)?;
-    if let Some(content) = popout_content_webview(app) {
-        content.show().map_err(|err| err.to_string())?;
-    }
     finalize_popout_compositing(app);
     Ok(())
 }
@@ -1538,6 +1537,7 @@ pub fn on_browser_popout_closed(app: &AppHandle) -> Result<(), String> {
 
 pub fn on_browser_popout_destroyed() {
     POPOUT_SHELL_READY.store(false, Ordering::SeqCst);
+    POPOUT_CHROME_OVERLAY.store(false, Ordering::SeqCst);
     unregister_browser_webview(BROWSER_CONTENT_LABEL);
     if let Ok(tabs) = POPOUT_TAB_IDS.lock() {
         for id in tabs.iter() { unregister_browser_webview(&tab_webview_label(BrowserSurface::Popout, id)); }
@@ -3178,6 +3178,12 @@ fn apply_popout_layout(app: &AppHandle) -> Result<(), String> {
     let window = popout_window(app)?;
     let (width, height) = window_inner_logical(&window)?;
     let content_height = (height - POPOUT_CHROME_HEIGHT_LOGICAL).max(8.0);
+    let overlay_active = POPOUT_CHROME_OVERLAY.load(Ordering::SeqCst);
+    let chrome_height = if overlay_active {
+        height
+    } else {
+        POPOUT_CHROME_HEIGHT_LOGICAL
+    };
 
     if let Some(main) = popout_main_webview(app) {
         let _ = main.set_bounds(Rect {
@@ -3199,8 +3205,10 @@ fn apply_popout_layout(app: &AppHandle) -> Result<(), String> {
                 size: LogicalSize::new(width, content_height).into(),
             })
             .map_err(|err| err.to_string())?;
-        if popout_visible {
+        if popout_visible && !overlay_active {
             content.show().map_err(|err| err.to_string())?;
+        } else {
+            content.hide().map_err(|err| err.to_string())?;
         }
     }
 
@@ -3208,7 +3216,7 @@ fn apply_popout_layout(app: &AppHandle) -> Result<(), String> {
         chrome
             .set_bounds(Rect {
                 position: LogicalPosition::new(0.0, 0.0).into(),
-                size: LogicalSize::new(width, POPOUT_CHROME_HEIGHT_LOGICAL).into(),
+                size: LogicalSize::new(width, chrome_height).into(),
             })
             .map_err(|err| err.to_string())?;
         chrome.show().map_err(|err| err.to_string())?;
@@ -3216,6 +3224,19 @@ fn apply_popout_layout(app: &AppHandle) -> Result<(), String> {
 
     finalize_popout_compositing(app);
     Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_popout_set_chrome_overlay(
+    app: AppHandle,
+    webview: tauri::Webview,
+    active: bool,
+) -> Result<(), String> {
+    if webview.label() != BROWSER_CHROME_LABEL {
+        return Err("browser overlay must originate from its chrome view".to_string());
+    }
+    POPOUT_CHROME_OVERLAY.store(active, Ordering::SeqCst);
+    apply_popout_layout(&app)
 }
 
 /// Create pop-out chrome + content child webviews. Idempotent.

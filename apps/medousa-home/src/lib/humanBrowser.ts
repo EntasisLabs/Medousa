@@ -158,6 +158,10 @@ export async function humanBrowserEmbedHide(): Promise<void> {
   return invoke("human_browser_embed_hide");
 }
 
+export async function humanBrowserPopoutSetChromeOverlay(active: boolean): Promise<void> {
+  return invoke("human_browser_popout_set_chrome_overlay", { active });
+}
+
 export async function humanBrowserSetMobileShellActive(active: boolean): Promise<void> {
   return invoke("human_browser_set_mobile_shell_active", { active });
 }

@@ -38,8 +38,10 @@
     children,
   }: Props = $props();
 
+  let viewportWidth = $state(0);
+  let viewportHeight = $state(0);
   const style = $derived(
-    popoverStyle(anchorRect, placement, { width, maxHeight }),
+    popoverStyle(anchorRect, placement, { width, maxHeight, viewportWidth, viewportHeight }),
   );
 
   $effect(() => {
@@ -78,6 +80,8 @@
     };
   });
 </script>
+
+<svelte:window bind:innerWidth={viewportWidth} bind:innerHeight={viewportHeight} />
 
 {#if open}
   {#if backdrop}

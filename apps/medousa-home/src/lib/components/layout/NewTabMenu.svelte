@@ -16,6 +16,7 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { dispatchBrowserFocusUrl } from "$lib/utils/browserChromeEvents";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
+  import { pushBrowserPopoverOverlay, popBrowserPopoverOverlay } from "$lib/utils/browserPopoverOverlay";
   import { dispatchWorkFocusAsk } from "$lib/utils/workChromeEvents";
   import {
     BookOpen,
@@ -93,6 +94,12 @@
       .map((id) => ITEMS.find((item) => item.id === id))
       .filter((item): item is NewTabItem => Boolean(item)),
   );
+
+  $effect(() => {
+    if (!open) return;
+    void pushBrowserPopoverOverlay();
+    return () => { void popBrowserPopoverOverlay(); };
+  });
 
   $effect(() => {
     if (!open || !triggerEl || !menuEl) return;
@@ -250,7 +257,10 @@
       tabindex="-1"
       aria-label="Create new tab"
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        onWindowKeydown(event);
+        event.stopPropagation();
+      }}
     >
       <div class="new-tab-menu-window" data-slide={slideDir}>
         {#key page}

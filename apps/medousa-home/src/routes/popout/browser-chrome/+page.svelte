@@ -11,6 +11,8 @@
   import { attachHumanBrowserSurface } from "$lib/utils/humanBrowserListeners";
   import { BROWSER_FOCUS_URL_EVENT } from "$lib/utils/browserChromeEvents";
   import BrowserNavigationError from "$lib/components/browser/BrowserNavigationError.svelte";
+  import { humanBrowserPopoutSetChromeOverlay } from "$lib/humanBrowser";
+  import { getBrowserPopoverOverlayDepth, setBrowserPopoverLayoutPort } from "$lib/utils/browserPopoverOverlay";
 
   let urlBarFocusNonce = $state(0);
   let visible = $state(true);
@@ -32,6 +34,22 @@
 
   onMount(() => {
     settings.applyTheme();
+
+    // This window has its own native chrome view, rather than the Home compositor.
+    // Grow it while menus are open so DOM popovers can extend past the toolbar.
+    let overlayChain: Promise<void> = Promise.resolve();
+    const syncOverlay = () => {
+      const active = getBrowserPopoverOverlayDepth() > 0;
+      overlayChain = overlayChain.catch(() => {}).then(() => humanBrowserPopoutSetChromeOverlay(active));
+      return overlayChain;
+    };
+    if (isTauri()) {
+      setBrowserPopoverLayoutPort({
+        scheduleLayout: () => { void syncOverlay().catch(console.error); },
+        flushLayout: syncOverlay,
+      });
+      void syncOverlay().catch(console.error);
+    }
 
     const stopListeners = attachHumanBrowserSurface(humanBrowserPopout, "popout");
     syncPopoutContent();
@@ -85,6 +103,10 @@
     window.addEventListener("keydown", onKeydown);
 
     return () => {
+      setBrowserPopoverLayoutPort(null);
+      if (isTauri()) {
+        void overlayChain.catch(() => {}).then(() => humanBrowserPopoutSetChromeOverlay(false)).catch(console.error);
+      }
       window.removeEventListener(BROWSER_FOCUS_URL_EVENT, focusUrl);
       window.removeEventListener("keydown", onKeydown);
       stopListeners();
@@ -97,8 +119,8 @@
   }
 </script>
 
-<!-- Fixed-height chrome strip — height must stay in sync with CHROME_HEIGHT_LOGICAL in human_browser.rs -->
-<div class="human-browser-chrome relative z-50 flex h-[132px] w-full flex-col overflow-hidden">
+<!-- Toolbar height stays fixed; the native chrome view grows for floating menus. -->
+<div class="human-browser-chrome relative z-50 flex h-[132px] w-full flex-col">
   <HumanBrowserTabBar />
 
   <div class="browser-toolbar">
