@@ -55,7 +55,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(shellSidebarViewTitle("files")).toBe("Files");
     expect(shellSidebarViewTitle("artifacts")).toBe("Artifacts");
     expect(shellSidebarViewTitle("code")).toBe("Projects");
-    expect(shellSidebarViewTitle("map")).toBe("Map");
+    expect(shellSidebarViewTitle("map")).toBe("Context");
     expect(shellSidebarViewTitle("settings")).toBe("Settings");
     expect(shellSidebarViewTitle("calendar")).toBe("Calendar");
     expect(shellSidebarViewTitle("work")).toBe("Sidebar");

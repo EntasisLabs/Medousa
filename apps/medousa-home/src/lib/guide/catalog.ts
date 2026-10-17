@@ -74,10 +74,10 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   },
   {
     id: "profiles-locus",
-    title: "You and the Map",
+    title: "You and Context",
     file: "19-profiles-locus.md",
     group: "everyday",
-    summary: "Manage your profile and saved context; browse recent links",
+    summary: "Manage your profile; browse saved session memory and sources",
   },
   {
     id: "troubleshooting",

@@ -122,7 +122,7 @@ Browser chords (also in Spotlight when Web is focused) include address bar, new/
 | Browser | Built-in web workshop |
 | Automations | Scripts and schedules |
 | Agents | Specialist agents in Workspace |
-| Map | Sessions, moments, and notes |
+| Context | Browse saved session memory and sources |
 | Peers | Nearby workshops and inbox |
 | Profiles | People and identity |
 | Engine status | Jobs, delivery, health |

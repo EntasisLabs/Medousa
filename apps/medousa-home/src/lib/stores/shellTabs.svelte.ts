@@ -102,7 +102,7 @@ function surfaceTitle(surfaceId: string): string {
       return "Channels";
     case "context":
     case "map":
-      return "Map";
+      return "Context";
     case "calendar":
       return "Calendar";
     case "settings":
@@ -259,7 +259,7 @@ function filterLayoutForLme(
   lmeTabIds: Set<string>,
 ): ShellDesktopLayout {
   const seenTabs = new Set<string>();
-  const tabs = layout.tabs.filter((tab) => {
+  const tabs = layout.tabs.map((tab) => tab.kind === "surface" && tab.surfaceId === "map" ? { ...tab, title: "Context" } : tab).filter((tab) => {
     if ((tab.kind === "surface" && tab.surfaceId === "work") || seenTabs.has(tab.id) || (tab.kind === "lme" && !lmeTabIds.has(tab.lmeTabId))) {
       return false;
     }

@@ -51,7 +51,7 @@ const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keyw
   { surface: "web", label: "Browser", subtitle: "Built-in web workshop", keywords: "browser web surf" },
   { surface: "automations", label: "Automations", subtitle: "Scripts and schedules", keywords: "cron scripts grapheme" },
   { surface: "workshop", label: "Agents", subtitle: "Specialist agents in Workspace", keywords: "skills manuscripts workshop capabilities specialist agents" },
-  { surface: "map", label: "Map", subtitle: "Sessions, moments, and notes", keywords: "memory locus context map moments" },
+  { surface: "map", label: "Context", subtitle: "Browse saved session memory and sources", keywords: "memory locus context map moments" },
   { surface: "peers", label: "Peers", subtitle: "Nearby workshops and inbox", keywords: "peers nearby share trust lan inbox" },
   { surface: "profiles", label: "Profiles", subtitle: "People and identity", keywords: "profiles identity people" },
   { surface: "runtime", label: "Engine status", subtitle: "Jobs, delivery, health", keywords: "runtime engine daemon health" },

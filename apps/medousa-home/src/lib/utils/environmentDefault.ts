@@ -36,7 +36,7 @@ function defaultSurfaces() {
     { id: "artifacts", label: "Artifacts", icon: "sparkles", builtinId: "artifacts" },
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
-    { id: "map", label: "Map", icon: "compass", builtinId: "map" },
+    { id: "map", label: "Context", icon: "compass", builtinId: "map" },
     { id: "workshop", label: "Capabilities", icon: "zap", builtinId: "workshop" },
     { id: "automations", label: "Automations", icon: "zap", builtinId: "automations" },
     { id: "messaging", label: "Messaging", icon: "radio", builtinId: "messaging" },
@@ -372,7 +372,7 @@ function mapSurfaceDef(): SurfaceDef {
   return (
     defaultSurfaces().find((surface) => surface.id === "map") ?? {
       id: "map",
-      label: "Map",
+      label: "Context",
       icon: "compass",
       kind: "builtin",
       builtinId: "map",
@@ -406,9 +406,11 @@ function replaceRetiredContextSurface(
   return next;
 }
 
-/** Ensure Map exists; strip retired Context surface from specs/presets. */
+/** Context keeps the map routing ID; migrate its label and retire the older context route. */
 export function ensureMapSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
-  let surfaces = spec.surfaces.filter((surface) => surface.id !== "context");
+  let surfaces = spec.surfaces.filter((surface) => surface.id !== "context").map((surface) =>
+    surface.id === "map" && surface.label !== "Context" ? { ...surface, label: "Context" } : surface,
+  );
   const hasMap = surfaces.some((surface) => surface.id === "map");
 
   if (!hasMap) {
@@ -425,7 +427,7 @@ export function ensureMapSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
 
   const surfacesChanged =
     surfaces.length !== spec.surfaces.length ||
-    surfaces.some((surface, index) => surface.id !== spec.surfaces[index]?.id);
+    surfaces.some((surface, index) => surface !== spec.surfaces[index]);
   const presetsChanged = (spec.layoutPresets ?? []).some((preset, index) => {
     const next = layoutPresets[index];
     if (!next) return true;

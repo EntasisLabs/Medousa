@@ -26,7 +26,7 @@ describe("ensureMapSurfaceInSpec", () => {
     const next = ensureMapSurfaceInSpec(spec);
     expect(next.surfaces.some((surface) => surface.id === "map")).toBe(true);
     const map = next.surfaces.find((surface) => surface.id === "map");
-    expect(map?.label).toBe("Map");
+    expect(map?.label).toBe("Context");
     expect(map?.icon).toBe("compass");
     expect(next.layoutPresets?.[0]?.surfaces).toContain("map");
   });

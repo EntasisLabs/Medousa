@@ -80,6 +80,11 @@ export function humanMomentTitle(node: {
 
 function humanizeSessionId(sessionId: string): string {
   if (!sessionId) return "Unknown session";
+  const coderRepo = sessionId.match(/^coder:(.+?)[/\\]\.git:/);
+  if (coderRepo) {
+    const project = coderRepo[1].split(/[/\\]/).filter(Boolean).at(-1);
+    return `${project || "Code"} · delegated session`;
+  }
   if (looksLikeOpaqueId(sessionId)) return "Session";
   return sessionId
     .split(/[-_]+/)

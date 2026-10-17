@@ -1,6 +1,6 @@
 # Agents
 
-**Advanced.** **Agents** (Automations → Agents) are optional specialist skills you can import, run, and schedule. They are not the same as **You** / your profile — [You and the Map](guide:profiles-locus).
+**Advanced.** **Agents** (Automations → Agents) are optional specialist skills you can import, run, and schedule. They are not the same as **You** / your profile — [You and Context](guide:profiles-locus).
 
 ## Open Agents
 

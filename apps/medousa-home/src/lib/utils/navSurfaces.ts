@@ -61,7 +61,7 @@ export function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | 
 
 export function navTitle(surface: SurfaceDef): string {
   if (surface.id === "automations") return "Automations";
-  if (surface.id === "map") return "Session link map";
+  if (surface.id === "map") return "Context";
   if (surface.id === "peers") return "Peers";
   if (surface.id === "profiles") return "You";
   return surface.label;
@@ -69,7 +69,7 @@ export function navTitle(surface: SurfaceDef): string {
 
 export function navLabel(surface: SurfaceDef): string {
   if (surface.id === "automations") return "Automations";
-  if (surface.id === "map") return "Map";
+  if (surface.id === "map") return "Context";
   if (surface.id === "profiles") return "You";
   return surface.label;
 }
@@ -94,7 +94,7 @@ export function shellSidebarViewTitle(surfaceId: string): string {
     case "messaging":
       return "Channels";
     case "map":
-      return "Map";
+      return "Context";
     case "calendar":
       return "Calendar";
     case "web":

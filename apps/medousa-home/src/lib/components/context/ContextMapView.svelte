@@ -26,10 +26,8 @@
     density?: ContextMapDensity;
     momentDetail?: LocusNodeDetailResponse | null;
     momentDetailLoading?: boolean;
-    chatSessionAvailable?: boolean;
     onFocusNode?: (node: ContextMapNode) => void;
     onClearSelection?: () => void;
-    onOpenChat?: () => void;
   }
 
   let {
@@ -43,10 +41,8 @@
     density = "default",
     momentDetail = null,
     momentDetailLoading = false,
-    chatSessionAvailable = false,
     onFocusNode,
     onClearSelection,
-    onOpenChat,
   }: Props = $props();
 
   let stageEl: HTMLDivElement | undefined = $state();
@@ -107,7 +103,6 @@
       searchQuery: search,
       density,
       vaultNotes,
-      avecMins: contextShell.mapAvecMins,
     }),
   );
 
@@ -281,8 +276,7 @@
       <div class="context-map-moment-overlay">
         <MapMomentOverlay
           detail={overlayDetail}
-          {chatSessionAvailable}
-          onOpenChat={onOpenChat}
+          {sessionLabels}
           onClear={onClearSelection}
         />
       </div>
