@@ -148,16 +148,19 @@ export async function refreshDesktopPeerCompletionHistory(deps: {
   scope: () => PersonalScopeSnapshot;
   scopeStillMatches: (snapshot: PersonalScopeSnapshot) => boolean;
   focusedSessionId: () => string;
+  focusedSessionRevision?: () => string | null;
   refreshSessions: () => Promise<unknown>;
   reconcileOnResume: () => Promise<unknown>;
 }): Promise<void> {
   const snapshot = deps.scope();
   const focusedSessionId = deps.focusedSessionId();
+  const before = deps.focusedSessionRevision?.();
   await deps.refreshSessions();
   if (
     focusedSessionId &&
     deps.scopeStillMatches(snapshot) &&
-    deps.focusedSessionId() === focusedSessionId
+    deps.focusedSessionId() === focusedSessionId &&
+    (!deps.focusedSessionRevision || before !== deps.focusedSessionRevision())
   ) {
     await deps.reconcileOnResume();
   }
@@ -184,6 +187,10 @@ const singleton = createRemotePeerCompletionSync({
       }),
       scopeStillMatches: (snapshot) => stillCurrent() && scopeStillMatches(snapshot),
       focusedSessionId: () => chat.focusedSessionId,
+      focusedSessionRevision: () => {
+        const session = chat.sessions.find(item => item.session_id === chat.focusedSessionId);
+        return session ? JSON.stringify([session.turns, session.last_timestamp]) : null;
+      },
       refreshSessions: () => chat.refreshSessions({ force: true }),
       reconcileOnResume: () => chat.reconcileOnResume({ notice: false }),
     }),

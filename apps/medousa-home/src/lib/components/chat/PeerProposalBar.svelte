@@ -9,11 +9,11 @@
   import type { PeerProposalInboxResponse, PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
   import { connection } from "$lib/stores/connection.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
-  import { isTauri } from "$lib/platform";
+  import { isTauri, isTauriMobilePlatform } from "$lib/platform";
   import { requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
   import { peerRuntimeLabel } from "./peerProgress";
 
-  let { sessionId, mobile = false, children }: { sessionId: string | null; mobile?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]> } = $props();
+  let { sessionId, mobile = false, visible = true, children }: { sessionId: string | null; mobile?: boolean; visible?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]> } = $props();
   let rows = $state<PeerProposalReviewRecord[]>([]);
   let cursors = $state<{ runtime: string | null; cursor: string }[]>([]);
   let busy = $state(false);
@@ -25,20 +25,20 @@
   let selectedRuntime: string | null = null;
   let selectedId: string | undefined;
   let proposalOrigins = new Map<string, string | null>();
+  let discoveryRetryAt = new Map<string | null, number>();
   let loadedScope: { session: string | null; workshop: string | null; profile: string } | undefined;
   let busyId = $state<string | null>(null);
   const profileScope = $derived(connection.health?.active_profile_id ?? "");
-  const proposalRuntimes = $derived([
-    null,
+  // A primitive key keeps health/registry refreshes from restarting the poller
+  // when the actual set of serving workshops has not changed.
+  const proposalRuntimeKey = $derived(JSON.stringify([...new Set([
+    ...(connection.health?.runtime?.advertised_capabilities.includes("coordination.operator_proposals.v1") ? [null] : []),
     ...workshops.workshops
-      .filter(workshop => workshop.kind === "portal" || workshop.kind === "paired")
+      .filter(workshop => workshop.id !== workshops.activeWorkshopId && (workshop.kind === "portal" || workshop.kind === "paired"))
       .map(workshop => workshop.pairing?.workshopDeviceId?.trim() || "")
       .filter(Boolean),
-  ]);
-  const available = $derived(isTauri() && connection.online && !workshops.switching && (
-    Boolean(connection.health?.runtime?.advertised_capabilities.includes("coordination.operator_proposals.v1"))
-    || proposalRuntimes.length > 1
-  ));
+  ])]));
+  const available = $derived(visible && isTauri() && connection.online && !workshops.switching && proposalRuntimeKey !== "[]");
   function proposalWorkshop(runtimeId: string) {
     return workshops.workshops.find(workshop => workshop.pairing?.workshopDeviceId === runtimeId);
   }
@@ -48,12 +48,14 @@
     const workshop = workshops.activeWorkshopId;
     const profile = profileScope;
     const enabled = available;
+    const runtimes = JSON.parse(proposalRuntimeKey) as (string | null)[];
     const token = ++epoch;
     const scopeChanged = !loadedScope || loadedScope.session !== session || loadedScope.workshop !== workshop
       || Boolean(profile && loadedScope.profile && loadedScope.profile !== profile);
     if (scopeChanged) {
       rows = []; cursors = []; feedback = null;
       loadedPages = new Map(); selectedId = undefined; selectedRuntime = null; proposalOrigins = new Map();
+      discoveryRetryAt = new Map();
     }
     // Missing health during reconnect is not a change of owner.
     loadedScope = { session, workshop, profile: profile || (scopeChanged ? "" : loadedScope?.profile ?? "") };
@@ -62,35 +64,47 @@
     let loading = false;
     const refresh = async () => {
       if (loading || untrack(() => busy) || document.visibilityState === "hidden") return;
-      void requestRemotePeerCompletionSync();
+      // Desktop completion sync already has a shell-owned poller.
+      if (isTauriMobilePlatform()) void requestRemotePeerCompletionSync();
       loading = true;
       const requestRevision = revision;
       try {
+        const observed = untrack(() => [...rows]);
+        const requested = runtimes.filter(runtime => runtime === null
+          || observed.some(row => !row.receipt && proposalOrigins.get(row.proposal.proposal_id) === runtime)
+          || Date.now() >= (discoveryRetryAt.get(runtime) ?? 0));
+        const pages = requested.flatMap(runtime => [undefined, ...(loadedPages.get(runtime) ?? [])].map(after => ({ runtime, after })));
         const settled = await Promise.allSettled(
-          proposalRuntimes.flatMap(runtime => [undefined, ...(loadedPages.get(runtime) ?? [])].map(async after => ({
+          pages.map(async ({ runtime, after }) => ({
             runtime, response: await listPeerProposals(session, runtime, after,
               !after && runtime === selectedRuntime ? selectedId : undefined),
-          }))),
+          })),
         );
         const responses = settled
           .filter((result): result is PromiseFulfilledResult<{ runtime: string | null; response: PeerProposalInboxResponse }> => result.status === "fulfilled")
           .map(result => result.value);
         if (token !== epoch || requestRevision !== revision) return;
-        const observed = untrack(() => [...rows]);
-        const updates = await Promise.allSettled(observed.filter(row => !responses.some(({ response }) =>
+        for (const runtime of requested) {
+          if (runtime !== null) discoveryRetryAt.set(runtime, Date.now() + 60_000);
+        }
+        const missing = observed.filter(row => !row.receipt
+          && responses.some(({ runtime }) => runtime === (proposalOrigins.get(row.proposal.proposal_id) ?? null))
+          && !responses.some(({ response }) =>
           response.proposals.some(item => item.proposal.proposal_id === row.proposal.proposal_id)
-          || response.tracked_proposal?.proposal.proposal_id === row.proposal.proposal_id))
-          .map(async row => ({ runtime: proposalOrigins.get(row.proposal.proposal_id) ?? null,
-            response: await listPeerProposals(session, proposalOrigins.get(row.proposal.proposal_id) ?? null, undefined, row.proposal.proposal_id) })));
+          || response.tracked_proposal?.proposal.proposal_id === row.proposal.proposal_id));
+        const updates = await Promise.allSettled(missing.map(async row => ({ runtime: proposalOrigins.get(row.proposal.proposal_id) ?? null,
+          response: await listPeerProposals(session, proposalOrigins.get(row.proposal.proposal_id) ?? null, undefined, row.proposal.proposal_id) })));
         const tracked = updates.filter((result): result is PromiseFulfilledResult<{ runtime: string | null; response: PeerProposalInboxResponse }> => result.status === "fulfilled").map(result => result.value);
-        if (!responses.length) throw settled.find(result => result.status === "rejected")?.reason ?? new Error("Proposal inbox unavailable");
+        if (!responses.length && settled.some(result => result.status === "rejected")) throw settled.find(result => result.status === "rejected")!.reason;
         if (token === epoch && requestRevision === revision) {
           applyResponses(responses, tracked);
-          feedback = settled.some(result => result.status === "rejected") || updates.some(result => result.status === "rejected")
+          const failed = new Set(settled.flatMap((result, index) => result.status === "rejected" ? [pages[index].runtime] : []));
+          feedback = observed.some(row => !row.receipt && failed.has(proposalOrigins.get(row.proposal.proposal_id) ?? null)) || updates.some(result => result.status === "rejected")
             ? "Some agent progress could not be refreshed. Showing the last known activity." : null;
         }
       } catch (error) {
-        if (token === epoch && requestRevision === revision && untrack(() => rows.length > 0)) feedback = String(error);
+        if (token === epoch && requestRevision === revision) feedback = untrack(() => rows.some(row => !row.receipt))
+          ? "Some agent progress could not be refreshed. Showing the last known activity." : null;
       } finally { loading = false; }
     };
     void refresh();

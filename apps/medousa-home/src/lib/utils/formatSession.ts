@@ -84,11 +84,11 @@ export function presenceSubline(now = new Date()): string {
 }
 
 /** Compact relative timestamp for session list rows. */
-export function formatSessionWhen(iso?: string | null): string {
+export function formatSessionWhen(iso?: string | null, now = Date.now()): string {
   if (!iso) return "";
   try {
     const date = new Date(iso);
-    const diffMs = Date.now() - date.getTime();
+    const diffMs = now - date.getTime();
     const mins = Math.floor(diffMs / 60_000);
     if (mins < 1) return "now";
     if (mins < 60) return `${mins}m`;

@@ -6,6 +6,7 @@
 
   interface Props {
     session: SessionSummary;
+    now?: number;
     selected?: boolean;
     pinned?: boolean;
     /** Touch / sheet: keep actions visible without hover. */
@@ -18,6 +19,7 @@
 
   let {
     session,
+    now = Date.now(),
     selected = false,
     pinned = false,
     alwaysShowActions = false,
@@ -27,7 +29,7 @@
     onTogglePin,
   }: Props = $props();
 
-  const when = $derived(formatSessionWhen(session.last_timestamp));
+  const when = $derived(formatSessionWhen(session.last_timestamp, now));
   const hasMeta = $derived(Boolean(when) || session.turns > 0);
   const title = $derived(formatSessionLabel(session));
   const untitled = $derived(

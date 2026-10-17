@@ -417,7 +417,16 @@ async function fetchSessions(host: ChatStoreHost, hadCache: boolean, query = "")
       q: query || undefined,
     });
     if (host.workshopEpoch !== workshopEpoch) return;
-    host.sessions = response.sessions;
+    const previous = new Map(host.sessions.map(session => [session.session_id, session]));
+    const next = response.sessions.map(session => {
+      const existing = previous.get(session.session_id);
+      return existing && Object.keys(existing).length === Object.keys(session).length
+        && (Object.keys(session) as Array<keyof typeof session>).every(key => existing[key] === session[key])
+        ? existing : session;
+    });
+    if (next.length !== host.sessions.length || next.some((session, index) => session !== host.sessions[index])) {
+      host.sessions = next;
+    }
     host.sessionsFetchedAt = Date.now();
     host.sessionsError = null;
   } catch (err) {

@@ -40,6 +40,12 @@
   const showBuiltInToolbar = $derived(chrome !== "rail-list");
 
   let query = $state("");
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!open) return;
+    const timer = setInterval(() => { now = Date.now(); }, 60_000);
+    return () => clearInterval(timer);
+  });
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let renamingSession = $state<SessionSummary | null>(null);
   let renameDraft = $state("");
@@ -160,7 +166,7 @@
         matchesQuery(session),
     ),
   );
-  const recentGroups = $derived(groupSessionsByRecency(recent));
+  const recentGroups = $derived(groupSessionsByRecency(recent, new Date(now)));
 
   const listEmpty = $derived(pinned.length === 0 && recent.length === 0);
 
@@ -541,8 +547,6 @@
 
     {#if chat.sessionsError}
       <p class="px-3 py-2 text-xs text-content-error">{chat.sessionsError}</p>
-    {:else if chat.sessionsRefreshing}
-      <p class="workshop-faint px-3 py-1 text-[11px]">Updating sessions…</p>
     {/if}
     {#if botError}
       <div class="flex items-start gap-2 px-3 py-2 text-xs text-content-error" role="alert">
@@ -655,6 +659,7 @@
               <li>
                 <SessionRow
                   {session}
+                  {now}
                   selected={chat.sessionId === session.session_id}
                   pinned
                   alwaysShowActions={touchActions}
@@ -702,6 +707,7 @@
                   <li>
                     <SessionRow
                       {session}
+                      {now}
                       selected={chat.sessionId === session.session_id}
                       pinned={false}
                       alwaysShowActions={touchActions}

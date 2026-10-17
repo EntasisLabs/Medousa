@@ -21,7 +21,7 @@ vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessions: [{ session_id: "se
 vi.mock("$lib/stores/undertakings.svelte", () => ({ undertakings: { active: null, items: [] } }));
 vi.mock("$lib/stores/shellTabs.svelte", () => ({ shellTabs: { openChat: navigation.openChat } }));
 vi.mock("$lib/stores/lmeWorkspace.svelte", () => ({ lmeWorkspace: { openCodeWorkspace: navigation.openProject } }));
-vi.mock("$lib/platform", () => ({ isTauri: () => true }));
+vi.mock("$lib/platform", () => ({ isTauri: () => true, isTauriMobilePlatform: () => false }));
 vi.mock("$lib/components/chat/ToolActivitySheet.svelte", () => ({ default: vi.fn() }));
 vi.mock("$lib/stores/executionTargets.svelte", () => ({ executionTargets: { runtimeLabel: () => "Mac mini" } }));
 vi.mock("$lib/remotePeerCompletionSync", () => ({ requestRemotePeerCompletionSync: vi.fn() }));

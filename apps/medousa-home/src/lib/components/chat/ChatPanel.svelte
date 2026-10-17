@@ -933,7 +933,7 @@
             onOpenSource={openDerivationSource}
           />
         {/if}
-        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile}>
+        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile} {visible}>
           {#snippet children(peerProposals, peerControls)}
             <ChatMessageList
               {peerProposals}
@@ -1013,7 +1013,7 @@
       </div>
       {/if}
       {#if !embedded && !providerRuntime && chatMessages.length === 0}
-        <PeerProposalBar sessionId={panelSessionId} {mobile} />
+        <PeerProposalBar sessionId={panelSessionId} {mobile} {visible} />
       {/if}
       {#if chatCodeProject && !embedded}
         <ChatChangeReceipt
