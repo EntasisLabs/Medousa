@@ -162,6 +162,7 @@ export function bindAllFeaturePorts(): void {
       warmBackgroundSession: (sessionId) => {
         void chat.warmBackgroundSession(sessionId);
       },
+      releaseSession: (sessionId) => queueMicrotask(() => chat.history.release(sessionId)),
       switchSession: (sessionId) => chat.switchSession(sessionId),
       newSession: (options) => {
         void chat.newSession(options);

@@ -270,12 +270,14 @@ describe("multi-live chat session runtimes", () => {
       limit: 24,
       cursor: "5",
     });
-    expect(store.messages.map((message) => message.content)).toEqual([
+    expect(store.history.messagesFor("sess-page").map((message) => message.content)).toEqual([
       "turn 3",
       "turn 4",
       "turn 5",
     ]);
-    expect(store.historyCursor).toBe("3");
+    expect(store.messages.map(message => message.content)).toEqual(["turn 5"]);
+    expect(store.history.olderCursorFor("sess-page")).toBe("3");
+    expect(store.historyCursor).toBe("5");
     expect(store.historyLoadingOlder).toBe(false);
   });
 
@@ -532,4 +534,98 @@ describe("multi-live chat session runtimes", () => {
     expect(store.secretAlert).toBeNull();
     expect(runtimes.get("sess-bg")?.secretAlert?.requestId).toBe("asecret-bg");
   });
+  function pagedHistory(sessionId: string, before = 313) {
+    const start = Math.max(1, before - 24);
+    return {
+      authority_id: "authority", session_id: sessionId,
+      next_cursor: start > 1 ? String(start) : null,
+      turns: Array.from({ length: before - start }, (_, i) => ({
+        entry_id: `entry-${start + i}`, entry_seq: start + i, content_digest: "digest",
+        role: i % 2 ? "assistant" : "user", content: `entry ${start + i}`,
+        timestamp: "2026-10-13T00:00:00Z", tool_names: [],
+      })),
+    };
+  }
+
+  it("browses backward and forward with bounded payloads without replacing the live stream buffer", async () => {
+    const { store } = await loadStore();
+    const { getSessionHistory } = await import("$lib/daemon");
+    const { mapTurns } = await import("$lib/chat/sessionController");
+    store.sessionId = "long-session";
+    store.historyCursor = "289";
+    store.historyLoading = false;
+    store.messages = mapTurns(pagedHistory(store.sessionId).turns as never, { sessionId: store.sessionId, authorityId: "authority" });
+    vi.mocked(getSessionHistory).mockImplementation(async (id, options) => pagedHistory(id, Number(options?.cursor ?? 313)) as never);
+    for (let i = 0; i < 10; i++) await store.loadOlderHistory(store.sessionId);
+    const displayed = store.history.messagesFor(store.sessionId);
+    expect(displayed).toHaveLength(72);
+    expect(displayed[0].transcript?.entrySeq).toBe(49);
+    expect(store.messages).toHaveLength(24);
+    const index = store.messages.length - 1;
+    store.replaceMessageAt(index, { ...store.messages[index], content: "live append", streaming: true });
+    expect(store.history.messagesFor(store.sessionId).at(-1)?.content).not.toBe("live append");
+    for (let i = 0; i < 10; i++) await store.history.loadNewer(store.sessionId);
+    expect(store.history.canLoadNewer(store.sessionId)).toBe(false);
+    expect(store.history.messagesFor(store.sessionId).at(-1)?.content).toBe("live append");
+    expect(store.history.messagesFor(store.sessionId)).toHaveLength(72);
+  });
+
+  it("releases a closed transcript, preserves its draft, and ignores late page results", async () => {
+    const { store } = await loadStore();
+    const { getSessionHistory, cancelActiveSessionTurn } = await import("$lib/daemon");
+    store.sessionId = "closed-session";
+    store.historyCursor = "289";
+    store.draft = "unfinished draft";
+    store.messages = [{ id: "entry", role: "assistant", content: "large old transcript" }];
+    store.stashFocusedRuntime(); store.currentMessageIndexes();
+    let finish!: (value: unknown) => void;
+    vi.mocked(getSessionHistory).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }) as never);
+    const pending = store.loadOlderHistory(store.sessionId);
+    store.history.release(store.sessionId);
+    finish(pagedHistory("closed-session", 289));
+    await pending;
+    expect(store.messages).toEqual([]);
+    expect(store.sessionRuntimes.has("closed-session")).toBe(false);
+    expect(store.messageIndexes.has("closed-session")).toBe(false);
+    expect(store.history.messagesFor("closed-session")).toEqual([]);
+    const { loadDraftForSession } = await import("$lib/chat/draftPersistence");
+    expect(loadDraftForSession("closed-session")).toBe("unfinished draft");
+    expect(cancelActiveSessionTurn).not.toHaveBeenCalled();
+    vi.mocked(getSessionHistory).mockResolvedValueOnce(pagedHistory("closed-session") as never);
+    await store.switchSession("closed-session");
+    expect(store.messages).toHaveLength(24);
+    expect(store.draft).toBe("unfinished draft");
+  });
+
+  it("does not release data while another visible surface reads the same conversation", async () => {
+    const { store } = await loadStore();
+    store.sessionId = "visible-session";
+    store.messages = [msg("entry", "visible")];
+    const stop = store.history.retain(store.sessionId);
+    store.history.release(store.sessionId);
+    expect(store.messages).toHaveLength(1);
+    stop();
+    store.history.release(store.sessionId);
+    expect(store.messages).toEqual([]);
+  });
+
+  it("keeps browsing ranges independent between two panes of the same session", async () => {
+    const { store } = await loadStore();
+    const { getSessionHistory } = await import("$lib/daemon");
+    const { mapTurns } = await import("$lib/chat/sessionController");
+    store.sessionId = "two-panes";
+    store.historyLoading = false; store.historyCursor = "289";
+    store.messages = mapTurns(pagedHistory(store.sessionId).turns as never, { sessionId: store.sessionId, authorityId: "authority" });
+    const left = store.history.retain(store.sessionId, "left");
+    const right = store.history.retain(store.sessionId, "right");
+    vi.mocked(getSessionHistory).mockImplementation(async (id, options) => pagedHistory(id, Number(options?.cursor ?? 313)) as never);
+    for (let i = 0; i < 6; i++) await store.history.loadOlder(store.sessionId, "left");
+    await store.history.loadOlder(store.sessionId, "right");
+    expect(store.history.messagesFor(store.sessionId, "left")[0].transcript?.entrySeq).toBe(145);
+    expect(store.history.messagesFor(store.sessionId, "right")[0].transcript?.entrySeq).toBe(265);
+    left();
+    expect(store.history.messagesFor(store.sessionId, "right")).toHaveLength(48);
+    right();
+  });
+
 });

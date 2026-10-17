@@ -10,6 +10,7 @@ export type ShellTabChatPort = {
   messagesFor: (sessionId: string) => ChatMessage[];
   historyLoadingFor: (sessionId: string) => boolean;
   warmBackgroundSession: (sessionId: string) => void;
+  releaseSession?: (sessionId: string) => void;
   switchSession: (sessionId: string) => Promise<void>;
   newSession: (options?: { shellContext?: { desktopId: string; groupId: string } }) => void;
 };

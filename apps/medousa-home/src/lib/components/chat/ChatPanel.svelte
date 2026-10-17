@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { useChatHistoryPanel } from "$lib/chat/chatHistoryPanel.svelte";
   import { composerModel } from "$lib/chat/composerModel";
   import { tick, untrack } from "svelte";
   import { ExternalLink, LoaderCircle } from "@lucide/svelte";
@@ -145,7 +146,7 @@
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
   let workerTranscriptWorkId = $state<string | null>(null);
-  let loadingOlderForScroll = $state(false);
+  const history = useChatHistoryPanel(chat.history, () => panelSessionId, () => visible);
 
   function openCardDetail(detail: CardDetailPayload) {
     cardDetail = detail;
@@ -188,17 +189,7 @@
   const externalConversation = untrack(() => sharedExternalConversation ?? createExternalConversationController({ provider: () => providerRuntime, sessionId: () => panelSessionId, scope: () => chat.workshopScopeId, offline: () => connection.offline, visible: () => visible }));
   const panelBot = $derived(bots.forSession(panelSessionId));
   const chatCodeProject = $derived(undertakings.forChat(panelSessionId));
-  const panelMessages = $derived(chat.messagesFor(panelSessionId));
-  async function loadOlderMessages() {
-    if (loadingOlderForScroll) return;
-    loadingOlderForScroll = true;
-    try {
-      await chat.loadOlderHistory(panelSessionId);
-      await tick();
-    } finally {
-      loadingOlderForScroll = false;
-    }
-  }
+  const panelMessages = $derived(history.messages());
   /**
    * Worker-lane turns stay in the principal thread: they carry the sub-agent's
    * synthesis prose, and their position is where the beat belongs chronologically.
@@ -887,7 +878,7 @@
   <div class="relative flex min-h-0 flex-1 flex-col">
   <ChatScrollChrome
     {mobile}
-    showFab={showScrollFab && visible}
+    showFab={(showScrollFab || history.canLoadNewer()) && visible}
     showTurnRail={showChatTurnRail}
     {showCurrentTurnAnchor}
     {chatTurnItems}
@@ -898,9 +889,12 @@
     bind:scheduleChatNavigationMeasure
     bind:resetForSession={resetScrollSession}
     historyKey={providerRuntime ? `${panelSessionId}:${externalConversation.selectedId ?? providerRuntime}` : panelSessionId}
-    canLoadOlder={!providerRuntime && Boolean(chat.historyCursorFor(panelSessionId))}
-    loadingOlder={!providerRuntime && chat.historyLoadingOlderFor(panelSessionId)}
-    onLoadOlder={providerRuntime ? undefined : loadOlderMessages}
+    canLoadOlder={!providerRuntime && Boolean(history.olderCursor())}
+    loadingOlder={!providerRuntime && history.loading()}
+    onLoadOlder={providerRuntime ? undefined : history.older}
+    canLoadNewer={!providerRuntime && history.canLoadNewer()}
+    onLoadNewer={providerRuntime ? undefined : history.newer}
+    onLoadLatest={providerRuntime ? undefined : history.latest}
     onAtBottomChange={(value) => (atBottom = value)}
     bodyClass={embedded && !useMobileChatLayout
       ? "vault-workshop-chat-body"

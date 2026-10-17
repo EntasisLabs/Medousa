@@ -1292,6 +1292,7 @@ export class ShellTabsStore {
         );
         if (!stillOpen) {
           chatStreamPool.release(tab.sessionId);
+          ports().chat.releaseSession?.(tab.sessionId);
         }
       }
     } finally {
