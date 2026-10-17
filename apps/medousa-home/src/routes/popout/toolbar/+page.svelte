@@ -640,7 +640,7 @@
         </section>
       {:else if drafts.mode === "ask" && !companionFeedback && !pendingApproval}
         <section class="companion-recent" aria-label="Background ask status">
-          <strong>{activeAskCard ? "Current ask" : "Ask runs in Work"}</strong>
+          <strong>{activeAskCard ? "Current ask" : "Ask runs in Activity"}</strong>
           <p>
             {activeAskCard
               ? `${activeAskCard.title} · ${activeAskCard.status_label}`
@@ -704,7 +704,7 @@
               <span class="companion-session-label">{sessionLabel}</span>
             {/if}
           {:else}
-            <span class="companion-session-label">Background · visible in Work</span>
+            <span class="companion-session-label">Background · visible in Activity</span>
           {/if}
           <button
             type="submit"

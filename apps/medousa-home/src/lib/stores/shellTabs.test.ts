@@ -462,6 +462,28 @@ describe("shellTabs store", () => {
     expect(shellTabs.splitRoot.type).toBe("group");
   });
 
+  it("retires saved Work tabs without disturbing other tabs or pane splits", async () => {
+    const { shellTabs } = await loadShellTabs();
+    shellTabs.bootstrap();
+    shellTabs.openChat("session-a", { activate: true });
+    shellTabs.splitActive("right");
+    shellTabs.openSurface("calendar", { activate: true });
+    const key = "medousa-home-workspace-session-v4:personal";
+    const saved = JSON.parse(localStorage.getItem(key)!);
+    const desktop = saved.desktops.find((entry: { id: string }) => entry.id === saved.activeDesktopId);
+    const group = desktop.layout.groups.find((entry: { id: string }) => entry.id === desktop.layout.activeGroupId);
+    desktop.layout.tabs.push({ id: "old-work", kind: "surface", surfaceId: "work", title: "Work" });
+    group.tabIds.push("old-work"); group.activeTabId = "old-work";
+    localStorage.setItem(key, JSON.stringify(saved));
+    const { shellTabs: restored } = await loadShellTabs();
+    restored.bootstrap();
+    expect(restored.tabs.some((tab) => tab.id === "old-work")).toBe(false);
+    expect(restored.tabs.some((tab) => tab.kind === "chat" && tab.sessionId === "session-a")).toBe(true);
+    expect(restored.groups).toHaveLength(2);
+    expect(restored.activeTab).toMatchObject({ kind: "surface", surfaceId: "calendar" });
+    expect(restored.openSurface("work")).toBeNull();
+  });
+
   it("persists and restores split layout across bootstrap", async () => {
     const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();

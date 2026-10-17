@@ -96,13 +96,6 @@ export async function sendVaultNoteToWork(path: string): Promise<void> {
   await workspace.submitAsk({
     prompt: buildWorkAskFromNote(note.path, note.title, note.content),
   });
-  if (shouldUseMobileShell()) {
-    layout.setMobileTab("home", { bump: true });
-    workspace.openAsksView();
-  } else {
-    layout.navigateDesktop("work", { bump: true });
-    workspace.openAsksView();
-  }
 }
 
 export async function launchVaultNoteWorkshop(input: {

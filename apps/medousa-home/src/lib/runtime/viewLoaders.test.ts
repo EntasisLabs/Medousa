@@ -56,9 +56,9 @@ describe("browse vs edit and settings splits", () => {
     expect(host).toContain("loadVaultEditor");
   });
 
-  it("does not evaluate the source editor from the work hub", () => {
+  it("does not evaluate the source editor from task details", () => {
     const work = readFileSync(
-      join(homeRoot, "src/lib/components/work/WorkPanel.svelte"),
+      join(homeRoot, "src/lib/components/tasks/TaskDetailsOverlay.svelte"),
       "utf8",
     );
     expect(work).not.toMatch(/CodeSourceEditor/);

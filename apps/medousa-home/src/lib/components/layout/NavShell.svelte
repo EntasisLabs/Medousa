@@ -17,8 +17,6 @@
   import CalendarRailList from "$lib/components/calendar/CalendarRailList.svelte";
   import YouRailToolbar from "$lib/components/profiles/YouRailToolbar.svelte";
   import YouRailList from "$lib/components/profiles/YouRailList.svelte";
-  import WorkRailToolbar from "$lib/components/work/WorkRailToolbar.svelte";
-  import WorkRailList from "$lib/components/work/WorkRailList.svelte";
   import CanvasAddViewForm from "$lib/components/settings/CanvasAddViewForm.svelte";
   import CanvasEditViewPopover from "$lib/components/settings/CanvasEditViewPopover.svelte";
   import { environment } from "$lib/stores/environment.svelte";
@@ -75,7 +73,6 @@
     onOpenChat: () => void;
     health?: DaemonHealth | null;
     chatActivity?: number;
-    workActivity?: number;
     peersActivity?: number;
     activeProfileLabel?: string;
   }
@@ -86,7 +83,6 @@
     onOpenChat,
     health = null,
     chatActivity = 0,
-    workActivity = 0,
     peersActivity = 0,
     activeProfileLabel = "Personal",
   }: Props = $props();
@@ -321,7 +317,6 @@
 
   function activityFor(id: string): number {
     if (id === "chat") return chatActivity;
-    if (id === "work") return workActivity;
     if (id === "peers") return peersActivity;
     return 0;
   }
@@ -699,15 +694,6 @@
                 <CalendarRailList onPickEvent={() => onSelect("calendar")} />
               </div>
             </div>
-          {:else if viewSurface === "work"}
-            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div class="lme-side-rail-dock">
-                <WorkRailToolbar onAction={() => onSelect("work")} />
-              </div>
-              <div class="min-h-0 flex-1 overflow-hidden">
-                <WorkRailList />
-              </div>
-            </div>
           {:else if viewSurface === "profiles"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="lme-side-rail-dock">
@@ -1011,8 +997,6 @@
         <WebRailToolbar onNavigated={() => commitPopoverSurface("web")} />
       {:else if popover.surfaceId === "calendar"}
         <CalendarRailToolbar onAction={() => commitPopoverSurface("calendar")} />
-      {:else if popover.surfaceId === "work"}
-        <WorkRailToolbar onAction={() => commitPopoverSurface("work")} />
       {:else if popover.surfaceId === "profiles"}
         <YouRailToolbar onAction={() => commitPopoverSurface("profiles")} />
       {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
@@ -1081,8 +1065,6 @@
       <WebRailList onPickTab={() => commitPopoverSurface("web")} />
     {:else if popover.surfaceId === "calendar"}
       <CalendarRailList onPickEvent={() => commitPopoverSurface("calendar")} />
-    {:else if popover.surfaceId === "work"}
-      <WorkRailList onPickCard={closeRailPopover} />
     {:else if popover.surfaceId === "profiles"}
       <YouRailList onPickProfile={() => commitPopoverSurface("profiles")} />
     {/if}

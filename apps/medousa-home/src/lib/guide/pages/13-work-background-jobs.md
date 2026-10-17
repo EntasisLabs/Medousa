@@ -1,117 +1,39 @@
-# Work and background jobs
+# Activity and background tasks
 
-**Work** is a board of jobs that keep going after a normal chat reply — background asks, long tasks, and items waiting on you.
+Open Spotlight with **⌘K** or **Ctrl+K**, then choose **Activity** to follow tasks, agents, code runs, schedules, and recent note activity across the connected workshop.
 
 Related: [Chat](guide:chat) · [Permissions, budgets, and tool safety](guide:permissions-budgets) · [Navigation and surfaces](guide:navigation-surfaces)
 
-## Open Work
+## Follow progress
 
-- Rail / Spotlight → **Work**
-- Chat cues after `/ask`: “Working in background”, “see Work”
-- Budget bar **Work** button → linked card
+Expand conversations, delegated turns, and agents to see their children. Select a row to preview progress and retained output. **Open chat**, **Open project**, **Open review**, and **Open note** return to the relevant context. **Task details** opens results, timeline, linked notes, and task controls over your current screen. Close it or press Escape to return.
 
-Views on the surface:
+Use **All**, **Running**, **Needs you**, or **Finished** to focus the hierarchy. Search keeps the ancestors of matching activity visible. Needs you, Finished, and search include older tasks still retained by the daemon.
 
-| View | Role |
-|------|------|
-| **Hub** | Kanban + trays |
-| **Asks** | List focused on ask-lane cards |
-
-## Columns
-
-```dashboard
-title: Work board columns
-columns: 2
-
----
-label: Backlog
-value: Queued
-tone: default
----
-label: In flight
-value: Running
-tone: accent
----
-label: Wrapping up
-value: Finishing
-tone: default
----
-label: Blocked
-value: Needs you
-tone: warn
----
-label: Done
-value: Finished
-tone: success
-```
-
-**Done** shows when **Show done** is checked. In flight’s header hint: drag to cancel.
-
-## How cards appear
-
-| Source | What you see |
-|--------|----------------|
-| `/ask …` or Spotlight **Background task** | Background ask card; interactive chat can keep going |
-| Long agent / worker turns | Turn-worker cards as the workshop syncs |
-| Budget approvals | Often **blocked** until you Approve/Deny |
-| Spotlight **Morning brief** (when available) | Queued job that lands you on Work |
-
-If an interactive turn is already live, new `/ask` traffic still goes to background rather than stealing the foreground turn.
-
-## Operate a card
-
-```timeline
-title: Operate a card
-subtitle: Typical loop
-
----
-ts: Open
-label: Open inspector
-detail: Click a card for timeline, result, chat/note links, and budget actions.
-icon: search
----
-ts: Cancel
-label: Cancel if needed
-detail: Drag an in-flight card to the cancel drop zone.
-icon: x
----
-ts: Group
-label: Group with swimlanes
-detail: none · By intent · By manuscript · By job family · By session.
-icon: layers
-```
+Needs you offers clear-failed and retry/hide-stuck actions. Finished offers archive-settled and clear-failed/stopped actions. They act on up to 24 matching tasks at a time; repeat for another batch. Individual cancel, retry, and budget actions are in task details.
 
 ```callout
 tone: tip
-title: Blocked usually means you
-body: Check the card inspector and chat for a budget or permission bar before assuming the engine died.
+title: Keep your place
+body: Task details and New ask open over your current screen. Close them to return to the same tab.
 ```
 
-## Retention
+## Start a background ask
 
-**Settings → Preferences → Work cards**
+- Choose **New ask** in Activity or **Ask** in the titlebar's **+** menu.
+- Use `/ask …` in Chat or Spotlight's **Background task** command.
+- Send a vault note as an ask from its note actions.
 
-| Setting | Effect |
-|---------|--------|
-| **Hide from board** | Hours after done before the card leaves the board |
-| **Clear archives** | Days before archived work is wiped |
+You can continue using the app while the task runs. The composer opens over your current screen. Accepted standalone asks open their task details. Completion dialogs are available across desktop and mobile and queue when several asks finish together. They offer **View task**, journal and delivery actions, and **Later**.
 
-Tune these if the board fills with completed noise.
+## Asks in Chat
 
-## Work vs Runtime
+When a conversation has background asks, its **background asks** button opens their transcripts. From there you can save an answer to the vault, turn tool history into a flow, or **Move to chat** when an ask has settled. This transcript list belongs to the conversation you opened it from.
 
-| Surface | Audience | Shows |
-|---------|----------|--------|
-| **Work** | Operators | Cards, asks, cancel, inspect |
-| **Runtime** | Diagnostics | **Now**, **Jobs**, **Delivery**, **Routing** — queues, failures, dead letters, delivery endpoints |
+## Retention and diagnostics
 
-When a schedule “didn’t deliver,” check Runtime → **Delivery** as well as Automations history. Work answers “what am I waiting on?”; Runtime answers “what did the engine enqueue?”
+**Settings → Preferences → Task activity** controls how long completed tasks remain in the default activity list and when archives clear. Status filters and search can find older tasks while the daemon retains them.
 
-## Slash and Spotlight
+Activity is the workshop overview. **Settings → Engine status** provides queue, delivery, routing, and failure diagnostics. Schedule configuration and history remain in **Automations**; project execution and review remain in **Code**.
 
-| Action | How |
-|--------|-----|
-| Background ask | `/ask …` in chat, or Spotlight **Background task** |
-| Budget list / approve / deny | `/budget …` — see [Permissions](guide:permissions-budgets) |
-
-Next: [Troubleshooting](guide:troubleshooting) if a card sits in blocked or in flight too long.
+Next: [Troubleshooting](guide:troubleshooting) if a task stays blocked or running too long.

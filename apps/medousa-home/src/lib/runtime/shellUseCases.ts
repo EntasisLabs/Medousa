@@ -29,6 +29,9 @@ export async function openWorkCard(cardId: string): Promise<void> {
   const { commandSpotlight } = await import("$lib/stores/commandSpotlight.svelte");
   if (activeWorkshopId() !== scope) return;
   commandSpotlight.closeSpotlight();
+  const { taskOverlays } = await import("$lib/runtime/taskOverlayState.svelte");
+  if (activeWorkshopId() !== scope) return;
+  taskOverlays.askHistorySessionId = null;
   await workspace.selectCard(cardId, { refresh: true });
 }
 
@@ -98,4 +101,17 @@ export function focusChatComposer(): void {
     void chat.ensureSessionHydrated();
   });
   window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
+}
+
+/** Show scoped ask transcripts beside the conversation that owns them. */
+export async function openAskHistory(sessionId?: string): Promise<void> {
+  const scope = activeWorkshopId();
+  const { chat } = await import("$lib/stores/chat.svelte");
+  const { taskOverlays } = await import("$lib/runtime/taskOverlayState.svelte");
+  const { commandSpotlight } = await import("$lib/stores/commandSpotlight.svelte");
+  if (activeWorkshopId() !== scope) return;
+  const id = sessionId?.trim() || chat.focusedSessionId;
+  if (!id) return;
+  commandSpotlight.closeSpotlight();
+  taskOverlays.askHistorySessionId = id;
 }

@@ -90,7 +90,7 @@
     /** Sticky pop-out: slim companion chrome, keep note IM chat. */
     stickyNote?: boolean;
     onOpenChat?: () => void;
-    onOpenWork?: () => void;
+    onOpenActivity?: () => void;
     onSelectCard?: (id: string) => void | Promise<void>;
   }
 
@@ -102,7 +102,7 @@
     mobile = false,
     stickyNote = false,
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onSelectCard,
   }: Props = $props();
 
@@ -589,10 +589,10 @@
   }
 
   async function handleSendToWork() {
-    if (!vault.selectedPath || !onOpenWork) return;
+    if (!vault.selectedPath || !onOpenActivity) return;
     try {
       await sendVaultNoteToWork(vault.selectedPath);
-      onOpenWork();
+      onOpenActivity();
     } catch {
       // workspace.submitAsk surfaces askError on Work surface.
     }
@@ -967,7 +967,7 @@
           monoSource={vault.editorSurface === "source"}
           {linkCount}
           onOpenChat={onOpenChat}
-          onOpenWork={onOpenWork}
+          onOpenActivity={onOpenActivity}
           onSelectCard={onSelectCard}
           onExportPdf={handleExportPdf}
           onExportWord={handleExportWord}

@@ -1,10 +1,9 @@
 <script lang="ts">
   import "$lib/styles/work.postcss";
-  import { ArrowLeft } from "@lucide/svelte";
+  import { onDestroy } from "svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { workspace } from "$lib/stores/workspace.svelte";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
@@ -13,22 +12,29 @@
     showChatTurnSaveFeedback,
   } from "$lib/utils/saveChatTurnToVault";
   import { groupAskThreads } from "$lib/utils/askThreads";
-  import { dispatchWorkFocusAsk } from "$lib/utils/workChromeEvents";
+  import { openNewAsk } from "$lib/utils/workChromeEvents";
+  import { taskOverlays } from "$lib/runtime/taskOverlayState.svelte";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
+  import { focusChatComposer } from "$lib/runtime/shellUseCases";
   import type { ChatMessage } from "$lib/types/chat";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
   interface Props {
-    onOpenChat?: () => void;
+    sessionId: string;
   }
 
-  let { onOpenChat }: Props = $props();
+  let { sessionId }: Props = $props();
+
+  let alive = true;
+  let moving = $state(false);
+  let actionError = $state("");
+  onDestroy(() => { alive = false; });
 
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
 
-  const askThreads = $derived(groupAskThreads(chat.messages));
-  const sessionId = $derived(chat.sessionId);
+  const askThreads = $derived(groupAskThreads(chat.messagesFor(sessionId)));
 
   function openCardDetail(detail: CardDetailPayload) {
     cardDetail = detail;
@@ -42,47 +48,47 @@
   function handlePromoteToFlow(ref: ToolHistorySliceRef) {
     flowDraft.queuePromotion([ref]);
     automationsNav.openSection("flows");
+    taskOverlays.askHistorySessionId = null;
     layout.navigateDesktop("automations", { bump: true });
     if (layout.isMobile) layout.openMore("automations");
   }
 
   async function handleSaveToVault(assistant: ChatMessage, user?: ChatMessage | null) {
+    const scope = activeWorkshopId();
     const result = await saveChatTurnToVault({
       assistant,
       user: user ?? null,
       sessionId,
     });
-    showChatTurnSaveFeedback(result);
+    if (alive && activeWorkshopId() === scope) showChatTurnSaveFeedback(result);
   }
 
-  function promoteToChat(jobId: string) {
-    chat.promoteAskToChat(jobId);
-    onOpenChat?.();
+  async function promoteToChat(jobId: string) {
+    if (moving) return;
+    const workshopId = activeWorkshopId();
+    moving = true; actionError = "";
+    try {
+      if (chat.sessionId !== sessionId) await chat.switchSession(sessionId);
+      if (!alive || activeWorkshopId() !== workshopId || chat.sessionId !== sessionId) return;
+      chat.promoteAskToChat(jobId);
+      taskOverlays.askHistorySessionId = null;
+      focusChatComposer();
+    } catch (cause) {
+      if (alive && activeWorkshopId() === workshopId) actionError = cause instanceof Error ? cause.message : String(cause);
+    } finally { if (alive) moving = false; }
   }
 
-  function goNewAsk() {
-    workspace.openHubView();
-    dispatchWorkFocusAsk();
-  }
+  function goNewAsk() { openNewAsk(); }
+
 </script>
 
 <div class="work-asks-panel flex h-full min-h-0 min-w-0 flex-1 flex-col">
   <header class="work-asks-header shrink-0">
     <div class="flex min-w-0 items-start gap-2">
-      {#if layout.isMobile}
-        <button
-          type="button"
-          class="mobile-icon-btn shrink-0"
-          aria-label="Back to Home"
-          onclick={() => workspace.openHubView()}
-        >
-          <ArrowLeft size={18} strokeWidth={1.85} />
-        </button>
-      {/if}
       <div class="min-w-0">
         <h1 class="text-sm font-semibold text-surface-50">Asks</h1>
         <p class="mt-0.5 text-[11px] text-content-quiet">
-          Scoped background work — separate from Chat
+          Background asks from this conversation
         </p>
       </div>
     </div>
@@ -95,12 +101,13 @@
     </button>
   </header>
 
+  {#if actionError}<p role="alert" class="px-4 py-2 text-xs text-content-error">{actionError}</p>{/if}
   <div class="work-asks-scroll min-h-0 flex-1 overflow-y-auto">
     {#if askThreads.length === 0}
       <div class="work-asks-empty">
         <p class="text-sm text-content-tertiary">No asks yet</p>
         <p class="mt-1 text-[12px] text-content-quiet">
-          Start one from the dock (New ask), or use /ask in Chat.
+          Start a new ask here, or use /ask in Chat.
         </p>
         <button
           type="button"
@@ -131,7 +138,8 @@
                 <button
                   type="button"
                   class="workshop-text-action shrink-0 text-[11px]"
-                  onclick={() => promoteToChat(thread.jobId)}
+                  disabled={moving}
+                  onclick={() => void promoteToChat(thread.jobId)}
                 >
                   Move to chat
                 </button>

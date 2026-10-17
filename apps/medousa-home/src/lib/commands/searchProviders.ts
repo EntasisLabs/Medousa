@@ -115,7 +115,7 @@ export function buildWorkCardOpenCommands(
     .map(({ card }) => ({
       id: `open-card:${card.id}`,
       section: "open" as const,
-      label: `Open work: ${card.title}`,
+      label: `Open task: ${card.title}`,
       subtitle: columnLabel(card.column),
       keywords: `work card kanban ${card.title} ${card.id}`,
       run: async (runCtx) => {

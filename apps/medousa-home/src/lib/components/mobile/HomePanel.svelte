@@ -2,7 +2,6 @@
   import { onDestroy, onMount } from "svelte";
   import "$lib/styles/mobile-home-convergence.postcss";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
-  import WorkAsksPanel from "$lib/components/work/WorkAsksPanel.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -356,9 +355,6 @@
   }
 </script>
 
-{#if workspace.workView === "asks"}
-  <WorkAsksPanel {onOpenChat} />
-{:else}
 <section class="mobile-home relative flex h-full min-h-0 flex-col">
   <div
     bind:this={scrollEl}
@@ -545,4 +541,3 @@
     onDismiss={dismissToast}
   />
 </section>
-{/if}

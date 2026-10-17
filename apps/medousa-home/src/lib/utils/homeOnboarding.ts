@@ -90,7 +90,7 @@ const FOCUS_SURFACES: Record<HomeOnboardingFocus, string[]> = {
   code: ["code"],
   messaging: ["messaging", "chat"],
   notes: ["notes", "files", "artifacts", "web"],
-  plan: ["work", "calendar", "automations"],
+  plan: ["calendar", "automations"],
   ai: ["chat", "map"],
 };
 

@@ -1,3 +1,4 @@
+import { buildActivityCommands } from "./activityCommands";
 import {
   approveTurnBudgetRequest,
   checkDaemonHealth,
@@ -46,7 +47,6 @@ const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keyw
   { surface: "notes", label: "Notes", subtitle: "Vault notes and markdown", keywords: "vault notes documents library" },
   { surface: "files", label: "Files", subtitle: "Pinned folders on this machine", keywords: "files folders pin local" },
   { surface: "artifacts", label: "Artifacts", subtitle: "HTML decks and agent widgets", keywords: "artifacts presentations decks widgets" },
-  { surface: "work", label: "Work", subtitle: "Tasks and kanban board", keywords: "kanban cards jobs" },
   { surface: "code", label: "Code", subtitle: "Projects, editing, understanding, and review", keywords: "code project repository editor forge test review source" },
   { surface: "web", label: "Browser", subtitle: "Built-in web workshop", keywords: "browser web surf" },
   { surface: "automations", label: "Automations", subtitle: "Scripts and schedules", keywords: "cron scripts grapheme" },
@@ -72,6 +72,7 @@ export function buildGoCommands(): WorkshopCommand[] {
   }));
   return [
     ...destinations,
+    ...buildActivityCommands(),
     {
       id: "go-channels",
       section: "go",

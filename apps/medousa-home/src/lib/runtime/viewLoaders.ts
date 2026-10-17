@@ -179,11 +179,6 @@ export const loadLmePanel = catalogLoader(
   "panel",
   () => import("$lib/components/lme/LmePanel.svelte"),
 );
-export const loadWorkPanel = catalogLoader(
-  "code-work",
-  "panel",
-  () => import("$lib/components/work/WorkPanel.svelte"),
-);
 export const loadHumanBrowserPanel = catalogLoader(
   "browser",
   "panel",
@@ -242,8 +237,8 @@ export const loadWizardContainer = catalogLoader(
   "view",
   () => import("$lib/components/wizard/WizardContainer.svelte"),
 );
-export const loadWorkAskDockPopover = () =>
-  import("$lib/components/work/WorkAskDockPopover.svelte");
+export const loadNewAskDialog = () =>
+  import("$lib/components/tasks/NewAskDialog.svelte");
 export const loadTaskDetailsOverlay = () =>
   import("$lib/components/tasks/TaskDetailsOverlay.svelte");
 export const loadTaskCompletionDialog = () =>
@@ -325,3 +320,5 @@ export const loadSettingsMcpSection = () =>
   import("$lib/components/settings/SettingsMcpSection.svelte");
 export const loadSettingsBasementSection = () =>
   import("$lib/components/settings/SettingsBasementSection.svelte");
+
+export const loadAskHistoryDialog = () => import("$lib/components/chat/AskHistoryDialog.svelte");

@@ -7,9 +7,9 @@ const fixture = vi.hoisted(() => {
   const card = (id: string, status = "running") => ({ id, title: `Task ${id}`, column: status === "failed" ? "blocked" : "in_flight", status_label: status, created_at_utc: "2026-10-17T10:00:00Z", updated_at_utc: "2026-10-17T11:00:00Z" });
   const a = card("a"); const b = card("b", "failed");
   const detail = (entry: typeof a) => ({ card: entry, kind: "turn_worker", session_id: "session", correlation_id: "turn", terminal: entry.id === "b", wrapping_up_reasons: [], task_line: entry.title, associations: { vault_paths: [], artifact_ids: [], locus_node_ids: [] } });
-  return { cards: [a, b], details: new Map([["a", detail(a)], ["b", detail(b)]]), card: vi.fn(), projects: vi.fn(), schedules: vi.fn(), navigate: vi.fn(), close: vi.fn(), switchSession: vi.fn(), openTask: vi.fn() };
+  return { cards: [a, b], details: new Map([["a", detail(a)], ["b", detail(b)]]), card: vi.fn(), projects: vi.fn(), schedules: vi.fn(), navigate: vi.fn(), close: vi.fn(), switchSession: vi.fn(), openTask: vi.fn(), clearTasks: vi.fn() };
 });
-vi.mock("$lib/stores/workspace.svelte", () => ({ workspace: { get cards() { return fixture.cards; }, visibleCards: () => fixture.cards, get cardDetailsCache() { return fixture.details; }, feed: [] } }));
+vi.mock("$lib/stores/workspace.svelte", () => ({ workspace: { get cards() { return fixture.cards; }, visibleCards: () => fixture.cards, get cardDetailsCache() { return fixture.details; }, feed: [], archiveTerminalTrayCards: fixture.clearTasks } }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessions: [{ session_id: "session", display_name: "Browser work", preview: "", turns: 2, verification_runs: 0 }], sessionRuntimes: new Map(), turns: new Map(), messages: [], sessionId: "", runtimeRevision: 0 } }));
 vi.mock("$lib/stores/connection.svelte", () => ({ connection: { offline: false } }));
 vi.mock("$lib/work/workerTranscripts.svelte", () => ({ workerTranscripts: { transcripts: new Map() } }));
@@ -17,6 +17,7 @@ vi.mock("$lib/utils/workshopLocality", () => ({ activeWorkshopId: () => "worksho
 vi.mock("$lib/spotlight/activityApi", () => ({ activityDataPort: { projects: fixture.projects, schedules: fixture.schedules, projectRuns: async () => [], scheduleRuns: async () => [], card: fixture.card }, readActivityCodeRun: vi.fn() }));
 vi.mock("$lib/daemon", () => ({ getWorkspaceCard: fixture.card, getJobResult: vi.fn() }));
 vi.mock("$lib/runtime/shellUseCases", () => ({ openTaskDetails: fixture.openTask }));
+import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
 import SpotlightActivity from "./SpotlightActivity.svelte";
 
 let component: ReturnType<typeof mount> | null = null;
@@ -25,7 +26,7 @@ const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement
 const tree = () => document.querySelector('[role="tree"]')!;
 async function start(query = "") { component = mount(SpotlightActivity, { target: document.body, props: { query, ctx: ctx() } }); flushSync(); await vi.advanceTimersByTimeAsync(200); flushSync(); }
 beforeEach(() => {
-  vi.useFakeTimers(); vi.clearAllMocks();
+  vi.useFakeTimers(); vi.clearAllMocks(); commandSpotlight.closeSpotlight();
   fixture.projects.mockResolvedValue({ items: [], nextCursor: null }); fixture.schedules.mockResolvedValue([]);
   fixture.switchSession.mockResolvedValue(undefined);
   fixture.card.mockImplementation(async (id: string) => fixture.details.get(id));
@@ -56,6 +57,14 @@ describe("Spotlight Activity interactions", () => {
     await start("Task a");
     expect(tree().textContent).toContain("Browser work"); expect(tree().textContent).toContain("Task a"); expect(tree().textContent).not.toContain("Task b");
     button("Running").click(); flushSync(); expect(tree().textContent).toContain("Task a");
+  });
+  it("clears only failed tasks matching the Activity search", async () => {
+    await start("Task b");
+    expect(document.querySelector('[aria-label="Task status"]')).toBeNull();
+    button("Needs you").click(); flushSync();
+    button("Clear failed (1)").click(); await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.clearTasks).toHaveBeenCalledWith([fixture.cards[1]], "failed");
+    expect(tree().textContent).not.toContain("Task a");
   });
   it("stops summary refreshes when the lens is unmounted", async () => {
     await start(); expect(fixture.projects).toHaveBeenCalledOnce();

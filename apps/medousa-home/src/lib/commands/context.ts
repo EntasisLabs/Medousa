@@ -1,3 +1,4 @@
+import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/runtime/layout.svelte";
@@ -80,7 +81,8 @@ export function buildWorkshopCommandContext(
         return;
       }
       if (surface === "work") {
-        void workspace.prefetchCardDetails();
+        commandSpotlight.openActivity();
+        return;
       }
       shellTabs.openDestination(surface);
     },

@@ -41,7 +41,7 @@ label: Stuck or silent reply
 icon: hourglass
 body: |-
   1. Still Connected?
-  2. Open **Work** — is a card **blocked**?
+  2. Open Spotlight → **Activity → Needs you** — is a task blocked?
   3. Chat — waiting for **Allow** or **Approve**?
   4. Browser — verification / CAPTCHA banner? Finish it, then **Continue agent**.
   5. Last resort: Settings → Connection → **Restart** (chats pause briefly).

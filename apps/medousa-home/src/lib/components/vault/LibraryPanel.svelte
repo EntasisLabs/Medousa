@@ -26,7 +26,7 @@
   interface Props {
     visible: boolean;
     onOpenChat: () => void;
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
     /** Hosted inside LME — hide library tabs; open notes as workspace tabs. */
     lmeHosted?: boolean;
@@ -35,7 +35,7 @@
   let {
     visible,
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onSelectCard,
     lmeHosted = false,
   }: Props = $props();
@@ -177,7 +177,7 @@
     <VaultEditor
       visible={true}
       {onOpenChat}
-      {onOpenWork}
+      {onOpenActivity}
       {onSelectCard}
     />
   {:else}
@@ -253,7 +253,7 @@
     <VaultEditor
       visible={true}
       {onOpenChat}
-      {onOpenWork}
+      {onOpenActivity}
       {onSelectCard}
     />
   {/if}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityDetailSummary, activityPath, buildWorkshopActivity, filterActivityTree, flattenActivityTree, type ActivitySources } from "./activity";
+import { activityTaskIds, activityDetailSummary, activityPath, buildWorkshopActivity, filterActivityTree, flattenActivityTree, type ActivitySources } from "./activity";
 import type { WorkCard, WorkspaceEvent } from "$lib/types/workspace";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { ItemProjection, ProjectTaskRunSummary } from "$lib/forge";
@@ -52,6 +52,22 @@ describe("workshop activity hierarchy", () => {
     expect(tree).toHaveLength(1);
     expect(tree[0].children[0].id).toBe("job:job");
     expect(tree[0].children[0].children[0].id).toBe("card:worker");
+  });
+
+  it("uses the existing attention and finished filters for task actions", () => {
+    const cards = [card("fail", { column: "blocked", status_label: "failed" }), card("stop", { column: "blocked", status_label: "canceled" }), card("done", { column: "done", status_label: "succeeded" }), card("stuck", { column: "blocked", status_label: "blocked" })];
+    const tree = buildWorkshopActivity(sources({ cards, details: new Map(cards.map((entry) => [entry.id, detail(entry.id, { session_id: "session", terminal: entry.id !== "stuck" })])) }));
+    expect([...activityTaskIds(filterActivityTree(tree, "attention", ""))].sort()).toEqual(["fail", "stuck"]);
+    expect([...activityTaskIds(filterActivityTree(tree, "finished", ""))].sort()).toEqual(["done", "fail", "stop"]);
+    expect([...activityTaskIds(filterActivityTree(tree, "attention", "no match"))]).toEqual([]);
+  });
+
+  it("does not include a context-only ancestor in a searched bulk action", () => {
+    const cards = [card("parent", { column: "blocked", status_label: "failed" }), card("needle", { column: "blocked", status_label: "failed" })];
+    const tree = buildWorkshopActivity(sources({ cards, details: new Map([["needle", detail("needle", { correlation_id: "parent" })]]) }));
+    const filtered = filterActivityTree(tree, "attention", "needle");
+    expect(filtered[0].id).toBe("card:parent");
+    expect([...activityTaskIds(filtered)]).toEqual(["needle"]);
   });
 
   it("keeps actual Code attempts and runs under their project without inventing attempt ownership", () => {

@@ -1,3 +1,5 @@
+import type { ActivityFilter } from "$lib/spotlight/activity";
+
 export type CommandSpotlightMode = "default" | "notes";
 
 export interface CommandPromptStep {
@@ -9,6 +11,7 @@ export interface CommandPromptStep {
 
 class CommandSpotlightStore {
   open = $state(false);
+  activityFilter = $state<ActivityFilter | null>(null);
   mode = $state<CommandSpotlightMode>("default");
   promptStep = $state<CommandPromptStep | null>(null);
   /** Command waiting for prompt input (not always in filtered list). */
@@ -23,10 +26,16 @@ class CommandSpotlightStore {
 
   openSpotlight(mode: CommandSpotlightMode = "default") {
     this.mode = mode;
+    this.activityFilter = null;
     this.promptStep = null;
     this.pendingCommand = null;
     this.seedQuery = null;
     this.open = true;
+  }
+
+  openActivity(filter: ActivityFilter = "all") {
+    this.openSpotlight();
+    this.activityFilter = filter;
   }
 
   /** VS Code-style command palette — Spotlight seeded in `>` advanced mode. */
@@ -65,6 +74,7 @@ class CommandSpotlightStore {
 
   closeSpotlight() {
     this.open = false;
+    this.activityFilter = null;
     this.promptStep = null;
     this.pendingCommand = null;
     this.mode = "default";

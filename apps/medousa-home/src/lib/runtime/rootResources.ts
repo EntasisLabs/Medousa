@@ -9,7 +9,6 @@ export const APP_SHELL_ROOT_RESOURCE_IDS = [
   "peer-message-notifications",
   "remote-peer-completion-sync",
   "command-spotlight-hotkeys",
-  "work-ask-focus",
 ] as const;
 
 export type RootResourceId = (typeof APP_SHELL_ROOT_RESOURCE_IDS)[number];
@@ -52,7 +51,8 @@ export const APP_SHELL_LAZY_OVERLAYS = [
   "VaultNoteWorkshop",
   "BrowserWorkshop",
   "MobileBrowserWorkshop",
-  "WorkAskDockPopover",
+  "NewAskDialog",
+  "AskHistoryDialog",
   "TaskDetailsOverlay",
   "TaskCompletionDialog",
   "VaultGarageImportWizard",

@@ -29,7 +29,6 @@ function defaultSurfaces() {
     { id: "home", label: "Home", icon: "home", builtinId: "home", mobileTab: "home" },
     { id: "chat", label: "Chat", icon: "message-circle", builtinId: "chat", mobileTab: "chat" },
     { id: "peers", label: "Peers", icon: "users", builtinId: "peers" },
-    { id: "work", label: "Work", icon: "layout-grid", builtinId: "work" },
     { id: "code", label: "Code", icon: "code-2", builtinId: "code" },
     { id: "library", label: "Workspace", icon: "notebook-text", builtinId: "library" },
     { id: "notes", label: "Notes", icon: "notebook-text", builtinId: "notes", mobileTab: "notes" },
@@ -473,7 +472,6 @@ export function defaultEnvironmentSpec(
         surfaces: [
           "chat",
           "peers",
-          "work",
           "code",
           "notes",
           "web",
@@ -492,4 +490,12 @@ export function defaultEnvironmentSpec(
     updatedAt: now,
     updatedBy: "system",
   };
+}
+
+/** Retire the built-in Work destination while preserving custom views. */
+export function retireWorkSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  const retired = new Set(spec.surfaces.filter((surface) => surface.kind === "builtin" && (surface.id === "work" || surface.builtinId === "work")).map((surface) => surface.id));
+  if (!retired.size) return spec;
+  return { ...spec, surfaces: spec.surfaces.filter((surface) => !retired.has(surface.id)),
+    layoutPresets: spec.layoutPresets?.map((preset) => ({ ...preset, surfaces: preset.surfaces.filter((id) => !retired.has(id)) })) };
 }

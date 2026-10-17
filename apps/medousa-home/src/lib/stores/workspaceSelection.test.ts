@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getWorkspaceCard, cancelWorkspaceCard } from "$lib/daemon";
+import { getWorkspaceCard, cancelWorkspaceCard, enqueueDaemonAsk } from "$lib/daemon";
 import { WorkspaceStore } from "./workspace.svelte";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkCard } from "$lib/types/workspace";
@@ -41,6 +41,24 @@ describe("shared task selection", () => {
     const store = new WorkspaceStore(); await store.selectCard("a"); const pending = store.cancelSelectedCard(); await store.selectCard("b");
     response.resolve({ ok: false, message: "old cancellation" } as Awaited<ReturnType<typeof cancelWorkspaceCard>>); await pending;
     expect(store.cardActionMessage).toBeNull(); expect(store.cardDetailError).toBeNull();
+  });
+});
+
+describe("task actions across workshop changes", () => {
+  it("does not open an accepted ask in a different workshop", async () => {
+    const result = deferred<Awaited<ReturnType<typeof enqueueDaemonAsk>>>();
+    vi.mocked(enqueueDaemonAsk).mockReturnValueOnce(result.promise);
+    const store = new WorkspaceStore(); const pending = store.submitAsk({ prompt: "Research" });
+    store.resetForWorkshopSwitch();
+    result.resolve({ job_id: "medousa-daemon-ask-old" } as Awaited<ReturnType<typeof enqueueDaemonAsk>>); await pending;
+    expect(store.selectedCardId).toBeNull(); expect(store.pendingFocusJobId).toBeNull(); expect(store.askMessage).toBeNull();
+  });
+  it("stops a bulk archive after its workshop changes", async () => {
+    const result = deferred<Awaited<ReturnType<WorkspaceStore["archiveCard"]>>>();
+    const store = new WorkspaceStore(); const archive = vi.spyOn(store, "archiveCard").mockReturnValueOnce(result.promise);
+    const pending = store.archiveTrayCards([card("medousa-daemon-ask-a"), card("medousa-daemon-ask-b")]);
+    store.resetForWorkshopSwitch(); result.resolve({ ok: true } as Awaited<ReturnType<WorkspaceStore["archiveCard"]>>); await pending;
+    expect(archive).toHaveBeenCalledTimes(1); expect(store.cardActionMessage).toBeNull();
   });
 });
 

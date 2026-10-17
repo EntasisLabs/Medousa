@@ -148,7 +148,7 @@ ordinary per-conversation draft recovery remains private to the app.
 | Surface | What it’s for |
 |---------|----------------|
 | **Chat** | Talk, think, attach context |
-| **Work** | Background jobs and the work board |
+| **Activity** (Spotlight) | Background tasks, agents, and execution previews |
 | **Library / Vault** | Notes and finished artifacts |
 | **Web** | Browse and save pages |
 | **Peers** | Other workshops / people on your network |

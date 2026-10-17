@@ -29,8 +29,8 @@ Exact paths depend on your operating system — trust the paths the app lists.
 
 | Setting | Where |
 |---------|--------|
-| Hide finished Work cards | Preferences → Work cards |
-| Wipe old Work archives | Preferences → Work cards |
+| Hide finished tasks | Preferences → Task activity |
+| Wipe old task archives | Preferences → Task activity |
 | Artifact cleanup | Medousa Agent → Artifacts |
 | Deleted notes | Notes → Trash → Restore |
 | Note history | Versions (if turned on) |

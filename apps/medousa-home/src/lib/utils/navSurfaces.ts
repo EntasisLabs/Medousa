@@ -6,7 +6,6 @@ import {
 
 const LIFE_IDS = new Set([
   "chat",
-  "work",
   "code",
   "notes",
   "files",
@@ -18,7 +17,7 @@ const LIFE_IDS = new Set([
 ]);
 const WORKSHOP_IDS = new Set(["workshop"]);
 /** Runtime + Messaging live under Settings — never the life rail. */
-const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME, "messaging"]);
+const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME, "messaging", "work"]);
 
 /** Surfaces whose list chrome lives in the master left rail (view mode). */
 export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
@@ -33,7 +32,6 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "messaging",
   "map",
   "calendar",
-  "work",
   "web",
   "profiles",
   SAFETY_SURFACE_SETTINGS,
@@ -99,8 +97,6 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Map";
     case "calendar":
       return "Calendar";
-    case "work":
-      return "Work";
     case "web":
       return "Web";
     case "profiles":

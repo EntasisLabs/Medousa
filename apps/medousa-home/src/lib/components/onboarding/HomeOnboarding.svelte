@@ -56,7 +56,7 @@
     { id: "code", label: "Build & code", hint: "Editor, terminal, and language tools", icon: Code2 },
     { id: "messaging", label: "Messages", hint: "Bring conversations into one place", icon: MessagesSquare },
     { id: "notes", label: "Notes & research", hint: "Library, browser, and daily notes", icon: NotebookPen },
-    { id: "plan", label: "Plan & organize", hint: "Calendar, work board, and automations", icon: CalendarCheck },
+    { id: "plan", label: "Plan & organize", hint: "Calendar, tasks, and automations", icon: CalendarCheck },
     { id: "ai", label: "Work with Medousa", hint: "Private local brain or your model provider", icon: Brain },
   ];
 

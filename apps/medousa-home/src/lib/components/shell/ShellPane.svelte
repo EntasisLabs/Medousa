@@ -24,14 +24,13 @@
     loadRuntimePanel,
     loadSettingsPanel,
     loadTerminalPane,
-    loadWorkPanel,
   } from "$lib/runtime/viewLoaders";
 
   interface Props {
     groupId: string;
     health?: DaemonHealth | null;
     onOpenChat: () => void;
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onOpenContext: () => void;
     onOpenConnection: () => void;
     onOpenNote: (path: string) => void | Promise<void>;
@@ -45,7 +44,7 @@
     groupId,
     health = null,
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onOpenContext,
     onOpenConnection,
     onOpenNote,
@@ -230,7 +229,7 @@
           ? "Choose a project from the side panel, or start a new one."
           : "Open something from the side panel."}
         {onOpenChat}
-        {onOpenWork}
+        {onOpenActivity}
         {onSelectCard}
       />
     {:else if showWeb}
@@ -259,14 +258,6 @@
                 <LazyFeatureView loader={loadPeersPanel} visible={true} />
               {:else if showSurface === "messaging"}
                 <LazyFeatureView loader={loadMessagingPanel} visible={true} {health} />
-              {:else if showSurface === "work"}
-                <LazyFeatureView
-                  loader={loadWorkPanel}
-                  visible={true}
-                  {onOpenNote}
-                  {onOpenChat}
-                  {onSelectCard}
-                />
               {:else if showSurface === "runtime"}
                 <LazyFeatureView
                   loader={loadRuntimePanel}

@@ -14,7 +14,6 @@
     onOpenChat: () => void;
     health?: DaemonHealth | null;
     chatActivity?: number;
-    workActivity?: number;
     peersActivity?: number;
     activeProfileLabel?: string;
   }
@@ -25,7 +24,6 @@
     onOpenChat,
     health = null,
     chatActivity = 0,
-    workActivity = 0,
     peersActivity = 0,
     activeProfileLabel = "Personal",
   }: Props = $props();
@@ -70,7 +68,6 @@
         {onOpenChat}
         {health}
         {chatActivity}
-        {workActivity}
         {peersActivity}
         {activeProfileLabel}
       />

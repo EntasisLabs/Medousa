@@ -118,7 +118,6 @@ Browser chords (also in Spotlight when Web is focused) include address bar, new/
 | Notes | Vault notes and markdown |
 | Files | Pinned folders on this machine |
 | Artifacts | HTML decks and agent widgets |
-| Work | Tasks and kanban board |
 | Code | Projects, editing, understanding, and review |
 | Browser | Built-in web workshop |
 | Automations | Scripts and schedules |
@@ -147,7 +146,7 @@ Contextual commands (rename desktop, per-desktop switch, etc.) appear when relev
 | Zoom pane | … — maximize / restore active pane |
 | Zoom in | … — whole UI, like the browser |
 | Zoom out | … — whole UI, like the browser |
-| Reset zoom | … — back to 110% |
+| Reset zoom | … — back to … |
 | Close pane | … — merge tabs into the nearest pane |
 | New chat in pane | … — open chat tab in the active pane |
 | Next tab in pane | … — cycle tabs forward |
@@ -182,6 +181,7 @@ Contextual commands (rename desktop, per-desktop switch, etc.) appear when relev
 | Export conversation as PDF… | Preview and save a PDF of this chat |
 | Export conversation as JSON | Raw session history for debugging |
 | See context usage | Token breakdown for the last turn |
+| Workshop activity | Tasks, agents, scripts, and recent activity |
 | New note | Create a note in the Library |
 | New chat | Start a fresh conversation |
 | New blank script | Open Scripts workbench |
@@ -193,7 +193,7 @@ Contextual commands (rename desktop, per-desktop switch, etc.) appear when relev
 | Toggle links panel | Wikilinks and backlinks |
 | Zoom in | Whole UI larger |
 | Zoom out | Whole UI smaller |
-| Reset zoom | Back to 110% |
+| Reset zoom | Back to … |
 | Resume last Spotlight | Restore previous search (Telescope-style) |
 | Clear all pins | Empty the working set |
 

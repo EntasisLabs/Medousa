@@ -32,12 +32,13 @@ export type RailSectionId =
   | "vault"
   | "automations";
 
-const FOCUS_IDS = new Set(["calendar", "work", "web"]);
+const FOCUS_IDS = new Set(["calendar", "web"]);
 
 /** Dock / chrome / folded doors — never appear in the primary strip. */
 export const RAIL_PRIMARY_SKIP_IDS = new Set([
   "workshop",
   "home",
+  "work", // retired — Activity lives in Spotlight
   "context", // retired — stripped from specs; keep skip for stale ids
   "library", // host surface — Notes/Files/Artifacts are the rail doors
   "profiles",

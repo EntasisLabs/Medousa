@@ -16,11 +16,10 @@ import { presentHomeNotification } from "$lib/notifications";
 import type { PendingAskCompletion } from "$lib/types/askJob";
 import { isAskJobId } from "$lib/types/askJob";
 import type { WorkCardDetail } from "$lib/types/card";
-import type { SwimlaneMode, WorkView } from "$lib/types/work";
 import type { EnqueueAskJobRequest } from "$lib/utils/askPrompt";
 import { collectActivityCardIds } from "$lib/utils/activityEnrichment";
 import { friendlyUserError } from "$lib/utils/normieErrors";
-import { hubCardsForPrefetch, type WorkHubLayer } from "$lib/utils/workHub";
+import { hubCardsForPrefetch } from "$lib/utils/workHub";
 import {
   isActionableBlockedCard,
   visibleWorkCards,
@@ -74,28 +73,6 @@ export class WorkspaceStore {
   set pendingAskCompletion(completion: PendingAskCompletion | null) { this.overlays.pendingAskCompletion = completion; }
   private completionQueue = $state<PendingAskCompletion[]>([]);
   cardDetailsCache = $state<Map<string, WorkCardDetail>>(new Map());
-  swimlane = $state<SwimlaneMode>("none");
-  showDone = $state(false);
-  workView = $state<WorkView>("hub");
-  /** Side-rail list filter (vault-style dock modes). */
-  workRailFilter = $state<WorkHubLayer>("living");
-
-  setWorkView(view: WorkView) {
-    this.workView = view;
-  }
-
-  openAsksView() {
-    this.workView = "asks";
-  }
-
-  openHubView() {
-    this.workView = "hub";
-  }
-
-  setWorkRailFilter(layer: WorkHubLayer) {
-    this.workRailFilter = layer;
-    this.workView = "hub";
-  }
   private previousColumns = new Map<string, string>();
   private reconcilingCards = false;
   private recoveringWorkerResults = false;
@@ -111,6 +88,8 @@ export class WorkspaceStore {
     this.feed = [];
     this.columnCounts = {};
     this.streamError = null;
+    this.overlays.newAskOpen = false;
+    this.overlays.askHistorySessionId = null;
     this.selectedCardId = null;
     this.selectedCardDetail = null;
     this.cardDetailError = null;
@@ -392,6 +371,7 @@ export class WorkspaceStore {
       (request.additionalManuscriptIds?.length ?? 0) > 0;
     if ((!trimmed && !hasSkills) || this.askSubmitting) return;
 
+    const epoch = this.workshopEpoch;
     this.askSubmitting = true;
     this.askError = null;
     this.askMessage = null;
@@ -404,14 +384,15 @@ export class WorkspaceStore {
         additionalManuscriptIds: request.additionalManuscriptIds,
         suggestedCapabilityIds: request.suggestedCapabilityIds,
       });
+      if (epoch !== this.workshopEpoch) return;
       this.pendingFocusJobId = accepted.job_id;
       this.askMessage = `Queued · job ${accepted.job_id}`;
       await this.selectCard(accepted.job_id);
     } catch (err) {
-      this.askError = err instanceof Error ? err.message : String(err);
+      if (epoch === this.workshopEpoch) this.askError = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
-      this.askSubmitting = false;
+      if (epoch === this.workshopEpoch) this.askSubmitting = false;
     }
   }
 
@@ -558,7 +539,7 @@ export class WorkspaceStore {
 
   kanbanCards(): WorkCard[] {
     const cards = this.visibleCards();
-    return cards.filter((card) => this.showDone || card.column !== "done");
+    return cards.filter((card) => card.column !== "done");
   }
 
   activeCards(): WorkCard[] {
@@ -814,6 +795,7 @@ export class WorkspaceStore {
   }
 
   async archiveTrayCards(cards: WorkCard[], limit = 24) {
+    const epoch = this.workshopEpoch;
     this.cardActionMessage = null;
     this.cardDetailError = null;
     let ok = 0;
@@ -821,6 +803,7 @@ export class WorkspaceStore {
     let failed = 0;
 
     for (const card of cards.slice(0, limit)) {
+      if (epoch !== this.workshopEpoch) return;
       if (!isAskJobId(card.id) && card.column !== "done") {
         skipped += 1;
         continue;
@@ -834,18 +817,21 @@ export class WorkspaceStore {
       }
     }
 
+    if (epoch !== this.workshopEpoch) return;
     this.cardActionMessage = `Archived ${ok}${skipped ? ` · ${skipped} skipped` : ""}${
       failed ? ` · ${failed} failed` : ""
     }`;
   }
 
   async archiveTerminalTrayCards(cards: WorkCard[], label: string, limit = 24) {
+    const epoch = this.workshopEpoch;
     this.cardActionMessage = null;
     this.cardDetailError = null;
     let ok = 0;
     let failed = 0;
 
     for (const card of cards.slice(0, limit)) {
+      if (epoch !== this.workshopEpoch) return;
       try {
         const response = await this.archiveCard(card.id, true);
         if (response.ok) ok += 1;
@@ -855,6 +841,7 @@ export class WorkspaceStore {
       }
     }
 
+    if (epoch !== this.workshopEpoch) return;
     this.cardActionMessage = `Cleared ${ok} ${label}${failed ? ` · ${failed} failed` : ""}`;
   }
 }

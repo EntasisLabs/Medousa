@@ -73,7 +73,7 @@
     buildScrollSync?: boolean;
     monoSource?: boolean;
     onOpenChat?: () => void;
-    onOpenWork?: () => void;
+    onOpenActivity?: () => void;
     onSelectCard?: (id: string) => void | Promise<void>;
     onExportPdf?: () => void | Promise<void>;
     onExportWord?: () => void | Promise<void>;
@@ -135,7 +135,7 @@
     buildScrollSync = true,
     monoSource = false,
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onSelectCard,
     onExportPdf,
     onExportWord,
@@ -265,10 +265,10 @@
       });
     }
 
-    if (onOpenWork && onSendToWork) {
+    if (onOpenActivity && onSendToWork) {
       rows.push({
         id: "send-work",
-        label: askSubmitting ? "Sending to Work…" : "Send to Work",
+        label: askSubmitting ? "Starting background ask…" : "Ask in background",
         icon: Send,
         disabled: noteLoading || askSubmitting,
         onClick: async () => {

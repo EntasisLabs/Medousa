@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import { tick } from "svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ComposerSkillPills from "$lib/components/chat/ComposerSkillPills.svelte";
@@ -139,8 +140,10 @@
       attachments.skillIds,
       attachments.toolIds,
     );
+    const scope = activeWorkshopId();
     try {
       await workspace.submitAsk({ ...request, modelHint: runtime.model });
+      if (activeWorkshopId() !== scope) return;
       resetComposer();
       onQueued?.();
     } catch {

@@ -7,18 +7,22 @@
   import { workerTranscripts } from "$lib/work/workerTranscripts.svelte";
   import { ActivityData } from "$lib/spotlight/activityData.svelte";
   import { activityDataPort, readActivityCodeRun } from "$lib/spotlight/activityApi";
-  import { activityPath, buildWorkshopActivity, filterActivityTree, flattenActivityTree, type ActivityFilter, type ActivityNode } from "$lib/spotlight/activity";
+  import { activityTaskIds, activityPath, buildWorkshopActivity, filterActivityTree, flattenActivityTree, type ActivityFilter, type ActivityNode } from "$lib/spotlight/activity";
   import { getJobResult, getWorkspaceCard } from "$lib/daemon";
   import type { WorkshopCommandContext } from "$lib/commands/types";
   import { formatSessionWhen } from "$lib/utils/formatSession";
   import { formatDaemonErrorSummary } from "$lib/utils/formatDaemonError";
   import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import type { ChatSessionRuntime } from "$lib/chat/chatSessionRuntime";
+  import TaskActivityActions from "$lib/components/tasks/TaskActivityActions.svelte";
+  import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
+  import { openNewAsk } from "$lib/utils/workChromeEvents";
   import { openTaskDetails } from "$lib/runtime/shellUseCases";
 
   let { query = "", ctx }: { query?: string; ctx: WorkshopCommandContext } = $props();
   const data = new ActivityData(activityDataPort);
-  let filter = $state<ActivityFilter>("all");
+  let filter = $state<ActivityFilter>(commandSpotlight.activityFilter ?? "all");
+  $effect(() => { if (commandSpotlight.activityFilter) filter = commandSpotlight.activityFilter; });
   let expanded = $state<Set<string>>(new Set());
   let selectedId = $state<string | null>(null);
   let detailExpanded = $state(false);
@@ -31,7 +35,7 @@
   let previewRevision = $state(0);
   let rowsEl = $state<HTMLDivElement | null>(null);
   let alive = true;
-  const activityCards = $derived(filter === "finished" || filter === "attention" || query.trim() ? workspace.cards : workspace.visibleCards());
+  const activityCards = $derived(filter !== "all" && filter !== "running" || query.trim() ? workspace.cards : workspace.visibleCards());
 
   const details = $derived.by(() => {
     const next = new Map(data.details);
@@ -62,6 +66,8 @@
     turns: liveTurns,
   }));
   const filtered = $derived(filterActivityTree(tree, filter, query));
+  const matchingTaskIds = $derived(activityTaskIds(filtered));
+  const matchingCards = $derived(activityCards.filter((card) => matchingTaskIds.has(card.id)));
   const rows = $derived(flattenActivityTree(filtered, expanded, Boolean(query.trim())));
   const selected = $derived(rows.find(({ node }) => node.id === selectedId)?.node ?? null);
   const previewKey = $derived(JSON.stringify([selected?.id, selected?.target, selected?.kind === "Tool run"]));
@@ -211,7 +217,7 @@
       }
     }
   }
-  function refresh() { void data.refresh(); void data.loadCards(activityCards, workspace.cardDetailsCache); previewRevision += 1; }
+  function refresh() { void workspace.reconcileCardsFromSnapshot(); void data.refresh(); void data.loadCards(activityCards, workspace.cardDetailsCache); previewRevision += 1; }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -220,11 +226,13 @@
   <header class="activity-toolbar">
     <div class="activity-filters" aria-label="Activity filters">
       {#each filters as item}
-        <button class:active={filter === item.id} aria-pressed={filter === item.id} onclick={() => { filter = item.id; }}>{item.label}</button>
+        <button class:active={filter === item.id} aria-pressed={filter === item.id} onclick={() => { commandSpotlight.activityFilter = null; filter = item.id; }}>{item.label}</button>
       {/each}
     </div>
-    <button class="activity-icon" aria-label="Refresh activity" disabled={data.loading || connection.offline} onclick={refresh}><RefreshCw size={14} class={data.loading ? 'animate-spin' : ''} /></button>
+    <div class="flex items-center gap-2"><button class="activity-more" onclick={openNewAsk}>New ask</button>
+    <button class="activity-icon" aria-label="Refresh activity" disabled={data.loading || connection.offline} onclick={refresh}><RefreshCw size={14} class={data.loading ? 'animate-spin' : ''} /></button></div>
   </header>
+  <TaskActivityActions {filter} cards={matchingCards} />
   {#if connection.offline}<p class="activity-notice">Offline · showing last known activity</p>{/if}
   {#if sourceErrors.length > 0}<p class="activity-notice">{sourceErrors.map(([name]) => name).join(", ")} activity could not be refreshed. <button onclick={refresh}>Retry</button></p>{/if}
   <div class="activity-columns" class:expanded-detail={detailExpanded}>

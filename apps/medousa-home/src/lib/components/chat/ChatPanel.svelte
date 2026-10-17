@@ -64,7 +64,7 @@
   } from "$lib/utils/vaultNoteBridge";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
-  import { openWorkAsks } from "$lib/utils/workChromeEvents";
+  import { openAskHistory } from "$lib/runtime/shellUseCases";
   import WorkerTranscriptPanel from "$lib/components/chat/WorkerTranscriptPanel.svelte";
   import { subagentRowMap, subagentRowsForSession } from "$lib/utils/subagentRows";
   import {
@@ -604,7 +604,7 @@
           modelHint: chatModel.model,
         });
         chatAttachments.clear();
-        chat.historyNotice = "Ask queued — watch Work for progress.";
+        chat.historyNotice = "Ask queued — follow progress in Activity.";
         return;
       }
 
@@ -858,10 +858,10 @@
           class="chat-restore-toast-dismiss text-content-link"
           onclick={() => {
             chat.clearAskHandoffNotice();
-            openWorkAsks();
+            void openAskHistory(panelSessionId);
           }}
         >
-          Open in Work
+          View asks
         </button>
         <button
           type="button"
@@ -913,14 +913,14 @@
           {mobile} loading={externalConversation.loading} error={externalConversation.error} />
       {:else}
       <ChatAsyncToolsHint {mobile} />
-      {#if askThreads.length > 0 && !embedded && mobile}
+      {#if askThreads.length > 0 && !embedded}
         <button
           type="button"
-          class="mobile-chat-rail-chip"
-          onclick={() => openWorkAsks()}
+          class="chat-ask-history-button"
+          onclick={() => void openAskHistory(panelSessionId)}
         >
           <span>
-            {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"} in Work
+            {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"}
           </span>
           <span class="text-content-quiet">→</span>
         </button>
@@ -1155,6 +1155,9 @@
 </section>
 
 <style>
+  .chat-ask-history-button { display:flex; align-items:center; justify-content:space-between; gap:1rem; width:100%; padding:.5rem .75rem; border:1px solid rgb(var(--theme-border) / .3); border-radius:.5rem; color:rgb(var(--theme-text-secondary)); font-size:.75rem; }
+  .chat-ask-history-button:hover { background:rgb(var(--theme-border) / .1); }
+
   .chat-view-popout {
     display: inline-flex;
     width: 1.6rem;

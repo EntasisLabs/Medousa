@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import "$lib/styles/workshop-surfaces.postcss";
   import { onMount } from "svelte";
   import AppTitlebar from "$lib/components/layout/AppTitlebar.svelte";
@@ -166,7 +167,8 @@
       return;
     }
     if (surface === "work") {
-      void workspace.prefetchCardDetails();
+      commandSpotlight.openActivity();
+      return;
     }
     shellTabs.openDestination(surface);
   }
@@ -201,7 +203,6 @@
       onOpenChat={() => goToSurface("chat")}
       health={daemonHealth}
       chatActivity={chat.backgroundActivity}
-      workActivity={workspace.inMotionCount()}
       peersActivity={peersUnread}
       activeProfileLabel={userProfiles.activeDisplayName}
     />
@@ -219,7 +220,7 @@
           <ShellTabHost
             health={daemonHealth}
             onOpenChat={() => goToSurface("chat")}
-            onOpenWork={() => goToSurface("work")}
+            onOpenActivity={() => commandSpotlight.openActivity()}
             onOpenContext={() => {
               layout.setIdentityDrawerOpen(false);
               goToSurface("map");

@@ -6,7 +6,6 @@ import { surfaceHasShellSidebarView } from "$lib/utils/navSurfaces";
 const LAST_SURFACE_KEY = "medousa-home-last-surface";
 const LANDING_SURFACES: Surface[] = [
   "chat",
-  "work",
   "library",
   "notes",
   "files",
@@ -482,9 +481,6 @@ export class LayoutStore {
     if (next !== "chat") {
       this.setSessionDrawerOpen(false);
       this.setIdentityDrawerOpen(false);
-    }
-    if (next === "work") {
-      this.setActivityCollapsed(true);
     }
     const changed = this.desktopSurface !== next;
     if (changed) {

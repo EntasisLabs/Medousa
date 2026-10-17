@@ -36,7 +36,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(surfaceHasShellSidebarView("code")).toBe(true);
     expect(surfaceHasShellSidebarView("map")).toBe(true);
     expect(surfaceHasShellSidebarView("settings")).toBe(true);
-    expect(surfaceHasShellSidebarView("work")).toBe(true);
+    expect(surfaceHasShellSidebarView("work")).toBe(false);
     expect(surfaceHasShellSidebarView("calendar")).toBe(true);
     expect(surfaceHasShellSidebarView("web")).toBe(true);
     expect(surfaceHasShellSidebarView("profiles")).toBe(true);
@@ -58,7 +58,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(shellSidebarViewTitle("map")).toBe("Map");
     expect(shellSidebarViewTitle("settings")).toBe("Settings");
     expect(shellSidebarViewTitle("calendar")).toBe("Calendar");
-    expect(shellSidebarViewTitle("work")).toBe("Work");
+    expect(shellSidebarViewTitle("work")).toBe("Sidebar");
     expect(shellSidebarViewTitle("web")).toBe("Web");
     expect(shellSidebarViewTitle("profiles")).toBe("You");
   });

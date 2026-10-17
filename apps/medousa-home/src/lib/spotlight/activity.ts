@@ -25,6 +25,7 @@ export interface ActivityNode {
   state: ActivityState;
   status: string;
   terminal?: boolean;
+  taskCardId?: string;
   updatedAt: string;
   summary?: string;
   error?: string;
@@ -94,6 +95,7 @@ export function activityDetailSummary(detail: WorkCardDetail): WorkCardDetail {
 
 export function buildWorkshopActivity(source: ActivitySources): ActivityNode[] {
   const roots: ActivityNode[] = [];
+  const cardsByJob = new Map(source.cards.map((card) => [source.details.get(card.id)?.job_id || card.id, card]));
   const cardNodes = new Map<string, ActivityNode>();
   const conversationNodes = new Map<string, ActivityNode>();
   const turns = new Map<string, ActivityNode>();
@@ -119,7 +121,9 @@ export function buildWorkshopActivity(source: ActivitySources): ActivityNode[] {
       state: activityState(schedule.last_run_status || "unknown"), status: label(schedule.last_run_status || "Recent activity"), updatedAt: schedule.last_run_at_utc || "",
       target: { kind: "schedule", recurringId: schedule.recurring_id }, children: runs.map((run): ActivityNode => {
         consumedJobs.add(run.job_id);
+        const card = cardsByJob.get(run.job_id);
         return { id: `job:${run.job_id}`, title: `Run · ${new Date(run.scheduled_at_utc).toLocaleString()}`, kind: "Scheduled run",
+          taskCardId: card?.id,
           state: activityState(run.status, run.is_terminal), terminal: run.is_terminal, status: label(run.status), updatedAt: run.updated_at_utc,
           summary: run.latest_outcome || undefined, target: { kind: "job", jobId: run.job_id }, children: [] };
       }),
@@ -144,6 +148,7 @@ export function buildWorkshopActivity(source: ActivitySources): ActivityNode[] {
       id: `card:${card.id}`, title: formatCardTitle(card), kind,
       state: state === "idle" ? activityState(card.column) : state,
       terminal,
+      taskCardId: card.id,
       status: label(status), updatedAt: card.updated_at_utc,
       summary: detail?.live_status_line || detail?.result_excerpt || detail?.task_line || undefined,
       error: detail?.error || undefined,
@@ -243,7 +248,8 @@ export function filterActivityTree(nodes: ActivityNode[], filter: ActivityFilter
     const haystack = `${node.title} ${node.kind} ${node.status} ${node.summary ?? ""}`.toLowerCase();
     const matches = ancestorMatches || haystack.includes(needle);
     const children = node.children.map((child) => visit(child, matches)).filter((child): child is ActivityNode => child !== null);
-    if ((matches && (filter === "all" || node.state === filter || (filter === "finished" && node.terminal))) || children.length > 0) return { ...node, children };
+    const ownMatch = matches && (filter === "all" || node.state === filter || (filter === "finished" && node.terminal));
+    if (ownMatch || children.length > 0) return { ...node, children, taskCardId: ownMatch ? node.taskCardId : undefined };
     return null;
   };
   return nodes.map((node) => visit(node)).filter((node): node is ActivityNode => node !== null);
@@ -266,4 +272,15 @@ export function activityPath(nodes: ActivityNode[], id: string): ActivityNode[] 
     if (child) return [node, ...child];
   }
   return null;
+}
+
+/** Task controls operate only on matching task nodes, never their context parents. */
+export function activityTaskIds(nodes: ActivityNode[]): Set<string> {
+  const ids = new Set<string>();
+  const visit = (node: ActivityNode) => {
+    if (node.taskCardId) ids.add(node.taskCardId);
+    node.children.forEach(visit);
+  };
+  nodes.forEach(visit);
+  return ids;
 }

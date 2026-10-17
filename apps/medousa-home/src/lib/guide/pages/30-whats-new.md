@@ -38,7 +38,7 @@ The Operator’s Guide covers everyday use (chat, notes, phone, troubleshooting)
 
 | Older wording | Current |
 |---------------|---------|
-| Settings → Rhythm | **Preferences** (Look, Everyday, Work cards) |
+| Settings → Rhythm | **Preferences** (Look, Everyday, Task activity) |
 | Workspace (sometimes) | Often **Library** on the rail |
 | Recipes (scripts) | **Templates** in Automations |
 | Specialists (surface) | **Agents** |

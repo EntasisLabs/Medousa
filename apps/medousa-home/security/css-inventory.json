@@ -184,7 +184,7 @@
       "id": "composer",
       "class": "feature",
       "path": "src/lib/styles/composer.postcss",
-      "loadedBy": "ChatComposerBar.svelte / CronPanel.svelte / WorkAskDockPopover.svelte"
+      "loadedBy": "ChatComposerBar.svelte / CronPanel.svelte / NewAskDialog.svelte"
     },
     {
       "id": "settings",
@@ -244,7 +244,7 @@
       "id": "work",
       "class": "feature",
       "path": "src/lib/styles/work.postcss",
-      "loadedBy": "WorkAsksPanel.svelte / WorkAskDockPopover.svelte"
+      "loadedBy": "ChatAsksPanel.svelte / NewAskDialog.svelte"
     },
     {
       "id": "messaging",

@@ -78,7 +78,10 @@
   let inputEl = $state<HTMLInputElement | null>(null);
   let promptValue = $state("");
   let selectedScopeId = $state("home");
-  let selectedLens = $state<SpotlightLens>("overview");
+  let selectedLens = $state<SpotlightLens>(commandSpotlight.activityFilter ? "activity" : "overview");
+  $effect(() => {
+    if (commandSpotlight.activityFilter) { selectedLens = "activity"; selectedScopeId = "home"; query = ""; }
+  });
   let groups = $state<SpotlightGroup[]>([]);
   let previewText = $state<string | null>(null);
   let previewTitle = $state<string | null>(null);

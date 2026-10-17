@@ -57,6 +57,10 @@
       "specifier": "$lib/styles/artifact.postcss"
     },
     {
+      "from": "src/lib/components/chat/ChatAsksPanel.svelte",
+      "specifier": "$lib/styles/work.postcss"
+    },
+    {
       "from": "src/lib/components/chat/ChatChangeReceipt.svelte",
       "specifier": "$lib/styles/chat-review.postcss"
     },
@@ -229,6 +233,14 @@
       "specifier": "./agentEditor.css"
     },
     {
+      "from": "src/lib/components/tasks/NewAskDialog.svelte",
+      "specifier": "$lib/styles/composer.postcss"
+    },
+    {
+      "from": "src/lib/components/tasks/NewAskDialog.svelte",
+      "specifier": "$lib/styles/work.postcss"
+    },
+    {
       "from": "src/lib/components/tasks/TaskDetailsOverlay.svelte",
       "specifier": "$lib/styles/work.postcss"
     },
@@ -307,18 +319,6 @@
     {
       "from": "src/lib/components/wizard/WizardContainer.svelte",
       "specifier": "./wizardExperience.css"
-    },
-    {
-      "from": "src/lib/components/work/WorkAskDockPopover.svelte",
-      "specifier": "$lib/styles/composer.postcss"
-    },
-    {
-      "from": "src/lib/components/work/WorkAskDockPopover.svelte",
-      "specifier": "$lib/styles/work.postcss"
-    },
-    {
-      "from": "src/lib/components/work/WorkAsksPanel.svelte",
-      "specifier": "$lib/styles/work.postcss"
     },
     {
       "from": "src/lib/liquid/archetypes/atoms/prose/Prose.svelte",

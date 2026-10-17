@@ -103,8 +103,6 @@ function surfaceTitle(surfaceId: string): string {
     case "context":
     case "map":
       return "Map";
-    case "work":
-      return "Work";
     case "calendar":
       return "Calendar";
     case "settings":
@@ -262,7 +260,7 @@ function filterLayoutForLme(
 ): ShellDesktopLayout {
   const seenTabs = new Set<string>();
   const tabs = layout.tabs.filter((tab) => {
-    if (seenTabs.has(tab.id) || (tab.kind === "lme" && !lmeTabIds.has(tab.lmeTabId))) {
+    if ((tab.kind === "surface" && tab.surfaceId === "work") || seenTabs.has(tab.id) || (tab.kind === "lme" && !lmeTabIds.has(tab.lmeTabId))) {
       return false;
     }
     seenTabs.add(tab.id);
@@ -983,6 +981,7 @@ export class ShellTabsStore {
     surfaceId: string,
     options?: { activate?: boolean; groupId?: string },
   ): string | null {
+    if (surfaceId === "work") return null; // Retired; Activity is a Spotlight lens.
     let next = surfaceId === "home" ? "chat" : surfaceId;
     if (next === "context") next = "map";
     if (
@@ -1063,6 +1062,7 @@ export class ShellTabsStore {
   }
 
   openDestination(surfaceId: string) {
+    if (surfaceId === "work") return null; // Retired; Activity is a Spotlight lens.
     let next = surfaceId === "home" ? "chat" : surfaceId;
     if (next === "context") next = "map";
     if (

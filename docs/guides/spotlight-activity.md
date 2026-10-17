@@ -38,8 +38,21 @@ additional tasks without fetching every transcript at once. Recent projects prel
 expand an older project to load its command history. **Refresh activity** retries
 available sources.
 
-The existing Work view remains available during the transition. Activity can
-preview tasks and runs directly without opening Work.
+Activity replaces the former Work destination. Saved Work tabs are removed on
+restore, while other tabs and pane layouts are preserved. Older Work navigation
+requests no longer create a Work tab. Task notifications still open task details.
+
+**Needs you** offers cleanup for failed tasks and retry/hide actions for stuck
+tasks. **Finished** offers archive/clear actions for completed, failed, and stopped
+tasks. Actions apply to up to 24 tasks matching the active filter and search;
+repeat for another batch.
+Individual task and budget controls remain in **Task details**.
+
+Choose **New ask** in Activity or **Ask** in the titlebar's **+** menu to queue
+background work over the current screen. `/ask` remains available in Chat.
+Conversation ask transcripts now open from Chat's **background asks** button,
+including save-to-vault, promote-to-flow, and Move to chat actions. Code projects
+and schedules remain in their own existing destinations.
 
 Background ask completion handling is available across desktop tabs and mobile
 screens. Completions are queued when several tasks finish close together. The

@@ -1,6 +1,6 @@
 # Chat
 
-Type at the bottom, press Enter, and Medousa answers. This chapter covers sending messages, models, conversations, and what happens during a long reply. Approvals: [Permissions](guide:permissions-budgets). Background work: [Work](guide:work-jobs).
+Type at the bottom, press Enter, and Medousa answers. This chapter covers sending messages, models, conversations, and what happens during a long reply. Approvals: [Permissions](guide:permissions-budgets). Background work: [Activity](guide:work-jobs).
 
 ## Composer
 
@@ -102,7 +102,7 @@ Type `/` in the composer for hints. Spotlight mirrors several of these.
 | `/usage` / `/context` | Open context usage panel |
 | `/help` / `/commands` / `/?` | Command hints |
 
-Background asks show cues like “Working in background” and “see Work”. Details: [Work and background jobs](guide:work-jobs).
+Follow background progress in Spotlight → **Activity**. The conversation’s **background asks** button opens its ask transcripts. Details: [Activity and background tasks](guide:work-jobs).
 
 ## Thinking, tools, and long turns
 
@@ -161,4 +161,4 @@ Use panes or pop-outs when two threads need to stay visible — [Navigation and 
 | Tool posture, shell, allowlists | Settings → Runtime Controls — [Permissions chapter](guide:permissions-budgets) |
 | Themes | [Themes and customization](guide:themes-customization) |
 
-Next: [Permissions, budgets, and tool safety](guide:permissions-budgets), or [Work and background jobs](guide:work-jobs).
+Next: [Permissions, budgets, and tool safety](guide:permissions-budgets), or [Activity and background tasks](guide:work-jobs).

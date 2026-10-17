@@ -53,10 +53,10 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   },
   {
     id: "work-jobs",
-    title: "Work and background jobs",
+    title: "Activity and background tasks",
     file: "13-work-background-jobs.md",
     group: "everyday",
-    summary: "The Work board and background asks",
+    summary: "Workshop activity and background asks",
   },
   {
     id: "themes-customization",

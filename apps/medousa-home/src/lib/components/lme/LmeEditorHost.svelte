@@ -29,7 +29,7 @@
     useActiveTabWhenUnbound?: boolean;
     emptyMessage?: string;
     onOpenChat: () => void;
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
   }
 
@@ -40,7 +40,7 @@
     useActiveTabWhenUnbound = true,
     emptyMessage = "Open something from the side panel.",
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onSelectCard,
   }: Props = $props();
 
@@ -160,7 +160,7 @@
           keepAlive={true}
           path={tab.path}
           {onOpenChat}
-          {onOpenWork}
+          {onOpenActivity}
           {onSelectCard}
         />
       </div>

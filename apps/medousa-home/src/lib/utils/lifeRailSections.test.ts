@@ -46,7 +46,6 @@ describe("buildLifeRailLayout", () => {
       "chat",
       "peers",
       "calendar",
-      "work",
       "web",
       "notes",
       "files",

@@ -13,11 +13,10 @@
   import { peersShell } from "$lib/stores/peersShell.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { workspace } from "$lib/stores/workspace.svelte";
   import { dispatchBrowserFocusUrl } from "$lib/utils/browserChromeEvents";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
   import { pushBrowserPopoverOverlay, popBrowserPopoverOverlay } from "$lib/utils/browserPopoverOverlay";
-  import { dispatchWorkFocusAsk } from "$lib/utils/workChromeEvents";
+  import { openNewAsk } from "$lib/utils/workChromeEvents";
   import {
     BookOpen,
     Bot,
@@ -178,10 +177,7 @@
           dispatchBrowserFocusUrl();
           break;
         case "ask":
-          workspace.openHubView();
-          shellTabs.openSurface("work", { activate: true });
-          await tick();
-          dispatchWorkFocusAsk();
+          openNewAsk();
           break;
         case "calendar":
           shellTabs.openSurface("calendar", { activate: true });

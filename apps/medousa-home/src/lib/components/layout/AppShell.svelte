@@ -13,7 +13,6 @@
   import { workshops } from "$lib/stores/workshops.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
-  import { workAskDock } from "$lib/stores/workAskDock.svelte";
   import { taskOverlays } from "$lib/runtime/taskOverlayState.svelte";
   import { vaultOverlay } from "$lib/vault/vaultOverlay.svelte";
   import { vaultContextMenu } from "$lib/stores/vaultContextMenu.svelte";
@@ -35,7 +34,8 @@
     loadVaultGarageImportWizard,
     loadVaultNoteWorkshop,
     loadWizardContainer,
-    loadWorkAskDockPopover,
+    loadNewAskDialog,
+    loadAskHistoryDialog,
     loadTaskDetailsOverlay,
     loadTaskCompletionDialog,
   } from "$lib/runtime/viewLoaders";
@@ -127,13 +127,19 @@
   {#key `${chat.workshopScopeId}:${taskOverlays.selectedCardId}`}
     <LazyFeatureView loader={loadTaskDetailsOverlay} overlay />
   {/key}
-{:else if taskOverlays.pendingAskCompletion}
+{:else if taskOverlays.askHistorySessionId}
+  {#key `${chat.workshopScopeId}:${taskOverlays.askHistorySessionId}`}
+    <LazyFeatureView loader={loadAskHistoryDialog} overlay sessionId={taskOverlays.askHistorySessionId} />
+  {/key}
+{:else if taskOverlays.pendingAskCompletion && !taskOverlays.newAskOpen}
   {#key `${chat.workshopScopeId}:${taskOverlays.pendingAskCompletion.jobId}`}
     <LazyFeatureView loader={loadTaskCompletionDialog} overlay pending={taskOverlays.pendingAskCompletion} />
   {/key}
 {/if}
-{#if !layout.isMobile && workAskDock.open}
-  <LazyFeatureView loader={loadWorkAskDockPopover} overlay />
+{#if !layout.isMobile && taskOverlays.newAskOpen && !taskOverlays.selectedCardId}
+  {#key chat.workshopScopeId}
+  <LazyFeatureView loader={loadNewAskDialog} overlay />
+  {/key}
 {/if}
 
 {#if vaultOverlay.garageWizardOpen}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultEnvironmentSpec,
+  retireWorkSurfaceInSpec,
   ensureCalendarSurfaceInSpec,
   ensureCodeSurfaceInSpec,
   ensureMapSurfaceInSpec,
@@ -67,6 +68,8 @@ describe("ensureMapSurfaceInSpec", () => {
 describe("ensureCodeSurfaceInSpec", () => {
   it("adds Code after Work to older specs and every saved layout", () => {
     const spec = defaultEnvironmentSpec();
+    spec.surfaces.push({ ...spec.surfaces[0]!, id: "work", builtinId: "work", label: "Work" });
+    for (const preset of spec.layoutPresets ?? []) preset.surfaces.push("work");
     spec.surfaces = spec.surfaces.filter((surface) => surface.id !== "code");
     for (const preset of spec.layoutPresets ?? []) {
       preset.surfaces = preset.surfaces.filter((id) => id !== "code");
@@ -169,5 +172,21 @@ describe("ensureCalendarSurfaceInSpec", () => {
 
     expect(ensureCalendarSurfaceInSpec(spec)).toBe(spec);
     expect(preset.surfaces).not.toContain("calendar");
+  });
+});
+
+describe("retired Work surface migration", () => {
+  it("removes built-in Work across presets without removing custom views or changing the source", () => {
+    const spec = defaultEnvironmentSpec();
+    const legacy = { ...spec.surfaces[0]!, id: "work", builtinId: "work", label: "Work" };
+    const custom = { ...legacy, id: "studio", kind: "custom" as const, builtinId: null };
+    spec.surfaces.push(legacy, custom);
+    for (const preset of spec.layoutPresets ?? []) preset.surfaces.push("work", "studio");
+    const migrated = retireWorkSurfaceInSpec(spec);
+    expect(migrated.surfaces).not.toContainEqual(legacy);
+    expect(migrated.surfaces).toContainEqual(custom);
+    expect(migrated.layoutPresets?.every((preset) => !preset.surfaces.includes("work") && preset.surfaces.includes("studio"))).toBe(true);
+    expect(spec.surfaces).toContainEqual(legacy);
+    expect(retireWorkSurfaceInSpec(migrated)).toBe(migrated);
   });
 });
