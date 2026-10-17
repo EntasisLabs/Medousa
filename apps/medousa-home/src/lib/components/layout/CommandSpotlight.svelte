@@ -36,6 +36,8 @@
   import { leafOrder } from "$lib/utils/shellSplitTree";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import SpotlightWorkspacePreview from "./SpotlightWorkspacePreview.svelte";
+  import SpotlightActivity from "./SpotlightActivity.svelte";
+  import SpotlightNavigation from "./SpotlightNavigation.svelte";
   import {
     Bot,
     Boxes,
@@ -45,7 +47,6 @@
     FolderOpen,
     GitBranch,
     Globe2,
-    House,
     LayoutPanelTop,
     MessageSquare,
     PanelRightOpen,
@@ -93,6 +94,7 @@
     return () => window.removeEventListener("medousa-external-conversation-changed",changed);
   });
   const notesMode = $derived(commandSpotlight.mode === "notes");
+  const activityMode = $derived(!notesMode && selectedScopeId === "home" && selectedLens === "activity");
   const promptStep = $derived(commandSpotlight.promptStep);
 
   const ctx = $derived(
@@ -123,6 +125,7 @@
   const lensTabs: Array<{ id: SpotlightLens; label: string }> = [
     { id: "overview", label: "Overview" },
     { id: "recent", label: "Recent" },
+    { id: "activity", label: "Activity" },
     { id: "create", label: "Create" },
     { id: "actions", label: "Actions" },
   ];
@@ -166,6 +169,8 @@
   const placeholder = $derived(
     notesMode
       ? "Search notes…"
+      : activityMode
+        ? "Search activity…"
       : selectedScopeId === "home"
         ? "Search this workshop…"
         : `Search ${selectedDesktop?.name ?? "workspace"}…`,
@@ -410,6 +415,8 @@
       const layout = selectedDesktopLayout;
       if (selectedScopeId !== "home" && layout) {
         groups = collectDesktopGroups(selectedScopeId, layout, query);
+      } else if (activityMode) {
+        groups = [];
       } else if (!notesMode && !query.trim()) {
         groups = collectWorkshopLensCommands(ctx, selectedLens).map((group) => ({
           id: `${selectedLens}-${group.label}`,
@@ -668,6 +675,9 @@
       return;
     }
 
+    // The Activity tree owns arrow navigation and opening its selected node.
+    if (activityMode) return;
+
     // Harpoon: digits 1–4 jump pins when query is empty.
     if (selectedScopeId === "home" && !query.trim() && /^[1-4]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
       const slot = Number(event.key) - 1;
@@ -741,7 +751,7 @@
     <div
       class="command-spotlight-panel"
       class:command-spotlight-panel-contextual={showStage && !hasRichStage}
-      class:command-spotlight-panel-rich={showStage && hasRichStage}
+      class:command-spotlight-panel-rich={activityMode || (showStage && hasRichStage)}
       role="dialog"
       aria-modal="true"
       aria-label="Command spotlight"
@@ -770,7 +780,7 @@
           }}
           disabled={busy}
         />
-        {#if prefixHint !== "default"}
+        {#if prefixHint !== "default" && !activityMode}
           <p class="command-spotlight-mode-chip">
             {#if prefixHint === "create"}
               Create
@@ -784,61 +794,14 @@
       {/if}
 
       {#if !promptStep}
-        <div class="command-spotlight-navigation">
-          <nav class="command-spotlight-scopes" aria-label="Workshop scopes">
-            <span class="command-spotlight-scopes-label">Search in</span>
-            <div class="command-spotlight-scope-list" role="tablist" aria-label="Workspaces">
-              {#each scopeTabs as scope (scope.id)}
-                <button
-                  type="button"
-                  role="tab"
-                  class="command-spotlight-scope"
-                  class:command-spotlight-scope-active={scope.id === selectedScopeId}
-                  aria-selected={scope.id === selectedScopeId}
-                  onclick={() => selectScope(scope.id)}
-                >
-                  <span class="command-spotlight-scope-content">
-                    {#if scope.id === "home"}
-                      <House size={12} strokeWidth={1.7} />
-                    {/if}
-                    <span>{scope.label}</span>
-                  </span>
-                </button>
-              {/each}
-              <button
-                type="button"
-                class="command-spotlight-workspace-add"
-                aria-label="Create workspace"
-                title="Create workspace"
-                onclick={createWorkspace}
-              >
-                <Plus size={13} strokeWidth={1.7} />
-              </button>
-            </div>
-          </nav>
-
-          {#if selectedScopeId === "home" && !notesMode}
-            {#if query.trim()}
-              <span class="command-spotlight-searching-all">All results</span>
-            {:else}
-              <nav class="command-spotlight-lenses" aria-label="Spotlight categories">
-                {#each lensTabs as lens (lens.id)}
-                  <button
-                    type="button"
-                    class="command-spotlight-lens"
-                    class:command-spotlight-lens-active={lens.id === selectedLens}
-                    aria-current={lens.id === selectedLens ? "page" : undefined}
-                    onclick={() => selectLens(lens.id)}
-                  >
-                    <span class="command-spotlight-lens-content">{lens.label}</span>
-                  </button>
-                {/each}
-              </nav>
-            {/if}
-          {/if}
-        </div>
+        <SpotlightNavigation {scopeTabs} {selectedScopeId} {selectedLens} {lensTabs} {query} {notesMode} {activityMode} {selectScope} {selectLens} {createWorkspace} />
       {/if}
 
+      {#if activityMode}
+        {#key chat.workshopScopeId}
+          <SpotlightActivity {query} {ctx} />
+        {/key}
+      {:else}
       <div
         class="command-spotlight-body"
         class:command-spotlight-body-rich={hasRichStage}
@@ -972,9 +935,10 @@
           </aside>
         {/if}
       </div>
+      {/if}
 
       <footer class="command-spotlight-footer">
-        <span>↑↓ Navigate · ↵ Run · esc Close</span>
+        <span>{activityMode ? "↑↓ Navigate · ←→ Expand · ↵ Open · esc Close" : "↑↓ Navigate · ↵ Run · esc Close"}</span>
         <span class="command-spotlight-kbd">{formatShortcut("K")}</span>
       </footer>
     </div>

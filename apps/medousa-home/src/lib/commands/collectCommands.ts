@@ -37,7 +37,7 @@ import type {
 import { SECTION_LABELS as LABELS, SECTION_ORDER as ORDER } from "./types";
 
 export type SpotlightPrefixMode = "default" | "advanced" | "create" | "run";
-export type SpotlightLens = "overview" | "recent" | "create" | "actions";
+export type SpotlightLens = "overview" | "recent" | "activity" | "create" | "actions";
 
 export interface CollectCommandsOptions {
   query: string;
@@ -214,6 +214,8 @@ export function collectWorkshopLensCommands(
   ctx: WorkshopCommandContext,
   lens: SpotlightLens,
 ): GroupedCommands[] {
+  // Activity owns a hierarchy rather than a flat command result list.
+  if (lens === "activity") return [];
   const suggested = buildSuggestedCommands(ctx);
   const budgetList = buildBudgetListCommand(ctx);
   if (budgetList) suggested.push(budgetList);
