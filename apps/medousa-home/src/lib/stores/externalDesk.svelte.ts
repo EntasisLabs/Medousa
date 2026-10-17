@@ -51,6 +51,7 @@ export class ExternalDeskStore {
   /** Session UI — survives Workspace rail remounts. */
   expandedPins = $state<Record<string, boolean>>({});
   showAllByRoot = $state<Record<string, boolean>>({});
+  private refreshRequests = new Map<string, Promise<void>>();
 
   searchHitsList = $derived.by((): ExternalFileEntry[] => {
     const query = this.searchQuery.trim().toLowerCase();
@@ -159,18 +160,22 @@ export class ExternalDeskStore {
   }
 
   async refreshRoot(rootPath: string) {
+    const pending = this.refreshRequests.get(rootPath);
+    if (pending) return pending;
     this.loadingRoot = rootPath;
     this.error = null;
-    try {
-      const entries = await scanExternalRoot(rootPath);
-      this.entriesByRoot = { ...this.entriesByRoot, [rootPath]: entries };
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
-    } finally {
-      if (this.loadingRoot === rootPath) {
-        this.loadingRoot = null;
+    const request = scanExternalRoot(rootPath).then((entries) => {
+      if (this.pinnedRoots.some((root) => root.path === rootPath)) {
+        this.entriesByRoot = { ...this.entriesByRoot, [rootPath]: entries };
       }
-    }
+    }).catch((err) => {
+      this.error = err instanceof Error ? err.message : String(err);
+    }).finally(() => {
+      this.refreshRequests.delete(rootPath);
+      if (this.loadingRoot === rootPath) this.loadingRoot = null;
+    });
+    this.refreshRequests.set(rootPath, request);
+    return request;
   }
 
   async refreshAllRoots() {

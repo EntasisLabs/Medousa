@@ -1,5 +1,6 @@
 /** LME (Life Management Environment) — unified Vault + Automations workspace. */
 
+import { fileDocuments } from "$lib/files/fileDocuments.svelte";
 import type { AutomationsSection } from "$lib/stores/automationsNav.svelte";
 import { lmeWorkspacePorts } from "$lib/runtime/lmeWorkspacePorts";
 import type { FlowComposerDraft } from "$lib/types/workflow";
@@ -384,7 +385,7 @@ export class LmeWorkspaceStore {
         path,
         title,
       };
-      this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+      this.tabs = [...this.tabs, tab];
       this.activeTabId = tab.tabId;
       mirrorActiveTabToShell(tab.tabId, tab.title);
     }
@@ -886,6 +887,10 @@ export class LmeWorkspaceStore {
 
   confirmCloseTab(tabId: string): boolean {
     const closing = this.tabs.find((tab) => tab.tabId === tabId);
+    if (closing?.kind === "file") {
+      fileDocuments.flush(closing.path);
+      return !fileDocuments.dirty(closing.path) || window.confirm(`Discard unsaved changes to ${closing.path}?`);
+    }
     if (
       !closing ||
       closing.kind !== "code" ||
@@ -919,6 +924,7 @@ export class LmeWorkspaceStore {
       );
       if (buffer) ports().closeCodeBuffer(buffer.tabId);
     }
+    if (closing.kind === "file") fileDocuments.close(closing.path);
     const wasActive = this.activeTabId === tabId;
     this.tabs = this.tabs.filter((tab) => tab.tabId !== tabId);
 

@@ -62,7 +62,7 @@ Settings | tone: default
 | **Chat** | Sessions, composer, turns, artifacts |
 | **Activity** (Spotlight) | Workshop task hierarchy, previews, and task controls |
 | **Notes** | Vault markdown, boards, sheets, Liquid |
-| **Files** | Loose / pinned folders on the desktop host |
+| **Files** | Open files from pinned folders: Markdown, text, code, images, PDFs, and spreadsheet previews |
 | **Artifacts** | HTML decks and agent widgets |
 | **Calendar** | Day / week / month; phones often default to Day |
 | **Web** | Human browser (tabs, history, bookmarks) |

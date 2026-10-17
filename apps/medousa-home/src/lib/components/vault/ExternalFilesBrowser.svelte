@@ -196,7 +196,7 @@
           </div>
 
           {#if expanded}
-            {#if externalDesk.loadingRoot === root.path}
+            {#if externalDesk.loadingRoot === root.path && total === 0}
               <p class="vault-external-group-status">Scanning…</p>
             {:else if total === 0}
               <p class="vault-external-group-status">No files in this folder.</p>

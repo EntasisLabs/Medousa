@@ -1,5 +1,6 @@
 /** M8c — vault note attachments in frontmatter (paths to external files). */
 
+import { fileViewKind, filePreviewMime } from "$lib/files/fileTypes";
 import { isSpreadsheetPath } from "$lib/utils/spreadsheetPreview";
 import { serializeFrontmatter, stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
@@ -34,7 +35,7 @@ const MIME_BY_EXT: Record<string, string> = {
 
 export function guessMimeFromPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return MIME_BY_EXT[ext] ?? "application/octet-stream";
+  return MIME_BY_EXT[ext] ?? filePreviewMime(path);
 }
 
 export function attachmentFileName(attachment: VaultAttachment): string {
@@ -62,6 +63,7 @@ export function isSpreadsheetAttachment(attachment: VaultAttachment): boolean {
 
 export function canPreviewAttachment(attachment: VaultAttachment): boolean {
   return (
+    ["markdown", "text", "image"].includes(fileViewKind(attachment.path)) ||
     isPdfAttachment(attachment) ||
     isImageAttachment(attachment) ||
     isSpreadsheetAttachment(attachment)

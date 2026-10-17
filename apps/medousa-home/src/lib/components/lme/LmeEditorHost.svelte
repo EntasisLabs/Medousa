@@ -177,7 +177,7 @@
             Select a file to preview.
           </div>
         {:else}
-          <header class="artifact-library-preview-header">
+          <header class="flex shrink-0 items-center justify-between gap-3 border-b border-surface-600/30 px-4 py-3">
             <div class="min-w-0">
               <h2 class="truncate text-sm font-semibold text-surface-100">
                 {fileAttachment.label || attachmentFileName(fileAttachment)}
@@ -187,7 +187,7 @@
             <div class="flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                class="artifact-library-action"
+                class="shrink-0 rounded-md border border-surface-600/40 px-3 py-1.5 text-xs text-content-secondary hover:bg-surface-700/30"
                 onclick={() => void openFileExternal()}
               >
                 Open in app
@@ -195,7 +195,7 @@
             </div>
           </header>
           <div class="min-h-0 flex-1 overflow-hidden">
-            <VaultAttachmentPreviewContent attachment={fileAttachment} fill={true} />
+            <VaultAttachmentPreviewContent attachment={fileAttachment} fill={true} editable={interactive} />
           </div>
         {/if}
       </div>

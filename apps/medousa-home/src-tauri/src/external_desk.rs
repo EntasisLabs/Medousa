@@ -1,7 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
+use medousa_forge::execution::{ExecutionClass, ForgeExecutionService};
 use serde::Serialize;
+
+pub(crate) fn file_execution() -> &'static ForgeExecutionService {
+    static EXECUTION: std::sync::OnceLock<ForgeExecutionService> = std::sync::OnceLock::new();
+    EXECUTION.get_or_init(ForgeExecutionService::new)
+}
 
 const MAX_SCAN_FILES: usize = 800;
 const MAX_SCAN_DEPTH: usize = 5;
@@ -92,7 +98,16 @@ fn scan_dir(path: &Path, depth: usize, out: &mut Vec<ExternalFileEntry>) {
 }
 
 #[tauri::command]
-pub fn external_desk_scan_root(path: String) -> Result<Vec<ExternalFileEntry>, String> {
+pub async fn external_desk_scan_root(path: String) -> Result<Vec<ExternalFileEntry>, String> {
+    file_execution()
+        .run(ExecutionClass::Observation, 256 * 1024, move || {
+            Ok(scan_root(path))
+        })
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn scan_root(path: String) -> Result<Vec<ExternalFileEntry>, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("path is required".to_string());
@@ -124,7 +139,16 @@ pub struct ExternalFilePayload {
 }
 
 #[tauri::command]
-pub fn external_desk_read_file(path: String) -> Result<ExternalFilePayload, String> {
+pub async fn external_desk_read_file(path: String) -> Result<ExternalFilePayload, String> {
+    file_execution()
+        .run(ExecutionClass::StoreIo, path.len(), move || {
+            Ok(read_file(path))
+        })
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn read_file(path: String) -> Result<ExternalFilePayload, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err("path is required".to_string());
@@ -144,7 +168,26 @@ pub fn external_desk_read_file(path: String) -> Result<ExternalFilePayload, Stri
         .and_then(|value| value.to_str())
         .unwrap_or("")
         .to_lowercase();
-    let is_binary = matches!(ext.as_str(), "xlsx" | "xls" | "xlsm");
+    let is_binary = matches!(
+        ext.as_str(),
+        "xlsx"
+            | "xls"
+            | "xlsm"
+            | "pdf"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "avif"
+            | "bmp"
+            | "svg"
+            | "ico"
+            | "heic"
+            | "heif"
+            | "tif"
+            | "tiff"
+    );
 
     if is_binary {
         if size_bytes > MAX_BINARY_READ_BYTES {
@@ -171,5 +214,38 @@ pub fn external_desk_read_file(path: String) -> Result<ExternalFilePayload, Stri
             content,
             size_bytes,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pinned_documents_deliver_binary_bytes_and_text_without_a_vault_root() {
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        let root = std::env::temp_dir().join(format!(
+            "medousa-files-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        for (name, bytes) in [
+            ("report.pdf", b"%PDF-1.4\n\xff".as_slice()),
+            ("image.png", b"\x89PNG\r\n\x1a\n".as_slice()),
+            ("figure.svg", b"<svg/>".as_slice()),
+        ] {
+            let path = root.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            let payload = read_file(path.to_string_lossy().into()).unwrap();
+            assert_eq!(payload.kind, "base64");
+            assert_eq!(STANDARD.decode(payload.content).unwrap(), bytes);
+        }
+        let path = root.join("config.json");
+        std::fs::write(&path, "{\"name\":\"Medousa\"}").unwrap();
+        let payload = read_file(path.to_string_lossy().into()).unwrap();
+        assert_eq!(payload.kind, "text");
+        assert_eq!(payload.content, "{\"name\":\"Medousa\"}");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

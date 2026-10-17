@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ExternalFileEntry } from "$lib/types/externalDesk";
+import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
 import { isTauri } from "$lib/window";
 
 export async function scanExternalRoot(path: string): Promise<ExternalFileEntry[]> {
@@ -14,8 +15,8 @@ export interface ExternalFilePayload {
 }
 
 export async function readExternalFile(path: string): Promise<ExternalFilePayload> {
-  if (!isTauri()) {
-    throw new Error("File read needs the Medousa desktop app.");
+  if (!isTauri() || !isCoLocatedWorkshop()) {
+    throw new Error("Open this file on its workshop machine.");
   }
   return invoke<ExternalFilePayload>("external_desk_read_file", { path });
 }

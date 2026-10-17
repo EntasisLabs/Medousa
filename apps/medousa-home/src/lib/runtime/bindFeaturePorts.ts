@@ -1,5 +1,6 @@
 /** Composition-root binders. Feature stores must not import this module. */
 
+import { fileDocuments } from "$lib/files/fileDocuments.svelte";
 import { alignStageRoutingWithHost } from "$lib/utils/stageRouting";
 import { artifacts } from "$lib/stores/artifacts.svelte";
 import { automations } from "$lib/stores/automations.svelte";
@@ -30,7 +31,13 @@ import {
   setWorkshopDefaultsSyncPort,
 } from "./workshopDefaultsPorts";
 
+function warnUnsavedFiles(event: BeforeUnloadEvent) {
+  fileDocuments.flushAll();
+  if (fileDocuments.hasDirty()) { event.preventDefault(); event.returnValue = ""; }
+}
+
 export function bindAllFeaturePorts(): void {
+  if (typeof window !== "undefined") window.addEventListener("beforeunload", warnUnsavedFiles);
   setChatSettingsPort({
     autoOpenWebOnAgentBrowse: () => settings.autoOpenWebOnAgentBrowse,
     showEngineDetailsInChat: () => settings.showEngineDetailsInChat,
@@ -201,6 +208,7 @@ export function bindAllFeaturePorts(): void {
 }
 
 export function unbindAllFeaturePorts(): void {
+  if (typeof window !== "undefined") window.removeEventListener("beforeunload", warnUnsavedFiles);
   setChatSettingsPort(null);
   setWorkshopDefaultsSyncPort(null);
   setWorkshopDefaultsQueryPort(null);

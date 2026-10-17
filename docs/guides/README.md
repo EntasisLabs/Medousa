@@ -20,6 +20,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
 | [SSH targets](ssh-targets.md) | Connect named servers and choose agent access |
 | [Memory & identity](memory-and-identity.md) | Teach who you are; profiles |
+| [Files](files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
 | [External agent conversations](provider-conversations.md) | Connect provider-hosted agents and replay their messages |
 | [Instinct Agent](instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |

@@ -113,6 +113,11 @@ export async function openAttachmentPath(path: string): Promise<void> {
 }
 
 export async function attachmentPreviewUrl(path: string): Promise<string | null> {
-  const { localFilePreviewUrl } = await import("$lib/utils/vaultFilesystem");
-  return localFilePreviewUrl(path);
+  const { readExternalFile } = await import("$lib/utils/externalDeskApi");
+  const { fileViewKind, filePreviewMime } = await import("$lib/files/fileTypes");
+  if (!["image", "pdf"].includes(fileViewKind(path))) return null;
+  const payload = await readExternalFile(path);
+  if (payload.kind !== "base64") return null;
+  const bytes = Uint8Array.from(atob(payload.content), (char) => char.charCodeAt(0));
+  return URL.createObjectURL(new Blob([bytes], { type: filePreviewMime(path) }));
 }

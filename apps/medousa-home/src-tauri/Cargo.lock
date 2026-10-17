@@ -5711,6 +5711,7 @@ dependencies = [
  "medousa",
  "medousa-browser-bridge",
  "medousa-browser-lite",
+ "medousa-forge",
  "medousa-host",
  "medousa-install-support",
  "medousa-iroh-http",

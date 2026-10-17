@@ -38,6 +38,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
 | [SSH targets](guides/ssh-targets.md) | Connect named servers, grant agent access, and open terminals |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
+| [Files](guides/files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
 | [External agent conversations](guides/provider-conversations.md) | Find and connect named agents from Sessions or Spotlight through WhatsApp, Slack, or a webhook |
 | [Instinct Agent](guides/instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |
