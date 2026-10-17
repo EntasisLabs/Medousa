@@ -13,4 +13,9 @@ export interface PinnedRoot {
   label: string;
 }
 
+export interface ExternalDirectoryPage {
+  entries: ExternalFileEntry[];
+  next_cursor: string | null;
+}
+
 export type LibrarySidebarMode = "vault" | "files" | "artifacts";

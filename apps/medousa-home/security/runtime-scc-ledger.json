@@ -153,6 +153,10 @@
       "specifier": "$lib/styles/workshop-surfaces.postcss"
     },
     {
+      "from": "src/lib/components/lme/explorers/LmeFilesExplorer.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
+    },
+    {
       "from": "src/lib/components/lme/LmeFlowEditor.svelte",
       "specifier": "$lib/components/automations/flowComposer.css"
     },
@@ -253,6 +257,10 @@
       "specifier": "$lib/styles/markdown-content.postcss"
     },
     {
+      "from": "src/lib/components/vault/ExternalFilesBrowser.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
+    },
+    {
       "from": "src/lib/components/vault/KanbanBoardEditor.svelte",
       "specifier": "$lib/styles/vault-kanban.postcss"
     },
@@ -267,6 +275,10 @@
     {
       "from": "src/lib/components/vault/VaultAttachmentPanel.svelte",
       "specifier": "$lib/styles/artifact.postcss"
+    },
+    {
+      "from": "src/lib/components/vault/VaultAttachmentPreviewContent.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
     },
     {
       "from": "src/lib/components/vault/VaultCalloutBuilderSheet.svelte",
@@ -313,12 +325,28 @@
       "specifier": "$lib/styles/vault-workshop.postcss"
     },
     {
+      "from": "src/lib/components/vault/VaultSpreadsheetPreview.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
+    },
+    {
       "from": "src/lib/components/vault/VaultViewBuilderSheet.svelte",
       "specifier": "$lib/styles/vault-liquid.postcss"
     },
     {
       "from": "src/lib/components/wizard/WizardContainer.svelte",
       "specifier": "./wizardExperience.css"
+    },
+    {
+      "from": "src/lib/files/FilePdfDocument.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
+    },
+    {
+      "from": "src/lib/files/FilePreviewHeader.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
+    },
+    {
+      "from": "src/lib/files/FileTextDocument.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
     },
     {
       "from": "src/lib/liquid/archetypes/atoms/prose/Prose.svelte",

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FilePreviewHeader from "$lib/files/FilePreviewHeader.svelte";
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultAttachmentPreviewContent from "$lib/components/vault/VaultAttachmentPreviewContent.svelte";
@@ -177,23 +178,7 @@
             Select a file to preview.
           </div>
         {:else}
-          <header class="flex shrink-0 items-center justify-between gap-3 border-b border-surface-600/30 px-4 py-3">
-            <div class="min-w-0">
-              <h2 class="truncate text-sm font-semibold text-surface-100">
-                {fileAttachment.label || attachmentFileName(fileAttachment)}
-              </h2>
-              <p class="truncate text-xs text-content-quiet">{fileAttachment.path}</p>
-            </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                class="shrink-0 rounded-md border border-surface-600/40 px-3 py-1.5 text-xs text-content-secondary hover:bg-surface-700/30"
-                onclick={() => void openFileExternal()}
-              >
-                Open in app
-              </button>
-            </div>
-          </header>
+          <FilePreviewHeader path={fileAttachment.path} title={fileAttachment.label || attachmentFileName(fileAttachment)} onOpenExternal={openFileExternal} />
           <div class="min-h-0 flex-1 overflow-hidden">
             <VaultAttachmentPreviewContent attachment={fileAttachment} fill={true} editable={interactive} />
           </div>

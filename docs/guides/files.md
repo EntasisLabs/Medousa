@@ -5,11 +5,24 @@ Medousa tabs without importing them into Notes or creating a Code project.
 Folders and files remain on the workshop machine. Local folder selection and
 file opening are available when the desktop app and workshop share that disk.
 
+Expand an added folder to browse its contents, then expand any nested folder.
+Folders appear before files, sorted by name. Each expansion reads only that
+folder; Medousa does not scan the whole folder tree when Files opens. Large
+folders have **Previous / Next** controls with 200 items per page, without a
+depth limit. Collapsing a folder releases its loaded listings.
+
+Use **View options → Show hidden files** to include names starting with a dot. Ordinary folders
+such as `build`, `dist`, and `node_modules` are available without exclusions.
+**Refresh folders** refreshes loaded folders; a folder's menu can refresh it
+individually. Read failures appear at the affected folder with **Retry folder**.
+The file filter searches names and paths in loaded folder pages; it does not
+search unopened folders or file contents.
+
 | Type | In Medousa |
 |------|------------|
 | Markdown | Rendered preview, editable source, or split view |
 | Text, source, and configuration files | The same source editor and syntax highlighting used in Code |
-| PDF | Paged document preview with fit-width and zoom controls |
+| PDF | Paged document preview with fit-page, fit-width, and zoom controls |
 | Images | Image preview, including files outside the vault |
 | CSV, TSV, XLSX | Existing read-only spreadsheet preview |
 

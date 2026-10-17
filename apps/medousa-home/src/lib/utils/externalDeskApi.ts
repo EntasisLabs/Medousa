@@ -1,11 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ExternalFileEntry } from "$lib/types/externalDesk";
+import type { ExternalFileEntry, ExternalDirectoryPage } from "$lib/types/externalDesk";
 import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
 import { isTauri } from "$lib/window";
 
 export async function scanExternalRoot(path: string): Promise<ExternalFileEntry[]> {
   if (!isTauri()) return [];
   return invoke<ExternalFileEntry[]>("external_desk_scan_root", { path });
+}
+
+export async function listExternalDirectory(path: string, cursor: string | null, showHidden: boolean): Promise<ExternalDirectoryPage> {
+  if (!isTauri() || !isCoLocatedWorkshop()) throw new Error("Open this folder on its workshop machine.");
+  return invoke<ExternalDirectoryPage>("external_desk_list_directory", { path, cursor, showHidden });
 }
 
 export interface ExternalFilePayload {

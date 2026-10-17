@@ -23,6 +23,104 @@ pub struct ExternalFileEntry {
     pub size_bytes: u64,
 }
 
+const DIRECTORY_PAGE_SIZE: usize = 200;
+type DirectoryKey = (bool, String, String);
+
+#[derive(Debug, Serialize)]
+pub struct ExternalDirectoryPage {
+    pub entries: Vec<ExternalFileEntry>,
+    pub next_cursor: Option<String>,
+}
+
+#[tauri::command]
+pub async fn external_desk_list_directory(
+    path: String,
+    cursor: Option<String>,
+    show_hidden: bool,
+) -> Result<ExternalDirectoryPage, String> {
+    file_execution()
+        .run(ExecutionClass::Observation, 256 * 1024, move || {
+            Ok(list_directory(path, cursor, show_hidden))
+        })
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn list_directory(
+    path: String,
+    cursor: Option<String>,
+    show_hidden: bool,
+) -> Result<ExternalDirectoryPage, String> {
+    if path.trim().is_empty() {
+        return Err("path is required".into());
+    }
+    let after: Option<DirectoryKey> = cursor
+        .map(|value| serde_json::from_str(&value))
+        .transpose()
+        .map_err(|_| "Invalid folder page cursor".to_string())?;
+    // Keep only one page plus a lookahead. Metadata is read only for that page;
+    // enumerating a folder never walks into its children.
+    let mut candidates = std::collections::BTreeMap::new();
+    for entry in std::fs::read_dir(&path).map_err(|error| format!("Cannot open folder: {error}"))? {
+        let entry = entry.map_err(|error| format!("Cannot read folder entry: {error}"))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        let is_dir = if file_type.is_symlink() {
+            std::fs::metadata(entry.path()).is_ok_and(|metadata| metadata.is_dir())
+        } else {
+            file_type.is_dir()
+        };
+        let key = (!is_dir, name.to_lowercase(), name);
+        if after.as_ref().is_some_and(|after| key <= *after) {
+            continue;
+        }
+        candidates.insert(key, entry.path());
+        if candidates.len() > DIRECTORY_PAGE_SIZE + 1 {
+            candidates.pop_last();
+        }
+    }
+    let more = candidates.len() > DIRECTORY_PAGE_SIZE;
+    if more {
+        candidates.pop_last();
+    }
+    let next_cursor = if more {
+        candidates
+            .last_key_value()
+            .map(|(key, _)| serde_json::to_string(key).unwrap())
+    } else {
+        None
+    };
+    let entries = candidates
+        .into_iter()
+        .map(|((is_file, _, name), path)| {
+            let metadata = std::fs::metadata(&path).ok();
+            ExternalFileEntry {
+                ext: if is_file {
+                    path.extension()
+                        .map(|ext| ext.to_string_lossy().to_lowercase())
+                } else {
+                    None
+                },
+                path: path.to_string_lossy().into_owned(),
+                name,
+                is_dir: !is_file,
+                modified_at_utc: metadata
+                    .as_ref()
+                    .map(|metadata| modified_at(metadata).to_rfc3339())
+                    .unwrap_or_default(),
+                size_bytes: metadata.as_ref().map_or(0, |metadata| metadata.len()),
+            }
+        })
+        .collect();
+    Ok(ExternalDirectoryPage {
+        entries,
+        next_cursor,
+    })
+}
+
 fn should_skip(name: &str) -> bool {
     if name.starts_with('.') {
         return true;
@@ -220,6 +318,54 @@ fn read_file(path: String) -> Result<ExternalFilePayload, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_pages_are_complete_and_shallow_with_optional_hidden_items() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-folders-{}",
+            Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        std::fs::create_dir_all(root.join("build/deep/child")).unwrap();
+        std::fs::write(root.join("build/deep/child/not-on-root-page.txt"), "nested").unwrap();
+        std::fs::write(root.join(".hidden"), "hidden").unwrap();
+        for index in 0..220 {
+            std::fs::write(root.join(format!("file-{index:03}.txt")), "text").unwrap();
+        }
+        let path = root.to_string_lossy().into_owned();
+        let first = list_directory(path.clone(), None, false).unwrap();
+        assert_eq!(first.entries.len(), DIRECTORY_PAGE_SIZE);
+        assert_eq!(first.entries[0].name, "build");
+        assert!(first.entries[0].is_dir);
+        let second = list_directory(path.clone(), first.next_cursor.clone(), false).unwrap();
+        assert_eq!(second.entries.len(), 21);
+        assert!(second.next_cursor.is_none());
+        let names: std::collections::BTreeSet<_> = first
+            .entries
+            .iter()
+            .chain(&second.entries)
+            .map(|entry| &entry.name)
+            .collect();
+        assert_eq!(names.len(), 221);
+        assert!(!names.contains(&"not-on-root-page.txt".to_string()));
+        assert!(!names.contains(&".hidden".to_string()));
+        assert!(
+            list_directory(path.clone(), None, true)
+                .unwrap()
+                .entries
+                .iter()
+                .any(|entry| entry.name == ".hidden")
+        );
+        assert!(list_directory(path, Some("broken cursor".into()), false).is_err());
+        assert!(
+            list_directory(
+                root.join("missing").to_string_lossy().into_owned(),
+                None,
+                false
+            )
+            .is_err()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn pinned_documents_deliver_binary_bytes_and_text_without_a_vault_root() {

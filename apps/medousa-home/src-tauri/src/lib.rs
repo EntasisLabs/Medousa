@@ -1010,6 +1010,7 @@ fn run_home() {
             channel_adapters::messaging_ensure_whatsapp_adapter,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             external_desk::external_desk_scan_root,
+            external_desk::external_desk_list_directory,
             external_desk::external_desk_read_file,
             files::write_file_bytes,
             wizard::wizard_bootstrap,

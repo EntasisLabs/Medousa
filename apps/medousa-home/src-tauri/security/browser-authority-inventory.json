@@ -276,6 +276,7 @@
     "embedded_daemon::embedded_clear_delegation_binding",
     "embedded_daemon::embedded_delegation_binding",
     "embedded_daemon::embedded_set_delegation_binding",
+    "external_desk::external_desk_list_directory",
     "external_desk::external_desk_read_file",
     "external_desk::external_desk_scan_root",
     "files::write_file_bytes",

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "$lib/styles/files-surface.postcss";
+  import { Table2 } from "@lucide/svelte";
   import type { SpreadsheetPreviewData } from "$lib/utils/spreadsheetPreview";
 
   interface Props {
@@ -8,37 +10,31 @@
   let { data }: Props = $props();
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-  <div class="shrink-0 border-b border-surface-500/35 px-4 py-2">
-    <p class="text-xs text-content-tertiary">
-      {#if data.sheetName}
-        Sheet: {data.sheetName}
-      {:else}
-        Spreadsheet preview
-      {/if}
-      · read-only · no formulas
-    </p>
+<div class="files-sheet flex min-h-0 flex-1 flex-col overflow-hidden">
+  <div class="files-document-toolbar">
+    <span class="files-save-state"><Table2 size={13} />{data.sheetName || 'Spreadsheet'}<span class="files-format-badge">Read-only</span></span>
+    <span class="files-save-state">{data.totalRows} rows · {data.headers.length} columns</span>
   </div>
 
-  <div class="min-h-0 flex-1 overflow-auto p-4">
+  <div class="files-sheet-body min-h-0 flex-1 overflow-auto">
     {#if data.rows.length === 0 && data.totalRows === 0}
-      <p class="text-sm text-content-quiet">This sheet is empty.</p>
+      <div class="files-empty"><span class="files-empty-icon"><Table2 size={22} /></span><h3>This sheet is empty</h3><p>There are no cells to preview.</p></div>
     {:else}
-      <table class="w-full min-w-[520px] border-collapse text-sm">
+      <table class="w-full min-w-[520px] border-collapse">
         <thead>
           <tr
-            class="sticky top-0 z-10 border-b border-surface-500/50 bg-surface-950/95 text-left text-xs uppercase tracking-wide text-content-tertiary"
+            class="sticky top-0 z-10 text-left"
           >
             {#each data.headers as header, colIndex (header + colIndex)}
-              <th class="px-2 py-2 font-medium">{header}</th>
+              <th>{header}</th>
             {/each}
           </tr>
         </thead>
         <tbody>
           {#each data.rows as row, rowIndex (rowIndex)}
-            <tr class="border-b border-surface-500/30 hover:bg-surface-800/40">
+            <tr>
               {#each data.headers as _, colIndex (colIndex)}
-                <td class="max-w-[240px] truncate px-2 py-1.5 text-surface-100" title={row[colIndex] ?? ""}>
+                <td class="max-w-[240px] truncate" title={row[colIndex] ?? ""}>
                   {row[colIndex] ?? ""}
                 </td>
               {/each}

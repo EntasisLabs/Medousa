@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "$lib/styles/files-surface.postcss";
+  import { AlertCircle, ExternalLink, LoaderCircle } from "@lucide/svelte";
   import { fileViewKind } from "$lib/files/fileTypes";
   import {
     attachmentPreviewUrl,
@@ -74,30 +76,32 @@
       {/await}
     {/key}
   {:else if previewError}
-    <div class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-      <p class="text-sm text-content-tertiary">{previewError}</p>
+    <div class="files-empty">
+      <span class="files-empty-icon"><AlertCircle size={22} strokeWidth={1.5} /></span>
+      <h3>Couldn't preview this file</h3>
+      <p role="alert">{previewError}</p>
       <button
         type="button"
-        class="btn btn-sm variant-soft-primary"
+        class="files-button"
         onclick={() => void handleOpenExternal()}
       >
-        Open file
+        <ExternalLink size={13} />Open in app
       </button>
     </div>
   {:else if spreadsheetData}
     <VaultSpreadsheetPreview data={spreadsheetData} />
   {:else if previewUrl && isImageAttachment(attachment)}
-    <div class="flex h-full min-h-0 flex-1 items-center justify-center overflow-auto p-4">
+    <div class="files-image-stage">
       <img
-        class="max-h-full max-w-full rounded-md object-contain"
         src={previewUrl}
         alt={attachment.label}
+        draggable={false}
         onerror={() => { previewError = "This image could not be decoded. Use Open in app to view it."; }}
       />
     </div>
   {:else}
-    <div class="flex h-full flex-1 items-center justify-center p-6 text-sm text-content-tertiary">
-      Loading preview…
+    <div class="files-empty" role="status">
+      <LoaderCircle size={20} class="animate-spin text-content-tertiary" /><p>Opening preview…</p>
     </div>
   {/if}
 </div>

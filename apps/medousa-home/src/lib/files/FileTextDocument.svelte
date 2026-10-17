@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "$lib/styles/files-surface.postcss";
+  import { AlertCircle, Check, LoaderCircle, RotateCw, Save } from "@lucide/svelte";
   import { onDestroy, untrack } from "svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import CodeMarkdownPreview from "$lib/components/code/CodeMarkdownPreview.svelte";
@@ -72,19 +74,25 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="flex h-full min-h-0 flex-1 flex-col" onkeydown={keydown}>
-  <div class="flex shrink-0 items-center justify-between gap-2 border-b border-surface-600/30 px-3 py-2 text-chrome-sm">
-    <span class="text-content-tertiary">{editable ? doc && doc.draft !== doc.original ? 'Unsaved changes' : 'Saved on disk' : 'Read-only'}</span>
-    <div class="flex items-center gap-2">
+  <div class="files-document-toolbar">
+    <span class="files-save-state">
+      {#if !doc}<LoaderCircle size={12} class="animate-spin" />Opening…
+      {:else if editable && doc.draft !== doc.original}<span class="files-draft-dot"></span>Unsaved changes
+      {:else}<Check size={12} />{editable ? 'Saved on disk' : 'Read-only'}{/if}
+    </span>
+    <div class="files-toolbar-actions">
       {#if markdown}
+        <div class="files-segments" role="group" aria-label="Document view">
         {#each ['preview', 'source', 'split'] as view}
-          <button type="button" class="rounded px-2 py-1 hover:bg-surface-700/40" class:bg-surface-700={mode === view} aria-pressed={mode === view} onclick={() => choose(view as typeof mode)}>{view === 'preview' ? 'Preview' : view === 'source' ? 'Source' : 'Split'}</button>
+          <button type="button" aria-pressed={mode === view} onclick={() => choose(view as typeof mode)}>{view === 'preview' ? 'Preview' : view === 'source' ? 'Source' : 'Split'}</button>
         {/each}
+        </div>
       {/if}
-      <button type="button" class="rounded px-2 py-1 hover:bg-surface-700/40" onclick={reload}>Reload</button>
-      {#if editable}<button type="button" class="rounded bg-primary-500/20 px-2 py-1 disabled:opacity-50" disabled={!doc || doc.saving || doc.original === doc.draft} onclick={() => void fileDocuments.save(path)}>{doc?.saving ? 'Saving…' : 'Save'}</button>{/if}
+      <button type="button" class="files-button files-button--quiet" onclick={reload}><RotateCw size={12} />Reload</button>
+      {#if editable}<button type="button" class="files-button" class:files-button--primary={!!doc && doc.original !== doc.draft} disabled={!doc || doc.saving || doc.original === doc.draft} onclick={() => void fileDocuments.save(path)}><Save size={12} />{doc?.saving ? 'Saving…' : 'Save'}</button>{/if}
     </div>
   </div>
-  {#if error || doc?.error}<p class="shrink-0 px-4 py-2 text-sm text-content-warning" role="alert">{error || doc?.error}</p>{/if}
+  {#if error || doc?.error}<div class="files-preview-alert" role="alert"><AlertCircle size={14} class="shrink-0" /><p>{error || doc?.error}</p></div>{/if}
   {#if doc}
     <div class="file-document-panes flex min-h-0 flex-1" class:split={mode === 'split'}>
       {#if mode !== 'preview'}
@@ -94,7 +102,7 @@
         <div class="min-h-0 min-w-0 flex-1 overflow-hidden"><CodeMarkdownPreview content={doc.draft} {path} workId="" {images} onOpenLocation={(target) => lmeWorkspace.openFile(path.startsWith('/') && !target.startsWith('/') ? `/${target}` : target)} /></div>
       {/if}
     </div>
-  {:else if !error}<p class="p-6 text-sm text-content-tertiary">Loading file…</p>{/if}
+  {:else if !error}<div class="files-empty" role="status"><LoaderCircle size={20} class="animate-spin text-content-tertiary" /><p>Opening file…</p></div>{/if}
 </div>
 <style>
   .split > div { flex-basis:50%; }
