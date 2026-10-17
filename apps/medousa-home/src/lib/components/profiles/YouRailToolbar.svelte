@@ -48,8 +48,8 @@
 <button
   type="button"
   class="vault-dock-icon-btn"
-  title="Teach"
-  aria-label="Teach something"
+  title="Add information"
+  aria-label="Add information"
   onclick={focusTeach}
 >
   <Brain size={15} strokeWidth={1.75} />

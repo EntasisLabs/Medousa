@@ -1,6 +1,6 @@
 # You and the Map
 
-**You** is who Medousa knows you (and other people) as. **Map** shows recent chats and linked notes. Neither is the same as an imported Agent.
+**You** contains your profile and saved context: preferences, people, and facts. **Map** shows recent chats and linked notes. Neither is the same as an imported Agent.
 
 Related: [Architecture and terminology](guide:architecture) · [Sharing and phone](guide:sharing-phone) (Shared seats)
 
@@ -10,11 +10,11 @@ Dock / More → **You**. Create menu:
 
 | Action | Dialog |
 |--------|--------|
-| **Teach** | **Teach Medousa** — facts and preferences |
-| **Add person** | **Remember someone** |
+| **Add information** | Save a fact or preference |
+| **Add person** | Save a person and their relationship to you |
 | **Add profile** | **New profile** (another hat / seat identity) |
 
-Correct mistakes: focus a card → **That's not right** (prefill teach), or shelf **Correct or refine** / **Relationship** / **Value**.
+Edit saved information: focus a card → **Edit** (prefilled with the saved value), or shelf **Correct or refine** / **Relationship** / **Value**.
 
 Overflow: **Export/Import profile backup**, **Export identity notes**.
 

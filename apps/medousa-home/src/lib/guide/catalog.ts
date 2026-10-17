@@ -77,7 +77,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
     title: "You and the Map",
     file: "19-profiles-locus.md",
     group: "everyday",
-    summary: "Teach Medousa about you; browse recent links",
+    summary: "Manage your profile and saved context; browse recent links",
   },
   {
     id: "troubleshooting",

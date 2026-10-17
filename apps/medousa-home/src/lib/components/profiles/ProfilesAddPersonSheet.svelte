@@ -88,7 +88,7 @@
       <header class="vault-interact-header vault-compose-header">
         <div class="min-w-0">
           <p class="vault-interact-kicker">You</p>
-          <h3 id="profiles-add-person-title" class="vault-interact-title">Remember someone</h3>
+          <h3 id="profiles-add-person-title" class="vault-interact-title">Add person</h3>
         </div>
         <button
           type="button"
@@ -134,7 +134,7 @@
           class="vault-interact-commit"
           disabled={readOnly || busy || !name.trim() || !role.trim()}
         >
-          {busy ? "Saving…" : "Remember"}
+          {busy ? "Saving…" : "Save"}
         </button>
       </div>
     </form>

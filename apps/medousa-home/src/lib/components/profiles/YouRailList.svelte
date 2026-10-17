@@ -72,7 +72,7 @@
   {:else if entries.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-2 px-3 py-6 text-center">
       <Brain size={22} strokeWidth={1.5} class="text-content-quiet" />
-      <p class="text-sm text-content-secondary">Nothing remembered yet</p>
+      <p class="text-sm text-content-secondary">No profile information saved yet</p>
       <button
         type="button"
         class="btn btn-sm btn-primary"
@@ -81,7 +81,7 @@
           dispatchProfilesFocusTeach();
         }}
       >
-        Teach something
+        Add information
       </button>
     </div>
   {:else}

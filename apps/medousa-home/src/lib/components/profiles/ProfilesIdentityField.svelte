@@ -149,7 +149,7 @@
 </script>
 
 <div class="profiles-field-view">
-  <p class="profiles-field-whisper">Drag the field · tap a body to focus</p>
+  <p class="profiles-field-whisper">Drag to explore · select an item for details</p>
 
   <div
     bind:this={viewportEl}
@@ -162,7 +162,7 @@
     role="presentation"
   >
     {#if loading}
-      <p class="profiles-field-loading">Gathering who she knows you as…</p>
+      <p class="profiles-field-loading">Loading your profile…</p>
     {:else}
       <svg
         class="profiles-field-svg"

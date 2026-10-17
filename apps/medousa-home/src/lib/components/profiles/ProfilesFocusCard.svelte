@@ -12,26 +12,13 @@
 
   let { blob, portrait, onClose, onOpenChat, onCorrect }: Props = $props();
 
-  const personRole = $derived.by(() => {
-    if (!blob || blob.kind !== "person") return "";
-    return blob.subtitle?.trim() || "someone in your life";
-  });
-
   const voiceLine = $derived.by(() => {
     if (!blob) return "";
     if (blob.kind === "cluster" && !blob.entry) {
       return portrait;
     }
-    if (blob.kind === "person") {
-      return `${blob.label} — ${personRole}. Someone she should recognize in every thread.`;
-    }
-    if (blob.kind === "preference") {
-      return `She shows up for you with ${blob.label.toLowerCase()} in mind — ${blob.subtitle}.`;
-    }
-    if (blob.entry?.kind === "claim") {
-      return blob.subtitle !== blob.label ? blob.subtitle : blob.label;
-    }
-    return blob.subtitle || blob.label;
+    const title = blob.entry?.title ?? blob.label;
+    return blob.subtitle !== title ? blob.subtitle : "";
   });
 </script>
 
@@ -48,17 +35,17 @@
       </button>
       <p class="profiles-focus-kicker">
         {#if blob.kind === "cluster" && !blob.entry}
-          Who she knows you as
+          About you
         {:else if blob.kind === "person"}
-          In your circle
+          Person
         {:else if blob.kind === "preference"}
-          Rhythm
+          Preference
         {:else}
-          She remembers
+          Saved fact
         {/if}
       </p>
-      <h2 class="profiles-focus-title">{blob.label}</h2>
-      <p class="profiles-focus-voice">{voiceLine}</p>
+      <h2 class="profiles-focus-title">{blob.entry?.title ?? blob.label}</h2>
+      {#if voiceLine}<p class="profiles-focus-voice">{voiceLine}</p>{/if}
       <div class="profiles-focus-actions">
         {#if onOpenChat}
           <button type="button" class="btn btn-sm variant-soft-primary" onclick={() => onOpenChat?.()}>
@@ -68,7 +55,7 @@
         {/if}
         {#if onCorrect}
           <button type="button" class="btn btn-sm variant-ghost-surface" onclick={() => onCorrect?.()}>
-            That's not right
+            Edit
           </button>
         {/if}
       </div>

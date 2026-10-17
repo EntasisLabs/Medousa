@@ -16,17 +16,16 @@
 
 <div class="min-h-0">
   {#if loading && entries.length === 0}
-    <p class="workshop-muted px-2 py-4 text-sm">Loading who she knows you as…</p>
+    <p class="workshop-muted px-2 py-4 text-sm">Loading your profile…</p>
   {:else if error}
     <p class="px-2 py-4 text-sm text-content-warning">{error}</p>
   {:else if entries.length === 0}
     <div class="px-2 py-6">
       <p class="text-sm leading-relaxed text-content-secondary">
-        She's still getting to know you.
+        No profile information saved yet.
       </p>
       <p class="workshop-faint mt-2 text-sm leading-relaxed">
-        Say something in chat — or use the bar below — and it will land here as a memory she
-        carries forward.
+        Add a preference, person, or fact to your profile.
       </p>
     </div>
   {:else}

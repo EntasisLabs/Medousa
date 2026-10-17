@@ -11,7 +11,7 @@ import type {
 import { preferenceDisplayValue } from "$lib/utils/identityTeach";
 
 const KIND_LABELS: Record<ProfileShelfKind, string> = {
-  claim: "Remembers",
+  claim: "Fact",
   contact: "Person",
   relationship: "Connection",
   preference: "Preference",
@@ -70,7 +70,7 @@ function formatPolicyTags(tags: string[]): string | null {
 
 function humanizePrefKey(key: string): string {
   if (key.startsWith("note_")) {
-    return "Remembers";
+    return "Saved fact";
   }
   return key
     .split(/[_-]+/)
@@ -122,7 +122,7 @@ export function buildProfileShelfEntries(
       id: `contact:${contact.contact_id}`,
       kind: "contact",
       title: contact.display_name,
-      subtitle: role ?? "Someone she should recognize",
+      subtitle: role ?? "Person in your profile",
       searchText: [contact.display_name, role, contact.contact_id, "person"].filter(Boolean).join(" "),
       trustLevel: rel?.trust_level,
       confidence: rel?.confidence,
@@ -141,7 +141,7 @@ export function buildProfileShelfEntries(
       id: `claim:${claim.claim_id}`,
       kind: "claim",
       title: claim.summary,
-      subtitle: `She's ${(claim.confidence * 100).toFixed(0)}% sure about this`,
+      subtitle: claim.summary,
       searchText: [claim.summary, claim.claim_id, "remembers fact"].join(" "),
       confidence: claim.confidence,
       rememberKind: "note",
@@ -196,7 +196,7 @@ export function buildProfileShelfEntries(
       id: `relationship:${rel.relationship_id}`,
       kind: "relationship",
       title: role,
-      subtitle: `Trust ${(rel.trust_level * 100).toFixed(0)}% · ${(rel.confidence * 100).toFixed(0)}% confidence`,
+      subtitle: role,
       searchText: [role, rel.relationship_id, "relationship"].join(" "),
       trustLevel: rel.trust_level,
       confidence: rel.confidence,
@@ -292,20 +292,4 @@ export function findShelfEntryAfterRemember(
     ) ??
     null
   );
-}
-
-/** Strip engine tokens from digest text for human empty-state copy. */
-export function humanDigestLines(text: string | null | undefined): string[] {
-  if (!text?.trim()) return [];
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(
-      (line) =>
-        line.length > 0 &&
-        !line.startsWith("[") &&
-        !line.includes("status=empty") &&
-        !line.startsWith("#") &&
-        !line.toLowerCase().includes("medousa_relational"),
-    );
 }

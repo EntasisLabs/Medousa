@@ -39,18 +39,6 @@
     idsOpen = false;
   });
 
-  const heroMeta = $derived.by(() => {
-    if (!entry) return null;
-    const parts: string[] = [];
-    if (entry.confidence !== undefined) {
-      parts.push(`${(entry.confidence * 100).toFixed(0)}% sure`);
-    }
-    if (entry.trustLevel !== undefined) {
-      parts.push(`${(entry.trustLevel * 100).toFixed(0)}% trust`);
-    }
-    return parts.length > 0 ? parts.join(" · ") : entry.subtitle;
-  });
-
   async function submitCorrection() {
     if (!entry?.rememberKind || !entry.rememberSubject) return;
     const statement = correction.trim();
@@ -86,19 +74,18 @@
 {#if !entry}
   <div class="flex h-full min-h-[12rem] flex-col justify-center px-2">
     {#if digestLines.length > 0}
-      <p class="workshop-label">Continuity slice</p>
+      <p class="workshop-label">Saved context</p>
       <ul class="mt-3 space-y-2 text-sm leading-relaxed text-content-secondary">
         {#each digestLines.slice(0, 6) as line, index (index)}
           <li class="workshop-inset px-3 py-2">{line}</li>
         {/each}
       </ul>
       <p class="workshop-faint mt-4 text-xs leading-relaxed">
-        Pick a memory on the left — or tell her something new below.
+        Select an item on the left to review your saved context.
       </p>
     {:else}
       <p class="workshop-muted max-w-sm text-sm leading-relaxed">
-        Pick a memory from the shelf — a person, a preference, something she carries forward —
-        or teach her something new in the bar below.
+        Select a person, preference, or fact to view its details, or add information to your profile.
       </p>
     {/if}
     <ProfilesQuickActions
@@ -111,8 +98,8 @@
   <article>
     <ContextWitnessHero
       title={entry.title}
-      meta={heroMeta}
-      lead={entry.kind === "preference" ? null : entry.subtitle !== entry.title ? entry.subtitle : null}
+      meta={null}
+      lead={entry.subtitle !== entry.title ? entry.subtitle : null}
       chipLabel={profileKindLabel(entry.kind)}
       chipVariant="ready"
     />
@@ -126,7 +113,7 @@
         <MessageCircle size={16} class="shrink-0 text-content-link" aria-hidden="true" />
         <span>
           <span class="context-related-memory-title block">Talk about this in chat</span>
-          <span class="context-related-memory-meta">She learns best in conversation</span>
+          <span class="context-related-memory-meta">Use this saved context in a conversation</span>
         </span>
       </button>
     {/if}
@@ -136,9 +123,9 @@
         <p class="workshop-label">{correctionLabel}</p>
         <p class="workshop-faint mt-1 text-xs leading-relaxed">
           {#if entry.kind === "contact" || entry.kind === "relationship"}
-            Update how she understands this person — partner, colleague, family.
+            Update this person’s relationship to you — partner, colleague, family.
           {:else}
-            Update what she holds — no need to re-explain in chat.
+            Update the information saved in your profile.
           {/if}
         </p>
         <div class="composer-bar mt-3 max-w-xl">
@@ -149,7 +136,7 @@
             disabled={correcting}
             placeholder={entry.kind === "contact" || entry.kind === "relationship"
               ? "Role — colleague, collaborator, family…"
-              : "What should be remembered instead?"}
+              : "Enter the updated information"}
           ></textarea>
           <div class="flex justify-end border-t border-surface-500/25 pt-2">
             <button
@@ -186,6 +173,12 @@
             <dt class="workshop-label">kind</dt>
             <dd class="mt-0.5 text-surface-200">{entry.kind}</dd>
           </div>
+          {#if entry.confidence !== undefined}
+            <div><dt class="workshop-label">Confidence</dt><dd>{(entry.confidence * 100).toFixed(0)}%</dd></div>
+          {/if}
+          {#if entry.trustLevel !== undefined}
+            <div><dt class="workshop-label">Trust</dt><dd>{(entry.trustLevel * 100).toFixed(0)}%</dd></div>
+          {/if}
           {#each Object.entries(entry.meta ?? {}) as [key, value] (key)}
             <div>
               <dt class="workshop-label">{key}</dt>
