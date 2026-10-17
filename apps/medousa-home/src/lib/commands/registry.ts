@@ -7,7 +7,7 @@ import {
   listManuscripts,
   listTurnBudgetRequests,
 } from "$lib/daemon";
-import { resetContentZoom, stepContentZoom } from "$lib/config/contentZoom";
+import { CONTENT_ZOOM_DEFAULT, contentZoomPercent, resetContentZoom, stepContentZoom } from "$lib/config/contentZoom";
 import { homeChannelSurface, formatShortcut } from "$lib/platform";
 import { onThisHostPhrase } from "$lib/platformCopy";
 import { appUpdate } from "$lib/stores/appUpdate.svelte";
@@ -310,8 +310,8 @@ export function buildPaneCommands(): WorkshopCommand[] {
       id: "content-zoom-reset",
       section: "advanced",
       label: "Reset zoom",
-      subtitle: `${formatShortcut("0")} — back to 100%`,
-      keywords: "zoom content reset default 100 ui",
+      subtitle: `${formatShortcut("0")} — back to ${contentZoomPercent(CONTENT_ZOOM_DEFAULT)}`,
+      keywords: "zoom content reset default 110 ui",
       advanced: true,
       run: (ctx) => {
         resetContentZoom();

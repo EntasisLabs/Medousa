@@ -1,4 +1,5 @@
 import {
+  CONTENT_ZOOM_DEFAULT,
   contentZoomPercent,
   resetContentZoom,
   stepContentZoom,
@@ -305,12 +306,12 @@ function buildToggleCommands(): WorkshopCommand[] {
       section: "do",
       verb: "toggle",
       label: "Reset zoom",
-      subtitle: "Back to 100%",
-      keywords: "zoom reset 100 default",
+      subtitle: `Back to ${contentZoomPercent(CONTENT_ZOOM_DEFAULT)}`,
+      keywords: "zoom reset 110 default",
       run: (ctx) => {
-        resetContentZoom();
+        const zoom = resetContentZoom();
         ctx.callbacks.close();
-        ctx.notice("Zoom 100%");
+        ctx.notice(`Zoom ${contentZoomPercent(zoom)}`);
       },
     },
   ];

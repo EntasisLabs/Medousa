@@ -147,7 +147,7 @@ Contextual commands (rename desktop, per-desktop switch, etc.) appear when relev
 | Zoom pane | … — maximize / restore active pane |
 | Zoom in | … — whole UI, like the browser |
 | Zoom out | … — whole UI, like the browser |
-| Reset zoom | … — back to 100% |
+| Reset zoom | … — back to 110% |
 | Close pane | … — merge tabs into the nearest pane |
 | New chat in pane | … — open chat tab in the active pane |
 | Next tab in pane | … — cycle tabs forward |
@@ -193,7 +193,7 @@ Contextual commands (rename desktop, per-desktop switch, etc.) appear when relev
 | Toggle links panel | Wikilinks and backlinks |
 | Zoom in | Whole UI larger |
 | Zoom out | Whole UI smaller |
-| Reset zoom | Back to 100% |
+| Reset zoom | Back to 110% |
 | Resume last Spotlight | Restore previous search (Telescope-style) |
 | Clear all pins | Empty the working set |
 
