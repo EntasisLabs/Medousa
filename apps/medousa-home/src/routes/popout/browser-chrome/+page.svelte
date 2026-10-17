@@ -9,9 +9,17 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { hideBrowser, isTauri, setBrowserWindowTitle } from "$lib/window";
   import { attachHumanBrowserSurface } from "$lib/utils/humanBrowserListeners";
-  import { humanBrowserActivateTab } from "$lib/humanBrowser";
+  import { BROWSER_FOCUS_URL_EVENT } from "$lib/utils/browserChromeEvents";
+  import BrowserNavigationError from "$lib/components/browser/BrowserNavigationError.svelte";
 
   let urlBarFocusNonce = $state(0);
+  let visible = $state(true);
+
+  $effect(() => {
+    if (!visible) return;
+    humanBrowserPopout.activeTab?.id;
+    return humanBrowserPopout.watchActiveNavigation();
+  });
 
   $effect(() => {
     const title = humanBrowserPopout.scopeLabel;
@@ -19,10 +27,7 @@
   });
 
   function syncPopoutContent() {
-    const active = humanBrowserPopout.activeTab;
-    if (!active) return;
-    void humanBrowserActivateTab(active.id, active.url);
-    void humanBrowserPopout.refreshNativeNavState();
+    void humanBrowserPopout.syncActiveTabToNative();
   }
 
   onMount(() => {
@@ -35,7 +40,8 @@
     if (isTauri()) {
       unlisteners.push(
         listen<boolean>("browser-window-visibility", (event) => {
-          if (event.payload) syncPopoutContent();
+          visible = event.payload;
+          if (visible) syncPopoutContent();
         }),
       );
     }
@@ -44,23 +50,23 @@
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
       const key = event.key.toLowerCase();
-      const target = event.target as HTMLElement | null;
-      const typing =
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable);
 
       if (key === "l") {
         event.preventDefault();
         urlBarFocusNonce += 1;
         return;
       }
-      if (typing) return;
+      if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        if (event.key === "[") void humanBrowserPopout.goBack();
+        else void humanBrowserPopout.goForward();
+        return;
+      }
 
       if (key === "t") {
         event.preventDefault();
-        void humanBrowserPopout.openTab();
+        if (event.shiftKey) void humanBrowserPopout.reopenClosedTab();
+        else void humanBrowserPopout.openTab();
         return;
       }
       if (key === "w") {
@@ -74,9 +80,12 @@
         void humanBrowserPopout.reload();
       }
     };
+    const focusUrl = () => { urlBarFocusNonce += 1; };
+    window.addEventListener(BROWSER_FOCUS_URL_EVENT, focusUrl);
     window.addEventListener("keydown", onKeydown);
 
     return () => {
+      window.removeEventListener(BROWSER_FOCUS_URL_EVENT, focusUrl);
       window.removeEventListener("keydown", onKeydown);
       stopListeners();
       Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
@@ -112,7 +121,9 @@
       >
         <ArrowRight size={16} strokeWidth={1.75} />
       </button>
-      {#if humanBrowserPopout.loading}
+      <BrowserNavigationError store={humanBrowserPopout} />
+
+  {#if humanBrowserPopout.loading}
         <button
           type="button"
           class="browser-nav-btn browser-nav-btn--stop"
@@ -146,6 +157,8 @@
       </button>
     {/if}
   </div>
+
+  <BrowserNavigationError store={humanBrowserPopout} />
 
   {#if humanBrowserPopout.loading}
     <div class="browser-loading-bar"></div>

@@ -23,6 +23,9 @@ use tauri::webview::{Color, DownloadEvent, NewWindowResponse, WebviewBuilder};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, WebviewUrl};
 use tokio::sync::oneshot;
 
+#[path = "human_browser_navigation.rs"]
+mod native_navigation;
+
 const MAIN_WINDOW_LABEL: &str = "main";
 /// Normal browser canvas for pages without an authored background.
 const EMBED_SURFACE_COLOR: Color = Color(255, 255, 255, 255);
@@ -142,13 +145,7 @@ fn finish_browser_navigation(label: &str, url: &str) -> Option<BrowserWebviewIde
     Some(identity.clone())
 }
 
-fn set_browser_tab_identity(label: &str, tab_id: Option<String>) {
-    if let Ok(mut webviews) = BROWSER_WEBVIEWS.lock() {
-        if let Some(identity) = webviews.get_mut(label) {
-            identity.tab_id = tab_id;
-        }
-    }
-}
+
 
 fn admit_browser_report(label: &str) -> Result<BrowserWebviewIdentity, String> {
     let mut webviews = BROWSER_WEBVIEWS
@@ -430,6 +427,7 @@ pub struct HumanBrowserNavStatePayload {
 #[serde(rename_all = "camelCase")]
 struct HumanBrowserLoadingPayload {
     loading: bool,
+    tab_id: Option<String>,
     #[serde(default = "default_embed_surface")]
     surface: String,
 }
@@ -1158,11 +1156,25 @@ fn install_macos_embed_hotkey_monitor(app: AppHandle) {
             if !command && !control {
                 return event_ptr.as_ptr();
             }
-            // Only steal chrome shortcuts while a page embed is on screen.
-            // Start page / popovers hide the embed, so shell keydown owns those.
-            if !EMBED_VISIBLE.load(Ordering::SeqCst) {
+            let Some(mtm) = objc2::MainThreadMarker::new() else {
                 return event_ptr.as_ptr();
-            }
+            };
+            let Some(event_window) = event.window(mtm) else {
+                return event_ptr.as_ptr();
+            };
+            let event_window_ptr = Retained::as_ptr(&event_window).cast::<std::ffi::c_void>();
+            let matches_window = |label| {
+                app_handle.get_window(label)
+                    .and_then(|window| window.ns_window().ok())
+                    .is_some_and(|pointer| pointer.cast_const() == event_window_ptr)
+            };
+            let surface = if matches_window(BROWSER_WINDOW_LABEL) {
+                "popout"
+            } else if matches_window(MAIN_WINDOW_LABEL) && EMBED_VISIBLE.load(Ordering::SeqCst) {
+                "embed"
+            } else {
+                return event_ptr.as_ptr();
+            };
 
             let shift = flags.contains(NSEventModifierFlags::Shift);
             let option = flags.contains(NSEventModifierFlags::Option);
@@ -1175,7 +1187,7 @@ fn install_macos_embed_hotkey_monitor(app: AppHandle) {
                 return event_ptr.as_ptr();
             };
 
-            dispatch_embed_hotkey(&app_handle, action, "embed");
+            dispatch_embed_hotkey(&app_handle, action, surface);
             // Swallow so the page (and shell, if focused) don't also handle it.
             std::ptr::null_mut()
         });
@@ -1396,8 +1408,71 @@ fn popout_window(app: &AppHandle) -> Result<tauri::Window, String> {
         .ok_or_else(|| "browser window is not configured".to_string())
 }
 
+fn content_for_tab(
+    app: &AppHandle,
+    surface: BrowserSurface,
+    tab_id: Option<&str>,
+) -> Result<tauri::Webview, String> {
+    let view = match (surface, tab_id) {
+        (BrowserSurface::Embed, Some(id)) => tab_webview(app, surface, id),
+        (BrowserSurface::Embed, None) => embedded_content_webview(app),
+        (BrowserSurface::Popout, Some(id)) => tab_webview(app, surface, id),
+        (BrowserSurface::Popout, _) => popout_content_webview(app),
+    };
+    view.ok_or_else(|| "browser tab is no longer available".to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeNavigationSnapshot {
+    #[serde(flatten)]
+    state: native_navigation::State,
+    tab_id: Option<String>,
+    surface: String,
+}
+
+async fn native_navigation_snapshot(
+    app: &AppHandle,
+    surface: BrowserSurface,
+    tab_id: Option<&str>,
+) -> Result<NativeNavigationSnapshot, String> {
+    let view = content_for_tab(app, surface, tab_id)?;
+    let identity = browser_webview_identity(view.label()).ok_or("browser tab was closed")?;
+    let state = native_navigation::read(view, None).await?;
+    let current = browser_webview_identity(&identity.label).ok_or("browser tab was closed")?;
+    if current.tab_id != identity.tab_id
+        || current.navigation_generation != identity.navigation_generation
+    {
+        return Err("browser navigation changed during state query".to_string());
+    }
+    if state.loading == Some(false) {
+        if let Some(url) = state
+            .url
+            .as_deref()
+            .filter(|url| *url != current.current_url)
+        {
+            if identity.tab_id == active_tab_id(surface) {
+                BROWSER_HOST_STATE.advance_navigation(surface);
+            }
+            begin_browser_navigation(&identity.label, url);
+            emit_navigated_ex(app, surface, url, None, None, identity.tab_id.clone(), true);
+        }
+    }
+    if identity.tab_id == active_tab_id(surface) {
+        if let Some(url) = state.url.as_deref() {
+            *surface_url_lock(surface).lock().map_err(|_| "browser URL lock poisoned")? = url.to_string();
+        }
+    }
+    Ok(NativeNavigationSnapshot {
+        state,
+        tab_id: identity.tab_id,
+        surface: surface.as_str().to_string(),
+    })
+}
+
 fn popout_content_webview(app: &AppHandle) -> Option<tauri::Webview> {
-    app.get_webview(BROWSER_CONTENT_LABEL)
+    active_tab_webview(app, BrowserSurface::Popout)
+        .or_else(|| app.get_webview(BROWSER_CONTENT_LABEL))
 }
 
 fn popout_chrome_webview(app: &AppHandle) -> Option<tauri::Webview> {
@@ -1434,6 +1509,9 @@ pub fn on_browser_popout_closed(app: &AppHandle) -> Result<(), String> {
 pub fn on_browser_popout_destroyed() {
     POPOUT_SHELL_READY.store(false, Ordering::SeqCst);
     unregister_browser_webview(BROWSER_CONTENT_LABEL);
+    if let Ok(tabs) = POPOUT_TAB_IDS.lock() {
+        for id in tabs.iter() { unregister_browser_webview(&tab_webview_label(BrowserSurface::Popout, id)); }
+    }
     if let Ok(mut active) = POPOUT_ACTIVE_TAB_ID.lock() {
         *active = None;
     }
@@ -1466,10 +1544,20 @@ fn window_inner_logical(window: &tauri::Window) -> Result<(f64, f64), String> {
 }
 
 fn emit_loading(app: &AppHandle, surface: BrowserSurface, loading: bool) {
+    emit_tab_loading(app, surface, active_tab_id(surface), loading);
+}
+
+fn emit_tab_loading(
+    app: &AppHandle,
+    surface: BrowserSurface,
+    tab_id: Option<String>,
+    loading: bool,
+) {
     let _ = app.emit(
         "human-browser-loading",
         HumanBrowserLoadingPayload {
             loading,
+            tab_id,
             surface: surface.as_str().to_string(),
         },
     );
@@ -1558,6 +1646,7 @@ fn content_builder(
     let new_window_label = label.clone();
     let mut builder =
         WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
+            .focused(false)
             .on_new_window(move |url, _features| {
                 let href = url.as_str();
                 let Some(identity) = browser_webview_identity(&new_window_label) else {
@@ -1583,9 +1672,11 @@ fn content_builder(
                     );
                     return false;
                 }
-                BROWSER_HOST_STATE.advance_navigation(identity.surface);
+                if identity.tab_id == active_tab_id(identity.surface) {
+                    BROWSER_HOST_STATE.advance_navigation(identity.surface);
+                }
                 let _ = begin_browser_navigation(&navigation_label, nav_url.as_str());
-                emit_loading(&app_navigation, identity.surface, true);
+                emit_tab_loading(&app_navigation, identity.surface, identity.tab_id.clone(), true);
                 true
             })
             .on_page_load(move |webview, payload| {
@@ -1594,10 +1685,13 @@ fn content_builder(
                     return;
                 };
                 match payload.event() {
-                    PageLoadEvent::Started => emit_loading(&app_load, identity.surface, true),
+                    PageLoadEvent::Started => emit_tab_loading(&app_load, identity.surface, identity.tab_id.clone(), true),
                     PageLoadEvent::Finished => {
-                        emit_loading(&app_load, identity.surface, false);
                         let href = payload.url().as_str().to_string();
+                        // A superseded document (including the initial blank page) must not
+                        // replace the URL/loading state of the next navigation.
+                        if identity.current_url != href { return; }
+                        emit_tab_loading(&app_load, identity.surface, identity.tab_id.clone(), false);
                         if !is_allowed_browser_navigation(payload.url()) {
                             return;
                         }
@@ -2504,45 +2598,41 @@ fn current_popout_content_rect(app: &AppHandle) -> Result<(f64, f64, f64, f64), 
 
 fn create_tab_webview(
     app: &AppHandle,
+    surface: BrowserSurface,
     tab_id: &str,
     x: f64,
     y: f64,
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    if tab_webview(app, BrowserSurface::Embed, tab_id).is_some() {
+    if tab_webview(app, surface, tab_id).is_some() {
         return Ok(());
     }
-    let label = tab_webview_label(BrowserSurface::Embed, tab_id);
-    let window = workshop_window(app)?;
-    let mobile_ua = EMBED_MOBILE_UA.load(Ordering::SeqCst);
-    register_browser_webview(
-        &label,
-        BrowserSurface::Embed,
-        Some(tab_id.to_string()),
-    );
-    if let Err(err) = window
-        .add_child(
-            content_builder(
-                app,
-                label.clone(),
-                mobile_ua,
-            ),
-            LogicalPosition::new(x, y),
-            LogicalSize::new(width.max(8.0), height.max(8.0)),
-        )
-    {
+    let label = tab_webview_label(surface, tab_id);
+    let window = match surface {
+        BrowserSurface::Embed => workshop_window(app)?,
+        BrowserSurface::Popout => popout_window(app)?,
+    };
+    let mobile_ua = surface == BrowserSurface::Embed && EMBED_MOBILE_UA.load(Ordering::SeqCst);
+    register_browser_webview(&label, surface, Some(tab_id.to_string()));
+    if let Err(err) = window.add_child(
+        content_builder(app, label.clone(), mobile_ua),
+        LogicalPosition::new(x, y),
+        LogicalSize::new(width.max(8.0), height.max(8.0)),
+    ) {
         unregister_browser_webview(&label);
         return Err(err.to_string());
     }
-    register_tab_id(BrowserSurface::Embed, tab_id);
-    EMBED_READY.store(true, Ordering::SeqCst);
-    if let Some(created) = tab_webview(app, BrowserSurface::Embed, tab_id) {
+    register_tab_id(surface, tab_id);
+    if surface == BrowserSurface::Embed {
+        EMBED_READY.store(true, Ordering::SeqCst);
+    }
+    if let Some(created) = tab_webview(app, surface, tab_id) {
         let zoom = *EMBED_CONTENT_ZOOM
             .lock()
             .map_err(|_| "browser zoom lock poisoned")?;
         created.set_zoom(zoom).map_err(|err| err.to_string())?;
-        attach_webview_chrome_hotkeys(&created, app, BrowserSurface::Embed);
+        attach_webview_chrome_hotkeys(&created, app, surface);
     }
     Ok(())
 }
@@ -2595,7 +2685,6 @@ fn navigate_tab_webview(
     if !force {
         if let Ok(current) = native_browser_url(&content) {
             if urls_match_for_snapshot(current.as_ref(), trimmed) {
-                emit_loading(app, surface, false);
                 return Ok(());
             }
         }
@@ -2632,7 +2721,12 @@ fn hide_embed_surface(app: &AppHandle) {
     }
 }
 
-fn activate_embed_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Result<(), String> {
+fn activate_embed_tab(
+    app: &AppHandle,
+    tab_id: &str,
+    initial_url: &str,
+    navigate: bool,
+) -> Result<(), String> {
     if active_tab_id(BrowserSurface::Embed).as_deref() != Some(tab_id) {
         BROWSER_HOST_STATE.advance_navigation(BrowserSurface::Embed);
     }
@@ -2660,7 +2754,7 @@ fn activate_embed_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Resul
         } else {
             (0.0, 0.0, 8.0, 8.0)
         };
-        create_tab_webview(app, tab_id, x, y, w, h)?;
+        create_tab_webview(app, BrowserSurface::Embed, tab_id, x, y, w, h)?;
         if blank {
             // Hide before navigate — add_child can show immediately while
             // EMBED_VISIBLE is still true from the previous page tab.
@@ -2679,9 +2773,10 @@ fn activate_embed_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Resul
             finalize_desktop_embed_compositing(app, Some(target));
         }
     } else {
-        navigate_tab_webview(app, BrowserSurface::Embed, initial_url, false)?;
+        if navigate {
+            navigate_tab_webview(app, BrowserSurface::Embed, initial_url, true)?;
+        }
         EMBED_NAV_PENDING.store(false, Ordering::SeqCst);
-        emit_loading(app, BrowserSurface::Embed, false);
         if blank {
             hide_embed_surface(app);
             return Ok(());
@@ -2693,37 +2788,33 @@ fn activate_embed_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Resul
     Ok(())
 }
 
-fn activate_popout_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Result<(), String> {
+fn activate_popout_tab(
+    app: &AppHandle,
+    tab_id: &str,
+    initial_url: &str,
+    navigate: bool,
+) -> Result<(), String> {
     ensure_popout_shell(app)?;
-
     if active_tab_id(BrowserSurface::Popout).as_deref() != Some(tab_id) {
         BROWSER_HOST_STATE.advance_navigation(BrowserSurface::Popout);
     }
-
-    {
-        let mut guard = active_tab_id_lock(BrowserSurface::Popout)
-            .lock()
-            .map_err(|_| "active tab lock poisoned".to_string())?;
-        *guard = Some(tab_id.to_string());
+    let exists = tab_webview(app, BrowserSurface::Popout, tab_id).is_some();
+    if !exists {
+        let (x, y, w, h) = current_popout_content_rect(app)?;
+        create_tab_webview(app, BrowserSurface::Popout, tab_id, x, y, w, h)?;
     }
-    set_browser_tab_identity(BROWSER_CONTENT_LABEL, Some(tab_id.to_string()));
-
+    *active_tab_id_lock(BrowserSurface::Popout)
+        .lock()
+        .map_err(|_| "active tab lock poisoned")? = Some(tab_id.to_string());
+    hide_tab_webviews(app, BrowserSurface::Popout, Some(tab_id));
+    if let Some(legacy) = app.get_webview(BROWSER_CONTENT_LABEL) {
+        legacy.close().map_err(|err| err.to_string())?;
+        unregister_browser_webview(BROWSER_CONTENT_LABEL);
+    }
+    if !exists || navigate {
+        navigate_tab_webview(app, BrowserSurface::Popout, initial_url, true)?;
+    }
     apply_popout_layout(app)?;
-
-    let popout_visible = app
-        .get_window(BROWSER_WINDOW_LABEL)
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false);
-
-    let content = popout_content_webview(app)
-        .ok_or_else(|| "pop-out browser content not ready".to_string())?;
-
-    if popout_visible {
-        content.show().map_err(|err| err.to_string())?;
-    }
-
-    navigate_tab_webview(app, BrowserSurface::Popout, initial_url, true)?;
-    finalize_popout_compositing(app);
     Ok(())
 }
 
@@ -2732,28 +2823,28 @@ fn activate_surface_tab(
     surface: BrowserSurface,
     tab_id: &str,
     initial_url: &str,
+    navigate: bool,
 ) -> Result<(), String> {
+    let existed = tab_webview(app, surface, tab_id).is_some();
     match surface {
-        BrowserSurface::Embed => activate_embed_tab(app, tab_id, initial_url),
-        BrowserSurface::Popout => activate_popout_tab(app, tab_id, initial_url),
+        BrowserSurface::Embed => activate_embed_tab(app, tab_id, initial_url, navigate)?,
+        BrowserSurface::Popout => activate_popout_tab(app, tab_id, initial_url, navigate)?,
     }
+    if !navigate && existed {
+        if let Some(identity) = browser_webview_identity(&tab_webview_label(surface, tab_id)) {
+            *surface_url_lock(surface).lock().map_err(|_| "browser URL lock poisoned")? = identity.current_url;
+        }
+    }
+    Ok(())
 }
 
 fn close_surface_tab(app: &AppHandle, surface: BrowserSurface, tab_id: &str) -> Result<(), String> {
-    match surface {
-        BrowserSurface::Embed => {
-            let label = tab_webview_label(BrowserSurface::Embed, tab_id);
-            if let Some(webview) = app.get_webview(&label) {
-                webview.close().map_err(|err| err.to_string())?;
-            }
-            unregister_browser_webview(&label);
-            unregister_tab_id(BrowserSurface::Embed, tab_id);
-        }
-        BrowserSurface::Popout => {
-            // Pop-out uses a single shared content webview — only drop tab metadata.
-            set_browser_tab_identity(BROWSER_CONTENT_LABEL, None);
-        }
+    let label = tab_webview_label(surface, tab_id);
+    if let Some(webview) = app.get_webview(&label) {
+        webview.close().map_err(|err| err.to_string())?;
     }
+    unregister_browser_webview(&label);
+    unregister_tab_id(surface, tab_id);
     if active_tab_id(surface).as_deref() == Some(tab_id) {
         BROWSER_HOST_STATE.advance_navigation(surface);
         if let Ok(mut guard) = active_tab_id_lock(surface).lock() {
@@ -2779,7 +2870,7 @@ fn flush_pending_embed_navigation(app: &AppHandle) {
         return;
     };
     if tab_webview(app, BrowserSurface::Embed, &tab_id).is_none() {
-        match activate_surface_tab(app, BrowserSurface::Embed, &tab_id, trimmed) {
+        match activate_surface_tab(app, BrowserSurface::Embed, &tab_id, trimmed, true) {
             Ok(()) => EMBED_NAV_PENDING.store(false, Ordering::SeqCst),
             Err(_) => EMBED_NAV_PENDING.store(true, Ordering::SeqCst),
         }
@@ -2826,7 +2917,7 @@ fn create_embedded_content_at(app: &AppHandle, bounds: EmbedBounds) -> Result<()
     let Some(tab_id) = active_tab_id(BrowserSurface::Embed) else {
         return Ok(());
     };
-    create_tab_webview(app, &tab_id, 0.0, 0.0, 8.0, 8.0)?;
+    create_tab_webview(app, BrowserSurface::Embed, &tab_id, 0.0, 0.0, 8.0, 8.0)?;
     apply_embedded_dom_bounds(app, bounds)
 }
 
@@ -3164,8 +3255,15 @@ pub async fn human_browser_embed_activate_tab(
     app: AppHandle,
     tab_id: String,
     url: String,
+    navigate: Option<bool>,
 ) -> Result<(), String> {
-    activate_surface_tab(&app, BrowserSurface::Embed, tab_id.trim(), url.trim())
+    activate_surface_tab(
+        &app,
+        BrowserSurface::Embed,
+        tab_id.trim(),
+        url.trim(),
+        navigate.unwrap_or(false),
+    )
 }
 
 #[tauri::command]
@@ -3178,8 +3276,15 @@ pub async fn human_browser_popout_activate_tab(
     app: AppHandle,
     tab_id: String,
     url: String,
+    navigate: Option<bool>,
 ) -> Result<(), String> {
-    activate_surface_tab(&app, BrowserSurface::Popout, tab_id.trim(), url.trim())
+    activate_surface_tab(
+        &app,
+        BrowserSurface::Popout,
+        tab_id.trim(),
+        url.trim(),
+        navigate.unwrap_or(false),
+    )
 }
 
 #[tauri::command]
@@ -3202,11 +3307,22 @@ fn focus_shell_webview(app: &AppHandle) {
 }
 
 fn hotkey_needs_shell_focus(action: &str) -> bool {
-    matches!(action, "focusUrl" | "find" | "bookmarks")
+    matches!(action, "focusUrl" | "find" | "bookmarks" | "newTab")
 }
 
 #[tauri::command]
-pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
+pub async fn human_browser_navigate(
+    app: AppHandle,
+    url: String,
+    tab_id: Option<String>,
+) -> Result<(), String> {
+    if let Some(id) = tab_id.as_deref() {
+        let content = content_for_tab(&app, BrowserSurface::Embed, Some(id))?;
+        let url = parse_external_url(url.trim())?;
+        content.navigate(url).map_err(|err| err.to_string())?;
+        emit_tab_loading(&app, BrowserSurface::Embed, Some(id.to_string()), true);
+        return Ok(());
+    }
     let trimmed = url.trim().to_string();
     {
         let mut guard = surface_url_lock(BrowserSurface::Embed)
@@ -3225,63 +3341,86 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
 }
 
 #[tauri::command]
-pub async fn human_browser_popout_navigate(app: AppHandle, url: String) -> Result<(), String> {
+pub async fn human_browser_popout_navigate(
+    app: AppHandle,
+    url: String,
+    tab_id: Option<String>,
+) -> Result<(), String> {
+    if let Some(id) = tab_id.as_deref() {
+        let content = content_for_tab(&app, BrowserSurface::Popout, Some(id))?;
+        content
+            .navigate(parse_external_url(url.trim())?)
+            .map_err(|err| err.to_string())?;
+        emit_tab_loading(&app, BrowserSurface::Popout, Some(id.to_string()), true);
+        return Ok(());
+    }
     navigate_popout_url(&app, url.trim())
 }
 
 #[tauri::command]
-pub async fn human_browser_reload(app: AppHandle) -> Result<(), String> {
-    if embedded_content_webview(&app).is_none() {
-        return Ok(());
-    }
-    let content = embedded_content_webview(&app)
-        .ok_or_else(|| "browser content webview not ready".to_string())?;
+pub async fn human_browser_reload(app: AppHandle, tab_id: Option<String>) -> Result<(), String> {
+    let content = content_for_tab(&app, BrowserSurface::Embed, tab_id.as_deref())?;
     content.reload().map_err(|err| err.to_string())?;
-    emit_loading(&app, BrowserSurface::Embed, true);
+    emit_tab_loading(
+        &app,
+        BrowserSurface::Embed,
+        tab_id.or_else(|| active_tab_id(BrowserSurface::Embed)),
+        true,
+    );
     Ok(())
 }
 
 #[tauri::command]
-pub async fn human_browser_popout_reload(app: AppHandle) -> Result<(), String> {
-    let content = popout_content_webview(&app)
-        .ok_or_else(|| "pop-out browser content not ready".to_string())?;
-    content.reload().map_err(|err| err.to_string())
+pub async fn human_browser_go_back(app: AppHandle, tab_id: Option<String>) -> Result<(), String> {
+    let content = content_for_tab(&app, BrowserSurface::Embed, tab_id.as_deref())?;
+    native_navigation::read(content, Some(native_navigation::Action::Back)).await?;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn human_browser_go_back(app: AppHandle) -> Result<(), String> {
-    let content = embedded_content_webview(&app)
-        .ok_or_else(|| "browser content webview not ready".to_string())?;
-    content
-        .eval("window.history.back()")
-        .map_err(|err| err.to_string())
+pub async fn human_browser_go_forward(
+    app: AppHandle,
+    tab_id: Option<String>,
+) -> Result<(), String> {
+    let content = content_for_tab(&app, BrowserSurface::Embed, tab_id.as_deref())?;
+    native_navigation::read(content, Some(native_navigation::Action::Forward)).await?;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn human_browser_popout_go_back(app: AppHandle) -> Result<(), String> {
-    let content = popout_content_webview(&app)
-        .ok_or_else(|| "pop-out browser content not ready".to_string())?;
-    content
-        .eval("window.history.back()")
-        .map_err(|err| err.to_string())
+pub async fn human_browser_popout_reload(
+    app: AppHandle,
+    tab_id: Option<String>,
+) -> Result<(), String> {
+    let content = content_for_tab(&app, BrowserSurface::Popout, tab_id.as_deref())?;
+    content.reload().map_err(|err| err.to_string())?;
+    emit_tab_loading(
+        &app,
+        BrowserSurface::Popout,
+        tab_id.or_else(|| active_tab_id(BrowserSurface::Popout)),
+        true,
+    );
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn human_browser_go_forward(app: AppHandle) -> Result<(), String> {
-    let content = embedded_content_webview(&app)
-        .ok_or_else(|| "browser content webview not ready".to_string())?;
-    content
-        .eval("window.history.forward()")
-        .map_err(|err| err.to_string())
+pub async fn human_browser_popout_go_back(
+    app: AppHandle,
+    tab_id: Option<String>,
+) -> Result<(), String> {
+    let content = content_for_tab(&app, BrowserSurface::Popout, tab_id.as_deref())?;
+    native_navigation::read(content, Some(native_navigation::Action::Back)).await?;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn human_browser_popout_go_forward(app: AppHandle) -> Result<(), String> {
-    let content = popout_content_webview(&app)
-        .ok_or_else(|| "pop-out browser content not ready".to_string())?;
-    content
-        .eval("window.history.forward()")
-        .map_err(|err| err.to_string())
+pub async fn human_browser_popout_go_forward(
+    app: AppHandle,
+    tab_id: Option<String>,
+) -> Result<(), String> {
+    let content = content_for_tab(&app, BrowserSurface::Popout, tab_id.as_deref())?;
+    native_navigation::read(content, Some(native_navigation::Action::Forward)).await?;
+    Ok(())
 }
 
 fn snapshot_capture_js(request_id: &str) -> Result<String, String> {
@@ -4028,73 +4167,48 @@ pub async fn snapshot_markdown_for_url(
 }
 
 #[tauri::command]
-pub async fn human_browser_stop(app: AppHandle) -> Result<(), String> {
-    let content = embedded_content_webview(&app)
-        .ok_or_else(|| "browser content webview not ready".to_string())?;
-    emit_loading(&app, BrowserSurface::Embed, false);
-    content
-        .eval("try{window.stop();}catch(e){}")
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-pub async fn human_browser_popout_stop(app: AppHandle) -> Result<(), String> {
-    let content = popout_content_webview(&app)
-        .ok_or_else(|| "pop-out browser content not ready".to_string())?;
-    emit_loading(&app, BrowserSurface::Popout, false);
-    content
-        .eval("try{window.stop();}catch(e){}")
-        .map_err(|err| err.to_string())
+pub async fn human_browser_stop(app: AppHandle, tab_id: Option<String>) -> Result<(), String> {
+    let content = content_for_tab(&app, BrowserSurface::Embed, tab_id.as_deref())?;
+    native_navigation::read(content, Some(native_navigation::Action::Stop)).await?;
+    emit_tab_loading(
+        &app,
+        BrowserSurface::Embed,
+        tab_id.or_else(|| active_tab_id(BrowserSurface::Embed)),
+        false,
+    );
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn human_browser_query_nav_state(
     app: AppHandle,
-) -> Result<HumanBrowserNavStatePayload, String> {
-    let content = embedded_content_webview(&app)
-        .ok_or_else(|| "browser content webview not ready".to_string())?;
-    let identity = request_identity(&content, BrowserSurface::Embed)?;
-    let (tx, rx) = oneshot::channel();
-    let request_id = BROWSER_HOST_STATE.register(
-        &identity,
-        BrowserPendingReply::Navigation(tx),
-    )?;
-    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
-    let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
-    content
-        .eval(format!(
-            r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('plugin:browser-bridge|report',{{report:{{version:1,kind:'navQuery',requestId:{request_id},canGoBack:window.history.length>1,canGoForward:false}}}});}}catch(e){{}}}})();"#,
-        ))
-        .map_err(|err| err.to_string())?;
-    tokio::time::timeout(Duration::from_secs(2), rx)
-        .await
-        .map_err(|_| "navigation state query timed out".to_string())?
-        .map_err(|_| "navigation state channel closed".to_string())
+    tab_id: Option<String>,
+) -> Result<NativeNavigationSnapshot, String> {
+    native_navigation_snapshot(&app, BrowserSurface::Embed, tab_id.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn human_browser_popout_stop(
+    app: AppHandle,
+    tab_id: Option<String>,
+) -> Result<(), String> {
+    let content = content_for_tab(&app, BrowserSurface::Popout, tab_id.as_deref())?;
+    native_navigation::read(content, Some(native_navigation::Action::Stop)).await?;
+    emit_tab_loading(
+        &app,
+        BrowserSurface::Popout,
+        tab_id.or_else(|| active_tab_id(BrowserSurface::Popout)),
+        false,
+    );
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn human_browser_popout_query_nav_state(
     app: AppHandle,
-) -> Result<HumanBrowserNavStatePayload, String> {
-    let content = popout_content_webview(&app)
-        .ok_or_else(|| "pop-out browser content not ready".to_string())?;
-    let identity = request_identity(&content, BrowserSurface::Popout)?;
-    let (tx, rx) = oneshot::channel();
-    let request_id = BROWSER_HOST_STATE.register(
-        &identity,
-        BrowserPendingReply::Navigation(tx),
-    )?;
-    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
-    let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
-    content
-        .eval(format!(
-            r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('plugin:browser-bridge|report',{{report:{{version:1,kind:'navQuery',requestId:{request_id},canGoBack:window.history.length>1,canGoForward:false}}}});}}catch(e){{}}}})();"#,
-        ))
-        .map_err(|err| err.to_string())?;
-    tokio::time::timeout(Duration::from_secs(2), rx)
-        .await
-        .map_err(|_| "navigation state query timed out".to_string())?
-        .map_err(|_| "navigation state channel closed".to_string())
+    tab_id: Option<String>,
+) -> Result<NativeNavigationSnapshot, String> {
+    native_navigation_snapshot(&app, BrowserSurface::Popout, tab_id.as_deref()).await
 }
 
 #[tauri::command]

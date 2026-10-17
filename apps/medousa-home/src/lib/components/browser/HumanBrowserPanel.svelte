@@ -8,6 +8,7 @@
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
+  import BrowserNavigationError from "$lib/components/browser/BrowserNavigationError.svelte";
   import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
   import BrowserSurfacePicker from "$lib/components/browser/BrowserSurfacePicker.svelte";
   import GovernedBrowserPanel from "$lib/components/browser/GovernedBrowserPanel.svelte";
@@ -177,6 +178,12 @@
   // never shows at pre-split full-pane bounds over a sibling pane.
   let wasPanelVisible = false;
   $effect(() => {
+    if (!visible || !useDesktopCompositor || governedBrowser.usesWorkshopWorld) return;
+    humanBrowser.activeTab?.id;
+    return humanBrowser.watchActiveNavigation();
+  });
+
+  $effect(() => {
     const isVisible = visible;
     if (isVisible && !wasPanelVisible) {
       wasPanelVisible = true;
@@ -307,6 +314,7 @@
     </div>
 
     <BrowserFindBar />
+    <BrowserNavigationError store={humanBrowser} />
     <BrowserCaptchaBanner compact={true} />
 
     {#if humanBrowser.loading}

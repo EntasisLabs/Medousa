@@ -255,7 +255,7 @@ pub async fn browser_window_present(
         let app_clone = app.clone();
         let url = url.to_string();
         tauri::async_runtime::spawn(async move {
-            let _ = human_browser::human_browser_popout_navigate(app_clone, url).await;
+            let _ = human_browser::human_browser_popout_navigate(app_clone, url, None).await;
         });
     }
     let _ = app.emit("browser-present", options);
