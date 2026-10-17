@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -65,15 +67,24 @@
   let actionBusy = $state(false);
   let shareMessage = $state<string | null>(null);
   let toolsSectionEl: HTMLDivElement | undefined = $state();
+  let alive = true;
+  onDestroy(() => { alive = false; });
+  function selectionGuard() {
+    const id = workspace.selectedCardId;
+    const scope = activeWorkshopId();
+    return () => alive && workspace.selectedCardId === id && activeWorkshopId() === scope;
+  }
 
   async function shareResult() {
     if (!detail?.job_id || !jobResult?.output_text) return;
     shareMessage = null;
+    const current = selectionGuard();
     const outcome = await shareWorkResult(
       formatCardTitle(detail.card),
       jobResult.output_text,
       detail.job_id,
     );
+    if (!current()) return;
     if (outcome === "shared") {
       haptic("success");
       shareMessage = "Shared";
@@ -132,7 +143,9 @@
       return;
     }
 
+    let cancelled = false;
     artifactsLoading = true;
+    artifactPreviews = [];
     void Promise.all(
       artifactIds.map(async (artifactId) => {
         try {
@@ -151,11 +164,12 @@
       }),
     )
       .then((previews) => {
-        artifactPreviews = previews;
+        if (!cancelled) artifactPreviews = previews;
       })
       .finally(() => {
-        artifactsLoading = false;
+        if (!cancelled) artifactsLoading = false;
       });
+    return () => { cancelled = true; };
   });
 
   $effect(() => {
@@ -170,29 +184,35 @@
 
     jobResultLoading = true;
     jobResultError = null;
+    let cancelled = false;
     void getJobResult(jobId)
       .then((result) => {
-        jobResult = result;
+        if (!cancelled) jobResult = result;
       })
       .catch((err) => {
+        if (cancelled) return;
         jobResultError = err instanceof Error ? err.message : String(err);
         jobResult = null;
       })
       .finally(() => {
-        jobResultLoading = false;
+        if (!cancelled) jobResultLoading = false;
       });
+    return () => { cancelled = true; };
   });
 
   async function archiveAsk() {
     if (!detail?.job_id || actionBusy) return;
     actionBusy = true;
     workspace.cardActionMessage = null;
+    const current = selectionGuard();
     try {
       const response = await archiveAskJob(detail.job_id, true);
+      if (!current()) return;
+      if (!response.archived) throw new Error(response.message);
       workspace.cardActionMessage = response.message;
       workspace.clearSelection();
     } catch (err) {
-      workspace.cardDetailError = err instanceof Error ? err.message : String(err);
+      if (current()) workspace.cardDetailError = err instanceof Error ? err.message : String(err);
     } finally {
       actionBusy = false;
     }
@@ -202,16 +222,19 @@
     if (!detail?.job_id || actionBusy) return;
     actionBusy = true;
     workspace.cardActionMessage = null;
+    const current = selectionGuard();
     try {
       const response = await completeAskJobActions(detail.job_id, {
         writeJournalPath: defaultJournalPathForToday(),
       });
+      if (!current()) return;
+      if (!response.ok) throw new Error(response.message);
       workspace.cardActionMessage = response.message;
       if (response.journal_path) {
         onOpenNote(response.journal_path);
       }
     } catch (err) {
-      workspace.cardDetailError = err instanceof Error ? err.message : String(err);
+      if (current()) workspace.cardDetailError = err instanceof Error ? err.message : String(err);
     } finally {
       actionBusy = false;
     }
@@ -221,17 +244,19 @@
     if (!detail || actionBusy || !isPendingBudgetRequest) return;
     actionBusy = true;
     workspace.cardActionMessage = null;
+    const current = selectionGuard();
     try {
       const response = await approveTurnBudgetRequest(
         detail.card.id,
         undefined,
         homeChannelSurface(),
       );
+      if (!current()) return;
       workspace.cardActionMessage = response.message;
       haptic("success");
       await workspace.refreshSelectedCard();
     } catch (err) {
-      workspace.cardDetailError = err instanceof Error ? err.message : String(err);
+      if (current()) workspace.cardDetailError = err instanceof Error ? err.message : String(err);
     } finally {
       actionBusy = false;
     }
@@ -241,16 +266,18 @@
     if (!detail || actionBusy || !isPendingBudgetRequest) return;
     actionBusy = true;
     workspace.cardActionMessage = null;
+    const current = selectionGuard();
     try {
       const response = await denyTurnBudgetRequest(
         detail.card.id,
         homeChannelSurface(),
       );
+      if (!current()) return;
       workspace.cardActionMessage = response.message;
       haptic("light");
       await workspace.refreshSelectedCard();
     } catch (err) {
-      workspace.cardDetailError = err instanceof Error ? err.message : String(err);
+      if (current()) workspace.cardDetailError = err instanceof Error ? err.message : String(err);
     } finally {
       actionBusy = false;
     }
@@ -259,9 +286,12 @@
   async function askMedousa() {
     if (!detail) return;
     const prompt = `Tell me about work card ${detail.card.id}: "${detail.card.title}". Status: ${detail.card.status_label}.`;
+    const scope = activeWorkshopId();
+    const sessionId = chat.sessionId;
     onOpenChat();
     try {
       const opts = await prepareInteractiveTurnOptions(chat);
+      if (activeWorkshopId() !== scope || chat.sessionId !== sessionId) return;
       const voice = voicePresets.turnVoiceFields();
       const accepted = await createTurnTicket({
         sessionId: chat.sessionId,
@@ -279,6 +309,7 @@
         voiceAppendix: voice.voiceAppendix,
         identityUserId: opts.identityUserId,
       });
+      if (activeWorkshopId() !== scope || chat.sessionId !== sessionId) return;
       chat.beginTurn(prompt, accepted, [], opts.identityUserId);
       await chat.startTurnStream(
         accepted.turn_id,
@@ -286,16 +317,24 @@
         accepted.stream_url,
       );
     } catch (err) {
-      chat.setError(err instanceof Error ? err.message : String(err));
+      if (activeWorkshopId() === scope && chat.sessionId === sessionId) chat.setError(err instanceof Error ? err.message : String(err));
     }
   }
 
   async function openLinkedChat() {
+    const current = selectionGuard();
     const sessionId = detail?.session_id?.trim();
     if (sessionId && sessionId !== chat.sessionId) {
       await chat.switchSession(sessionId);
     }
-    onOpenChat();
+    if (current()) onOpenChat();
+  }
+
+  function openResearch(url: string) {
+    if (!detail) return;
+    const context = { workCardId: detail.card.id, sessionId: detail.session_id, openWorkshop: url === "about:blank" };
+    handleClose();
+    void openInBrowser(url, context);
   }
 
   function scrollToTools() {
@@ -326,7 +365,7 @@
         </button>
       {/if}
       <h1 class="break-words text-base font-semibold leading-snug">
-        {detail ? formatCardTitle(detail.card) : "Manifestation"}
+        {detail ? formatCardTitle(detail.card) : "Task details"}
       </h1>
       {#if detail && !popover}
         <p class="workshop-faint mt-1 break-all text-xs leading-relaxed">
@@ -446,7 +485,9 @@
 
   {#if !detail}
     <div class="workshop-muted flex flex-1 items-center justify-center">
-      Select a card from the board or work rail.
+      {#if workspace.cardDetailError}
+        <button class="btn btn-sm variant-ghost-surface" onclick={() => void workspace.refreshSelectedCard()}>Retry loading task</button>
+      {:else}Loading task details…{/if}
     </div>
   {:else if popover && manifestation}
     <div class="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">
@@ -466,11 +507,7 @@
           <button
             type="button"
             class="btn btn-sm variant-soft-primary mt-2"
-            onclick={() =>
-              void openInBrowser(linkedBrowserUrl, {
-                workCardId: detail.card.id,
-                sessionId: detail.session_id,
-              })}
+            onclick={() => openResearch(linkedBrowserUrl)}
           >
             Open in Web
           </button>
@@ -480,21 +517,16 @@
           <button
             type="button"
             class="btn btn-sm variant-soft-surface"
-            onclick={() =>
-              void openInBrowser("about:blank", {
-                workCardId: detail.card.id,
-                sessionId: detail.session_id,
-                openWorkshop: true,
-              })}
+            onclick={() => openResearch("about:blank")}
           >
             Open research browser
           </button>
         </div>
       {/if}
 
-      {#if manifestation.resultPreview && !jobResult?.output_text}
+      {#if !detail.job_id && (detail.live_output || manifestation.resultPreview)}
         <div class="manifest-result mt-4">
-          <MarkdownContent content={manifestation.resultPreview} />
+          <MarkdownContent content={detail.live_output || manifestation.resultPreview || ""} />
         </div>
       {/if}
 
@@ -520,7 +552,7 @@
         </div>
       {/if}
 
-      {#if detail.job_id && (jobResultLoading || jobResult?.output_text || jobResultError)}
+      {#if detail.job_id && (jobResultLoading || jobResult?.output_text || jobResult?.interim_text || jobResultError)}
         <div class="manifest-result mt-4">
           {#if jobResultLoading}
             <p class="text-sm text-content-quiet">Loading result…</p>
@@ -694,12 +726,10 @@
             </p>
           {/if}
         </div>
-      {:else if detail.result_excerpt}
+      {:else if detail.live_output || detail.result_excerpt}
         <div class="workshop-inset min-w-0 p-4">
           <p class="workshop-label">Result</p>
-          <pre
-            class="mt-2 overflow-x-hidden whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-surface-100"
-          >{detail.result_excerpt}</pre>
+          <MarkdownContent content={detail.live_output || detail.result_excerpt || ""} />
         </div>
       {/if}
 

@@ -1,114 +1,82 @@
 <script lang="ts">
+  import { onMount, onDestroy, untrack } from "svelte";
+  import TaskDialogFrame from "./TaskDialogFrame.svelte";
   import { archiveAskJob, completeAskJobActions } from "$lib/daemon";
   import { loadProductConfigSummary } from "$lib/messaging";
   import type { ProductConfigSummary } from "$lib/types/messaging";
-  import {
-    defaultJournalPathForToday,
-    type PendingAskCompletion,
-  } from "$lib/types/askJob";
+  import { defaultJournalPathForToday, type PendingAskCompletion } from "$lib/types/askJob";
   import { workspace } from "$lib/stores/workspace.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
+  import { openTaskDetails, openVaultNote } from "$lib/runtime/shellUseCases";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
 
-  interface Props {
-    pending: PendingAskCompletion | null;
-    onOpenNote: (path: string) => void;
-    onClose: () => void;
-  }
-
-  let { pending, onOpenNote, onClose }: Props = $props();
-
+  let { pending }: { pending: PendingAskCompletion } = $props();
+  const jobId = untrack(() => pending.jobId);
+  const scope = activeWorkshopId();
+  let alive = true;
+  onDestroy(() => { alive = false; });
+  const current = () => alive && activeWorkshopId() === scope && workspace.pendingAskCompletion?.jobId === jobId;
   let journalPath = $state(defaultJournalPathForToday());
   let writeJournal = $state(true);
-  let notifyChannel = $state<string>("");
+  let notifyChannel = $state("");
   let submitting = $state(false);
   let message = $state<string | null>(null);
   let error = $state<string | null>(null);
   let config = $state<ProductConfigSummary | null>(null);
+  let configError = $state(false);
 
   const notifyOptions = $derived.by(() => {
-    const options: { id: string; label: string }[] = [{ id: "", label: "Don't notify" }];
-    if (!config) return options;
-    if (config.telegram.heartbeatChatIds.length > 0) {
-      options.push({ id: "telegram", label: "Telegram" });
-    }
-    if (config.discord.heartbeatChannelIds.length > 0) {
-      options.push({ id: "discord", label: "Discord" });
-    }
-    if (config.slack.heartbeatChannelIds.length > 0) {
-      options.push({ id: "slack", label: "Slack" });
-    }
-    if (config.whatsapp.heartbeatChatJids.length > 0) {
-      options.push({ id: "whatsapp", label: "WhatsApp" });
-    }
+    const options = [{ id: "", label: "Don't notify" }];
+    if (config?.telegram.heartbeatChatIds.length) options.push({ id: "telegram", label: "Telegram" });
+    if (config?.discord.heartbeatChannelIds.length) options.push({ id: "discord", label: "Discord" });
+    if (config?.slack.heartbeatChannelIds.length) options.push({ id: "slack", label: "Slack" });
+    if (config?.whatsapp.heartbeatChatJids.length) options.push({ id: "whatsapp", label: "WhatsApp" });
     return options;
   });
-
-  $effect(() => {
-    if (pending) {
-      journalPath = defaultJournalPathForToday();
-      writeJournal = true;
-      notifyChannel = "";
-      message = null;
-      error = null;
-      void loadProductConfigSummary().then((summary) => {
-        config = summary;
-      });
-    }
+  onMount(() => {
+    void loadProductConfigSummary().then((summary) => { if (current()) config = summary; })
+      .catch(() => { if (current()) configError = true; });
   });
 
   async function saveAndClose(removeFromBoard: boolean) {
-    if (!pending || submitting) return;
-    submitting = true;
-    error = null;
-    message = null;
+    if (!current() || submitting) return;
+    submitting = true; error = null; message = null;
     try {
-      const response = await completeAskJobActions(pending.jobId, {
+      const response = await completeAskJobActions(jobId, {
         writeJournalPath: writeJournal ? journalPath.trim() : undefined,
         notifyChannel: notifyChannel || undefined,
       });
-      message = response.message;
-      if (response.journal_path) {
-        onOpenNote(response.journal_path);
-      }
+      if (!current()) return;
+      if (!response.ok) throw new Error(response.message);
       if (removeFromBoard) {
-        await archiveAskJob(pending.jobId, true);
+        const archived = await archiveAskJob(jobId, true);
+        if (!current()) return;
+        if (!archived.archived) throw new Error(archived.message);
       }
-      workspace.clearPendingAskCompletion();
-      onClose();
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      submitting = false;
-    }
+      workspace.clearPendingAskCompletion(jobId);
+      if (response.journal_path) await openVaultNote(response.journal_path);
+    } catch (cause) { if (current()) error = cause instanceof Error ? cause.message : String(cause); }
+    finally { if (current()) submitting = false; }
   }
-
-  async function dismissOnly() {
-    workspace.clearPendingAskCompletion();
-    onClose();
+  function dismissOnly() { if (current()) workspace.clearPendingAskCompletion(jobId); }
+  function viewTask() {
+    if (!current()) return;
+    void openTaskDetails(jobId);
+    workspace.clearPendingAskCompletion(jobId);
   }
 </script>
 
-{#if pending}
-  <div
-    class="fixed inset-0 z-50 flex items-end justify-center bg-surface-950/70 p-4 sm:items-center"
-    role="presentation"
-    onclick={(event) => {
-      if (event.target === event.currentTarget) void dismissOnly();
-    }}
-  >
-    <div
-      class="w-full max-w-lg rounded-container-token border border-surface-600/40 bg-surface-900 p-5 shadow-xl"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="ask-completion-title"
-    >
+<TaskDialogFrame label="Task finished" compact mobile={layout.isMobile} onClose={dismissOnly}>
+  <div class="p-5">
       <h2 id="ask-completion-title" class="text-base font-semibold text-surface-50">
         Ask finished
       </h2>
       <p class="mt-1 text-sm text-content-secondary">{pending.title}</p>
       <p class="mt-2 text-xs text-content-quiet">
-        Result is saved on this machine. Choose where to send it, or dismiss and read it in Work.
+        The result is saved in your workshop. Open task details to read it, or choose where to send it.
       </p>
 
+      {#if configError}<p class="mt-3 text-xs text-content-warning">Delivery options are unavailable. You can still save to your journal.</p>{/if}
       <div class="mt-4 space-y-3">
         <label class="flex items-start gap-2 text-sm text-surface-200">
           <input type="checkbox" class="checkbox mt-0.5" bind:checked={writeJournal} />
@@ -149,11 +117,12 @@
       {/if}
 
       <div class="mt-5 flex flex-wrap justify-end gap-2">
+        <button type="button" class="btn btn-sm variant-ghost-surface" disabled={submitting} onclick={viewTask}>View task</button>
         <button
           type="button"
           class="btn btn-sm variant-ghost-surface"
           disabled={submitting}
-          onclick={() => void dismissOnly()}
+          onclick={dismissOnly}
         >
           Later
         </button>
@@ -174,6 +143,6 @@
           {submitting ? "…" : "Save & clear"}
         </button>
       </div>
-    </div>
+
   </div>
-{/if}
+</TaskDialogFrame>

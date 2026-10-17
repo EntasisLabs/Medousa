@@ -244,6 +244,10 @@ export const loadWizardContainer = catalogLoader(
 );
 export const loadWorkAskDockPopover = () =>
   import("$lib/components/work/WorkAskDockPopover.svelte");
+export const loadTaskDetailsOverlay = () =>
+  import("$lib/components/tasks/TaskDetailsOverlay.svelte");
+export const loadTaskCompletionDialog = () =>
+  import("$lib/components/tasks/TaskCompletionDialog.svelte");
 export const loadVaultGarageImportWizard = catalogLoader(
   "export-import",
   "import",

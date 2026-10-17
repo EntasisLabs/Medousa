@@ -7,7 +7,7 @@ const fixture = vi.hoisted(() => {
   const card = (id: string, status = "running") => ({ id, title: `Task ${id}`, column: status === "failed" ? "blocked" : "in_flight", status_label: status, created_at_utc: "2026-10-17T10:00:00Z", updated_at_utc: "2026-10-17T11:00:00Z" });
   const a = card("a"); const b = card("b", "failed");
   const detail = (entry: typeof a) => ({ card: entry, kind: "turn_worker", session_id: "session", correlation_id: "turn", terminal: entry.id === "b", wrapping_up_reasons: [], task_line: entry.title, associations: { vault_paths: [], artifact_ids: [], locus_node_ids: [] } });
-  return { cards: [a, b], details: new Map([["a", detail(a)], ["b", detail(b)]]), card: vi.fn(), projects: vi.fn(), schedules: vi.fn(), navigate: vi.fn(), close: vi.fn(), switchSession: vi.fn() };
+  return { cards: [a, b], details: new Map([["a", detail(a)], ["b", detail(b)]]), card: vi.fn(), projects: vi.fn(), schedules: vi.fn(), navigate: vi.fn(), close: vi.fn(), switchSession: vi.fn(), openTask: vi.fn() };
 });
 vi.mock("$lib/stores/workspace.svelte", () => ({ workspace: { get cards() { return fixture.cards; }, visibleCards: () => fixture.cards, get cardDetailsCache() { return fixture.details; }, feed: [] } }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessions: [{ session_id: "session", display_name: "Browser work", preview: "", turns: 2, verification_runs: 0 }], sessionRuntimes: new Map(), turns: new Map(), messages: [], sessionId: "", runtimeRevision: 0 } }));
@@ -16,6 +16,7 @@ vi.mock("$lib/work/workerTranscripts.svelte", () => ({ workerTranscripts: { tran
 vi.mock("$lib/utils/workshopLocality", () => ({ activeWorkshopId: () => "workshop" }));
 vi.mock("$lib/spotlight/activityApi", () => ({ activityDataPort: { projects: fixture.projects, schedules: fixture.schedules, projectRuns: async () => [], scheduleRuns: async () => [], card: fixture.card }, readActivityCodeRun: vi.fn() }));
 vi.mock("$lib/daemon", () => ({ getWorkspaceCard: fixture.card, getJobResult: vi.fn() }));
+vi.mock("$lib/runtime/shellUseCases", () => ({ openTaskDetails: fixture.openTask }));
 import SpotlightActivity from "./SpotlightActivity.svelte";
 
 let component: ReturnType<typeof mount> | null = null;
@@ -32,6 +33,12 @@ beforeEach(() => {
 afterEach(async () => { if (component) await unmount(component); component = null; document.body.replaceChildren(); vi.useRealTimers(); });
 
 describe("Spotlight Activity interactions", () => {
+  it("opens shared task details without navigating into Work", async () => {
+    await start("Task a");
+    [...document.querySelectorAll<HTMLElement>('[role="treeitem"]')].find((entry) => entry.textContent?.includes("Task a"))!.click(); flushSync();
+    button("Task details").click(); await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.openTask).toHaveBeenCalledWith("a"); expect(fixture.navigate).not.toHaveBeenCalled();
+  });
   it("expands conversation → turn → tasks and previews before navigation", async () => {
     await start();
     expect(tree().textContent).toContain("Browser work"); expect(tree().textContent).not.toContain("Task a");

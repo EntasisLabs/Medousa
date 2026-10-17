@@ -1043,13 +1043,7 @@
     onContinue={continueWhereLeftOff}
   >
     {#if !providerRuntime && !embedded && !presenceComposerCentered}
-      <BudgetApprovalBar
-        onOpenWork={() => {
-          workspace.workView = "hub";
-          const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
-          if (pending) void workspace.selectCard(pending.workCardId);
-        }}
-      />
+      <BudgetApprovalBar />
       <ModeProposalBar
         sessionId={panelSessionId}
       />

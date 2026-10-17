@@ -53,14 +53,12 @@ export function buildSuggestedCommands(ctx: WorkshopCommandContext): WorkshopCom
       {
         id: `suggested-work-${item.requestId}`,
         section: "suggested",
-        label: "Review approval in Work",
+        label: "Review approval details",
         subtitle: "Open the related work card",
         keywords: `work card ${item.requestId}`,
         run: async (runCtx) => {
-          runCtx.workspace.workView = "hub";
-          runCtx.navigate("work");
-          await runCtx.workspace.selectCard(item.workCardId);
           runCtx.callbacks.close();
+          await runCtx.workspace.selectCard(item.workCardId, { refresh: true });
         },
       },
     );
@@ -109,10 +107,8 @@ export function buildSuggestedCommands(ctx: WorkshopCommandContext): WorkshopCom
       subtitle: `${blocked.length} item${blocked.length === 1 ? "" : "s"} need attention`,
       keywords: "blocked work kanban",
       run: async (runCtx) => {
-        runCtx.workspace.workView = "hub";
-        runCtx.navigate("work");
-        await runCtx.workspace.selectCard(first.id);
         runCtx.callbacks.close();
+        await runCtx.workspace.selectCard(first.id, { refresh: true });
       },
     });
   }

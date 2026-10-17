@@ -33,6 +33,8 @@ const DORMANT_OVERLAYS = [
   "BrowserWorkshop",
   "MobileBrowserWorkshop",
   "WorkAskDockPopover",
+  "TaskDetailsOverlay",
+  "TaskCompletionDialog",
   "VaultGarageImportWizard",
   "VaultContextMenu",
   "ScriptContextMenu",

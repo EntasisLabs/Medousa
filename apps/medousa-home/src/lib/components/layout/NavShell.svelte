@@ -705,7 +705,7 @@
                 <WorkRailToolbar onAction={() => onSelect("work")} />
               </div>
               <div class="min-h-0 flex-1 overflow-hidden">
-                <WorkRailList onPickCard={() => onSelect("work")} />
+                <WorkRailList />
               </div>
             </div>
           {:else if viewSurface === "profiles"}
@@ -1082,7 +1082,7 @@
     {:else if popover.surfaceId === "calendar"}
       <CalendarRailList onPickEvent={() => commitPopoverSurface("calendar")} />
     {:else if popover.surfaceId === "work"}
-      <WorkRailList onPickCard={() => commitPopoverSurface("work")} />
+      <WorkRailList onPickCard={closeRailPopover} />
     {:else if popover.surfaceId === "profiles"}
       <YouRailList onPickProfile={() => commitPopoverSurface("profiles")} />
     {/if}

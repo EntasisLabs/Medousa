@@ -14,6 +14,7 @@
   import { formatDaemonErrorSummary } from "$lib/utils/formatDaemonError";
   import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import type { ChatSessionRuntime } from "$lib/chat/chatSessionRuntime";
+  import { openTaskDetails } from "$lib/runtime/shellUseCases";
 
   let { query = "", ctx }: { query?: string; ctx: WorkshopCommandContext } = $props();
   const data = new ActivityData(activityDataPort);
@@ -168,6 +169,8 @@
         await ctx.chat.switchSession(id);
         if (!current()) return;
         ctx.navigate("chat"); ctx.callbacks.close();
+      } else if (target?.kind === "card" || target?.kind === "job") {
+        await openTaskDetails(target.kind === "card" ? target.cardId : target.jobId);
       } else if (target?.kind === "project") {
         const { setCoderExecutionTransport } = await import("$lib/executionAuthority");
         if (!current()) return;
@@ -267,7 +270,10 @@
         </div>
         <footer>
           {#if openError}<p class="activity-error">{openError}</p>{/if}
-          <button class="activity-open" disabled={opening} onclick={() => void open(selected!)}>{#if selected.target?.kind === 'project' || selected.target?.kind === 'chat' || selected.target?.kind === 'note' || (selected.target?.kind === 'card' && selected.target.sessionId)}<ArrowUpRight size={14} /> Open {selected.target.kind === 'project' ? (selected.target.review ? 'review' : 'project') : selected.target.kind === 'note' ? 'note' : 'chat'}{:else}<Maximize2 size={14} /> Expand details{/if}</button>
+          <button class="activity-open" disabled={opening} onclick={() => void open(selected!)}>{#if selected.target?.kind === 'project' || selected.target?.kind === 'chat' || selected.target?.kind === 'note' || selected.target?.kind === 'card' || selected.target?.kind === 'job'}<ArrowUpRight size={14} /> Open {selected.target.kind === 'project' ? (selected.target.review ? 'review' : 'project') : selected.target.kind === 'note' ? 'note' : selected.target.kind === 'job' || (selected.target.kind === 'card' && !selected.target.sessionId) ? 'task' : 'chat'}{:else}<Maximize2 size={14} /> Expand details{/if}</button>
+          {#if selected.target?.kind === 'card' && selected.target.sessionId}
+            <button class="activity-more" onclick={() => { const target = selected?.target; if (target?.kind === 'card') void openTaskDetails(target.cardId); }}>Task details</button>
+          {/if}
         </footer>
       {:else}<p class="activity-empty">Select an activity to preview its progress and results.</p>{/if}
     </aside>

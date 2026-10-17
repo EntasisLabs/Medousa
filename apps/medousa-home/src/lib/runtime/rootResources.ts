@@ -53,6 +53,8 @@ export const APP_SHELL_LAZY_OVERLAYS = [
   "BrowserWorkshop",
   "MobileBrowserWorkshop",
   "WorkAskDockPopover",
+  "TaskDetailsOverlay",
+  "TaskCompletionDialog",
   "VaultGarageImportWizard",
   "VaultContextMenu",
   "ScriptContextMenu",

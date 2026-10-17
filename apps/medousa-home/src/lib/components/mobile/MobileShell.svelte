@@ -8,14 +8,13 @@
   import MobileBottomChrome from "$lib/components/mobile/MobileBottomChrome.svelte";
   import MobileTopChrome from "$lib/components/mobile/MobileTopChrome.svelte";
   import HomePanel from "$lib/components/mobile/HomePanel.svelte";
-  import WorkStory from "$lib/components/mobile/WorkStory.svelte";
   import MoreHub from "$lib/components/mobile/MoreHub.svelte";
   import MobileLibraryPanel from "$lib/components/mobile/MobileLibraryPanel.svelte";
   import BrowserPanel from "$lib/components/browser/BrowserPanel.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
-  import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
+  import { openWorkCard } from "$lib/runtime/shellUseCases";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
   import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
   import ShellAskFab from "$lib/components/environment/ShellAskFab.svelte";
@@ -219,8 +218,7 @@
   }
 
   async function handleSelectCard(id: string) {
-    switchMobileTab("home");
-    await workspace.selectCard(id);
+    await openWorkCard(id);
   }
 
   async function handleOpenChat(sessionId?: string) {
@@ -230,9 +228,6 @@
     }
   }
 
-  function closeWorkStory() {
-    workspace.clearSelection();
-  }
 </script>
 
 <div
@@ -330,17 +325,4 @@
 
   <ActivitySheet onOpenNote={handleOpenNote} />
 
-  {#if layout.mobileTab === "home"}
-    <WorkStory
-      onOpenNote={handleOpenNote}
-      onOpenChat={handleOpenChat}
-      onClose={closeWorkStory}
-    />
-  {/if}
-
-  <AskCompletionModal
-    pending={workspace.pendingAskCompletion}
-    onOpenNote={handleOpenNote}
-    onClose={() => workspace.clearPendingAskCompletion()}
-  />
 </div>

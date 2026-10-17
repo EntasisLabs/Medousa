@@ -119,10 +119,8 @@ export function buildWorkCardOpenCommands(
       subtitle: columnLabel(card.column),
       keywords: `work card kanban ${card.title} ${card.id}`,
       run: async (runCtx) => {
-        runCtx.workspace.workView = "hub";
-        runCtx.navigate("work");
-        await runCtx.workspace.selectCard(card.id);
         runCtx.callbacks.close();
+        await runCtx.workspace.selectCard(card.id, { refresh: true });
       },
     }));
 }

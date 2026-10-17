@@ -14,6 +14,7 @@
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
   import { workAskDock } from "$lib/stores/workAskDock.svelte";
+  import { taskOverlays } from "$lib/runtime/taskOverlayState.svelte";
   import { vaultOverlay } from "$lib/vault/vaultOverlay.svelte";
   import { vaultContextMenu } from "$lib/stores/vaultContextMenu.svelte";
   import { scriptContextMenu } from "$lib/stores/scriptContextMenu.svelte";
@@ -35,6 +36,8 @@
     loadVaultNoteWorkshop,
     loadWizardContainer,
     loadWorkAskDockPopover,
+    loadTaskDetailsOverlay,
+    loadTaskCompletionDialog,
   } from "$lib/runtime/viewLoaders";
 
   const loadAgentCreation = () => import("$lib/components/chat/AgentCreationDialog.svelte");
@@ -119,6 +122,15 @@
     overlay
     onFocusChat={focusChatComposer}
   />
+{/if}
+{#if taskOverlays.selectedCardId}
+  {#key `${chat.workshopScopeId}:${taskOverlays.selectedCardId}`}
+    <LazyFeatureView loader={loadTaskDetailsOverlay} overlay />
+  {/key}
+{:else if taskOverlays.pendingAskCompletion}
+  {#key `${chat.workshopScopeId}:${taskOverlays.pendingAskCompletion.jobId}`}
+    <LazyFeatureView loader={loadTaskCompletionDialog} overlay pending={taskOverlays.pendingAskCompletion} />
+  {/key}
 {/if}
 {#if !layout.isMobile && workAskDock.open}
   <LazyFeatureView loader={loadWorkAskDockPopover} overlay />

@@ -9,6 +9,7 @@ import {
 } from "$lib/daemon";
 import { workspaceChatPort } from "$lib/runtime/workspaceChatPort";
 import { workCardHideAfterHours } from "$lib/runtime/workCardHideAfterHoursPort";
+import { TaskOverlayState, taskOverlays } from "$lib/runtime/taskOverlayState.svelte";
 import { workerTranscripts } from "$lib/work/workerTranscripts.svelte";
 import type { BlockedGroup } from "$lib/utils/groupWork";
 import { presentHomeNotification } from "$lib/notifications";
@@ -59,7 +60,9 @@ export class WorkspaceStore {
   feed = $state<WorkspaceEvent[]>([]);
   columnCounts = $state<Record<string, number>>({});
   streamError = $state<string | null>(null);
-  selectedCardId = $state<string | null>(null);
+  constructor(private overlays = new TaskOverlayState()) {}
+  get selectedCardId() { return this.overlays.selectedCardId; }
+  set selectedCardId(id: string | null) { this.overlays.selectedCardId = id; }
   selectedCardDetail = $state<WorkCardDetail | null>(null);
   cardDetailError = $state<string | null>(null);
   cardActionMessage = $state<string | null>(null);
@@ -67,7 +70,9 @@ export class WorkspaceStore {
   askError = $state<string | null>(null);
   askMessage = $state<string | null>(null);
   pendingFocusJobId = $state<string | null>(null);
-  pendingAskCompletion = $state<PendingAskCompletion | null>(null);
+  get pendingAskCompletion() { return this.overlays.pendingAskCompletion; }
+  set pendingAskCompletion(completion: PendingAskCompletion | null) { this.overlays.pendingAskCompletion = completion; }
+  private completionQueue = $state<PendingAskCompletion[]>([]);
   cardDetailsCache = $state<Map<string, WorkCardDetail>>(new Map());
   swimlane = $state<SwimlaneMode>("none");
   showDone = $state(false);
@@ -96,9 +101,11 @@ export class WorkspaceStore {
   private recoveringWorkerResults = false;
   private heartbeatsSinceReconcile = 0;
   private workshopEpoch = 0;
+  private selectionRequest = 0;
 
   resetForWorkshopSwitch() {
     this.workshopEpoch += 1;
+    this.selectionRequest += 1;
     this.revision = 0;
     this.cards = [];
     this.feed = [];
@@ -113,6 +120,7 @@ export class WorkspaceStore {
     this.askMessage = null;
     this.pendingFocusJobId = null;
     this.pendingAskCompletion = null;
+    this.completionQueue = [];
     this.cardDetailsCache = new Map();
     this.previousColumns.clear();
     this.reconcilingCards = false;
@@ -197,10 +205,10 @@ export class WorkspaceStore {
 
     if (transitionedToDone) {
       if (isAskJobId(card.id)) {
-        this.pendingAskCompletion = {
+        this.queueAskCompletion({
           jobId: card.id,
           title: card.title,
-        };
+        });
         workspaceChatPort().noteAskTurnSettled(card.id);
       }
     }
@@ -365,8 +373,10 @@ export class WorkspaceStore {
   }
 
   private async refreshCardProjection(cardId: string) {
+    const epoch = this.workshopEpoch;
     try {
       const detail = await getWorkspaceCard(cardId);
+      if (epoch !== this.workshopEpoch) return;
       this.cardDetailsCache.set(cardId, detail);
       workerTranscripts.ingestDetail(detail, detail.card.column);
       this.handleCardUpserted(detail.card);
@@ -405,8 +415,16 @@ export class WorkspaceStore {
     }
   }
 
-  clearPendingAskCompletion() {
-    this.pendingAskCompletion = null;
+  private queueAskCompletion(completion: PendingAskCompletion) {
+    if (this.pendingAskCompletion?.jobId === completion.jobId || this.completionQueue.some((entry) => entry.jobId === completion.jobId)) return;
+    if (this.pendingAskCompletion) this.completionQueue = [...this.completionQueue, completion];
+    else this.pendingAskCompletion = completion;
+  }
+
+  clearPendingAskCompletion(jobId = this.pendingAskCompletion?.jobId) {
+    if (jobId !== this.pendingAskCompletion?.jobId) return;
+    this.pendingAskCompletion = this.completionQueue[0] ?? null;
+    this.completionQueue = this.completionQueue.slice(1);
   }
 
   setError(message: string) {
@@ -468,6 +486,8 @@ export class WorkspaceStore {
     previousColumn?: string,
     force = false,
   ) {
+    const epoch = this.workshopEpoch;
+    const selection = this.selectionRequest;
     if (!force) {
       const cached = this.cardDetailsCache.get(id);
       if (cached) {
@@ -494,11 +514,13 @@ export class WorkspaceStore {
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
+      if (epoch !== this.workshopEpoch) return;
       try {
         const detail = await getWorkspaceCard(id);
+        if (epoch !== this.workshopEpoch) return;
         this.cardDetailsCache.set(id, detail);
         this.cardDetailsCache = new Map(this.cardDetailsCache);
-        if (this.selectedCardId === id) {
+        if (this.selectedCardId === id && this.selectionRequest === selection) {
           this.selectedCardDetail = detail;
         }
         const card = this.cards.find((item) => item.id === id);
@@ -516,6 +538,7 @@ export class WorkspaceStore {
         }
         return;
       } catch {
+        if (epoch !== this.workshopEpoch) return;
         if (attempt === retryDelaysMs.length - 1) {
           const card = this.cards.find((item) => item.id === id);
           if (
@@ -587,7 +610,10 @@ export class WorkspaceStore {
     await Promise.all(targets.map((id) => this.cacheCardDetail(id)));
   }
 
-  async selectCard(id: string | null) {
+  async selectCard(id: string | null, options: { refresh?: boolean } = {}) {
+    const request = ++this.selectionRequest;
+    const epoch = this.workshopEpoch;
+    const current = () => request === this.selectionRequest && epoch === this.workshopEpoch && this.selectedCardId === id;
     this.selectedCardId = id;
     this.selectedCardDetail = null;
     this.cardDetailError = null;
@@ -599,25 +625,26 @@ export class WorkspaceStore {
     const cached = this.cardDetailsCache.get(id);
     if (cached) {
       this.selectedCardDetail = cached;
-      return;
+      if (!options.refresh) return;
     }
 
     try {
       const detail = await getWorkspaceCard(id);
+      if (!current()) return;
       this.selectedCardDetail = detail;
-      this.cardDetailsCache.set(id, detail);
-      this.cardDetailsCache = new Map(this.cardDetailsCache);
+      // Detail-only output belongs to this selection, not the global summary cache.
     } catch (err) {
-      this.cardDetailError = err instanceof Error ? err.message : String(err);
+      if (current()) this.cardDetailError = err instanceof Error ? err.message : String(err);
     }
   }
 
   async refreshSelectedCard() {
     if (!this.selectedCardId) return;
-    await this.selectCard(this.selectedCardId);
+    await this.selectCard(this.selectedCardId, { refresh: true });
   }
 
   clearSelection() {
+    this.selectionRequest += 1;
     this.selectedCardId = null;
     this.selectedCardDetail = null;
     this.cardDetailError = null;
@@ -635,14 +662,18 @@ export class WorkspaceStore {
   async cancelSelectedCard() {
     if (!this.selectedCardId) return;
     this.cardActionMessage = null;
+    const request = this.selectionRequest;
+    const epoch = this.workshopEpoch;
+    const current = () => request === this.selectionRequest && epoch === this.workshopEpoch;
     try {
       const response = await this.cancelCard(this.selectedCardId);
+      if (!current()) return;
       this.cardActionMessage = response.message;
       if (!response.ok) {
         this.cardDetailError = response.message;
       }
     } catch (err) {
-      this.cardDetailError = err instanceof Error ? err.message : String(err);
+      if (current()) this.cardDetailError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -653,18 +684,24 @@ export class WorkspaceStore {
   async retrySelectedCard() {
     if (!this.selectedCardId) return;
     this.cardActionMessage = null;
+    const request = this.selectionRequest;
+    const epoch = this.workshopEpoch;
+    const current = () => request === this.selectionRequest && epoch === this.workshopEpoch;
     try {
       const response = await retryWorkspaceCard(this.selectedCardId);
+      if (!current()) return;
       this.cardActionMessage = response.message;
       if (!response.ok) {
         this.cardDetailError = response.message;
       }
     } catch (err) {
-      this.cardDetailError = err instanceof Error ? err.message : String(err);
+      if (current()) this.cardDetailError = err instanceof Error ? err.message : String(err);
     }
   }
 
   async retryBlockedGroup(group: BlockedGroup) {
+    const epoch = this.workshopEpoch;
+    const selection = this.selectionRequest;
     this.cardActionMessage = null;
     this.cardDetailError = null;
     let ok = 0;
@@ -672,6 +709,7 @@ export class WorkspaceStore {
     let failed = 0;
 
     for (const card of group.cards) {
+      if (epoch !== this.workshopEpoch) return;
       const detail = this.cardDetailsCache.get(card.id);
       if (detail?.kind !== "stasis_job") {
         skipped += 1;
@@ -686,6 +724,7 @@ export class WorkspaceStore {
       }
     }
 
+    if (epoch !== this.workshopEpoch || selection !== this.selectionRequest) return;
     this.cardActionMessage = `Retried ${ok} of ${group.cards.length}${
       skipped ? ` · ${skipped} skipped (not replayable jobs)` : ""
     }${failed ? ` · ${failed} failed` : ""}`;
@@ -695,6 +734,8 @@ export class WorkspaceStore {
   }
 
   async dismissBlockedGroup(group: BlockedGroup) {
+    const epoch = this.workshopEpoch;
+    const selection = this.selectionRequest;
     this.cardActionMessage = null;
     this.cardDetailError = null;
     let ok = 0;
@@ -702,6 +743,7 @@ export class WorkspaceStore {
     let failed = 0;
 
     for (const card of group.cards) {
+      if (epoch !== this.workshopEpoch) return;
       const detail = this.cardDetailsCache.get(card.id);
       if (!detail || detail.terminal) {
         skipped += 1;
@@ -720,6 +762,7 @@ export class WorkspaceStore {
       }
     }
 
+    if (epoch !== this.workshopEpoch || selection !== this.selectionRequest) return;
     this.cardActionMessage = `Hidden ${ok} of ${group.cards.length}${
       skipped ? ` · ${skipped} already terminal or not cancelable` : ""
     }${failed ? ` · ${failed} failed` : ""}`;
@@ -732,9 +775,11 @@ export class WorkspaceStore {
     id: string,
     purgeOutput = true,
   ): Promise<{ ok: boolean; message: string }> {
+    const epoch = this.workshopEpoch;
     const detail =
       this.cardDetailsCache.get(id) ??
       (await getWorkspaceCard(id).catch(() => null));
+    if (epoch !== this.workshopEpoch) throw new Error("Workshop changed while loading task");
     if (detail?.job_id && isAskJobId(detail.job_id)) {
       const response = await archiveAskJob(detail.job_id, purgeOutput);
       return { ok: response.archived, message: response.message };
@@ -751,8 +796,12 @@ export class WorkspaceStore {
     if (!this.selectedCardId) return;
     this.cardActionMessage = null;
     this.cardDetailError = null;
+    const request = this.selectionRequest;
+    const epoch = this.workshopEpoch;
+    const current = () => request === this.selectionRequest && epoch === this.workshopEpoch;
     try {
       const response = await this.archiveCard(this.selectedCardId, true);
+      if (!current()) return;
       this.cardActionMessage = response.message;
       if (!response.ok) {
         this.cardDetailError = response.message;
@@ -760,7 +809,7 @@ export class WorkspaceStore {
         this.clearSelection();
       }
     } catch (err) {
-      this.cardDetailError = err instanceof Error ? err.message : String(err);
+      if (current()) this.cardDetailError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -810,4 +859,4 @@ export class WorkspaceStore {
   }
 }
 
-export const workspace = new WorkspaceStore();
+export const workspace = new WorkspaceStore(taskOverlays);

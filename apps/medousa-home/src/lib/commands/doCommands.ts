@@ -194,12 +194,12 @@ function buildRunCommands(): WorkshopCommand[] {
       keywords: "run morning brief digest summary",
       aliases: ["brief", "morning"],
       run: async (ctx) => {
-        await enqueueDaemonAsk({
+        const accepted = await enqueueDaemonAsk({
           prompt: "Run the morning brief.",
           manuscriptId: "morning-brief",
         });
-        ctx.navigate("work");
         ctx.callbacks.close();
+        await ctx.workspace.selectCard(accepted.job_id, { refresh: true });
         ctx.notice("Morning brief queued.");
       },
     },

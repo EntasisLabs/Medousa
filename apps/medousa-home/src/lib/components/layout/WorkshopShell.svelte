@@ -28,6 +28,7 @@
   import type { DaemonHealth } from "$lib/daemon";
   import HomeOnboarding from "$lib/components/onboarding/HomeOnboarding.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import { openWorkCard } from "$lib/runtime/shellUseCases";
 
   interface Props {
     onOpenSpotlight?: () => void;
@@ -183,8 +184,7 @@
   }
 
   async function handleCardSelect(id: string) {
-    shellTabs.openSurface("work", { activate: true });
-    await workspace.selectCard(id);
+    await openWorkCard(id);
   }
 </script>
 

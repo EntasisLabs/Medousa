@@ -2,8 +2,6 @@
   import { onMount } from "svelte";
   import WorkHub from "$lib/components/work/WorkHub.svelte";
   import WorkAsksPanel from "$lib/components/work/WorkAsksPanel.svelte";
-  import WorkManifestPopover from "$lib/components/work/WorkManifestPopover.svelte";
-  import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
 
   interface Props {
@@ -30,11 +28,4 @@
     </div>
   {/if}
 
-  <WorkManifestPopover {onOpenNote} {onOpenChat} />
-
-  <AskCompletionModal
-    pending={workspace.pendingAskCompletion}
-    {onOpenNote}
-    onClose={() => workspace.clearPendingAskCompletion()}
-  />
 </div>

@@ -229,6 +229,10 @@
       "specifier": "./agentEditor.css"
     },
     {
+      "from": "src/lib/components/tasks/TaskDetailsOverlay.svelte",
+      "specifier": "$lib/styles/work.postcss"
+    },
+    {
       "from": "src/lib/components/terminal/TerminalPane.svelte",
       "specifier": "@xterm/xterm/css/xterm.css"
     },
