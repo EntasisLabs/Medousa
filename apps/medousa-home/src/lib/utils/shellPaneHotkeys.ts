@@ -112,7 +112,6 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
       !editable &&
       ctrl &&
       !event.altKey &&
-      !event.shiftKey &&
       Date.now() > prefixArmedUntil
     ) {
       if (key === "=" || key === "+" || key === "Add") {

@@ -24,8 +24,8 @@ use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, Web
 use tokio::sync::oneshot;
 
 const MAIN_WINDOW_LABEL: &str = "main";
-/// Shell surface background — aligns WKWebView under-page compositing with the workshop chrome.
-const EMBED_SURFACE_COLOR: Color = Color(12, 14, 18, 255);
+/// Normal browser canvas for pages without an authored background.
+const EMBED_SURFACE_COLOR: Color = Color(255, 255, 255, 255);
 
 const BROWSER_WINDOW_LABEL: &str = "browser";
 const BROWSER_CONTENT_LABEL: &str = "browser-content-popout";
@@ -51,6 +51,7 @@ static EMBED_MOBILE_UA: AtomicBool = AtomicBool::new(false);
 /// Set by the frontend when the mobile shell owns embed layout (blocks workshop resize reapply).
 static MOBILE_SHELL_ACTIVE: AtomicBool = AtomicBool::new(false);
 static LAST_EMBED_PLACEMENT: Mutex<Option<EmbedPlacement>> = Mutex::new(None);
+static EMBED_CONTENT_ZOOM: Mutex<f64> = Mutex::new(1.0);
 /// Last successful macOS title-bar inset. `with_webview` can miss on first create;
 /// falling back to (0,0) shifts child embeds up under the OS title bar.
 static LAST_VIEWPORT_INSET: Mutex<Option<(f64, f64)>> = Mutex::new(None);
@@ -330,9 +331,6 @@ const MOBILE_SAFARI_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac
 
 /// Fix mobile UA viewport / safe-area so page content fills the native embed frame (mirrors iOS insets plugin).
 const MOBILE_EMBED_FIX_JS: &str = r#"(function(){try{var d=document,h=d.head||d.documentElement,m=d.querySelector('meta[name="viewport"]');if(!m){m=d.createElement('meta');m.name='viewport';h.appendChild(m)}m.content='width=device-width,initial-scale=1,viewport-fit=cover';var s=d.getElementById('medousa-mobile-embed-fix');if(!s){s=d.createElement('style');s.id='medousa-mobile-embed-fix';s.textContent='html,body{min-height:100%;height:100%;margin:0;padding:0}body{padding-bottom:env(safe-area-inset-bottom,0)!important}';h.appendChild(s)}}catch(e){}})();"#;
-
-/// Reset default document margins in the embedded page; clipping is handled natively (NSView clipsToBounds).
-const DESKTOP_EMBED_FILL_JS: &str = r#"(function(){try{var s=document.getElementById('medousa-desktop-embed-fill');if(!s){s=document.createElement('style');s.id='medousa-desktop-embed-fill';(document.head||document.documentElement).appendChild(s)}s.textContent='html,body{margin:0;padding:0;background:#0c0e12}';}catch(e){}})();"#;
 
 fn inject_mobile_embed_fix(app: &AppHandle) {
     if !EMBED_MOBILE_UA.load(Ordering::SeqCst) {
@@ -1100,6 +1098,9 @@ fn map_chrome_hotkey_action(key: &str, shift: bool, alt: bool) -> Option<&'stati
         ("t", false, false) => Some("newTab"),
         ("w", false, false) => Some("closeTab"),
         ("r", false, false) => Some("reload"),
+        ("=" | "+", _, false) => Some("zoomIn"),
+        ("-" | "_", _, false) => Some("zoomOut"),
+        ("0", false, false) => Some("zoomReset"),
         ("[", _, false) => Some("goBack"),
         ("]", _, false) => Some("goForward"),
         _ => None,
@@ -1247,6 +1248,12 @@ fn attach_windows_webview_hotkeys(
                 "[".to_string()
             } else if vk == VK_OEM_6.0 as u32 {
                 "]".to_string()
+            } else if vk == 0xBB || vk == 0x6B {
+                "=".to_string()
+            } else if vk == 0xBD || vk == 0x6D {
+                "-".to_string()
+            } else if vk == 0x30 || vk == 0x60 {
+                "0".to_string()
             } else {
                 return Ok(());
             };
@@ -1254,6 +1261,9 @@ fn attach_windows_webview_hotkeys(
             let Some(action) = map_chrome_hotkey_action(key.as_str(), shift, alt) else {
                 return Ok(());
             };
+            if surface == "popout" && matches!(action, "zoomIn" | "zoomOut" | "zoomReset") {
+                return Ok(());
+            }
             unsafe { args.SetHandled(true)? };
             if let Some(handle) = app_handle() {
                 dispatch_embed_hotkey(&handle, action, surface);
@@ -1312,6 +1322,9 @@ fn attach_linux_webview_hotkeys(
             let Some(action) = map_chrome_hotkey_action(key.as_str(), shift, alt) else {
                 return Propagation::Proceed;
             };
+            if surface == "popout" && matches!(action, "zoomIn" | "zoomOut" | "zoomReset") {
+                return Propagation::Proceed;
+            }
             dispatch_embed_hotkey(&app_handle, action, surface);
             Propagation::Stop
         });
@@ -1600,8 +1613,6 @@ fn content_builder(
                         );
                         if mobile_ua {
                             let _ = webview.eval(MOBILE_EMBED_FIX_JS);
-                        } else {
-                            let _ = webview.eval(DESKTOP_EMBED_FILL_JS);
                         }
                     }
                 }
@@ -2527,6 +2538,10 @@ fn create_tab_webview(
     register_tab_id(BrowserSurface::Embed, tab_id);
     EMBED_READY.store(true, Ordering::SeqCst);
     if let Some(created) = tab_webview(app, BrowserSurface::Embed, tab_id) {
+        let zoom = *EMBED_CONTENT_ZOOM
+            .lock()
+            .map_err(|_| "browser zoom lock poisoned")?;
+        created.set_zoom(zoom).map_err(|err| err.to_string())?;
         attach_webview_chrome_hotkeys(&created, app, BrowserSurface::Embed);
     }
     Ok(())
@@ -2880,7 +2895,30 @@ pub fn human_browser_embed_apply_mobile_layout(
 pub fn human_browser_embed_set_bounds(
     app: AppHandle,
     bounds: EmbedBoundsDto,
+    zoom: Option<f64>,
 ) -> Result<(), String> {
+    if let Some(zoom) = zoom {
+        if !zoom.is_finite() || zoom <= 0.0 {
+            return Err("browser zoom must be a positive finite factor".to_string());
+        }
+        let previous = *EMBED_CONTENT_ZOOM
+            .lock()
+            .map_err(|_| "browser zoom lock poisoned")?;
+        if (previous - zoom).abs() > f64::EPSILON {
+            let ids = tab_ids_lock(BrowserSurface::Embed)
+                .lock()
+                .map_err(|_| "browser tab lock poisoned")?
+                .clone();
+            for id in ids {
+                if let Some(content) = tab_webview(&app, BrowserSurface::Embed, &id) {
+                    content.set_zoom(zoom).map_err(|err| err.to_string())?;
+                }
+            }
+            *EMBED_CONTENT_ZOOM
+                .lock()
+                .map_err(|_| "browser zoom lock poisoned")? = zoom;
+        }
+    }
     apply_embedded_freeform(&app, bounds.into())
 }
 

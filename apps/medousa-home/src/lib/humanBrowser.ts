@@ -32,8 +32,9 @@ export interface FindInPageResult {
 
 export async function humanBrowserEmbedSetBounds(
   bounds: HumanBrowserEmbedBounds,
+  zoom?: number,
 ): Promise<void> {
-  return invoke("human_browser_embed_set_bounds", { bounds });
+  return invoke("human_browser_embed_set_bounds", { bounds, zoom });
 }
 
 export async function humanBrowserEmbedApplyLayout(

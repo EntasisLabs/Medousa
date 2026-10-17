@@ -1,3 +1,5 @@
+import { readContentZoom } from "$lib/config/contentZoom";
+
 /** Fallback when `--mobile-bottom-chrome-height` is not measured yet (5.5rem). */
 export const MOBILE_BOTTOM_CHROME_DEFAULT = 88;
 
@@ -85,7 +87,7 @@ export function measureDesktopBrowserEmbedBounds(
 /** Tauri `setZoom` shrinks/grows CSS pixels inside a fixed webview; map to window child coords. */
 export function scaleDesktopEmbedBoundsForZoom(
   bounds: MobileBrowserBounds,
-  zoom: number = readDesktopContentZoom(),
+  zoom: number = readContentZoom(),
 ): MobileBrowserBounds {
   const factor = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
   if (Math.abs(factor - 1) < 0.001) return bounds;
@@ -116,20 +118,14 @@ export function clampDesktopEmbedBoundsToViewport(
   };
 }
 
-function readDesktopContentZoom(): number {
-  if (typeof localStorage === "undefined") return 1;
-  const raw = localStorage.getItem("medousa-home-content-zoom");
-  if (raw == null) return 1;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return 1;
-  return Math.min(1.6, Math.max(0.7, n));
-}
-
 function readDesktopViewportSize(): { width: number; height: number } {
   if (typeof window === "undefined") return { width: 8, height: 8 };
+  // Bounds have already been converted to native logical pixels. Clamp against
+  // a viewport in that same space, rather than the smaller CSS viewport at >100%.
+  const zoom = readContentZoom();
   return {
-    width: window.innerWidth || document.documentElement.clientWidth || 8,
-    height: window.innerHeight || document.documentElement.clientHeight || 8,
+    width: (window.innerWidth || document.documentElement.clientWidth || 8) * zoom,
+    height: (window.innerHeight || document.documentElement.clientHeight || 8) * zoom,
   };
 }
 

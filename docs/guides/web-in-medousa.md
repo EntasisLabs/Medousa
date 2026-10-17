@@ -39,6 +39,11 @@ keyboard.
 4. Take control back at any time. Navigation, tab replacement, closing the tab,
    timeout, or taking control back cancels pending agent actions.
 
+On desktop, the embedded device page follows Medousa's interface zoom. Use
+**Ctrl/⌘ +**, **Ctrl/⌘ −**, or **Ctrl/⌘ 0** while the page has focus to zoom
+the page and shell together. Reset returns to the default **110%** size. Tabs
+keep the current zoom when you switch between them or open another page.
+
 Websites cannot open popups, start downloads, launch external protocols, or ask
 for camera, microphone, location, notification, clipboard, or similar native
 permissions through the embedded browser. Open those flows in your system

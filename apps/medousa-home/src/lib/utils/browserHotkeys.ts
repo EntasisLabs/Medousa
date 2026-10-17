@@ -5,6 +5,7 @@ import {
   dispatchBrowserOpenBookmarks,
 } from "$lib/utils/browserChromeEvents";
 import type { HumanBrowserStore } from "$lib/stores/humanBrowser.svelte";
+import { resetContentZoom, stepContentZoom } from "$lib/config/contentZoom";
 
 export type BrowserHotkeyAction =
   | "focusUrl"
@@ -15,7 +16,10 @@ export type BrowserHotkeyAction =
   | "closeTab"
   | "reload"
   | "goBack"
-  | "goForward";
+  | "goForward"
+  | "zoomIn"
+  | "zoomOut"
+  | "zoomReset";
 
 export function isBrowserHotkeyAction(value: string): value is BrowserHotkeyAction {
   return (
@@ -27,7 +31,10 @@ export function isBrowserHotkeyAction(value: string): value is BrowserHotkeyActi
     value === "closeTab" ||
     value === "reload" ||
     value === "goBack" ||
-    value === "goForward"
+    value === "goForward" ||
+    value === "zoomIn" ||
+    value === "zoomOut" ||
+    value === "zoomReset"
   );
 }
 
@@ -36,6 +43,15 @@ export function runBrowserHotkeyAction(
   store: HumanBrowserStore,
 ): void {
   switch (action) {
+    case "zoomIn":
+      stepContentZoom(1);
+      return;
+    case "zoomOut":
+      stepContentZoom(-1);
+      return;
+    case "zoomReset":
+      resetContentZoom();
+      return;
     case "focusUrl":
       dispatchBrowserFocusUrl();
       return;
