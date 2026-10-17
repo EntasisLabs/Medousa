@@ -26,6 +26,36 @@ use tokio::sync::oneshot;
 #[path = "human_browser_navigation.rs"]
 mod native_navigation;
 
+#[cfg(target_os = "macos")]
+#[path = "human_browser_identity.rs"]
+mod browser_identity;
+
+#[cfg(target_os = "macos")]
+static DESKTOP_USER_AGENT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Resolve native bundle metadata during synchronous app setup, before browser tabs exist.
+#[cfg(target_os = "macos")]
+pub fn initialize_browser_identity() {
+    use objc2_foundation::{NSBundle, NSProcessInfo, NSString};
+    DESKTOP_USER_AGENT.get_or_init(|| {
+        let safari_version =
+            NSBundle::bundleWithPath(&NSString::from_str("/Applications/Safari.app"))
+                .and_then(|bundle| {
+                    bundle.objectForInfoDictionaryKey(&NSString::from_str(
+                        "CFBundleShortVersionString",
+                    ))
+                })
+                .and_then(|value| value.downcast::<NSString>().ok())
+                .map(|version| version.to_string());
+        let os = NSProcessInfo::processInfo().operatingSystemVersion();
+        browser_identity::desktop_user_agent(
+            safari_version.as_deref(),
+            os.majorVersion as i64,
+            os.minorVersion as i64,
+        )
+    });
+}
+
 const MAIN_WINDOW_LABEL: &str = "main";
 /// Normal browser canvas for pages without an authored background.
 const EMBED_SURFACE_COLOR: Color = Color(255, 255, 255, 255);
@@ -1749,6 +1779,10 @@ fn content_builder(
     if mobile_ua {
         builder = builder.user_agent(MOBILE_SAFARI_UA);
     } else {
+        #[cfg(target_os = "macos")]
+        if let Some(user_agent) = DESKTOP_USER_AGENT.get() {
+            builder = builder.user_agent(user_agent);
+        }
         builder = builder.background_color(EMBED_SURFACE_COLOR);
     }
     builder

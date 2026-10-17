@@ -118,12 +118,14 @@ zbus = { version = "3.15.2", default-features = false, features = ["tokio"] }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = [
+  "NSBundle",
   "NSData",
   "NSDictionary",
   "NSGeometry",
   "NSNotification",
   "NSObject",
   "NSOperation",
+  "NSProcessInfo",
   "NSObjCRuntime",
   "NSString",
   "block2",

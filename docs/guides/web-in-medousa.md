@@ -39,6 +39,10 @@ keyboard.
 4. Take control back at any time. Navigation, tab replacement, closing the tab,
    timeout, or taking control back cancels pending agent actions.
 
+On macOS, the device browser uses Safari-compatible desktop identification so
+websites can serve their normal desktop experience. Its cookies and sign-ins
+remain separate from Safari.
+
 On desktop, the embedded device page follows Medousa's interface zoom. Use
 **Ctrl/⌘ +**, **Ctrl/⌘ −**, or **Ctrl/⌘ 0** while the page has focus to zoom
 the page and shell together. Reset returns to the default **110%** size. Tabs

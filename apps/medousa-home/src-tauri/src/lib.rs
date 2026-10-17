@@ -206,6 +206,8 @@ fn run_home() {
     builder = builder.setup(move |app| {
         let setup_started = std::time::Instant::now();
         eprintln!("[medousa-home] setup start");
+        #[cfg(target_os = "macos")]
+        human_browser::initialize_browser_identity();
         #[cfg(target_os = "ios")]
         {
             let inference = app
