@@ -3,6 +3,10 @@
 Open Spotlight with **⌘K** on macOS or **Ctrl+K** on Windows/Linux. Choose
 **Home → Activity** to follow the connected workshop's recent and running work.
 
+Spotlight opens at a balanced 860 × 560 size, capped to fit smaller windows.
+Switching lenses or opening and expanding previews keeps the same outer size;
+results and preview content scroll within it.
+
 Activity includes background tasks, delegated workers and their tool runs,
 live conversations loaded in Medousa, code projects with attempts and command
 runs, scheduled runs, and recent note activity. Available history follows what

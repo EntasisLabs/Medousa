@@ -289,12 +289,12 @@
 </section>
 
 <style>
-  .spotlight-activity { display:flex; flex-direction:column; min-height:0; }
-  .activity-toolbar { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid rgb(var(--theme-border) / .25); }
+  .spotlight-activity { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
+  .activity-toolbar { display:flex; flex-shrink:0; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid rgb(var(--theme-border) / .25); }
   .activity-filters { display:flex; gap:3px; flex-wrap:wrap; }
   .activity-filters button { padding:5px 8px; font-size:11px; border-radius:6px; color:rgb(var(--theme-text-tertiary)); }
   .activity-filters button.active { color:rgb(var(--theme-text)); background:rgb(var(--theme-border) / .25); }
-  .activity-columns { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); height:min(28rem,calc(100vh - 18rem)); min-height:180px; }
+  .activity-columns { display:grid; flex:1; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); min-height:0; }
   .activity-list { overflow:auto; min-width:0; padding:6px; }
   .activity-row { display:flex; gap:6px; align-items:center; padding:8px 6px; border-radius:6px; cursor:pointer; min-width:0; }
   .activity-row:hover { background:rgb(var(--theme-border) / .12); }
@@ -308,7 +308,7 @@
   [data-state="running"] { color:rgb(var(--color-primary-400)); }
   [data-state="finished"] { color:rgb(var(--theme-text-secondary)); }
   .activity-preview { min-width:0; min-height:0; display:flex; flex-direction:column; border-left:1px solid rgb(var(--theme-border) / .25); }
-  .activity-preview header { padding:14px 16px; border-bottom:1px solid rgb(var(--theme-border) / .2); }
+  .activity-preview header { flex-shrink:0; padding:14px 16px; border-bottom:1px solid rgb(var(--theme-border) / .2); }
   .activity-kicker { font-size:10px; color:rgb(var(--theme-text-tertiary)); margin:0 0 8px; }
   h2 { font-size:14px; line-height:1.5; overflow-wrap:anywhere; margin:0 0 8px; }
   .activity-status { font-size:11px; margin-bottom:5px; }
@@ -317,13 +317,13 @@
   pre { font-size:11px; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; margin-bottom:16px; }
   .activity-child { display:flex; flex-direction:column; text-align:left; gap:4px; font-size:11px; padding:8px 0; width:100%; border-bottom:1px solid rgb(var(--theme-border) / .16); }
   .activity-child span:first-child { overflow-wrap:anywhere; }
-  .activity-preview footer { padding:10px 16px; border-top:1px solid rgb(var(--theme-border) / .25); }
+  .activity-preview footer { flex-shrink:0; padding:10px 16px; border-top:1px solid rgb(var(--theme-border) / .25); }
   .activity-open,.activity-back { display:flex; align-items:center; gap:7px; font-size:12px; }
   .activity-back { font-size:11px; margin-bottom:14px; }
   .activity-empty { padding:24px 16px; color:rgb(var(--theme-text-tertiary)); font-size:12px; line-height:1.6; }
-  .activity-loading,.activity-notice { color:rgb(var(--theme-text-tertiary)); font-size:11px; padding:8px 12px; }
+  .activity-loading,.activity-notice { flex-shrink:0; color:rgb(var(--theme-text-tertiary)); font-size:11px; padding:8px 12px; }
   .activity-more { font-size:11px; padding:8px 12px; color:rgb(var(--theme-text-secondary)); }
   .expanded-detail { grid-template-columns:1fr; }
   .expanded-detail .activity-list { display:none; }
-  @media(max-width:640px) { .activity-columns { grid-template-columns:1fr; overflow:auto; height:min(30rem,calc(100vh - 15rem)); } .activity-list { max-height:230px; min-height:110px; } .activity-preview { border-left:0; border-top:1px solid rgb(var(--theme-border) / .25); min-height:180px; } .activity-preview-scroll { min-height:120px; } }
+  @media(max-width:640px) { .activity-columns { grid-template-columns:1fr; overflow:auto; } .activity-list { max-height:230px; min-height:110px; } .activity-preview { border-left:0; border-top:1px solid rgb(var(--theme-border) / .25); min-height:180px; } .activity-preview-scroll { min-height:120px; } }
 </style>

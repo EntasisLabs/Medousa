@@ -753,8 +753,6 @@
   >
     <div
       class="command-spotlight-panel"
-      class:command-spotlight-panel-contextual={showStage && !hasRichStage}
-      class:command-spotlight-panel-rich={activityMode || (showStage && hasRichStage)}
       role="dialog"
       aria-modal="true"
       aria-label="Command spotlight"
@@ -805,10 +803,7 @@
           <SpotlightActivity {query} {ctx} />
         {/key}
       {:else}
-      <div
-        class="command-spotlight-body"
-        class:command-spotlight-body-rich={hasRichStage}
-      >
+      <div class="command-spotlight-body">
         <div class="command-spotlight-results" bind:this={resultsEl}>
           {#each groups as group, sectionIndex (group.id)}
             <div class="command-spotlight-section-label">{group.label}</div>
