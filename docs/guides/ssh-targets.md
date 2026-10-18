@@ -30,6 +30,19 @@ If the server's host key changes, the connection fails rather than silently
 trusting the replacement. Remove and add the connection after verifying its new
 identity. The first version supports up to 64 saved targets per workshop.
 
+## Open terminals from Spotlight
+
+On desktop, open Spotlight with **⌘K** (macOS) or **Ctrl+K** (Windows/Linux).
+In **Actions**, choose **Open terminal** for a new shell on the connected
+workshop, or **Open SSH terminal…** to pick a saved server. The regular shell
+starts in the workshop's configured shell directory. Both open as terminal tabs
+and follow **Connection**, independently of the worker selected in Code.
+
+You can also search Spotlight directly for `ssh`, a server name, username, or
+address and select **SSH · server name**. The SSH picker supports arrow keys
+and Enter; Escape returns to the previous Spotlight view. If no servers are
+saved, **Manage SSH servers** opens their settings.
+
 ## Ask Medousa to work with the server
 
 For example: “Check why the backup failed on Homelab.” Agents discover only SSH

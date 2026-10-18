@@ -55,6 +55,8 @@ export function scoreCommand(command: WorkshopCommand, query: string): number {
   const bodyScore = fuzzyScore(trimmed, haystack);
   let score = Math.max(labelScore, bodyScore * 0.92);
   if (score <= 0) return 0;
+  // An exact named destination must win over a fuzzy match elsewhere in metadata.
+  if (command.aliases?.some((alias) => alias.toLowerCase() === trimmed)) score += 400;
 
   // Verb-ish queries prefer Actions / pins over long Open lists.
   if (

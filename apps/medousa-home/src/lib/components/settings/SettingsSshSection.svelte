@@ -3,8 +3,7 @@
   import { Plus, Terminal, RefreshCw, Trash2, Server, Ellipsis } from "@lucide/svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { sshTargets, sshAction, sshSetAccess, sshRemove, type SshTarget, type SshConfig, type HostInspection } from "$lib/utils/sshApi";
-  import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import { layout } from "$lib/runtime/layout.svelte";
+  import { openSshTerminal } from "$lib/utils/terminalActions";
   import { isTauriDesktop } from "$lib/platform";
 
   let targets = $state<SshTarget[]>([]);
@@ -49,14 +48,6 @@
     name = ""; host = ""; username = ""; identityFile = ""; port = 22;
     await refresh(); note = "SSH target saved. Test the connection to check authentication.";
   }
-  async function open(target: SshTarget) {
-    const receipt = await sshAction<{ session_id: string | null; error: string | null }>("terminal", {
-      target_id: target.target_id, request_key: crypto.randomUUID(),
-    });
-    if (!receipt.session_id) throw new Error(receipt.error || "SSH terminal could not start");
-    layout.navigateDesktop("chat");
-    shellTabs.openTerminal(receipt.session_id, { title: `SSH · ${target.name}`, executionRuntimeId: null });
-  }
 </script>
 
 <div class="prefs-band">
@@ -98,7 +89,7 @@
         <div class="ssh-actions">
           <label class="ssh-access">Agent access <input class="ssh-switch" type="checkbox" role="switch" aria-label={`Agent access for ${target.name}`} checked={target.agent_access} disabled={busy}
             onchange={(event) => { const enabled = event.currentTarget.checked; event.currentTarget.checked = target.agent_access; void action(async () => { await sshSetAccess(target.target_id, enabled); await refresh(); }); }} /></label>
-          {#if isTauriDesktop()}<button type="button" class="btn btn-sm variant-soft-surface" disabled={busy} onclick={() => void action(() => open(target))}><Terminal size={14} /> Terminal</button>{/if}
+          {#if isTauriDesktop()}<button type="button" class="btn btn-sm variant-soft-surface" disabled={busy} onclick={() => void action(() => openSshTerminal(target))}><Terminal size={14} /> Terminal</button>{/if}
           <OverflowMenu
             open={menuTarget === target.target_id}
             onOpenChange={(open) => { menuTarget = open ? target.target_id : null; if (!open) menuTrigger?.focus(); }}

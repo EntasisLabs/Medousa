@@ -14,6 +14,10 @@
   import { jumpPinSlot } from "$lib/commands/pinCommands";
   import { executeWorkshopCommand } from "$lib/commands/runWorkshopCommand";
   import { buildWorkspaceCommands } from "$lib/commands/registry";
+  import { buildSshTerminalCommands } from "$lib/commands/terminalCommands";
+  import { filterAndSortCommands } from "$lib/commands/score";
+  import { SpotlightSshTargets } from "$lib/spotlight/sshTargets.svelte";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import { getVaultNote } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
@@ -31,13 +35,14 @@
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
   } from "$lib/utils/browserPopoverOverlay";
-  import { formatShortcut } from "$lib/platform";
+  import { formatShortcut, isTauriDesktop } from "$lib/platform";
   import { loadVaultExportPreviewModal } from "$lib/runtime/viewLoaders";
   import { leafOrder } from "$lib/utils/shellSplitTree";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import SpotlightWorkspacePreview from "./SpotlightWorkspacePreview.svelte";
   import SpotlightActivity from "./SpotlightActivity.svelte";
   import SpotlightNavigation from "./SpotlightNavigation.svelte";
+  import SpotlightTerminalStatus from "./SpotlightTerminalStatus.svelte";
   import {
     Bot,
     Boxes,
@@ -75,6 +80,15 @@
   let query = $state("");
   let highlightIndex = $state(0);
   let busy = $state(false);
+  let commandError = $state<string | null>(null);
+  let sshData = $state<SpotlightSshTargets | null>(null);
+  $effect(() => {
+    if (!commandSpotlight.open || !isTauriDesktop()) return;
+    const scope = activeWorkshopId();
+    const data = new SpotlightSshTargets(scope);
+    untrack(() => { sshData = data; void data.refresh(); });
+    return () => { data.dispose(); sshData = null; };
+  });
   let inputEl = $state<HTMLInputElement | null>(null);
   let promptValue = $state("");
   let selectedScopeId = $state("home");
@@ -97,7 +111,8 @@
     return () => window.removeEventListener("medousa-external-conversation-changed",changed);
   });
   const notesMode = $derived(commandSpotlight.mode === "notes");
-  const activityMode = $derived(!notesMode && selectedScopeId === "home" && selectedLens === "activity");
+  const sshMode = $derived(commandSpotlight.mode === "ssh");
+  const activityMode = $derived(!notesMode && !sshMode && selectedScopeId === "home" && selectedLens === "activity");
   const promptStep = $derived(commandSpotlight.promptStep);
 
   const ctx = $derived(
@@ -170,7 +185,7 @@
   );
 
   const placeholder = $derived(
-    notesMode
+    sshMode ? "Search saved SSH servers…" : notesMode
       ? "Search notes…"
       : activityMode
         ? "Search activity…"
@@ -413,10 +428,14 @@
     void query;
     void promptStep;
     void ctx;
+    void sshMode;
+    void sshData?.targets;
 
     try {
       const layout = selectedDesktopLayout;
-      if (selectedScopeId !== "home" && layout) {
+      if (sshMode) {
+        groups = [{ id: "ssh-servers", label: "Saved SSH servers", commands: filterAndSortCommands(buildSshTerminalCommands(sshData?.targets ?? [], sshData?.scope ?? ""), query, 64) }];
+      } else if (selectedScopeId !== "home" && layout) {
         groups = collectDesktopGroups(selectedScopeId, layout, query);
       } else if (activityMode) {
         groups = [];
@@ -430,8 +449,10 @@
         groups = collectWorkshopCommands(ctx, {
           query,
           notesMode,
+          sshTargets: sshData?.targets ?? [],
+          workshopScope: sshData?.scope,
         }).map((group) => ({
-          id: group.section,
+          id: `${group.section}-${group.label}`,
           label: group.label,
           commands: group.commands,
         }));
@@ -446,12 +467,14 @@
   $effect(() => {
     const isOpen = commandSpotlight.open;
     const step = promptStep;
+    const mode = commandSpotlight.mode;
     if (!isOpen) {
       query = "";
       selectedScopeId = "home";
       selectedLens = "overview";
       promptValue = "";
       busy = false;
+      commandError = null;
       previewText = null;
       previewTitle = null;
       highlightIndex = 0;
@@ -461,6 +484,7 @@
     // Intentionally do not read query/seed here — that re-ran this effect on every keystroke
     // and fought resume hydration.
     void step;
+    void mode;
     highlightIndex = 0;
 
     const frame = requestAnimationFrame(() => {
@@ -586,11 +610,13 @@
       return;
     }
     busy = true;
+    commandError = null;
     try {
       commandSpotlight.rememberQuery(query, commandSpotlight.mode);
       await executeWorkshopCommand(ctx, command, args);
     } catch (err) {
-      ctx.error(err instanceof Error ? err.message : String(err));
+      commandError = err instanceof Error ? err.message : String(err);
+      ctx.error(commandError);
     } finally {
       busy = false;
     }
@@ -652,6 +678,8 @@
       event.preventDefault();
       if (promptStep) {
         commandSpotlight.cancelPrompt();
+      } else if (sshMode) {
+        commandSpotlight.leaveSshTargets();
       } else {
         commandSpotlight.rememberQuery(query, commandSpotlight.mode);
         commandSpotlight.closeSpotlight();
@@ -681,8 +709,8 @@
     // The Activity tree owns arrow navigation and opening its selected node.
     if (activityMode) return;
 
-    // Harpoon: digits 1–4 jump pins when query is empty.
-    if (selectedScopeId === "home" && !query.trim() && /^[1-4]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    // Digits typed in search are query text (including IP addresses). Pins use result focus.
+    if (!sshMode && event.target !== inputEl && selectedScopeId === "home" && !query.trim() && /^[1-4]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
       const slot = Number(event.key) - 1;
       if (jumpPinSlot(ctx, slot)) {
         event.preventDefault();
@@ -757,6 +785,12 @@
       aria-modal="true"
       aria-label="Command spotlight"
     >
+      {#if sshMode}
+        <div class="command-spotlight-prompt-header command-spotlight-terminal-header">
+          <button type="button" class="btn btn-sm variant-ghost-surface" disabled={busy} onclick={() => { commandSpotlight.leaveSshTargets(); requestAnimationFrame(() => inputEl?.focus()); }}>← Back</button>
+          <p class="command-spotlight-prompt-label">Open SSH terminal</p>
+        </div>
+      {/if}
       {#if promptStep}
         <div class="command-spotlight-prompt-header">
           <p class="command-spotlight-kicker">Follow-up</p>
@@ -781,7 +815,7 @@
           }}
           disabled={busy}
         />
-        {#if prefixHint !== "default" && !activityMode}
+        {#if prefixHint !== "default" && !activityMode && !sshMode}
           <p class="command-spotlight-mode-chip">
             {#if prefixHint === "create"}
               Create
@@ -794,7 +828,7 @@
         {/if}
       {/if}
 
-      {#if !promptStep}
+      {#if !promptStep && !sshMode}
         <SpotlightNavigation {scopeTabs} {selectedScopeId} {selectedLens} {lensTabs} {query} {notesMode} {activityMode} {selectScope} {selectLens} {createWorkspace} />
       {/if}
 
@@ -805,6 +839,7 @@
       {:else}
       <div class="command-spotlight-body">
         <div class="command-spotlight-results" bind:this={resultsEl}>
+          <SpotlightTerminalStatus {sshMode} data={sshData} {query} {commandError} empty={!flatCommands.length} onManage={() => { ctx.openSettingsSection("basement"); ctx.callbacks.close(); }} />
           {#each groups as group, sectionIndex (group.id)}
             <div class="command-spotlight-section-label">{group.label}</div>
             <ul class="command-spotlight-list">
@@ -854,7 +889,7 @@
               {/each}
             </ul>
           {:else}
-            <p class="command-spotlight-empty">No matching commands</p>
+            {#if !sshMode}<p class="command-spotlight-empty">No matching commands</p>{/if}
           {/each}
         </div>
 
@@ -936,7 +971,7 @@
       {/if}
 
       <footer class="command-spotlight-footer">
-        <span>{activityMode ? "↑↓ Navigate · ←→ Expand · ↵ Open · esc Close" : "↑↓ Navigate · ↵ Run · esc Close"}</span>
+        <span>{activityMode ? "↑↓ Navigate · ←→ Expand · ↵ Open · esc Close" : sshMode ? "↑↓ Navigate · ↵ Open · esc Back" : "↑↓ Navigate · ↵ Run · esc Close"}</span>
         <span class="command-spotlight-kbd">{formatShortcut("K")}</span>
       </footer>
     </div>

@@ -11,6 +11,8 @@ import {
   buildWorkspaceCommands,
 } from "./registry";
 import { buildCodeCommands } from "./codeCommands";
+import { buildTerminalCommands, buildSshTerminalCommands } from "./terminalCommands";
+import type { SshTarget } from "$lib/utils/sshApi";
 import { buildSuggestedCommands, buildBudgetListCommand } from "./contextCommands";
 import { buildDoCommands, buildScriptRunOpenCommands } from "./doCommands";
 import {
@@ -42,6 +44,8 @@ export type SpotlightLens = "overview" | "recent" | "activity" | "create" | "act
 export interface CollectCommandsOptions {
   query: string;
   notesMode?: boolean;
+  sshTargets?: SshTarget[];
+  workshopScope?: string;
 }
 
 export interface ParsedSpotlightQuery {
@@ -150,6 +154,7 @@ export function collectWorkshopCommands(
     ...buildGoCommands(),
     ...buildWorkspaceCommands(),
     ...doCommands,
+    ...buildTerminalCommands(),
     ...buildCodeCommands(),
     ...buildAskCommands(),
     ...buildTuneCommands(),
@@ -163,6 +168,7 @@ export function collectWorkshopCommands(
   }
 
   const searchPool: WorkshopCommand[] = withNotePreviews([
+    ...buildSshTerminalCommands(options.sshTargets ?? [], options.workshopScope ?? ""),
     ...buildBotOpenCommands(rawQuery),
     ...buildConnectedAgentOpenCommands(rawQuery),
     ...buildNoteOpenCommands(ctx, rawQuery),
@@ -198,7 +204,11 @@ export function collectWorkshopCommands(
   }
 
   const filtered = filterAndSortCommands(dedupeCommandsById(pool), rawQuery, 64);
-  return groupCommands(filtered);
+  // Keep exact terminal destinations ahead of unrelated fuzzy hits in earlier sections.
+  const exactTerminals = filtered.filter((command) => command.id.startsWith("terminal-") && command.aliases?.some((alias) => alias.toLowerCase() === rawQuery.toLowerCase()));
+  if (!exactTerminals.length) return groupCommands(filtered);
+  const exactIds = new Set(exactTerminals.map((command) => command.id));
+  return [{ section: "open", label: "Terminals", commands: exactTerminals }, ...groupCommands(filtered.filter((command) => !exactIds.has(command.id)))];
 }
 
 function lensGroup(
@@ -270,6 +280,7 @@ export function collectWorkshopLensCommands(
   }
 
   const actionPool = dedupeCommandsById([
+    ...buildTerminalCommands(),
     ...doCommands.filter((command) => command.verb !== "create"),
     ...buildCodeCommands(),
     ...buildAskCommands(),

@@ -36,7 +36,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Medousa Live on iPhone](guides/medousa-live-ios.md) | Continuous in-app voice, controls, requirements, and preview limits |
 | [Medousa Live in CarPlay](guides/medousa-carplay.md) | Development companion controls, setup, and qualification limits |
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
-| [SSH targets](guides/ssh-targets.md) | Connect named servers, grant agent access, and open terminals |
+| [SSH targets](guides/ssh-targets.md) | Connect named servers and open workshop or SSH terminals from Spotlight |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Files](guides/files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
 | [Context](guides/context.md) | Browse saved session memory and its sources |

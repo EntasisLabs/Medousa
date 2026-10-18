@@ -1,6 +1,6 @@
 import type { ActivityFilter } from "$lib/spotlight/activity";
 
-export type CommandSpotlightMode = "default" | "notes";
+export type CommandSpotlightMode = "default" | "notes" | "ssh";
 
 export interface CommandPromptStep {
   commandId: string;
@@ -64,6 +64,18 @@ class CommandSpotlightStore {
 
   openNotes() {
     this.openSpotlight("notes");
+  }
+
+  openSshTargets() {
+    this.mode = "ssh";
+    this.activityFilter = null;
+    this.seedQuery = "";
+    this.open = true;
+  }
+
+  leaveSshTargets() {
+    this.mode = "default";
+    this.seedQuery = "";
   }
 
   rememberQuery(query: string, mode: CommandSpotlightMode) {
