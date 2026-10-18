@@ -284,6 +284,11 @@ export const loadUndertakingsPanel = catalogLoader(
   "undertakings",
   () => import("$lib/components/work/UndertakingsPanel.svelte"),
 );
+export const loadReviewsPanel = catalogLoader(
+  "code-work",
+  "reviews",
+  () => import("$lib/components/work/ReviewsPanel.svelte"),
+);
 export const loadCodeSourceEditor = catalogLoader(
   "code-work",
   "editor",

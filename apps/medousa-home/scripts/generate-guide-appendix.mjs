@@ -129,7 +129,7 @@ const pinCommandsSrc = readRel("src/lib/commands/pinCommands.ts");
 
 const groups = parseKeyboardCatalog(catalogSrc);
 const slashHints = parseSlashHints(slashSrc);
-const goDests = parseGoDestinations(registrySrc);
+const goDests = parseGoDestinations(readRel("src/lib/commands/destinations.ts"));
 const spotlight = [
   ...parseSpotlightCommands(registrySrc),
   ...parseSpotlightCommands(activitySrc),

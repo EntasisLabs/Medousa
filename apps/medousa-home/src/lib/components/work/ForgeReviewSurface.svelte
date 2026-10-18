@@ -1,10 +1,13 @@
 <script lang="ts">
+  import type { ReviewReadingState } from "$lib/code/reviewPage.svelte";
   import ReviewFileChanges from "$lib/components/work/ReviewFileChanges.svelte";
-  import ReviewIntentHeader from "$lib/components/work/ReviewIntentHeader.svelte";
   import type { ReviewFileDiff, ReviewProjection } from "$lib/forge";
 
   interface Props {
     review: ReviewProjection;
+    directory?: string | null;
+    viewState?: ReviewReadingState["diff"];
+    onReady?: () => void;
     projectTitle?: string | null;
     busy?: boolean;
     onOpenFile: (path: string, line?: number) => void | Promise<void>;
@@ -21,7 +24,10 @@
 
   let {
     review,
-    projectTitle = null,
+    directory = null,
+    viewState,
+    onReady,
+    projectTitle: _projectTitle = null,
     busy = false,
     onOpenFile,
     onRestore,
@@ -31,7 +37,7 @@
 </script>
 
 <div class="review-surface" aria-label="Change review">
-  <ReviewIntentHeader {review} {projectTitle} />
+
 
   {#if review.evidence_id && review.changed_files.length === 0}
     <div class="review-empty-seal" role="status">
@@ -39,7 +45,7 @@
       <span>Nothing was sealed — or pick another attempt from project actions if several exist.</span>
     </div>
   {:else}
-    <ReviewFileChanges {review} {busy} {onOpenFile} {onRestore} {onComment} />
+    <ReviewFileChanges {directory} {viewState} {onReady} {review} {busy} {onOpenFile} {onRestore} {onComment} />
   {/if}
 </div>
 

@@ -44,6 +44,7 @@ import {
 } from "$lib/utils/shellSplitTree";
 import {
   titleOfTab,
+  surfaceTitle,
   type ShellTabSearchHit,
 } from "$lib/utils/shellTabSearch";
 import type { HomeOnboardingLayout } from "$lib/utils/homeOnboarding";
@@ -87,37 +88,6 @@ function newTabId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function surfaceTitle(surfaceId: string): string {
-  switch (surfaceId) {
-    case "library":
-      return "Workspace";
-    case "automations":
-      return "Automations";
-    case "code":
-      return "Code";
-    case "chat":
-      return "Chat";
-    case "peers":
-      return "Peers";
-    case "messaging":
-      return "Channels";
-    case "context":
-    case "map":
-      return "Context";
-    case "calendar":
-      return "Calendar";
-    case "settings":
-      return "Settings";
-    case "runtime":
-      return "Runtime";
-    case "profiles":
-      return "Profiles";
-    case "web":
-      return "Web";
-    default:
-      return surfaceId;
-  }
-}
 
 function focusSurfaceHint(tab: ShellTab | null): string | null {
   if (!tab) return null;
@@ -138,7 +108,7 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
       case "deck":
         return "library";
       case "code":
-        return "code";
+        return lme.resource.kind === "review" ? "reviews" : "code";
       default:
         return "library";
     }
@@ -580,6 +550,7 @@ export class ShellTabsStore {
     const surface = focusSurfaceHint(tab);
     if (!surface) return;
     layout.focusDesktopSurface(surface);
+    if (surface === "reviews") layout.openShellSidebarView("reviews");
   }
 
   private patchGroup(groupId: string, patch: Partial<EditorGroup>) {

@@ -30,6 +30,7 @@ function defaultSurfaces() {
     { id: "chat", label: "Chat", icon: "message-circle", builtinId: "chat", mobileTab: "chat" },
     { id: "peers", label: "Peers", icon: "users", builtinId: "peers" },
     { id: "code", label: "Code", icon: "code-2", builtinId: "code" },
+    { id: "reviews", label: "Reviews", icon: "checklist", builtinId: "reviews" },
     { id: "library", label: "Workspace", icon: "notebook-text", builtinId: "library" },
     { id: "notes", label: "Notes", icon: "notebook-text", builtinId: "notes", mobileTab: "notes" },
     { id: "files", label: "Files", icon: "folder", builtinId: "files" },
@@ -64,6 +65,22 @@ function defaultSurfaces() {
     slots: [],
     mobileTab: entry.mobileTab ?? null,
   }));
+}
+
+/** Add Reviews once, preserving later choices to hide it from a preset. */
+export function ensureReviewsSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  if (spec.surfaces.some((surface) => surface.id === "reviews")) return spec;
+  const insert = (ids: string[]) => {
+    if (ids.includes("reviews")) return ids;
+    const next = [...ids];
+    const at = next.indexOf("code");
+    next.splice(at < 0 ? next.length : at + 1, 0, "reviews");
+    return next;
+  };
+  const surfaces = [...spec.surfaces];
+  const at = surfaces.findIndex((surface) => surface.id === "code");
+  surfaces.splice(at < 0 ? surfaces.length : at + 1, 0, defaultSurfaces().find((surface) => surface.id === "reviews")!);
+  return { ...spec, surfaces, layoutPresets: spec.layoutPresets?.map((preset) => ({ ...preset, surfaces: insert(preset.surfaces) })) };
 }
 
 function codeSurfaceDef(): SurfaceDef {
@@ -475,6 +492,7 @@ export function defaultEnvironmentSpec(
           "chat",
           "peers",
           "code",
+          "reviews",
           "notes",
           "web",
           "files",

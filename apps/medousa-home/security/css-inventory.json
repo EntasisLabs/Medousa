@@ -276,6 +276,12 @@
       "path": "src/lib/styles/chat-review.postcss",
       "loadedBy": "ChatChangeReceipt.svelte",
       "layered": false
+    },
+    {
+      "id": "review-canvas",
+      "class": "feature",
+      "path": "src/lib/styles/review-canvas.postcss",
+      "loadedBy": "UndertakingReviewCanvas.svelte"
     }
   ]
 }

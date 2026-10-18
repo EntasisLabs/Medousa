@@ -536,12 +536,10 @@ export class LmeWorkspaceStore {
     this.tabs = [...this.tabs, ...additions].slice(-MAX_TABS);
   }
 
-  /** Review is a canvas, not a panel stacked beneath the editor. */
+  /** Review opens independently of the editable working copy. */
   async openCodeReview(workId: string, title?: string) {
     const id = workId.trim();
     if (!id) return;
-    this.setExplorerMode("code");
-    await openCodeWorkspaceSession(id);
     const resource: CodeWorkspaceResource = { kind: "review" };
     const resourceId = codeResourceKey(id, resource);
     const label = title?.trim() || "Review changes";
@@ -846,6 +844,7 @@ export class LmeWorkspaceStore {
       return;
     }
     if (tab.kind === "code") {
+      if (tab.resource.kind === "review") return;
       if (ports().undertakingDetailId() !== tab.workId) {
         await ports().selectUndertaking(tab.workId);
       }

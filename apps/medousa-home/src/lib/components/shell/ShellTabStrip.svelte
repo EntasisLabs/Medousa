@@ -9,6 +9,7 @@
     FileText,
     Files,
     GitBranch,
+    GitPullRequestArrow,
     Globe,
     LayoutGrid,
     MessageSquare,
@@ -44,12 +45,12 @@
   function iconFor(tab: ShellTab) {
     if (tab.kind === "chat") return MessageSquare;
     if (tab.kind === "web") return Globe;
-    if (tab.kind === "surface") return LayoutGrid;
+    if (tab.kind === "surface") return tab.surfaceId === "reviews" ? GitPullRequestArrow : LayoutGrid;
     if (tab.kind === "terminal") return SquareTerminal;
     const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
     if (!lme) return FileText;
     if (lme.kind === "script") return FileCode2;
-    if (lme.kind === "code") return Code2;
+    if (lme.kind === "code") return lme.resource.kind === "review" ? GitPullRequestArrow : Code2;
     if (lme.kind === "file") return Files;
     if (lme.kind === "deck") return Presentation;
     if (lme.kind === "manuscript") return Bot;

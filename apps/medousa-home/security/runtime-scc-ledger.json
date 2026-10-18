@@ -337,6 +337,10 @@
       "specifier": "./wizardExperience.css"
     },
     {
+      "from": "src/lib/components/work/UndertakingReviewCanvas.svelte",
+      "specifier": "$lib/styles/review-canvas.postcss"
+    },
+    {
       "from": "src/lib/files/FilePdfDocument.svelte",
       "specifier": "$lib/styles/files-surface.postcss"
     },

@@ -7,6 +7,7 @@ import {
 const LIFE_IDS = new Set([
   "chat",
   "code",
+  "reviews",
   "notes",
   "files",
   "artifacts",
@@ -27,6 +28,7 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "files",
   "artifacts",
   "code",
+  "reviews",
   "automations",
   "workshop",
   "peers",
@@ -37,6 +39,11 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "profiles",
   SAFETY_SURFACE_SETTINGS,
 ]);
+
+/** Surfaces hosted by the shared LME explorer in the side rail. */
+export function shellSidebarUsesLmeExplorer(surfaceId: string): boolean {
+  return ["library", "notes", "files", "artifacts", "automations", "code"].includes(surfaceId);
+}
 
 export function surfaceHasShellSidebarView(surfaceId: string): boolean {
   if (surfaceId === "automations") return true;
@@ -90,6 +97,8 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Artifacts";
     case "code":
       return "Projects";
+    case "reviews":
+      return "Reviews";
     case "workshop":
       return "Agents";
     case "automations":

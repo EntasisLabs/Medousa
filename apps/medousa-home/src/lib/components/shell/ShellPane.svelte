@@ -24,6 +24,7 @@
     loadPeersPanel,
     loadProfilesPanel,
     loadRuntimePanel,
+    loadReviewsPanel,
     loadSettingsPanel,
     loadTerminalPane,
   } from "$lib/runtime/viewLoaders";
@@ -250,7 +251,9 @@
         {:then { default: EnvironmentRenderer }}
           <EnvironmentRenderer surfaceId={showSurface}>
             {#snippet builtin()}
-              {#if showSurface === "automations"}
+              {#if showSurface === "reviews"}
+                {#key chat.workshopScopeId}<LazyFeatureView loader={loadReviewsPanel} />{/key}
+              {:else if showSurface === "automations"}
                 {#key chat.workshopScopeId}<LazyFeatureView loader={loadAutomationsRunList} />{/key}
               {:else if showSurface === "calendar"}
                 <LazyFeatureView loader={loadCalendarPanel} visible={true} />

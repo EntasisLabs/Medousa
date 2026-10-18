@@ -6,6 +6,7 @@ const layoutState = {
     layoutState.desktopSurface = surface;
   }),
   setShellSidebarMode: vi.fn(),
+  openShellSidebarView: vi.fn(),
   toggleShellSidebarExpanded: vi.fn(),
 };
 
@@ -819,6 +820,14 @@ describe("shellTabs store", () => {
     shellTabs.close(tabId!);
     expect(shellTabs.tabs).toHaveLength(0);
     expect(shellTabs.activeTab).toBeNull();
+  });
+
+  it("opens Reviews with its review list instead of retaining the project explorer", async () => {
+    const { shellTabs } = await loadShellTabs();
+    shellTabs.bootstrap();
+    shellTabs.openSurface("reviews", { activate: true });
+    expect(layoutState.focusDesktopSurface).toHaveBeenCalledWith("reviews");
+    expect(layoutState.openShellSidebarView).toHaveBeenCalledWith("reviews");
   });
 
   it("enterLmeFamily does not seed empty Workspace or Code surface tabs", async () => {

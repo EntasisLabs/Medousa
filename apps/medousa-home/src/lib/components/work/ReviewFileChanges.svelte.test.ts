@@ -66,3 +66,23 @@ it("stops admitting queued file loads when the review is closed", async () => {
   await settle();
   expect(api.file).toHaveBeenCalledTimes(2);
 });
+
+
+it("shows only the selected directory, including nested files but not similarly named siblings", async () => {
+  const projection = review(0);
+  projection.changed_files = ["README.md", "src/main.rs", "src/nested/lib.rs", "src-other/main.rs", "docs/README.md"].map((path) => ({ path, status: "modified", is_binary: false }));
+  component = mount(ReviewFileChanges, { target: document.body, props: { review: projection, directory: "src", onOpenFile: vi.fn() } });
+  await settle();
+  expect(buttons().map((button) => button.textContent?.trim())).toEqual(["main.rs src", "lib.rs src/nested"]);
+  buttons()[0].click(); await settle();
+  expect(api.file).toHaveBeenCalledWith("work", "src/main.rs", "attempt");
+  expect(api.file).toHaveBeenCalledTimes(1);
+});
+
+it("limits Repository root to files outside directories", async () => {
+  const projection = review(0);
+  projection.changed_files = ["README.md", "src/main.rs", "docs/README.md"].map((path) => ({ path, status: "modified", is_binary: false }));
+  component = mount(ReviewFileChanges, { target: document.body, props: { review: projection, directory: "", onOpenFile: vi.fn() } });
+  await settle();
+  expect(buttons().map((button) => button.textContent?.trim())).toEqual(["README.md"]);
+});

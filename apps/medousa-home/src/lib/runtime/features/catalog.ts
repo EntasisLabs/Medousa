@@ -32,7 +32,7 @@ export const FEATURE_CATALOG: readonly FeatureDescriptor[] = [
   },
   {
     id: "code-work",
-    destinations: ["code"],
+    destinations: ["code", "reviews"],
     clientPlatforms: ["desktop", "mobile"],
     requiredCapabilities: [],
     preload: "intent",

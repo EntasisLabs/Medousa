@@ -186,13 +186,16 @@
       </div>
     {:else if active.kind === "code"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {#key `${chat.workshopScopeId}:${active.workId}:${active.resource.kind}`}
         <LazyFeatureView
           loader={loadUndertakingsPanel}
           showBrowser={false}
           workId={active.workId}
           resource={active.resource}
+          reviewScope={chat.workshopScopeId}
           {interactive}
         />
+        {/key}
       </div>
     {:else if active.kind === "deck"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

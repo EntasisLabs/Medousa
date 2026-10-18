@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { reviewFileInDirectory } from "$lib/code/reviewAreas";
+  import { basename, parentDir, shortKind, symbolName } from "$lib/code/reviewFileLabels";
+  import type { ReviewReadingState } from "$lib/code/reviewPage.svelte";
   import { ChevronRight, MessageSquareText } from "@lucide/svelte";
   import DiffStack from "$lib/components/diff/DiffStack.svelte";
   import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
@@ -15,6 +18,9 @@
 
   interface Props {
     review: ReviewProjection;
+    directory?: string | null;
+    viewState?: ReviewReadingState["diff"];
+    onReady?: () => void;
     busy?: boolean;
     onOpenFile: (path: string, line?: number) => void | Promise<void>;
     onRestore?: (comparison: ReviewFileDiff) => Promise<void>;
@@ -28,6 +34,9 @@
 
   let {
     review,
+    directory = null,
+    viewState,
+    onReady,
     busy = false,
     onOpenFile,
     onRestore,
@@ -70,7 +79,7 @@
   });
 
   const files = $derived.by(() => {
-    const list = [...review.changed_files];
+    const list = review.changed_files.filter((file) => reviewFileInDirectory(file.path, directory));
     return list.sort((a, b) => {
       const ar = riskPaths.has(a.path) ? 0 : 1;
       const br = riskPaths.has(b.path) ? 0 : 1;
@@ -104,19 +113,29 @@
       loadingPaths = new Set();
       scopesByPath = {};
       scopesLoading = {};
+      if (viewState?.comparison === evidenceId) {
+        density = viewState.density;
+        wrap = viewState.wrap;
+        mode = viewState.mode;
+        const paths = viewState.expanded.filter((path) => review.changed_files.some((file) => file.path === path)).slice(0, MAX_BULK_EXPAND_FILES);
+        expandedPaths = new Set(paths);
+        const epoch = loadEpoch;
+        void Promise.all(paths.map((path) => ensureFileDiff(path))).then(() => {
+          if (epoch === loadEpoch) onReady?.();
+        });
+      } else onReady?.();
     });
   });
-
-  function basename(path: string): string {
-    const parts = path.replaceAll("\\", "/").split("/");
-    return parts[parts.length - 1] || path;
-  }
-
-  function parentDir(path: string): string {
-    const normalized = path.replaceAll("\\", "/");
-    const idx = normalized.lastIndexOf("/");
-    return idx > 0 ? normalized.slice(0, idx) : "";
-  }
+  $effect(() => {
+    const expanded = [...expandedPaths];
+    const preferences = { mode, wrap, density };
+    untrack(() => {
+      if (!viewState || !resetForEvidenceId) return;
+      viewState.comparison = resetForEvidenceId;
+      viewState.expanded = expanded;
+      Object.assign(viewState, preferences);
+    });
+  });
 
   function scopeKey(path: string, scopeId: string): string {
     return `${path}\0${scopeId}`;
@@ -129,25 +148,6 @@
       return null;
     }
     return `${count}`;
-  }
-
-  function shortKind(kind: string | null | undefined): string {
-    const raw = (kind ?? "").toLowerCase();
-    if (raw.includes("fn") || raw.includes("function") || raw.includes("method")) return "fn";
-    if (raw.includes("struct") || raw.includes("class") || raw.includes("type")) return "type";
-    if (raw.includes("trait") || raw.includes("interface")) return "trait";
-    if (raw.includes("mod") || raw.includes("module")) return "mod";
-    if (raw.includes("enum")) return "enum";
-    if (raw.includes("const")) return "const";
-    if (raw.length <= 6 && raw) return raw;
-    return "sym";
-  }
-
-  function symbolName(label: string): string {
-    const trimmed = label.trim();
-    if (!trimmed) return label;
-    const parts = trimmed.split("::");
-    return parts[parts.length - 1] || trimmed;
   }
 
   function intentsFor(file: ReviewFileChange): string[] {
@@ -411,7 +411,7 @@
 </script>
 
 {#if files.length === 0}
-  <p class="file-empty">No file changes in this revision.</p>
+  <p class="file-empty">{directory === null ? "No file changes in this revision." : "No changed files in this directory."}</p>
 {:else}
   <div class="file-skim-chrome">
     <div class="file-skim-toolbar">

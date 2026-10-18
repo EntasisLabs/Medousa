@@ -119,6 +119,7 @@ Browser chords (also in Spotlight when Web is focused) include address bar, new/
 | Files | Pinned folders on this machine |
 | Artifacts | HTML decks and agent widgets |
 | Code | Projects, editing, understanding, and review |
+| Reviews | Review prepared project changes |
 | Browser | Built-in web workshop |
 | Automations | Saved prompts, scripts, and flows |
 | Agents | Browse and edit specialists |

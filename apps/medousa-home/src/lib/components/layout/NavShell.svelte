@@ -1,4 +1,6 @@
 <script lang="ts">
+  import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
+  import { loadReviewsPanel } from "$lib/runtime/viewLoaders";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import MapSidePanel from "$lib/components/context/MapSidePanel.svelte";
   import MapRailToolbar from "$lib/components/context/MapRailToolbar.svelte";
@@ -47,6 +49,7 @@
     navLabel,
     navTitle,
     shellSidebarViewTitle,
+    shellSidebarUsesLmeExplorer,
     surfaceHasShellSidebarView,
   } from "$lib/utils/navSurfaces";
   import {
@@ -95,12 +98,7 @@
     mode === "view" && surfaceHasShellSidebarView(viewSurface),
   );
   const viewTitle = $derived(
-    viewSurface === "library" ||
-      viewSurface === "notes" ||
-      viewSurface === "files" ||
-      viewSurface === "artifacts" ||
-      viewSurface === "automations" ||
-      viewSurface === "code"
+    shellSidebarUsesLmeExplorer(viewSurface)
       ? labelForLmeExplorerMode(lmeWorkspace.explorerMode)
       : shellSidebarViewTitle(viewSurface),
   );
@@ -635,14 +633,11 @@
                 <SessionSidebar open={true} variant="inline" chrome="rail-list" />
               </div>
             </div>
+          {:else if viewSurface === "reviews"}
+            <LazyFeatureView loader={loadReviewsPanel} rail={true} />
           {:else if viewSurface === "workshop"}
             <LmeSidePanel {onOpenChat} family="library" />
-          {:else if viewSurface === "library" ||
-            viewSurface === "notes" ||
-            viewSurface === "files" ||
-            viewSurface === "artifacts" ||
-            viewSurface === "automations" ||
-            viewSurface === "code"}
+          {:else if shellSidebarUsesLmeExplorer(viewSurface)}
             <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(viewSurface)} />
           {:else if viewSurface === "messaging"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1027,14 +1022,11 @@
             ? "automations"
             : "library"}
       />
+    {:else if popover.surfaceId === "reviews"}
+      <LazyFeatureView loader={loadReviewsPanel} rail={true} onPick={closeRailPopover} />
     {:else if popover.surfaceId === "workshop"}
       <LmeSidePanel {onOpenChat} family="library" />
-    {:else if popover.surfaceId === "library" ||
-      popover.surfaceId === "notes" ||
-      popover.surfaceId === "files" ||
-      popover.surfaceId === "artifacts" ||
-      popover.surfaceId === "automations" ||
-      popover.surfaceId === "code"}
+    {:else if shellSidebarUsesLmeExplorer(popover.surfaceId)}
       <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(popover.surfaceId)} />
     {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
       <div class="min-h-0 flex-1 overflow-y-auto py-1">
