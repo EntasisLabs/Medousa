@@ -28,6 +28,7 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "artifacts",
   "code",
   "automations",
+  "workshop",
   "peers",
   "messaging",
   "map",
@@ -60,6 +61,7 @@ export function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | 
 }
 
 export function navTitle(surface: SurfaceDef): string {
+  if (surface.id === "workshop") return "Agents";
   if (surface.id === "automations") return "Automations";
   if (surface.id === "map") return "Context";
   if (surface.id === "peers") return "Peers";
@@ -68,6 +70,7 @@ export function navTitle(surface: SurfaceDef): string {
 }
 
 export function navLabel(surface: SurfaceDef): string {
+  if (surface.id === "workshop") return "Agents";
   if (surface.id === "automations") return "Automations";
   if (surface.id === "map") return "Context";
   if (surface.id === "profiles") return "You";
@@ -87,6 +90,8 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Artifacts";
     case "code":
       return "Projects";
+    case "workshop":
+      return "Agents";
     case "automations":
       return "Automations";
     case "peers":

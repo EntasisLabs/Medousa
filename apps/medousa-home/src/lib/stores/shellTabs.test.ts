@@ -178,6 +178,15 @@ describe("shellTabs store", () => {
     lmeState.closeTab.mockClear();
   });
 
+  it("opens Automations as its own restorable surface rather than a library alias", async () => {
+    const { shellTabs } = await loadShellTabs();
+    const id = shellTabs.openSurface("automations");
+    expect(shellTabs.activeTab).toMatchObject({ id, kind: "surface", surfaceId: "automations", title: "Automations" });
+    expect(layoutState.desktopSurface).toBe("automations");
+    shellTabs.openDestination("automations");
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "surface" && tab.surfaceId === "automations")).toHaveLength(1);
+  });
+
   it("applies onboarding pane shapes without seeding tabs", async () => {
     const { shellTabs } = await loadShellTabs();
 

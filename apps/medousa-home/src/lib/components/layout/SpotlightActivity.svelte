@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { Activity, ChevronRight, ChevronDown, RefreshCw, ArrowUpRight, Maximize2, ArrowLeft } from "@lucide/svelte";
+  import { Activity, Square, CheckSquare, ChevronRight, ChevronDown, RefreshCw, ArrowUpRight, Maximize2, ArrowLeft } from "@lucide/svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
@@ -8,7 +8,7 @@
   import { ActivityData } from "$lib/spotlight/activityData.svelte";
   import { activityDataPort, readActivityCodeRun } from "$lib/spotlight/activityApi";
   import { activityTaskIds, activityPath, buildWorkshopActivity, filterActivityTree, flattenActivityTree, type ActivityFilter, type ActivityNode } from "$lib/spotlight/activity";
-  import { getJobResult, getWorkspaceCard } from "$lib/daemon";
+  import { getJobResult, getWorkspaceCard, promoteWorkflowFromSlice } from "$lib/daemon";
   import type { WorkshopCommandContext } from "$lib/commands/types";
   import { formatSessionWhen } from "$lib/utils/formatSession";
   import { formatDaemonErrorSummary } from "$lib/utils/formatDaemonError";
@@ -20,6 +20,12 @@
   import { openTaskDetails } from "$lib/runtime/shellUseCases";
 
   let { query = "", ctx }: { query?: string; ctx: WorkshopCommandContext } = $props();
+  import { flows } from "$lib/stores/flows.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  let flowSelection = $state<Set<string>>(new Set());
+  let flowName = $state("");
+  let creatingFlow = $state(false);
+  let flowError = $state("");
   const data = new ActivityData(activityDataPort);
   let filter = $state<ActivityFilter>(commandSpotlight.activityFilter ?? "all");
   $effect(() => { if (commandSpotlight.activityFilter) filter = commandSpotlight.activityFilter; });
@@ -63,7 +69,7 @@
     cards: activityCards, details, sessions: chat.sessions, feed: workspace.feed,
     projects: data.projects, projectRuns: data.projectRuns,
     schedules: data.schedules, scheduleRuns: data.scheduleRuns,
-    turns: liveTurns,
+    turns: liveTurns, toolRuns: data.toolRuns,
   }));
   const filtered = $derived(filterActivityTree(tree, filter, query));
   const matchingTaskIds = $derived(activityTaskIds(filtered));
@@ -199,7 +205,7 @@
   }
   function handleKeydown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || rows.length === 0) return;
-    if (event.target instanceof Element && event.target.closest("select, textarea")) return;
+    if (event.target instanceof Element && event.target.closest("select, textarea, .activity-flow-bar input")) return;
     if (event.key === "Enter" && event.target instanceof Element && event.target.closest("button")) return;
     const index = rows.findIndex(({ node }) => node.id === selectedId);
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -217,6 +223,34 @@
       }
     }
   }
+  async function createFlow() {
+    if (creatingFlow) return;
+    const refs = data.toolRuns.filter((run) => flowSelection.has(run.entry_id) && !run.redacted)
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp) || a.turn_index - b.turn_index || a.tool_round - b.tool_round)
+      .map((run) => ({ session_id: run.session_id, slice_id: run.slice_id, tool_round: run.tool_round, run_id: run.run_id }));
+    if (!refs.length) return;
+    const workshopId = activeWorkshopId();
+    creatingFlow = true; flowError = "";
+    try {
+      const response = await promoteWorkflowFromSlice({ refs, name: flowName.trim() || null, run: false });
+      if (!alive || activeWorkshopId() !== workshopId) return;
+      flows.openComposer({ name: response.draft.name || flowName, steps: response.draft.steps });
+      lmeWorkspace.focusFlowComposerTab(response.draft.name || flowName || "New flow");
+      ctx.callbacks.close();
+    } catch (cause) { if (alive && activeWorkshopId() === workshopId) flowError = formatDaemonErrorSummary(cause); }
+    finally { if (alive) creatingFlow = false; }
+  }
+  function toggleFlowRun(node: ActivityNode) {
+    const ref = node.replayRef;
+    const entry = ref && data.toolRuns.find((run) => run.session_id === ref.session_id && run.slice_id === ref.slice_id && run.run_id === ref.run_id);
+    if (!entry) return;
+    const next = new Set(flowSelection);
+    if (next.has(entry.entry_id)) next.delete(entry.entry_id); else next.add(entry.entry_id);
+    flowSelection = next;
+  }
+  function flowRunSelected(node: ActivityNode) {
+    return data.toolRuns.some((run) => flowSelection.has(run.entry_id) && run.session_id === node.replayRef?.session_id && run.slice_id === node.replayRef?.slice_id && run.run_id === node.replayRef?.run_id);
+  }
   function refresh() { void workspace.reconcileCardsFromSnapshot(); void data.refresh(); void data.loadCards(activityCards, workspace.cardDetailsCache); previewRevision += 1; }
 </script>
 
@@ -232,6 +266,10 @@
     <div class="flex items-center gap-2"><button class="activity-more" onclick={openNewAsk}>New ask</button>
     <button class="activity-icon" aria-label="Refresh activity" disabled={data.loading || connection.offline} onclick={refresh}><RefreshCw size={14} class={data.loading ? 'animate-spin' : ''} /></button></div>
   </header>
+  {#if flowSelection.size > 0}
+    <div class="activity-flow-bar"><span>{flowSelection.size} tool runs selected</span><input aria-label="Flow name" placeholder="Name this flow…" bind:value={flowName} /><button disabled={creatingFlow} onclick={() => void createFlow()}>{creatingFlow ? 'Creating…' : 'Create flow'}</button><button disabled={creatingFlow} onclick={() => { flowSelection = new Set(); }}>Clear</button></div>
+    {#if flowError}<p class="activity-error">{flowError}</p>{/if}
+  {/if}
   <TaskActivityActions {filter} cards={matchingCards} />
   {#if connection.offline}<p class="activity-notice">Offline · showing last known activity</p>{/if}
   {#if sourceErrors.length > 0}<p class="activity-notice">{sourceErrors.map(([name]) => name).join(", ")} activity could not be refreshed. <button onclick={refresh}>Retry</button></p>{/if}
@@ -245,6 +283,7 @@
                 {#if expanded.has(node.id) || query.trim()}<ChevronDown size={13} />{:else}<ChevronRight size={13} />{/if}
               </button>
             {:else}<span class="activity-leaf"><Activity size={12} /></span>{/if}
+            {#if node.replayRef}<button class="activity-icon" aria-label={`Select ${node.title} for flow`} aria-pressed={flowRunSelected(node)} onclick={(event) => { event.stopPropagation(); toggleFlowRun(node); }}>{#if flowRunSelected(node)}<CheckSquare size={13} />{:else}<Square size={13} />{/if}</button>{/if}
             <span class="activity-copy"><span class="activity-title">{node.title}</span><span class="activity-subtitle">{node.kind} · <span data-state={node.state}>{node.status}</span>{#if node.children.length} · {node.children.length}{/if}</span></span>
             <span class="activity-time">{formatSessionWhen(node.updatedAt)}</span>
           </div>
@@ -289,6 +328,8 @@
 </section>
 
 <style>
+  .activity-flow-bar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 12px; border-bottom:1px solid rgb(var(--theme-border) / .25); font-size:11px; }
+  .activity-flow-bar input { background:transparent; border:1px solid rgb(var(--theme-border) / .4); border-radius:5px; padding:6px; min-width:80px; flex:1; }
   .spotlight-activity { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
   .activity-toolbar { display:flex; flex-shrink:0; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid rgb(var(--theme-border) / .25); }
   .activity-filters { display:flex; gap:3px; flex-wrap:wrap; }

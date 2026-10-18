@@ -120,8 +120,8 @@ Browser chords (also in Spotlight when Web is focused) include address bar, new/
 | Artifacts | HTML decks and agent widgets |
 | Code | Projects, editing, understanding, and review |
 | Browser | Built-in web workshop |
-| Automations | Scripts and schedules |
-| Agents | Specialist agents in Workspace |
+| Automations | Saved prompts, scripts, and flows |
+| Agents | Browse and edit specialists |
 | Context | Browse saved session memory and sources |
 | Peers | Nearby workshops and inbox |
 | Profiles | People and identity |

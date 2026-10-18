@@ -322,3 +322,9 @@ export const loadSettingsBasementSection = () =>
   import("$lib/components/settings/SettingsBasementSection.svelte");
 
 export const loadAskHistoryDialog = () => import("$lib/components/chat/AskHistoryDialog.svelte");
+
+export const loadAutomationsRunList = catalogLoader(
+  "vault-browse",
+  "automations-run-list",
+  () => import("$lib/components/automations/AutomationsRunList.svelte"),
+);

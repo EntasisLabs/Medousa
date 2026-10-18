@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getWorkspaceCard, listRecurring, listRecurringRuns, operationPath, type OperationId } from "$lib/daemon";
+import { getWorkspaceCard, listToolHistorySlices, listRecurring, listRecurringRuns, operationPath, type OperationId } from "$lib/daemon";
 import { forgeFetch, type ItemProjection, type ProjectTaskRun, type ProjectTaskRunList } from "$lib/forge";
 import { isTauri } from "$lib/platform";
 import type { ActivityDataPort } from "./activityData.svelte";
@@ -12,6 +12,7 @@ async function readForge<T>(operation: OperationId, params: Record<string, strin
 }
 
 export const activityDataPort: ActivityDataPort = {
+  async tools() { return (await listToolHistorySlices({ limit: 120 })).runs; },
   async projects(cursor) {
     const query = new URLSearchParams({ limit: "128" });
     if (cursor) query.set("cursor", cursor);

@@ -31,6 +31,7 @@ async function runScriptById(
   spotlightPins.setLastScriptId(scriptId);
   await workshop.runScriptSource(source);
   ctx.navigate("automations");
+  ctx.layout.openShellSidebarView("automations");
   ctx.callbacks.close();
   ctx.notice(
     workshop.runError
@@ -58,7 +59,7 @@ function buildCreateCommands(): WorkshopCommand[] {
           body: applied.body,
           intent: applied.intent,
         });
-        ctx.navigate("automations");
+        ctx.layout.openShellSidebarView("automations");
         ctx.callbacks.close();
         ctx.notice(`Opened template: ${recipe.title}`);
       },
@@ -123,7 +124,7 @@ function buildCreateCommands(): WorkshopCommand[] {
       aliases: ["script", "+script"],
       run: (ctx) => {
         lmeWorkspace.openNewScript();
-        ctx.navigate("automations");
+        ctx.layout.openShellSidebarView("automations");
         ctx.callbacks.close();
         ctx.notice("New script tab opened.");
       },

@@ -29,13 +29,26 @@ export class AutomationsNavStore {
   }
 
   openSection(section: AutomationsSection) {
-    this.pendingSection = section;
+    this.pendingSection = section === "history" || section === "agents" ? null : section;
     this.setCurrentSection(section);
-    void import("$lib/stores/lmeWorkspace.svelte").then(({ lmeWorkspace }) => {
+    if (section === "history") {
+      void import("$lib/stores/commandSpotlight.svelte").then(({ commandSpotlight }) => commandSpotlight.openActivity());
+      return;
+    }
+    void Promise.all([
+      import("$lib/stores/lmeWorkspace.svelte"),
+      import("$lib/runtime/layout.svelte"),
+      import("$lib/stores/shellTabs.svelte"),
+    ]).then(([{ lmeWorkspace }, { layout }, { shellTabs }]) => {
       lmeWorkspace.openAutomationsSection(section);
-    });
-    void import("$lib/runtime/layout.svelte").then(({ layout }) => {
-      layout.navigateDesktop("library", { bump: true });
+      if (layout.isMobile) layout.openMore(section === "agents" ? "workshop" : "automations");
+      else if (section === "agents") {
+        shellTabs.enterLmeFamily("library");
+        layout.openShellSidebarView("workshop");
+      } else {
+        shellTabs.enterLmeFamily("library");
+        layout.openShellSidebarView("automations");
+      }
     });
   }
 

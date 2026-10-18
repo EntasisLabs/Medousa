@@ -7,6 +7,9 @@ import { formatSessionLabel } from "$lib/utils/formatSession";
 import { formatCardTitle } from "$lib/utils/formatWork";
 import { formatToolName } from "$lib/utils/formatTurn";
 
+import { sliceRefFromRun, type ToolHistoryRunEntry, type ToolHistorySliceRef } from "$lib/types/toolHistory";
+import { humanToolRunHeadline, humanToolRunResult } from "$lib/utils/toolHistorySummary";
+
 export type ActivityState = "running" | "attention" | "finished" | "idle";
 export type ActivityFilter = "all" | "running" | "attention" | "finished";
 export type ActivityTarget =
@@ -30,6 +33,7 @@ export interface ActivityNode {
   summary?: string;
   error?: string;
   target?: ActivityTarget;
+  replayRef?: ToolHistorySliceRef;
   children: ActivityNode[];
 }
 
@@ -42,6 +46,7 @@ export interface ActivitySources {
   projectRuns: ReadonlyMap<string, ProjectTaskRunSummary[]>;
   schedules: RecurringDefinitionEntry[];
   scheduleRuns: ReadonlyMap<string, RecurringRunEntry[]>;
+  toolRuns?: ToolHistoryRunEntry[];
   turns?: Array<{ id: string; sessionId: string; phase: string; terminal: boolean; title: string; updatedAt: string }>;
 }
 
@@ -217,6 +222,32 @@ export function buildWorkshopActivity(source: ActivitySources): ActivityNode[] {
           summary: run.task.argv.join(" "), target: { kind: "code-run", workId: project.id, runId: run.run_id }, children: [],
         })),
       ],
+    });
+  }
+  // Match by session + run identity, so history enriches live entries without duplicating them.
+  const tools = new Map((source.toolRuns ?? []).map((run) => [`${run.session_id}:${run.run_id}`, run]));
+  const represented = new Set<string>();
+  for (const [cardId, node] of cardNodes) {
+    const detail = source.details.get(cardId);
+    for (const tool of detail?.live_tool_activity ?? []) {
+      const key = `${detail?.session_id}:${tool.run_id}`;
+      const entry = tools.get(key);
+      const child = node.children.find((child) => child.id === `tool:${cardId}:${tool.run_id}`);
+      if (entry && child) {
+        if (!entry.redacted) child.replayRef = sliceRefFromRun(entry);
+        represented.add(key);
+      }
+    }
+  }
+  for (const entry of source.toolRuns ?? []) {
+    if (represented.has(`${entry.session_id}:${entry.run_id}`)) continue;
+    conversation(entry.session_id).children.push({
+      id: `history:${entry.entry_id}`, title: humanToolRunHeadline(entry), kind: "Tool run",
+      // A recorded tool failure is history, not a new request for operator attention.
+      state: activityState(entry.status) === "running" ? "running" : "finished", status: label(entry.status), updatedAt: entry.timestamp,
+      summary: humanToolRunResult(entry) || entry.input_summary,
+      replayRef: entry.redacted ? undefined : sliceRefFromRun(entry),
+      target: { kind: "chat", sessionId: entry.session_id }, children: [],
     });
   }
   // Surface workshop activity without a card too (notes, scripts and run events).

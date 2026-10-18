@@ -5,7 +5,10 @@ import type { RecurringDefinitionEntry, RecurringRunEntry } from "$lib/types/rec
 import { activityDetailSummary } from "./activity";
 import { isActionableBlockedCard } from "$lib/utils/workCardRetention";
 
+import type { ToolHistoryRunEntry } from "$lib/types/toolHistory";
+
 export interface ActivityDataPort {
+  tools?(): Promise<ToolHistoryRunEntry[]>;
   projects(cursor: string | null): Promise<{ items: ItemProjection[]; nextCursor: string | null }>;
   projectRuns(workId: string): Promise<ProjectTaskRunSummary[]>;
   schedules(): Promise<RecurringDefinitionEntry[]>;
@@ -19,6 +22,7 @@ async function batches<T>(items: T[], visit: (item: T) => Promise<void>) {
 
 /** Lens-owned summaries. Closing the lens invalidates requests and releases its caches. */
 export class ActivityData {
+  toolRuns = $state<ToolHistoryRunEntry[]>([]);
   projects = $state<ItemProjection[]>([]);
   projectRuns = $state<Map<string, ProjectTaskRunSummary[]>>(new Map());
   schedules = $state<RecurringDefinitionEntry[]>([]);
@@ -49,6 +53,15 @@ export class ActivityData {
     };
     try {
       await Promise.all([
+        (async () => {
+          if (!this.port.tools) return;
+          try {
+            const runs = await this.port.tools();
+            if (!current()) return;
+            this.toolRuns = runs.map((run) => ({ ...run, sanitized_input: {}, input_summary: run.input_summary.slice(0, 1000), output_preview: run.output_preview?.slice(0, 4000) }));
+            this.errors = { ...this.errors, Tools: "" };
+          } catch (cause) { error("Tools", cause); }
+        })(),
         (async () => {
           try {
             this.errors = { ...this.errors, Code: "", "Code runs": "" };
@@ -166,6 +179,7 @@ export class ActivityData {
     this.details = new Map();
     this.projectRuns = new Map();
     this.scheduleRuns = new Map();
+    this.toolRuns = [];
     this.projects = [];
     this.schedules = [];
   }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { SurfaceDef } from "$lib/types/environment";
 import {
   navTier,
+  navLabel,
+  navTitle,
   shellSidebarViewTitle,
   surfaceHasShellSidebarView,
 } from "./navSurfaces";
@@ -62,4 +64,11 @@ describe("navSurfaces shell sidebar views", () => {
     expect(shellSidebarViewTitle("web")).toBe("Web");
     expect(shellSidebarViewTitle("profiles")).toBe("You");
   });
+});
+
+
+it("labels the saved Capabilities destination as Agents", () => {
+  const legacy = { ...surface("workshop"), label: "Capabilities" };
+  expect(navLabel(legacy)).toBe("Agents");
+  expect(navTitle(legacy)).toBe("Agents");
 });

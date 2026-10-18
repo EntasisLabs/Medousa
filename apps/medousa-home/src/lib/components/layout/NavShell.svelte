@@ -312,6 +312,7 @@
       railPopover?.surfaceId === "files" ||
       railPopover?.surfaceId === "artifacts" ||
       railPopover?.surfaceId === "automations" ||
+      railPopover?.surfaceId === "workshop" ||
       railPopover?.surfaceId === "code",
   );
 
@@ -380,6 +381,7 @@
   }
 
   function ensureFamilyForSurface(surfaceId: string) {
+    if (surfaceId === "workshop") { lmeWorkspace.setExplorerMode("agents"); return; }
     const doorMode = LIBRARY_DOOR_MODES[surfaceId];
     if (doorMode) {
       lmeWorkspace.setExplorerMode(doorMode);
@@ -529,6 +531,12 @@
     event?.stopPropagation();
     closeRailPopover();
     ensureFamilyForSurface(surfaceId);
+    if (surfaceId === "automations") {
+      onSelect(surfaceId);
+      layout.setShellSidebarMode("nav");
+      return;
+    }
+    if (surfaceId === "workshop") lmeWorkspace.setExplorerMode("agents");
     if (surfaceHasShellSidebarView(surfaceId)) {
       layout.openShellSidebarView(surfaceId);
       onSelect(surfaceId);
@@ -557,7 +565,9 @@
           ? "code"
           : isLmeAutomationsMode(mode)
             ? "automations"
-            : mode === "files"
+            : mode === "agents"
+              ? "workshop"
+              : mode === "files"
               ? "files"
               : mode === "artifacts"
                 ? "artifacts"
@@ -625,6 +635,8 @@
                 <SessionSidebar open={true} variant="inline" chrome="rail-list" />
               </div>
             </div>
+          {:else if viewSurface === "workshop"}
+            <LmeSidePanel {onOpenChat} family="library" />
           {:else if viewSurface === "library" ||
             viewSurface === "notes" ||
             viewSurface === "files" ||
@@ -739,7 +751,9 @@
                 ? libraryDoorIsActive(surface.id)
                 : isAutomations
                   ? automationsIsActive()
-                  : active === surface.id || surfacePopoverOpen(surface.id)}
+                  : surface.id === "workshop"
+                    ? (showView && viewSurface === "workshop") || (active === "library" && lmeWorkspace.explorerMode === "agents")
+                    : active === surface.id || surfacePopoverOpen(surface.id)}
               {@const canHide =
                 railLayoutEditing && isNavDestinationToggleable(surface.id)}
               {@const canEditCustom = canHide && surface.kind === "custom"}
@@ -978,7 +992,7 @@
     {#snippet toolbar()}
       {#if popover.kind === "lme"}
         <!-- LME dock icons portal into the popover dock slot. -->
-      {:else if popover.surfaceId === "library" ||
+      {:else if popover.surfaceId === "workshop" || popover.surfaceId === "library" ||
         popover.surfaceId === "notes" ||
         popover.surfaceId === "files" ||
         popover.surfaceId === "artifacts" ||
@@ -1013,6 +1027,8 @@
             ? "automations"
             : "library"}
       />
+    {:else if popover.surfaceId === "workshop"}
+      <LmeSidePanel {onOpenChat} family="library" />
     {:else if popover.surfaceId === "library" ||
       popover.surfaceId === "notes" ||
       popover.surfaceId === "files" ||

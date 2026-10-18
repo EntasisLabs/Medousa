@@ -89,6 +89,7 @@ export type ShellDesktop = {
 /** Singleton surfaces that open as at most one tab each. */
 export const SHELL_SURFACE_TAB_IDS = new Set<string>([
   "library",
+  "automations",
   "code",
   "peers",
   "messaging",

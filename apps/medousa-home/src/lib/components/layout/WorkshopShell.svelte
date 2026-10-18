@@ -114,24 +114,15 @@
       shellTabs.openSurface("map", { activate: true });
       return;
     }
-    // Automations + Capabilities fold into the LME workspace — rail only, no
-    // empty Workspace/Code surface tabs.
+    // Saved automations have a Run list; resource editors remain LME tabs.
     if (surface === "automations") {
-      const mode = lmeWorkspace.explorerMode;
-      if (
-        mode !== "scripts" &&
-        mode !== "flows" &&
-        mode !== "schedules" &&
-        mode !== "history" &&
-        mode !== "agents"
-      ) {
-        lmeWorkspace.setExplorerMode("scripts");
-      }
-      shellTabs.enterLmeFamily("library");
+      shellTabs.openSurface("automations", { activate: true });
+      layout.setShellSidebarMode("nav");
       return;
     }
     if (surface === "workshop") {
       lmeWorkspace.setExplorerMode("agents");
+      layout.openShellSidebarView("workshop");
       shellTabs.enterLmeFamily("library");
       return;
     }

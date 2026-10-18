@@ -18,7 +18,7 @@
   const selected = $derived.by(() => {
     const id = active?.workflowId;
     if (!id) return null;
-    return flows.workflows.find((entry) => entry.workflow_id === id) ?? null;
+    return flows.workflows.find((entry) => entry.workflow_id === id) ?? (flows.detailById[id] ? { ...flows.detailById[id], step_count: flows.detailById[id].steps.length } : null);
   });
 
   const selectedDetail = $derived(

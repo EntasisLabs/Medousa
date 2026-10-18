@@ -421,7 +421,6 @@ export class LayoutStore {
   focusDesktopSurface(surface: string) {
     let next = surface === "home" ? "chat" : surface;
     if (
-      next === "automations" ||
       next === "workshop" ||
       next === "notes" ||
       next === "files" ||
@@ -441,7 +440,6 @@ export class LayoutStore {
     // `lmeWorkspace` before navigating.
     let next = surface === "home" ? "chat" : surface;
     if (
-      next === "automations" ||
       next === "library" ||
       next === "notes" ||
       next === "files" ||
@@ -449,7 +447,6 @@ export class LayoutStore {
     ) {
       const requested = next;
       if (
-        next === "automations" ||
         next === "notes" ||
         next === "files" ||
         next === "artifacts"
@@ -459,13 +456,10 @@ export class LayoutStore {
       void import("$lib/stores/lmeWorkspace.svelte").then(({ lmeWorkspace }) => {
         void import("$lib/utils/lmeExplorerModes").then(
           ({
-            isLmeAutomationsMode,
             isLmeLibraryMode,
             defaultModeForLmeFamily,
           }) => {
-            if (requested === "automations" && !isLmeAutomationsMode(lmeWorkspace.explorerMode)) {
-              lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("automations"));
-            } else if (requested === "notes") {
+            if (requested === "notes") {
               lmeWorkspace.setExplorerMode("notes");
             } else if (requested === "files") {
               lmeWorkspace.setExplorerMode("files");

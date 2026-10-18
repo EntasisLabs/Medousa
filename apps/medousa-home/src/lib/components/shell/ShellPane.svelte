@@ -8,11 +8,13 @@
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { isBrowserWorkshop, usesUnifiedTitlebar } from "$lib/platform";
   import type { DaemonHealth } from "$lib/daemon";
   import { refreshDaemonHealth } from "$lib/workshopConnection";
   import {
+    loadAutomationsRunList,
     loadCalendarPanel,
     loadEnvironmentRenderer,
     loadHumanBrowserPanel,
@@ -248,7 +250,9 @@
         {:then { default: EnvironmentRenderer }}
           <EnvironmentRenderer surfaceId={showSurface}>
             {#snippet builtin()}
-              {#if showSurface === "calendar"}
+              {#if showSurface === "automations"}
+                {#key chat.workshopScopeId}<LazyFeatureView loader={loadAutomationsRunList} />{/key}
+              {:else if showSurface === "calendar"}
                 <LazyFeatureView loader={loadCalendarPanel} visible={true} />
               {:else if showSurface === "context" || showSurface === "map"}
                 <LazyFeatureView loader={loadMapPanel} visible={true} />

@@ -30,7 +30,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Spotlight Activity](guides/spotlight-activity.md) | Follow workshop tasks, agents, code commands, and scheduled runs |
 | [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands and understand local credential storage |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
-| [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
+| [Workshop & Automations](guides/workshop-and-automations.md) | Run list, schedules, specialists, and Activity |
 | [Phone pairing](guides/phone-pairing.md) | Name paired workshops, refresh stale connections, and add optional portals |
 | [Siri and Shortcuts](guides/siri-and-shortcuts.md) | Continue the selected chat by voice or from an iPhone shortcut |
 | [Medousa Live on iPhone](guides/medousa-live-ios.md) | Continuous in-app voice, controls, requirements, and preview limits |

@@ -49,7 +49,6 @@
     flowDraft.queuePromotion([ref]);
     automationsNav.openSection("flows");
     taskOverlays.askHistorySessionId = null;
-    layout.navigateDesktop("automations", { bump: true });
     if (layout.isMobile) layout.openMore("automations");
   }
 

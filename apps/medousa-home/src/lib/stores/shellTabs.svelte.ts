@@ -90,8 +90,9 @@ function newTabId(prefix: string): string {
 function surfaceTitle(surfaceId: string): string {
   switch (surfaceId) {
     case "library":
-    case "automations":
       return "Workspace";
+    case "automations":
+      return "Automations";
     case "code":
       return "Code";
     case "chat":
@@ -126,8 +127,9 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
     // Inline map (avoid importing lmeExplorerModes → circular init with lmeWorkspace).
     const lme = ports().lme.tabs().find((entry) => entry.tabId === tab.lmeTabId);
     switch (lme?.kind) {
-      case "script":
       case "manuscript":
+        return "workshop";
+      case "script":
       case "flow":
       case "schedule":
         return "automations";
@@ -700,7 +702,7 @@ export class ShellTabsStore {
         return;
       }
     }
-    if (surface === "library" || surface === "automations" || surface === "code") {
+    if (surface === "library" || surface === "code") {
       this.enterLmeFamily(surface === "code" ? "code" : "library");
       return;
     }
@@ -985,7 +987,6 @@ export class ShellTabsStore {
     let next = surfaceId === "home" ? "chat" : surfaceId;
     if (next === "context") next = "map";
     if (
-      next === "automations" ||
       next === "workshop" ||
       next === "notes" ||
       next === "files" ||
@@ -1066,7 +1067,6 @@ export class ShellTabsStore {
     let next = surfaceId === "home" ? "chat" : surfaceId;
     if (next === "context") next = "map";
     if (
-      next === "automations" ||
       next === "workshop" ||
       next === "notes" ||
       next === "files" ||

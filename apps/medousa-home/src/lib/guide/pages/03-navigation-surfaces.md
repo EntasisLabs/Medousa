@@ -68,7 +68,8 @@ Settings | tone: default
 | **Web** | Human browser (tabs, history, bookmarks) |
 | **Map** | Picture of recent chats and linked notes |
 | **You** | Profiles / identity field (dock door) |
-| **Automations** | Scripts, Agents, Flows, Schedules, History |
+| **Automations** | Saved prompts, scripts, and flows in a Run list |
+| **Agents** | Specialist import, tuning, and use in chat |
 | **Peers** | Nearby workshops, trust, inbox |
 | **Channels** | Messaging adapters (under Settings / More — not the life rail) |
 | **Runtime** | Now, Jobs, Delivery, Routing diagnostics |
@@ -76,17 +77,17 @@ Settings | tone: default
 
 **Custom views** you create also appear as surfaces on the rail when the layout includes them.
 
-## Automations modes
+## Automations
 
-Open **Automations** (or deep-link into scripts/agents):
+On desktop, **Automations** opens a Run list with **All**, **Scheduled**,
+**Manual**, and **Paused** filters. Select a row for its overview, run controls,
+and recorded runs. **New automation** starts a prompt schedule or opens the
+existing script and flow libraries. **Scripts** and **Flows** below the list
+keep their editors available.
 
-| Mode | For |
-|------|-----|
-| **Scripts** | Grapheme workbench |
-| **Agents** | Specialist import and tuning |
-| **Flows** | Multi-step workflows |
-| **Schedules** | Cron / recurring runs |
-| **History** | Past runs (secondary strip — chevron) |
+**Agents** is a separate destination. Global history lives in
+**Spotlight → Activity**, where tool runs can be selected to create a flow draft.
+On mobile, Automations keeps its Scripts, Flows, and Schedules sections.
 
 ## Layout presets
 

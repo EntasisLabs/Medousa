@@ -332,7 +332,6 @@
   function handlePromoteToFlow(ref: ToolHistorySliceRef) {
     flowDraft.queuePromotion([ref]);
     automationsNav.openSection("flows");
-    layout.navigateDesktop("automations", { bump: true });
     if (mobile) layout.openMore("automations");
   }
 

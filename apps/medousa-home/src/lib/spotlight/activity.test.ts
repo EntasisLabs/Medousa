@@ -123,3 +123,27 @@ describe("workshop activity hierarchy", () => {
     expect(summary.live_tool_activity![0].output_summary).toHaveLength(500);
   });
 });
+
+
+describe("reusable tool activity", () => {
+  const tool = { entry_id: "saved", session_id: "session", slice_id: "turn:1", turn_index: 1, tool_round: 2, run_id: "tool", tool_name: "shell", status: "succeeded", input_summary: "git status", sanitized_input: {}, args_hash: "hash", redacted: false, timestamp: "2026-10-17T11:00:00Z" };
+  it("places history under the source conversation with an exact replay reference", () => {
+    const tree = buildWorkshopActivity(sources({ toolRuns: [tool] }));
+    expect(tree[0].id).toBe("session:session");
+    expect(tree[0].children[0]).toMatchObject({ id: "history:saved", kind: "Tool run", replayRef: { session_id: "session", slice_id: "turn:1", run_id: "tool", tool_round: 2 } });
+  });
+  it("enriches a live tool instead of listing it twice", () => {
+    const tree = buildWorkshopActivity(sources({ cards: [card("worker")], details: new Map([["worker", detail("worker", { session_id: "session", live_tool_activity: [{ run_id: "tool", name: "shell", status: "succeeded", round: 2, started_at: tool.timestamp }] })]]), toolRuns: [tool] }));
+    const tools = flattenActivityTree(tree, new Set(), true).filter(({ node }) => node.kind === "Tool run");
+    expect(tools).toHaveLength(1); expect(tools[0].node.replayRef?.run_id).toBe("tool");
+  });
+  it("keeps historical tool failures out of the actionable attention list", () => {
+    const tree = buildWorkshopActivity(sources({ toolRuns: [{ ...tool, status: "failed" }] }));
+    expect(tree[0].children[0]).toMatchObject({ state: "finished", status: "failed" });
+    expect(filterActivityTree(tree, "attention", "")).toEqual([]);
+  });
+  it("keeps redacted activity visible without offering replay", () => {
+    const tree = buildWorkshopActivity(sources({ toolRuns: [{ ...tool, redacted: true }] }));
+    expect(tree[0].children[0].replayRef).toBeUndefined();
+  });
+});

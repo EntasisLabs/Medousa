@@ -37,7 +37,7 @@
 <style>
   .mobile-automations-dock {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     flex-shrink: 0;
     border-top: 1px solid rgb(var(--color-surface-500) / 0.35);
     background: rgb(var(--color-surface-900) / 0.92);

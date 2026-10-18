@@ -34,21 +34,13 @@ export function buildWorkshopCommandContext(
         return;
       }
       if (surface === "automations") {
-        const mode = lmeWorkspace.explorerMode;
-        if (
-          mode !== "scripts" &&
-          mode !== "flows" &&
-          mode !== "schedules" &&
-          mode !== "history" &&
-          mode !== "agents"
-        ) {
-          lmeWorkspace.setExplorerMode("scripts");
-        }
-        shellTabs.enterLmeFamily("library");
+        shellTabs.openSurface("automations", { activate: true });
+        layout.setShellSidebarMode("nav");
         return;
       }
       if (surface === "workshop") {
         lmeWorkspace.setExplorerMode("agents");
+        layout.openShellSidebarView("workshop");
         shellTabs.enterLmeFamily("library");
         return;
       }

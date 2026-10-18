@@ -23,6 +23,7 @@ export function resolveSummonToolbarSurface(
   explorerMode: LmeExplorerMode,
   activeLmeKind?: string | null,
 ): string | null {
+  if (desktopSurface === "automations" && explorerMode === "history") return "automations";
   // Non-LME list surfaces win over leftover explorer mode (e.g. chat after notes).
   if (
     surfaceHasShellSidebarView(desktopSurface) &&
@@ -30,6 +31,7 @@ export function resolveSummonToolbarSurface(
     desktopSurface !== "notes" &&
     desktopSurface !== "files" &&
     desktopSurface !== "artifacts" &&
+    desktopSurface !== "workshop" &&
     desktopSurface !== "automations"
   ) {
     return desktopSurface;
@@ -45,6 +47,7 @@ export function resolveSummonToolbarSurface(
     desktopSurface === "automations" ||
     desktopSurface === "workshop"
   ) {
+    if (activeLmeKind === "manuscript" || (!activeLmeKind && explorerMode === "agents")) return "workshop";
     const fromTab = activeLmeKind ? familyForLmeTabKind(activeLmeKind) : null;
     const family = fromTab ?? familyForLmeExplorerMode(explorerMode);
     if (family === "library") {

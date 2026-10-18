@@ -36,7 +36,6 @@ const FOCUS_IDS = new Set(["calendar", "web"]);
 
 /** Dock / chrome / folded doors — never appear in the primary strip. */
 export const RAIL_PRIMARY_SKIP_IDS = new Set([
-  "workshop",
   "home",
   "work", // retired — Activity lives in Spotlight
   "context", // retired — stripped from specs; keep skip for stale ids
@@ -101,9 +100,15 @@ export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
       continue;
     }
 
-    primary.push({ kind: "surface", id: surface.id, surface });
+    primary.push({ kind: "surface", id: surface.id, surface: surface.id === "workshop" ? { ...surface, label: "Agents", icon: "bot" } : surface });
   }
 
+  if (sawAutomations && !primary.some((item) => item.id === "workshop")) {
+    primary.push({ kind: "surface", id: "workshop", surface: {
+      id: "workshop", label: "Agents", icon: "bot", kind: "builtin",
+      builtinId: "workshop", layout: "single", slots: [], mobileTab: null,
+    } });
+  }
   const focusStartIndex = primary.findIndex((item) => FOCUS_IDS.has(item.id));
   const customStartIndex = primary.findIndex(
     (item) => item.kind === "surface" && item.surface.kind === "custom",

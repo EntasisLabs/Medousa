@@ -42,3 +42,12 @@ describe("Activity request lifetime", () => {
     expect(data.details.size).toBe(0);
   });
 });
+
+
+it("releases history and ignores a late history response after closing", async () => {
+  const api = port(); const response = deferred<import("$lib/types/toolHistory").ToolHistoryRunEntry[]>();
+  api.tools = vi.fn(() => response.promise);
+  const data = new ActivityData(api); const pending = data.refresh(); data.dispose();
+  response.resolve([{ entry_id: "late" }] as import("$lib/types/toolHistory").ToolHistoryRunEntry[]); await pending;
+  expect(data.toolRuns).toEqual([]);
+});
