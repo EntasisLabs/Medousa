@@ -106,6 +106,7 @@ $adapterManifests = @(
     @{ Label = "medousa_telegram"; Manifest = $MEDOUSA_TELEGRAM_MANIFEST },
     @{ Label = "medousa_discord"; Manifest = $MEDOUSA_DISCORD_MANIFEST },
     @{ Label = "medousa_slack"; Manifest = $MEDOUSA_SLACK_MANIFEST },
+    @{ Label = "medousa_review_github"; Manifest = (Join-Path $MEDOUSA_ROOT "adapters/medousa-github/Cargo.toml") },
     @{ Label = "medousa_mcp_gateway"; Manifest = $MEDOUSA_MCP_GATEWAY_MANIFEST },
     @{ Label = "medousa_whatsapp"; Manifest = $MEDOUSA_WHATSAPP_MANIFEST }
 )

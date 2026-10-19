@@ -1,5 +1,7 @@
 <script lang="ts">
   import "$lib/styles/markdown-content.postcss";
+  import "$lib/styles/liquid-accordion.postcss";
+  import "$lib/styles/markdown-document.postcss";
   import {
     createMarkdownRenderSession,
     renderMarkdown,
@@ -18,6 +20,7 @@
   import { getMarkdownViewComponent } from "$lib/components/ui/markdownView";
 
   interface Props {
+    presentation?: "document";
     content: string;
     titleByPath?: Map<string, string>;
     /** Open http(s) links in the Web surface instead of a new tab. */
@@ -30,6 +33,7 @@
 
   let {
     content,
+    presentation,
     titleByPath,
     openLinksInWeb = false,
     liquidContext,
@@ -67,6 +71,7 @@
   function createStreamingRenderSession(): MarkdownRenderSession {
     const ctx = resolveContext();
     return createMarkdownRenderSession({
+      presentation,
       titleByPath: ctx.titleByPath,
       resolveLocalImages: Boolean(ctx.localImagePath),
     });
@@ -76,6 +81,7 @@
     if (stableMode) return "";
     const ctx = resolveContext();
     return renderMarkdown(content, {
+      presentation,
       titleByPath: ctx.titleByPath,
       // Nested slide/report bodies need the same vault image pipeline as preview.
       resolveLocalImages: Boolean(ctx.localImagePath),
@@ -174,6 +180,7 @@
   bind:this={container}
   class="markdown-content min-w-0 max-w-full"
   class:markdown-content-streaming-blocks={stableMode}
+  class:markdown-document={presentation === "document"}
   role="document"
   onclick={handleClick}
   onkeydown={handleLinkKeydown}

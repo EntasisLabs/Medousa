@@ -178,3 +178,22 @@ Telegram/Discord/Slack bins use `client.ingest().post()`. TUI uses `MedousaClien
 ## Contributing
 
 When adding SDK methods, register them on `DeclaredRouter` / `ContractRouter` and regenerate `sdk-contract/openapi.json` with `UPDATE_API_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::checked_in_contract_artifacts_match_generation`.
+
+## Hosted repository reviews
+
+Rust clients use `client.reviews().providers().await` and
+`client.reviews().query(&query).await` with the shared `ReviewProviderQuery` DTO.
+Handle `ReviewProviderResponse.outcome` explicitly: provider errors use the typed
+error outcome, even when transport succeeded. Low-level generated operations
+`reviews.providers.get` and `reviews.query.post` are also available to other
+clients. `client.reviews().authenticate(&request)` coordinates device sign-in;
+`client.reviews().mutate(&request)` publishes an already-pushed branch. Their
+generated operations are `reviews.auth.post` and `reviews.mutate.post`. Sign-in
+returns public user codes and connection IDs, never access tokens. The package runs on the connected workshop, with no local CLI required
+by the SDK. See [Review-provider protocol](../engine/review-providers.md).
+
+Hosted review queries also support account-relative PR inboxes and CI details.
+The provider-neutral mutation DTO supports comments/replies, review decisions
+with inline comments, PR editing/lifecycle/reviewer requests, revision-pinned
+merges, and workflow rerun/cancel. Providers advertise supported operation names;
+see [review providers](../engine/review-providers.md) for revision and retry rules.

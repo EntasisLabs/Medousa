@@ -108,7 +108,7 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
       case "deck":
         return "library";
       case "code":
-        return lme.resource.kind === "review" ? "reviews" : "code";
+        return (lme.resource.kind === "review" || lme.resource.kind === "hosted_review") ? "reviews" : "code";
       default:
         return "library";
     }

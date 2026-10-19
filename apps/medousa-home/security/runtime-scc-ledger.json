@@ -254,7 +254,15 @@
     },
     {
       "from": "src/lib/components/ui/MarkdownContent.svelte",
+      "specifier": "$lib/styles/liquid-accordion.postcss"
+    },
+    {
+      "from": "src/lib/components/ui/MarkdownContent.svelte",
       "specifier": "$lib/styles/markdown-content.postcss"
+    },
+    {
+      "from": "src/lib/components/ui/MarkdownContent.svelte",
+      "specifier": "$lib/styles/markdown-document.postcss"
     },
     {
       "from": "src/lib/components/vault/ExternalFilesBrowser.svelte",
@@ -359,6 +367,10 @@
     {
       "from": "src/lib/liquid/archetypes/atoms/whisper/Whisper.svelte",
       "specifier": "$lib/styles/markdown-content.postcss"
+    },
+    {
+      "from": "src/lib/liquid/archetypes/molecules/accordion/Accordion.svelte",
+      "specifier": "$lib/styles/liquid-accordion.postcss"
     },
     {
       "from": "src/lib/liquid/archetypes/molecules/code/Code.svelte",

@@ -99,6 +99,7 @@ MEDOUSA_PACKAGE_VERSION_IDS=(
   adapter-telegram
   adapter-discord
   adapter-slack
+  review-github
   adapter-whatsapp
   mcp-gateway
   coding-engine
@@ -330,6 +331,7 @@ MEDOUSA_COMPONENT_IDS=(
   adapter-telegram
   adapter-discord
   adapter-slack
+  review-github
   adapter-whatsapp
   mcp-gateway
   coding-engine
@@ -345,6 +347,7 @@ medousa_component_binaries() {
     adapter-telegram) echo "medousa_telegram" ;;
     adapter-discord) echo "medousa_discord" ;;
     adapter-slack) echo "medousa_slack" ;;
+    review-github) echo "medousa_review_github" ;;
     adapter-whatsapp) echo "medousa_whatsapp" ;;
     mcp-gateway) echo "medousa_mcp_gateway" ;;
     coding-engine) echo "medousa-code" ;;

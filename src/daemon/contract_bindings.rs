@@ -47,6 +47,22 @@ pub(crate) fn stream_spec(transport: StreamTransport, item_name: &str) -> Stream
 
 pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
     Some(match operation_id {
+        "reviews.providers.get" => WireBinding {
+            request: None,
+            response: "ReviewProviderListResponse",
+        },
+        "reviews.auth.post" => WireBinding {
+            request: Some("ReviewProviderAuthRequest"),
+            response: "ReviewProviderAuthResponse",
+        },
+        "reviews.mutate.post" => WireBinding {
+            request: Some("ReviewProviderMutation"),
+            response: "ReviewProviderResponse",
+        },
+        "reviews.query.post" => WireBinding {
+            request: Some("ReviewProviderQuery"),
+            response: "ReviewProviderResponse",
+        },
         "auth.chatgpt.get" => WireBinding {
             request: None,
             response: "ChatGptOAuthStatusResponse",

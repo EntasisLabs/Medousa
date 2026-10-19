@@ -420,6 +420,7 @@ fn run_home() {
             daemon::invalidate_route_caches,
             daemon::workshop_transport_diagnostics,
             daemon::chatgpt::chatgpt_oauth_request,
+            daemon::reviews::review_provider_auth,
             daemon::code::code_read,
             daemon::code::code_request,
             daemon_service::daemon_start,

@@ -1,10 +1,12 @@
 <script lang="ts">
   import { ArrowUpRight, CircleCheck, CircleAlert, CircleDashed } from "@lucide/svelte";
+  import ReviewPageHeading from "./ReviewPageHeading.svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import { reviewAreas, reviewFileInDirectory } from "$lib/code/reviewAreas";
   import type { ReviewProjection } from "$lib/forge";
 
-  let { review, originalRequest, sourceBranch, onShowChanges }: {
+  let { review, originalRequest, sourceBranch, title = "", onShowChanges }: {
+    title?: string;
     review: ReviewProjection;
     originalRequest: string;
     sourceBranch: string;
@@ -12,7 +14,9 @@
   } = $props();
 
   let requestOpen = $state(false);
+  const candidate = $derived(review.candidates.find(candidate => candidate.attempt_id === review.attempt_id));
   const targetLabel = $derived(/^[a-f0-9]{40}$/i.test(sourceBranch) ? sourceBranch.slice(0, 10) : sourceBranch);
+  const outcome = $derived(review.synthesis.outcome?.trim() !== originalRequest.trim() ? review.synthesis.outcome?.trim() : "");
   const verification = $derived(review.synthesis.verification);
   const issues = $derived(review.synthesis.unresolved_issues.filter((issue) => !/no project check|project checks haven'?t run/i.test(issue)));
   const additions = $derived(review.changed_files.reduce((count, file) => count + (file.lines_added ?? 0), 0));
@@ -23,8 +27,9 @@
 
 <article class="review-overview" aria-label="Review overview">
   <div class="overview-reading">
-    {#if intents.length}
-      <section class="overview-summary"><h2>Summary</h2><ul class="overview-intents">{#each intents as intent}<li>{intent}</li>{/each}</ul></section>
+    {#if title}<ReviewPageHeading {title} author={candidate?.executor ?? ""} revision={candidate ? `Revision ${candidate.attempt_seq}` : ""} target={targetLabel} />{/if}
+    {#if intents.length || (outcome && outcome !== title)}
+      <section class="overview-summary"><h2>Summary</h2>{#if outcome && outcome !== title}<p>{outcome}</p>{/if}{#if intents.length}<ul class="overview-intents">{#each intents as intent}<li>{intent}</li>{/each}</ul>{/if}</section>
     {/if}
     <section>
       <h2>Changed areas</h2>
@@ -36,7 +41,7 @@
     </section>
     {#if issues.length}<section class="overview-attention"><h2>Needs attention</h2><ul class="overview-intents">{#each issues as issue}<li>{issue}</li>{/each}</ul></section>{/if}
     {#if review.decision?.rationale}<section class="overview-decision"><h2>Review decision</h2><p>{review.decision.rationale}</p></section>{/if}
-    {#if originalRequest.trim()}<details bind:open={requestOpen}><summary>Original request</summary>{#if requestOpen}<div class="overview-request"><MarkdownContent content={originalRequest} openLinksInWeb={true} /></div>{/if}</details>{/if}
+    {#if originalRequest.trim()}<details bind:open={requestOpen}><summary>Original request</summary>{#if requestOpen}<div class="overview-request"><MarkdownContent presentation="document" content={originalRequest} openLinksInWeb={true} /></div>{/if}</details>{/if}
   </div>
   <aside class="overview-details" aria-label="Revision details">
     <section>
@@ -60,9 +65,9 @@
 </article>
 
 <style>
-  .review-overview { display:grid; grid-template-columns:minmax(0,1fr) 13rem; align-items:start; gap:clamp(1.5rem,4vw,3.5rem); color:rgb(var(--theme-text)); }
+  .review-overview { display:grid; grid-template-columns:minmax(0,1fr) 11rem; align-items:start; gap:2rem; color:rgb(var(--theme-text)); }
   .overview-reading { min-width:0; }
-  section { margin:0 0 1.6rem; }
+  section { margin:0 0 1.4rem; }
   h2 { font-size:.875rem; font-weight:550; margin:0 0 .65rem; letter-spacing:-.01em; }
   p,li { font-size:.8125rem; line-height:1.65; color:rgb(var(--theme-text-secondary)); }
   p { margin:.25rem 0; }

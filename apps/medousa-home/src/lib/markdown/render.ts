@@ -1,3 +1,4 @@
+import { presentDocumentMarkdown } from "./documentPresentation";
 import DOMPurify from "dompurify";
 import { Marked, type Tokens } from "marked";
 
@@ -17,6 +18,7 @@ import { enhanceResumePresentation } from "./resumePresentation";
 import { isLocalImageHref, isRemoteImageHref } from "$lib/utils/vaultLocalImages";
 
 export interface MarkdownRenderOptions {
+  presentation?: "document";
   titleByPath?: Map<string, string>;
   sourcePath?: string | null;
   knownPaths?: ReadonlySet<string>;
@@ -61,6 +63,7 @@ function createMarked(
   taskCheckboxIndex: { value: number },
 ): Marked {
   const parser = new Marked();
+  let linkDepth = 0;
   parser.use({
     gfm: true,
     breaks: false,
@@ -86,7 +89,11 @@ function createMarked(
           : "";
         return `<p${blockAttr}>${stripped.html}</p>\n`;
       },
-      link({ href, title, text }: Tokens.Link) {
+      link(this: { parser: { parseInline: (tokens: Tokens.Link["tokens"]) => string } }, { href, title, text, tokens }: Tokens.Link) {
+        let labelHtml: string;
+        linkDepth++;
+        try { labelHtml = this.parser.parseInline(tokens); }
+        finally { linkDepth--; }
         if (href?.startsWith("wikilink:")) {
           const target = decodeURIComponent(href.slice("wikilink:".length));
           const label = escapeHtml(text);
@@ -101,7 +108,7 @@ function createMarked(
         const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
         const guideLink = href?.startsWith("guide:");
         if (guideLink) {
-          return `<a href="${safeHref}" class="markdown-guide-link" data-guide-href="${safeHref}"${titleAttr}>${escapeHtml(text)}</a>`;
+          return `<a href="${safeHref}" class="markdown-guide-link" data-guide-href="${safeHref}"${titleAttr}>${labelHtml}</a>`;
         }
         const external =
           href?.startsWith("http://") || href?.startsWith("https://");
@@ -118,7 +125,7 @@ function createMarked(
           ? ` class="${classParts.join(" ")}"`
           : "";
         const targetAttr = internalHash ? "" : ' target="_blank" rel="noopener noreferrer"';
-        return `<a href="${safeHref}"${classAttr}${titleAttr}${targetAttr}>${escapeHtml(text)}</a>`;
+        return `<a href="${safeHref}"${classAttr}${titleAttr}${targetAttr}>${labelHtml}</a>`;
       },
       code({ text, lang }: Tokens.Code) {
         const language = (lang ?? "").trim();
@@ -162,6 +169,8 @@ function createMarked(
         const sizeAttr = size
           ? ` style="${escapeAttr(imageSizeStyle(size))}"`
           : "";
+        const wrapper = linkDepth ? "span" : "figure";
+        const inlineClass = linkDepth ? " markdown-image-inline" : "";
         const sizeClass = size ? " markdown-image--sized" : "";
         if (
           options.resolveLocalImages &&
@@ -169,10 +178,10 @@ function createMarked(
           !isRemoteImageHref(cleanHref) &&
           isLocalImageHref(cleanHref)
         ) {
-          return `<figure class="markdown-image markdown-image-local${sizeClass}"><img class="markdown-local-image" data-local-image="${escapeAttr(cleanHref)}" alt="${alt}"${titleAttr}${sizeAttr} loading="lazy" decoding="async"></figure>`;
+          return `<${wrapper} class="markdown-image markdown-image-local${sizeClass}${inlineClass}"><img class="markdown-local-image" data-local-image="${escapeAttr(cleanHref)}" alt="${alt}"${titleAttr}${sizeAttr} loading="lazy" decoding="async"></${wrapper}>`;
         }
         const safeHref = escapeAttr(cleanHref);
-        return `<figure class="markdown-image${sizeClass}"><img src="${safeHref}" alt="${alt}"${titleAttr}${sizeAttr} loading="lazy" decoding="async"></figure>`;
+        return `<${wrapper} class="markdown-image${sizeClass}${inlineClass}"><img src="${safeHref}" alt="${alt}"${titleAttr}${sizeAttr} loading="lazy" decoding="async"></${wrapper}>`;
       },
     },
   });
@@ -264,7 +273,8 @@ function renderMarkdownWithState(
   const parser = createMarked(options, headingSlugCounts, taskCheckboxIndex);
   const preprocessed = preprocessMarkdown(source, options.titleByPath);
   const raw = parser.parse(preprocessed, { async: false }) as string;
-  return sanitizeHtml(enhanceResumePresentation(wrapMarkdownTables(raw)));
+  const html = sanitizeHtml(enhanceResumePresentation(wrapMarkdownTables(raw)));
+  return options.presentation === "document" ? presentDocumentMarkdown(html) : html;
 }
 
 export interface MarkdownRenderSession {

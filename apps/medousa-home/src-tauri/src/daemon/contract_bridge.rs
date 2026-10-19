@@ -23,9 +23,11 @@ static STREAM_SEQ: AtomicU64 = AtomicU64::new(1);
 fn ensure_webview_operation_allowed(operation: DaemonOperation) -> Result<(), String> {
     if matches!(
         operation,
-        DaemonOperation::AuthChatgptBeginPost | DaemonOperation::AuthChatgptCompletePost
+        DaemonOperation::AuthChatgptBeginPost
+            | DaemonOperation::AuthChatgptCompletePost
+            | DaemonOperation::ReviewsAuthPost
     ) {
-        return Err("Use native ChatGPT sign-in; authorization URLs and callbacks stay in the native runtime".into());
+        return Err("Use native account sign-in; authorization URLs and callbacks stay in the native runtime".into());
     }
     Ok(())
 }
@@ -306,10 +308,11 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn webview_dispatcher_rejects_sensitive_chatgpt_oauth_operations() {
+    fn webview_dispatcher_rejects_sensitive_account_oauth_operations() {
         for operation in [
             DaemonOperation::AuthChatgptBeginPost,
             DaemonOperation::AuthChatgptCompletePost,
+            DaemonOperation::ReviewsAuthPost,
         ] {
             assert!(ensure_webview_operation_allowed(operation).is_err());
         }

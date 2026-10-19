@@ -317,6 +317,8 @@ export const loadSettingsRuntimeSection = () =>
   import("$lib/components/settings/SettingsRuntimeSection.svelte");
 export const loadSettingsNetworkSection = () =>
   import("$lib/components/settings/SettingsNetworkSection.svelte");
+export const loadSettingsAccountsSection = () =>
+  import("$lib/components/settings/SettingsAccountsSection.svelte");
 export const loadSettingsConnectionsSection = () =>
   import("$lib/components/settings/SettingsConnectionsSection.svelte");
 export const loadSettingsPackagesSection = () =>

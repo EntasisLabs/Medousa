@@ -1005,6 +1005,7 @@ async fn start_daemon() -> Result<()> {
         .merge(medousa::daemon::external_conversations::surface())
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
+        .merge(medousa::daemon::review_providers::surface())
         .merge(medousa::browser_handlers::browser_surface())
         .merge(medousa::computer_handlers::computer_surface())
         .merge(medousa::world_handlers::world_timeline_surface())

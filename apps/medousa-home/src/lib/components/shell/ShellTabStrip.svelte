@@ -50,7 +50,7 @@
     const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
     if (!lme) return FileText;
     if (lme.kind === "script") return FileCode2;
-    if (lme.kind === "code") return lme.resource.kind === "review" ? GitPullRequestArrow : Code2;
+    if (lme.kind === "code") return (lme.resource.kind === "review" || lme.resource.kind === "hosted_review") ? GitPullRequestArrow : Code2;
     if (lme.kind === "file") return Files;
     if (lme.kind === "deck") return Presentation;
     if (lme.kind === "manuscript") return Bot;

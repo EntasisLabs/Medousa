@@ -28,7 +28,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |
 | [Spotlight Activity](guides/spotlight-activity.md) | Follow workshop tasks, agents, code commands, and scheduled runs |
-| [Reviews](guides/reviews.md) | Browse prepared change sets, inspect revisions, and review project changes |
+| [Reviews](guides/reviews.md) | Connect review accounts and browse local or repository-hosted reviews and project changes |
 | [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands and understand local credential storage |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Run list, schedules, specialists, and Activity |
@@ -102,6 +102,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Vault](engine/vault.md) | Notes API + cognition vault tools |
 | [Calendar](engine/calendar.md) | Personal `.ics` API + cognition calendar tools |
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
+| [Review providers](engine/review-providers.md) | Optional repository-host packages and the unified hosted-review API |
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
 | [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
 | [Work scopes and relationships](engine/work-units.md) | Durable user-domain intent, resource links, actor-bound inboxes, and correlated provider evidence through existing runtime tools |

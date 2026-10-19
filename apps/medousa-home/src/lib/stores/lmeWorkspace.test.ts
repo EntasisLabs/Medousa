@@ -254,6 +254,20 @@ describe("lmeWorkspace", () => {
     expect(selectUndertaking).not.toHaveBeenCalled();
   });
 
+  it("keeps hosted review accounts and hosts independent without hydrating Forge", async () => {
+    const hydrateCode = vi.fn(async () => {});
+    const selectUndertaking = vi.fn(async () => {});
+    setLmeWorkspacePorts({ ...lmeWorkspacePorts(), hydrateCode, selectUndertaking });
+    const reference = { provider_id: "example", host: "git.example.test", repository: "group/sub/repo", native_id: "42" };
+    await store.openHostedReview(reference, "Review", "account-a");
+    await store.activateTab(store.activeTabId!);
+    await store.openHostedReview(reference, "Review", "account-a");
+    await store.openHostedReview(reference, "Review", "account-b");
+    await store.openHostedReview({ ...reference, host: "other.example.test" }, "Review", "account-a");
+    expect(store.tabs).toHaveLength(3);
+    expect(hydrateCode).not.toHaveBeenCalled(); expect(selectUndertaking).not.toHaveBeenCalled();
+  });
+
   it("opens notes as workspace tabs", async () => {
     await store.openNote("notes/a.md");
     expect(openNote).toHaveBeenCalledWith("notes/a.md");

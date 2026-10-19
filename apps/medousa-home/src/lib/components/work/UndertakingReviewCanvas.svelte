@@ -2,6 +2,7 @@
   import "$lib/styles/review-canvas.postcss";
   import { tick, untrack } from "svelte";
   import { reviewAreas } from "$lib/code/reviewAreas";
+  import ReviewPageHeading from "./ReviewPageHeading.svelte";
   import ReviewOverview from "$lib/components/work/ReviewOverview.svelte";
   import type { ReviewReadingState, ReviewLens } from "$lib/code/reviewPage.svelte";
   import { ChevronRight, CircleAlert, GitCommitHorizontal, Link2, Save } from "@lucide/svelte";
@@ -122,6 +123,7 @@
   let scrollEl = $state<HTMLDivElement | null>(null);
   let changesVisited = $state(false);
   const selectedRevision = $derived(review?.attempt_id);
+  const candidate = $derived(review?.candidates.find(candidate => candidate.attempt_id === review.attempt_id));
   const areas = $derived(reviewAreas(review?.changed_files ?? []));
   let restoreGeneration = 0;
   let restoringScroll = false;
@@ -182,6 +184,7 @@
                 class:review-canvas--with-rail={showCommentRail}
               >
                 <div class="review-canvas-main">
+                {#if readingState.lens !== "overview"}<ReviewPageHeading title={projectTitle} author={candidate?.executor ?? ""} revision={candidate ? `Revision ${candidate.attempt_seq}` : ""} target={sourceBranch} />{/if}
                 {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}
                   <section class="review-policy" aria-label="Policy exceptions">
                     <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
@@ -249,7 +252,7 @@
                 {/if}
 
                 {#if readingState.lens === "overview"}
-                  <ReviewOverview {review} {originalRequest} {sourceBranch} onShowChanges={showDirectory} />
+                  <ReviewOverview title={projectTitle} {review} {originalRequest} {sourceBranch} onShowChanges={showDirectory} />
                 {/if}
                 {#if changesVisited}
                 <div hidden={readingState.lens !== "changes"}>

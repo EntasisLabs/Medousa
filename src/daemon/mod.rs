@@ -14,6 +14,7 @@ pub mod core;
 pub mod detamu_host;
 pub mod external_conversations;
 pub mod forge_api;
+pub mod review_providers;
 pub mod forge_events;
 pub mod forge_host;
 pub mod forge_preview;

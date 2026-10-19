@@ -282,6 +282,18 @@
       "class": "feature",
       "path": "src/lib/styles/review-canvas.postcss",
       "loadedBy": "UndertakingReviewCanvas.svelte"
+    },
+    {
+      "id": "liquid-accordion",
+      "path": "src/lib/styles/liquid-accordion.postcss",
+      "class": "feature",
+      "loadedBy": "Accordion.svelte / MarkdownContent.svelte"
+    },
+    {
+      "id": "markdown-document",
+      "path": "src/lib/styles/markdown-document.postcss",
+      "class": "feature",
+      "loadedBy": "MarkdownContent.svelte"
     }
   ]
 }

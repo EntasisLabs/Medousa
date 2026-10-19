@@ -22223,6 +22223,1545 @@
       }
     }
   },
+  "ReviewProviderAuthRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ReviewProviderAuthRequest",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "host",
+          "provider_id"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "begin"
+            ]
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "host": {
+            "type": "string"
+          },
+          "provider_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "flow_id"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "poll"
+            ]
+          },
+          "flow_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "flow_id"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "cancel"
+            ]
+          },
+          "flow_id": {
+            "type": "string"
+          }
+        }
+      }
+    ]
+  },
+  "ReviewProviderAuthResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ReviewProviderAuthResponse",
+    "description": "No device secrets or OAuth tokens cross the public HTTP boundary.",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "expires_in",
+          "flow_id",
+          "interval",
+          "status",
+          "user_code",
+          "verification_uri"
+        ],
+        "properties": {
+          "expires_in": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "flow_id": {
+            "type": "string"
+          },
+          "interval": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          },
+          "user_code": {
+            "type": "string"
+          },
+          "verification_uri": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "account",
+          "connection_id",
+          "status"
+        ],
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "cancelled"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "ReviewProviderListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ReviewProviderListResponse",
+    "type": "object",
+    "required": [
+      "problems",
+      "providers"
+    ],
+    "properties": {
+      "problems": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "providers": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ReviewProviderDescriptor"
+        }
+      }
+    },
+    "definitions": {
+      "ReviewProviderDescriptor": {
+        "type": "object",
+        "required": [
+          "hosts",
+          "id",
+          "label",
+          "operations",
+          "protocol_version"
+        ],
+        "properties": {
+          "hosts": {
+            "description": "Suggested hosts. An explicit connection may use a self-hosted instance.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "ReviewProviderMutation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ReviewProviderMutation",
+    "description": "Writes have a separate HTTP operation and capability from review reads.",
+    "type": "object",
+    "required": [
+      "host",
+      "provider_id",
+      "request"
+    ],
+    "properties": {
+      "connection_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "host": {
+        "type": "string"
+      },
+      "provider_id": {
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/definitions/ReviewProviderWrite"
+      }
+    },
+    "definitions": {
+      "HostedReviewRef": {
+        "type": "object",
+        "required": [
+          "host",
+          "native_id",
+          "provider_id",
+          "repository"
+        ],
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "native_id": {
+            "type": "string"
+          },
+          "provider_id": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewDecision": {
+        "type": "string",
+        "enum": [
+          "approve",
+          "request_changes",
+          "comment"
+        ]
+      },
+      "ReviewInlineComment": {
+        "type": "object",
+        "required": [
+          "body",
+          "line",
+          "path",
+          "side"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "path": {
+            "type": "string"
+          },
+          "side": {
+            "$ref": "#/definitions/ReviewLineSide"
+          }
+        }
+      },
+      "ReviewLifecycle": {
+        "type": "string",
+        "enum": [
+          "close",
+          "reopen",
+          "ready",
+          "draft"
+        ]
+      },
+      "ReviewLineSide": {
+        "type": "string",
+        "enum": [
+          "old",
+          "new"
+        ]
+      },
+      "ReviewMergeMethod": {
+        "type": "string",
+        "enum": [
+          "merge",
+          "squash",
+          "rebase"
+        ]
+      },
+      "ReviewProviderWrite": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "body",
+              "operation",
+              "review"
+            ],
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "comment"
+                ]
+              },
+              "reply_to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "body",
+              "comments",
+              "decision",
+              "operation",
+              "review",
+              "revision"
+            ],
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "comments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ReviewInlineComment"
+                }
+              },
+              "decision": {
+                "$ref": "#/definitions/ReviewDecision"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "submit_review"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "revision": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "body",
+              "operation",
+              "review",
+              "title"
+            ],
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "edit"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review",
+              "state"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "set_state"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "state": {
+                "$ref": "#/definitions/ReviewLifecycle"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review",
+              "reviewers"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "request_reviewers"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "method",
+              "operation",
+              "review",
+              "revision"
+            ],
+            "properties": {
+              "method": {
+                "$ref": "#/definitions/ReviewMergeMethod"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "merge"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "revision": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "check_id",
+              "failed_only",
+              "operation",
+              "review",
+              "revision"
+            ],
+            "properties": {
+              "check_id": {
+                "type": "string"
+              },
+              "failed_only": {
+                "type": "boolean"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "rerun_check"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "revision": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "check_id",
+              "operation",
+              "review",
+              "revision"
+            ],
+            "properties": {
+              "check_id": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "cancel_check"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "revision": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "description": "Branch publication stays with the workshop's Git service. This operation looks up an existing open review before creating one, making retries safe.",
+            "type": "object",
+            "required": [
+              "base",
+              "body",
+              "draft",
+              "head",
+              "operation",
+              "repository",
+              "title",
+              "update_existing"
+            ],
+            "properties": {
+              "base": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "draft": {
+                "type": "boolean"
+              },
+              "head": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "publish"
+                ]
+              },
+              "repository": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "update_existing": {
+                "description": "Forge sharing updates its description; chat Git reuses an existing PR.",
+                "type": "boolean"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "ReviewProviderQuery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ReviewProviderQuery",
+    "type": "object",
+    "required": [
+      "host",
+      "provider_id",
+      "request"
+    ],
+    "properties": {
+      "connection_id": {
+        "description": "Explicit account identity; omitted to use the package's existing sign-in.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "host": {
+        "type": "string"
+      },
+      "provider_id": {
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/definitions/ReviewProviderOperation"
+      }
+    },
+    "definitions": {
+      "HostedReviewRef": {
+        "type": "object",
+        "required": [
+          "host",
+          "native_id",
+          "provider_id",
+          "repository"
+        ],
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "native_id": {
+            "type": "string"
+          },
+          "provider_id": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewInboxFolder": {
+        "description": "Account-relative inboxes are interpreted by the installed provider.",
+        "type": "string",
+        "enum": [
+          "authored",
+          "review_requested",
+          "participating"
+        ]
+      },
+      "ReviewProviderOperation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "folder",
+              "operation"
+            ],
+            "properties": {
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "folder": {
+                "$ref": "#/definitions/ReviewInboxFolder"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "inbox"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "check_id",
+              "operation",
+              "review",
+              "revision"
+            ],
+            "properties": {
+              "check_id": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "check_details"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "revision": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "connection_status"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "remote_url"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "resolve_repository"
+                ]
+              },
+              "remote_url": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "repository"
+            ],
+            "properties": {
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "list"
+                ]
+              },
+              "repository": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "url"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "resolve"
+                ]
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "get"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review",
+              "revision"
+            ],
+            "properties": {
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "files"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "revision": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "path",
+              "review",
+              "revision"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "diff"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "revision": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review",
+              "revision"
+            ],
+            "properties": {
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "checks"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "revision": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review"
+            ],
+            "properties": {
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "discussion"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "ReviewProviderResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ReviewProviderResponse",
+    "type": "object",
+    "required": [
+      "outcome",
+      "protocol_version"
+    ],
+    "properties": {
+      "outcome": {
+        "$ref": "#/definitions/ReviewProviderOutcome"
+      },
+      "protocol_version": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "HostedReview": {
+        "type": "object",
+        "required": [
+          "actions",
+          "additions",
+          "author",
+          "base_branch",
+          "base_revision",
+          "body",
+          "changed_files",
+          "deletions",
+          "head_branch",
+          "head_revision",
+          "native_state",
+          "reference",
+          "state",
+          "title",
+          "updated_at",
+          "url"
+        ],
+        "properties": {
+          "actions": {
+            "description": "Actions currently available on this review (empty for read-only packages).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "additions": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "author": {
+            "type": "string"
+          },
+          "base_branch": {
+            "type": "string"
+          },
+          "base_revision": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "changed_files": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "deletions": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "head_branch": {
+            "type": "string"
+          },
+          "head_revision": {
+            "type": "string"
+          },
+          "merge_methods": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "merge_state": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "native_state": {
+            "type": "string"
+          },
+          "reference": {
+            "$ref": "#/definitions/HostedReviewRef"
+          },
+          "requested_reviewers": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "state": {
+            "description": "open, draft, merged, or closed. The native label is preserved separately.",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "HostedReviewCheck": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status"
+        ],
+        "properties": {
+          "conclusion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HostedReviewDiscussionEntry": {
+        "type": "object",
+        "required": [
+          "author",
+          "body",
+          "created_at",
+          "id",
+          "kind",
+          "url"
+        ],
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reply_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "HostedReviewFile": {
+        "type": "object",
+        "required": [
+          "additions",
+          "deletions",
+          "path",
+          "status"
+        ],
+        "properties": {
+          "additions": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "deletions": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "path": {
+            "type": "string"
+          },
+          "previous_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "HostedReviewRef": {
+        "type": "object",
+        "required": [
+          "host",
+          "native_id",
+          "provider_id",
+          "repository"
+        ],
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "native_id": {
+            "type": "string"
+          },
+          "provider_id": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewProviderError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/definitions/ReviewProviderErrorCode"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewProviderErrorCode": {
+        "type": "string",
+        "enum": [
+          "unavailable",
+          "not_authenticated",
+          "not_found",
+          "invalid_parameter",
+          "unsupported",
+          "rate_limited",
+          "stale_revision",
+          "provider_error"
+        ]
+      },
+      "ReviewProviderOutcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "result",
+              "status"
+            ],
+            "properties": {
+              "result": {
+                "$ref": "#/definitions/ReviewProviderResult"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "success"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "error",
+              "status"
+            ],
+            "properties": {
+              "error": {
+                "$ref": "#/definitions/ReviewProviderError"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ReviewProviderResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "message"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "updated"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "annotations",
+              "kind",
+              "summary",
+              "text",
+              "title"
+            ],
+            "properties": {
+              "annotations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "check_details"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "host",
+              "kind",
+              "provider_id",
+              "repository"
+            ],
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "repository"
+                ]
+              },
+              "provider_id": {
+                "type": "string"
+              },
+              "repository": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "existing",
+              "kind",
+              "review"
+            ],
+            "properties": {
+              "existing": {
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "published"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReview"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "authenticated",
+              "kind",
+              "message"
+            ],
+            "properties": {
+              "account": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "authenticated": {
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "connection"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "reviews"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "reviews"
+                ]
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reviews": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/HostedReview"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "review"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "review"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReview"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "files",
+              "kind"
+            ],
+            "properties": {
+              "files": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/HostedReviewFile"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "files"
+                ]
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "diff"
+                ]
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "patch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "checks",
+              "kind"
+            ],
+            "properties": {
+              "checks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/HostedReviewCheck"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "checks"
+                ]
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "entries",
+              "kind"
+            ],
+            "properties": {
+              "entries": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/HostedReviewDiscussionEntry"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "discussion"
+                ]
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
   "RotateExternalCallbackResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "RotateExternalCallbackResponse",

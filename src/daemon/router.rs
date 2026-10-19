@@ -178,6 +178,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::external_conversations::surface().inventory())
         .expect("duplicate external conversation route policy");
     inventory
+        .extend(crate::daemon::review_providers::surface().inventory())
+        .expect("duplicate review provider route policy");
+    inventory
         .extend(crate::daemon::forge_api::forge_surface().inventory())
         .expect("duplicate Forge route policy");
     inventory

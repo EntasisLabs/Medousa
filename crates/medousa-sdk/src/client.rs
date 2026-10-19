@@ -60,6 +60,11 @@ impl MedousaClient {
         }
     }
 
+    #[cfg(feature = "async")]
+    pub fn reviews(&self) -> crate::reviews::ReviewsApi<'_> {
+        crate::reviews::ReviewsApi { client: self }
+    }
+
     pub fn base_url(&self) -> &str {
         &self.base_url
     }

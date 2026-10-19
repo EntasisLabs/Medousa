@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hostedReviews } from "$lib/code/hostedReviews.svelte";
   import { onMount, onDestroy, untrack } from "svelte";
   import { createReviewPage } from "$lib/code/reviewPage.svelte";
   import { reviewRepository } from "$lib/code/reviewQueue";
@@ -732,6 +733,8 @@
     if (!detail) return;
     await run(async () => {
       providerHandoff = await shareProviderHandoff(detail!.id, {
+        connection_id: hostedReviews.connectionId ?? undefined,
+        provider_id: hostedReviews.accountProvider ?? undefined,
         title: detail!.title,
         attempt_id: review?.attempt_id ?? undefined,
       });
@@ -931,8 +934,8 @@
         {#if reviewCanvas || !detail.environment}
         <div class="review-page-header flex shrink-0 flex-wrap items-center justify-between gap-2 {showBrowser ? 'px-0' : 'border-b border-surface-500/25 px-2 py-1'}">
           <div class="min-w-0 flex-1">
-            {#if reviewCanvas}<p class="review-page-eyebrow">{reviewRepository(detail)} · {humanPhaseLabel(detail.human_phase)}</p>{/if}
-            <h3 class="review-page-title truncate text-sm font-semibold text-surface-50" title={detail.title}>{detail.title}</h3>
+            {#if reviewCanvas}<p class="review-page-eyebrow"><GitPullRequestArrow size={13} /><span>Forge</span><span>{reviewRepository(detail)}</span><span>{humanPhaseLabel(detail.human_phase)}</span></p>
+            {:else}<h3 class="review-page-title truncate text-sm font-semibold text-surface-50" title={detail.title}>{detail.title}</h3>{/if}
             {#if detail.environment && !reviewCanvas}
               <p class="mt-0.5 text-[10px] text-content-quiet">
                 {humanPhaseLabel(detail.human_phase)}{workspaceCopy.attached ? " · Current checkout" : ""}

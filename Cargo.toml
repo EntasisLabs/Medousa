@@ -44,6 +44,7 @@ members = [
     "adapters/medousa-telegram",
     "adapters/medousa-discord",
     "adapters/medousa-slack",
+    "adapters/medousa-github",
     "adapters/medousa-mcp-gateway",
 ]
 exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]

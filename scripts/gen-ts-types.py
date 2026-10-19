@@ -16,6 +16,12 @@ OUT = ROOT / "apps" / "medousa-home" / "src" / "lib" / "types" / "generated" / "
 # Stream + session types TypeScript surfaces rely on for contract parity.
 # Nested $ref targets (MediaRef, ContextUsageReport, …) are resolved automatically.
 EXPORTED_TYPES = [
+    "ReviewProviderListResponse",
+    "ReviewProviderQuery",
+    "ReviewProviderMutation",
+    "ReviewProviderAuthRequest",
+    "ReviewProviderAuthResponse",
+    "ReviewProviderResponse",
     "ChatGptAccountProfile",
     "ChatGptOAuthStatusResponse",
     "BeginChatGptOAuthRequest",

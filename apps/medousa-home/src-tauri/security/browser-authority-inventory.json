@@ -175,6 +175,7 @@
     "daemon::recurring::recurring_list_runs",
     "daemon::recurring::recurring_register_prompt",
     "daemon::recurring::recurring_update",
+    "daemon::reviews::review_provider_auth",
     "daemon::runtime::migrate_global_tui_defaults_to_engine",
     "daemon::runtime::runtime_config_command",
     "daemon::runtime::runtime_get_continuation_status",

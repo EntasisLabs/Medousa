@@ -26,9 +26,11 @@ function render(overrides = {}) {
   return props;
 }
 
-it("records approval before offering to apply unapproved changes", () => {
+it("records approval before offering to apply unapproved changes", async () => {
   const props = render();
-  const approve = document.querySelector<HTMLButtonElement>('button[aria-label="Approve changes · Apply to main"]')!;
+  document.querySelector<HTMLButtonElement>('button[aria-label="Forge review actions"]')!.click();
+  flushSync(); await tick(); flushSync();
+  const approve = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent?.includes("Approve changes"))!;
   expect(approve).not.toBeNull();
   expect(document.querySelector('button[aria-label="Apply to main"]')).toBeNull();
   approve.click();
@@ -68,24 +70,24 @@ it("offers no decision actions once review and apply are unavailable", () => {
 
 it("changes the after-approval strategy without recording approval or applying changes", async () => {
   const props = render();
-  document.querySelector<HTMLButtonElement>('button[aria-label="Approval options"]')!.click();
+  document.querySelector<HTMLButtonElement>('button[aria-label="Forge review actions"]')!.click();
   flushSync(); await tick(); flushSync();
   const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]')];
   expect(choices).toHaveLength(2);
   expect(choices[0].getAttribute("aria-checked")).toBe("true");
   choices[1].click(); flushSync(); await tick(); flushSync();
-  document.querySelector<HTMLButtonElement>('button[aria-label="Approval options"]')!.click();
+  document.querySelector<HTMLButtonElement>('button[aria-label="Forge review actions"]')!.click();
   flushSync(); await tick(); flushSync();
   expect(document.querySelectorAll('[role="menuitemcheckbox"]')[1].getAttribute("aria-checked")).toBe("true");
   expect(props.onApprove).not.toHaveBeenCalled();
   expect(props.onApply).not.toHaveBeenCalled();
 });
 
-it("disables approval and its options while another action is running", () => {
+it("disables the review menu while another action is running", () => {
   const props = render({ busy: true });
-  const approve = document.querySelector<HTMLButtonElement>('button[aria-label="Approve changes · Apply to main"]')!;
-  expect(approve.disabled).toBe(true);
-  expect(document.querySelector<HTMLButtonElement>('button[aria-label="Approval options"]')!.disabled).toBe(true);
-  approve.click();
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Forge review actions"]')!;
+  expect(trigger.disabled).toBe(true);
+  trigger.click();
+  expect(document.querySelector('[role="menuitem"]')).toBeNull();
   expect(props.onApprove).not.toHaveBeenCalled();
 });

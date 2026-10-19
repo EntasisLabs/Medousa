@@ -1,3 +1,4 @@
+import { hostedReviews } from "$lib/code/hostedReviews.svelte";
 import { forgeFetch } from "$lib/forge";
 import { operationPath } from "$lib/daemon";
 
@@ -10,6 +11,6 @@ export async function runReviewGitAction(workId: string, action: "commit" | "pul
   title?: string; body?: string; base?: string; draft?: boolean; branch?: string;
 }): Promise<{ head?: string; url?: string; existing?: boolean; warning?: string | null }> {
   return forgeFetch(operationPath(action === "commit" ? "forge.items.by_work_id.changes.commit.post" : "forge.items.by_work_id.changes.pull_request.post", { work_id: workId }), {
-    method: "POST", body: JSON.stringify(input),
+    method: "POST", body: JSON.stringify(action === "pull-request" ? { ...input, connection_id: hostedReviews.connectionId, provider_id: hostedReviews.accountProvider } : input),
   });
 }

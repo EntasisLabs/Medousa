@@ -187,6 +187,13 @@
     {:else if active.kind === "code"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {#key `${chat.workshopScopeId}:${active.workId}:${active.resource.kind}`}
+        {#if active.resource.kind === "hosted_review"}
+          {#await import("$lib/components/work/HostedReviewPanel.svelte")}
+            <div class="p-6 text-sm text-content-quiet">Loading review…</div>
+          {:then { default: HostedReviewPanel }}
+            <HostedReviewPanel reference={active.resource.reference} connectionId={active.resource.connectionId} scope={chat.workshopScopeId} />
+          {/await}
+        {:else}
         <LazyFeatureView
           loader={loadUndertakingsPanel}
           showBrowser={false}
@@ -195,6 +202,7 @@
           reviewScope={chat.workshopScopeId}
           {interactive}
         />
+        {/if}
         {/key}
       </div>
     {:else if active.kind === "deck"}
