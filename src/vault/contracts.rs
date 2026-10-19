@@ -230,12 +230,24 @@ pub struct VaultMutationReceiptRecord {
     pub identity: Option<VaultIdentityBinding>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VaultFileIdentity {
     pub device: u64,
     pub inode: u64,
     pub created: Option<std::time::SystemTime>,
+}
+
+impl PartialEq for VaultFileIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        // Darwin device numbers identify the current mount and can change on
+        // reboot. Persisted identities must survive that change, including the
+        // root, resource records, and native journal publication witnesses.
+        // Inode plus birth time also distinguishes replaced/reused files.
+        let same_file = self.inode == other.inode && self.created == other.created;
+        let durable_birth_time = cfg!(target_vendor = "apple") && self.created.is_some();
+        same_file && (durable_birth_time || self.device == other.device)
+    }
 }
 
 impl From<medousa_store::StoreMetadata> for VaultFileIdentity {

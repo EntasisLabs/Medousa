@@ -27,7 +27,6 @@ describe("buildLifeRailItems", () => {
 
     expect(items.map((item) => item.id)).toEqual([
       "chat",
-      "work",
       ...LME_EXPLORER_MODES.map((mode) => `lme:${mode.id}`),
       "web",
     ]);

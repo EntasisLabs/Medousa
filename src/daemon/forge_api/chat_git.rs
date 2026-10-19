@@ -14,6 +14,10 @@ pub(super) struct GitState {
 }
 #[derive(Debug, Deserialize)]
 pub(super) struct GitAction {
+    #[serde(default)]
+    connection_id: Option<String>,
+    #[serde(default)]
+    provider_id: Option<String>,
     lease_id: String,
     generation: u64,
     snapshot: String,
@@ -63,7 +67,7 @@ async fn command(
     }
     Ok(out)
 }
-async fn git(binary: &FsPath, root: &FsPath, args: &[&str]) -> ApiResult<String> {
+pub(super) async fn git(binary: &FsPath, root: &FsPath, args: &[&str]) -> ApiResult<String> {
     let out = command(
         binary,
         root,
@@ -299,7 +303,64 @@ async fn execute(
 ) -> ApiResult<Json<serde_json::Value>> {
     let (_, root, binary) = context(&state, work_id.clone()).await?;
     let execution = state.forge_execution.clone();
-    execution.run_async(if pr { ExecutionClass::NetworkGit } else { ExecutionClass::LocalMutation }, MAX_CAPTURE_BYTES,
+    let state_execution = execution.clone();
+    let publication = if pr {
+        let origin = execution
+            .run_async(
+                ExecutionClass::RepositoryMetadata,
+                64 * 1024,
+                Some(root.display().to_string()),
+                {
+                    let root = root.clone();
+                    let binary = binary.clone();
+                    async move {
+                        Ok(git(
+                            &binary,
+                            &root,
+                            &["remote", "get-url", "--push", "--all", "origin"],
+                        )
+                        .await)
+                    }
+                },
+            )
+            .await
+            .map_err(map_err)??;
+        let target = super::super::review_providers::repository_target(
+            &execution,
+            &origin,
+            body.provider_id.as_deref(),
+        )
+        .await
+        .map_err(review_package_error)?;
+        let connection = super::super::review_providers::dispatch(
+            &execution,
+            medousa_types::ReviewProviderQuery {
+                provider_id: target.0.clone(),
+                host: target.1.clone(),
+                connection_id: body.connection_id.clone(),
+                request: medousa_types::ReviewProviderOperation::ConnectionStatus,
+            },
+        )
+        .await
+        .map_err(review_package_error)?;
+        if !matches!(
+            connection,
+            medousa_types::ReviewProviderResult::Connection {
+                authenticated: true,
+                ..
+            }
+        ) {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "Connect a review account before creating a pull request",
+            ));
+        }
+        Some((origin, target))
+    } else {
+        None
+    };
+    let expected_origin = publication.as_ref().map(|(origin, _)| origin.clone());
+    let result = execution.run_async(if pr { ExecutionClass::NetworkGit } else { ExecutionClass::LocalMutation }, MAX_CAPTURE_BYTES,
         Some(root.display().to_string()), async move {
         let result = async {
             // Revalidate custody after waiting for the repository admission lane.
@@ -342,18 +403,12 @@ async fn execute(
                     record_commit(&state, &item, &before.head, &before.head, &final_branch).await?;
                 }
                 let origin = git(&binary, &root, &["remote", "get-url", "--push", "--all", "origin"]).await?;
-                let repository = github_repository(&origin)?;
-                // Look up first: retrying after an uncertain response must not create duplicates.
-                let listed = command(FsPath::new("gh"), &root, vec!["pr", "list", "--repo", &repository, "--head", &final_branch, "--base", &body.base, "--state", "open", "--json", "url"].into_iter().map(str::to_owned).collect(), vec![]).await?;
-                let existing: serde_json::Value = serde_json::from_slice(&listed).map_err(|e| request_error(StatusCode::CONFLICT, e.to_string()))?;
+                if expected_origin.as_deref() != Some(origin.as_str()) {return Err(request_error(StatusCode::CONFLICT,"Origin changed. Refresh before publishing."));}
                 git(&binary, &root, &["push", "origin", &format!("{}:refs/heads/{}", before.head, final_branch)]).await?;
-                if let Some(url) = existing.get(0).and_then(|v| v.get("url")).and_then(|v| v.as_str()) {
-                    return Ok(Json(serde_json::json!({"url": url, "existing": true})));
-                }
-                let mut args = vec!["pr".into(), "create".into(), "--repo".into(), repository, "--head".into(), final_branch, "--base".into(), body.base, "--title".into(), body.title, "--body".into(), body.body];
-                if body.draft { args.push("--draft".into()); }
-                let url = command(FsPath::new("gh"), &root, args, vec![]).await.map_err(|_| request_error(StatusCode::CONFLICT, "The branch was pushed, but GitHub did not confirm PR creation. Check GitHub authentication and retry; an existing PR will be reused."))?;
-                return Ok(Json(serde_json::json!({"url": String::from_utf8_lossy(&url).trim(), "existing": false})));
+                // Provider I/O runs after releasing the repository/network lane.
+                // Two simultaneous PR actions must not deadlock on nested admission.
+                return Ok(Json(serde_json::json!({"publish": {"remote":origin,"head":final_branch,"base":body.base,"title":body.title,"body":body.body,"draft":body.draft,"connection_id":body.connection_id,"provider_id":body.provider_id}})));
+
             }
             if body.message.trim().is_empty() || body.paths.is_empty() || body.paths.iter().any(|p| !before.paths.contains(p)) {
                 return Err(request_error(StatusCode::BAD_REQUEST, "Choose changed files and enter a commit message"));
@@ -368,44 +423,42 @@ async fn execute(
             Ok(Json(serde_json::json!({"head": head, "warning": warning})))
         }.await;
         Ok(result)
-    }).await.map_err(map_err)?
-}
-
-/// Bind PR creation to the actual push destination, including GitHub Enterprise.
-fn github_repository(origin: &str) -> ApiResult<String> {
-    let invalid = || {
-        request_error(
-            StatusCode::BAD_REQUEST,
-            "Origin must have one GitHub SSH or HTTPS push URL",
-        )
-    };
-    if origin.lines().count() != 1 {
-        return Err(invalid());
+    }).await.map_err(map_err)??;
+    if !pr {
+        return Ok(result);
     }
-    let normalized = if let Some(scp) = origin.strip_prefix("git@") {
-        format!("ssh://git@{}", scp.replacen(':', "/", 1))
-    } else {
-        origin.to_owned()
-    };
-    let url = reqwest::Url::parse(&normalized).map_err(|_| invalid())?;
-    if !matches!(url.scheme(), "https" | "ssh") || url.query().is_some() || url.fragment().is_some()
-    {
-        return Err(invalid());
+    let request = &result.0["publish"];
+    let (_, (provider_id, host, repository)) = publication.ok_or_else(|| {
+        request_error(StatusCode::BAD_GATEWAY, "Missing review publication target")
+    })?;
+    let result = super::super::review_providers::publish(
+        &state_execution,
+        medousa_types::ReviewProviderMutation {
+            provider_id,
+            host,
+            connection_id: request["connection_id"].as_str().map(str::to_owned),
+            request: medousa_types::ReviewProviderWrite::Publish {
+                repository,
+                head: request["head"].as_str().unwrap_or_default().into(),
+                base: request["base"].as_str().unwrap_or_default().into(),
+                title: request["title"].as_str().unwrap_or_default().into(),
+                body: request["body"].as_str().unwrap_or_default().into(),
+                draft: request["draft"].as_bool().unwrap_or(false),
+                update_existing: false,
+            },
+        },
+    )
+    .await
+    .map_err(review_package_error)?;
+    match result {
+        medousa_types::ReviewProviderResult::Published { review, existing } => Ok(Json(
+            serde_json::json!({"url":review.url,"existing":existing}),
+        )),
+        _ => Err(request_error(
+            StatusCode::BAD_GATEWAY,
+            "The review package did not confirm publication",
+        )),
     }
-    let host = url.host_str().ok_or_else(invalid)?;
-    let path = url.path().trim_matches('/').trim_end_matches(".git");
-    let parts = path.split('/').collect::<Vec<_>>();
-    if parts.len() != 2
-        || parts.iter().any(|p| {
-            p.is_empty()
-                || !p
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-        })
-    {
-        return Err(invalid());
-    }
-    Ok(format!("{host}/{path}"))
 }
 
 async fn record_commit(
@@ -520,28 +573,6 @@ async fn finish_commit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn pull_request_repository_matches_push_destination() {
-        for origin in [
-            "git@github.com:owner/repo.git",
-            "https://github.com/owner/repo.git",
-            "ssh://git@github.com/owner/repo",
-        ] {
-            assert_eq!(github_repository(origin).unwrap(), "github.com/owner/repo");
-        }
-        assert_eq!(
-            github_repository("https://github.internal/team/repo.git").unwrap(),
-            "github.internal/team/repo"
-        );
-        for invalid in [
-            "/tmp/repository",
-            "https://github.com/owner/repo.git\nhttps://github.com/other/repo.git",
-            "https://github.com/owner/repo/extra",
-            "file:///repo",
-        ] {
-            assert!(github_repository(invalid).is_err());
-        }
-    }
     async fn repository() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

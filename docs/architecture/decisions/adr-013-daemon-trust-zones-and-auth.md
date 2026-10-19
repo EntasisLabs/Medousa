@@ -81,19 +81,25 @@ extensions. Handlers consume that typed context; they do not parse
 
 The daemon creates a random local capability during installation/first secure
 startup and stores only the material needed to verify it. Home obtains the
-credential through the platform credential store or an owner-only file under
+credential through an owner-only file under
 the Medousa data directory. It is attached by the Tauri/native transport, never
 exposed to the webview JavaScript runtime.
 
-Daemon-owned secrets (provider API keys, messaging bot tokens, Surreal password,
-ChatGPT OAuth envelopes, APNs keys, and local-auth bearer material) use a single
-OS keyring service, `com.entasislabs.medousa.secrets.daemon`, with typed
-`v1/{installation_id}/…` accounts and an opaque owner-only file fallback.
-Client-only pairing session tokens use
-`com.entasislabs.medousa.secrets.client`. First-party Settings UIs write
+External service secrets (provider API keys, messaging bot tokens,
+ChatGPT OAuth envelopes, APNs keys, and MCP server credentials) use the
+OS keyring service `com.entasislabs.medousa.secrets.daemon`, with typed
+`v1/{installation_id}/…` accounts and an owner-only file fallback.
+Local-auth bearers, pairing session tokens, the MCP policy token, and the Surreal
+password use owner-only files. Keychain-only local capabilities are reissued
+at daemon startup without unlocking Keychain; existing private mirrors retain
+their token. The MCP policy token is provisioned directly into a file. Pairing and database
+credentials are imported once.
+Routine operations do not delete their old Keychain copies. The daemon's
+self-calls use an independent random credential registered with its live
+verifiers and kept only in process memory. First-party Settings UIs write
 daemon-owned material through generated `/v1/integrations*` (and ChatGPT OAuth)
-HTTP ops that never return secret values. On first write, Keychain may prompt
-twice (daemon service + client service), then stop.
+HTTP ops that never return secret values. Keychain access for external service
+credentials depends on the application's signing identity and OS access rules.
 
 Other same-user native clients may enroll for their own named local capability.
 Credentials are individually revocable and rotatable. File permissions are a

@@ -16,7 +16,9 @@ server and authenticate as the account you choose.
 5. Select **Check server identity**. Compare the displayed fingerprints with
    the server's host keys, then select **Trust this server identity** and save.
    Checking retrieves public host keys; it does not authenticate your account.
-6. Select **Test** to check authentication. On desktop, **Terminal** opens the
+6. Open the server's **More actions (⋯)** menu and select **Test connection**
+   to check authentication. **Remove server** is in the same menu.
+   On desktop, **Terminal** on the row opens the
    same saved connection in Medousa's existing terminal view. SSH terminals
    use the saved server access independently of coding projects; they do not
    require an undertaking or a sealed Forge environment.
@@ -27,6 +29,19 @@ ProxyCommand/ProxyJump rules, and port forwards are not imported in this version
 If the server's host key changes, the connection fails rather than silently
 trusting the replacement. Remove and add the connection after verifying its new
 identity. The first version supports up to 64 saved targets per workshop.
+
+## Open terminals from Spotlight
+
+On desktop, open Spotlight with **⌘K** (macOS) or **Ctrl+K** (Windows/Linux).
+In **Actions**, choose **Open terminal** for a new shell on the connected
+workshop, or **Open SSH terminal…** to pick a saved server. The regular shell
+starts in the workshop's configured shell directory. Both open as terminal tabs
+and follow **Connection**, independently of the worker selected in Code.
+
+You can also search Spotlight directly for `ssh`, a server name, username, or
+address and select **SSH · server name**. The SSH picker supports arrow keys
+and Enter; Escape returns to the previous Spotlight view. If no servers are
+saved, **Manage SSH servers** opens their settings.
 
 ## Ask Medousa to work with the server
 

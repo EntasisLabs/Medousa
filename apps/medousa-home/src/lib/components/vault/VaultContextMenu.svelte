@@ -293,7 +293,7 @@
         },
         {
           id: "send-to-work",
-          label: "Send to Work",
+          label: "Ask in background",
           onClick: async () => {
             try {
               await sendVaultNoteToWork(path);

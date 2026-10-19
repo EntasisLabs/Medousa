@@ -46,13 +46,13 @@ describe("buildLifeRailLayout", () => {
       "chat",
       "peers",
       "calendar",
-      "work",
       "web",
       "notes",
       "files",
       "artifacts",
       "automations",
       "map",
+      "workshop",
     ]);
     expect(layout.focusStartIndex).toBe(2);
     expect(layout.showAutomations).toBe(true);
@@ -97,6 +97,7 @@ describe("buildLifeRailLayout", () => {
       "notes",
       "files",
       "artifacts",
+      "workshop",
     ]);
     expect(automationsFirst.showAutomations).toBe(true);
   });

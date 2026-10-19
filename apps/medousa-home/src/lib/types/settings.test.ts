@@ -34,7 +34,8 @@ describe("settings nav groups", () => {
     expect(settingsSectionById("connections")?.group).toBe("app");
     expect(settingsSectionById("connections")?.label).toBe("External Agents");
     expect(settingsSectionById("connections")?.hint).toBe("Codex, Cursor & Hermes");
-    expect(SETTINGS_SECTIONS.filter((section) => section.group === "app")).toHaveLength(5);
+    expect(settingsSectionById("accounts")?.label).toBe("Accounts");
+    expect(SETTINGS_SECTIONS.filter((section) => section.group === "app")).toHaveLength(6);
 
     expect(settingsSectionById("packages")?.group).toBe("machine");
     expect(settingsSectionById("mcp")?.group).toBe("machine");

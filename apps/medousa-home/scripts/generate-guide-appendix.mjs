@@ -122,15 +122,17 @@ function parseSpotlightCommands(src) {
 
 const catalogSrc = readRel("src/lib/utils/keyboardShortcutsCatalog.ts");
 const slashSrc = readRel("src/lib/utils/slashCommands.ts");
+const activitySrc = readRel("src/lib/commands/activityCommands.ts");
 const registrySrc = readRel("src/lib/commands/registry.ts");
 const doCommandsSrc = readRel("src/lib/commands/doCommands.ts");
 const pinCommandsSrc = readRel("src/lib/commands/pinCommands.ts");
 
 const groups = parseKeyboardCatalog(catalogSrc);
 const slashHints = parseSlashHints(slashSrc);
-const goDests = parseGoDestinations(registrySrc);
+const goDests = parseGoDestinations(readRel("src/lib/commands/destinations.ts"));
 const spotlight = [
   ...parseSpotlightCommands(registrySrc),
+  ...parseSpotlightCommands(activitySrc),
   ...parseSpotlightCommands(doCommandsSrc),
   ...parseSpotlightCommands(pinCommandsSrc),
 ];

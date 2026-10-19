@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    UserRound,
     Blocks,
     Bot,
     Check,
@@ -49,6 +50,7 @@
 
   const sectionIcons = {
     preferences: SlidersHorizontal,
+    accounts: UserRound,
     agent: Bot,
     runtime: Gauge,
     network: Share2,

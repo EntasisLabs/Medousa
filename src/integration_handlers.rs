@@ -90,7 +90,8 @@ fn admin_policy(method: axum::http::Method, path: &'static str, body_limit: usiz
 }
 
 async fn list_integrations() -> Result<Json<IntegrationConnectionListResponse>, StatusCode> {
-    let _ = ensure_secrets_bootstrapped().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Listing account metadata must not unlock keychain or migrate old secrets.
+    // Credential consumers bootstrap on demand; this surface reads only records.
     let connections = integration_connection_service()
         .list()
         .await

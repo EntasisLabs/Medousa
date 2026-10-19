@@ -4,7 +4,7 @@ import type { FeatureDescriptor, FeatureId } from "./types";
 export const FEATURE_CATALOG: readonly FeatureDescriptor[] = [
   {
     id: "shell-desktop",
-    destinations: ["chat", "library", "work", "web", "settings"],
+    destinations: ["chat", "library", "web", "settings"],
     clientPlatforms: ["desktop"],
     requiredCapabilities: [],
     preload: "never",
@@ -32,7 +32,7 @@ export const FEATURE_CATALOG: readonly FeatureDescriptor[] = [
   },
   {
     id: "code-work",
-    destinations: ["code", "work"],
+    destinations: ["code", "reviews"],
     clientPlatforms: ["desktop", "mobile"],
     requiredCapabilities: [],
     preload: "intent",

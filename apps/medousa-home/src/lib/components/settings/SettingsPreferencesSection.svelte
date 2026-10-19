@@ -537,16 +537,16 @@
 
   <div class="prefs-band">
     <div class="prefs-band-head">
-      <h3 class="settings-subsection-heading">Work cards</h3>
+      <h3 class="settings-subsection-heading">Task activity</h3>
       <p class="settings-subsection-lead">
-        Done cards leave the board, then archives clear with the active workshop.
+        Completed tasks leave the default activity list, then archives clear with the active workshop.
       </p>
     </div>
 
     <div class="prefs-grid">
       <label class="prefs-tile prefs-tile-metric">
         <span class="prefs-tile-copy">
-          <span class="prefs-tile-title">Hide from board</span>
+          <span class="prefs-tile-title">Hide from activity</span>
           <span class="prefs-tile-meta">After done</span>
         </span>
         <span class="prefs-metric">
@@ -557,7 +557,7 @@
             inputmode="numeric"
             class="prefs-metric-input"
             value={settings.workCardHideAfterHours}
-            aria-label="Hide from board after hours"
+            aria-label="Hide from activity after hours"
             onchange={(event) => commitHideHours((event.currentTarget as HTMLInputElement).value)}
           />
           <span class="prefs-metric-unit">hrs</span>

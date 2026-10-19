@@ -27,6 +27,7 @@ export type ChatMessageIndexes = {
 };
 
 export type ChatStoreHost = {
+  history?: import("./chatHistoryController.svelte").ChatHistoryController;
   workshopScopeId: string;
   workshopEpoch: number;
   sessionId: string;

@@ -67,7 +67,7 @@ export function attachHumanBrowserSurface(
     "human-browser-loading",
     (event) => {
       if (!matchesSurface(event.payload.surface, surface)) return;
-      store.setLoading(event.payload.loading);
+      store.setLoading(event.payload.loading, event.payload.tabId);
     },
   );
 
@@ -78,6 +78,7 @@ export function attachHumanBrowserSurface(
       store.setNativeNavState(
         event.payload.canGoBack,
         event.payload.canGoForward,
+        event.payload.tabId,
       );
     },
   );

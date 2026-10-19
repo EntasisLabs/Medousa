@@ -13,6 +13,7 @@ import {
   type HumanBrowserEmbedBounds,
 } from "$lib/humanBrowser";
 import { measureBrowserWebviewBounds } from "$lib/browserWebview";
+import { readContentZoom } from "$lib/config/contentZoom";
 import { getBrowserPopoverOverlayDepth, setBrowserPopoverLayoutPort } from "$lib/utils/browserPopoverOverlay";
 import {
   isMobileBottomChromeMeasured,
@@ -150,6 +151,7 @@ export function createBrowserCompositor(
   let layoutGeneration = 0;
   let layoutChain: Promise<void> = Promise.resolve();
   let lastBounds: HumanBrowserEmbedBounds | null = null;
+  let lastZoom: number | null = null;
   let lastVisible = false;
   /** After host remount / split, always push bounds once (ignore equality). */
   let forceBoundsNext = false;
@@ -241,7 +243,8 @@ export function createBrowserCompositor(
     }
     if (gen !== layoutGeneration) return;
 
-    const boundsChanged = forceBoundsNext || !boundsEqual(lastBounds, bounds);
+    const zoom = readContentZoom();
+    const boundsChanged = forceBoundsNext || !boundsEqual(lastBounds, bounds) || lastZoom !== zoom;
     forceBoundsNext = false;
 
     if (options.mode === "mobile") {
@@ -282,8 +285,9 @@ export function createBrowserCompositor(
       if (gen !== layoutGeneration) return;
       // Bounds before show — critical after split so we don't flash full-pane size.
       if (boundsChanged || !lastVisible) {
-        await humanBrowserEmbedSetBounds(bounds);
+        await humanBrowserEmbedSetBounds(bounds, zoom);
         lastBounds = bounds;
+        lastZoom = zoom;
       }
       // Only show (and native flush) when becoming visible. Re-show on every bounds
       // change was re-navigating mid-load on Windows WebView2.
@@ -347,6 +351,7 @@ export function createBrowserCompositor(
 
     // New embed host (split / ownership move) — never reuse prior pane rect.
     lastBounds = null;
+    lastZoom = null;
     lastVisible = false;
     forceBoundsNext = true;
 
@@ -390,6 +395,7 @@ export function createBrowserCompositor(
     bottomChromeEl = null;
     chromeEl = null;
     lastBounds = null;
+    lastZoom = null;
     forceBoundsNext = false;
     void humanBrowserEmbedHide().catch(() => {});
     lastVisible = false;
@@ -400,7 +406,10 @@ export function createBrowserCompositor(
     attach,
     detach,
     scheduleLayout,
-    flushLayout: () => layoutChain.then(() => applyLayoutOnce()),
+    flushLayout: () => {
+      layoutChain = layoutChain.catch(() => {}).then(() => applyLayoutOnce());
+      return layoutChain;
+    },
     pushPopoverHide: () => {
       manualHide = true;
       scheduleLayout();

@@ -1,8 +1,11 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { hostedReviews } from "$lib/code/hostedReviews.svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
+  import { createReviewPage } from "$lib/code/reviewPage.svelte";
+  import { reviewRepository } from "$lib/code/reviewQueue";
   import {
+    MessageSquare,
     GitPullRequestArrow,
-    History,
     MoreHorizontal,
     Play,
     Square,
@@ -72,6 +75,7 @@
     resource?: CodeWorkspaceResource;
     /** Background split panes render but must not own global interactions. */
     interactive?: boolean;
+    reviewScope?: string;
   }
 
   let {
@@ -79,6 +83,7 @@
     workId: boundWorkId = "",
     resource = { kind: "workspace" },
     interactive = true,
+    reviewScope = "local",
   }: Props = $props();
 
   let title = $state("");
@@ -117,26 +122,39 @@
   let reviewDetailsLoading = $state(false);
   let reviewDetailsOpen = $state(false);
   let reviewHistoryExpanded = $state(false);
+  let reviewHistoryOpen = $state(false);
+  let reviewLinksOpen = $state(false);
   let reviewAuditOpen = $state(true);
   let providerLinkOpen = $state(false);
   /** When threads exist, `c` can dismiss the rail without losing comments. */
   let commentRailDismissed = $state(false);
 
-  const detail = $derived(
-    !boundWorkId || undertakings.detail?.id === boundWorkId
-      ? undertakings.detail
-      : null,
-  );
-  const review = $derived(
-    !boundWorkId || undertakings.review?.work_id === boundWorkId
-      ? undertakings.review
-      : null,
-  );
   const reviewCanvas = $derived(resource.kind === "review");
+  // The host keys this component by workshop, project, and resource kind.
+  const reviewPage = untrack(() => createReviewPage(boundWorkId, reviewScope));
+  onDestroy(() => reviewPage.dispose());
+  const detail = $derived(reviewCanvas ? reviewPage.detail : (
+    !boundWorkId || undertakings.detail?.id === boundWorkId ? undertakings.detail : null
+  ));
+  const review = $derived(reviewCanvas ? reviewPage.review : (
+    !boundWorkId || undertakings.review?.work_id === boundWorkId ? undertakings.review : null
+  ));
+  $effect(() => {
+    if (!reviewCanvas || !boundWorkId) return;
+    void undertakings.eventRevision;
+    void untrack(() => reviewPage.refresh());
+  });
+  async function refreshSelectedDetail() {
+    if (reviewCanvas) await reviewPage.refresh();
+    else await undertakings.refreshDetail();
+  }
+  function selectReviewAttempt(attemptId: string) {
+    return reviewCanvas ? reviewPage.selectCandidate(attemptId) : undertakings.selectReviewAttempt(attemptId);
+  }
   const resourcePath = $derived(
     resource.kind === "file" ? resource.path : null,
   );
-  const actions = $derived(detail?.allowed_actions);
+  const actions = $derived(reviewCanvas ? review?.allowed_actions ?? detail?.allowed_actions : detail?.allowed_actions);
   const workspaceCopy = $derived(undertakingWorkspaceCopy(detail));
   const sourceBranch = $derived(gitTargetBaseRef(detail?.target) ?? "source branch"),
     reviewedBranch = $derived(detail?.environment?.branch?.trim() || "working branch");
@@ -203,8 +221,8 @@
       await fn();
     } catch (err) {
       actionError = err instanceof Error ? err.message : String(err);
-      if ((err as { status?: number }).status === 409 && undertakings.selectedId) {
-        await undertakings.refreshDetail();
+      if ((err as { status?: number }).status === 409 && (boundWorkId || undertakings.selectedId)) {
+        await refreshSelectedDetail();
       }
     } finally {
       busy = false;
@@ -216,7 +234,7 @@
     if (!d) return;
     await run(async () => {
       await openProjectTerminal(d);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
     });
   }
 
@@ -237,7 +255,7 @@
     localStorage.setItem("medousa-code-agent-runtime", runtime);
     await run(async () => {
       await startTrackedAgent(d, runtime);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
     });
   }
 
@@ -263,7 +281,7 @@
         undertakings.setActiveFromItem(ready);
       }
       await startTrackedAgent(ready, runtime, { draft });
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
     });
   }
 
@@ -272,7 +290,7 @@
     if (!d) return;
     await run(async () => {
       await reclaimTrackedHuman(d);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
     });
   }
 
@@ -281,7 +299,7 @@
     if (!d) return;
     await run(async () => {
       await interruptTrackedAgent(d);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
     });
   }
 
@@ -342,7 +360,7 @@
           leaseGeneration: generation,
           executorKind: "human",
         });
-        await undertakings.refreshDetail();
+        await refreshSelectedDetail();
       } catch (err) {
         actionError = humanizeForgeMessage(
           err instanceof Error ? err.message : String(err),
@@ -356,7 +374,7 @@
     }
     await run(async () => {
       await sealLease(leaseId!, generation!);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
       if (undertakings.review?.evidence_id) {
         patch = await getEvidencePatch(undertakings.review.evidence_id, {
           work_id: undertakings.review.work_id,
@@ -390,11 +408,17 @@
     }
   });
 
+  const reviewEvidenceId = $derived(review?.evidence_id);
   $effect(() => {
-    // Fresh evidence → show comments again if any exist.
-    void review?.evidence_id;
-    commentRailDismissed = false;
+    void reviewEvidenceId;
+    commentRailDismissed = true;
     reviewHistoryExpanded = false;
+    reviewHistoryOpen = false;
+    reviewLinksOpen = false;
+    acknowledgePolicy = false;
+    acknowledgeBlocking = false;
+    commentCompose = null;
+    commentDraft = "";
   });
 
   async function loadMoreCommands() {
@@ -482,7 +506,7 @@
       review
         && actions?.review.allowed
         && review.changed_files.length > 0
-        && !busy
+        && !busy && !reviewPage.loading
         && !(review.policy?.violations.length && !acknowledgePolicy)
         && !(reviewHardBlockingMessages.length && !acknowledgeBlocking && !acknowledgePolicy),
     ),
@@ -546,7 +570,7 @@
           ? (review.policy?.violations.map((violation) => violation.id) ?? [])
           : [],
       });
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
       toast.show(
         strategy === "fast_forward_only"
           ? `Approved — ready to apply to ${sourceBranch}.`
@@ -566,7 +590,7 @@
         leaseGeneration: begun.lease.generation,
         executorKind: "human",
       });
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
       await lmeWorkspace.openCodeWorkspace(detail!.id, detail!.title);
     });
   }
@@ -595,7 +619,7 @@
       await startTrackedAgent(item, preferredCodeAgent, {
         draft: brief || undefined,
       });
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
       toast.show("Changes requested — a new attempt is starting with your feedback.");
     });
   }
@@ -612,12 +636,6 @@
   }
 
   function toggleCommentRail() {
-    const hasThreads = (review?.comments?.length ?? 0) > 0;
-    if (!hasThreads && !commentCompose) {
-      // Summon compose affordance hint by pinning an empty rail briefly is avoided —
-      // `.` / hover already start compose. Toggle only when threads earn the rail.
-      return;
-    }
     commentRailDismissed = !commentRailDismissed;
   }
 
@@ -630,8 +648,7 @@
   }
 
   const showCommentRail = $derived(
-    Boolean(commentCompose)
-      || (((review?.comments?.length ?? 0) > 0) && !commentRailDismissed),
+    Boolean(commentCompose) || !commentRailDismissed,
   );
 
   async function submitComment() {
@@ -652,7 +669,7 @@
       commentCompose = null;
       commentDraft = "";
       commentRailDismissed = false;
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
     });
   }
 
@@ -660,7 +677,7 @@
     if (!detail) return;
     await run(async () => {
       await resolveReviewComment(detail!.id, commentId);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
     });
   }
 
@@ -668,7 +685,7 @@
     if (!detail) return;
     await run(async () => {
       await deleteReviewComment(detail!.id, commentId);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
     });
   }
 
@@ -681,7 +698,7 @@
         attempt_id: comparison.attempt_id,
       });
       undertakings.setActiveFromItem(result.item);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
       await lmeWorkspace.openCodeFile(detail!.id, result.path, { line: 1 });
       undertakings.setSelection({ path: result.path, line: 1, entityId: null });
     });
@@ -700,7 +717,7 @@
     if (!window.confirm(prompt)) return;
     await run(async () => {
       const result = await applyDecision(detail!.id, decisionId);
-      await undertakings.refreshDetail();
+      await refreshSelectedDetail();
       await undertakings.refreshList();
       toast.show(
         result.disposition === "base_fast_forwarded"
@@ -716,6 +733,8 @@
     if (!detail) return;
     await run(async () => {
       providerHandoff = await shareProviderHandoff(detail!.id, {
+        connection_id: hostedReviews.connectionId ?? undefined,
+        provider_id: hostedReviews.accountProvider ?? undefined,
         title: detail!.title,
         attempt_id: review?.attempt_id ?? undefined,
       });
@@ -767,7 +786,7 @@
 
 </script>
 
-<div class="flex h-full min-h-0 flex-col gap-3 p-3 text-sm text-surface-100">
+<div class="undertaking-panel flex h-full min-h-0 flex-col text-sm text-surface-100" class:focused-review={reviewCanvas} class:project-panel={!reviewCanvas}>
   {#if showBrowser}<header class="flex flex-wrap items-center justify-between gap-2 border-b border-surface-500/40 pb-2">
     <div>
       <h2 class="text-base font-semibold text-surface-50">Code projects</h2>
@@ -793,9 +812,9 @@
     </div>
   </header>{/if}
 
-  {#if actionError || undertakings.error}
+  {#if actionError || (reviewCanvas ? reviewPage.error : undertakings.error)}
     <p class="rounded-md border border-amber-500/40 bg-amber-950/40 px-2 py-1 text-xs text-amber-100">
-      {humanizeForgeMessage(actionError || undertakings.error || "")}
+      {humanizeForgeMessage(actionError || (reviewCanvas ? reviewPage.error : undertakings.error) || "")}
     </p>
   {/if}
 
@@ -906,57 +925,22 @@
       {#if !detail}
         <div class="flex min-h-48 flex-1 items-center justify-center px-1 py-2">
           <div class="max-w-sm text-center">
-            <p class="text-sm font-medium text-content-secondary">Open or start a project</p>
-            <p class="mt-1 text-xs leading-relaxed text-content-quiet">
-              Pick a project in the rail, or start one with the outcome you want.
-            </p>
+            <p class="text-sm font-medium text-content-secondary">{reviewCanvas ? (reviewPage.loading ? "Loading review…" : "Could not open this review") : "Open or start a project"}</p>
+            {#if reviewCanvas}<button type="button" class="mt-3 text-xs text-content-secondary" onclick={() => void reviewPage.refresh()}>Try again</button>
+            {:else}<p class="mt-1 text-xs leading-relaxed text-content-quiet">Pick a project in the rail, or start one with the outcome you want.</p>{/if}
           </div>
         </div>
       {:else}
         {#if reviewCanvas || !detail.environment}
-        <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 {showBrowser ? 'px-0' : 'border-b border-surface-500/25 px-2 py-1'}">
+        <div class="review-page-header flex shrink-0 flex-wrap items-center justify-between gap-2 {showBrowser ? 'px-0' : 'border-b border-surface-500/25 px-2 py-1'}">
           <div class="min-w-0 flex-1">
-            <h3 class="truncate text-sm font-semibold text-surface-50" title={detail.brief || detail.title}>{detail.title}</h3>
-            {#if reviewCanvas && review}
-              <p class="review-chrome-meta" aria-label="Review summary">
-                <span class="review-meta-item review-meta-item--files">
-                  <span class="review-meta-value tabular-nums">{review.changed_files.length}</span>
-                  {review.changed_files.length === 1 ? "file" : "files"}
-                </span>
-                <span class="review-meta-dot" aria-hidden="true">·</span>
-                <span
-                  class="review-meta-item review-meta-item--risk review-meta-item--risk-{review.synthesis.risk}"
-                  title={review.synthesis.risk_summary}
-                >{review.synthesis.risk} risk</span>
-                {#if review.attempt_seq != null}
-                  <span class="review-meta-dot" aria-hidden="true">·</span>
-                  <span class="review-meta-item review-meta-item--attempt">
-                    attempt
-                    <span class="review-meta-value tabular-nums">{review.attempt_seq}</span>{#if review.candidates.length > 1}<span class="review-meta-quiet tabular-nums">/{review.candidates.length}</span>{/if}
-                  </span>
-                {/if}
-                {#if review.timeline.length > 0}
-                  <span class="review-meta-dot" aria-hidden="true">·</span>
-                  <span class="review-meta-item review-meta-item--events">
-                    <span class="review-meta-value tabular-nums">{review.timeline.length}</span>
-                    {review.timeline.length === 1 ? "event" : "events"}
-                  </span>
-                {/if}
-                {#if reviewPrLinkCount > 0}
-                  <span class="review-meta-dot" aria-hidden="true">·</span>
-                  <span class="review-meta-item review-meta-item--pr">
-                    PR <span class="review-meta-value tabular-nums">({reviewPrLinkCount})</span>
-                  </span>
-                {:else if (review.changed_since_previous?.length ?? 0) > 0}
-                  <span class="review-meta-dot" aria-hidden="true">·</span>
-                  <span class="review-meta-item review-meta-item--follow">follow-up</span>
-                {/if}
-              </p>
-            {:else if detail.environment}
+            {#if reviewCanvas}<p class="review-page-eyebrow"><GitPullRequestArrow size={13} /><span>Forge</span><span>{reviewRepository(detail)}</span><span>{humanPhaseLabel(detail.human_phase)}</span></p>
+            {:else}<h3 class="review-page-title truncate text-sm font-semibold text-surface-50" title={detail.title}>{detail.title}</h3>{/if}
+            {#if detail.environment && !reviewCanvas}
               <p class="mt-0.5 text-[10px] text-content-quiet">
                 {humanPhaseLabel(detail.human_phase)}{workspaceCopy.attached ? " · Current checkout" : ""}
               </p>
-            {:else}
+            {:else if !reviewCanvas}
               {#if detail.brief && detail.brief.trim() !== detail.title.trim()}
                 <p class="truncate text-[10px] text-content-quiet" title={detail.brief}>{detail.brief}</p>
               {/if}
@@ -968,13 +952,12 @@
           </div>
           <div class="flex shrink-0 items-center gap-1.5">
             {#if reviewCanvas && review}
+              <button type="button" class="review-notes-action" aria-label="Review notes" aria-expanded={showCommentRail} onclick={toggleCommentRail}><MessageSquare size={14} /><span>Notes</span></button>
               <UndertakingReviewActions
-                attached={workspaceCopy.attached} {busy} canApprove={canApproveReview}
-                allowContinue={Boolean(actions?.continue_editing?.allowed)}
+                attached={workspaceCopy.attached} busy={busy || reviewPage.loading} canApprove={canApproveReview}
                 allowReview={Boolean(actions?.review.allowed)} allowApply={Boolean(actions?.apply.allowed)}
                 {sourceBranch} {reviewedBranch} actionLabel={integrationActionLabel}
                 bind:integrationStrategy
-                onContinue={() => void beginContinueEditing()}
                 onRequestChanges={() => void beginRequestChanges()}
                 onApprove={() => void recordApproval()}
                 onApply={() => void applyApproval()}
@@ -1020,23 +1003,29 @@
               ><Play size={14} /><span class="hidden sm:inline">Resume</span></button>
             {/if}
 
-            {#if reviewCanvas && review}
-              <OverflowMenu
-                label="Review history"
-                title="History"
-                panelClass="w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-surface-500/40 bg-surface-900 p-2 shadow-xl"
-              >
-                {#snippet trigger({ open, toggle })}
-                  <button
-                    type="button"
-                    class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
-                    title="History"
-                    aria-label="History · {review.timeline.length} events"
-                    aria-expanded={open}
-                    aria-haspopup="menu"
-                    onclick={toggle}
-                  ><History size={14} strokeWidth={1.75} /></button>
-                {/snippet}
+
+            <OverflowMenu
+              label="Project actions"
+              title="Project actions"
+              panelClass="review-project-menu w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+            >
+              {#snippet trigger({ open, toggle })}
+                <button
+                  type="button"
+                  class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+                  title="Project actions"
+                  aria-label="Project actions"
+                  aria-expanded={open}
+                  aria-haspopup="menu"
+                  onclick={toggle}
+                >
+                  <MoreHorizontal size={15} strokeWidth={1.75} />
+                </button>
+              {/snippet}
+              {#if reviewCanvas && review}
+                <button type="button" role="menuitem" class="secondary-action" onclick={() => void lmeWorkspace.openCodeWorkspace(detail.id, detail.title)}>Open project</button>
+                <button type="button" role="menuitem" class="secondary-action" aria-expanded={reviewHistoryOpen} onclick={() => reviewHistoryOpen = !reviewHistoryOpen}>History <span class="review-menu-count">{review.timeline.length}</span></button>
+                {#if reviewHistoryOpen}
                 <div class="review-chrome-popover" role="presentation">
                   <p class="review-chrome-popover-title">
                     History
@@ -1069,29 +1058,9 @@
                     {/if}
                   {/if}
                 </div>
-              </OverflowMenu>
-
-              <OverflowMenu
-                label="Pull request"
-                title="Pull request"
-                panelClass="w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-surface-500/40 bg-surface-900 p-2 shadow-xl"
-              >
-                {#snippet trigger({ open, toggle })}
-                  <button
-                    type="button"
-                    class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
-                    title={reviewPrLinkCount > 0 ? `Pull request · ${reviewPrLinkCount} links` : "Pull request"}
-                    aria-label={reviewPrLinkCount > 0 ? `Pull request · ${reviewPrLinkCount} links` : "Pull request"}
-                    aria-expanded={open}
-                    aria-haspopup="menu"
-                    onclick={toggle}
-                  >
-                    <GitPullRequestArrow size={14} strokeWidth={1.75} />
-                    {#if reviewPrLinkCount > 0}
-                      <span class="review-toolbar-badge tabular-nums">{reviewPrLinkCount}</span>
-                    {/if}
-                  </button>
-                {/snippet}
+                {/if}
+                <button type="button" role="menuitem" class="secondary-action" aria-expanded={reviewLinksOpen} onclick={() => reviewLinksOpen = !reviewLinksOpen}>Pull request{#if reviewPrLinkCount}<span class="review-menu-count">{reviewPrLinkCount}</span>{/if}</button>
+                {#if reviewLinksOpen}
                 <div class="review-chrome-popover" role="presentation">
                   <p class="review-chrome-popover-title">Pull request</p>
                   {#if !providerHandoff || (!providerHandoff.available && !providerHandoff.review_url && providerHandoff.links.length === 0)}
@@ -1138,27 +1107,9 @@
                     >Add related link…</button>
                   {/if}
                 </div>
-              </OverflowMenu>
-            {/if}
-
-            <OverflowMenu
-              label="Project actions"
-              title="Project actions"
-              panelClass="w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
-            >
-              {#snippet trigger({ open, toggle })}
-                <button
-                  type="button"
-                  class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
-                  title="Project actions"
-                  aria-label="Project actions"
-                  aria-expanded={open}
-                  aria-haspopup="menu"
-                  onclick={toggle}
-                >
-                  <MoreHorizontal size={15} strokeWidth={1.75} />
-                </button>
-              {/snippet}
+                {/if}
+                <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+              {/if}
               {#if reviewCanvas && review && actions?.review.allowed}
                 <button
                   type="button"
@@ -1174,25 +1125,6 @@
                     disabled={busy}
                     onclick={() => void beginContinueEditing()}
                   >Continue editing</button>
-                {/if}
-                {#if review.candidates.length > 1}
-                  <div class="px-2 py-1.5 text-[10px] text-content-quiet">
-                    <label class="flex flex-col gap-1">
-                      <span>Compare sealed attempt</span>
-                      <select
-                        class="rounded border border-surface-500/35 bg-surface-900 px-1.5 py-1 text-[11px] text-content-secondary"
-                        value={review.attempt_id ?? ""}
-                        disabled={busy}
-                        onchange={(event) => undertakings.selectReviewAttempt(event.currentTarget.value)}
-                      >
-                        {#each review.candidates as candidate (candidate.attempt_id)}
-                          <option value={candidate.attempt_id}>
-                            Attempt {candidate.attempt_seq} · {candidate.executor}
-                          </option>
-                        {/each}
-                      </select>
-                    </label>
-                  </div>
                 {/if}
                 <div class="my-1 border-t border-surface-500/25" role="separator"></div>
               {/if}
@@ -1415,10 +1347,13 @@
         {#if reviewCanvas}
           <UndertakingReviewCanvas
             {review}
+            readingState={reviewPage.reading}
+            originalRequest={detail.brief}
+            {sourceBranch}
             humanPhase={detail.human_phase}
             projectTitle={detail.title}
-            provenanceBaseRef={baseRef || gitTargetBaseRef(detail?.target) || null}
-            {busy}
+            provenanceBaseRef={gitTargetBaseRef(detail?.target) || null}
+            busy={busy || reviewPage.loading}
             bind:acknowledgePolicy
             bind:acknowledgeBlocking
             bind:requestChangesPreviewOpen
@@ -1442,9 +1377,9 @@
             {reviewNoteOpen}
             reviewAllowed={Boolean(actions?.review.allowed)}
             remoteExport={!isCoLocatedWorkshop()}
-            onOpenFile={(path, line) => openWorldAt({ path, line })}
+            onOpenFile={(path, line) => { void lmeWorkspace.openCodeFile(detail.id, path, { line }); }}
             onRestore={restoreReviewedFile}
-            onSelectCandidate={(attemptId) => undertakings.selectReviewAttempt(attemptId)}
+            onSelectCandidate={(attemptId) => void selectReviewAttempt(attemptId)}
             onComment={openCommentCompose}
             onToggleCommentRail={toggleCommentRail}
             onExport={() => void beginExport()}
@@ -1476,247 +1411,3 @@
     </section>
   </div>
 </div>
-
-<style>
-  .review-chrome-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.2rem 0.4rem;
-    margin-top: 0.15rem;
-    min-width: 0;
-    font-size: 0.7rem;
-    line-height: 1.35;
-    letter-spacing: 0.005em;
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .review-meta-item {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.22rem;
-    white-space: nowrap;
-  }
-
-  .review-meta-value {
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: rgb(var(--theme-text));
-  }
-
-  .review-meta-quiet {
-    font-weight: 500;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-meta-dot {
-    color: rgb(var(--theme-text-quiet));
-    opacity: 0.7;
-  }
-
-  .review-meta-item--risk {
-    font-weight: 550;
-  }
-
-  /* Mix status into readable text — tint, not neon. */
-  .review-meta-item--risk-low {
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-success)) 40%,
-      rgb(var(--theme-text-secondary))
-    );
-  }
-
-  .review-meta-item--risk-attention {
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-warning)) 48%,
-      rgb(var(--theme-text-secondary))
-    );
-  }
-
-  .review-meta-item--risk-high {
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-error)) 52%,
-      rgb(var(--theme-text-secondary))
-    );
-  }
-
-  .review-meta-item--attempt {
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .review-meta-item--attempt .review-meta-value {
-    color: color-mix(
-      in srgb,
-      rgb(var(--color-primary-400)) 45%,
-      rgb(var(--theme-text))
-    );
-  }
-
-  .review-meta-item--events {
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .review-meta-item--pr,
-  .review-meta-item--follow {
-    font-weight: 550;
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-link)) 42%,
-      rgb(var(--theme-text-secondary))
-    );
-  }
-
-  .review-meta-item--pr .review-meta-value {
-    color: inherit;
-    font-weight: 600;
-  }
-
-  :global(html.dark) .review-meta-item--risk-low {
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-success)) 32%,
-      rgb(var(--theme-text-secondary))
-    );
-  }
-
-  :global(html.dark) .review-meta-item--attempt .review-meta-value {
-    color: color-mix(
-      in srgb,
-      rgb(var(--color-primary-300)) 38%,
-      rgb(var(--theme-text))
-    );
-  }
-
-  :global(html.dark) .review-meta-item--pr,
-  :global(html.dark) .review-meta-item--follow {
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-link)) 34%,
-      rgb(var(--theme-text-secondary))
-    );
-  }
-
-  .secondary-action {
-    display: block;
-    width: 100%;
-    border: 0;
-    border-radius: 0.35rem;
-    background: transparent;
-    padding: 0.4rem 0.5rem;
-    text-align: left;
-    font-family:
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      system-ui,
-      sans-serif;
-    font-size: 13px;
-    font-weight: 400;
-    color: rgb(var(--theme-text));
-    cursor: pointer;
-  }
-
-  .secondary-action:hover:not(:disabled) {
-    background: rgb(var(--color-surface-800) / 0.7);
-    color: rgb(var(--theme-text));
-  }
-
-  .secondary-action:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-
-  .review-toolbar-badge {
-    margin-left: 0.1rem;
-    min-width: 0.9rem;
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .review-chrome-popover {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    max-height: min(22rem, 60vh);
-    overflow: auto;
-  }
-
-  .review-chrome-popover-title {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin: 0;
-    padding: 0.15rem 0.35rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: rgb(var(--theme-text));
-  }
-
-  .review-chrome-popover-title span {
-    color: rgb(var(--theme-text-quiet));
-    font-weight: 500;
-  }
-
-  .review-chrome-popover-empty,
-  .review-chrome-popover-line {
-    margin: 0;
-    padding: 0.25rem 0.35rem;
-    font-size: 0.75rem;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-chrome-timeline {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-
-  .review-chrome-timeline li {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.65rem;
-    padding: 0.2rem 0.35rem;
-  }
-
-  .review-chrome-timeline p {
-    margin: 0;
-    font-size: 0.75rem;
-    font-weight: 550;
-    color: rgb(var(--theme-text));
-  }
-
-  .review-chrome-timeline span,
-  .review-chrome-timeline time {
-    font-size: 0.625rem;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-chrome-timeline time {
-    white-space: nowrap;
-  }
-
-  .review-chrome-popover-more {
-    border: 0;
-    background: transparent;
-    padding: 0.35rem;
-    color: rgb(var(--theme-link));
-    font-size: 0.6875rem;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .review-chrome-link {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-</style>

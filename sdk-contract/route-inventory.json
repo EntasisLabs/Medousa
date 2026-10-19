@@ -5755,6 +5755,70 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 131072,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "reviews.auth.post",
+      "path": "/v1/reviews/auth",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 131072,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "reviews.mutate.post",
+      "path": "/v1/reviews/mutate",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 131072,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "reviews.providers.get",
+      "path": "/v1/reviews/providers",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 131072,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "reviews.query.post",
+      "path": "/v1/reviews/query",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 8388608,
       "bootstrap_public": false,
       "browser_policy": "native_only",

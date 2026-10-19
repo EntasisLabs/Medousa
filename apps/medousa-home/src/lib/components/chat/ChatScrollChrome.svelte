@@ -27,6 +27,9 @@
     canLoadOlder?: boolean;
     loadingOlder?: boolean;
     onLoadOlder?: () => Promise<unknown>;
+    canLoadNewer?: boolean;
+    onLoadNewer?: () => Promise<unknown>;
+    onLoadLatest?: () => Promise<unknown>;
     children?: Snippet;
     onAtBottomChange: (atBottom: boolean) => void;
     scrollEl?: HTMLDivElement;
@@ -49,6 +52,9 @@
     canLoadOlder = false,
     loadingOlder = false,
     onLoadOlder,
+    canLoadNewer = false,
+    onLoadNewer,
+    onLoadLatest,
     children,
     onAtBottomChange,
     scrollEl = $bindable(),
@@ -71,6 +77,9 @@
   let historyLoadFailed = $state(false);
   let historyNavigationReady = $state(false);
   let observedHistoryKey = "";
+  let historyNewerSentinel = $state<HTMLDivElement>();
+  let historyDirection: "older" | "newer" = "older";
+  let previousScrollTop = 0;
 
   function shouldLoadOlderAtTop(): boolean {
     return Boolean(historyNavigationReady && scrollEl && scrollEl.scrollTop <= 160);
@@ -82,7 +91,8 @@
 
   function stableHistoryAnchor(root: HTMLElement): HTMLElement | null {
     const anchors = root.querySelectorAll<HTMLElement>("[data-chat-history-anchor]");
-    return anchors.item(anchors.length - 1);
+    const viewport = root.getBoundingClientRect();
+    return [...anchors].find(anchor => anchor.getBoundingClientRect().bottom > viewport.top) ?? anchors.item(0);
   }
 
   async function requestOlder(force = false) {
@@ -101,6 +111,7 @@
     historyLoadInFlight = true;
     follower?.stopFollowing();
     historyLoadFailed = false;
+    const key = historyKey;
     try {
       // Disable browser anchoring before the prepend so WebKit and our explicit
       // restoration cannot both apply the inserted height.
@@ -111,7 +122,7 @@
       const previousAnchorOffset = anchor ? contentOffsetTop(scrollEl, anchor) : null;
       await onLoadOlder();
       await tick();
-      if (!scrollEl) return;
+      if (!scrollEl || key !== historyKey) return;
       let previousExtent = previousHeight;
       let nextExtent = scrollEl.scrollHeight;
       if (anchor?.isConnected && previousAnchorOffset != null) {
@@ -123,6 +134,7 @@
         previousExtent,
         nextExtent,
       );
+      previousScrollTop = scrollEl.scrollTop;
       scheduleChatNavigationMeasureFn();
     } catch {
       historyLoadFailed = true;
@@ -135,8 +147,38 @@
     }
   }
 
-  function scrollToLatestFn(force = false, behavior: ScrollBehavior = "auto") {
+  async function scrollToLatestFn(force = false, behavior: ScrollBehavior = "auto") {
+    if (force && canLoadNewer && onLoadLatest) {
+      await onLoadLatest();
+      await tick();
+    }
     follower?.request(force, behavior);
+  }
+
+  function shouldLoadNewerAtBottom() {
+    return Boolean(historyNavigationReady && historyDirection === "newer" && scrollEl && scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight <= 160);
+  }
+
+  async function requestNewer(force = false) {
+    if (!scrollEl || !onLoadNewer || !canLoadNewer || loadingOlder || historyLoadInFlight || (!force && !shouldLoadNewerAtBottom())) return;
+    historyLoadInFlight = true;
+    follower?.stopFollowing();
+    historyLoadFailed = false;
+    const key = historyKey;
+    const anchor = stableHistoryAnchor(scrollEl);
+    const offset = anchor ? contentOffsetTop(scrollEl, anchor) : null;
+    try {
+      await onLoadNewer();
+      await tick();
+      if (!scrollEl || key !== historyKey) return;
+      if (anchor?.isConnected && offset != null) scrollEl.scrollTop = Math.max(0, scrollEl.scrollTop + contentOffsetTop(scrollEl, anchor) - offset);
+      previousScrollTop = scrollEl.scrollTop;
+      scheduleChatNavigationMeasureFn();
+    } catch {
+      historyLoadFailed = true;
+    } finally {
+      historyLoadInFlight = false;
+    }
   }
 
   $effect(() => {
@@ -200,6 +242,8 @@
 
   function onScroll() {
     if (!scrollEl) return;
+    if (scrollEl.scrollTop !== previousScrollTop) historyDirection = scrollEl.scrollTop > previousScrollTop ? "newer" : "older";
+    previousScrollTop = scrollEl.scrollTop;
     follower?.onScroll();
     chatScrolling = true;
     if (chatScrollEndTimer) clearTimeout(chatScrollEndTimer);
@@ -209,6 +253,7 @@
     }, 160);
     scheduleChatNavigationMeasureFn();
     if (shouldLoadOlderAtTop()) void requestOlder();
+    else if (shouldLoadNewerAtBottom() && !historyLoadFailed) void requestNewer();
   }
 
   function scrollToChatTurn(id: string) {
@@ -255,6 +300,18 @@
     observedHistoryKey = key;
     historyLoadFailed = false;
     historyLoadInFlight = false;
+  });
+
+  $effect(() => {
+    const root = scrollEl;
+    const sentinel = historyNewerSentinel;
+    void historyKey; void canLoadNewer; void loadingOlder;
+    if (!root || !sentinel || !onLoadNewer || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting) && !historyLoadFailed) void requestNewer();
+    }, { root, rootMargin: "0px 0px 160px", threshold: 0 });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
   });
 
   $effect(() => {
@@ -313,6 +370,12 @@
       </div>
       <div bind:this={contentEl} class="chat-scroll-content {contentSpacing}">
         {@render children?.()}
+      </div>
+      <div bind:this={historyNewerSentinel} class="chat-history-sentinel" class:chat-history-sentinel-active={canLoadNewer}>
+        {#if canLoadNewer}
+          {#if historyLoadInFlight}<LoaderCircle size={16} class="animate-spin" aria-label="Loading newer messages" />
+          {:else}<button type="button" class="chat-history-retry" onclick={() => void requestNewer(true)}>Load newer messages</button>{/if}
+        {/if}
       </div>
     </div>
     {#if showTurnRail}

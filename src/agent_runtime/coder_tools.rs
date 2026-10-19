@@ -730,6 +730,14 @@ pub trait CoderExecutionGuard: Send + Sync {
     }
 }
 
+/// Reporting and ending an admitted turn must remain possible after workspace authority expires.
+fn coder_reporting_call(tool_name: &str, input: &Value) -> bool {
+    crate::turn_control_tools::is_finish_turn_tool_name(tool_name, input)
+        || crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name, input)
+        || crate::turn_control_tools::is_update_user_tool_name(tool_name, input)
+        || medousa_runtime::turn_control::is_request_input_turn_tool_name(tool_name, input)
+}
+
 /// Exact environment-aware Coder surface used after a portable undertaking is
 /// admitted on another workshop. Forge remains authoritative on the origin;
 /// the destination receives only code operations that can be rebound to the
@@ -979,9 +987,12 @@ impl ToolRegistry for PortableCoderToolRegistry {
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
-        self.verify()?;
         let id = self.resolve(tool_name)?;
         let (metadata, input) = take_coder_call(input)?;
+        if coder_reporting_call(id.as_str(), &input) {
+            return self.inner.invoke_tool(id.as_str(), input).await;
+        }
+        self.verify()?;
         if id.as_str() == super::coder_read_batch::TOOL_NAME {
             // A batch never expands the destination's admitted child tool set.
             self.resolve(crate::public_api::COGNITION_STORE_READ)?;
@@ -2836,6 +2847,10 @@ impl ToolRegistry for CoderBoundToolRegistry {
             )));
         }
         let tool_name = tool_id.as_str();
+        if coder_reporting_call(tool_name, &input) {
+            let (_, input) = take_coder_call(input)?;
+            return self.inner.invoke_tool(tool_name, input).await;
+        }
         let authority = self.authority()?;
         authority.heartbeat_admitted().await?;
         let (metadata, input) = take_coder_call(input)?;
@@ -3988,6 +4003,33 @@ mod tests {
             );
         }
         guard.revoked.store(true, Ordering::SeqCst);
+        for action in [
+            "turn.finish",
+            "turn.checkpoint",
+            "turn.request_input",
+            "turn.update_user",
+        ] {
+            registry.invoke_tool(crate::public_api::COGNITION_TURN,
+                json!({"intent":"Report expired assignment", "action": action, "message":"Assignment is no longer available"}))
+                .await.unwrap();
+        }
+        for action in [
+            "turn.begin_work",
+            "turn.request_more_rounds",
+            "turn.propose_mode",
+        ] {
+            assert!(
+                registry
+                    .invoke_tool(
+                        crate::public_api::COGNITION_TURN,
+                        json!({"intent":"Continue execution", "action": action, "goal":"More work"})
+                    )
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("revoked")
+            );
+        }
         assert!(
             registry
                 .invoke_tool(crate::public_api::COGNITION_STORE_READ, read)

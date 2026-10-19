@@ -13,7 +13,6 @@ import type { WorkCardDetail } from "$lib/types/card";
 import type { SessionSummary, TurnTicketRecord, TurnTicketResponse } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import type { MediaRef } from "$lib/types/media";
-import { dedupeMessagesById } from "$lib/utils/mergeTranscript";
 import type { StreamOwner } from "$lib/utils/streamOwnership";
 import { StreamEventPump, type StreamEventTarget } from "$lib/stream/eventPump";
 import { friendlyUserError } from "$lib/utils/normieErrors";
@@ -133,7 +132,10 @@ import { activeWorkshopId } from "$lib/utils/workshopLocality";
 import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 
+import { ChatHistoryController } from "$lib/chat/chatHistoryController.svelte";
+
 export class ChatStore implements ChatStoreHost {
+  history: ChatHistoryController = new ChatHistoryController(this);
   askHydrationInFlight = new Set<string>();
   workshopScopeId = activeWorkshopId();
   workshopEpoch = 0;
@@ -211,6 +213,7 @@ export class ChatStore implements ChatStoreHost {
     this.streamEventPump.reset();
     this.streamOwners.clear();
     this.sessionRuntimes.clear();
+    this.history.reset();
     this.messageIndexes.clear();
     this.askHydrationInFlight.clear();
     chatStreamPool.clear();
@@ -599,8 +602,7 @@ export class ChatStore implements ChatStoreHost {
   }
 
   sanitizeTranscript() {
-    const deduped = dedupeMessagesById(this.messages);
-    if (deduped.length !== this.messages.length) this.messages = deduped;
+    this.history.sanitize();
   }
 
   async reconcileOnResume(options?: { notice?: boolean }, cards: WorkCard[] = []) {
@@ -699,7 +701,7 @@ export class ChatStore implements ChatStoreHost {
   }
 
   isRelevantSession(sessionId: string | null | undefined): boolean {
-    return isRelevantSession(this, sessionId);
+    return !this.history.isReleased(sessionId?.trim() ?? "") && isRelevantSession(this, sessionId);
   }
 
   resolveTurnSessionId(turnId: string | null | undefined, workspaceCardId?: string | null): string {
@@ -766,11 +768,11 @@ export class ChatStore implements ChatStoreHost {
     const owner = this.streamOwners.get(event.turn_id);
     const targetSession = owner?.sessionId?.trim() || this.sessionId;
     const appliedSeq = this.lastAppliedSeq(targetSession, event.turn_id);
-    this.streamEventPump.enqueue({ sessionId: targetSession, event }, appliedSeq);
+    if (!this.history.isReleased(targetSession)) this.streamEventPump.enqueue({ sessionId: targetSession, event }, appliedSeq);
   }
 
   private applyPumpedStreamEvent(target: StreamEventTarget) {
-    applyPumpedStreamEvent(this, target);
+    if (!this.history.isReleased(target.sessionId)) applyPumpedStreamEvent(this, target);
   }
 
   private lastAppliedSeq(sessionId: string, turnId: string): number {
@@ -825,6 +827,7 @@ export class ChatStore implements ChatStoreHost {
     if (message.role === "assistant" && message.turnId) {
       indexes.assistantByTurn.set(message.turnId, message.id);
     }
+    this.history.sanitize();
   }
 
   applyStreamEventToMessage(messageId: string, event: InteractiveTurnStreamEvent) {

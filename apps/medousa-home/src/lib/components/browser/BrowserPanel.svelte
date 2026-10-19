@@ -5,6 +5,7 @@
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
+  import BrowserNavigationError from "$lib/components/browser/BrowserNavigationError.svelte";
   import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
   import BrowserTabSheet from "$lib/components/browser/BrowserTabSheet.svelte";
   import BrowserCompositorDebug from "$lib/components/browser/BrowserCompositorDebug.svelte";
@@ -140,6 +141,12 @@
   });
 
   $effect(() => {
+    if (!visible || !useNative || governedBrowser.usesWorkshopWorld) return;
+    humanBrowser.activeTab?.id;
+    return humanBrowser.watchActiveNavigation();
+  });
+
+  $effect(() => {
     const workshopWorld = governedBrowser.usesWorkshopWorld;
     if (workshopWorld) {
       compositor?.detach();
@@ -238,6 +245,7 @@
       <BrowserCaptchaBanner compact={true} />
       <BrowserControlHandoff />
       <BrowserFindBar />
+      <BrowserNavigationError store={humanBrowser} />
       <div data-browser-controls class="mobile-browser-url-row">
         <HumanBrowserUrlBar mobile />
         <BrowserChromeActions

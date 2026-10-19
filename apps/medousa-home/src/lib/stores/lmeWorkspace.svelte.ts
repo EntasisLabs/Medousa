@@ -1,5 +1,8 @@
 /** LME (Life Management Environment) — unified Vault + Automations workspace. */
 
+import type { HostedReviewRef } from "$lib/code/hostedReviews";
+import { hostedReviewKey } from "$lib/code/hostedReviews";
+import { fileDocuments } from "$lib/files/fileDocuments.svelte";
 import type { AutomationsSection } from "$lib/stores/automationsNav.svelte";
 import { lmeWorkspacePorts } from "$lib/runtime/lmeWorkspacePorts";
 import type { FlowComposerDraft } from "$lib/types/workflow";
@@ -23,7 +26,8 @@ export type LmeExplorerMode =
 export type CodeWorkspaceResource =
   | { kind: "workspace" }
   | { kind: "file"; path: string; line: number | null }
-  | { kind: "review" };
+  | { kind: "review" }
+  | { kind: "hosted_review"; reference: HostedReviewRef; connectionId: string | null };
 
 export type LmeTab =
   | {
@@ -103,6 +107,10 @@ function isRestorableTab(value: unknown): value is LmeTab {
     case "code": {
       if (!isString(tab.workId) || !tab.resource || typeof tab.resource !== "object") return false;
       const resource = tab.resource as Record<string, unknown>;
+      if (resource.kind === "hosted_review") {
+        const ref = resource.reference as Record<string, unknown> | undefined;
+        return Boolean(ref && [ref.provider_id, ref.host, ref.repository, ref.native_id].every(isString) && (resource.connectionId === null || typeof resource.connectionId === "string"));
+      }
       return resource.kind === "workspace" || resource.kind === "review" || (
         resource.kind === "file" &&
         isString(resource.path) &&
@@ -384,7 +392,7 @@ export class LmeWorkspaceStore {
         path,
         title,
       };
-      this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+      this.tabs = [...this.tabs, tab];
       this.activeTabId = tab.tabId;
       mirrorActiveTabToShell(tab.tabId, tab.title);
     }
@@ -535,12 +543,20 @@ export class LmeWorkspaceStore {
     this.tabs = [...this.tabs, ...additions].slice(-MAX_TABS);
   }
 
-  /** Review is a canvas, not a panel stacked beneath the editor. */
+  async openHostedReview(reference: HostedReviewRef, title: string, connectionId: string | null = null) {
+    const identity = hostedReviewKey(reference, connectionId);
+    const resource: CodeWorkspaceResource = { kind: "hosted_review", reference, connectionId };
+    const tabId = codeResourceKey(identity, resource);
+    const existing = this.tabs.find((tab) => tab.tabId === tabId);
+    if (!existing) this.tabs = [...this.tabs, { tabId, kind: "code" as const, workId: identity, title, resource }].slice(-MAX_TABS);
+    this.activeTabId = tabId;
+    mirrorActiveTabToShell(tabId, existing?.title ?? title);
+  }
+
+  /** Review opens independently of the editable working copy. */
   async openCodeReview(workId: string, title?: string) {
     const id = workId.trim();
     if (!id) return;
-    this.setExplorerMode("code");
-    await openCodeWorkspaceSession(id);
     const resource: CodeWorkspaceResource = { kind: "review" };
     const resourceId = codeResourceKey(id, resource);
     const label = title?.trim() || "Review changes";
@@ -845,6 +861,7 @@ export class LmeWorkspaceStore {
       return;
     }
     if (tab.kind === "code") {
+      if (tab.resource.kind === "review" || tab.resource.kind === "hosted_review") return;
       if (ports().undertakingDetailId() !== tab.workId) {
         await ports().selectUndertaking(tab.workId);
       }
@@ -886,6 +903,10 @@ export class LmeWorkspaceStore {
 
   confirmCloseTab(tabId: string): boolean {
     const closing = this.tabs.find((tab) => tab.tabId === tabId);
+    if (closing?.kind === "file") {
+      fileDocuments.flush(closing.path);
+      return !fileDocuments.dirty(closing.path) || window.confirm(`Discard unsaved changes to ${closing.path}?`);
+    }
     if (
       !closing ||
       closing.kind !== "code" ||
@@ -919,6 +940,7 @@ export class LmeWorkspaceStore {
       );
       if (buffer) ports().closeCodeBuffer(buffer.tabId);
     }
+    if (closing.kind === "file") fileDocuments.close(closing.path);
     const wasActive = this.activeTabId === tabId;
     this.tabs = this.tabs.filter((tab) => tab.tabId !== tabId);
 

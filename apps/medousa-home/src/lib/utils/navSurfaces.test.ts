@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { SurfaceDef } from "$lib/types/environment";
 import {
   navTier,
+  navLabel,
+  navTitle,
   shellSidebarViewTitle,
   surfaceHasShellSidebarView,
 } from "./navSurfaces";
@@ -36,7 +38,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(surfaceHasShellSidebarView("code")).toBe(true);
     expect(surfaceHasShellSidebarView("map")).toBe(true);
     expect(surfaceHasShellSidebarView("settings")).toBe(true);
-    expect(surfaceHasShellSidebarView("work")).toBe(true);
+    expect(surfaceHasShellSidebarView("work")).toBe(false);
     expect(surfaceHasShellSidebarView("calendar")).toBe(true);
     expect(surfaceHasShellSidebarView("web")).toBe(true);
     expect(surfaceHasShellSidebarView("profiles")).toBe(true);
@@ -55,11 +57,18 @@ describe("navSurfaces shell sidebar views", () => {
     expect(shellSidebarViewTitle("files")).toBe("Files");
     expect(shellSidebarViewTitle("artifacts")).toBe("Artifacts");
     expect(shellSidebarViewTitle("code")).toBe("Projects");
-    expect(shellSidebarViewTitle("map")).toBe("Map");
+    expect(shellSidebarViewTitle("map")).toBe("Context");
     expect(shellSidebarViewTitle("settings")).toBe("Settings");
     expect(shellSidebarViewTitle("calendar")).toBe("Calendar");
-    expect(shellSidebarViewTitle("work")).toBe("Work");
+    expect(shellSidebarViewTitle("work")).toBe("Sidebar");
     expect(shellSidebarViewTitle("web")).toBe("Web");
     expect(shellSidebarViewTitle("profiles")).toBe("You");
   });
+});
+
+
+it("labels the saved Capabilities destination as Agents", () => {
+  const legacy = { ...surface("workshop"), label: "Capabilities" };
+  expect(navLabel(legacy)).toBe("Agents");
+  expect(navTitle(legacy)).toBe("Agents");
 });

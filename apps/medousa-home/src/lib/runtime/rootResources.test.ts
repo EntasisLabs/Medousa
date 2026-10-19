@@ -30,7 +30,6 @@ describe("root resource probe", () => {
       "peer-message-notifications",
       "remote-peer-completion-sync",
       "command-spotlight-hotkeys",
-      "work-ask-focus",
     ]);
     const source = readFileSync(
       join(homeRoot, "src/lib/runtime/shellLifecycle.ts"),
@@ -63,6 +62,15 @@ describe("root resource probe", () => {
 });
 
 describe("eager AppShell graph freeze", () => {
+  it("owns task details and completion once across desktop and mobile", () => {
+    const root = readFileSync(join(homeRoot, "src/lib/components/layout/AppShell.svelte"), "utf8");
+    expect(root).toContain("loadTaskDetailsOverlay"); expect(root).toContain("loadTaskCompletionDialog");
+    expect(root).toContain("taskOverlays.selectedCardId"); expect(root).toContain("taskOverlays.pendingAskCompletion");
+    for (const path of ["mobile/HomePanel.svelte", "mobile/MobileShell.svelte"]) {
+      const source = readFileSync(join(homeRoot, "src/lib/components", path), "utf8");
+      expect(source).not.toMatch(/WorkManifestPopover|WorkStory|AskCompletionModal|TaskCompletionDialog|TaskDetailsOverlay/);
+    }
+  });
   it("keeps chat eager and loads overlays only on intent", () => {
     const source = readFileSync(
       join(homeRoot, "src/lib/components/layout/AppShell.svelte"),

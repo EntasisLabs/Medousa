@@ -1,0 +1,23 @@
+@layer features {
+  /* Reading surfaces use Liquid's section rhythm, accordions, tables and code
+     controls without changing the source document or chat's compact prose. */
+  .markdown-document { font-size:.8125rem; line-height:1.7; color:rgb(var(--theme-text)); }
+  .markdown-document > :first-child { margin-top:0; }
+  .markdown-document > :last-child { margin-bottom:0; }
+  .markdown-document :is(h1,h2) { font-size:1rem; font-weight:600; line-height:1.4; margin:1.25rem 0 .65rem; }
+  .markdown-document h3 { font-size:.875rem; font-weight:600; line-height:1.5; }
+  .markdown-document blockquote { font-style:normal; border-color:rgb(var(--theme-border)/.5); padding-left:1rem; }
+  .markdown-document .liquid-accordion { margin:1rem 0; }
+  .markdown-document .liquid-accordion-label { font-size:.8125rem; font-weight:550; }
+  .markdown-document .liquid-accordion-panel { padding:.3rem .85rem 1rem; font-size:.8125rem; line-height:1.7; }
+  .markdown-document .liquid-accordion-panel > :first-child { margin-top:0; }
+  .markdown-document .liquid-accordion-panel > :last-child { margin-bottom:0; }
+  .markdown-document .liquid-accordion-panel .markdown-code-block { margin-block:.85rem; }
+  .markdown-document .markdown-image-inline { display:inline-block; vertical-align:middle; margin:0 .15rem; max-width:100%; }
+  .markdown-document .markdown-image-inline img { display:inline-block; border:0; border-radius:0; background:transparent; vertical-align:middle; }
+  .markdown-document a:has(.markdown-image-inline) { display:inline-block; max-width:100%; vertical-align:middle; }
+  .markdown-document :is(table,pre) { max-width:100%; }
+  .markdown-document summary { cursor:pointer; }
+  .markdown-document :is(.markdown-table-scroll,.markdown-code-block) { margin-block:1rem; }
+  @media(prefers-reduced-motion:reduce) { .markdown-document .liquid-accordion-chevron { transition:none; } }
+}

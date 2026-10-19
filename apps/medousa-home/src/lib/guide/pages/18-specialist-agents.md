@@ -1,6 +1,6 @@
 # Agents
 
-**Advanced.** **Agents** (Automations → Agents) are optional specialist skills you can import, run, and schedule. They are not the same as **You** / your profile — [You and the Map](guide:profiles-locus).
+**Advanced.** **Agents** (Automations → Agents) are optional specialist skills you can import, run, and schedule. They are not the same as **You** / your profile — [You and Context](guide:profiles-locus).
 
 ## Open Agents
 
@@ -35,7 +35,7 @@ Treat the Tools palette as the trust surface — there is no separate “trust p
 ```callout
 tone: tip
 title: Profile vs specialist
-body: You / Profiles is who you are. Agents are optional skills with their own tools. Do not import a skill to “fix” identity memory — teach from You instead.
+body: You / Profiles is who you are. Agents are optional skills with their own tools. Do not import a skill to “fix” identity memory — update your saved context in You instead.
 ```
 
 Next: [Automations and scripts](guide:grapheme-automations) · [Writing scripts](guide:writing-scripts) · [Permissions, budgets, and tool safety](guide:permissions-budgets).

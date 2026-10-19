@@ -21,6 +21,16 @@ macro_rules! export_type {
 
 fn main() {
     let mut schemas: BTreeMap<String, RootSchema> = BTreeMap::new();
+    export_type!(
+        schemas,
+        ReviewProviderListResponse,
+        "ReviewProviderListResponse"
+    );
+    export_type!(schemas, ReviewProviderMutation, "ReviewProviderMutation");
+    export_type!(schemas, ReviewProviderAuthRequest, "ReviewProviderAuthRequest");
+    export_type!(schemas, ReviewProviderAuthResponse, "ReviewProviderAuthResponse");
+    export_type!(schemas, ReviewProviderQuery, "ReviewProviderQuery");
+    export_type!(schemas, ReviewProviderResponse, "ReviewProviderResponse");
     export_type!(schemas, ChatGptAccountProfile, "ChatGptAccountProfile");
     export_type!(
         schemas,

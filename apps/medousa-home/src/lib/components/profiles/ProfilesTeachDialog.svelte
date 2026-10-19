@@ -1,5 +1,6 @@
 <script lang="ts">
   import { rememberIdentityFact } from "$lib/daemon";
+  import type { ProfileShelfEntry } from "$lib/types/profileShelf";
   import type { IdentityRememberResponse } from "$lib/types/identity";
   import type { IdentityRememberRequest } from "$lib/types/identity";
   import { parseIdentityTeachInput, withIdentityUserId } from "$lib/utils/identityTeach";
@@ -10,6 +11,7 @@
     open: boolean;
     readOnly?: boolean;
     prefill?: string;
+    entry?: ProfileShelfEntry | null;
     onClose: () => void;
     onRemembered?: (
       parsed: IdentityRememberRequest,
@@ -21,6 +23,7 @@
     open,
     readOnly = false,
     prefill = "",
+    entry = null,
     onClose,
     onRemembered,
   }: Props = $props();
@@ -47,7 +50,11 @@
 
   async function submit(event?: SubmitEvent) {
     event?.preventDefault();
-    const parsed = withIdentityUserId(parseIdentityTeachInput(text));
+    const parsed = withIdentityUserId(
+      entry?.rememberKind && entry.rememberSubject
+        ? { fact_kind: entry.rememberKind, subject: entry.rememberSubject, statement: text.trim(), source: "user_direct" }
+        : parseIdentityTeachInput(text),
+    );
     if (!parsed.statement.trim() || readOnly) return;
     busy = true;
     flash = null;
@@ -101,7 +108,7 @@
       <header class="vault-interact-header vault-compose-header">
         <div class="min-w-0">
           <p class="vault-interact-kicker">You</p>
-          <h3 id="profiles-teach-title" class="vault-interact-title">Teach Medousa</h3>
+          <h3 id="profiles-teach-title" class="vault-interact-title">{entry ? "Edit information" : "Add information"}</h3>
         </div>
         <button
           type="button"
@@ -138,7 +145,7 @@
           class="vault-interact-commit"
           disabled={readOnly || busy || !text.trim()}
         >
-          {busy ? "Saving…" : "Remember"}
+          {busy ? "Saving…" : "Save"}
         </button>
       </div>
     </form>

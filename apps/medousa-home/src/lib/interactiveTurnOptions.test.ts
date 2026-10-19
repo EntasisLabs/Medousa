@@ -14,12 +14,16 @@ vi.mock("$lib/stores/governedBrowser.svelte", () => ({ governedBrowser: {} }));
 vi.mock("$lib/stores/userProfiles.svelte", () => ({
   userProfiles: { turnIdentityUserId: () => "user-1" },
 }));
+vi.mock("$lib/stores/chat.svelte", () => ({
+  chat: { sessionId: "composer-chat", workshopScopeId: "workshop", messages: [] },
+}));
 
 import { runtime } from "$lib/stores/runtime.svelte";
 import { sessionModelSelections, type ChatModelContext } from "$lib/chat/sessionModelSelection.svelte";
 import { reasoningCapabilities } from "$lib/chat/reasoningCapabilities.svelte";
 import { normalizeReasoningCapability } from "$lib/types/reasoningEffort";
 import { buildInteractiveTurnOptions, prepareInteractiveTurnOptions } from "./interactiveTurnOptions";
+import { selectComposerModel } from "$lib/chat/composerModel";
 
 let sequence = 0;
 function chat(): ChatModelContext {
@@ -56,6 +60,19 @@ describe("interactive chat model routing", () => {
     expect(next).toEqual(first);
     expect(next.stageRouting?.final_response.model).toBe("sol");
     expect(next).toMatchObject({ responseDepthMode: "deep", reasoningEffort: "default", identityUserId: "user-1" });
+  });
+
+  it("sends the composer pick for each turn without changing the provider default", async () => {
+    const context = chat();
+    vi.spyOn(reasoningCapabilities, "load").mockResolvedValue();
+    const originalModel = runtime.model;
+    for (const model of ["luna", "astra", originalModel]) {
+      selectComposerModel(runtime.provider, model, context);
+      const options = await prepareInteractiveTurnOptions(context);
+      expect(options).toMatchObject({ provider: runtime.provider, model });
+      expect(options.stageRouting?.final_response.model).toBe(model);
+      expect(runtime.model).toBe(originalModel);
+    }
   });
 
   it("prepares the saved model effort without leaking another chat or global default", async () => {

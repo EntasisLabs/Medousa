@@ -1,3 +1,4 @@
+import { taskOverlays } from "$lib/runtime/taskOverlayState.svelte";
 import { haptic } from "$lib/haptics";
 import { chat } from "$lib/stores/chat.svelte";
 import { environment } from "$lib/stores/environment.svelte";
@@ -47,6 +48,14 @@ export function tryMobileBackNavigation(): boolean {
   for (let index = modalBackHandlers.length - 1; index >= 0; index -= 1) {
     if (modalBackHandlers[index]()) return true;
   }
+  if (taskOverlays.askHistorySessionId) {
+    taskOverlays.askHistorySessionId = null;
+    return true;
+  }
+  if (workspace.selectedCardId) {
+    workspace.clearSelection();
+    return true;
+  }
   if (layout.mobileDestinationsMenuOpen) {
     layout.setMobileDestinationsMenuOpen(false);
     return true;
@@ -69,14 +78,6 @@ export function tryMobileBackNavigation(): boolean {
   }
   for (let index = mobileBackHandlers.length - 1; index >= 0; index -= 1) {
     if (mobileBackHandlers[index]()) return true;
-  }
-  if (layout.mobileTab === "home" && workspace.workView === "asks") {
-    workspace.openHubView();
-    return true;
-  }
-  if (layout.mobileTab === "home" && workspace.selectedCardId) {
-    workspace.clearSelection();
-    return true;
   }
   if (layout.mobileTab === "home" && layout.mobileSurfaceOverride) {
     layout.clearMobileSurfaceOverride();

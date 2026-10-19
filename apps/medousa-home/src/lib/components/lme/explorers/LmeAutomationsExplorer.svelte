@@ -1,13 +1,10 @@
 <script lang="ts">
   import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
-  import HistoryPanel from "$lib/components/automations/HistoryPanel.svelte";
+  import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 
   const mode = $derived(lmeWorkspace.explorerMode);
 
-  function openFlowsComposer() {
-    lmeWorkspace.focusFlowComposerTab();
-  }
 </script>
 
 <aside
@@ -15,11 +12,7 @@
   aria-label="Automations explorer"
 >
   {#if mode === "history"}
-    <HistoryPanel
-      visible={true}
-      embedded={true}
-      onOpenFlows={openFlowsComposer}
-    />
+    <button class="m-3 rounded px-3 py-2 text-sm hover:bg-surface-800" onclick={() => commandSpotlight.openActivity()}>Open Activity</button>
   {:else if mode === "schedules"}
     <AutomationsPanel
       visible={true}

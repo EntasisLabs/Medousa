@@ -457,6 +457,10 @@ symbols when World has indexed them, or the whole-file diff. Expand a symbol for
 that scope’s hunks only. Large pure deletions start collapsed. Custody details
 (base, digest, history, index coverage, PR) live under **About**.
 
+Review keeps a bounded set of open file previews. Opening more files can collapse
+an older preview to release its contents; expand it again to reload the same
+comparison. Context lines are shared across a file's symbol previews.
+
 Binary changes show honest file metadata instead of an unreadable patch. Policy
 exceptions and risky content (secrets, oversize) are called out above the file
 list and must be acknowledged before approval; softer warnings such as “checks

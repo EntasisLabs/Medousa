@@ -31,7 +31,6 @@
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { pendingComposeLaunch } from "$lib/composeLaunch";
   import { layout } from "$lib/runtime/layout.svelte";
-  import { workspace } from "$lib/stores/workspace.svelte";
   import { getSessionAgentMode, getSessionCodeBinding } from "$lib/daemon";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
@@ -238,14 +237,7 @@
   {/if}
   {#if !providerRuntime}
   <PeerProposalBar mobile sessionId={chat.focusedSessionId} />
-  <BudgetApprovalBar
-    mobile
-    onOpenWork={() => {
-      switchMobileTab("home");
-      const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
-      if (pending) void workspace.selectCard(pending.workCardId);
-    }}
-  />
+  <BudgetApprovalBar mobile />
   <ModeProposalBar
     mobile
     sessionId={chat.focusedSessionId}

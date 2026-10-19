@@ -74,6 +74,13 @@ Connection**.
 Send a normal message. Medousa keeps work durable on the engine — closing the
 window does not throw away an accepted job.
 
+Long conversations load earlier messages as you scroll up. Medousa keeps nearby
+pages in memory and reloads other pages when you scroll back toward newer
+messages. **Scroll to latest** returns to the live reply. Closing a conversation
+tab releases its transcript cache; reopening it loads recent messages from the
+workshop daemon and restores your draft. Closing a tab does not cancel work
+running in the daemon.
+
 While a reply streams, completed paragraphs and blocks stay in place. Chat
 follows the growing reply until you scroll upward to read. Return to the bottom
 or select the down arrow to follow it again; finishing a reply does not pull
@@ -141,7 +148,7 @@ ordinary per-conversation draft recovery remains private to the app.
 | Surface | What it’s for |
 |---------|----------------|
 | **Chat** | Talk, think, attach context |
-| **Work** | Background jobs and the work board |
+| **Activity** (Spotlight) | Background tasks, agents, and execution previews |
 | **Library / Vault** | Notes and finished artifacts |
 | **Web** | Browse and save pages |
 | **Peers** | Other workshops / people on your network |

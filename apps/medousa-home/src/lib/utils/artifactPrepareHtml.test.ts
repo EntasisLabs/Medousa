@@ -19,13 +19,17 @@ describe("artifactPrepareHtml", () => {
   });
 
   it("injects scrollable panel mode styles without layout overrides", () => {
+    const authoredStyle = "body{color:#242424;background:#faf9f6;margin:40px auto;padding:0 24px}";
     const html = prepareArtifactHtml(
-      "<!DOCTYPE html><html><head></head><body><p>Hi</p></body></html>",
+      `<!DOCTYPE html><html><head><style>${authoredStyle}</style><style id="medousa-artifact-host">html,body{margin:0;padding:0;background:transparent;overflow:hidden}</style></head><body><p>Hi</p></body></html>`,
       "panel",
       false,
     );
     expect(html).toContain("overflow:auto");
     expect(html).toContain("--medousa-host-fg:#18181b");
+    expect(html).toContain(authoredStyle);
+    expect(html).not.toContain('id="medousa-artifact-host"');
+    expect(buildArtifactModeStyle("panel")).not.toContain("background:");
     expect(html).not.toContain("justify-content");
     expect(html).not.toContain("body>*");
   });

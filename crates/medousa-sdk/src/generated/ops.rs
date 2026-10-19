@@ -2543,6 +2543,34 @@ pub const RECURRING_PROMPT_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const REVIEWS_AUTH_POST: Operation = Operation {
+    id: "reviews.auth.post",
+    method: "POST",
+    path: "/v1/reviews/auth",
+    streaming: false,
+};
+
+pub const REVIEWS_MUTATE_POST: Operation = Operation {
+    id: "reviews.mutate.post",
+    method: "POST",
+    path: "/v1/reviews/mutate",
+    streaming: false,
+};
+
+pub const REVIEWS_PROVIDERS_GET: Operation = Operation {
+    id: "reviews.providers.get",
+    method: "GET",
+    path: "/v1/reviews/providers",
+    streaming: false,
+};
+
+pub const REVIEWS_QUERY_POST: Operation = Operation {
+    id: "reviews.query.post",
+    method: "POST",
+    path: "/v1/reviews/query",
+    streaming: false,
+};
+
 pub const RUNTIME_ARTIFACT_COMMAND_POST: Operation = Operation {
     id: "runtime.artifact.command.post",
     method: "POST",
@@ -3830,6 +3858,10 @@ pub static ALL: &[Operation] = &[
     RECURRING_BY_RECURRING_ID_RUNS_GET,
     RECURRING_GET,
     RECURRING_PROMPT_POST,
+    REVIEWS_AUTH_POST,
+    REVIEWS_MUTATE_POST,
+    REVIEWS_PROVIDERS_GET,
+    REVIEWS_QUERY_POST,
     RUNTIME_ARTIFACT_COMMAND_POST,
     RUNTIME_ARTIFACT_DELETE_POST,
     RUNTIME_ARTIFACT_FETCH_POST,

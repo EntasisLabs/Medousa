@@ -22,7 +22,7 @@ Related: [How Medousa fits together](guide:architecture) · [Desktop, web, and p
 | Band | Controls |
 |------|----------|
 | **Look** | Light/dark, color theme, what chrome to show |
-| **Work cards** | How long finished Work stays on the board |
+| **Task activity** | How long completed tasks stay in the default Activity list |
 | **Everyday** | Notification categories, guidance, and phone-only Live Activity |
 | **More display** | Model picker, Liquid chat, technical detail in chat |
 

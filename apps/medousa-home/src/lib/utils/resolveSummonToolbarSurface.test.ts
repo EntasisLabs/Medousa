@@ -10,7 +10,7 @@ describe("resolveSummonToolbarSurface", () => {
     expect(resolveSummonToolbarSurface("settings", "agents")).toBe("settings");
     expect(resolveSummonToolbarSurface("web", "notes")).toBe("web");
     expect(resolveSummonToolbarSurface("calendar", "scripts")).toBe("calendar");
-    expect(resolveSummonToolbarSurface("work", "notes")).toBe("work");
+    expect(resolveSummonToolbarSurface("work", "notes")).toBeNull();
     expect(resolveSummonToolbarSurface("code", "notes")).toBe("code");
     expect(resolveSummonToolbarSurface("profiles", "notes")).toBe("profiles");
   });

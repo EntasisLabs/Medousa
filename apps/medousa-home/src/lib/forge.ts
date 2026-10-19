@@ -1180,7 +1180,7 @@ export async function getProviderHandoff(workId: string): Promise<ProviderHandof
 
 export async function shareProviderHandoff(
   workId: string,
-  input: { title?: string; body?: string; attempt_id?: string },
+  input: { title?: string; body?: string; attempt_id?: string; connection_id?: string; provider_id?: string },
 ): Promise<ProviderHandoff> {
   return forgeFetch(operationPath("forge.items.by_work_id.provider.post", { work_id: workId }), {
     method: "POST",

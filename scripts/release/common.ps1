@@ -16,6 +16,7 @@ $script:MedousaBinaries = @(
     "medousa_telegram",
     "medousa_discord",
     "medousa_slack",
+    "medousa_review_github",
     "medousa_mcp_gateway",
     "medousa_whatsapp"
 )
@@ -26,6 +27,7 @@ $script:MedousaComponentIds = @(
     "adapter-telegram",
     "adapter-discord",
     "adapter-slack",
+    "review-github",
     "adapter-whatsapp",
     "mcp-gateway",
     "coding-engine",
@@ -107,6 +109,7 @@ function Get-MedousaComponentBinaries([string]$PackageId) {
         "adapter-telegram" { return @("medousa_telegram") }
         "adapter-discord" { return @("medousa_discord") }
         "adapter-slack" { return @("medousa_slack") }
+        "review-github" { return @("medousa_review_github") }
         "adapter-whatsapp" { return @("medousa_whatsapp") }
         "mcp-gateway" { return @("medousa_mcp_gateway") }
         "coding-engine" { return @("medousa-code") }

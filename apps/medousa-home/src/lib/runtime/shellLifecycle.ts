@@ -6,7 +6,6 @@ import { toast } from "$lib/runtime/toast.svelte";
 import { wizard } from "$lib/stores/wizard.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
-import { workAskDock } from "$lib/stores/workAskDock.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 import { settings } from "$lib/stores/settings.svelte";
@@ -32,7 +31,6 @@ import {
   watchMobileViewport,
 } from "$lib/platform";
 import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
-import { WORK_FOCUS_ASK_EVENT } from "$lib/utils/workChromeEvents";
 import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
 import { bindRootResource } from "./rootResources";
 import { eventMatchesCommandChord } from "$lib/commands/commandBindings";
@@ -214,16 +212,6 @@ export function startShellRootResources(): () => void {
     window.removeEventListener("keydown", onKeydown);
   });
 
-  const onFocusAsk = () => {
-    if (layout.isMobile) return;
-    const trigger =
-      document.querySelector<HTMLElement>('[data-work-ask-trigger="true"]') ?? null;
-    workAskDock.openDock(trigger);
-  };
-  window.addEventListener(WORK_FOCUS_ASK_EVENT, onFocusAsk);
-  const stopWorkAskFocus = bindRootResource("work-ask-focus", () => {
-    window.removeEventListener(WORK_FOCUS_ASK_EVENT, onFocusAsk);
-  });
 
   return () => {
     stopWizard();
@@ -234,7 +222,6 @@ export function startShellRootResources(): () => void {
     stopPeerNotifications();
     stopRemotePeerCompletionSync();
     stopHotkeys();
-    stopWorkAskFocus();
     setActiveWorkshopKindPort(() => undefined);
     setWorkshopReconnectPort(null);
     setWorkshopRefreshPort(null);

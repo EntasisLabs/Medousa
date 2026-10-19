@@ -4,6 +4,7 @@
    * Chat message list — runtime-governed Liquid is the sole paint path.
    * User→assistant pairs render as timeline beats (whisper + full-width voice).
    */
+  import VirtualChatBeat from "./VirtualChatBeat.svelte";
   import { onMount } from "svelte";
   import { Copy, CornerDownRight, Library, Share2, Square, Volume2 } from "@lucide/svelte";
   import ChatAgentGroup from "$lib/components/chat/ChatAgentGroup.svelte";
@@ -292,11 +293,13 @@
     (previousBeat.kind === "pair" || previousBeat.message.role === "assistant") &&
     (beat.kind === "pair" || beat.message.role === "user")}
 
+  <VirtualChatBeat
+    userId={navigation ? (beat.kind === "pair" ? beat.user.id : beat.message.role === "user" ? beat.message.id : undefined) : undefined}
+    keepMounted={beat.kind === "pair" ? Boolean(beat.assistant.streaming) : Boolean(beat.message.streaming)}
+  >
   {#if beat.kind === "pair"}
     <section
       class="chat-turn-beat {turnBreak ? 'chat-turn-break' : ''}"
-      data-chat-history-anchor
-      data-chat-turn-user-id={navigation ? beat.user.id : undefined}
     >
       <ChatUserWhisper
         message={beat.user}
@@ -330,8 +333,6 @@
   {:else if beat.message.role === "user"}
     <div
       class="{turnBreak ? 'chat-turn-break' : ''} chat-turn-beat"
-      data-chat-history-anchor
-      data-chat-turn-user-id={navigation ? beat.message.id : undefined}
     >
       <ChatUserWhisper
         message={beat.message}
@@ -350,7 +351,6 @@
   {:else}
     <article
       class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}"
-      data-chat-history-anchor
     >
       {@render resultReceipt(beat.message)}
       <LiquidChatMessage
@@ -369,6 +369,7 @@
     </article>
   {/if}
   {@render agentGroup(beat.kind === "pair" ? beat.user.id : beat.message.id)}
+  </VirtualChatBeat>
 {/each}
 
 <style>

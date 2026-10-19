@@ -27,16 +27,20 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |
-| [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands in an owned native terminal |
+| [Spotlight Activity](guides/spotlight-activity.md) | Follow workshop tasks, agents, code commands, and scheduled runs |
+| [Reviews](guides/reviews.md) | Connect review accounts and browse local or repository-hosted reviews and project changes |
+| [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands and understand local credential storage |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
-| [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
+| [Workshop & Automations](guides/workshop-and-automations.md) | Run list, schedules, specialists, and Activity |
 | [Phone pairing](guides/phone-pairing.md) | Name paired workshops, refresh stale connections, and add optional portals |
 | [Siri and Shortcuts](guides/siri-and-shortcuts.md) | Continue the selected chat by voice or from an iPhone shortcut |
 | [Medousa Live on iPhone](guides/medousa-live-ios.md) | Continuous in-app voice, controls, requirements, and preview limits |
 | [Medousa Live in CarPlay](guides/medousa-carplay.md) | Development companion controls, setup, and qualification limits |
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
-| [SSH targets](guides/ssh-targets.md) | Connect named servers, grant agent access, and open terminals |
+| [SSH targets](guides/ssh-targets.md) | Connect named servers and open workshop or SSH terminals from Spotlight |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
+| [Files](guides/files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
+| [Context](guides/context.md) | Browse saved session memory and its sources |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
 | [External agent conversations](guides/provider-conversations.md) | Find and connect named agents from Sessions or Spotlight through WhatsApp, Slack, or a webhook |
 | [Instinct Agent](guides/instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |
@@ -98,6 +102,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Vault](engine/vault.md) | Notes API + cognition vault tools |
 | [Calendar](engine/calendar.md) | Personal `.ics` API + cognition calendar tools |
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
+| [Review providers](engine/review-providers.md) | Optional repository-host packages and the unified hosted-review API |
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
 | [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
 | [Work scopes and relationships](engine/work-units.md) | Durable user-domain intent, resource links, actor-bound inboxes, and correlated provider evidence through existing runtime tools |

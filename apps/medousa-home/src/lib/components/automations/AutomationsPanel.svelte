@@ -1,25 +1,20 @@
 <script lang="ts">
   import { AUTOMATIONS_SECTIONS } from "$lib/automationsSections";
   import FlowsPanel from "$lib/components/automations/FlowsPanel.svelte";
-  import HistoryPanel from "$lib/components/automations/HistoryPanel.svelte";
   import ScheduleCreatePopover from "$lib/components/automations/ScheduleCreatePopover.svelte";
   import ScheduleDetailEditor from "$lib/components/automations/ScheduleDetailEditor.svelte";
   import ScriptsWorkbenchPanel from "$lib/components/automations/ScriptsWorkbenchPanel.svelte";
   import MobileAutomationsDock from "$lib/components/mobile/MobileAutomationsDock.svelte";
-  import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { automationsNav, type AutomationsSection } from "$lib/stores/automationsNav.svelte";
   import { automations } from "$lib/stores/automations.svelte";
-  import { catalog } from "$lib/stores/catalog.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import { flows } from "$lib/stores/flows.svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
-  import type { ManuscriptCatalogEntry } from "$lib/types/catalog";
   import type { RecurringDefinitionEntry } from "$lib/types/recurring";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
-  import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import { SlidersHorizontal } from "@lucide/svelte";
   import { onMount, tick } from "svelte";
 
@@ -175,13 +170,6 @@
     automationDraft.clearCreate();
   }
 
-  function scheduleAgent(entry: ManuscriptCatalogEntry) {
-    automationDraft.openCreate(
-      automationDraftForSpecialist(entry, catalog.manuscriptDetail),
-    );
-    setSection("schedules");
-  }
-
   function clearSchedulesSearch() {
     search = "";
     searchOpen = false;
@@ -293,41 +281,6 @@
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <ScriptsWorkbenchPanel visible={true} {mobile} {embedded} />
     </div>
-  {:else if section === "agents"}
-    {#if !lmeHosted && !calmMobile}
-      <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          {#if !embedded}
-            <div>
-              <h1 class="text-base font-semibold text-surface-50">Automations</h1>
-              <p class="workshop-header-line mt-1">Specialist agents · run, tune, schedule</p>
-            </div>
-          {/if}
-        </div>
-        <div class="workshop-tabs workshop-tabs-mobile mt-3">
-          {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
-            <button
-              type="button"
-              class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-              onclick={() => setSection(tab.id)}
-            >
-              {tab.label}
-            </button>
-          {/each}
-        </div>
-      </header>
-    {/if}
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-      <SkillsPanel
-        visible={true}
-        {mobile}
-        embedded={true}
-        hideMobileHeader={calmMobile}
-        {onOpenChat}
-        onScheduleSkill={scheduleAgent}
-        onUseInAutomation={scheduleAgent}
-      />
-    </div>
   {:else if section === "flows"}
     {#if !lmeHosted && !calmMobile}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
@@ -335,7 +288,7 @@
         {#if !embedded}
           <div>
             <h1 class="text-base font-semibold text-surface-50">Automations</h1>
-            <p class="workshop-header-line mt-1">Scripts · flows · schedules · history</p>
+            <p class="workshop-header-line mt-1">Scripts · flows · schedules</p>
           </div>
         {/if}
       </div>
@@ -355,36 +308,6 @@
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <FlowsPanel visible={true} {mobile} {embedded} />
     </div>
-  {:else if section === "history"}
-    {#if !lmeHosted && !calmMobile}
-    <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        {#if !embedded}
-          <div>
-            <h1 class="text-base font-semibold text-surface-50">Automations</h1>
-            <p class="workshop-header-line mt-1">Scripts · flows · schedules · history</p>
-          </div>
-        {/if}
-      </div>
-      <div class="workshop-tabs workshop-tabs-mobile mt-3">
-        {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
-          <button
-            type="button"
-            class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => setSection(tab.id)}
-          >
-            {tab.label}
-          </button>
-        {/each}
-      </div>
-    </header>
-    {/if}
-    <HistoryPanel
-      visible={true}
-      {mobile}
-      {embedded}
-      onOpenFlows={() => setSection("flows")}
-    />
   {:else}
   {#if !mobileDetailOpen && !(embedded && lmeHosted) && !calmMobile}
     <header class="{embedded ? 'px-3 py-2' : 'workshop-header'}">

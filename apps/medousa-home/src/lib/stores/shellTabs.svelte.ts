@@ -44,6 +44,7 @@ import {
 } from "$lib/utils/shellSplitTree";
 import {
   titleOfTab,
+  surfaceTitle,
   type ShellTabSearchHit,
 } from "$lib/utils/shellTabSearch";
 import type { HomeOnboardingLayout } from "$lib/utils/homeOnboarding";
@@ -87,38 +88,6 @@ function newTabId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function surfaceTitle(surfaceId: string): string {
-  switch (surfaceId) {
-    case "library":
-    case "automations":
-      return "Workspace";
-    case "code":
-      return "Code";
-    case "chat":
-      return "Chat";
-    case "peers":
-      return "Peers";
-    case "messaging":
-      return "Channels";
-    case "context":
-    case "map":
-      return "Map";
-    case "work":
-      return "Work";
-    case "calendar":
-      return "Calendar";
-    case "settings":
-      return "Settings";
-    case "runtime":
-      return "Runtime";
-    case "profiles":
-      return "Profiles";
-    case "web":
-      return "Web";
-    default:
-      return surfaceId;
-  }
-}
 
 function focusSurfaceHint(tab: ShellTab | null): string | null {
   if (!tab) return null;
@@ -128,8 +97,9 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
     // Inline map (avoid importing lmeExplorerModes → circular init with lmeWorkspace).
     const lme = ports().lme.tabs().find((entry) => entry.tabId === tab.lmeTabId);
     switch (lme?.kind) {
-      case "script":
       case "manuscript":
+        return "workshop";
+      case "script":
       case "flow":
       case "schedule":
         return "automations";
@@ -138,7 +108,7 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
       case "deck":
         return "library";
       case "code":
-        return "code";
+        return (lme.resource.kind === "review" || lme.resource.kind === "hosted_review") ? "reviews" : "code";
       default:
         return "library";
     }
@@ -261,8 +231,8 @@ function filterLayoutForLme(
   lmeTabIds: Set<string>,
 ): ShellDesktopLayout {
   const seenTabs = new Set<string>();
-  const tabs = layout.tabs.filter((tab) => {
-    if (seenTabs.has(tab.id) || (tab.kind === "lme" && !lmeTabIds.has(tab.lmeTabId))) {
+  const tabs = layout.tabs.map((tab) => tab.kind === "surface" && tab.surfaceId === "map" ? { ...tab, title: "Context" } : tab).filter((tab) => {
+    if ((tab.kind === "surface" && tab.surfaceId === "work") || seenTabs.has(tab.id) || (tab.kind === "lme" && !lmeTabIds.has(tab.lmeTabId))) {
       return false;
     }
     seenTabs.add(tab.id);
@@ -580,6 +550,7 @@ export class ShellTabsStore {
     const surface = focusSurfaceHint(tab);
     if (!surface) return;
     layout.focusDesktopSurface(surface);
+    if (surface === "reviews") layout.openShellSidebarView("reviews");
   }
 
   private patchGroup(groupId: string, patch: Partial<EditorGroup>) {
@@ -702,7 +673,7 @@ export class ShellTabsStore {
         return;
       }
     }
-    if (surface === "library" || surface === "automations" || surface === "code") {
+    if (surface === "library" || surface === "code") {
       this.enterLmeFamily(surface === "code" ? "code" : "library");
       return;
     }
@@ -983,10 +954,10 @@ export class ShellTabsStore {
     surfaceId: string,
     options?: { activate?: boolean; groupId?: string },
   ): string | null {
+    if (surfaceId === "work") return null; // Retired; Activity is a Spotlight lens.
     let next = surfaceId === "home" ? "chat" : surfaceId;
     if (next === "context") next = "map";
     if (
-      next === "automations" ||
       next === "workshop" ||
       next === "notes" ||
       next === "files" ||
@@ -1063,10 +1034,10 @@ export class ShellTabsStore {
   }
 
   openDestination(surfaceId: string) {
+    if (surfaceId === "work") return null; // Retired; Activity is a Spotlight lens.
     let next = surfaceId === "home" ? "chat" : surfaceId;
     if (next === "context") next = "map";
     if (
-      next === "automations" ||
       next === "workshop" ||
       next === "notes" ||
       next === "files" ||
@@ -1292,6 +1263,7 @@ export class ShellTabsStore {
         );
         if (!stillOpen) {
           chatStreamPool.release(tab.sessionId);
+          ports().chat.releaseSession?.(tab.sessionId);
         }
       }
     } finally {

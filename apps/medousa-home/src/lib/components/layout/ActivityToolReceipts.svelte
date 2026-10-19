@@ -1,7 +1,6 @@
 <script lang="ts">
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { layout } from "$lib/runtime/layout.svelte";
   import { toolHistory } from "$lib/stores/toolHistory.svelte";
   import { humanToolRunHeadline } from "$lib/utils/toolHistorySummary";
 
@@ -29,7 +28,6 @@
 
   function openFullHistory() {
     automationsNav.openSection("history");
-    layout.navigateDesktop("automations", { bump: true });
   }
 
   function formatWhen(value: string | null | undefined): string {

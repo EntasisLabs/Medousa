@@ -6,8 +6,8 @@ import {
 
 const LIFE_IDS = new Set([
   "chat",
-  "work",
   "code",
+  "reviews",
   "notes",
   "files",
   "artifacts",
@@ -18,7 +18,7 @@ const LIFE_IDS = new Set([
 ]);
 const WORKSHOP_IDS = new Set(["workshop"]);
 /** Runtime + Messaging live under Settings — never the life rail. */
-const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME, "messaging"]);
+const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME, "messaging", "work"]);
 
 /** Surfaces whose list chrome lives in the master left rail (view mode). */
 export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
@@ -28,16 +28,22 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "files",
   "artifacts",
   "code",
+  "reviews",
   "automations",
+  "workshop",
   "peers",
   "messaging",
   "map",
   "calendar",
-  "work",
   "web",
   "profiles",
   SAFETY_SURFACE_SETTINGS,
 ]);
+
+/** Surfaces hosted by the shared LME explorer in the side rail. */
+export function shellSidebarUsesLmeExplorer(surfaceId: string): boolean {
+  return ["library", "notes", "files", "artifacts", "automations", "code"].includes(surfaceId);
+}
 
 export function surfaceHasShellSidebarView(surfaceId: string): boolean {
   if (surfaceId === "automations") return true;
@@ -62,16 +68,18 @@ export function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | 
 }
 
 export function navTitle(surface: SurfaceDef): string {
+  if (surface.id === "workshop") return "Agents";
   if (surface.id === "automations") return "Automations";
-  if (surface.id === "map") return "Session link map";
+  if (surface.id === "map") return "Context";
   if (surface.id === "peers") return "Peers";
   if (surface.id === "profiles") return "You";
   return surface.label;
 }
 
 export function navLabel(surface: SurfaceDef): string {
+  if (surface.id === "workshop") return "Agents";
   if (surface.id === "automations") return "Automations";
-  if (surface.id === "map") return "Map";
+  if (surface.id === "map") return "Context";
   if (surface.id === "profiles") return "You";
   return surface.label;
 }
@@ -89,6 +97,10 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Artifacts";
     case "code":
       return "Projects";
+    case "reviews":
+      return "Reviews";
+    case "workshop":
+      return "Agents";
     case "automations":
       return "Automations";
     case "peers":
@@ -96,11 +108,9 @@ export function shellSidebarViewTitle(surfaceId: string): string {
     case "messaging":
       return "Channels";
     case "map":
-      return "Map";
+      return "Context";
     case "calendar":
       return "Calendar";
-    case "work":
-      return "Work";
     case "web":
       return "Web";
     case "profiles":

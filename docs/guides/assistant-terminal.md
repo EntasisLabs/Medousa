@@ -21,3 +21,13 @@ terminal. The assistant may own up to eight terminals concurrently.
 Windows retains the existing AppContainer/Job execution backend. Bound container
 work environments keep their existing execution path. Persistent human terminal
 tabs and Forge-bound Coder terminals continue to use the workshop session host.
+
+Opening or polling a Coder terminal uses the daemon's in-memory connection
+credential. It does not unlock Keychain to retrieve a local CLI token.
+Local app and pairing credentials use private files; API keys and OAuth tokens
+keep their Keychain storage. On upgrade, local connection tokens move to files
+automatically at daemon startup, without unlocking Keychain. Existing remote
+pairing or database credentials may need one import of their old Keychain
+item. Home's credential status indicators use stored presence flags without
+reading the Keychain values. If a Coder assignment expires, the agent can still report
+the blocker, ask for input, checkpoint, or finish its turn.

@@ -12,11 +12,11 @@ OUTPUT=""
 PRINT_TARGET_ONLY=0
 WITH_LOCAL_BRAIN=1
 WITH_IROH=1
-# Comma list: engine,adapters,mcp,coding-engine,shell-session,computer-driver
+# Comma list: engine,adapters,mcp,coding-engine,shell-session,computer-driver,review-github
 # (default: all of them)
 # `cli` is accepted as a legacy alias for engine.
 # `coder` is accepted as an alias for coding-engine,shell-session.
-COMPONENTS="engine,adapters,mcp,coding-engine,shell-session,computer-driver"
+COMPONENTS="engine,adapters,mcp,coding-engine,shell-session,computer-driver,review-github"
 
 usage() {
   cat <<'EOF'
@@ -26,7 +26,7 @@ Options:
   --target <triple>     Rust target triple (default: host)
   --output <dir>        Staging directory (default: dist/build/<target>)
   --print-target        Print resolved target triple and exit
-  --components <list>   Comma list: engine,adapters,mcp,coding-engine,shell-session,computer-driver
+  --components <list>   Comma list: engine,adapters,mcp,coding-engine,shell-session,computer-driver,review-github
                         (default: all). Aliases: cli→engine, coder→coding-engine+shell-session
   --with-local-brain    Also build medousa_local into <output>/bin/ (default: on)
   --without-local-brain Skip medousa_local (mistralrs) build
@@ -142,10 +142,12 @@ NEED_WHATSAPP=0
 NEED_TELEGRAM=0
 NEED_DISCORD=0
 NEED_SLACK=0
+NEED_REVIEW_GITHUB=0
 # engine includes launcher + daemon + cli + tui (cli is a legacy alias for engine).
 want_component engine && NEED_ENGINE=1
 want_component cli && NEED_ENGINE=1
 want_component adapters && NEED_ADAPTERS=1 && NEED_WHATSAPP=1 && NEED_TELEGRAM=1 && NEED_DISCORD=1 && NEED_SLACK=1
+if want_component all || want_component review-github; then NEED_REVIEW_GITHUB=1; fi
 want_component mcp && NEED_MCP=1
 want_component coding-engine && NEED_CODING_ENGINE=1
 want_component shell-session && NEED_SHELL_SESSION=1
@@ -234,6 +236,7 @@ build_workspace_package() {
 [[ "${NEED_DISCORD}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_DISCORD_MANIFEST}" "medousa_discord"
 [[ "${NEED_SLACK}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_SLACK_MANIFEST}" "medousa_slack"
 [[ "${NEED_WHATSAPP}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_WHATSAPP_MANIFEST}" "medousa_whatsapp"
+[[ "${NEED_REVIEW_GITHUB}" -eq 1 ]] && build_workspace_package medousa-github medousa_review_github
 [[ "${NEED_MCP}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_MCP_GATEWAY_MANIFEST}" "medousa_mcp_gateway"
 [[ "${NEED_CODING_ENGINE}" -eq 1 ]] && build_workspace_package medousa-code medousa-code
 [[ "${NEED_SHELL_SESSION}" -eq 1 ]] && build_workspace_package medousa-session medousa-session
@@ -279,6 +282,7 @@ fi
 STAGE_LIST=()
 [[ "${NEED_ENGINE}" -eq 1 ]] && STAGE_LIST+=(medousa_cli medousa_tui)
 [[ "${NEED_ADAPTERS}" -eq 1 ]] && STAGE_LIST+=(medousa_telegram medousa_discord medousa_slack medousa_whatsapp)
+[[ "${NEED_REVIEW_GITHUB}" -eq 1 ]] && STAGE_LIST+=(medousa_review_github)
 [[ "${NEED_MCP}" -eq 1 ]] && STAGE_LIST+=(medousa_mcp_gateway)
 [[ "${NEED_CODING_ENGINE}" -eq 1 ]] && STAGE_LIST+=(medousa-code)
 [[ "${NEED_SHELL_SESSION}" -eq 1 ]] && STAGE_LIST+=(medousa-session)

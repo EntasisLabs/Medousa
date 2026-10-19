@@ -1,3 +1,4 @@
+import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/runtime/layout.svelte";
@@ -33,21 +34,13 @@ export function buildWorkshopCommandContext(
         return;
       }
       if (surface === "automations") {
-        const mode = lmeWorkspace.explorerMode;
-        if (
-          mode !== "scripts" &&
-          mode !== "flows" &&
-          mode !== "schedules" &&
-          mode !== "history" &&
-          mode !== "agents"
-        ) {
-          lmeWorkspace.setExplorerMode("scripts");
-        }
-        shellTabs.enterLmeFamily("library");
+        shellTabs.openSurface("automations", { activate: true });
+        layout.setShellSidebarMode("nav");
         return;
       }
       if (surface === "workshop") {
         lmeWorkspace.setExplorerMode("agents");
+        layout.openShellSidebarView("workshop");
         shellTabs.enterLmeFamily("library");
         return;
       }
@@ -80,7 +73,8 @@ export function buildWorkshopCommandContext(
         return;
       }
       if (surface === "work") {
-        void workspace.prefetchCardDetails();
+        commandSpotlight.openActivity();
+        return;
       }
       shellTabs.openDestination(surface);
     },

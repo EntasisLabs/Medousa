@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FilePreviewHeader from "$lib/files/FilePreviewHeader.svelte";
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultAttachmentPreviewContent from "$lib/components/vault/VaultAttachmentPreviewContent.svelte";
@@ -29,7 +30,7 @@
     useActiveTabWhenUnbound?: boolean;
     emptyMessage?: string;
     onOpenChat: () => void;
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
   }
 
@@ -40,7 +41,7 @@
     useActiveTabWhenUnbound = true,
     emptyMessage = "Open something from the side panel.",
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onSelectCard,
   }: Props = $props();
 
@@ -160,7 +161,7 @@
           keepAlive={true}
           path={tab.path}
           {onOpenChat}
-          {onOpenWork}
+          {onOpenActivity}
           {onSelectCard}
         />
       </div>
@@ -177,37 +178,32 @@
             Select a file to preview.
           </div>
         {:else}
-          <header class="artifact-library-preview-header">
-            <div class="min-w-0">
-              <h2 class="truncate text-sm font-semibold text-surface-100">
-                {fileAttachment.label || attachmentFileName(fileAttachment)}
-              </h2>
-              <p class="truncate text-xs text-content-quiet">{fileAttachment.path}</p>
-            </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                class="artifact-library-action"
-                onclick={() => void openFileExternal()}
-              >
-                Open in app
-              </button>
-            </div>
-          </header>
+          <FilePreviewHeader path={fileAttachment.path} title={fileAttachment.label || attachmentFileName(fileAttachment)} onOpenExternal={openFileExternal} />
           <div class="min-h-0 flex-1 overflow-hidden">
-            <VaultAttachmentPreviewContent attachment={fileAttachment} fill={true} />
+            <VaultAttachmentPreviewContent attachment={fileAttachment} fill={true} editable={interactive} />
           </div>
         {/if}
       </div>
     {:else if active.kind === "code"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {#key `${chat.workshopScopeId}:${active.workId}:${active.resource.kind}`}
+        {#if active.resource.kind === "hosted_review"}
+          {#await import("$lib/components/work/HostedReviewPanel.svelte")}
+            <div class="p-6 text-sm text-content-quiet">Loading review…</div>
+          {:then { default: HostedReviewPanel }}
+            <HostedReviewPanel reference={active.resource.reference} connectionId={active.resource.connectionId} scope={chat.workshopScopeId} />
+          {/await}
+        {:else}
         <LazyFeatureView
           loader={loadUndertakingsPanel}
           showBrowser={false}
           workId={active.workId}
           resource={active.resource}
+          reviewScope={chat.workshopScopeId}
           {interactive}
         />
+        {/if}
+        {/key}
       </div>
     {:else if active.kind === "deck"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

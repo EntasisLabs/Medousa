@@ -40,6 +40,7 @@ sha2 = "0.10"
 bytes = "1"
 url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
+medousa-forge = { path = "../../../crates/medousa-forge" }
 medousa-runtime = { path = "../../../crates/medousa-runtime" }
 medousa-secrets = { path = "../../../crates/medousa-secrets" }
 medousa-world = { path = "../../../crates/medousa-world" }
@@ -118,12 +119,14 @@ zbus = { version = "3.15.2", default-features = false, features = ["tokio"] }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = [
+  "NSBundle",
   "NSData",
   "NSDictionary",
   "NSGeometry",
   "NSNotification",
   "NSObject",
   "NSOperation",
+  "NSProcessInfo",
   "NSObjCRuntime",
   "NSString",
   "block2",
@@ -147,6 +150,7 @@ objc2-app-kit = { version = "0.3", features = [
 objc2-web-kit = { version = "0.3", default-features = false, features = [
   "WKSnapshotConfiguration",
   "WKWebView",
+  "WKNavigation",
   "block2",
 ] }
 

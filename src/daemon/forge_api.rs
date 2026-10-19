@@ -10057,6 +10057,8 @@ struct ProviderContext {
     links: Vec<String>,
     #[serde(default)]
     review_url: Option<String>,
+    #[serde(default)]
+    connection_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -10080,6 +10082,10 @@ struct SaveProviderContextRequest {
 
 #[derive(Debug, Deserialize)]
 struct ShareProviderRequest {
+    #[serde(default)]
+    connection_id: Option<String>,
+    #[serde(default)]
+    provider_id: Option<String>,
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -10155,7 +10161,7 @@ fn background_tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Comma
 
 fn repository_remote(worktree: &FsPath) -> Option<String> {
     let output = background_command("git")
-        .args(["remote", "get-url", "origin"])
+        .args(["remote", "get-url", "--push", "--all", "origin"])
         .current_dir(worktree)
         .output()
         .ok()?;
@@ -10224,7 +10230,7 @@ fn provider_handoff(forge: &Forge, item: &WorkItem) -> ProviderHandoff {
         .map(|(provider, _)| *provider)
         .unwrap_or("none");
     let available = match provider {
-        "github" => command_available("gh"),
+        "github" => true,
         "gitlab" => command_available("glab"),
         _ => false,
     };
@@ -10266,7 +10272,7 @@ async fn get_provider_handoff(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<ProviderHandoff>> {
-    admit_forge(
+    let Json(mut handoff) = admit_forge(
         &state,
         medousa_forge::execution::ExecutionClass::RepositoryMetadata,
         64 * 1024,
@@ -10280,7 +10286,9 @@ async fn get_provider_handoff(
             }
         },
     )
-    .await
+    .await?;
+    resolve_provider_handoff(&state, &mut handoff).await;
+    Ok(Json(handoff))
 }
 
 async fn save_provider_context(
@@ -10288,7 +10296,7 @@ async fn save_provider_context(
     Path(work_id): Path<String>,
     Json(body): Json<SaveProviderContextRequest>,
 ) -> ApiResult<Json<ProviderHandoff>> {
-    admit_forge(
+    let Json(mut handoff) = admit_forge(
         &state,
         medousa_forge::execution::ExecutionClass::StoreIo,
         64 * 1024,
@@ -10326,7 +10334,9 @@ async fn save_provider_context(
             }
         },
     )
-    .await
+    .await?;
+    resolve_provider_handoff(&state, &mut handoff).await;
+    Ok(Json(handoff))
 }
 
 fn provider_command_error(label: &str, output: &std::process::Output) -> ApiError {
@@ -10407,47 +10417,270 @@ fn provider_review_body(
     .collect()
 }
 
-fn existing_provider_review_url(
-    provider: &str,
-    repository: &str,
-    branch: &str,
-    worktree: &FsPath,
-) -> ApiResult<Option<String>> {
-    let output = if provider == "github" {
-        background_command("gh")
-            .args([
-                "pr", "view", branch, "--repo", repository, "--json", "url", "--jq", ".url",
-            ])
-            .current_dir(worktree)
-            .output()
-    } else {
-        background_command("glab")
-            .args(["mr", "view", branch, "--output", "json"])
-            .current_dir(worktree)
-            .output()
-    }
-    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+fn existing_gitlab_review_url(branch: &str, worktree: &FsPath) -> ApiResult<Option<String>> {
+    let output = background_command("glab")
+        .args(["mr", "view", branch, "--output", "json"])
+        .current_dir(worktree)
+        .output()
+        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
     if !output.status.success() {
         return Err(provider_command_error("Opening the review", &output));
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let url = if provider == "github" {
-        let url = stdout.trim();
-        (!url.is_empty()).then(|| url.to_string())
-    } else {
-        serde_json::from_str::<serde_json::Value>(&stdout)
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("web_url")
-                    .and_then(|url| url.as_str())
-                    .map(str::to_string)
-            })
-    };
-    Ok(url)
+    Ok(serde_json::from_slice::<serde_json::Value>(&output.stdout)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("web_url")
+                .and_then(|url| url.as_str())
+                .map(str::to_owned)
+        }))
 }
 
+fn review_package_error(error: medousa_types::ReviewProviderError) -> ApiError {
+    request_error(StatusCode::BAD_GATEWAY, error.message)
+}
+async fn resolve_provider_handoff(state: &AppState, handoff: &mut ProviderHandoff) {
+    // Keep the existing GitLab adapter until its package migration. GitHub and
+    // new provider implementations go exclusively through package discovery.
+    if handoff.provider == "gitlab" {
+        return;
+    }
+    let Some(remote) = &handoff.remote_url else {
+        return;
+    };
+    match super::review_providers::repository_target(&state.forge_execution, remote, None).await {
+        Ok((provider, _, repository)) => {
+            handoff.provider = provider;
+            handoff.repository = Some(repository);
+            handoff.available = true;
+            handoff.message = "Ready to share from the connected workshop.".into();
+        }
+        Err(error) => {
+            handoff.available = false;
+            handoff.message = error.message;
+        }
+    }
+}
 async fn share_provider_handoff(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ShareProviderRequest>,
+) -> ApiResult<Json<ProviderHandoff>> {
+    let prepared = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        128 * 1024,
+        {
+            let state = state.clone();
+            let work_id = work_id.clone();
+            let requested = body.body.clone();
+            let requested_title = body.title.clone();
+            let attempt_id = body.attempt_id.clone();
+            move || {
+                let forge = forge(&state);
+                let item = forge.load(&parse_work_id(&work_id)?).map_err(map_err)?;
+                if !matches!(item.state, WorkState::AwaitingReview | WorkState::Accepted) {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "Finish and review the project before sharing it",
+                    ));
+                }
+                let attempt_id = attempt_id
+                    .filter(|value| !value.trim().is_empty())
+                    .map(medousa_forge::model::AttemptId::from);
+                let environment = match &attempt_id {
+                    Some(id) => item.environment_for_attempt(id),
+                    None => item.workspace_environment(),
+                }
+                .ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "Project workspace is unavailable")
+                })?;
+                let remote = repository_remote(&environment.worktree).ok_or_else(|| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        "Origin push destination is unavailable",
+                    )
+                })?;
+                let WorkTarget::Git(target) = &item.target;
+                let description = provider_review_body(
+                    forge.as_ref(),
+                    &item,
+                    requested.as_deref(),
+                    attempt_id.as_ref(),
+                );
+                let title = requested_title
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| item.title.clone())
+                    .chars()
+                    .take(256)
+                    .collect::<String>();
+                Ok((
+                    remote,
+                    environment.worktree.clone(),
+                    environment.branch.clone(),
+                    target.base_ref.clone(),
+                    title,
+                    description,
+                ))
+            }
+        },
+    )
+    .await?;
+    let (remote, root, branch, base, title, description) = prepared;
+    if provider_repository(&remote).is_some_and(|(provider, _)| provider == "gitlab") {
+        return share_legacy_gitlab_handoff(State(state), Path(work_id), Json(body)).await;
+    }
+    let (provider_id, host, repository) = super::review_providers::repository_target(
+        &state.forge_execution,
+        &remote,
+        body.provider_id.as_deref(),
+    )
+    .await
+    .map_err(review_package_error)?;
+    let connection_id = body.connection_id;
+    // Resolve package/account before pushing. Metadata-only target resolution never unlocks keychain.
+    let connection = super::review_providers::dispatch(
+        &state.forge_execution,
+        medousa_types::ReviewProviderQuery {
+            provider_id: provider_id.clone(),
+            host: host.clone(),
+            connection_id: connection_id.clone(),
+            request: medousa_types::ReviewProviderOperation::ConnectionStatus,
+        },
+    )
+    .await
+    .map_err(review_package_error)?;
+    if !matches!(
+        connection,
+        medousa_types::ReviewProviderResult::Connection {
+            authenticated: true,
+            ..
+        }
+    ) {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "Connect a review account before sharing this branch",
+        ));
+    }
+    let push_state = state.clone();
+    let push_work_id = work_id.clone();
+    let push_attempt_id = body.attempt_id.clone();
+    let branch = state
+        .forge_execution
+        .run_async(
+            medousa_forge::execution::ExecutionClass::NetworkGit,
+            256 * 1024,
+            Some(root.display().to_string()),
+            async move {
+                let expected_root = root.clone();
+                let expected_branch = branch.clone();
+                let valid = tokio::task::spawn_blocking(move || {
+                    let item = forge(&push_state)
+                        .load(&parse_work_id(&push_work_id)?)
+                        .map_err(map_err)?;
+                    let attempt_id = push_attempt_id
+                        .filter(|value| !value.trim().is_empty())
+                        .map(medousa_forge::model::AttemptId::from);
+                    let environment = match &attempt_id {
+                        Some(id) => item.environment_for_attempt(id),
+                        None => item.workspace_environment(),
+                    };
+                    if !matches!(item.state, WorkState::AwaitingReview | WorkState::Accepted)
+                        || environment.is_none_or(|env| {
+                            env.worktree != expected_root || env.branch != expected_branch
+                        })
+                    {
+                        return Err(request_error(
+                            StatusCode::CONFLICT,
+                            "The project workspace changed. Refresh before sharing.",
+                        ));
+                    }
+                    Ok(())
+                })
+                .await
+                .map_err(|_| {
+                    medousa_forge::error::ForgeError::Command(
+                        "Could not revalidate project workspace".into(),
+                    )
+                })?;
+                let current = chat_git::git(
+                    FsPath::new("git"),
+                    &root,
+                    &["remote", "get-url", "--push", "--all", "origin"],
+                )
+                .await;
+                let result = async {
+                    valid?;
+                    if current? != remote {
+                        return Err(request_error(
+                            StatusCode::CONFLICT,
+                            "Origin changed. Refresh before sharing.",
+                        ));
+                    }
+                    chat_git::git(
+                        FsPath::new("git"),
+                        &root,
+                        &["push", "--set-upstream", "origin", &branch],
+                    )
+                    .await?;
+                    Ok(branch)
+                }
+                .await;
+                Ok(result)
+            },
+        )
+        .await
+        .map_err(map_err)??;
+    let result = super::review_providers::publish(
+        &state.forge_execution,
+        medousa_types::ReviewProviderMutation {
+            provider_id,
+            host,
+            connection_id: connection_id.clone(),
+            request: medousa_types::ReviewProviderWrite::Publish {
+                repository,
+                head: branch,
+                base,
+                title,
+                body: description,
+                draft: false,
+                update_existing: true,
+            },
+        },
+    )
+    .await
+    .map_err(review_package_error)?;
+    let medousa_types::ReviewProviderResult::Published { review, .. } = result else {
+        return Err(request_error(
+            StatusCode::BAD_GATEWAY,
+            "The package did not confirm review publication",
+        ));
+    };
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            let work_id = work_id.clone();
+            move || {
+                let forge = forge(&state);
+                let id = parse_work_id(&work_id)?;
+                let item = forge.load(&id).map_err(map_err)?;
+                let mut context = load_provider_context(forge.as_ref(), &id);
+                context.review_url = Some(review.url);
+                context.connection_id = connection_id;
+                store_provider_context(forge.as_ref(), &id, &context)?;
+                publish_item(&state, &item, "provider_shared");
+                Ok(())
+            }
+        },
+    )
+    .await?;
+    get_provider_handoff(State(state), Path(work_id)).await
+}
+
+async fn share_legacy_gitlab_handoff(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
     Json(body): Json<ShareProviderRequest>,
@@ -10497,7 +10730,7 @@ async fn share_provider_handoff(
                 if !push.status.success() {
                     return Err(provider_command_error("Sharing the branch", &push));
                 }
-                let repository = handoff.repository.as_deref().ok_or_else(|| {
+                handoff.repository.as_deref().ok_or_else(|| {
                     request_error(
                         StatusCode::BAD_REQUEST,
                         "Repository identity is unavailable",
@@ -10519,43 +10752,23 @@ async fn share_provider_handoff(
                     body.body.as_deref(),
                     attempt_id.as_ref(),
                 );
-                let output = if handoff.provider == "github" {
-                    background_command("gh")
-                        .args([
-                            "pr",
-                            "create",
-                            "--repo",
-                            repository,
-                            "--head",
-                            &environment.branch,
-                            "--base",
-                            base,
-                            "--title",
-                            &title,
-                            "--body",
-                            &description,
-                        ])
-                        .current_dir(&environment.worktree)
-                        .output()
-                } else {
-                    background_command("glab")
-                        .args([
-                            "mr",
-                            "create",
-                            "--source-branch",
-                            &environment.branch,
-                            "--target-branch",
-                            base,
-                            "--title",
-                            &title,
-                            "--description",
-                            &description,
-                            "--yes",
-                        ])
-                        .current_dir(&environment.worktree)
-                        .output()
-                }
-                .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+                let output = background_command("glab")
+                    .args([
+                        "mr",
+                        "create",
+                        "--source-branch",
+                        &environment.branch,
+                        "--target-branch",
+                        base,
+                        "--title",
+                        &title,
+                        "--description",
+                        &description,
+                        "--yes",
+                    ])
+                    .current_dir(&environment.worktree)
+                    .output()
+                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
                 let created_url = output
                     .status
                     .success()
@@ -10570,53 +10783,26 @@ async fn share_provider_handoff(
                     if created_url.is_some() {
                         created_url
                     } else {
-                        existing_provider_review_url(
-                            &handoff.provider,
-                            repository,
-                            &environment.branch,
-                            &environment.worktree,
-                        )?
+                        existing_gitlab_review_url(&environment.branch, &environment.worktree)?
                     }
                 } else {
-                    let update = if handoff.provider == "github" {
-                        background_command("gh")
-                            .args([
-                                "pr",
-                                "edit",
-                                &environment.branch,
-                                "--repo",
-                                repository,
-                                "--title",
-                                &title,
-                                "--body",
-                                &description,
-                            ])
-                            .current_dir(&environment.worktree)
-                            .output()
-                    } else {
-                        background_command("glab")
-                            .args([
-                                "mr",
-                                "update",
-                                &environment.branch,
-                                "--title",
-                                &title,
-                                "--description",
-                                &description,
-                            ])
-                            .current_dir(&environment.worktree)
-                            .output()
-                    }
-                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+                    let update = background_command("glab")
+                        .args([
+                            "mr",
+                            "update",
+                            &environment.branch,
+                            "--title",
+                            &title,
+                            "--description",
+                            &description,
+                        ])
+                        .current_dir(&environment.worktree)
+                        .output()
+                        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
                     if !update.status.success() {
                         return Err(provider_command_error("Updating the review", &update));
                     }
-                    existing_provider_review_url(
-                        &handoff.provider,
-                        repository,
-                        &environment.branch,
-                        &environment.worktree,
-                    )?
+                    existing_gitlab_review_url(&environment.branch, &environment.worktree)?
                 };
                 let mut context = load_provider_context(forge.as_ref(), &id);
                 context.review_url = review_url;
@@ -10633,85 +10819,90 @@ async fn list_provider_comments(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<Vec<ProviderComment>>> {
-    admit_forge(
+    let (url, connection_id, remote) = admit_forge(
         &state,
         medousa_forge::execution::ExecutionClass::StoreIo,
         64 * 1024,
         {
             let state = state.clone();
             move || {
-                let id = parse_work_id(&work_id)?;
                 let forge = forge(&state);
+                let id = parse_work_id(&work_id)?;
                 let item = forge.load(&id).map_err(map_err)?;
-                let handoff = provider_handoff(forge.as_ref(), &item);
-                if handoff.provider != "github" || handoff.review_url.is_none() {
-                    return Ok(Json(Vec::new()));
-                }
-                let repository = handoff.repository.ok_or_else(|| {
-                    request_error(
-                        StatusCode::BAD_REQUEST,
-                        "Repository identity is unavailable",
-                    )
-                })?;
-                let branch = handoff.branch.ok_or_else(|| {
-                    request_error(StatusCode::BAD_REQUEST, "Project branch is unavailable")
-                })?;
-                let output = background_command("gh")
-                    .args([
-                        "pr",
-                        "view",
-                        &branch,
-                        "--repo",
-                        &repository,
-                        "--json",
-                        "comments,reviews",
-                    ])
-                    .output()
-                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-                if !output.status.success() {
-                    return Err(provider_command_error("Reading review comments", &output));
-                }
-                let value: serde_json::Value = serde_json::from_slice(&output.stdout)
-                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-                let mut comments = Vec::new();
-                for (kind, entries) in [
-                    ("comment", value.get("comments")),
-                    ("review", value.get("reviews")),
-                ] {
-                    for (index, entry) in entries
-                        .and_then(|entries| entries.as_array())
-                        .into_iter()
-                        .flatten()
-                        .enumerate()
-                    {
-                        let body = entry
-                            .get("body")
-                            .and_then(|body| body.as_str())
-                            .unwrap_or("")
-                            .trim();
-                        if body.is_empty() {
-                            continue;
-                        }
-                        comments.push(ProviderComment {
-                            id: format!("{kind}-{index}"),
-                            author: entry
-                                .pointer("/author/login")
-                                .and_then(|author| author.as_str())
-                                .unwrap_or("Reviewer")
-                                .into(),
-                            body: body.chars().take(8_000).collect(),
-                            url: entry
-                                .get("url")
-                                .and_then(|url| url.as_str())
-                                .map(str::to_string),
-                        });
-                    }
-                }
-                Ok(Json(comments))
+                let remote = item
+                    .workspace_environment()
+                    .and_then(|env| repository_remote(&env.worktree));
+                let context = load_provider_context(forge.as_ref(), &id);
+                Ok((context.review_url, context.connection_id, remote))
             }
         },
     )
-    .await
+    .await?;
+    let Some(url) = url else {
+        return Ok(Json(vec![]));
+    };
+    let Some(remote) = remote else {
+        return Ok(Json(vec![]));
+    };
+    if provider_repository(&remote).is_some_and(|(provider, _)| provider == "gitlab") {
+        return Ok(Json(vec![]));
+    }
+    let (provider_id, host, _) =
+        super::review_providers::repository_target(&state.forge_execution, &remote, None)
+            .await
+            .map_err(review_package_error)?;
+    let query = medousa_types::ReviewProviderQuery {
+        provider_id,
+        host,
+        connection_id,
+        request: medousa_types::ReviewProviderOperation::Resolve { url },
+    };
+    let medousa_types::ReviewProviderResult::Review { review } =
+        super::review_providers::dispatch(&state.forge_execution, query.clone())
+            .await
+            .map_err(review_package_error)?
+    else {
+        return Ok(Json(vec![]));
+    };
+    let mut comments = Vec::new();
+    let mut cursor = None;
+    for _ in 0..10 {
+        let result = super::review_providers::dispatch(
+            &state.forge_execution,
+            medousa_types::ReviewProviderQuery {
+                request: medousa_types::ReviewProviderOperation::Discussion {
+                    review: review.reference.clone(),
+                    cursor,
+                },
+                ..query.clone()
+            },
+        )
+        .await
+        .map_err(review_package_error)?;
+        let medousa_types::ReviewProviderResult::Discussion {
+            entries,
+            next_cursor,
+        } = result
+        else {
+            break;
+        };
+        comments.extend(
+            entries
+                .into_iter()
+                .filter(|entry| !entry.body.trim().is_empty())
+                .map(|entry| ProviderComment {
+                    id: entry.id,
+                    author: entry.author,
+                    body: entry.body.chars().take(8000).collect(),
+                    url: Some(entry.url),
+                }),
+        );
+        if next_cursor.is_none() {
+            break;
+        }
+        cursor = next_cursor;
+    }
+    Ok(Json(comments))
 }
 
 async fn import_provider_comment(

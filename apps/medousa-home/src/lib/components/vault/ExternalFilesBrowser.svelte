@@ -1,11 +1,16 @@
 <script lang="ts">
+  import "$lib/styles/files-surface.postcss";
   import {
+    Check,
     ChevronDown,
     ChevronRight,
-    ChevronUp,
     Ellipsis,
+    Eye,
+    Folder,
+    FolderPlus,
     FolderOpen,
     RefreshCw,
+    SlidersHorizontal,
     Unlink,
   } from "@lucide/svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
@@ -14,34 +19,21 @@
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { canPreviewAttachment } from "$lib/utils/vaultAttachments";
   import type { ExternalFileEntry, PinnedRoot } from "$lib/types/externalDesk";
-  import ExternalFileRow from "./ExternalFileRow.svelte";
+  import ExternalDirectoryContents from "./ExternalDirectoryContents.svelte";
   import { isCoLocatedWorkshop, vaultPinFolderRemoteHint } from "$lib/utils/workshopLocality";
   import { hostComputerPhrase, onThisHostPhrase } from "$lib/platformCopy";
 
   interface Props {
-    compact?: boolean;
     /** When set (LME), open goes through workspace tabs instead of pane preview only. */
     onOpenFile?: (entry: ExternalFileEntry) => void | Promise<void>;
   }
 
-  let { compact = false, onOpenFile }: Props = $props();
-
-  const RECENT_PEEK = $derived(compact ? 4 : 6);
+  let { onOpenFile }: Props = $props();
 
   const canLink = $derived(Boolean(vault.selectedPath));
   const coLocated = $derived(isCoLocatedWorkshop());
   let openRootMenu = $state<string | null>(null);
-
-  function visibleFiles(rootPath: string): ExternalFileEntry[] {
-    return (externalDesk.entriesByRoot[rootPath] ?? []).filter((entry) => !entry.is_dir);
-  }
-
-  function sortedFiles(rootPath: string): ExternalFileEntry[] {
-    return [...visibleFiles(rootPath)].sort(
-      (a, b) =>
-        new Date(b.modified_at_utc).getTime() - new Date(a.modified_at_utc).getTime(),
-    );
-  }
+  let viewMenuOpen = $state(false);
 
   function isExpanded(rootId: string): boolean {
     return externalDesk.isPinExpanded(rootId);
@@ -49,22 +41,6 @@
 
   function togglePin(rootId: string) {
     externalDesk.togglePinExpanded(rootId);
-  }
-
-  function showAll(rootId: string): boolean {
-    return externalDesk.isShowAll(rootId);
-  }
-
-  function setShowAll(rootId: string, value: boolean) {
-    externalDesk.setShowAll(rootId, value);
-  }
-
-  function filesToShow(root: PinnedRoot): { entries: ExternalFileEntry[]; total: number } {
-    const all = sortedFiles(root.path);
-    if (showAll(root.id)) {
-      return { entries: all, total: all.length };
-    }
-    return { entries: all.slice(0, RECENT_PEEK), total: all.length };
   }
 
   async function handleOpen(entry: ExternalFileEntry) {
@@ -91,7 +67,7 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col">
+<div class="files-browser flex min-h-0 flex-1 flex-col">
   {#if externalDesk.error}
     <p class="border-b border-error-500/30 bg-error-500/10 px-3 py-2 text-xs text-content-error">
       {externalDesk.error}
@@ -99,32 +75,37 @@
   {/if}
 
   {#if !coLocated}
-    <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <FolderOpen size={28} strokeWidth={1.5} class="text-content-quiet" />
-      <div class="max-w-xs space-y-1">
-        <p class="text-sm font-medium text-surface-100">Your files stay {onThisHostPhrase()}</p>
-        <p class="text-xs leading-relaxed text-content-quiet">
+    <div class="files-empty">
+      <span class="files-empty-icon"><Folder size={23} strokeWidth={1.5} /></span>
+      <h3>Your files stay {onThisHostPhrase()}</h3>
+        <p>
           {vaultPinFolderRemoteHint()}
         </p>
-      </div>
     </div>
   {:else if externalDesk.pinnedRoots.length === 0}
-    <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <FolderOpen size={28} strokeWidth={1.5} class="text-content-quiet" />
-      <div class="max-w-xs space-y-1">
-        <p class="text-sm font-medium text-surface-100">
-          Add folders from {hostComputerPhrase()}
-        </p>
-        <p class="text-xs leading-relaxed text-content-quiet">
-          Folders you add show up here. Open a file, or link it into a note.
-        </p>
-      </div>
+    <div class="files-empty">
+      <span class="files-empty-icon"><FolderOpen size={24} strokeWidth={1.4} /></span>
+      <h3>Start with a folder</h3>
+      <p>Browse documents, images, and code from {hostComputerPhrase()}.</p>
+      <button type="button" class="files-button files-button--primary" onclick={() => void externalDesk.pinFolder()}><FolderPlus size={13} />Add folder</button>
     </div>
   {:else}
+    <div class="files-section-bar">
+      <span class="files-section-label">Folders <span class="files-count">{externalDesk.pinnedRoots.length}</span></span>
+      <OverflowMenu open={viewMenuOpen} onOpenChange={(open) => viewMenuOpen = open} panelClass="vault-external-folder-menu" panelWidth={190}>
+        {#snippet trigger({ open, toggle })}
+          <button type="button" class="files-icon-button" aria-label="File view options" title="View options" aria-haspopup="menu" aria-expanded={open} onclick={toggle}><SlidersHorizontal size={13} /></button>
+        {/snippet}
+        <button type="button" role="menuitemcheckbox" aria-checked={externalDesk.showHidden} class="vault-external-folder-menu-item" onclick={() => { externalDesk.setShowHidden(!externalDesk.showHidden); viewMenuOpen = false; }}>
+          <Eye size={13} /><span class="flex-1">Show hidden files</span>{#if externalDesk.showHidden}<Check size={12} />{/if}
+        </button>
+      </OverflowMenu>
+    </div>
     <div class="vault-external-groups min-h-0 flex-1 overflow-y-auto">
       {#each externalDesk.pinnedRoots as root (root.id)}
         {@const expanded = isExpanded(root.id)}
-        {@const { entries, total } = filesToShow(root)}
+        {@const directory = externalDesk.directories[root.path]}
+        {@const parent = root.path.replace(/\\/g, '/').split('/').filter(Boolean).at(-2)}
         <section class="vault-external-group">
           <div class="vault-external-group-header">
             <button
@@ -141,11 +122,9 @@
                   <ChevronRight size={13} strokeWidth={1.8} />
                 {/if}
               </span>
-              <FolderOpen size={14} strokeWidth={1.75} class="vault-external-pin-icon" />
-              <span class="vault-external-pin-label">{root.label}</span>
-              {#if total > 0}
-                <span class="vault-external-pin-count">{total}</span>
-              {/if}
+              <span class="files-root-icon">{#if expanded}<FolderOpen size={15} strokeWidth={1.6} />{:else}<Folder size={15} strokeWidth={1.6} />{/if}</span>
+              <span class="files-root-copy"><span class="files-root-name">{root.label}</span>{#if parent}<span class="files-root-location">{parent}</span>{/if}</span>
+              {#if directory && !directory.error}<span class="files-count" title="Items on this page">{directory.entries.length}{directory.next_cursor ? '+' : ''}</span>{/if}
             </button>
             <OverflowMenu
               open={openRootMenu === root.id}
@@ -171,7 +150,7 @@
                 type="button"
                 role="menuitem"
                 class="vault-external-folder-menu-item"
-                disabled={externalDesk.loadingRoot === root.path}
+                disabled={externalDesk.directories[root.path]?.loading ?? false}
                 onclick={() => {
                   openRootMenu = null;
                   void handleRefreshRoot(root);
@@ -196,51 +175,9 @@
           </div>
 
           {#if expanded}
-            {#if externalDesk.loadingRoot === root.path}
-              <p class="vault-external-group-status">Scanning…</p>
-            {:else if total === 0}
-              <p class="vault-external-group-status">No files in this folder.</p>
-            {:else}
-              <div class="vault-external-group-body">
-                {#if !showAll(root.id) && total > RECENT_PEEK}
-                  <p class="vault-external-recents-label">
-                    Recent files <span>· {RECENT_PEEK} of {total}</span>
-                  </p>
-                {/if}
-                <ul class="vault-external-file-list">
-                  {#each entries as entry (entry.path)}
-                    <li>
-                      <ExternalFileRow
-                        {entry}
-                        selected={externalDesk.selectedExternalPath === entry.path}
-                        showLink={canLink}
-                        onOpen={handleOpen}
-                        onLink={handleLink}
-                      />
-                    </li>
-                  {/each}
-                </ul>
-                {#if total > RECENT_PEEK && !showAll(root.id)}
-                  <button
-                    type="button"
-                    class="vault-external-group-footer"
-                    onclick={() => setShowAll(root.id, true)}
-                  >
-                    <span>Show {total - RECENT_PEEK} more</span>
-                    <ChevronRight size={12} strokeWidth={1.8} />
-                  </button>
-                {:else if showAll(root.id) && total > RECENT_PEEK}
-                  <button
-                    type="button"
-                    class="vault-external-group-footer"
-                    onclick={() => setShowAll(root.id, false)}
-                  >
-                    <span>Show recent only</span>
-                    <ChevronUp size={12} strokeWidth={1.8} />
-                  </button>
-                {/if}
-              </div>
-            {/if}
+            <div class="vault-external-group-body">
+              <ExternalDirectoryContents path={root.path} showLink={canLink} onOpen={handleOpen} onLink={handleLink} />
+            </div>
           {/if}
         </section>
       {/each}

@@ -6,6 +6,7 @@ const layoutState = {
     layoutState.desktopSurface = surface;
   }),
   setShellSidebarMode: vi.fn(),
+  openShellSidebarView: vi.fn(),
   toggleShellSidebarExpanded: vi.fn(),
 };
 
@@ -176,6 +177,15 @@ describe("shellTabs store", () => {
     lmeState.activeTabId = null;
     lmeState.activateTab.mockClear();
     lmeState.closeTab.mockClear();
+  });
+
+  it("opens Automations as its own restorable surface rather than a library alias", async () => {
+    const { shellTabs } = await loadShellTabs();
+    const id = shellTabs.openSurface("automations");
+    expect(shellTabs.activeTab).toMatchObject({ id, kind: "surface", surfaceId: "automations", title: "Automations" });
+    expect(layoutState.desktopSurface).toBe("automations");
+    shellTabs.openDestination("automations");
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "surface" && tab.surfaceId === "automations")).toHaveLength(1);
   });
 
   it("applies onboarding pane shapes without seeding tabs", async () => {
@@ -460,6 +470,28 @@ describe("shellTabs store", () => {
     shellTabs.openSurface("map", { activate: true });
     expect(shellTabs.groups.length).toBeGreaterThanOrEqual(1);
     expect(shellTabs.splitRoot.type).toBe("group");
+  });
+
+  it("retires saved Work tabs without disturbing other tabs or pane splits", async () => {
+    const { shellTabs } = await loadShellTabs();
+    shellTabs.bootstrap();
+    shellTabs.openChat("session-a", { activate: true });
+    shellTabs.splitActive("right");
+    shellTabs.openSurface("calendar", { activate: true });
+    const key = "medousa-home-workspace-session-v4:personal";
+    const saved = JSON.parse(localStorage.getItem(key)!);
+    const desktop = saved.desktops.find((entry: { id: string }) => entry.id === saved.activeDesktopId);
+    const group = desktop.layout.groups.find((entry: { id: string }) => entry.id === desktop.layout.activeGroupId);
+    desktop.layout.tabs.push({ id: "old-work", kind: "surface", surfaceId: "work", title: "Work" });
+    group.tabIds.push("old-work"); group.activeTabId = "old-work";
+    localStorage.setItem(key, JSON.stringify(saved));
+    const { shellTabs: restored } = await loadShellTabs();
+    restored.bootstrap();
+    expect(restored.tabs.some((tab) => tab.id === "old-work")).toBe(false);
+    expect(restored.tabs.some((tab) => tab.kind === "chat" && tab.sessionId === "session-a")).toBe(true);
+    expect(restored.groups).toHaveLength(2);
+    expect(restored.activeTab).toMatchObject({ kind: "surface", surfaceId: "calendar" });
+    expect(restored.openSurface("work")).toBeNull();
   });
 
   it("persists and restores split layout across bootstrap", async () => {
@@ -788,6 +820,14 @@ describe("shellTabs store", () => {
     shellTabs.close(tabId!);
     expect(shellTabs.tabs).toHaveLength(0);
     expect(shellTabs.activeTab).toBeNull();
+  });
+
+  it("opens Reviews with its review list instead of retaining the project explorer", async () => {
+    const { shellTabs } = await loadShellTabs();
+    shellTabs.bootstrap();
+    shellTabs.openSurface("reviews", { activate: true });
+    expect(layoutState.focusDesktopSurface).toHaveBeenCalledWith("reviews");
+    expect(layoutState.openShellSidebarView).toHaveBeenCalledWith("reviews");
   });
 
   it("enterLmeFamily does not seed empty Workspace or Code surface tabs", async () => {

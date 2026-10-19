@@ -1,3 +1,6 @@
+import { contextThreads } from "$lib/context/contextThreads.svelte";
+import { contextNotes } from "$lib/context/contextNotes.svelte";
+import { contextShell } from "$lib/context/contextShell.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 import { bots } from "$lib/stores/bots.svelte";
 import { executionTargets } from "$lib/stores/executionTargets.svelte";
@@ -326,6 +329,11 @@ export async function prepareForWorkshopSwitch(): Promise<void> {
 }
 
 function clearWorkshopState(): void {
+  contextThreads.resetForWorkshopSwitch();
+  contextNotes.resetForWorkshopSwitch();
+  contextShell.selectMapNode(null);
+  contextShell.search = "";
+  contextShell.lens = "browse";
   chat.prepareForWorkshopSwitch();
   bots.resetForWorkshopSwitch();
   executionTargets.resetForWorkshopSwitch();

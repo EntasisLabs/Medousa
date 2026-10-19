@@ -11,13 +11,13 @@
   } from "$lib/utils/vaultNoteBridge";
 
   interface Props {
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onOpenChat: () => void;
     onOpenNote: (path: string) => void;
     onSelectCard: (id: string) => void;
   }
 
-  let { onOpenWork, onOpenChat, onOpenNote, onSelectCard }: Props = $props();
+  let { onOpenActivity, onOpenChat, onOpenNote, onSelectCard }: Props = $props();
 
   const needsAttention = $derived(workspace.needsAttentionCount());
   const primaryCard = $derived(workspace.primaryInMotionCard());
@@ -42,7 +42,7 @@
         metric: String(needsAttention),
         label: "blocked",
         action: "Review",
-        onClick: onOpenWork,
+        onClick: onOpenActivity,
       };
     }
 
@@ -103,8 +103,8 @@
       >
         {nextAction.action}
       </button>
-      <button type="button" class="workshop-text-action" onclick={onOpenWork}>
-        Work board →
+      <button type="button" class="workshop-text-action" onclick={onOpenActivity}>
+        Activity →
       </button>
     </div>
 

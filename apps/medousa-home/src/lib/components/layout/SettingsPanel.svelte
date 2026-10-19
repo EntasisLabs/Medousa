@@ -17,6 +17,7 @@
   import { isBrowserWorkshop, isTauriDesktop } from "$lib/platform";
   import type { SettingsSectionId } from "$lib/types/settings";
   import {
+    loadSettingsAccountsSection,
     loadSettingsAgentSection,
     loadSettingsBasementSection,
     loadSettingsConnectionsSection,
@@ -167,6 +168,8 @@
           {health}
           {nativeWorkloads}
         />
+      {:else if activeSection === "accounts"}
+        <LazyFeatureView loader={loadSettingsAccountsSection} />
       {:else if activeSection === "connections"}
         <LazyFeatureView loader={loadSettingsConnectionsSection} />
       {:else if activeSection === "packages"}

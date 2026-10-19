@@ -32,7 +32,7 @@ summary: Notes for what should stick around — boards, sheets, and Liquid.
 ```
 
 ```card
-title: Work
+title: Activity
 subtitle: Background jobs
 icon: zap
 summary: Kanban of background asks and agent jobs waiting on you or finishing up.
@@ -41,7 +41,7 @@ summary: Kanban of background asks and agent jobs waiting on you or finishing up
 ```chips
 - Home | tone: default
 Chat | tone: accent
-Work | tone: default
+Activity | tone: default
 Notes | tone: default
 Files | tone: default
 Artifacts | tone: default
@@ -60,15 +60,16 @@ Settings | tone: default
 |---------|------|
 | **Home** | Landing / presence; often not a primary rail icon |
 | **Chat** | Sessions, composer, turns, artifacts |
-| **Work** | Kanban of background and agent jobs |
+| **Activity** (Spotlight) | Workshop task hierarchy, previews, and task controls |
 | **Notes** | Vault markdown, boards, sheets, Liquid |
-| **Files** | Loose / pinned folders on the desktop host |
+| **Files** | Open files from pinned folders: Markdown, text, code, images, PDFs, and spreadsheet previews |
 | **Artifacts** | HTML decks and agent widgets |
 | **Calendar** | Day / week / month; phones often default to Day |
 | **Web** | Human browser (tabs, history, bookmarks) |
 | **Map** | Picture of recent chats and linked notes |
 | **You** | Profiles / identity field (dock door) |
-| **Automations** | Scripts, Agents, Flows, Schedules, History |
+| **Automations** | Saved prompts, scripts, and flows in a Run list |
+| **Agents** | Specialist import, tuning, and use in chat |
 | **Peers** | Nearby workshops, trust, inbox |
 | **Channels** | Messaging adapters (under Settings / More — not the life rail) |
 | **Runtime** | Now, Jobs, Delivery, Routing diagnostics |
@@ -76,17 +77,17 @@ Settings | tone: default
 
 **Custom views** you create also appear as surfaces on the rail when the layout includes them.
 
-## Automations modes
+## Automations
 
-Open **Automations** (or deep-link into scripts/agents):
+On desktop, **Automations** opens a Run list with **All**, **Scheduled**,
+**Manual**, and **Paused** filters. Select a row for its overview, run controls,
+and recorded runs. **New automation** starts a prompt schedule or opens the
+existing script and flow libraries. **Scripts** and **Flows** below the list
+keep their editors available.
 
-| Mode | For |
-|------|-----|
-| **Scripts** | Grapheme workbench |
-| **Agents** | Specialist import and tuning |
-| **Flows** | Multi-step workflows |
-| **Schedules** | Cron / recurring runs |
-| **History** | Past runs (secondary strip — chevron) |
+**Agents** is a separate destination. Global history lives in
+**Spotlight → Activity**, where tool runs can be selected to create a flow draft.
+On mobile, Automations keeps its Scripts, Flows, and Schedules sections.
 
 ## Layout presets
 
@@ -94,8 +95,8 @@ Built-in examples:
 
 | Preset | Typical surfaces |
 |--------|------------------|
-| **Default** | Full set (chat, work, notes, files, artifacts, calendar, web, map, peers, automations, messaging, runtime, settings, …) |
-| **Focus** | Smaller set — chat, peers, work, notes, files, artifacts, map, settings, runtime |
+| **Default** | Full set (chat, notes, files, artifacts, calendar, web, map, peers, automations, messaging, runtime, settings, …) |
+| **Focus** | Smaller set — chat, peers, notes, files, artifacts, map, settings, runtime |
 
 Switching preset can also apply that preset’s **theme** and **shell chrome**. Custom presets come from your environment / canvas setup — see [Views and environments](guide:views-environments).
 
@@ -106,7 +107,7 @@ Inside a desktop:
 - Split **right** / **down**; focus panes from the keyboard (see [Keyboard and flow](guide:keyboard-flow)).
 - Up to **four panes** per desktop.
 - Tabs inside a pane for sessions, notes, browser pages, etc.
-- Some surfaces are **singletons** (one tab max): Notes/Files/Artifacts (shared host), Peers, Channels, Map, Work, Calendar, Settings, Runtime, You.
+- Some surfaces are **singletons** (one tab max): Notes/Files/Artifacts (shared host), Peers, Channels, Map, Calendar, Settings, Runtime, You.
 
 Treat panes like a light tiling manager for one workshop — not twelve separate Home windows.
 
@@ -162,7 +163,7 @@ Notes, Files, Artifacts, Automations, and similar explorers can grow a contextua
 
 ```chips
 - Sessions / ask → Chat | tone: accent
-Background jobs → Work | tone: default
+Background jobs → Activity | tone: default
 Notes → Notes | tone: default
 Scripts / flows → Automations | tone: default
 Identity → You | tone: default
@@ -176,7 +177,7 @@ Engine restart → Settings · Workshop | tone: default
 | I need… | Go to |
 |---------|--------|
 | Sessions / ask | Chat |
-| Background job board | Work |
+| Background tasks | Spotlight → Activity |
 | Notes | Notes |
 | Files | Files |
 | Artifacts | Artifacts |

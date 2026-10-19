@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
   import { FilePlus, Pin, PinOff, Search, X } from "@lucide/svelte";
   import VaultEditor from "$lib/components/vault/VaultEditor.svelte";
   import VaultEditorOverflowMenu from "$lib/components/vault/VaultEditorOverflowMenu.svelte";
@@ -28,6 +29,7 @@
   let loadingPath = $state(true);
   let missingPath = $state(false);
   let findOpen = $state(false);
+  let closing = false;
 
   const displayTitle = $derived(
     vault.selectedPath
@@ -56,6 +58,14 @@
   });
 
   onMount(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    if (isTauri()) {
+      void listen("popout-close-requested", handleClose).then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      });
+    }
     async function openStickyPath(path: string | null) {
       vault.applyStickyLivePlane();
       if (!path) {
@@ -121,6 +131,8 @@
     window.addEventListener("keydown", onKeydown, true);
 
     return () => {
+      disposed = true;
+      unlisten?.();
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("keydown", onKeydown, true);
       detachWorkshop();
@@ -133,11 +145,16 @@
   }
 
   async function handleClose() {
-    if (vault.dirty) {
-      await vault.flushSave();
-    }
-    if (isTauri()) {
-      await hideVaultSticky();
+    if (closing) return;
+    closing = true;
+    try {
+      if (vault.dirty) {
+        const saved = await vault.flushSave();
+        if (!saved || vault.dirty) return;
+      }
+      if (isTauri()) await hideVaultSticky();
+    } finally {
+      closing = false;
     }
   }
 

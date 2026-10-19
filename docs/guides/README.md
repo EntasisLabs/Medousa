@@ -11,14 +11,18 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Getting started](getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](models-and-agent-sources.md) | Choose runtimes, models, modes, and reply narration in chat |
 | [Bots](bots.md) | Create durable named teammates with their own memory and conversation |
+| [Spotlight Activity](spotlight-activity.md) | Follow workshop execution and open its chat, project, or run output |
+| [Reviews](reviews.md) | Browse prepared change sets and review project revisions |
 | [Packages](packages.md) | Add optional computer, coding, model, channel, and MCP capabilities |
-| [Workshop & Automations](workshop-and-automations.md) | Flows, schedules, specialists, background work |
+| [Workshop & Automations](workshop-and-automations.md) | Run list, schedules, specialists, and Activity |
 | [Phone pairing](phone-pairing.md) | Add another computer as an optional portal, including from a browser |
 | [Siri and Shortcuts](siri-and-shortcuts.md) | Continue the selected Medousa chat by voice or from an iPhone shortcut |
 | [Medousa Live on iPhone](medousa-live-ios.md) | Hold a continuous in-app voice conversation on iPhone |
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
 | [SSH targets](ssh-targets.md) | Connect named servers and choose agent access |
 | [Memory & identity](memory-and-identity.md) | Teach who you are; profiles |
+| [Files](files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
+| [Context](context.md) | Browse saved session memory and its sources |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
 | [External agent conversations](provider-conversations.md) | Connect provider-hosted agents and replay their messages |
 | [Instinct Agent](instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |

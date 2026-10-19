@@ -15,7 +15,7 @@
   interface Props {
     health?: DaemonHealth | null;
     onOpenChat: () => void;
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onOpenContext: () => void;
     onOpenConnection: () => void;
     onOpenNote: (path: string) => void | Promise<void>;
@@ -26,7 +26,7 @@
   let {
     health = null,
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onOpenContext,
     onOpenConnection,
     onOpenNote,
@@ -120,7 +120,7 @@
         groupId={shellTabs.zoomedGroupId}
         {health}
         {onOpenChat}
-        {onOpenWork}
+        {onOpenActivity}
         {onOpenContext}
         {onOpenConnection}
         {onOpenNote}
@@ -133,7 +133,7 @@
         node={shellTabs.splitRoot}
         {health}
         {onOpenChat}
-        {onOpenWork}
+        {onOpenActivity}
         {onOpenContext}
         {onOpenConnection}
         {onOpenNote}

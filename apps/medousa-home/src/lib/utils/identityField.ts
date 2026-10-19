@@ -45,26 +45,20 @@ function clusterFill(density: number): string {
   return `rgb(var(--color-primary-500) / ${alpha.toFixed(2)})`;
 }
 
-function synthesizePortrait(displayName: string, people: number, prefs: number): string {
-  if (people === 0 && prefs === 0) {
-    return `She's still learning who ${displayName} is — teach her something and watch the field take shape.`;
+function profileSummary(people: number, preferences: number, facts: number): string {
+  if (people + preferences + facts === 0) {
+    return "No profile information saved yet. Add a preference, person, or fact.";
   }
-  const parts: string[] = [];
-  if (people > 0) {
-    parts.push(
-      people === 1 ? "someone close orbits you" : `${people} people pull on your center`,
-    );
-  }
-  if (prefs > 0) {
-    parts.push(prefs === 1 ? "a rhythm tints the air" : "rhythms tint how she shows up");
-  }
-  return `${displayName} — ${parts.join("; ")}.`;
+  return [
+    `${preferences} preference${preferences === 1 ? "" : "s"}`,
+    `${people} ${people === 1 ? "person" : "people"}`,
+    `${facts} fact${facts === 1 ? "" : "s"}`,
+  ].join(" · ");
 }
 
 export function buildIdentityFieldLayout(
   context: IdentityContextResponse | null,
   displayName: string,
-  digestLines: string[] = [],
 ): IdentityFieldLayout {
   const entries = context ? buildProfileShelfEntries(context) : [];
   const people = entries.filter((e) => e.kind === "contact" || e.kind === "relationship");
@@ -74,9 +68,7 @@ export function buildIdentityFieldLayout(
   const density = people.length + remembers.length + preferences.length;
   const clusterRadius = 88 + Math.min(density * 10, 72);
 
-  const portrait =
-    digestLines.find((line) => line.length > 12 && line.length < 140) ??
-    synthesizePortrait(displayName, people.length, preferences.length);
+  const portrait = profileSummary(people.length, preferences.length, remembers.length);
 
   const blobs: IdentityFieldBlob[] = [
     {

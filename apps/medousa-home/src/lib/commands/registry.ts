@@ -1,3 +1,4 @@
+import { buildActivityCommands } from "./activityCommands";
 import {
   approveTurnBudgetRequest,
   checkDaemonHealth,
@@ -7,7 +8,7 @@ import {
   listManuscripts,
   listTurnBudgetRequests,
 } from "$lib/daemon";
-import { resetContentZoom, stepContentZoom } from "$lib/config/contentZoom";
+import { CONTENT_ZOOM_DEFAULT, contentZoomPercent, resetContentZoom, stepContentZoom } from "$lib/config/contentZoom";
 import { homeChannelSurface, formatShortcut } from "$lib/platform";
 import { onThisHostPhrase } from "$lib/platformCopy";
 import { appUpdate } from "$lib/stores/appUpdate.svelte";
@@ -41,22 +42,7 @@ import type { Surface } from "$lib/types/ui";
 import type { DepthMode } from "$lib/types/runtime";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
 
-const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keywords: string }[] = [
-  { surface: "chat", label: "Chat", subtitle: "Talk with Medousa", keywords: "message compose conversation" },
-  { surface: "notes", label: "Notes", subtitle: "Vault notes and markdown", keywords: "vault notes documents library" },
-  { surface: "files", label: "Files", subtitle: "Pinned folders on this machine", keywords: "files folders pin local" },
-  { surface: "artifacts", label: "Artifacts", subtitle: "HTML decks and agent widgets", keywords: "artifacts presentations decks widgets" },
-  { surface: "work", label: "Work", subtitle: "Tasks and kanban board", keywords: "kanban cards jobs" },
-  { surface: "code", label: "Code", subtitle: "Projects, editing, understanding, and review", keywords: "code project repository editor forge test review source" },
-  { surface: "web", label: "Browser", subtitle: "Built-in web workshop", keywords: "browser web surf" },
-  { surface: "automations", label: "Automations", subtitle: "Scripts and schedules", keywords: "cron scripts grapheme" },
-  { surface: "workshop", label: "Agents", subtitle: "Specialist agents in Workspace", keywords: "skills manuscripts workshop capabilities specialist agents" },
-  { surface: "map", label: "Map", subtitle: "Sessions, moments, and notes", keywords: "memory locus context map moments" },
-  { surface: "peers", label: "Peers", subtitle: "Nearby workshops and inbox", keywords: "peers nearby share trust lan inbox" },
-  { surface: "profiles", label: "Profiles", subtitle: "People and identity", keywords: "profiles identity people" },
-  { surface: "runtime", label: "Engine status", subtitle: "Jobs, delivery, health", keywords: "runtime engine daemon health" },
-  { surface: "settings", label: "Settings", subtitle: "Preferences and connection", keywords: "settings preferences config" },
-];
+import { GO_DESTINATIONS } from "./destinations";
 
 export function buildGoCommands(): WorkshopCommand[] {
   const destinations = GO_DESTINATIONS.map((dest) => ({
@@ -72,6 +58,7 @@ export function buildGoCommands(): WorkshopCommand[] {
   }));
   return [
     ...destinations,
+    ...buildActivityCommands(),
     {
       id: "go-channels",
       section: "go",
@@ -310,8 +297,8 @@ export function buildPaneCommands(): WorkshopCommand[] {
       id: "content-zoom-reset",
       section: "advanced",
       label: "Reset zoom",
-      subtitle: `${formatShortcut("0")} — back to 100%`,
-      keywords: "zoom content reset default 100 ui",
+      subtitle: `${formatShortcut("0")} — back to ${contentZoomPercent(CONTENT_ZOOM_DEFAULT)}`,
+      keywords: "zoom content reset default 110 ui",
       advanced: true,
       run: (ctx) => {
         resetContentZoom();

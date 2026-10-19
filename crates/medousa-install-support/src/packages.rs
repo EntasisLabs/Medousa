@@ -137,6 +137,18 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             false,
         ),
         entry(
+            "review-github",
+            "GitHub reviews",
+            &["engine"],
+            &["medousa_review_github"],
+            PackageCategory::Expansion,
+            "GitPullRequestArrow",
+            &[],
+            8 * 1024 * 1024,
+            true,
+            false,
+        ),
+        entry(
             "adapter-telegram",
             "Telegram",
             &["engine"],
@@ -426,6 +438,7 @@ pub fn is_home_packages_package(package_id: &str) -> bool {
         "local-brain"
             | "system-one-laya"
             | "mcp-gateway"
+            | "review-github"
             | "adapter-telegram"
             | "adapter-discord"
             | "adapter-slack"
@@ -458,6 +471,7 @@ pub fn package_short_hint(package_id: &str) -> &'static str {
         "local-brain" => "On-device inference binary for offline Gemma.",
         "system-one-laya" => "Local typed-decision engine for fast System One routing.",
         "mcp-gateway" => "Connect MCP servers to Medousa.",
+        "review-github" => "GitHub reviews with connected workshop accounts.",
         "adapter-telegram" => "Telegram channel adapter.",
         "adapter-discord" => "Discord channel adapter.",
         "adapter-slack" => "Slack channel adapter.",
@@ -481,6 +495,7 @@ pub fn resolve_package_alias(name: &str) -> Option<&'static str> {
     match name.trim().to_ascii_lowercase().as_str() {
         "engine" | "daemon" | "cli" | "tui" | "core" => Some("engine"),
         "mcp" | "mcp_gateway" | "mcp-gateway" => Some("mcp-gateway"),
+        "github" | "review-github" => Some("review-github"),
         "telegram" | "adapter-telegram" => Some("adapter-telegram"),
         "discord" | "adapter-discord" => Some("adapter-discord"),
         "slack" | "adapter-slack" => Some("adapter-slack"),
@@ -571,6 +586,13 @@ pub fn package_composition() -> Vec<PackageComposition> {
             workspace_crates: &["medousa-mcp-gateway"],
             cargo_features: &[],
             binaries: &["medousa_mcp_gateway"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "review-github",
+            workspace_crates: &["medousa-github"],
+            cargo_features: &[],
+            binaries: &["medousa_review_github"],
             in_default_engine_link: false,
         },
         PackageComposition {

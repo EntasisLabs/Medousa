@@ -1,6 +1,5 @@
 <script lang="ts">
   import { chat } from "$lib/stores/chat.svelte";
-  import { workspace } from "$lib/stores/workspace.svelte";
   import {
     approveTurnBudgetRequest,
     denyTurnBudgetRequest,
@@ -10,10 +9,9 @@
 
   interface Props {
     mobile?: boolean;
-    onOpenWork?: () => void;
   }
 
-  let { mobile = false, onOpenWork }: Props = $props();
+  let { mobile = false }: Props = $props();
 
   let busy = $state(false);
   let feedback = $state<string | null>(null);
@@ -65,8 +63,8 @@
 
   async function openWorkCard() {
     if (!pending) return;
-    onOpenWork?.();
-    await workspace.selectCard(pending.workCardId);
+    const { openTaskDetails } = await import("$lib/runtime/shellUseCases");
+    await openTaskDetails(pending.workCardId);
   }
 </script>
 
@@ -112,16 +110,14 @@
         >
           Deny
         </button>
-        {#if onOpenWork}
           <button
             type="button"
             class="btn btn-sm variant-ghost-surface"
             disabled={busy}
             onclick={() => void openWorkCard()}
           >
-            Work
+            Task details
           </button>
-        {/if}
       </div>
     </div>
   </div>

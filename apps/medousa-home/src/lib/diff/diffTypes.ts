@@ -33,6 +33,9 @@ export type DiffFileSection = {
   /** Full before/after text for real context expansion between hunks. */
   beforeText?: string | null;
   afterText?: string | null;
+  /** Shared context lines when several symbol previews show the same file. */
+  beforeLines?: string[];
+  afterLines?: string[];
   conflict?: boolean;
 };
 

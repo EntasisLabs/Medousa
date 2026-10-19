@@ -6,7 +6,7 @@
   import { hydrateMarkdownContainer, destroyMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
   import { projectMarkdownTarget, type ProjectMarkdownImages } from "$lib/code/codeMarkdownDocument";
 
-  let { content, path, workId, images, onOpenLocation }: { content: string; path: string; workId: string; images: ProjectMarkdownImages; onOpenLocation: (path: string, line: number) => void } = $props();
+  let { content, path, workId, images, onOpenLocation }: { content: string; path: string; workId: string; images: Pick<ProjectMarkdownImages, "resolve">; onOpenLocation: (path: string, line: number) => void } = $props();
   let root = $state<HTMLDivElement>();
   function renderProjectMarkdown(content: string, path: string) {
     const html = renderMarkdownPreview(stripFrontmatter(content).content, { sourcePath: path, interactiveTasks: false, resolveLocalImages: true });

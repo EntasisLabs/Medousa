@@ -1,4 +1,6 @@
-export type CommandSpotlightMode = "default" | "notes";
+import type { ActivityFilter } from "$lib/spotlight/activity";
+
+export type CommandSpotlightMode = "default" | "notes" | "ssh";
 
 export interface CommandPromptStep {
   commandId: string;
@@ -9,6 +11,7 @@ export interface CommandPromptStep {
 
 class CommandSpotlightStore {
   open = $state(false);
+  activityFilter = $state<ActivityFilter | null>(null);
   mode = $state<CommandSpotlightMode>("default");
   promptStep = $state<CommandPromptStep | null>(null);
   /** Command waiting for prompt input (not always in filtered list). */
@@ -23,10 +26,16 @@ class CommandSpotlightStore {
 
   openSpotlight(mode: CommandSpotlightMode = "default") {
     this.mode = mode;
+    this.activityFilter = null;
     this.promptStep = null;
     this.pendingCommand = null;
     this.seedQuery = null;
     this.open = true;
+  }
+
+  openActivity(filter: ActivityFilter = "all") {
+    this.openSpotlight();
+    this.activityFilter = filter;
   }
 
   /** VS Code-style command palette — Spotlight seeded in `>` advanced mode. */
@@ -57,6 +66,18 @@ class CommandSpotlightStore {
     this.openSpotlight("notes");
   }
 
+  openSshTargets() {
+    this.mode = "ssh";
+    this.activityFilter = null;
+    this.seedQuery = "";
+    this.open = true;
+  }
+
+  leaveSshTargets() {
+    this.mode = "default";
+    this.seedQuery = "";
+  }
+
   rememberQuery(query: string, mode: CommandSpotlightMode) {
     this.lastQuery = query;
     this.lastMode = mode;
@@ -65,6 +86,7 @@ class CommandSpotlightStore {
 
   closeSpotlight() {
     this.open = false;
+    this.activityFilter = null;
     this.promptStep = null;
     this.pendingCommand = null;
     this.mode = "default";

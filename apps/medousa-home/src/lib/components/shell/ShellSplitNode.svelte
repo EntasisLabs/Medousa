@@ -9,7 +9,7 @@
     node: SplitNode;
     health?: DaemonHealth | null;
     onOpenChat: () => void;
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onOpenContext: () => void;
     onOpenConnection: () => void;
     onOpenNote: (path: string) => void | Promise<void>;
@@ -22,7 +22,7 @@
     node,
     health = null,
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onOpenContext,
     onOpenConnection,
     onOpenNote,
@@ -37,7 +37,7 @@
     groupId={node.id}
     {health}
     {onOpenChat}
-    {onOpenWork}
+    {onOpenActivity}
     {onOpenContext}
     {onOpenConnection}
     {onOpenNote}
@@ -61,7 +61,7 @@
         node={node.a}
         {health}
         {onOpenChat}
-        {onOpenWork}
+        {onOpenActivity}
         {onOpenContext}
         {onOpenConnection}
         {onOpenNote}
@@ -83,7 +83,7 @@
         node={node.b}
         {health}
         {onOpenChat}
-        {onOpenWork}
+        {onOpenActivity}
         {onOpenContext}
         {onOpenConnection}
         {onOpenNote}

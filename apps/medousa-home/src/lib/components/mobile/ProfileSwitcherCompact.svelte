@@ -218,7 +218,7 @@
         class="workshop-text-action mt-3 text-sm"
         onclick={openFullProfiles}
       >
-        Teach Medousa &amp; manage profiles →
+        Your profile &amp; saved context →
       </button>
     </div>
     </div>

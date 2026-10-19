@@ -1,4 +1,5 @@
 import {
+  CONTENT_ZOOM_DEFAULT,
   contentZoomPercent,
   resetContentZoom,
   stepContentZoom,
@@ -30,6 +31,7 @@ async function runScriptById(
   spotlightPins.setLastScriptId(scriptId);
   await workshop.runScriptSource(source);
   ctx.navigate("automations");
+  ctx.layout.openShellSidebarView("automations");
   ctx.callbacks.close();
   ctx.notice(
     workshop.runError
@@ -57,7 +59,7 @@ function buildCreateCommands(): WorkshopCommand[] {
           body: applied.body,
           intent: applied.intent,
         });
-        ctx.navigate("automations");
+        ctx.layout.openShellSidebarView("automations");
         ctx.callbacks.close();
         ctx.notice(`Opened template: ${recipe.title}`);
       },
@@ -122,7 +124,7 @@ function buildCreateCommands(): WorkshopCommand[] {
       aliases: ["script", "+script"],
       run: (ctx) => {
         lmeWorkspace.openNewScript();
-        ctx.navigate("automations");
+        ctx.layout.openShellSidebarView("automations");
         ctx.callbacks.close();
         ctx.notice("New script tab opened.");
       },
@@ -193,12 +195,12 @@ function buildRunCommands(): WorkshopCommand[] {
       keywords: "run morning brief digest summary",
       aliases: ["brief", "morning"],
       run: async (ctx) => {
-        await enqueueDaemonAsk({
+        const accepted = await enqueueDaemonAsk({
           prompt: "Run the morning brief.",
           manuscriptId: "morning-brief",
         });
-        ctx.navigate("work");
         ctx.callbacks.close();
+        await ctx.workspace.selectCard(accepted.job_id, { refresh: true });
         ctx.notice("Morning brief queued.");
       },
     },
@@ -305,12 +307,12 @@ function buildToggleCommands(): WorkshopCommand[] {
       section: "do",
       verb: "toggle",
       label: "Reset zoom",
-      subtitle: "Back to 100%",
-      keywords: "zoom reset 100 default",
+      subtitle: `Back to ${contentZoomPercent(CONTENT_ZOOM_DEFAULT)}`,
+      keywords: "zoom reset 110 default",
       run: (ctx) => {
-        resetContentZoom();
+        const zoom = resetContentZoom();
         ctx.callbacks.close();
-        ctx.notice("Zoom 100%");
+        ctx.notice(`Zoom ${contentZoomPercent(zoom)}`);
       },
     },
   ];

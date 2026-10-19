@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import "$lib/styles/workshop-surfaces.postcss";
   import { onMount } from "svelte";
   import AppTitlebar from "$lib/components/layout/AppTitlebar.svelte";
@@ -28,6 +29,7 @@
   import type { DaemonHealth } from "$lib/daemon";
   import HomeOnboarding from "$lib/components/onboarding/HomeOnboarding.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import { openWorkCard } from "$lib/runtime/shellUseCases";
 
   interface Props {
     onOpenSpotlight?: () => void;
@@ -112,24 +114,15 @@
       shellTabs.openSurface("map", { activate: true });
       return;
     }
-    // Automations + Capabilities fold into the LME workspace — rail only, no
-    // empty Workspace/Code surface tabs.
+    // Saved automations have a Run list; resource editors remain LME tabs.
     if (surface === "automations") {
-      const mode = lmeWorkspace.explorerMode;
-      if (
-        mode !== "scripts" &&
-        mode !== "flows" &&
-        mode !== "schedules" &&
-        mode !== "history" &&
-        mode !== "agents"
-      ) {
-        lmeWorkspace.setExplorerMode("scripts");
-      }
-      shellTabs.enterLmeFamily("library");
+      shellTabs.openSurface("automations", { activate: true });
+      layout.setShellSidebarMode("nav");
       return;
     }
     if (surface === "workshop") {
       lmeWorkspace.setExplorerMode("agents");
+      layout.openShellSidebarView("workshop");
       shellTabs.enterLmeFamily("library");
       return;
     }
@@ -165,7 +158,8 @@
       return;
     }
     if (surface === "work") {
-      void workspace.prefetchCardDetails();
+      commandSpotlight.openActivity();
+      return;
     }
     shellTabs.openDestination(surface);
   }
@@ -183,8 +177,7 @@
   }
 
   async function handleCardSelect(id: string) {
-    shellTabs.openSurface("work", { activate: true });
-    await workspace.selectCard(id);
+    await openWorkCard(id);
   }
 </script>
 
@@ -201,7 +194,6 @@
       onOpenChat={() => goToSurface("chat")}
       health={daemonHealth}
       chatActivity={chat.backgroundActivity}
-      workActivity={workspace.inMotionCount()}
       peersActivity={peersUnread}
       activeProfileLabel={userProfiles.activeDisplayName}
     />
@@ -219,7 +211,7 @@
           <ShellTabHost
             health={daemonHealth}
             onOpenChat={() => goToSurface("chat")}
-            onOpenWork={() => goToSurface("work")}
+            onOpenActivity={() => commandSpotlight.openActivity()}
             onOpenContext={() => {
               layout.setIdentityDrawerOpen(false);
               goToSurface("map");

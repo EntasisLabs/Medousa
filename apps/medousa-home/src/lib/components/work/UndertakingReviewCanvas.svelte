@@ -1,4 +1,10 @@
 <script lang="ts">
+  import "$lib/styles/review-canvas.postcss";
+  import { tick, untrack } from "svelte";
+  import { reviewAreas } from "$lib/code/reviewAreas";
+  import ReviewPageHeading from "./ReviewPageHeading.svelte";
+  import ReviewOverview from "$lib/components/work/ReviewOverview.svelte";
+  import type { ReviewReadingState, ReviewLens } from "$lib/code/reviewPage.svelte";
   import { ChevronRight, CircleAlert, GitCommitHorizontal, Link2, Save } from "@lucide/svelte";
   import ForgeReviewSurface from "$lib/components/work/ForgeReviewSurface.svelte";
   import ReviewCommentRail from "$lib/components/work/ReviewCommentRail.svelte";
@@ -12,6 +18,9 @@
 
   interface Props {
     review: ReviewProjection | null;
+    readingState: ReviewReadingState;
+    originalRequest: string;
+    sourceBranch: string;
     humanPhase: string;
     projectTitle: string;
     provenanceBaseRef: string | null;
@@ -66,6 +75,9 @@
 
   let {
     review,
+    readingState,
+    originalRequest,
+    sourceBranch,
     humanPhase,
     projectTitle,
     provenanceBaseRef,
@@ -108,7 +120,46 @@
     onConfirmExport,
   }: Props = $props();
 
-  function scrollToReviewFile(path: string) {
+  let scrollEl = $state<HTMLDivElement | null>(null);
+  let changesVisited = $state(false);
+  const selectedRevision = $derived(review?.attempt_id);
+  const candidate = $derived(review?.candidates.find(candidate => candidate.attempt_id === review.attempt_id));
+  const areas = $derived(reviewAreas(review?.changed_files ?? []));
+  let restoreGeneration = 0;
+  let restoringScroll = false;
+  async function restoreScroll() {
+    const generation = restoreGeneration;
+    await tick();
+    if (generation !== restoreGeneration || !scrollEl) return;
+    scrollEl.scrollTop = readingState.scroll[readingState.lens];
+    restoringScroll = false;
+  }
+  $effect(() => {
+    const lens = readingState.lens;
+    const attempt = selectedRevision;
+    void readingState.directory;
+    const waitForDiff = untrack(() => lens === "changes" && !changesVisited && readingState.diff.expanded.length > 0);
+    if (lens === "changes") changesVisited = true;
+    restoreGeneration += 1;
+    restoringScroll = true;
+    if (!waitForDiff) untrack(() => { void restoreScroll(); });
+    void attempt;
+  });
+  function setLens(lens: ReviewLens) {
+    if (scrollEl) readingState.scroll[readingState.lens] = scrollEl.scrollTop;
+    readingState.lens = lens;
+  }
+  function saveScroll() {
+    if (scrollEl && !restoringScroll) readingState.scroll[readingState.lens] = scrollEl.scrollTop;
+  }
+  function showDirectory(directory: string | null) {
+    readingState.directory = directory;
+    setLens("changes");
+    readingState.scroll.changes = 0;
+  }
+  async function scrollToReviewFile(path: string) {
+    showDirectory(null);
+    await tick();
     const el = document.getElementById(`diff-file-${encodeURIComponent(path)}`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -116,12 +167,24 @@
 
         {#if review && (humanPhase === "review" || review.evidence_id)}
           <div class="flex min-h-0 flex-1 flex-col bg-surface-950/20">
-            <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
+            <nav class="review-page-lenses" aria-label="Review lenses">
+              <button type="button" aria-pressed={readingState.lens === "overview"} onclick={() => setLens("overview")}>Summary</button>
+              <button type="button" aria-pressed={readingState.lens === "changes"} onclick={() => setLens("changes")}>Changes <span>{review.changed_files.length}</span></button>
+              <div class="review-lens-controls">
+              {#if readingState.lens === "changes"}<select aria-label="Filter changed files by directory" value={JSON.stringify(readingState.directory)} onchange={(event) => showDirectory(JSON.parse(event.currentTarget.value))}>
+                <option value="null">All files · {review.changed_files.length}</option>
+                {#each areas as area}<option value={JSON.stringify(area.directory)}>{area.label} · {area.count}</option>{/each}
+              </select>{/if}
+              {#if review.candidates.length > 1}<select aria-label="Review revision" value={review.attempt_id ?? ""} disabled={busy} onchange={(event) => onSelectCandidate(event.currentTarget.value)}>{#each review.candidates as candidate (candidate.attempt_id)}<option value={candidate.attempt_id}>Revision {candidate.attempt_seq} · {candidate.executor}</option>{/each}</select>{/if}
+              </div>
+            </nav>
+            <div bind:this={scrollEl} onscroll={saveScroll} class="review-page-scroll min-h-0 flex-1 overflow-auto">
               <div
                 class="review-canvas"
                 class:review-canvas--with-rail={showCommentRail}
               >
                 <div class="review-canvas-main">
+                {#if readingState.lens !== "overview"}<ReviewPageHeading title={projectTitle} author={candidate?.executor ?? ""} revision={candidate ? `Revision ${candidate.attempt_seq}` : ""} target={sourceBranch} />{/if}
                 {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}
                   <section class="review-policy" aria-label="Policy exceptions">
                     <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
@@ -188,8 +251,16 @@
                   </section>
                 {/if}
 
+                {#if readingState.lens === "overview"}
+                  <ReviewOverview title={projectTitle} {review} {originalRequest} {sourceBranch} onShowChanges={showDirectory} />
+                {/if}
+                {#if changesVisited}
+                <div hidden={readingState.lens !== "changes"}>
                 <ForgeReviewSurface
                   {review}
+                  directory={readingState.directory}
+                  viewState={readingState.diff}
+                  onReady={() => void restoreScroll()}
                   projectTitle={projectTitle}
                   {busy}
                   onOpenFile={onOpenFile}
@@ -198,8 +269,10 @@
                   onComment={onComment}
                   onToggleCommentRail={onToggleCommentRail}
                 />
+                </div>
+                {/if}
 
-                {#if review.decision?.rationale}
+                {#if readingState.lens === "changes" && review.decision?.rationale}
                   <p class="review-prior-note">
                     Prior decision note: <span>{review.decision.rationale}</span>
                   </p>
@@ -341,8 +414,8 @@
                     onCancelCompose={onCancelCompose}
                     onResolve={onResolveComment}
                     onDelete={onDeleteComment}
-                    onJump={(comment) => {
-                      scrollToReviewFile(comment.path);
+                    onJump={async (comment) => {
+                      await scrollToReviewFile(comment.path);
                       const el = document.querySelector(
                         `[data-diff-line="${comment.start_line}"]`,
                       ) as HTMLElement | null;
@@ -434,565 +507,3 @@
             </div>
           </div>
         {/if}
-
-<style>
-  .review-canvas {
-    width: 100%;
-    max-width: 88rem;
-    margin: 0 auto;
-  }
-
-  .review-canvas--with-rail {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(14rem, 17rem);
-    gap: 0.85rem;
-    align-items: start;
-  }
-
-  .review-canvas-main {
-    min-width: 0;
-  }
-
-  .review-revision-brief {
-    margin-top: 0.85rem;
-  }
-
-  .review-revision-brief-body {
-    margin-top: 0.45rem;
-    max-height: 12rem;
-    overflow: auto;
-    border: 1px solid rgb(var(--color-surface-500) / 0.22);
-    border-radius: 0.5rem;
-    background: rgb(var(--color-surface-950) / 0.35);
-    padding: 0.65rem 0.75rem;
-    color: rgb(var(--theme-text-secondary));
-    font-family: var(--font-mono);
-    font-size: 0.625rem;
-    line-height: 1.45;
-    white-space: pre-wrap;
-  }
-
-  @media (max-width: 960px) {
-    .review-canvas--with-rail {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .review-policy {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.65rem;
-    margin-top: 0.85rem;
-    border: 1px solid rgb(var(--color-warning-500) / 0.26);
-    border-radius: 0.6rem;
-    padding: 0.75rem;
-    background: rgb(var(--color-warning-500) / 0.1);
-    color: rgb(var(--theme-warning));
-  }
-
-  .review-policy p {
-    font-size: 0.6875rem;
-    font-weight: 600;
-  }
-
-  .review-policy ul {
-    margin-top: 0.3rem;
-    font-size: 0.625rem;
-    line-height: 1.5;
-    color: rgb(var(--theme-warning) / 0.72);
-  }
-
-  .review-policy-path {
-    font-family: var(--font-mono);
-  }
-
-  .review-policy-path {
-    border: 0;
-    background: transparent;
-    padding: 0;
-    color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 0.12em;
-    cursor: pointer;
-  }
-
-  .review-policy-path:hover {
-    color: rgb(var(--color-surface-100));
-  }
-
-  .review-policy label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    margin-top: 0.55rem;
-    font-size: 0.625rem;
-    color: rgb(var(--theme-warning));
-  }
-
-  .review-prior-note {
-    margin-top: 0.75rem;
-    font-size: 0.6875rem;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-prior-note span {
-    color: rgb(var(--color-surface-200));
-  }
-
-  .review-context {
-    margin-top: 0.85rem;
-    padding: 0.2rem 0 0.8rem;
-  }
-
-  .review-context-disclosure {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    border: 0;
-    border-radius: 0.35rem;
-    background: transparent;
-    padding: 0.3rem 0.4rem 0.3rem 0.1rem;
-    color: rgb(var(--theme-text-secondary));
-    text-align: left;
-    transition: color 140ms ease, background-color 140ms ease;
-  }
-
-  .review-context-disclosure:hover {
-    background: rgb(var(--color-surface-800) / 0.3);
-    color: rgb(var(--theme-text));
-  }
-
-  .review-context-disclosure > span {
-    font-size: 0.75rem;
-    font-weight: 500;
-    letter-spacing: -0.01em;
-  }
-
-  .review-context-disclosure small {
-    margin-left: 0.25rem;
-    font-size: 0.625rem;
-    font-weight: 400;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  :global(.review-context-chevron),
-  :global(.review-context-row-chevron) {
-    flex-shrink: 0;
-    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  :global(.review-context-chevron--open),
-  :global(.review-context-row-chevron--open) {
-    transform: rotate(90deg);
-  }
-
-  .review-context-body {
-    margin-top: 0.35rem;
-    animation: review-context-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  @keyframes review-context-in {
-    from {
-      opacity: 0;
-      transform: translateY(-3px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .review-context-loading {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.55rem;
-    font-size: 0.625rem;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-context-loading-dot {
-    width: 0.35rem;
-    height: 0.35rem;
-    border-radius: 50%;
-    background: rgb(var(--color-primary-400));
-    animation: review-context-pulse 1.2s ease-in-out infinite;
-  }
-
-  @keyframes review-context-pulse {
-    50% {
-      opacity: 0.35;
-      transform: scale(0.75);
-    }
-  }
-
-  .review-context-row,
-  .review-context-row-button {
-    display: grid;
-    grid-template-columns: 1.75rem minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.55rem;
-    width: 100%;
-  }
-
-  .review-context-row {
-    min-height: 2.8rem;
-    border-radius: 0.5rem;
-    padding: 0.45rem 0.55rem;
-    transition: background-color 140ms ease;
-  }
-
-  .review-context-row:hover {
-    background: rgb(var(--color-surface-800) / 0.2);
-  }
-
-  .review-context-row--stack {
-    display: block;
-  }
-
-  .review-context-row-button {
-    border: 0;
-    background: transparent;
-    padding: 0;
-    color: inherit;
-    text-align: left;
-  }
-
-  .review-context-icon {
-    display: inline-flex;
-    width: 1.75rem;
-    height: 1.75rem;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.45rem;
-    background: rgb(var(--color-surface-800) / 0.35);
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-context-copy {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-  }
-
-  .review-context-copy-title {
-    overflow: hidden;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    color: rgb(var(--color-surface-200));
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .review-context-copy > span:not(.review-context-copy-title) {
-    overflow: hidden;
-    margin-top: 0.1rem;
-    font-size: 0.6875rem;
-    line-height: 1.4;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-audit button {
-    border: 0;
-    background: transparent;
-    padding: 0.15rem 0.3rem;
-    font-size: 0.5625rem;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-audit button:hover {
-    color: rgb(var(--theme-link));
-  }
-
-  .review-link-compose {
-    display: flex;
-    max-width: 34rem;
-    align-items: center;
-    gap: 0.4rem;
-    margin: 0.45rem 0 0;
-    border-radius: 0.45rem;
-    padding: 0.3rem 0.4rem;
-    background: rgb(var(--color-surface-800) / 0.28);
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-link-compose input {
-    appearance: none;
-    min-width: 0;
-    flex: 1;
-    border: 0;
-    background: transparent;
-    padding: 0.15rem;
-    box-shadow: none;
-    outline: none;
-    font-size: 0.6875rem;
-    color: rgb(var(--color-surface-100));
-  }
-
-  .review-link-compose input::placeholder {
-    color: rgb(var(--theme-text-faint));
-  }
-
-  .review-link-compose button {
-    border: 0;
-    border-radius: 0.3rem;
-    background: transparent;
-    padding: 0.25rem 0.4rem;
-    font-size: 0.625rem;
-    color: rgb(var(--theme-link));
-  }
-
-  .review-link-compose button:disabled {
-    color: rgb(var(--theme-text-faint));
-  }
-
-  .review-audit {
-    margin: 0.55rem 0 0 2.3rem;
-  }
-
-  .review-audit-revision {
-    margin-bottom: 0.35rem;
-    font-family: var(--font-mono);
-    font-size: 0.5625rem;
-    color: rgb(var(--theme-text-faint));
-  }
-
-  .review-audit pre {
-    max-height: 12rem;
-    overflow: auto;
-    border-radius: 0.45rem;
-    padding: 0.6rem;
-    background: rgb(0 0 0 / 0.24);
-    font-family: var(--font-mono);
-    font-size: 0.5625rem;
-    line-height: 1.4;
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  .review-exported {
-    margin: 0.4rem 0;
-    font-size: 0.625rem;
-    color: rgb(var(--theme-success));
-  }
-
-  .review-exported span {
-    font-family: var(--font-mono);
-  }
-
-  .review-decision {
-    flex-shrink: 0;
-    border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
-    padding: 0.6rem 1rem;
-    background: rgb(var(--color-surface-900) / 0.94);
-    box-shadow: 0 -0.5rem 1.5rem rgb(0 0 0 / 0.14);
-    backdrop-filter: blur(12px);
-  }
-
-  .review-note {
-    appearance: none;
-    width: 100%;
-    margin-bottom: 0.55rem;
-    resize: none;
-    border: 0;
-    border-radius: 0.5rem;
-    background: rgb(var(--color-surface-800) / 0.4);
-    padding: 0.55rem 0.65rem;
-    box-shadow: none;
-    outline: none;
-    font-size: 0.75rem;
-    color: rgb(var(--color-surface-100));
-  }
-
-  .review-note::placeholder {
-    color: rgb(var(--theme-text-faint));
-  }
-
-  .review-decision-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .review-decision-guidance {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.45rem;
-    color: rgb(var(--theme-warning));
-  }
-
-  .review-decision-guidance p {
-    overflow: hidden;
-    font-size: 0.8125rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .review-export-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1rem;
-  }
-
-  .review-export-backdrop {
-    position: absolute;
-    inset: 0;
-    border: 0;
-    background: rgb(0 0 0 / 0.5);
-    backdrop-filter: blur(3px);
-  }
-
-  .review-export-dialog {
-    position: relative;
-    display: grid;
-    width: min(26rem, 100%);
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 0.7rem 0.8rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.32);
-    border-radius: 0.8rem;
-    padding: 1rem;
-    background: rgb(var(--color-surface-900) / 0.98);
-    box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 0.4);
-  }
-
-  .review-export-icon {
-    display: inline-flex;
-    width: 2rem;
-    height: 2rem;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.5rem;
-    background: rgb(var(--color-primary-500) / 0.12);
-    color: rgb(var(--theme-link));
-  }
-
-  .review-export-dialog h4 {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-100));
-  }
-
-  .review-export-dialog p {
-    margin-top: 0.2rem;
-    font-size: 0.6875rem;
-    line-height: 1.45;
-    color: rgb(var(--theme-text-quiet));
-  }
-
-  .review-export-dialog label,
-  .review-export-dialog input,
-  .review-export-dialog small,
-  .review-export-path,
-  .review-export-actions {
-    grid-column: 1 / -1;
-  }
-
-  .review-export-dialog label {
-    margin-top: 0.35rem;
-    font-size: 0.625rem;
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  .review-export-dialog input {
-    appearance: none;
-    border: 0;
-    border-radius: 0.45rem;
-    background: rgb(var(--color-surface-800) / 0.5);
-    padding: 0.5rem 0.6rem;
-    box-shadow: none;
-    outline: none;
-    font-family: var(--font-mono);
-    font-size: 0.6875rem;
-    color: rgb(var(--color-surface-100));
-  }
-
-  .review-export-dialog input::placeholder {
-    color: rgb(var(--theme-text-faint));
-  }
-
-  .review-export-dialog small {
-    margin-top: -0.45rem;
-    font-size: 0.5625rem;
-    color: rgb(var(--theme-text-faint));
-  }
-
-  .review-export-dialog .review-export-path {
-    overflow: hidden;
-    margin-top: 0.35rem;
-    border-radius: 0.45rem;
-    padding: 0.5rem 0.6rem;
-    background: rgb(var(--color-surface-800) / 0.35);
-    font-family: var(--font-mono);
-    font-size: 0.625rem;
-    color: rgb(var(--theme-text-tertiary));
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .review-export-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.35rem;
-    margin-top: 0.35rem;
-  }
-
-  .review-export-actions button {
-    border: 1px solid transparent;
-    border-radius: 0.4rem;
-    background: transparent;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.6875rem;
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  .review-export-actions button:hover:not(:disabled) {
-    background: rgb(var(--color-surface-700) / 0.35);
-    color: rgb(var(--color-surface-100));
-  }
-
-  .review-export-actions .review-export-save {
-    border-color: rgb(var(--color-primary-500) / 0.3);
-    background: rgb(var(--color-primary-500) / 0.12);
-    color: rgb(var(--color-primary-200));
-  }
-
-  .review-export-actions button:disabled {
-    opacity: 0.35;
-  }
-
-  @media (max-width: 640px) {
-    .review-context-disclosure small {
-      display: none;
-    }
-
-    .review-context-row,
-    .review-context-row-button {
-      grid-template-columns: 1.75rem minmax(0, 1fr);
-    }
-
-    :global(.review-context-row-chevron) {
-      grid-column: 2;
-      justify-self: flex-start;
-    }
-
-    .review-decision-row {
-      align-items: flex-start;
-      flex-direction: column;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .review-context-body,
-    :global(.review-context-chevron),
-    :global(.review-context-row-chevron),
-    .review-context-loading-dot {
-      animation: none !important;
-      transition: none !important;
-    }
-  }
-</style>

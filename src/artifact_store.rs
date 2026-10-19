@@ -872,7 +872,8 @@ const ARTIFACT_HOST_STYLE: &str = concat!(
     "<style id=\"medousa-artifact-host\">",
     // Minimal host vars for chat/library exports; Home PresentationFrame injects full theme tokens live.
     ":root{--medousa-host-bg:transparent;--medousa-host-fg:inherit;--medousa-host-muted:inherit}",
-    "html,body{margin:0;padding:0;background:var(--medousa-host-bg,transparent);overflow:hidden;",
+    ":where(html,body){margin:0;padding:0}",
+    "html,body{overflow:hidden;",
     "scrollbar-width:none;-ms-overflow-style:none}",
     "html::-webkit-scrollbar,body::-webkit-scrollbar{display:none;width:0;height:0}",
     "/* Agent utility: .medousa-fill { min-height:100%; width:100% } */",

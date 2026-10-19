@@ -53,13 +53,16 @@
     if (!isLocalImageHref(href) && !href.includes("/") && !href.includes("\\")) {
       return;
     }
+    let cancelled = false;
+    let ownedUrl: string | null = null;
     void (async () => {
       try {
-        thumbUrl = await attachmentPreviewUrl(href);
-      } catch {
-        thumbUrl = null;
-      }
+        const url = await attachmentPreviewUrl(href);
+        if (cancelled) { if (url) URL.revokeObjectURL(url); return; }
+        ownedUrl = url; thumbUrl = url;
+      } catch { if (!cancelled) thumbUrl = null; }
     })();
+    return () => { cancelled = true; if (ownedUrl) URL.revokeObjectURL(ownedUrl); };
   });
 
   function handleWikilink(event: MouseEvent, target: string) {

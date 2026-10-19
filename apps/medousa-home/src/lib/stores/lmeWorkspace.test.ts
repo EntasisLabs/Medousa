@@ -139,7 +139,7 @@ vi.mock("$lib/stores/flows.svelte", () => ({
 }));
 
 const { LmeWorkspaceStore } = await import("./lmeWorkspace.svelte");
-const { setLmeWorkspacePorts } = await import("$lib/runtime/lmeWorkspacePorts");
+const { setLmeWorkspacePorts, lmeWorkspacePorts } = await import("$lib/runtime/lmeWorkspacePorts");
 
 const codeTabsForWorkA = [
   {
@@ -239,6 +239,33 @@ describe("lmeWorkspace", () => {
     store.activeTabId = null;
     store.explorerMode = "notes";
     vi.clearAllMocks();
+  });
+
+  it("opens and restores reviews without hydrating an editable source workspace", async () => {
+    const hydrateCode = vi.fn(async () => {});
+    const selectUndertaking = vi.fn(async () => {});
+    setLmeWorkspacePorts({ ...lmeWorkspacePorts(), hydrateCode, selectUndertaking });
+    await store.openCodeReview("work-a", "Review A");
+    await store.activateTab(store.activeTabId!);
+    await store.openCodeReview("work-a", "Review A");
+    expect(store.tabs).toHaveLength(1);
+    expect(store.tabs[0]).toMatchObject({ kind: "code", workId: "work-a", resource: { kind: "review" } });
+    expect(hydrateCode).not.toHaveBeenCalled();
+    expect(selectUndertaking).not.toHaveBeenCalled();
+  });
+
+  it("keeps hosted review accounts and hosts independent without hydrating Forge", async () => {
+    const hydrateCode = vi.fn(async () => {});
+    const selectUndertaking = vi.fn(async () => {});
+    setLmeWorkspacePorts({ ...lmeWorkspacePorts(), hydrateCode, selectUndertaking });
+    const reference = { provider_id: "example", host: "git.example.test", repository: "group/sub/repo", native_id: "42" };
+    await store.openHostedReview(reference, "Review", "account-a");
+    await store.activateTab(store.activeTabId!);
+    await store.openHostedReview(reference, "Review", "account-a");
+    await store.openHostedReview(reference, "Review", "account-b");
+    await store.openHostedReview({ ...reference, host: "other.example.test" }, "Review", "account-a");
+    expect(store.tabs).toHaveLength(3);
+    expect(hydrateCode).not.toHaveBeenCalled(); expect(selectUndertaking).not.toHaveBeenCalled();
   });
 
   it("opens notes as workspace tabs", async () => {

@@ -24,7 +24,6 @@
   .shell-titlebar-tabs {
     display: flex;
     min-width: 0;
-    max-width: min(42rem, 58vw);
     flex: 0 1 auto;
     align-items: center;
     gap: 0.2rem;

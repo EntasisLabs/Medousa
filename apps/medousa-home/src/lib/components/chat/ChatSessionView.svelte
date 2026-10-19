@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { useChatHistoryPanel } from "$lib/chat/chatHistoryPanel.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import SessionIdentity from "./SessionIdentity.svelte";
@@ -31,7 +32,8 @@
   const trimmed = $derived(sessionId.trim());
   /** Use focusedSessionId — raw sessionId swaps during background SSE apply. */
   const isPrincipal = $derived(trimmed === chat.focusedSessionId);
-  const messages = $derived(chat.messagesFor(trimmed));
+  const history = useChatHistoryPanel(chat.history, () => trimmed, () => visible && !(interactive && isPrincipal));
+  const messages = $derived(history.messages());
   const loading = $derived(chat.historyLoadingFor(trimmed));
   const error = $derived(chat.streamErrorFor(trimmed));
   const runtime = $derived(getSessionAgentRuntime(trimmed));

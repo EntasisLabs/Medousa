@@ -1,67 +1,55 @@
 # Workshop & Automations
 
-**Audience:** Medousa app users who want scripts, flows, and scheduled work —
-not just chat.
+**Audience:** Medousa users who want to reuse scripts, flows, and scheduled work.
 
-Medousa can run durable jobs, specialist packs, and scheduled check-ins. On
-desktop you’ll see **Workshop** and **Automations** in the nav (wording may
-evolve as Scripts Workbench lands). On mobile, open **Automations** from the
-destinations menu (or the More tab) for scripts, flows, schedules, and run
-history (or **Agents** for specialists).
+On desktop, **Automations** opens a Run list of saved prompts, scripts, and flows.
+**Agents** has its own destination for browsing and editing specialists.
 
----
+## Find saved work
 
-## Mental model
+Use **All**, **Scheduled**, **Manual**, or **Paused**, and search by name or
+script tags. Each row shows its trigger and the latest result available from
+the workshop. A scheduled flow appears once, with its schedule attached.
 
-| Idea | Meaning |
-|------|---------|
-| **Workshop** | Browse modules, scripts, connections, and specialists for the active engine |
-| **Automations** | Flows, schedules, run history — work that can finish without you watching |
-| **Specialty** | A pack with its own voice and boundaries (morning brief, research, …) |
-| **Background / Work** | Heavy jobs you send off chat; results return on the work board |
+Select a row to see its overview and recorded runs. Open a run to read its
+retained output. Script results are available in Activity and the script editor;
+the Run list does not invent a last result when none is recorded.
 
-Chat is for conversation. Automations are for **repeatable** or **long-running**
-work that should survive sleep and reconnects.
+## Create, run, and schedule
 
----
+- **New automation → Quick prompt** opens the existing prompt and schedule form.
+- **From script** opens the script library, including templates and the editor.
+- **From flow** opens the flow library and its editor.
+- **Run now** executes a script or replays a flow's saved definition.
+- **Pause / Resume** changes an existing schedule without deleting it.
+- **Edit schedule and delivery** opens the existing schedule editor.
 
-## Common things to do
+Prompt schedules currently support editing and pause/resume. Their abbreviated
+prompt preview is never used to run an incomplete copy on demand.
 
-### Run or schedule a flow
+The **Scripts** and **Flows** links below the list keep the existing workbenches
+available. On mobile, Automations retains its Scripts, Flows, and Schedules
+sections; Agents is a separate destination.
 
-1. Open **Automations** (desktop nav, or on mobile the destinations menu → Automations).
-2. Pick a flow or ask Medousa in chat to *create a flow that…*
-3. Run it now, or attach a **schedule** so it lands while you’re away.
-4. Delivery can go to chat, a channel, or vault — pick what you configured.
+## Activity and reusable flows
 
-### Import or edit a specialty
+Open **Spotlight → Activity** for workshop activity across chats, tasks, scripts,
+code, and schedules. Recent tool runs appear beneath their source conversations.
+Select tool runs, name the flow, and choose **Create flow** to open a draft in
+the flow editor. Creating the draft does not execute it.
 
-1. Open Workshop / Automations → specialists or scripts.
-2. Import a `SKILL.md` (Cursor / Hermes / OpenClaw style) or start from a
-   template.
-3. Preview allowlists before you trust a pack with tools.
+For a particular automation, use its **Runs** tab to inspect recorded results.
+Activity remains the broader overview of what is happening across the workshop.
 
-Cookbook depth: [Skills & specialties](../cookbook/skills-and-specialties.md).
+## Agents
 
-### Send heavy work to the background
+Open **Agents** to browse, import, edit, or use specialist packs in chat. You can
+also create a schedule for a specialist from there.
 
-In chat, ask Medousa to run something in the background or use the Work surface.
-Accepted jobs retry and resume; you don’t babysit the window.
-
----
-
-## History and honesty
-
-Automations keep **run history** so you can see what fired, what failed, and
-what was delivered. If something looks stuck, open history before restarting the
-engine.
-
----
+See [Skills & specialties](../cookbook/skills-and-specialties.md) for more detail.
 
 ## Related
 
 - [Getting started](getting-started.md)
-- [Channels](channels.md) — deliver briefs to Telegram / Discord / …
+- [Channels](channels.md)
 - [Custom views & canvas](../cookbook/custom-views-and-canvas.md)
-- Contributor plans: [workshop-and-automations-plan.md](../../architecture/workshop-and-automations-plan.md)
-  (architecture — not required for using the app)

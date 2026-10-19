@@ -184,7 +184,7 @@
       "id": "composer",
       "class": "feature",
       "path": "src/lib/styles/composer.postcss",
-      "loadedBy": "ChatComposerBar.svelte / CronPanel.svelte / WorkAskDockPopover.svelte"
+      "loadedBy": "ChatComposerBar.svelte / CronPanel.svelte / NewAskDialog.svelte"
     },
     {
       "id": "settings",
@@ -244,7 +244,7 @@
       "id": "work",
       "class": "feature",
       "path": "src/lib/styles/work.postcss",
-      "loadedBy": "WorkAsksPanel.svelte / WorkAskDockPopover.svelte"
+      "loadedBy": "ChatAsksPanel.svelte / NewAskDialog.svelte"
     },
     {
       "id": "messaging",
@@ -276,6 +276,24 @@
       "path": "src/lib/styles/chat-review.postcss",
       "loadedBy": "ChatChangeReceipt.svelte",
       "layered": false
+    },
+    {
+      "id": "review-canvas",
+      "class": "feature",
+      "path": "src/lib/styles/review-canvas.postcss",
+      "loadedBy": "UndertakingReviewCanvas.svelte"
+    },
+    {
+      "id": "liquid-accordion",
+      "path": "src/lib/styles/liquid-accordion.postcss",
+      "class": "feature",
+      "loadedBy": "Accordion.svelte / MarkdownContent.svelte"
+    },
+    {
+      "id": "markdown-document",
+      "path": "src/lib/styles/markdown-document.postcss",
+      "class": "feature",
+      "loadedBy": "MarkdownContent.svelte"
     }
   ]
 }

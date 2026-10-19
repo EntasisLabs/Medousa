@@ -43,6 +43,8 @@ pub mod reconnecting_stream;
 #[cfg(feature = "async")]
 mod recurring;
 #[cfg(feature = "async")]
+mod reviews;
+#[cfg(feature = "async")]
 mod runtime;
 #[cfg(feature = "async")]
 mod sessions;

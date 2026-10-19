@@ -1,4 +1,6 @@
 <script lang="ts">
+  import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
+  import { loadReviewsPanel } from "$lib/runtime/viewLoaders";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import MapSidePanel from "$lib/components/context/MapSidePanel.svelte";
   import MapRailToolbar from "$lib/components/context/MapRailToolbar.svelte";
@@ -17,8 +19,6 @@
   import CalendarRailList from "$lib/components/calendar/CalendarRailList.svelte";
   import YouRailToolbar from "$lib/components/profiles/YouRailToolbar.svelte";
   import YouRailList from "$lib/components/profiles/YouRailList.svelte";
-  import WorkRailToolbar from "$lib/components/work/WorkRailToolbar.svelte";
-  import WorkRailList from "$lib/components/work/WorkRailList.svelte";
   import CanvasAddViewForm from "$lib/components/settings/CanvasAddViewForm.svelte";
   import CanvasEditViewPopover from "$lib/components/settings/CanvasEditViewPopover.svelte";
   import { environment } from "$lib/stores/environment.svelte";
@@ -49,6 +49,7 @@
     navLabel,
     navTitle,
     shellSidebarViewTitle,
+    shellSidebarUsesLmeExplorer,
     surfaceHasShellSidebarView,
   } from "$lib/utils/navSurfaces";
   import {
@@ -75,7 +76,6 @@
     onOpenChat: () => void;
     health?: DaemonHealth | null;
     chatActivity?: number;
-    workActivity?: number;
     peersActivity?: number;
     activeProfileLabel?: string;
   }
@@ -86,7 +86,6 @@
     onOpenChat,
     health = null,
     chatActivity = 0,
-    workActivity = 0,
     peersActivity = 0,
     activeProfileLabel = "Personal",
   }: Props = $props();
@@ -99,12 +98,7 @@
     mode === "view" && surfaceHasShellSidebarView(viewSurface),
   );
   const viewTitle = $derived(
-    viewSurface === "library" ||
-      viewSurface === "notes" ||
-      viewSurface === "files" ||
-      viewSurface === "artifacts" ||
-      viewSurface === "automations" ||
-      viewSurface === "code"
+    shellSidebarUsesLmeExplorer(viewSurface)
       ? labelForLmeExplorerMode(lmeWorkspace.explorerMode)
       : shellSidebarViewTitle(viewSurface),
   );
@@ -316,12 +310,12 @@
       railPopover?.surfaceId === "files" ||
       railPopover?.surfaceId === "artifacts" ||
       railPopover?.surfaceId === "automations" ||
+      railPopover?.surfaceId === "workshop" ||
       railPopover?.surfaceId === "code",
   );
 
   function activityFor(id: string): number {
     if (id === "chat") return chatActivity;
-    if (id === "work") return workActivity;
     if (id === "peers") return peersActivity;
     return 0;
   }
@@ -385,6 +379,7 @@
   }
 
   function ensureFamilyForSurface(surfaceId: string) {
+    if (surfaceId === "workshop") { lmeWorkspace.setExplorerMode("agents"); return; }
     const doorMode = LIBRARY_DOOR_MODES[surfaceId];
     if (doorMode) {
       lmeWorkspace.setExplorerMode(doorMode);
@@ -534,6 +529,12 @@
     event?.stopPropagation();
     closeRailPopover();
     ensureFamilyForSurface(surfaceId);
+    if (surfaceId === "automations") {
+      onSelect(surfaceId);
+      layout.setShellSidebarMode("nav");
+      return;
+    }
+    if (surfaceId === "workshop") lmeWorkspace.setExplorerMode("agents");
     if (surfaceHasShellSidebarView(surfaceId)) {
       layout.openShellSidebarView(surfaceId);
       onSelect(surfaceId);
@@ -562,7 +563,9 @@
           ? "code"
           : isLmeAutomationsMode(mode)
             ? "automations"
-            : mode === "files"
+            : mode === "agents"
+              ? "workshop"
+              : mode === "files"
               ? "files"
               : mode === "artifacts"
                 ? "artifacts"
@@ -630,12 +633,11 @@
                 <SessionSidebar open={true} variant="inline" chrome="rail-list" />
               </div>
             </div>
-          {:else if viewSurface === "library" ||
-            viewSurface === "notes" ||
-            viewSurface === "files" ||
-            viewSurface === "artifacts" ||
-            viewSurface === "automations" ||
-            viewSurface === "code"}
+          {:else if viewSurface === "reviews"}
+            <LazyFeatureView loader={loadReviewsPanel} rail={true} />
+          {:else if viewSurface === "workshop"}
+            <LmeSidePanel {onOpenChat} family="library" />
+          {:else if shellSidebarUsesLmeExplorer(viewSurface)}
             <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(viewSurface)} />
           {:else if viewSurface === "messaging"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -699,15 +701,6 @@
                 <CalendarRailList onPickEvent={() => onSelect("calendar")} />
               </div>
             </div>
-          {:else if viewSurface === "work"}
-            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div class="lme-side-rail-dock">
-                <WorkRailToolbar onAction={() => onSelect("work")} />
-              </div>
-              <div class="min-h-0 flex-1 overflow-hidden">
-                <WorkRailList onPickCard={() => onSelect("work")} />
-              </div>
-            </div>
           {:else if viewSurface === "profiles"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="lme-side-rail-dock">
@@ -753,7 +746,9 @@
                 ? libraryDoorIsActive(surface.id)
                 : isAutomations
                   ? automationsIsActive()
-                  : active === surface.id || surfacePopoverOpen(surface.id)}
+                  : surface.id === "workshop"
+                    ? (showView && viewSurface === "workshop") || (active === "library" && lmeWorkspace.explorerMode === "agents")
+                    : active === surface.id || surfacePopoverOpen(surface.id)}
               {@const canHide =
                 railLayoutEditing && isNavDestinationToggleable(surface.id)}
               {@const canEditCustom = canHide && surface.kind === "custom"}
@@ -992,7 +987,7 @@
     {#snippet toolbar()}
       {#if popover.kind === "lme"}
         <!-- LME dock icons portal into the popover dock slot. -->
-      {:else if popover.surfaceId === "library" ||
+      {:else if popover.surfaceId === "workshop" || popover.surfaceId === "library" ||
         popover.surfaceId === "notes" ||
         popover.surfaceId === "files" ||
         popover.surfaceId === "artifacts" ||
@@ -1011,8 +1006,6 @@
         <WebRailToolbar onNavigated={() => commitPopoverSurface("web")} />
       {:else if popover.surfaceId === "calendar"}
         <CalendarRailToolbar onAction={() => commitPopoverSurface("calendar")} />
-      {:else if popover.surfaceId === "work"}
-        <WorkRailToolbar onAction={() => commitPopoverSurface("work")} />
       {:else if popover.surfaceId === "profiles"}
         <YouRailToolbar onAction={() => commitPopoverSurface("profiles")} />
       {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
@@ -1029,12 +1022,11 @@
             ? "automations"
             : "library"}
       />
-    {:else if popover.surfaceId === "library" ||
-      popover.surfaceId === "notes" ||
-      popover.surfaceId === "files" ||
-      popover.surfaceId === "artifacts" ||
-      popover.surfaceId === "automations" ||
-      popover.surfaceId === "code"}
+    {:else if popover.surfaceId === "reviews"}
+      <LazyFeatureView loader={loadReviewsPanel} rail={true} onPick={closeRailPopover} />
+    {:else if popover.surfaceId === "workshop"}
+      <LmeSidePanel {onOpenChat} family="library" />
+    {:else if shellSidebarUsesLmeExplorer(popover.surfaceId)}
       <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(popover.surfaceId)} />
     {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
       <div class="min-h-0 flex-1 overflow-y-auto py-1">
@@ -1081,8 +1073,6 @@
       <WebRailList onPickTab={() => commitPopoverSurface("web")} />
     {:else if popover.surfaceId === "calendar"}
       <CalendarRailList onPickEvent={() => commitPopoverSurface("calendar")} />
-    {:else if popover.surfaceId === "work"}
-      <WorkRailList onPickCard={() => commitPopoverSurface("work")} />
     {:else if popover.surfaceId === "profiles"}
       <YouRailList onPickProfile={() => commitPopoverSurface("profiles")} />
     {/if}

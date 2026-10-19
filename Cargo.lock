@@ -7890,6 +7890,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-github"
+version = "0.11.1"
+dependencies = [
+ "medousa-forge",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "medousa-host"
 version = "0.11.0"
 dependencies = [

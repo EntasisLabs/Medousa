@@ -13,10 +13,10 @@
   import { peersShell } from "$lib/stores/peersShell.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { workspace } from "$lib/stores/workspace.svelte";
   import { dispatchBrowserFocusUrl } from "$lib/utils/browserChromeEvents";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
-  import { dispatchWorkFocusAsk } from "$lib/utils/workChromeEvents";
+  import { pushBrowserPopoverOverlay, popBrowserPopoverOverlay } from "$lib/utils/browserPopoverOverlay";
+  import { openNewAsk } from "$lib/utils/workChromeEvents";
   import {
     BookOpen,
     Bot,
@@ -95,6 +95,12 @@
   );
 
   $effect(() => {
+    if (!open) return;
+    void pushBrowserPopoverOverlay();
+    return () => { void popBrowserPopoverOverlay(); };
+  });
+
+  $effect(() => {
     if (!open || !triggerEl || !menuEl) return;
     let frame = 0;
     const place = () => {
@@ -171,10 +177,7 @@
           dispatchBrowserFocusUrl();
           break;
         case "ask":
-          workspace.openHubView();
-          shellTabs.openSurface("work", { activate: true });
-          await tick();
-          dispatchWorkFocusAsk();
+          openNewAsk();
           break;
         case "calendar":
           shellTabs.openSurface("calendar", { activate: true });
@@ -250,7 +253,10 @@
       tabindex="-1"
       aria-label="Create new tab"
       onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        onWindowKeydown(event);
+        event.stopPropagation();
+      }}
     >
       <div class="new-tab-menu-window" data-slide={slideDir}>
         {#key page}

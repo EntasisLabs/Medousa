@@ -219,3 +219,7 @@ Operators / CI: [Install & self-host](../cookbook/install-and-self-host.md) ·
   Packages on the Mac or PC that hosts those workloads.
 - After installing a channel adapter, configure tokens under messaging /
   [Channels](channels.md).
+
+### GitHub reviews
+
+The **GitHub reviews** package adds repository-hosted reviews through the connected workshop. It uses an existing native GitHub or CLI sign-in. See [Reviews](reviews.md#repository-hosted-reviews) for setup and the first read-only workflow.

@@ -247,6 +247,8 @@
         languageHint={languageHint}
         beforeText={file.beforeText}
         afterText={file.afterText}
+        beforeLines={file.beforeLines}
+        afterLines={file.afterLines}
         onRevertHunk={onRevertHunk}
         revertBusy={busy}
         onComment={

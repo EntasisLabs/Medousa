@@ -59,7 +59,7 @@ export type PopoverPlacement = "above" | "below" | "panel";
 export function popoverStyle(
   anchorRect: DOMRect | null | undefined,
   placement: PopoverPlacement,
-  options?: { width?: number; maxHeight?: number },
+  options?: { width?: number; maxHeight?: number; viewportWidth?: number; viewportHeight?: number },
 ): string {
   const width = options?.width ?? 320;
   const maxHeight = options?.maxHeight ?? 360;
@@ -75,8 +75,8 @@ export function popoverStyle(
   }
 
   const margin = 8;
-  const viewportW = typeof window !== "undefined" ? window.innerWidth : width;
-  const viewportH = typeof window !== "undefined" ? window.innerHeight : maxHeight;
+  const viewportW = options?.viewportWidth ?? (typeof window !== "undefined" ? window.innerWidth : width);
+  const viewportH = options?.viewportHeight ?? (typeof window !== "undefined" ? window.innerHeight : maxHeight);
   let left = anchorRect.left + anchorRect.width / 2 - width / 2;
   left = Math.max(margin, Math.min(left, viewportW - width - margin));
 

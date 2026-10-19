@@ -54,3 +54,37 @@ export function tabKindLabel(kind: ShellTabKind): string {
 export function titleOfTab(tab: ShellTab): string {
   return tab.title.trim() || tabKindLabel(tab.kind);
 }
+
+export function surfaceTitle(surfaceId: string): string {
+  switch (surfaceId) {
+    case "library":
+      return "Workspace";
+    case "automations":
+      return "Automations";
+    case "code":
+      return "Code";
+    case "reviews":
+      return "Reviews";
+    case "chat":
+      return "Chat";
+    case "peers":
+      return "Peers";
+    case "messaging":
+      return "Channels";
+    case "context":
+    case "map":
+      return "Context";
+    case "calendar":
+      return "Calendar";
+    case "settings":
+      return "Settings";
+    case "runtime":
+      return "Runtime";
+    case "profiles":
+      return "Profiles";
+    case "web":
+      return "Web";
+    default:
+      return surfaceId;
+  }
+}

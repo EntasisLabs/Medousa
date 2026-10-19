@@ -1,6 +1,7 @@
 <script lang="ts">
+  import "$lib/styles/files-surface.postcss";
   import { FolderPlus, RefreshCw, Search, X } from "@lucide/svelte";
-  import { onMount, tick } from "svelte";
+  import { tick } from "svelte";
   import ExternalFilesBrowser from "$lib/components/vault/ExternalFilesBrowser.svelte";
   import ExternalFileRow from "$lib/components/vault/ExternalFileRow.svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
@@ -19,19 +20,13 @@
   let searchExpanded = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
 
-  const externalHits = $derived(externalDesk.searchHitsList);
-  const query = $derived(vault.searchQuery);
-  const searching = $derived(query.trim().length > 0);
-  const canLinkFiles = $derived(Boolean(vault.selectedPath));
   const coLocated = $derived(isCoLocatedWorkshop());
+  const externalHits = $derived(externalDesk.searchHitsList);
+  const query = $derived(externalDesk.searchQuery);
+  const searching = $derived(coLocated && query.trim().length > 0);
+  const canLinkFiles = $derived(Boolean(vault.selectedPath));
   const hasFolders = $derived(externalDesk.pinnedRoots.length > 0);
   const refreshing = $derived(Boolean(externalDesk.loadingRoot));
-
-  onMount(() => {
-    if (hasFolders) {
-      void externalDesk.refreshAllRoots();
-    }
-  });
 
   $effect(() => {
     if (searching && !searchExpanded) {
@@ -52,7 +47,6 @@
   }
 
   function handleExternalSearch(value: string) {
-    vault.searchQuery = value;
     externalDesk.setSearchQuery(value);
   }
 
@@ -64,6 +58,7 @@
   }
 
   async function handleOpen(entry: ExternalFileEntry) {
+    externalDesk.selectExternalPath(entry.path);
     const attachment = externalDesk.attachmentForPath(entry.path);
     if (canPreviewAttachment(attachment)) {
       lmeWorkspace.openFile(entry.path);
@@ -91,7 +86,7 @@
           bind:this={searchInputEl}
           class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
           type="search"
-          placeholder="Search files…"
+          placeholder="Filter loaded files…"
           value={query}
           oninput={(event) =>
             handleExternalSearch((event.currentTarget as HTMLInputElement).value)}
@@ -109,7 +104,7 @@
       </div>
     {:else}
       <!-- Push action cluster to the right: New · Refresh · Search -->
-      <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+      <span class="files-dock-title">Files</span>
 
       {#if !coLocated}
         <span
@@ -164,9 +159,10 @@
   </header>
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if searching}
-      <div class="flex h-full min-h-0 flex-col overflow-y-auto px-1.5 py-1">
+      <div class="files-search-results flex h-full min-h-0 flex-col overflow-y-auto px-2 py-1">
+        <div class="files-search-summary"><strong>{externalHits.length} {externalHits.length === 1 ? 'file' : 'files'}</strong><span>In loaded folders</span></div>
         {#if externalHits.length === 0}
-          <p class="px-2 py-4 text-sm text-content-quiet">No files match.</p>
+          <div class="files-empty"><span class="files-empty-icon"><Search size={22} strokeWidth={1.5} /></span><h3>No files found</h3><p>Try another name, or open more folders to include their files.</p><button type="button" class="files-button files-button--quiet" onclick={closeSearch}>Back to folders</button></div>
         {:else}
           <ul class="space-y-0.5">
             {#each externalHits as entry (entry.path)}

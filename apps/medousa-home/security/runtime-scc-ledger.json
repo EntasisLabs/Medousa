@@ -57,6 +57,10 @@
       "specifier": "$lib/styles/artifact.postcss"
     },
     {
+      "from": "src/lib/components/chat/ChatAsksPanel.svelte",
+      "specifier": "$lib/styles/work.postcss"
+    },
+    {
       "from": "src/lib/components/chat/ChatChangeReceipt.svelte",
       "specifier": "$lib/styles/chat-review.postcss"
     },
@@ -149,6 +153,10 @@
       "specifier": "$lib/styles/workshop-surfaces.postcss"
     },
     {
+      "from": "src/lib/components/lme/explorers/LmeFilesExplorer.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
+    },
+    {
       "from": "src/lib/components/lme/LmeFlowEditor.svelte",
       "specifier": "$lib/components/automations/flowComposer.css"
     },
@@ -229,12 +237,36 @@
       "specifier": "./agentEditor.css"
     },
     {
+      "from": "src/lib/components/tasks/NewAskDialog.svelte",
+      "specifier": "$lib/styles/composer.postcss"
+    },
+    {
+      "from": "src/lib/components/tasks/NewAskDialog.svelte",
+      "specifier": "$lib/styles/work.postcss"
+    },
+    {
+      "from": "src/lib/components/tasks/TaskDetailsOverlay.svelte",
+      "specifier": "$lib/styles/work.postcss"
+    },
+    {
       "from": "src/lib/components/terminal/TerminalPane.svelte",
       "specifier": "@xterm/xterm/css/xterm.css"
     },
     {
       "from": "src/lib/components/ui/MarkdownContent.svelte",
+      "specifier": "$lib/styles/liquid-accordion.postcss"
+    },
+    {
+      "from": "src/lib/components/ui/MarkdownContent.svelte",
       "specifier": "$lib/styles/markdown-content.postcss"
+    },
+    {
+      "from": "src/lib/components/ui/MarkdownContent.svelte",
+      "specifier": "$lib/styles/markdown-document.postcss"
+    },
+    {
+      "from": "src/lib/components/vault/ExternalFilesBrowser.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
     },
     {
       "from": "src/lib/components/vault/KanbanBoardEditor.svelte",
@@ -251,6 +283,10 @@
     {
       "from": "src/lib/components/vault/VaultAttachmentPanel.svelte",
       "specifier": "$lib/styles/artifact.postcss"
+    },
+    {
+      "from": "src/lib/components/vault/VaultAttachmentPreviewContent.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
     },
     {
       "from": "src/lib/components/vault/VaultCalloutBuilderSheet.svelte",
@@ -297,6 +333,10 @@
       "specifier": "$lib/styles/vault-workshop.postcss"
     },
     {
+      "from": "src/lib/components/vault/VaultSpreadsheetPreview.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
+    },
+    {
       "from": "src/lib/components/vault/VaultViewBuilderSheet.svelte",
       "specifier": "$lib/styles/vault-liquid.postcss"
     },
@@ -305,16 +345,20 @@
       "specifier": "./wizardExperience.css"
     },
     {
-      "from": "src/lib/components/work/WorkAskDockPopover.svelte",
-      "specifier": "$lib/styles/composer.postcss"
+      "from": "src/lib/components/work/UndertakingReviewCanvas.svelte",
+      "specifier": "$lib/styles/review-canvas.postcss"
     },
     {
-      "from": "src/lib/components/work/WorkAskDockPopover.svelte",
-      "specifier": "$lib/styles/work.postcss"
+      "from": "src/lib/files/FilePdfDocument.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
     },
     {
-      "from": "src/lib/components/work/WorkAsksPanel.svelte",
-      "specifier": "$lib/styles/work.postcss"
+      "from": "src/lib/files/FilePreviewHeader.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
+    },
+    {
+      "from": "src/lib/files/FileTextDocument.svelte",
+      "specifier": "$lib/styles/files-surface.postcss"
     },
     {
       "from": "src/lib/liquid/archetypes/atoms/prose/Prose.svelte",
@@ -323,6 +367,10 @@
     {
       "from": "src/lib/liquid/archetypes/atoms/whisper/Whisper.svelte",
       "specifier": "$lib/styles/markdown-content.postcss"
+    },
+    {
+      "from": "src/lib/liquid/archetypes/molecules/accordion/Accordion.svelte",
+      "specifier": "$lib/styles/liquid-accordion.postcss"
     },
     {
       "from": "src/lib/liquid/archetypes/molecules/code/Code.svelte",

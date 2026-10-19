@@ -8,11 +8,13 @@
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { isBrowserWorkshop, usesUnifiedTitlebar } from "$lib/platform";
   import type { DaemonHealth } from "$lib/daemon";
   import { refreshDaemonHealth } from "$lib/workshopConnection";
   import {
+    loadAutomationsRunList,
     loadCalendarPanel,
     loadEnvironmentRenderer,
     loadHumanBrowserPanel,
@@ -22,16 +24,16 @@
     loadPeersPanel,
     loadProfilesPanel,
     loadRuntimePanel,
+    loadReviewsPanel,
     loadSettingsPanel,
     loadTerminalPane,
-    loadWorkPanel,
   } from "$lib/runtime/viewLoaders";
 
   interface Props {
     groupId: string;
     health?: DaemonHealth | null;
     onOpenChat: () => void;
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onOpenContext: () => void;
     onOpenConnection: () => void;
     onOpenNote: (path: string) => void | Promise<void>;
@@ -45,7 +47,7 @@
     groupId,
     health = null,
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onOpenContext,
     onOpenConnection,
     onOpenNote,
@@ -230,7 +232,7 @@
           ? "Choose a project from the side panel, or start a new one."
           : "Open something from the side panel."}
         {onOpenChat}
-        {onOpenWork}
+        {onOpenActivity}
         {onSelectCard}
       />
     {:else if showWeb}
@@ -249,7 +251,11 @@
         {:then { default: EnvironmentRenderer }}
           <EnvironmentRenderer surfaceId={showSurface}>
             {#snippet builtin()}
-              {#if showSurface === "calendar"}
+              {#if showSurface === "reviews"}
+                {#key chat.workshopScopeId}<LazyFeatureView loader={loadReviewsPanel} />{/key}
+              {:else if showSurface === "automations"}
+                {#key chat.workshopScopeId}<LazyFeatureView loader={loadAutomationsRunList} />{/key}
+              {:else if showSurface === "calendar"}
                 <LazyFeatureView loader={loadCalendarPanel} visible={true} />
               {:else if showSurface === "context" || showSurface === "map"}
                 <LazyFeatureView loader={loadMapPanel} visible={true} />
@@ -259,14 +265,6 @@
                 <LazyFeatureView loader={loadPeersPanel} visible={true} />
               {:else if showSurface === "messaging"}
                 <LazyFeatureView loader={loadMessagingPanel} visible={true} {health} />
-              {:else if showSurface === "work"}
-                <LazyFeatureView
-                  loader={loadWorkPanel}
-                  visible={true}
-                  {onOpenNote}
-                  {onOpenChat}
-                  {onSelectCard}
-                />
               {:else if showSurface === "runtime"}
                 <LazyFeatureView
                   loader={loadRuntimePanel}

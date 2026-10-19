@@ -1555,6 +1555,485 @@ class RecurringRunEntry(MedousaModel):
     updated_at_utc: AwareDatetime
 
 
+class ReviewProviderDescriptor(MedousaModel):
+    hosts: list[str] = Field(
+        ..., description='Suggested hosts. An explicit connection may use a self-hosted instance.'
+    )
+    id: str
+    label: str
+    operations: list[str]
+    protocol_version: int = Field(..., ge=0)
+
+
+class HostedReviewRef(MedousaModel):
+    host: str
+    native_id: str
+    provider_id: str
+    repository: str
+
+
+class ReviewDecision(Enum):
+    approve = 'approve'
+    request_changes = 'request_changes'
+    comment = 'comment'
+
+
+class ReviewLifecycle(Enum):
+    close = 'close'
+    reopen = 'reopen'
+    ready = 'ready'
+    draft = 'draft'
+
+
+class ReviewLineSide(Enum):
+    old = 'old'
+    new = 'new'
+
+
+class ReviewMergeMethod(Enum):
+    merge = 'merge'
+    squash = 'squash'
+    rebase = 'rebase'
+
+
+class Operation(Enum):
+    comment = 'comment'
+
+
+class ReviewProviderWrite1(MedousaModel):
+    body: str
+    operation: Operation
+    reply_to: str | None = None
+    review: HostedReviewRef
+
+
+class Operation1(Enum):
+    submit_review = 'submit_review'
+
+
+class Operation2(Enum):
+    edit = 'edit'
+
+
+class ReviewProviderWrite3(MedousaModel):
+    body: str
+    operation: Operation2
+    review: HostedReviewRef
+    title: str
+
+
+class Operation3(Enum):
+    set_state = 'set_state'
+
+
+class ReviewProviderWrite4(MedousaModel):
+    operation: Operation3
+    review: HostedReviewRef
+    state: ReviewLifecycle
+
+
+class Operation4(Enum):
+    request_reviewers = 'request_reviewers'
+
+
+class ReviewProviderWrite5(MedousaModel):
+    operation: Operation4
+    review: HostedReviewRef
+    reviewers: list[str]
+
+
+class Operation5(Enum):
+    merge = 'merge'
+
+
+class ReviewProviderWrite6(MedousaModel):
+    method: ReviewMergeMethod
+    operation: Operation5
+    review: HostedReviewRef
+    revision: str
+
+
+class Operation6(Enum):
+    rerun_check = 'rerun_check'
+
+
+class ReviewProviderWrite7(MedousaModel):
+    check_id: str
+    failed_only: bool
+    operation: Operation6
+    review: HostedReviewRef
+    revision: str
+
+
+class Operation7(Enum):
+    cancel_check = 'cancel_check'
+
+
+class ReviewProviderWrite8(MedousaModel):
+    check_id: str
+    operation: Operation7
+    review: HostedReviewRef
+    revision: str
+
+
+class Operation8(Enum):
+    publish = 'publish'
+
+
+class ReviewProviderWrite9(MedousaModel):
+    base: str
+    body: str
+    draft: bool
+    head: str
+    operation: Operation8
+    repository: str
+    title: str
+    update_existing: bool = Field(
+        ..., description='Forge sharing updates its description; chat Git reuses an existing PR.'
+    )
+
+
+class ReviewInboxFolder(Enum):
+    authored = 'authored'
+    review_requested = 'review_requested'
+    participating = 'participating'
+
+
+class Operation9(Enum):
+    inbox = 'inbox'
+
+
+class ReviewProviderOperation1(MedousaModel):
+    cursor: str | None = None
+    folder: ReviewInboxFolder
+    operation: Operation9
+
+
+class Operation10(Enum):
+    check_details = 'check_details'
+
+
+class ReviewProviderOperation2(MedousaModel):
+    check_id: str
+    operation: Operation10
+    review: HostedReviewRef
+    revision: str
+
+
+class Operation11(Enum):
+    connection_status = 'connection_status'
+
+
+class ReviewProviderOperation3(MedousaModel):
+    operation: Operation11
+
+
+class Operation12(Enum):
+    resolve_repository = 'resolve_repository'
+
+
+class ReviewProviderOperation4(MedousaModel):
+    operation: Operation12
+    remote_url: str
+
+
+class Operation13(Enum):
+    list = 'list'
+
+
+class ReviewProviderOperation5(MedousaModel):
+    cursor: str | None = None
+    operation: Operation13
+    repository: str
+
+
+class Operation14(Enum):
+    resolve = 'resolve'
+
+
+class ReviewProviderOperation6(MedousaModel):
+    operation: Operation14
+    url: str
+
+
+class Operation15(Enum):
+    get = 'get'
+
+
+class ReviewProviderOperation7(MedousaModel):
+    operation: Operation15
+    review: HostedReviewRef
+
+
+class Operation16(Enum):
+    files = 'files'
+
+
+class ReviewProviderOperation8(MedousaModel):
+    cursor: str | None = None
+    operation: Operation16
+    review: HostedReviewRef
+    revision: str
+
+
+class Operation17(Enum):
+    diff = 'diff'
+
+
+class ReviewProviderOperation9(MedousaModel):
+    operation: Operation17
+    path: str
+    review: HostedReviewRef
+    revision: str
+
+
+class Operation18(Enum):
+    checks = 'checks'
+
+
+class ReviewProviderOperation10(MedousaModel):
+    cursor: str | None = None
+    operation: Operation18
+    review: HostedReviewRef
+    revision: str
+
+
+class Operation19(Enum):
+    discussion = 'discussion'
+
+
+class ReviewProviderOperation11(MedousaModel):
+    cursor: str | None = None
+    operation: Operation19
+    review: HostedReviewRef
+
+
+class ReviewProviderOperation(
+    RootModel[
+        ReviewProviderOperation1
+        | ReviewProviderOperation2
+        | ReviewProviderOperation3
+        | ReviewProviderOperation4
+        | ReviewProviderOperation5
+        | ReviewProviderOperation6
+        | ReviewProviderOperation7
+        | ReviewProviderOperation8
+        | ReviewProviderOperation9
+        | ReviewProviderOperation10
+        | ReviewProviderOperation11
+    ]
+):
+    root: ReviewProviderOperation1 | ReviewProviderOperation2 | ReviewProviderOperation3 | ReviewProviderOperation4 | ReviewProviderOperation5 | ReviewProviderOperation6 | ReviewProviderOperation7 | ReviewProviderOperation8 | ReviewProviderOperation9 | ReviewProviderOperation10 | ReviewProviderOperation11
+
+
+class HostedReview(MedousaModel):
+    actions: list[str] = Field(
+        ...,
+        description='Actions currently available on this review (empty for read-only packages).',
+    )
+    additions: int = Field(..., ge=0)
+    author: str
+    base_branch: str
+    base_revision: str
+    body: str
+    changed_files: int = Field(..., ge=0)
+    deletions: int = Field(..., ge=0)
+    head_branch: str
+    head_revision: str
+    merge_methods: list[str] | None = []
+    merge_state: str | None = None
+    native_state: str
+    reference: HostedReviewRef
+    requested_reviewers: list[str] | None = []
+    state: str = Field(
+        ..., description='open, draft, merged, or closed. The native label is preserved separately.'
+    )
+    title: str
+    updated_at: str
+    url: str
+
+
+class HostedReviewCheck(MedousaModel):
+    conclusion: str | None = None
+    id: str
+    name: str
+    status: str
+    url: str | None = None
+
+
+class HostedReviewDiscussionEntry(MedousaModel):
+    author: str
+    body: str
+    created_at: str
+    id: str
+    kind: str
+    line: int | None = Field(None, ge=0)
+    path: str | None = None
+    reply_to: str | None = None
+    revision: str | None = None
+    side: str | None = None
+    url: str
+
+
+class HostedReviewFile(MedousaModel):
+    additions: int = Field(..., ge=0)
+    deletions: int = Field(..., ge=0)
+    path: str
+    previous_path: str | None = None
+    status: str
+
+
+class ReviewProviderErrorCode(Enum):
+    unavailable = 'unavailable'
+    not_authenticated = 'not_authenticated'
+    not_found = 'not_found'
+    invalid_parameter = 'invalid_parameter'
+    unsupported = 'unsupported'
+    rate_limited = 'rate_limited'
+    stale_revision = 'stale_revision'
+    provider_error = 'provider_error'
+
+
+class Status(Enum):
+    success = 'success'
+
+
+class Status1(Enum):
+    error = 'error'
+
+
+class Kind11(Enum):
+    updated = 'updated'
+
+
+class ReviewProviderResult1(MedousaModel):
+    kind: Kind11
+    message: str
+
+
+class Kind12(Enum):
+    check_details = 'check_details'
+
+
+class ReviewProviderResult2(MedousaModel):
+    annotations: list[str]
+    kind: Kind12
+    summary: str
+    text: str
+    title: str
+    url: str | None = None
+
+
+class Kind13(Enum):
+    repository = 'repository'
+
+
+class ReviewProviderResult3(MedousaModel):
+    host: str
+    kind: Kind13
+    provider_id: str
+    repository: str
+
+
+class Kind14(Enum):
+    published = 'published'
+
+
+class ReviewProviderResult4(MedousaModel):
+    existing: bool
+    kind: Kind14
+    review: HostedReview
+
+
+class Kind15(Enum):
+    connection = 'connection'
+
+
+class ReviewProviderResult5(MedousaModel):
+    account: str | None = None
+    authenticated: bool
+    kind: Kind15
+    message: str
+
+
+class Kind16(Enum):
+    reviews = 'reviews'
+
+
+class ReviewProviderResult6(MedousaModel):
+    kind: Kind16
+    next_cursor: str | None = None
+    reviews: list[HostedReview]
+
+
+class Kind17(Enum):
+    review = 'review'
+
+
+class ReviewProviderResult7(MedousaModel):
+    kind: Kind17
+    review: HostedReview
+
+
+class Kind18(Enum):
+    files = 'files'
+
+
+class ReviewProviderResult8(MedousaModel):
+    files: list[HostedReviewFile]
+    kind: Kind18
+    next_cursor: str | None = None
+
+
+class Kind19(Enum):
+    diff = 'diff'
+
+
+class ReviewProviderResult9(MedousaModel):
+    kind: Kind19
+    message: str | None = None
+    patch: str | None = None
+    path: str
+
+
+class Kind20(Enum):
+    checks = 'checks'
+
+
+class ReviewProviderResult10(MedousaModel):
+    checks: list[HostedReviewCheck]
+    kind: Kind20
+    next_cursor: str | None = None
+
+
+class Kind21(Enum):
+    discussion = 'discussion'
+
+
+class ReviewProviderResult11(MedousaModel):
+    entries: list[HostedReviewDiscussionEntry]
+    kind: Kind21
+    next_cursor: str | None = None
+
+
+class ReviewProviderResult(
+    RootModel[
+        ReviewProviderResult1
+        | ReviewProviderResult2
+        | ReviewProviderResult3
+        | ReviewProviderResult4
+        | ReviewProviderResult5
+        | ReviewProviderResult6
+        | ReviewProviderResult7
+        | ReviewProviderResult8
+        | ReviewProviderResult9
+        | ReviewProviderResult10
+        | ReviewProviderResult11
+    ]
+):
+    root: ReviewProviderResult1 | ReviewProviderResult2 | ReviewProviderResult3 | ReviewProviderResult4 | ReviewProviderResult5 | ReviewProviderResult6 | ReviewProviderResult7 | ReviewProviderResult8 | ReviewProviderResult9 | ReviewProviderResult10 | ReviewProviderResult11
+
+
 class Command13(Enum):
     model = 'model'
 
@@ -1618,46 +2097,46 @@ class TurnArtifactRef(MedousaModel):
     role: str
 
 
-class Kind11(Enum):
+class Kind22(Enum):
     model_receipt = 'model_receipt'
 
 
 class TurnPart1(MedousaModel):
-    kind: Kind11
+    kind: Kind22
     model: str
     provider: str
 
 
-class Kind12(Enum):
+class Kind23(Enum):
     text = 'text'
 
 
 class TurnPart2(MedousaModel):
-    kind: Kind12
+    kind: Kind23
     markdown: str
     model_round: int | None = Field(None, ge=0)
     segment_id: str | None = None
 
 
-class Kind13(Enum):
+class Kind24(Enum):
     progress = 'progress'
 
 
 class TurnPart3(MedousaModel):
-    kind: Kind13
+    kind: Kind24
     markdown: str
 
 
-class Kind14(Enum):
+class Kind25(Enum):
     reasoning = 'reasoning'
 
 
 class TurnPart4(MedousaModel):
-    kind: Kind14
+    kind: Kind25
     markdown: str
 
 
-class Kind15(Enum):
+class Kind26(Enum):
     tool_run = 'tool_run'
 
 
@@ -1666,7 +2145,7 @@ class TurnPart5(MedousaModel):
     finished_at: AwareDatetime | None = None
     input_params: list[ToolInputParam] | None = None
     input_summary: str
-    kind: Kind15
+    kind: Kind26
     output_summary: str | None = None
     run_id: str
     started_at: AwareDatetime
@@ -1675,43 +2154,43 @@ class TurnPart5(MedousaModel):
     tool_round: int | None = Field(None, ge=0)
 
 
-class Kind16(Enum):
+class Kind27(Enum):
     handoff = 'handoff'
 
 
 class TurnPart6(MedousaModel):
     handoff_kind: str
-    kind: Kind16
+    kind: Kind27
     text: str
     work_id: str | None = None
 
 
-class Kind17(Enum):
+class Kind28(Enum):
     user_media = 'user_media'
 
 
 class TurnPart7(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind17
+    kind: Kind28
     label: str | None = None
     media_id: str
     mime: str
 
 
-class Kind18(Enum):
+class Kind29(Enum):
     user_drawing = 'user_drawing'
 
 
 class TurnPart8(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind18
+    kind: Kind29
     label: str | None = None
     media_id: str
     mime: str
     preview_media_id: str
 
 
-class Kind19(Enum):
+class Kind30(Enum):
     generated_media = 'generated_media'
 
 
@@ -1719,7 +2198,7 @@ class TurnPart9(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
     generation_id: str
     height_px: int | None = Field(None, ge=0)
-    kind: Kind19
+    kind: Kind30
     label: str
     media_id: str
     mime: str
@@ -1729,11 +2208,11 @@ class TurnPart9(MedousaModel):
     width_px: int | None = Field(None, ge=0)
 
 
-class Kind20(Enum):
+class Kind31(Enum):
     host_context = 'host_context'
 
 
-class Kind21(Enum):
+class Kind32(Enum):
     attachment_ref = 'attachment_ref'
 
 
@@ -1741,18 +2220,18 @@ class TurnPart11(MedousaModel):
     artifact_id: str
     byte_size: int | None = Field(None, ge=0)
     height_px: int | None = Field(None, ge=0)
-    kind: Kind21
+    kind: Kind32
     label: str
     mime: str
     presentation: str | None = None
 
 
-class Kind22(Enum):
+class Kind33(Enum):
     unknown = 'unknown'
 
 
 class TurnPart12(MedousaModel):
-    kind: Kind22
+    kind: Kind33
 
 
 class TurnSliceSummary(MedousaModel):
@@ -2695,11 +3174,11 @@ class WorkEventKind(Enum):
     provider_failed = 'provider_failed'
 
 
-class Operation(Enum):
+class Operation20(Enum):
     subscribe = 'subscribe'
 
 
-class Operation1(Enum):
+class Operation21(Enum):
     acknowledge_event = 'acknowledge_event'
 
 
@@ -2711,15 +3190,15 @@ class WorkGraphMutation2(MedousaModel):
         ..., description='Attributable observation/decision receipt, not a provider effect.'
     )
     event_revision: int = Field(..., ge=0)
-    operation: Operation1
+    operation: Operation21
     subscription_id: str
 
 
-class Operation2(Enum):
+class Operation22(Enum):
     advance_provider_stage = 'advance_provider_stage'
 
 
-class Operation3(Enum):
+class Operation23(Enum):
     stop_subscription = 'stop_subscription'
 
 
@@ -2727,11 +3206,11 @@ class WorkGraphMutation4(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    operation: Operation3
+    operation: Operation23
     subscription_id: str
 
 
-class Operation4(Enum):
+class Operation24(Enum):
     record_resource = 'record_resource'
 
 
@@ -2741,12 +3220,12 @@ class WorkGraphMutation5(MedousaModel):
     )
     locator: str | None = None
     native_revision: str | None = None
-    operation: Operation4
+    operation: Operation24
     reference: ResourceRef
     resolution: ResourceResolution
 
 
-class Operation5(Enum):
+class Operation25(Enum):
     put_relationship = 'put_relationship'
 
 
@@ -2756,24 +3235,24 @@ class WorkGraphMutation6(MedousaModel):
     )
     from_: ResourceRef = Field(..., alias='from')
     kind: ResourceRelationshipKind
-    operation: Operation5
+    operation: Operation25
     relationship_id: str
     to: ResourceRef
 
 
-class Operation6(Enum):
+class Operation26(Enum):
     accept_work = 'accept_work'
 
 
-class Operation7(Enum):
+class Operation27(Enum):
     set_scope = 'set_scope'
 
 
-class Operation8(Enum):
+class Operation28(Enum):
     set_state = 'set_state'
 
 
-class Operation9(Enum):
+class Operation29(Enum):
     set_contact = 'set_contact'
 
 
@@ -2782,11 +3261,11 @@ class WorkGraphMutation10(MedousaModel):
         extra='forbid',
     )
     contact: WorkContactPreference
-    operation: Operation9
+    operation: Operation29
     work_unit_id: str
 
 
-class Operation10(Enum):
+class Operation30(Enum):
     attach_conversation = 'attach_conversation'
 
 
@@ -2794,16 +3273,16 @@ class WorkGraphMutation11(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    operation: Operation10
+    operation: Operation30
     session: SessionRef
     work_unit_id: str
 
 
-class Operation11(Enum):
+class Operation31(Enum):
     record_readiness = 'record_readiness'
 
 
-class Operation12(Enum):
+class Operation32(Enum):
     set_budget = 'set_budget'
 
 
@@ -2812,11 +3291,11 @@ class WorkGraphMutation13(MedousaModel):
         extra='forbid',
     )
     limits: WorkBudgetLimits
-    operation: Operation12
+    operation: Operation32
     work_unit_id: str
 
 
-class Operation13(Enum):
+class Operation33(Enum):
     reserve_budget = 'reserve_budget'
 
 
@@ -2825,13 +3304,13 @@ class WorkGraphMutation14(MedousaModel):
         extra='forbid',
     )
     execution: ResourceRef
-    operation: Operation13
+    operation: Operation33
     reservation_id: str
     reserved_cost_microusd: int = Field(..., ge=0)
     work_unit_id: str
 
 
-class Operation14(Enum):
+class Operation34(Enum):
     settle_budget = 'settle_budget'
 
 
@@ -2841,23 +3320,23 @@ class WorkGraphMutation15(MedousaModel):
     )
     actual_cost_microusd: int = Field(..., ge=0)
     disposition: WorkBudgetDisposition
-    operation: Operation14
+    operation: Operation34
     reservation_id: str
 
 
-class Operation15(Enum):
+class Operation35(Enum):
     register_provider_request = 'register_provider_request'
 
 
-class Operation16(Enum):
+class Operation36(Enum):
     register_provider_dispatch = 'register_provider_dispatch'
 
 
-class Operation17(Enum):
+class Operation37(Enum):
     register_coordinator_wake = 'register_coordinator_wake'
 
 
-class Operation18(Enum):
+class Operation38(Enum):
     claim_coordinator_wake = 'claim_coordinator_wake'
 
 
@@ -2867,11 +3346,11 @@ class WorkGraphMutation19(MedousaModel):
     )
     attempt: WorkCoordinatorAttempt
     conversation_id: str
-    operation: Operation18
+    operation: Operation38
     request_id: str
 
 
-class Operation19(Enum):
+class Operation39(Enum):
     complete_coordinator_wake = 'complete_coordinator_wake'
 
 
@@ -2881,11 +3360,11 @@ class WorkGraphMutation20(MedousaModel):
     )
     conversation_id: str
     decision: WorkCoordinatorDecision
-    operation: Operation19
+    operation: Operation39
     request_id: str
 
 
-class Operation20(Enum):
+class Operation40(Enum):
     block_coordinator_wake = 'block_coordinator_wake'
 
 
@@ -2894,12 +3373,12 @@ class WorkGraphMutation21(MedousaModel):
         extra='forbid',
     )
     conversation_id: str
-    operation: Operation20
+    operation: Operation40
     reason: str
     request_id: str
 
 
-class Operation21(Enum):
+class Operation41(Enum):
     close_provider_dispatch = 'close_provider_dispatch'
 
 
@@ -2908,12 +3387,12 @@ class WorkGraphMutation22(MedousaModel):
         extra='forbid',
     )
     conversation_id: str
-    operation: Operation21
+    operation: Operation41
     reason: str
     request_id: str
 
 
-class Operation22(Enum):
+class Operation42(Enum):
     claim_provider_request = 'claim_provider_request'
 
 
@@ -2922,11 +3401,11 @@ class WorkGraphMutation23(MedousaModel):
         extra='forbid',
     )
     conversation_id: str
-    operation: Operation22
+    operation: Operation42
     request_id: str
 
 
-class Operation23(Enum):
+class Operation43(Enum):
     record_provider_event = 'record_provider_event'
 
 
@@ -3251,48 +3730,48 @@ class WorldRecipe(MedousaModel):
     steps: list[WorldRecipeStep]
 
 
-class Kind23(Enum):
+class Kind34(Enum):
     text = 'text'
 
 
 class WorldRecipeRunInputValue1(MedousaModel):
-    kind: Kind23
+    kind: Kind34
     text: str
 
 
-class Kind24(Enum):
+class Kind35(Enum):
     selection = 'selection'
 
 
 class WorldRecipeRunInputValue2(MedousaModel):
-    kind: Kind24
+    kind: Kind35
     value: str
 
 
-class Kind25(Enum):
+class Kind36(Enum):
     key = 'key'
 
 
 class WorldRecipeRunInputValue3(MedousaModel):
     key: str
-    kind: Kind25
+    kind: Kind36
 
 
-class Kind26(Enum):
+class Kind37(Enum):
     scroll_delta = 'scroll_delta'
 
 
 class WorldRecipeRunInputValue4(MedousaModel):
     delta_y: int
-    kind: Kind26
+    kind: Kind37
 
 
-class Kind27(Enum):
+class Kind38(Enum):
     wait_duration = 'wait_duration'
 
 
 class WorldRecipeRunInputValue5(MedousaModel):
-    kind: Kind27
+    kind: Kind38
     milliseconds: int = Field(..., ge=0)
 
 
@@ -4217,6 +4696,101 @@ class RegisterRecurringResponse(MedousaModel):
     timezone: str
 
 
+class Action(Enum):
+    begin = 'begin'
+
+
+class ReviewProviderAuthRequest1(MedousaModel):
+    action: Action
+    client_id: str | None = None
+    host: str
+    provider_id: str
+
+
+class Action1(Enum):
+    poll = 'poll'
+
+
+class ReviewProviderAuthRequest2(MedousaModel):
+    action: Action1
+    flow_id: str
+
+
+class Action2(Enum):
+    cancel = 'cancel'
+
+
+class ReviewProviderAuthRequest3(MedousaModel):
+    action: Action2
+    flow_id: str
+
+
+class ReviewProviderAuthRequest(
+    RootModel[ReviewProviderAuthRequest1 | ReviewProviderAuthRequest2 | ReviewProviderAuthRequest3]
+):
+    root: ReviewProviderAuthRequest1 | ReviewProviderAuthRequest2 | ReviewProviderAuthRequest3 = (
+        Field(..., title='ReviewProviderAuthRequest')
+    )
+
+
+class Status2(Enum):
+    pending = 'pending'
+
+
+class ReviewProviderAuthResponse1(MedousaModel):
+    expires_in: int = Field(..., ge=0)
+    flow_id: str
+    interval: int = Field(..., ge=0)
+    status: Status2
+    user_code: str
+    verification_uri: str
+
+
+class Status3(Enum):
+    connected = 'connected'
+
+
+class ReviewProviderAuthResponse2(MedousaModel):
+    account: str
+    connection_id: str
+    status: Status3
+
+
+class Status4(Enum):
+    cancelled = 'cancelled'
+
+
+class ReviewProviderAuthResponse3(MedousaModel):
+    status: Status4
+
+
+class ReviewProviderAuthResponse(
+    RootModel[
+        ReviewProviderAuthResponse1
+        | ReviewProviderAuthResponse2
+        | ReviewProviderAuthResponse3
+    ]
+):
+    root: (
+        ReviewProviderAuthResponse1 | ReviewProviderAuthResponse2 | ReviewProviderAuthResponse3
+    ) = Field(..., description='No device secrets or OAuth tokens cross the public HTTP boundary.', title='ReviewProviderAuthResponse')
+
+
+class ReviewProviderListResponse(MedousaModel):
+    problems: list[str]
+    providers: list[ReviewProviderDescriptor]
+
+
+class ReviewProviderQuery(MedousaModel):
+    connection_id: str | None = Field(
+        None,
+        description="Explicit account identity; omitted to use the package's existing sign-in.",
+    )
+    host: str
+    provider_id: str
+    request: ReviewProviderOperation
+
+
 class RotateExternalCallbackResponse(MedousaModel):
     callback_key: str
 
@@ -4529,15 +5103,15 @@ class VaultWriteResponse(MedousaModel):
     vault_generation: int | None = Field(None, ge=0)
 
 
-class Action(Enum):
+class Action3(Enum):
     work_record = 'work.record'
 
 
-class Action1(Enum):
+class Action4(Enum):
     work_coordinate = 'work.coordinate'
 
 
-class Action2(Enum):
+class Action5(Enum):
     peer_propose = 'peer.propose'
 
 
@@ -4545,12 +5119,12 @@ class WorkParticipantMutation3(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    action: Action2
+    action: Action5
     intent: PeerProposalIntent
     session_id: SessionId
 
 
-class Action3(Enum):
+class Action6(Enum):
     work_graph = 'work.graph'
 
 
@@ -4558,11 +5132,11 @@ class WorkParticipantQuery1(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    action: Action3
+    action: Action6
     query: WorkGraphQuery
 
 
-class Action4(Enum):
+class Action7(Enum):
     work_get = 'work.get'
 
 
@@ -4570,11 +5144,11 @@ class WorkParticipantQuery2(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    action: Action4
+    action: Action7
     work_unit_id: str
 
 
-class Action5(Enum):
+class Action8(Enum):
     work_events = 'work.events'
 
 
@@ -4582,11 +5156,11 @@ class WorkParticipantQuery3(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    action: Action5
+    action: Action8
     query: WorkEventsQuery
 
 
-class Action6(Enum):
+class Action9(Enum):
     work_coordination = 'work.coordination'
 
 
@@ -4594,11 +5168,11 @@ class WorkParticipantQuery4(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    action: Action6
+    action: Action9
     query: WorkCoordinationQuery
 
 
-class Action7(Enum):
+class Action10(Enum):
     peer_discover = 'peer.discover'
 
 
@@ -4606,7 +5180,7 @@ class WorkParticipantQuery5(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    action: Action7
+    action: Action10
     session_id: SessionId
 
 
@@ -5082,6 +5656,57 @@ class PeerProposalReviewRecord(MedousaModel):
     )
 
 
+class ReviewInlineComment(MedousaModel):
+    body: str
+    line: int = Field(..., ge=0)
+    path: str
+    side: ReviewLineSide
+
+
+class ReviewProviderWrite2(MedousaModel):
+    body: str
+    comments: list[ReviewInlineComment]
+    decision: ReviewDecision
+    operation: Operation1
+    review: HostedReviewRef
+    revision: str
+
+
+class ReviewProviderWrite(
+    RootModel[
+        ReviewProviderWrite1
+        | ReviewProviderWrite2
+        | ReviewProviderWrite3
+        | ReviewProviderWrite4
+        | ReviewProviderWrite5
+        | ReviewProviderWrite6
+        | ReviewProviderWrite7
+        | ReviewProviderWrite8
+        | ReviewProviderWrite9
+    ]
+):
+    root: ReviewProviderWrite1 | ReviewProviderWrite2 | ReviewProviderWrite3 | ReviewProviderWrite4 | ReviewProviderWrite5 | ReviewProviderWrite6 | ReviewProviderWrite7 | ReviewProviderWrite8 | ReviewProviderWrite9
+
+
+class ReviewProviderError(MedousaModel):
+    code: ReviewProviderErrorCode
+    message: str
+
+
+class ReviewProviderOutcome1(MedousaModel):
+    result: ReviewProviderResult
+    status: Status
+
+
+class ReviewProviderOutcome2(MedousaModel):
+    error: ReviewProviderError
+    status: Status1
+
+
+class ReviewProviderOutcome(RootModel[ReviewProviderOutcome1 | ReviewProviderOutcome2]):
+    root: ReviewProviderOutcome1 | ReviewProviderOutcome2
+
+
 class RuntimeConfigCommandSpec4(MedousaModel):
     args: list[str]
     command: Command16
@@ -5101,7 +5726,7 @@ class RuntimeConfigCommandSpec(
 
 class TurnPart10(MedousaModel):
     context: HostTurnContext
-    kind: Kind20
+    kind: Kind31
 
 
 class TurnPart(
@@ -5315,7 +5940,7 @@ class WorkGraphMutation1(MedousaModel):
         extra='forbid',
     )
     input: WorkSubscriptionInput
-    operation: Operation
+    operation: Operation20
 
 
 class WorkGraphMutation3(MedousaModel):
@@ -5323,7 +5948,7 @@ class WorkGraphMutation3(MedousaModel):
         extra='forbid',
     )
     event_revision: int = Field(..., ge=0)
-    operation: Operation2
+    operation: Operation22
     reason: str
     state: WorkUnitState | None = None
     subscription_id: str
@@ -5340,7 +5965,7 @@ class WorkGraphMutation7(MedousaModel):
     )
     intent: str
     kind: WorkUnitKind
-    operation: Operation6
+    operation: Operation26
     origin: SessionRef | None = None
     scope: WorkScope
     work_unit_id: str
@@ -5350,7 +5975,7 @@ class WorkGraphMutation8(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    operation: Operation7
+    operation: Operation27
     scope: WorkScope
     work_unit_id: str
 
@@ -5360,7 +5985,7 @@ class WorkGraphMutation9(MedousaModel):
         extra='forbid',
     )
     evidence: list[ResourceRef]
-    operation: Operation8
+    operation: Operation28
     reason: str
     state: WorkUnitState
     work_unit_id: str
@@ -5373,7 +5998,7 @@ class WorkGraphMutation12(MedousaModel):
     condition: str
     evidence: list[WorkRevisionEvidence]
     expected_scope_revision: int = Field(..., ge=0)
-    operation: Operation11
+    operation: Operation31
     valid_for_seconds: int = Field(
         ...,
         description='Checkpoints expire; the runtime does not infer continuing freshness.',
@@ -5386,7 +6011,7 @@ class WorkGraphMutation18(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    operation: Operation17
+    operation: Operation37
     wake: WorkCoordinatorWake
 
 
@@ -5898,6 +6523,18 @@ class PeerProposalInboxResponse(MedousaModel):
     )
 
 
+class ReviewProviderMutation(MedousaModel):
+    connection_id: str | None = None
+    host: str
+    provider_id: str
+    request: ReviewProviderWrite
+
+
+class ReviewProviderResponse(MedousaModel):
+    outcome: ReviewProviderOutcome
+    protocol_version: int = Field(..., ge=0)
+
+
 class RuntimeConfigCommandRequest(MedousaModel):
     command: RuntimeConfigCommandSpec
     current_model: str
@@ -5963,7 +6600,7 @@ class WorkParticipantMutation2(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    action: Action1
+    action: Action4
     input: WorkCoordinationInput
 
 
@@ -6091,7 +6728,7 @@ class WorkGraphMutation16(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    operation: Operation15
+    operation: Operation35
     request: WorkProviderRequest
 
 
@@ -6100,7 +6737,7 @@ class WorkGraphMutation17(MedousaModel):
         extra='forbid',
     )
     dispatch: WorkProviderDispatch
-    operation: Operation16
+    operation: Operation36
 
 
 class WorkProviderEvent(MedousaModel):
@@ -6178,7 +6815,7 @@ class WorkGraphMutation24(MedousaModel):
         extra='forbid',
     )
     event: WorkProviderEvent
-    operation: Operation23
+    operation: Operation43
 
 
 class WorkGraphMutation(
@@ -6228,7 +6865,7 @@ class WorkParticipantMutation1(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    action: Action
+    action: Action3
     command: WorkGraphCommand
 
 

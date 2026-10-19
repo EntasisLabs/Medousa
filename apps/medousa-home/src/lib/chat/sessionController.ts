@@ -216,6 +216,7 @@ async function recentHistoryForMerge(
       page.turns.some((turn) => turn.entry_seq <= newestLocalSeq);
     const nextCursor = historyCursor(page);
     if (
+      pages.length >= 3 ||
       newestLocalSeq === 0 ||
       overlapsLocal ||
       !nextCursor ||
@@ -416,7 +417,16 @@ async function fetchSessions(host: ChatStoreHost, hadCache: boolean, query = "")
       q: query || undefined,
     });
     if (host.workshopEpoch !== workshopEpoch) return;
-    host.sessions = response.sessions;
+    const previous = new Map(host.sessions.map(session => [session.session_id, session]));
+    const next = response.sessions.map(session => {
+      const existing = previous.get(session.session_id);
+      return existing && Object.keys(existing).length === Object.keys(session).length
+        && (Object.keys(session) as Array<keyof typeof session>).every(key => existing[key] === session[key])
+        ? existing : session;
+    });
+    if (next.length !== host.sessions.length || next.some((session, index) => session !== host.sessions[index])) {
+      host.sessions = next;
+    }
     host.sessionsFetchedAt = Date.now();
     host.sessionsError = null;
   } catch (err) {
@@ -489,7 +499,7 @@ export function scheduleSessionsRefresh(host: ChatStoreHost) {
 export async function warmBackgroundSession(host: ChatStoreHost, sessionId: string) {
   const workshopEpoch = host.workshopEpoch;
   const trimmed = sessionId.trim();
-  if (!trimmed || trimmed === host.sessionId || externalConversationBinding(trimmed)) return;
+  if (!trimmed || trimmed === host.sessionId || externalConversationBinding(trimmed) || host.history?.isReleased(trimmed)) return;
 
   const existing = host.sessionRuntimes.get(trimmed);
   if (existing && (existing.messages.length > 0 || existing.historyLoading)) {
@@ -506,7 +516,7 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
 
   try {
     const history = await getSessionHistory(trimmed, { limit: TRANSCRIPT_PAGE_SIZE });
-    if (host.workshopEpoch !== workshopEpoch) return;
+    if (host.workshopEpoch !== workshopEpoch || host.history?.isReleased(trimmed)) return;
     if (host.sessionId === trimmed) return;
     const current =
       host.sessionRuntimes.get(trimmed) ??
@@ -519,15 +529,17 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
     current.historyLoading = false;
     current.streamError = null;
     host.sessionRuntimes.set(trimmed, current);
+    host.messageIndexes.delete(trimmed);
     host.bumpRuntimeRevision();
   } catch (err) {
-    if (host.workshopEpoch !== workshopEpoch) return;
+    if (host.workshopEpoch !== workshopEpoch || host.history?.isReleased(trimmed)) return;
     if (host.sessionId === trimmed) return;
     const current = host.sessionRuntimes.get(trimmed);
     if (!current) return;
     current.historyLoading = false;
     current.streamError = err instanceof Error ? err.message : String(err);
     host.sessionRuntimes.set(trimmed, current);
+    host.messageIndexes.delete(trimmed);
     host.bumpRuntimeRevision();
   }
 }
@@ -641,6 +653,7 @@ export async function ensureSessionHydrated(
   host: ChatStoreHost,
   options?: { notice?: boolean },
 ) {
+  if (host.history?.isReleased(host.sessionId)) return;
   if (!host.sessionId.trim()) {
     if (!host.sessionBootstrapInFlight) {
       const pending = newSession(host);
@@ -678,7 +691,7 @@ export async function reconcileOnResume(
   const stillSameSession = () =>
     workshopEpoch === host.workshopEpoch &&
     epoch === host.transcriptEpoch &&
-    host.sessionId.trim() === sessionId;
+    host.sessionId.trim() === sessionId && !host.history?.isReleased(sessionId);
 
   try {
     await host.tryReattachActiveTurn(cards);
@@ -719,7 +732,7 @@ export async function reloadCurrentSession(
   const stillSameSession = () =>
     workshopEpoch === host.workshopEpoch &&
     epoch === host.transcriptEpoch &&
-    host.sessionId.trim() === sessionId;
+    host.sessionId.trim() === sessionId && !host.history?.isReleased(sessionId);
 
   host.historyLoading = true;
   host.historyLoadingOlder = false;
@@ -747,52 +760,8 @@ export async function reloadCurrentSession(
   }
 }
 
-export async function loadOlderHistory(
-  host: ChatStoreHost,
-  sessionId: string,
-): Promise<number> {
-  const workshopEpoch = host.workshopEpoch;
-  const trimmed = sessionId.trim();
-  const cursor = host.historyCursor?.trim();
-  if (
-    !trimmed ||
-    trimmed !== host.sessionId.trim() ||
-    !cursor ||
-    host.historyLoadingOlder
-  ) {
-    return 0;
-  }
-
-  const epoch = host.transcriptEpoch;
-  const stillSameSession = () =>
-    workshopEpoch === host.workshopEpoch &&
-    epoch === host.transcriptEpoch &&
-    host.sessionId.trim() === trimmed;
-
-  host.historyLoadingOlder = true;
-  try {
-    const history = await getSessionHistory(trimmed, {
-      limit: TRANSCRIPT_PAGE_SIZE,
-      cursor,
-    });
-    if (!stillSameSession()) return 0;
-
-    const older = mapTurns(history.turns, {
-      sessionId: trimmed,
-      authorityId: history.authority_id,
-    });
-    host.messages = dedupeMessagesById([...older, ...host.messages]);
-    const nextCursor = historyCursor(history);
-    host.historyCursor = nextCursor === cursor ? null : nextCursor;
-    host.sanitizeTranscript();
-    return older.length;
-  } finally {
-    if (workshopEpoch === host.workshopEpoch) {
-      host.withSessionFields(trimmed, () => {
-        if (host.transcriptEpoch === epoch) host.historyLoadingOlder = false;
-      });
-    }
-  }
+export async function loadOlderHistory(host: ChatStoreHost, sessionId: string): Promise<number> {
+  return host.history?.loadOlder(sessionId.trim()) ?? 0;
 }
 
 export async function switchSession(host: ChatStoreHost, sessionId: string) {
@@ -815,6 +784,7 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
 
   const trimmed = sessionId.trim();
   if (!trimmed) return;
+  host.history?.open(trimmed);
 
   if (trimmed === host.sessionId) {
     await reloadCurrentSession(host, { notice: false });

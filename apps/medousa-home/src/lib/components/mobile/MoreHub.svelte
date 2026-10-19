@@ -73,7 +73,7 @@
           }}
         />
       {:else if layout.moreDestination === "map"}
-        <MapPanel visible={true} />
+        <MapPanel visible={true} mobile={true} />
       {:else if layout.moreDestination === "workshop"}
         <SkillsPanel
           visible={true}

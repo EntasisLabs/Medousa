@@ -29,15 +29,15 @@ function defaultSurfaces() {
     { id: "home", label: "Home", icon: "home", builtinId: "home", mobileTab: "home" },
     { id: "chat", label: "Chat", icon: "message-circle", builtinId: "chat", mobileTab: "chat" },
     { id: "peers", label: "Peers", icon: "users", builtinId: "peers" },
-    { id: "work", label: "Work", icon: "layout-grid", builtinId: "work" },
     { id: "code", label: "Code", icon: "code-2", builtinId: "code" },
+    { id: "reviews", label: "Reviews", icon: "checklist", builtinId: "reviews" },
     { id: "library", label: "Workspace", icon: "notebook-text", builtinId: "library" },
     { id: "notes", label: "Notes", icon: "notebook-text", builtinId: "notes", mobileTab: "notes" },
     { id: "files", label: "Files", icon: "folder", builtinId: "files" },
     { id: "artifacts", label: "Artifacts", icon: "sparkles", builtinId: "artifacts" },
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
-    { id: "map", label: "Map", icon: "compass", builtinId: "map" },
+    { id: "map", label: "Context", icon: "compass", builtinId: "map" },
     { id: "workshop", label: "Capabilities", icon: "zap", builtinId: "workshop" },
     { id: "automations", label: "Automations", icon: "zap", builtinId: "automations" },
     { id: "messaging", label: "Messaging", icon: "radio", builtinId: "messaging" },
@@ -65,6 +65,22 @@ function defaultSurfaces() {
     slots: [],
     mobileTab: entry.mobileTab ?? null,
   }));
+}
+
+/** Add Reviews once, preserving later choices to hide it from a preset. */
+export function ensureReviewsSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  if (spec.surfaces.some((surface) => surface.id === "reviews")) return spec;
+  const insert = (ids: string[]) => {
+    if (ids.includes("reviews")) return ids;
+    const next = [...ids];
+    const at = next.indexOf("code");
+    next.splice(at < 0 ? next.length : at + 1, 0, "reviews");
+    return next;
+  };
+  const surfaces = [...spec.surfaces];
+  const at = surfaces.findIndex((surface) => surface.id === "code");
+  surfaces.splice(at < 0 ? surfaces.length : at + 1, 0, defaultSurfaces().find((surface) => surface.id === "reviews")!);
+  return { ...spec, surfaces, layoutPresets: spec.layoutPresets?.map((preset) => ({ ...preset, surfaces: insert(preset.surfaces) })) };
 }
 
 function codeSurfaceDef(): SurfaceDef {
@@ -373,7 +389,7 @@ function mapSurfaceDef(): SurfaceDef {
   return (
     defaultSurfaces().find((surface) => surface.id === "map") ?? {
       id: "map",
-      label: "Map",
+      label: "Context",
       icon: "compass",
       kind: "builtin",
       builtinId: "map",
@@ -407,9 +423,11 @@ function replaceRetiredContextSurface(
   return next;
 }
 
-/** Ensure Map exists; strip retired Context surface from specs/presets. */
+/** Context keeps the map routing ID; migrate its label and retire the older context route. */
 export function ensureMapSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
-  let surfaces = spec.surfaces.filter((surface) => surface.id !== "context");
+  let surfaces = spec.surfaces.filter((surface) => surface.id !== "context").map((surface) =>
+    surface.id === "map" && surface.label !== "Context" ? { ...surface, label: "Context" } : surface,
+  );
   const hasMap = surfaces.some((surface) => surface.id === "map");
 
   if (!hasMap) {
@@ -426,7 +444,7 @@ export function ensureMapSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
 
   const surfacesChanged =
     surfaces.length !== spec.surfaces.length ||
-    surfaces.some((surface, index) => surface.id !== spec.surfaces[index]?.id);
+    surfaces.some((surface, index) => surface !== spec.surfaces[index]);
   const presetsChanged = (spec.layoutPresets ?? []).some((preset, index) => {
     const next = layoutPresets[index];
     if (!next) return true;
@@ -473,8 +491,8 @@ export function defaultEnvironmentSpec(
         surfaces: [
           "chat",
           "peers",
-          "work",
           "code",
+          "reviews",
           "notes",
           "web",
           "files",
@@ -492,4 +510,12 @@ export function defaultEnvironmentSpec(
     updatedAt: now,
     updatedBy: "system",
   };
+}
+
+/** Retire the built-in Work destination while preserving custom views. */
+export function retireWorkSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  const retired = new Set(spec.surfaces.filter((surface) => surface.kind === "builtin" && (surface.id === "work" || surface.builtinId === "work")).map((surface) => surface.id));
+  if (!retired.size) return spec;
+  return { ...spec, surfaces: spec.surfaces.filter((surface) => !retired.has(surface.id)),
+    layoutPresets: spec.layoutPresets?.map((preset) => ({ ...preset, surfaces: preset.surfaces.filter((id) => !retired.has(id)) })) };
 }

@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { afterEach, expect, it, vi } from "vitest";
-import { flushSync, mount, unmount } from "svelte";
+import { flushSync, mount, tick, unmount } from "svelte";
 import UndertakingReviewActions from "./UndertakingReviewActions.svelte";
 
 let component: ReturnType<typeof mount>;
@@ -13,11 +13,11 @@ afterEach(async () => {
 function render(overrides = {}) {
   const props = {
     attached: false, busy: false, canApprove: true,
-    allowContinue: true, allowReview: true, allowApply: false,
+    allowReview: true, allowApply: false,
     sourceBranch: "main", reviewedBranch: "work/change",
     actionLabel: "Apply to main",
     integrationStrategy: "fast_forward_only" as const,
-    onContinue: vi.fn(), onRequestChanges: vi.fn(),
+    onRequestChanges: vi.fn(),
     onApprove: vi.fn(), onApply: vi.fn(),
     ...overrides,
   };
@@ -26,9 +26,11 @@ function render(overrides = {}) {
   return props;
 }
 
-it("records approval before offering to apply unapproved changes", () => {
+it("records approval before offering to apply unapproved changes", async () => {
   const props = render();
-  const approve = document.querySelector<HTMLButtonElement>('button[aria-label="Approve changes · Apply to main"]')!;
+  document.querySelector<HTMLButtonElement>('button[aria-label="Forge review actions"]')!.click();
+  flushSync(); await tick(); flushSync();
+  const approve = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent?.includes("Approve changes"))!;
   expect(approve).not.toBeNull();
   expect(document.querySelector('button[aria-label="Apply to main"]')).toBeNull();
   approve.click();
@@ -63,4 +65,29 @@ it("disables applying while a project action is running", () => {
 it("offers no decision actions once review and apply are unavailable", () => {
   render({ allowReview: false, allowApply: false });
   expect(document.querySelector("button")).toBeNull();
+});
+
+
+it("changes the after-approval strategy without recording approval or applying changes", async () => {
+  const props = render();
+  document.querySelector<HTMLButtonElement>('button[aria-label="Forge review actions"]')!.click();
+  flushSync(); await tick(); flushSync();
+  const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]')];
+  expect(choices).toHaveLength(2);
+  expect(choices[0].getAttribute("aria-checked")).toBe("true");
+  choices[1].click(); flushSync(); await tick(); flushSync();
+  document.querySelector<HTMLButtonElement>('button[aria-label="Forge review actions"]')!.click();
+  flushSync(); await tick(); flushSync();
+  expect(document.querySelectorAll('[role="menuitemcheckbox"]')[1].getAttribute("aria-checked")).toBe("true");
+  expect(props.onApprove).not.toHaveBeenCalled();
+  expect(props.onApply).not.toHaveBeenCalled();
+});
+
+it("disables the review menu while another action is running", () => {
+  const props = render({ busy: true });
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Forge review actions"]')!;
+  expect(trigger.disabled).toBe(true);
+  trigger.click();
+  expect(document.querySelector('[role="menuitem"]')).toBeNull();
+  expect(props.onApprove).not.toHaveBeenCalled();
 });

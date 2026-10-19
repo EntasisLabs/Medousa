@@ -175,6 +175,7 @@
     "daemon::recurring::recurring_list_runs",
     "daemon::recurring::recurring_register_prompt",
     "daemon::recurring::recurring_update",
+    "daemon::reviews::review_provider_auth",
     "daemon::runtime::migrate_global_tui_defaults_to_engine",
     "daemon::runtime::runtime_config_command",
     "daemon::runtime::runtime_get_continuation_status",
@@ -276,6 +277,7 @@
     "embedded_daemon::embedded_clear_delegation_binding",
     "embedded_daemon::embedded_delegation_binding",
     "embedded_daemon::embedded_set_delegation_binding",
+    "external_desk::external_desk_list_directory",
     "external_desk::external_desk_read_file",
     "external_desk::external_desk_scan_root",
     "files::write_file_bytes",
@@ -301,6 +303,7 @@
     "human_browser::human_browser_popout_navigate",
     "human_browser::human_browser_popout_query_nav_state",
     "human_browser::human_browser_popout_reload",
+    "human_browser::human_browser_popout_set_chrome_overlay",
     "human_browser::human_browser_popout_stop",
     "human_browser::human_browser_query_nav_state",
     "human_browser::human_browser_reload",
@@ -551,7 +554,7 @@
     ]
   },
   "trustedShell": {
-    "csp": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: http: https:; media-src 'self' data: blob: http: https:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https: wss:; frame-src 'self' http: https:; worker-src 'self' blob:",
+    "csp": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; font-src 'self' data: blob:; img-src 'self' data: blob: http: https:; media-src 'self' data: blob: http: https:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https: wss:; frame-src 'self' http: https:; worker-src 'self' blob:",
     "assetProtocolEnabled": false
   },
   "lockedRuntime": {

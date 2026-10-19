@@ -32,14 +32,14 @@ Long tool loops pause with **Needs your approval**:
 title: Approve / Deny
 subtitle: More tool rounds
 icon: clock
-summary: **Approve** grants the requested +N tool rounds. **Deny** stops extending the turn. **Work** jumps to the linked Work card when present.
+summary: **Approve** grants the requested +N tool rounds. **Deny** stops extending the turn. **Task details** opens the linked task when present.
 ```
 
 | Control | Meaning |
 |---------|---------|
 | **Approve** | Grant the requested **+N tool round(s)** |
 | **Deny** | Stop extending the turn |
-| **Work** | Jump to the linked Work card (when present) |
+| **Task details** | Open the linked task over the current screen |
 
 Slash shortcuts (also in Spotlight):
 

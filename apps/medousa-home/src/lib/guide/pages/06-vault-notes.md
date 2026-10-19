@@ -56,7 +56,7 @@ Toolbar toggles when the note kind supports them:
 |--------|--------|
 | **Export PDF…** / **Export Word…** / **HTML** / **Markdown** | Overflow (⇧P for PDF) → preview → save |
 | **Talk about this note** | Overflow / context menu → grounds chat |
-| **Send to Work** | Same menus → Work card |
+| **Ask in background** | Same menus → shared task details |
 
 Disabled for **Loose file** notes outside the vault. HTML export is self-contained (Liquid frozen where needed); Markdown export keeps the clean note plus fences.
 

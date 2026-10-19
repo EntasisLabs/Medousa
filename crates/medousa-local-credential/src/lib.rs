@@ -1,7 +1,9 @@
 //! Native local-client credentials shared by the daemon and first-party clients.
 //!
-//! The bearer secret is stored in the platform credential store when possible,
-//! with an owner-only file fallback. The daemon retains only a SHA-256 verifier
+//! The bearer secret is stored in an owner-only file. Existing Keychain records
+//! with a private mirror are migrated without rotating the token. Keychain-only
+//! local tokens are reissued at daemon startup without unlocking Keychain.
+//! The daemon retains a SHA-256 verifier
 //! and compares digests in constant time on the request path.
 
 use std::collections::HashMap;
@@ -25,13 +27,12 @@ pub const CLI_LOCAL_NAME: &str = "medousa-cli";
 pub const TUI_LOCAL_NAME: &str = "medousa-tui";
 pub const FIRST_PARTY_LOCAL_NAMES: [&str; 3] = [HOME_LOCAL_NAME, CLI_LOCAL_NAME, TUI_LOCAL_NAME];
 const RECORD_VERSION: u8 = 1;
-const LEGACY_KEYRING_SERVICE: &str = "com.entasislabs.medousa.local-credentials";
 const CREDENTIALS_DIR: &str = "credentials";
 
 static LOADED_SECRET_CACHE: OnceLock<Mutex<HashMap<(PathBuf, String), CachedLocalCredential>>> =
     OnceLock::new();
 
-use medousa_types::secrets::{DaemonSecretPath, LocalClientKind};
+use medousa_types::secrets::DaemonSecretPath;
 
 #[derive(Clone)]
 pub struct LocalCredentialVerifier {
@@ -115,6 +116,19 @@ impl LocalCredentialSet {
         let mut next = self.verifiers.load().as_ref().clone();
         next.retain(|current| current.name() != name);
         self.verifiers.store(Arc::new(next));
+    }
+
+    /// Register a process-owned credential without reading or writing persistent secrets.
+    pub fn provision_process_credential(&self) -> LocalCredentialSecret {
+        let mut secret = generate_secret();
+        let mut verifier =
+            LocalCredentialVerifier::from_token(secret.credential_id.clone(), &secret.token);
+        verifier.name = Arc::from("daemon-self");
+        self.replace(verifier);
+        LocalCredentialSecret {
+            credential_id: std::mem::take(&mut secret.credential_id),
+            token: std::mem::take(&mut secret.token),
+        }
     }
 }
 
@@ -207,8 +221,9 @@ impl Drop for CachedLocalCredential {
 
 /// Provision the stable Home credential if necessary and return its verifier.
 ///
-/// This validates that the verifier and secret agree on every startup. Missing
-/// or mismatched material fails closed instead of silently rotating authority.
+/// Private mirrors retain their token. Keychain-only local capabilities are
+/// reissued with their stable ID and a newer generation, without a Keychain read.
+/// Malformed or mismatched material is rejected.
 pub fn provision_home_local(data_dir: &Path) -> Result<LocalCredentialVerifier> {
     provision_named(data_dir, HOME_LOCAL_NAME)
 }
@@ -226,7 +241,13 @@ pub fn provision_first_party(data_dir: &Path) -> Result<LocalCredentialSet> {
             // The record already contains the verifier digest. Daemon startup
             // must not unlock three client secrets merely to reconstruct the
             // hashes it uses on the request path.
-            verifiers.push(verifier_from_record(&record, name)?);
+            verifiers.push(
+                if matches!(record.secret_store, SecretStore::Keyring { .. }) {
+                    provision_named(data_dir, name)?
+                } else {
+                    verifier_from_record(&record, name)?
+                },
+            );
         } else {
             verifiers.push(provision_named(data_dir, name)?);
         }
@@ -242,11 +263,34 @@ pub fn provision_named(data_dir: &Path, name: &str) -> Result<LocalCredentialVer
 
     if record_path.is_file() {
         let record = read_record(&record_path)?;
+        validate_record_shape(&record, name)?;
         if record.revoked {
             bail!("{name} local credential is revoked");
         }
         match load_secret_for_record(data_dir, &record) {
             Ok(secret) => return verifier_from_parts(&record, &secret, name),
+            Err(error)
+                if matches!(record.secret_store, SecretStore::Keyring { .. })
+                    && secret_material_missing(&error) =>
+            {
+                // These are generated local capabilities, not external account
+                // credentials. Reissue at the authority's startup instead of
+                // blocking unattended boot on a Keychain import dialog.
+                let mut secret = generate_secret();
+                secret.credential_id = record.credential_id.clone();
+                let next_generation = record
+                    .generation
+                    .checked_add(1)
+                    .context("local credential generation exhausted")?;
+                replace_secret(data_dir, name, &private_store(name), &secret)?;
+                let mut next = record;
+                next.generation = next_generation;
+                next.token_sha256 = digest_hex(&Sha256::digest(secret.token.as_bytes()));
+                next.secret_store = private_store(name);
+                replace_record(&record_path, &next)?;
+                clear_cached_secret(data_dir, name);
+                return verifier_from_parts(&next, &secret, name);
+            }
             Err(error) if secret_material_missing(&error) => {
                 // Stale metadata after a failed keyring migration / denied
                 // Keychain write — drop the record and re-issue rather than
@@ -254,29 +298,11 @@ pub fn provision_named(data_dir: &Path, name: &str) -> Result<LocalCredentialVer
                 eprintln!(
                     "medousa-local-credential: re-provisioning {name} after missing secret material ({error:#})"
                 );
-                let _ = delete_secret(data_dir, &record.secret_store);
+                let _ = delete_secret(data_dir, name, &record.secret_store);
                 let _ = fs::remove_file(&record_path);
             }
             Err(error) => return Err(error),
         }
-    }
-
-    let account = legacy_keyring_account(data_dir, name)?;
-    if let Ok(Some(secret)) = read_legacy_keyring_secret(&account) {
-        let path = local_auth_path(data_dir, name, &secret.credential_id)?;
-        write_daemon_secret_payload(data_dir, &path, &secret)?;
-        // Only drop legacy after the new coordinates hold the material.
-        let _ = medousa_secrets::delete_legacy_keyring(LEGACY_KEYRING_SERVICE, &account);
-        let record = record_for_secret(
-            name,
-            secret.credential_id.clone(),
-            &secret,
-            SecretStore::Keyring {
-                account: path.account(),
-            },
-        );
-        replace_record(&record_path, &record)?;
-        return verifier_from_parts(&record, &secret, name);
     }
 
     let secret_path = credentials_dir.join(secret_file(name));
@@ -295,39 +321,15 @@ pub fn provision_named(data_dir: &Path, name: &str) -> Result<LocalCredentialVer
     }
 
     let secret = generate_secret();
-    let path = local_auth_path(data_dir, name, &secret.credential_id)?;
-    match write_daemon_secret_payload(data_dir, &path, &secret) {
-        Ok(_) => {
-            // Keyring *or* opaque file fallback — both are loaded via the typed
-            // DaemonSecretPath account through medousa-secrets.
-            let record = record_for_secret(
-                name,
-                secret.credential_id.clone(),
-                &secret,
-                SecretStore::Keyring {
-                    account: path.account(),
-                },
-            );
-            replace_record(&record_path, &record)?;
-            verifier_from_parts(&record, &secret, name)
-        }
-        Err(_) => {
-            let mut encoded = serde_json::to_vec(&secret)?;
-            let result = replace_private_file(&secret_path, &encoded);
-            encoded.zeroize();
-            result?;
-            let record = record_for_secret(
-                name,
-                secret.credential_id.clone(),
-                &secret,
-                SecretStore::OwnerOnlyFile {
-                    relative_path: format!("{CREDENTIALS_DIR}/{}", secret_file(name)),
-                },
-            );
-            replace_record(&record_path, &record)?;
-            verifier_from_parts(&record, &secret, name)
-        }
-    }
+    replace_secret(data_dir, name, &private_store(name), &secret)?;
+    let record = record_for_secret(
+        name,
+        secret.credential_id.clone(),
+        &secret,
+        private_store(name),
+    );
+    replace_record(&record_path, &record)?;
+    verifier_from_parts(&record, &secret, name)
 }
 
 /// Load the Home bearer for a native first-party transport.
@@ -439,15 +441,7 @@ pub fn rotate_named(data_dir: &Path, name: &str) -> Result<LocalCredentialRotati
     replace_secret(data_dir, name, &old.secret_store, &secret)?;
     let old_generation = old.generation;
     let old_was_active = !old.revoked;
-    let next_store = match &old.secret_store {
-        SecretStore::Keyring { .. } => {
-            let path = local_auth_path(data_dir, name, &old.credential_id)?;
-            SecretStore::Keyring {
-                account: path.account(),
-            }
-        }
-        other => other.clone(),
-    };
+    let next_store = private_store(name);
     let next = CredentialRecord {
         version: RECORD_VERSION,
         name: name.to_string(),
@@ -460,7 +454,7 @@ pub fn rotate_named(data_dir: &Path, name: &str) -> Result<LocalCredentialRotati
     if let Err(error) = replace_record(&record_path, &next) {
         let rollback = match previous_secret {
             Some(ref previous) => replace_secret(data_dir, name, &next.secret_store, previous),
-            None => delete_secret(data_dir, &next.secret_store),
+            None => delete_secret(data_dir, name, &next.secret_store),
         };
         return match rollback {
             Ok(()) => Err(error),
@@ -483,7 +477,7 @@ pub fn revoke_named(data_dir: &Path, name: &str) -> Result<LocalCredentialSummar
     let mut record = read_record(&record_path)?;
     validate_record_shape(&record, name)?;
     if !record.revoked {
-        delete_secret(data_dir, &record.secret_store)?;
+        delete_secret(data_dir, name, &record.secret_store)?;
         record.revoked = true;
         replace_record(&record_path, &record)?;
     }
@@ -586,34 +580,22 @@ fn summary(record: &CredentialRecord) -> LocalCredentialSummary {
 fn load_secret_for_record(data_dir: &Path, record: &CredentialRecord) -> Result<SecretPayload> {
     match &record.secret_store {
         SecretStore::Keyring { account } => {
-            if let Ok(path) = DaemonSecretPath::parse(account) {
-                if let Some(secret) = read_daemon_secret_payload(data_dir, &path)? {
-                    return Ok(secret);
-                }
-                // Typed account recorded, but keyring/file miss — try legacy
-                // coordinates and the stable credentials/*.secret mirror.
-                if let Some(secret) = recover_missing_keyring_secret(data_dir, record)? {
-                    return Ok(secret);
-                }
-                bail!(
-                    "{} local credential is missing from the platform credential store",
-                    record.name
-                );
+            let mirror = data_dir
+                .join(CREDENTIALS_DIR)
+                .join(secret_file(&record.name));
+            if mirror.is_file() {
+                let secret = read_file_secret(&mirror)?;
+                return migrate_local_secret(data_dir, record, secret);
             }
-            // Legacy account under com.entasislabs.medousa.local-credentials.
-            if let Some(secret) = read_legacy_keyring_secret(account)?
-                && let Ok(path) = local_auth_path(data_dir, &record.name, &secret.credential_id)
+            if let Ok(path @ DaemonSecretPath::LocalAuth { .. }) = DaemonSecretPath::parse(account)
             {
-                if write_daemon_secret_payload(data_dir, &path, &secret).is_ok() {
-                    let _ = medousa_secrets::delete_legacy_keyring(LEGACY_KEYRING_SERVICE, account);
+                let private = data_dir.join("secrets").join(path.storage_key().as_str());
+                if private.is_file() {
+                    return migrate_local_secret(data_dir, record, read_file_secret(&private)?);
                 }
-                return Ok(secret);
-            }
-            if let Some(secret) = recover_missing_keyring_secret(data_dir, record)? {
-                return Ok(secret);
             }
             bail!(
-                "{} local credential is missing from the platform credential store",
+                "{} local credential secret material is missing; start the daemon to provision private storage",
                 record.name
             )
         }
@@ -623,30 +605,56 @@ fn load_secret_for_record(data_dir: &Path, record: &CredentialRecord) -> Result<
     }
 }
 
-fn recover_missing_keyring_secret(
+fn private_store(name: &str) -> SecretStore {
+    SecretStore::OwnerOnlyFile {
+        relative_path: format!("{CREDENTIALS_DIR}/{}", secret_file(name)),
+    }
+}
+
+fn migrate_local_secret(
     data_dir: &Path,
     record: &CredentialRecord,
-) -> Result<Option<SecretPayload>> {
+    secret: SecretPayload,
+) -> Result<SecretPayload> {
+    verifier_from_parts(record, &secret, &record.name)?;
+    create_private_dir(&data_dir.join(CREDENTIALS_DIR))?;
     let mirror = data_dir
         .join(CREDENTIALS_DIR)
         .join(secret_file(&record.name));
-    if mirror.is_file() {
-        return Ok(Some(read_file_secret(&mirror)?));
-    }
-    if let Ok(legacy_account) = legacy_keyring_account(data_dir, &record.name)
-        && let Some(secret) = read_legacy_keyring_secret(&legacy_account)?
-    {
-        if let Ok(path) = local_auth_path(data_dir, &record.name, &secret.credential_id) {
-            let _ = write_daemon_secret_payload(data_dir, &path, &secret);
+    let mut encoded = serde_json::to_vec(&secret)?;
+    let created = create_private_file(&mirror, &encoded);
+    encoded.zeroize();
+    match created {
+        Ok(()) => {}
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| io.kind() == ErrorKind::AlreadyExists) =>
+        {
+            let existing = read_file_secret(&mirror)?;
+            verifier_from_parts(record, &existing, &record.name)?;
         }
-        return Ok(Some(secret));
+        Err(error) => return Err(error),
     }
-    Ok(None)
+    let record_path = data_dir
+        .join(CREDENTIALS_DIR)
+        .join(record_file(&record.name));
+    let mut current = read_record(&record_path)?;
+    if current.credential_id != record.credential_id
+        || current.generation != record.generation
+        || current.token_sha256 != record.token_sha256
+        || current.revoked
+    {
+        bail!("local credential changed during storage migration");
+    }
+    current.secret_store = private_store(&record.name);
+    replace_record(&record_path, &current)?;
+    Ok(secret)
 }
 
 fn secret_material_missing(error: &anyhow::Error) -> bool {
     let text = error.to_string();
-    text.contains("missing from the platform credential store")
+    text.contains("local credential secret material is missing")
         || text.contains("No such file")
         || text.contains("os error 2")
 }
@@ -684,14 +692,7 @@ fn replace_secret(
     secret: &SecretPayload,
 ) -> Result<()> {
     match store {
-        SecretStore::Keyring { account } => {
-            let path = local_auth_path(data_dir, name, &secret.credential_id)?;
-            write_daemon_secret_payload(data_dir, &path, secret)?;
-            if account != &path.account() {
-                let _ = medousa_secrets::delete_legacy_keyring(LEGACY_KEYRING_SERVICE, account);
-            }
-            Ok(())
-        }
+        SecretStore::Keyring { .. } => replace_secret(data_dir, name, &private_store(name), secret),
         SecretStore::OwnerOnlyFile { relative_path } => {
             let path = checked_secret_path(data_dir, relative_path)?;
             let mut encoded = serde_json::to_vec(secret)?;
@@ -702,15 +703,9 @@ fn replace_secret(
     }
 }
 
-fn delete_secret(data_dir: &Path, store: &SecretStore) -> Result<()> {
+fn delete_secret(data_dir: &Path, name: &str, store: &SecretStore) -> Result<()> {
     match store {
-        SecretStore::Keyring { account } => {
-            if let Ok(path) = DaemonSecretPath::parse(account) {
-                medousa_secrets::delete_daemon_secret(data_dir, &path)?;
-            }
-            let _ = medousa_secrets::delete_legacy_keyring(LEGACY_KEYRING_SERVICE, account);
-            Ok(())
-        }
+        SecretStore::Keyring { .. } => delete_secret(data_dir, name, &private_store(name)),
         SecretStore::OwnerOnlyFile { relative_path } => {
             let path = checked_secret_path(data_dir, relative_path)?;
             match fs::remove_file(&path) {
@@ -741,71 +736,6 @@ fn read_file_secret(path: &Path) -> Result<SecretPayload> {
     result
 }
 
-fn local_client_kind(name: &str) -> Result<LocalClientKind> {
-    LocalClientKind::parse(name).map_err(|err| anyhow::anyhow!("{err}"))
-}
-
-fn local_auth_path(data_dir: &Path, name: &str, credential_id: &str) -> Result<DaemonSecretPath> {
-    validate_name(name)?;
-    let installation_id = medousa_secrets::ensure_installation_id(data_dir)?;
-    Ok(DaemonSecretPath::LocalAuth {
-        installation_id,
-        client_kind: local_client_kind(name)?,
-        client_id: credential_id.to_string(),
-    })
-}
-
-fn write_daemon_secret_payload(
-    data_dir: &Path,
-    path: &DaemonSecretPath,
-    secret: &SecretPayload,
-) -> Result<medousa_secrets::SecretBackend> {
-    let mut encoded = serde_json::to_string(secret).context("serialize local credential secret")?;
-    let result = medousa_secrets::save_daemon_secret(data_dir, path, &encoded);
-    encoded.zeroize();
-    result
-}
-
-fn read_daemon_secret_payload(
-    data_dir: &Path,
-    path: &DaemonSecretPath,
-) -> Result<Option<SecretPayload>> {
-    match medousa_secrets::load_daemon_secret(data_dir, path)? {
-        Some(mut read) => {
-            let result = serde_json::from_str(&read.value)
-                .map(Some)
-                .context("parse local credential secret");
-            medousa_secrets::zeroize_string(&mut read.value);
-            result
-        }
-        None => Ok(None),
-    }
-}
-
-fn read_legacy_keyring_secret(account: &str) -> Result<Option<SecretPayload>> {
-    match medousa_secrets::load_legacy_keyring(LEGACY_KEYRING_SERVICE, account)? {
-        Some(mut raw) => {
-            let result = serde_json::from_str(&raw)
-                .map(Some)
-                .context("parse local credential keyring entry");
-            medousa_secrets::zeroize_string(&mut raw);
-            result
-        }
-        None => Ok(None),
-    }
-}
-
-fn legacy_keyring_account(data_dir: &Path, name: &str) -> Result<String> {
-    validate_name(name)?;
-    let absolute = if data_dir.is_absolute() {
-        data_dir.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(data_dir)
-    };
-    let digest = Sha256::digest(absolute.to_string_lossy().as_bytes());
-    Ok(format!("{name}-{}", &digest_hex(&digest)[..24]))
-}
-
 fn validate_name(name: &str) -> Result<()> {
     if FIRST_PARTY_LOCAL_NAMES.contains(&name) {
         Ok(())
@@ -826,7 +756,15 @@ fn create_private_dir(path: &Path) -> Result<()> {
     fs::create_dir_all(path).with_context(|| format!("create {}", path.display()))?;
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        // A daemon launched as root still shares these credentials with the
+        // owner of its data directory (Home/CLI run as that user).
+        if let Some(parent) = path.parent() {
+            let owner = fs::metadata(parent)?.uid();
+            if fs::metadata(path)?.uid() != owner {
+                std::os::unix::fs::chown(path, Some(owner), None)?;
+            }
+        }
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))
             .with_context(|| format!("restrict {}", path.display()))?;
     }
@@ -844,6 +782,16 @@ fn create_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = options
         .open(path)
         .with_context(|| format!("create {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Some(parent) = path.parent() {
+            let owner = fs::metadata(parent)?.uid();
+            if file.metadata()?.uid() != owner {
+                std::os::unix::fs::chown(path, Some(owner), None)?;
+            }
+        }
+    }
     file.write_all(bytes)
         .with_context(|| format!("write {}", path.display()))?;
     file.sync_all()
@@ -921,6 +869,97 @@ fn constant_time_eq(left: &[u8; 32], right: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use medousa_types::secrets::LocalClientKind;
+
+    #[test]
+    fn fresh_credentials_use_private_files_across_cold_starts() -> Result<()> {
+        let data_dir = test_dir("private-default");
+        let set = provision_first_party(&data_dir)?;
+        for name in FIRST_PARTY_LOCAL_NAMES {
+            let secret = load_named_secret(&data_dir, name)?;
+            assert!(set.resolve(secret.token()).is_some());
+            assert_eq!(
+                summary(&read_record(
+                    &data_dir.join(CREDENTIALS_DIR).join(record_file(name))
+                )?)
+                .secret_store,
+                "owner_only_file"
+            );
+            clear_cached_secret(&data_dir, name);
+            assert_eq!(load_named_secret(&data_dir, name)?.token(), secret.token());
+        }
+        fs::remove_dir_all(data_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_reissues_keychain_only_tokens_without_unlocking_keychain() -> Result<()> {
+        let data_dir = test_dir("keychain-only-bootstrap");
+        let old = provision_file_fixture(&data_dir, TUI_LOCAL_NAME)?;
+        let path = data_dir
+            .join(CREDENTIALS_DIR)
+            .join(record_file(TUI_LOCAL_NAME));
+        let mut record = read_record(&path)?;
+        record.secret_store = SecretStore::Keyring {
+            account: "never-query-the-host-keychain".into(),
+        };
+        record.generation = 4;
+        replace_record(&path, &record)?;
+        fs::remove_file(
+            data_dir
+                .join(CREDENTIALS_DIR)
+                .join(secret_file(TUI_LOCAL_NAME)),
+        )?;
+        clear_cached_secret(&data_dir, TUI_LOCAL_NAME);
+        let set = provision_first_party(&data_dir)?;
+        let current = load_named_secret(&data_dir, TUI_LOCAL_NAME)?;
+        assert_eq!(current.credential_id(), old.credential_id());
+        assert_ne!(current.token(), old.token());
+        assert!(set.resolve(old.token()).is_none());
+        assert_eq!(set.resolve(current.token()).unwrap().1, 5);
+        assert_eq!(
+            summary(&read_record(&path)?).secret_store,
+            "owner_only_file"
+        );
+        assert_eq!(
+            provision_first_party(&data_dir)?
+                .resolve(current.token())
+                .unwrap()
+                .1,
+            5
+        );
+        fs::remove_dir_all(data_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_record_migrates_without_changing_credential_identity_or_token() -> Result<()> {
+        let data_dir = test_dir("legacy-to-private");
+        let secret = provision_file_fixture(&data_dir, CLI_LOCAL_NAME)?;
+        let record_path = data_dir
+            .join(CREDENTIALS_DIR)
+            .join(record_file(CLI_LOCAL_NAME));
+        let mut record = read_record(&record_path)?;
+        record.generation = 7;
+        record.secret_store = SecretStore::Keyring {
+            account: "legacy-account".into(),
+        };
+        replace_record(&record_path, &record)?;
+        clear_cached_secret(&data_dir, CLI_LOCAL_NAME);
+        let migrated = load_named_secret(&data_dir, CLI_LOCAL_NAME)?;
+        assert_eq!(migrated.token(), secret.token());
+        assert_eq!(migrated.credential_id(), secret.credential_id());
+        let next = read_record(&record_path)?;
+        assert_eq!(next.generation, 7);
+        assert_eq!(summary(&next).secret_store, "owner_only_file");
+        let rotation = rotate_named(&data_dir, CLI_LOCAL_NAME)?;
+        assert_eq!(rotation.verifier.generation(), 8);
+        assert!(!rotation.verifier.verify(secret.token()));
+        revoke_named(&data_dir, CLI_LOCAL_NAME)?;
+        assert!(try_load_named_secret(&data_dir, CLI_LOCAL_NAME)?.is_none());
+        fs::remove_dir_all(data_dir)?;
+        Ok(())
+    }
     use std::path::PathBuf;
 
     fn test_dir(name: &str) -> PathBuf {

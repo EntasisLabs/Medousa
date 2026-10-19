@@ -3,6 +3,7 @@ import { thisHostLabel } from "$lib/platformCopy";
 
 export type SettingsSectionId =
   | "preferences"
+  | "accounts"
   | "agent"
   | "runtime"
   | "network"
@@ -17,6 +18,7 @@ export type SettingsSectionGroupId = "app" | "machine";
 /** Mobile settings pager order — every section, one at a time with arrows. */
 export const SETTINGS_MOBILE_SECTIONS: SettingsSectionId[] = [
   "preferences",
+  "accounts",
   "agent",
   "runtime",
   "network",
@@ -58,6 +60,12 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     id: "preferences",
     label: "Preferences",
     hint: "Look, notifications & chrome",
+    group: "app",
+  },
+  {
+    id: "accounts",
+    label: "Accounts",
+    hint: "Connected services & review accounts",
     group: "app",
   },
   {

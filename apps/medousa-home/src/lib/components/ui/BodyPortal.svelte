@@ -19,7 +19,9 @@
       ready = true;
       return;
     }
-    document.body.appendChild(host);
+    // Native modal dialogs form a top layer above body portals. Keep nested
+    // menus and sheets in their owning dialog so they stay visible and usable.
+    (host.closest("dialog") ?? document.body).appendChild(host);
     ready = true;
     return () => {
       host?.remove();

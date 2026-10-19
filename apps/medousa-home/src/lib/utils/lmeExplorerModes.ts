@@ -29,18 +29,15 @@ export const LME_CODE_MODES: LmeExplorerModeDef[] = [
   { id: "code", label: "Code", icon: Code2 },
 ];
 
-/** Page 0 of the Automations strip. */
+/** Resource editors linked from the Run list. */
 export const LME_AUTOMATIONS_PRIMARY_MODES: LmeExplorerModeDef[] = [
   { id: "scripts", label: "Scripts", icon: FileCode2 },
-  { id: "agents", label: "Agents", icon: Bot },
   { id: "flows", label: "Flows", icon: GitBranch },
   { id: "schedules", label: "Schedules", icon: CalendarClock },
 ];
 
-/** Page 1 of the Automations strip (revealed via chevron). */
-export const LME_AUTOMATIONS_SECONDARY_MODES: LmeExplorerModeDef[] = [
-  { id: "history", label: "History", icon: History },
-];
+/** Legacy strip compatibility; global history now lives in Spotlight Activity. */
+export const LME_AUTOMATIONS_SECONDARY_MODES: LmeExplorerModeDef[] = [];
 
 export const LME_AUTOMATIONS_MODES: LmeExplorerModeDef[] = [
   ...LME_AUTOMATIONS_PRIMARY_MODES,
@@ -48,6 +45,8 @@ export const LME_AUTOMATIONS_MODES: LmeExplorerModeDef[] = [
 ];
 
 export const LME_EXPLORER_MODES: LmeExplorerModeDef[] = [
+  { id: "agents", label: "Agents", icon: Bot },
+  { id: "history", label: "Activity", icon: History },
   ...LME_LIBRARY_MODES,
   ...LME_CODE_MODES,
   ...LME_AUTOMATIONS_MODES,
@@ -83,10 +82,10 @@ export function familyForLmeExplorerMode(mode: LmeExplorerMode): LmeExplorerFami
 export function familyForLmeTabKind(kind: string): LmeExplorerFamily | null {
   switch (kind) {
     case "script":
-    case "manuscript":
     case "flow":
     case "schedule":
       return "automations";
+    case "manuscript":
     case "note":
     case "file":
     case "deck":
@@ -98,7 +97,7 @@ export function familyForLmeTabKind(kind: string): LmeExplorerFamily | null {
   }
 }
 
-/** Automations strip page: 0 = scripts/agents/flows/schedules, 1 = history. */
+/** @deprecated The resource strip no longer paginates. */
 export function automationsStripPageForMode(mode: LmeExplorerMode): 0 | 1 {
   return AUTOMATIONS_SECONDARY_IDS.has(mode) ? 1 : 0;
 }

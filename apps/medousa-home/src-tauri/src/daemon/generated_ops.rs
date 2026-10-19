@@ -728,6 +728,14 @@ pub enum DaemonOperation {
     RecurringGet,
     #[serde(rename = "recurring.prompt.post")]
     RecurringPromptPost,
+    #[serde(rename = "reviews.auth.post")]
+    ReviewsAuthPost,
+    #[serde(rename = "reviews.mutate.post")]
+    ReviewsMutatePost,
+    #[serde(rename = "reviews.providers.get")]
+    ReviewsProvidersGet,
+    #[serde(rename = "reviews.query.post")]
+    ReviewsQueryPost,
     #[serde(rename = "runtime.artifact.command.post")]
     RuntimeArtifactCommandPost,
     #[serde(rename = "runtime.artifact.delete.post")]
@@ -1359,6 +1367,10 @@ impl DaemonOperation {
             Self::RecurringByRecurringIdRunsGet => "recurring.by_recurring_id.runs.get",
             Self::RecurringGet => "recurring.get",
             Self::RecurringPromptPost => "recurring.prompt.post",
+            Self::ReviewsAuthPost => "reviews.auth.post",
+            Self::ReviewsMutatePost => "reviews.mutate.post",
+            Self::ReviewsProvidersGet => "reviews.providers.get",
+            Self::ReviewsQueryPost => "reviews.query.post",
             Self::RuntimeArtifactCommandPost => "runtime.artifact.command.post",
             Self::RuntimeArtifactDeletePost => "runtime.artifact.delete.post",
             Self::RuntimeArtifactFetchPost => "runtime.artifact.fetch.post",

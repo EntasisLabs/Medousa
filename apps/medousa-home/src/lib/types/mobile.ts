@@ -27,7 +27,7 @@ export const MORE_DESTINATIONS: {
   hint: string;
 }[] = [
   { id: "profiles", label: "You", hint: "Who you are — teach her facts" },
-  { id: "map", label: "Map", hint: "Sessions, moments, and notes linked" },
+  { id: "map", label: "Context", hint: "Saved session memory and sources" },
   { id: "workshop", label: "Agents", hint: "Specialist agents you can run" },
   {
     id: "automations",

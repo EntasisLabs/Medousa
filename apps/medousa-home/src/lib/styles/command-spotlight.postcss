@@ -5,6 +5,7 @@
 
 @layer features {
   .command-spotlight-backdrop {
+    --spotlight-top: clamp(3.5rem, 9vh, 7rem);
     position: fixed;
     inset: 0;
     z-index: 200;
@@ -12,14 +13,17 @@
     align-items: flex-start;
     justify-content: center;
     padding: 1rem;
-    padding-top: clamp(3.5rem, 9vh, 7rem);
+    padding-top: var(--spotlight-top);
     background: color-mix(in srgb, rgb(var(--theme-canvas)) 68%, transparent);
     backdrop-filter: blur(5px) saturate(0.88);
   }
 
   .command-spotlight-panel {
-    width: min(100%, 38rem);
-    max-height: min(42rem, calc(100vh - 7rem));
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 860px);
+    height: 560px;
+    max-height: calc(100dvh - var(--spotlight-top) - 1rem);
     overflow: hidden;
     border: 1px solid rgb(var(--theme-border) / 0.42);
     border-radius: var(--theme-container-radius, 0.875rem);
@@ -28,15 +32,14 @@
     box-shadow:
       0 28px 70px rgb(var(--theme-shadow) / 0.34),
       inset 0 0 0 1px rgb(var(--theme-border) / 0.34);
-    transition: width 160ms ease;
   }
 
-  .command-spotlight-panel-contextual {
-    width: min(100%, 50rem);
-  }
-
-  .command-spotlight-panel-rich {
-    width: min(100%, 56rem);
+  .command-spotlight-input,
+  .command-spotlight-prompt-header,
+  .command-spotlight-mode-chip,
+  .command-spotlight-navigation,
+  .command-spotlight-footer {
+    flex-shrink: 0;
   }
 
   .command-spotlight-input {
@@ -82,6 +85,8 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
+
+  .command-spotlight-terminal-header { display: flex; align-items: center; gap: .6rem; }
 
   .command-spotlight-prompt-label {
     margin: 0.2rem 0 0;
@@ -245,13 +250,9 @@
 
   .command-spotlight-body {
     display: flex;
-    min-height: 15rem;
-    max-height: min(22rem, calc(100vh - 14rem));
-  }
-
-  .command-spotlight-body-rich {
-    height: min(25rem, calc(100vh - 14rem));
-    max-height: min(25rem, calc(100vh - 14rem));
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
   }
 
   .command-spotlight-results {
@@ -635,12 +636,8 @@
       padding: 0.65rem;
     }
 
-    .command-spotlight-panel,
-    .command-spotlight-panel-contextual,
-    .command-spotlight-panel-rich {
-      display: flex;
-      max-height: calc(100vh - 1.3rem);
-      flex-direction: column;
+    .command-spotlight-panel {
+      max-height: calc(100dvh - 1.3rem);
     }
 
     .command-spotlight-preview {
@@ -658,13 +655,6 @@
     .command-spotlight-lenses {
       width: 100%;
       overflow-x: auto;
-    }
-
-    .command-spotlight-body {
-      min-height: 0;
-      height: auto;
-      max-height: none;
-      flex: 1;
     }
 
     .command-spotlight-footer span:first-child {

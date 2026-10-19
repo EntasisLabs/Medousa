@@ -139,11 +139,12 @@
   }
 
   .profiles-focus-card {
-    @apply pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4;
+    @apply pointer-events-none absolute inset-x-0 bottom-4 top-4 z-20 flex items-end justify-center px-4;
   }
 
   .profiles-focus-card-inner {
-    @apply pointer-events-auto w-full max-w-md rounded-2xl border border-surface-500/40 px-4 py-4 shadow-xl;
+    @apply pointer-events-auto relative max-h-full w-full max-w-md overflow-y-auto rounded-2xl border border-surface-500/40 px-4 py-4 shadow-xl;
+    overflow-wrap: anywhere;
     background-color: rgb(var(--color-surface-900) / 0.94);
     backdrop-filter: blur(12px);
   }
@@ -157,11 +158,11 @@
   }
 
   .profiles-focus-title {
-    @apply mt-1 text-lg font-semibold text-surface-50;
+    @apply mt-1 pr-5 text-lg font-semibold text-surface-50;
   }
 
   .profiles-focus-voice {
-    @apply mt-2 text-sm leading-relaxed text-content-secondary;
+    @apply mt-2 whitespace-pre-wrap text-sm leading-relaxed text-content-secondary;
   }
 
   .profiles-focus-actions {

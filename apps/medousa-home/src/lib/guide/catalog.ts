@@ -53,10 +53,10 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   },
   {
     id: "work-jobs",
-    title: "Work and background jobs",
+    title: "Activity and background tasks",
     file: "13-work-background-jobs.md",
     group: "everyday",
-    summary: "The Work board and background asks",
+    summary: "Workshop activity and background asks",
   },
   {
     id: "themes-customization",
@@ -74,10 +74,10 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   },
   {
     id: "profiles-locus",
-    title: "You and the Map",
+    title: "You and Context",
     file: "19-profiles-locus.md",
     group: "everyday",
-    summary: "Teach Medousa about you; browse recent links",
+    summary: "Manage your profile; browse saved session memory and sources",
   },
   {
     id: "troubleshooting",

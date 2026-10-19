@@ -26,7 +26,7 @@
   interface Props {
     visible: boolean;
     onOpenChat: () => void;
-    onOpenWork: () => void;
+    onOpenActivity: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
     /** Hosted inside LME — hide library tabs; open notes as workspace tabs. */
     lmeHosted?: boolean;
@@ -35,7 +35,7 @@
   let {
     visible,
     onOpenChat,
-    onOpenWork,
+    onOpenActivity,
     onSelectCard,
     lmeHosted = false,
   }: Props = $props();
@@ -77,9 +77,6 @@
         }
       }
       if (cancelled) return;
-      if (externalDesk.sidebarMode === "files" && externalDesk.pinnedRoots.length > 0) {
-        await externalDesk.refreshAllRoots();
-      }
       if (cancelled) return;
     })();
     return () => {
@@ -145,10 +142,10 @@
           {#if showFilesSearch}
             <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
               <p class="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-content-quiet">
-                Search results
+                Matches in loaded folders
               </p>
               {#if externalHits.length === 0}
-                <p class="px-2 py-4 text-sm text-content-quiet">No matches in pinned folders.</p>
+                <p class="px-2 py-4 text-sm text-content-quiet">No matches in loaded folders.</p>
               {:else}
                 <ul class="space-y-0.5">
                   {#each externalHits as entry (entry.path)}
@@ -177,7 +174,7 @@
     <VaultEditor
       visible={true}
       {onOpenChat}
-      {onOpenWork}
+      {onOpenActivity}
       {onSelectCard}
     />
   {:else}
@@ -253,7 +250,7 @@
     <VaultEditor
       visible={true}
       {onOpenChat}
-      {onOpenWork}
+      {onOpenActivity}
       {onSelectCard}
     />
   {/if}

@@ -39,6 +39,28 @@ keyboard.
 4. Take control back at any time. Navigation, tab replacement, closing the tab,
    timeout, or taking control back cancels pending agent actions.
 
+On macOS, the device browser uses Safari-compatible desktop identification so
+websites can serve their normal desktop experience. Its cookies and sign-ins
+remain separate from Safari.
+
+On desktop, the embedded device page follows Medousa's interface zoom. Use
+**Ctrl/⌘ +**, **Ctrl/⌘ −**, or **Ctrl/⌘ 0** while the page has focus to zoom
+the page and shell together. Reset returns to the default **110%** size. Tabs
+keep the current zoom when you switch between them or open another page.
+
+Desktop device tabs keep their own native page history. **Back** and **Forward**
+follow links, redirects, and same-page navigation without reloading a saved URL.
+Switching tabs preserves the live page; loading indicators belong to each tab.
+Closing a tab releases its page. The next tab to its right is selected, or the
+one to its left when there is no right neighbor. Closing a background tab keeps
+your current selection.
+
+Use **Ctrl/⌘ Shift T** to reopen a recently closed tab. Medousa saves open tab
+addresses, titles, selection, and up to five recently closed tabs across app
+restarts. Reopened or restarted tabs load their saved address with fresh page
+history; form contents and scroll positions are retained only while a tab's
+native page stays open. Restored background tabs load when first selected.
+
 Websites cannot open popups, start downloads, launch external protocols, or ask
 for camera, microphone, location, notification, clipboard, or similar native
 permissions through the embedded browser. Open those flows in your system

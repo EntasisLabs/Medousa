@@ -22,7 +22,7 @@ Spotlight is a tool surface, not only search. Open with ⌘K / Ctrl+K, then:
 | `+` | **Create** — new note, chat, script, templates |
 | `!` | **Run** — scripts, morning brief |
 | `>` | **Advanced** — rarer / power actions |
-| `1`–`4` (empty query) | Jump **Pinned** working-set slots (Harpoon-style) |
+| `1`–`4` (empty query, results focused) | Jump **Pinned** working-set slots; digits in the search field remain search text |
 
 Pin the notes/scripts you’re juggling (**Pin current**), then return with digit keys — no fuzzy thinking. **Resume last Spotlight** restores your previous query. Prefer Spotlight when you already know the name *or* the next verb.
 

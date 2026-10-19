@@ -8,6 +8,12 @@ Open Medousa's menu-bar menu and choose **Companion**. Choose it again, or use t
 
 Closing the main Medousa window hides Home but leaves the companion and background process running. Use **Quit** in Medousa's menu-bar or tray menu when you want to stop Medousa completely.
 
+Floating windows are created when you open them. Closing Chat, a sticky note,
+Web, custom views, the guide, or the companion releases that window's renderer.
+Chat drafts are saved before closing. A sticky note saves pending edits first;
+if saving fails, the note stays open. Reopen a tool from Medousa or the companion
+when you need it again.
+
 Click the pet to open its toolbelt. Drag the pet to move it; Medousa keeps the expanded toolbelt inside the current screen's usable area.
 
 ## What it can do

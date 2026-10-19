@@ -9,7 +9,6 @@
     active: string;
     onSelect: (surface: string) => void;
     chatActivity?: number;
-    workActivity?: number;
     peersActivity?: number;
     activeProfileLabel?: string;
     health?: DaemonHealth | null;
@@ -19,7 +18,6 @@
     active,
     onSelect,
     chatActivity = 0,
-    workActivity = 0,
     peersActivity = 0,
     activeProfileLabel = "Personal",
     health = null,
@@ -32,7 +30,6 @@
   onOpenChat={() => onSelect("chat")}
   {health}
   {chatActivity}
-  {workActivity}
   {peersActivity}
   {activeProfileLabel}
 />

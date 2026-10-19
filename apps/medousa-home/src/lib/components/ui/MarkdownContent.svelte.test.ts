@@ -73,3 +73,15 @@ it("copies completed history loaded into an already mounted nonstreaming view", 
   await vi.waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith("  echo history"));
   await vi.waitFor(() => expect(button.textContent).toBe("Copied"));
 });
+
+it("uses Liquid disclosure styling and real linked badges in document presentation", async () => {
+  component = mount(MarkdownContent, {
+    target: document.body,
+    props: { presentation: "document", content: '<details>\n<summary>Release notes</summary>\n\n**Fixed** the issue.\n\n</details>\n\n[![Build status](https://example.com/status.svg)](https://example.com/build)' },
+  });
+  flushSync(); await tick();
+  expect(document.querySelector<HTMLDetailsElement>(".markdown-document .liquid-accordion details")?.open).toBe(true);
+  expect(document.querySelector(".liquid-accordion-panel strong")?.textContent).toBe("Fixed");
+  expect(document.querySelector("a .markdown-image-inline img")?.getAttribute("src")).toBe("https://example.com/status.svg");
+  expect(document.body.textContent).not.toContain("![Build status]");
+});

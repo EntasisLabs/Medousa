@@ -31,7 +31,7 @@ describe("environmentLayout nav visibility", () => {
   it("keeps safety surfaces when hiding native views", () => {
     const spec = defaultEnvironmentSpec();
     setSurfaceNavVisible(spec, "chat", false);
-    setSurfaceNavVisible(spec, "work", false);
+    setSurfaceNavVisible(spec, "code", false);
 
     expect(activePresetSurfaceIds(spec)).toContain("settings");
     expect(activePresetSurfaceIds(spec)).toContain("runtime");
@@ -112,7 +112,7 @@ describe("environmentLayout reorder", () => {
       "chat",
       "peers",
       "map",
-      "work",
+      "code",
       "notes",
       "files",
       "artifacts",
@@ -121,9 +121,9 @@ describe("environmentLayout reorder", () => {
       "runtime",
     ];
 
-    reorderPrimarySurfaceInActivePreset(spec, "work", 0);
+    reorderPrimarySurfaceInActivePreset(spec, "code", 0);
     expect(primaryRailSurfaceIds(activePresetSurfaceIds(spec))).toEqual([
-      "work",
+      "code",
       "chat",
       "peers",
       "map",
@@ -136,13 +136,13 @@ describe("environmentLayout reorder", () => {
       activePresetSurfaceIds(spec).indexOf("peers"),
     );
 
-    reorderPrimarySurfaceInActivePreset(spec, "work", 4);
+    reorderPrimarySurfaceInActivePreset(spec, "code", 4);
     expect(primaryRailSurfaceIds(activePresetSurfaceIds(spec))).toEqual([
       "chat",
       "peers",
       "map",
       "notes",
-      "work",
+      "code",
       "files",
       "artifacts",
       "automations",

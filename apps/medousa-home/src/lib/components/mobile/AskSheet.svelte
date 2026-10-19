@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AskComposer from "$lib/components/work/AskComposer.svelte";
+  import AskComposer from "$lib/components/tasks/AskComposer.svelte";
   import { haptic } from "$lib/haptics";
   import { layout } from "$lib/runtime/layout.svelte";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { useChatHistoryPanel } from "$lib/chat/chatHistoryPanel.svelte";
   import { composerModel } from "$lib/chat/composerModel";
   import { tick, untrack } from "svelte";
   import { ExternalLink, LoaderCircle } from "@lucide/svelte";
@@ -63,7 +64,7 @@
   } from "$lib/utils/vaultNoteBridge";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
-  import { openWorkAsks } from "$lib/utils/workChromeEvents";
+  import { openAskHistory } from "$lib/runtime/shellUseCases";
   import WorkerTranscriptPanel from "$lib/components/chat/WorkerTranscriptPanel.svelte";
   import { subagentRowMap, subagentRowsForSession } from "$lib/utils/subagentRows";
   import {
@@ -145,7 +146,7 @@
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
   let workerTranscriptWorkId = $state<string | null>(null);
-  let loadingOlderForScroll = $state(false);
+  const history = useChatHistoryPanel(chat.history, () => panelSessionId, () => visible);
 
   function openCardDetail(detail: CardDetailPayload) {
     cardDetail = detail;
@@ -188,17 +189,7 @@
   const externalConversation = untrack(() => sharedExternalConversation ?? createExternalConversationController({ provider: () => providerRuntime, sessionId: () => panelSessionId, scope: () => chat.workshopScopeId, offline: () => connection.offline, visible: () => visible }));
   const panelBot = $derived(bots.forSession(panelSessionId));
   const chatCodeProject = $derived(undertakings.forChat(panelSessionId));
-  const panelMessages = $derived(chat.messagesFor(panelSessionId));
-  async function loadOlderMessages() {
-    if (loadingOlderForScroll) return;
-    loadingOlderForScroll = true;
-    try {
-      await chat.loadOlderHistory(panelSessionId);
-      await tick();
-    } finally {
-      loadingOlderForScroll = false;
-    }
-  }
+  const panelMessages = $derived(history.messages());
   /**
    * Worker-lane turns stay in the principal thread: they carry the sub-agent's
    * synthesis prose, and their position is where the beat belongs chronologically.
@@ -341,7 +332,6 @@
   function handlePromoteToFlow(ref: ToolHistorySliceRef) {
     flowDraft.queuePromotion([ref]);
     automationsNav.openSection("flows");
-    layout.navigateDesktop("automations", { bump: true });
     if (mobile) layout.openMore("automations");
   }
 
@@ -613,7 +603,7 @@
           modelHint: chatModel.model,
         });
         chatAttachments.clear();
-        chat.historyNotice = "Ask queued — watch Work for progress.";
+        chat.historyNotice = "Ask queued — follow progress in Activity.";
         return;
       }
 
@@ -867,10 +857,10 @@
           class="chat-restore-toast-dismiss text-content-link"
           onclick={() => {
             chat.clearAskHandoffNotice();
-            openWorkAsks();
+            void openAskHistory(panelSessionId);
           }}
         >
-          Open in Work
+          View asks
         </button>
         <button
           type="button"
@@ -887,7 +877,7 @@
   <div class="relative flex min-h-0 flex-1 flex-col">
   <ChatScrollChrome
     {mobile}
-    showFab={showScrollFab && visible}
+    showFab={(showScrollFab || history.canLoadNewer()) && visible}
     showTurnRail={showChatTurnRail}
     {showCurrentTurnAnchor}
     {chatTurnItems}
@@ -898,9 +888,12 @@
     bind:scheduleChatNavigationMeasure
     bind:resetForSession={resetScrollSession}
     historyKey={providerRuntime ? `${panelSessionId}:${externalConversation.selectedId ?? providerRuntime}` : panelSessionId}
-    canLoadOlder={!providerRuntime && Boolean(chat.historyCursorFor(panelSessionId))}
-    loadingOlder={!providerRuntime && chat.historyLoadingOlderFor(panelSessionId)}
-    onLoadOlder={providerRuntime ? undefined : loadOlderMessages}
+    canLoadOlder={!providerRuntime && Boolean(history.olderCursor())}
+    loadingOlder={!providerRuntime && history.loading()}
+    onLoadOlder={providerRuntime ? undefined : history.older}
+    canLoadNewer={!providerRuntime && history.canLoadNewer()}
+    onLoadNewer={providerRuntime ? undefined : history.newer}
+    onLoadLatest={providerRuntime ? undefined : history.latest}
     onAtBottomChange={(value) => (atBottom = value)}
     bodyClass={embedded && !useMobileChatLayout
       ? "vault-workshop-chat-body"
@@ -919,14 +912,14 @@
           {mobile} loading={externalConversation.loading} error={externalConversation.error} />
       {:else}
       <ChatAsyncToolsHint {mobile} />
-      {#if askThreads.length > 0 && !embedded && mobile}
+      {#if askThreads.length > 0 && !embedded}
         <button
           type="button"
-          class="mobile-chat-rail-chip"
-          onclick={() => openWorkAsks()}
+          class="chat-ask-history-button"
+          onclick={() => void openAskHistory(panelSessionId)}
         >
           <span>
-            {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"} in Work
+            {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"}
           </span>
           <span class="text-content-quiet">→</span>
         </button>
@@ -939,7 +932,7 @@
             onOpenSource={openDerivationSource}
           />
         {/if}
-        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile}>
+        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile} {visible}>
           {#snippet children(peerProposals, peerControls)}
             <ChatMessageList
               {peerProposals}
@@ -1019,7 +1012,7 @@
       </div>
       {/if}
       {#if !embedded && !providerRuntime && chatMessages.length === 0}
-        <PeerProposalBar sessionId={panelSessionId} {mobile} />
+        <PeerProposalBar sessionId={panelSessionId} {mobile} {visible} />
       {/if}
       {#if chatCodeProject && !embedded}
         <ChatChangeReceipt
@@ -1049,13 +1042,7 @@
     onContinue={continueWhereLeftOff}
   >
     {#if !providerRuntime && !embedded && !presenceComposerCentered}
-      <BudgetApprovalBar
-        onOpenWork={() => {
-          workspace.workView = "hub";
-          const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
-          if (pending) void workspace.selectCard(pending.workCardId);
-        }}
-      />
+      <BudgetApprovalBar />
       <ModeProposalBar
         sessionId={panelSessionId}
       />
@@ -1167,6 +1154,9 @@
 </section>
 
 <style>
+  .chat-ask-history-button { display:flex; align-items:center; justify-content:space-between; gap:1rem; width:100%; padding:.5rem .75rem; border:1px solid rgb(var(--theme-border) / .3); border-radius:.5rem; color:rgb(var(--theme-text-secondary)); font-size:.75rem; }
+  .chat-ask-history-button:hover { background:rgb(var(--theme-border) / .1); }
+
   .chat-view-popout {
     display: inline-flex;
     width: 1.6rem;

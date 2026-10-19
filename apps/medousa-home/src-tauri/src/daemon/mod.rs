@@ -4,6 +4,7 @@ pub mod bot;
 pub mod calendar;
 pub mod catalog;
 pub mod chatgpt;
+pub mod reviews;
 pub mod code;
 pub mod component_runtime;
 pub mod component_store;

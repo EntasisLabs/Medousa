@@ -14,8 +14,9 @@ export const DEFAULT_MAP_AVEC_MINS: MapAvecMins = {
   autonomy: 0,
 };
 
-/** Desktop shell bridge for the Map surface (search, selection, AVEC filter). */
+/** Shared selection and lens for Context. Internal map IDs stay compatible with saved tabs. */
 export class ContextShellStore {
+  lens = $state<"browse" | "map">("browse");
   search = $state("");
   selectedMapNodeId = $state<string | null>(null);
   /** Rail → canvas: bump nonce + session id to force-expand moments. */
@@ -31,6 +32,7 @@ export class ContextShellStore {
   requestExpandMapSession(sessionId: string) {
     const id = sessionId.trim();
     if (!id) return;
+    this.lens = "map";
     this.mapExpandSessionId = id;
     this.mapExpandNonce += 1;
   }

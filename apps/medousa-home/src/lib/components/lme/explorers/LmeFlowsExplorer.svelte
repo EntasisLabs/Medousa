@@ -10,13 +10,32 @@
   import { settings } from "$lib/stores/settings.svelte";
   import type { WorkflowListEntry } from "$lib/types/workflow";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
-  import { onMount } from "svelte";
+  import { flowDraft } from "$lib/stores/flowDraft.svelte";
+  import { promoteWorkflowFromSlice } from "$lib/daemon";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
+  import { onMount, untrack } from "svelte";
 
+  let alive = true;
+  $effect(() => {
+    if (!flowDraft.openComposer || !flowDraft.pendingRefs.length) return;
+    const scope = activeWorkshopId();
+    const name = flowDraft.seedDraft.name;
+    const refs = untrack(() => flowDraft.consumePendingRefs());
+    void promoteWorkflowFromSlice({ refs, name: name || null, run: false }).then((response) => {
+      if (!alive || activeWorkshopId() !== scope) return;
+      flows.openComposer({ name: response.draft.name || name, steps: response.draft.steps });
+      flowDraft.clear();
+      lmeWorkspace.focusFlowComposerTab(response.draft.name || name || "New flow");
+    }).catch((cause) => {
+      if (alive && activeWorkshopId() === scope) flows.actionMessage = cause instanceof Error ? cause.message : String(cause);
+    });
+  });
   let search = $state("");
   let filterOpen = $state(false);
 
   onMount(() => {
     void flows.refresh();
+    return () => { alive = false; };
   });
 
   const filterActive = $derived(search.trim().length > 0);
@@ -97,6 +116,7 @@
     <p class="shrink-0 px-3 py-2 text-sm text-content-error">{flows.error}</p>
   {/if}
 
+  {#if flows.actionMessage}<p class="shrink-0 px-3 py-2 text-xs text-content-secondary">{flows.actionMessage}</p>{/if}
   <header class="lme-side-rail-dock" use:portLmeDock>
     <div class="lme-dock-leading-ghost min-w-0 flex-1">
       {#if filterActive}

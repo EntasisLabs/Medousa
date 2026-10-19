@@ -5,17 +5,16 @@
   import ProfilesIdentityField from "$lib/components/profiles/ProfilesIdentityField.svelte";
   import ProfilesOverflowMenu from "$lib/components/profiles/ProfilesOverflowMenu.svelte";
   import ProfilesTeachDialog from "$lib/components/profiles/ProfilesTeachDialog.svelte";
-  import { getIdentityDigestPreview } from "$lib/daemon";
   import { identity } from "$lib/stores/identity.svelte";
   import { profilesSelection } from "$lib/stores/profilesSelection.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
+  import type { ProfileShelfEntry } from "$lib/types/profileShelf";
   import type { IdentityRememberRequest, IdentityRememberResponse } from "$lib/types/identity";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { blobForShelfEntry, buildIdentityFieldLayout } from "$lib/utils/identityField";
   import {
     buildProfileShelfEntries,
     findShelfEntryAfterRemember,
-    humanDigestLines,
   } from "$lib/utils/profileShelf";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import {
@@ -33,11 +32,11 @@
 
   let { visible, mobile = false, embedded = false, onOpenChat }: Props = $props();
 
-  let digestLines = $state<string[]>([]);
   let personSheetOpen = $state(false);
   let teachDialogOpen = $state(false);
   let shelfNotice = $state<string | null>(null);
   let teachPrefill = $state("");
+  let editingEntry = $state<ProfileShelfEntry | null>(null);
 
   const readOnly = false;
 
@@ -45,7 +44,6 @@
     buildIdentityFieldLayout(
       identity.context,
       userProfiles.activeDisplayName,
-      digestLines,
     ),
   );
 
@@ -93,16 +91,6 @@
       relationshipLimit: 32,
       userId: userProfiles.resolvedUserId,
     });
-    try {
-      const preview = await getIdentityDigestPreview({
-        mode: "cognitive",
-        relationship_limit: 32,
-        user_id: userProfiles.resolvedUserId ?? undefined,
-      });
-      digestLines = humanDigestLines(preview.digest_text);
-    } catch {
-      digestLines = [];
-    }
   }
 
   async function focusAfterRemember(
@@ -128,6 +116,7 @@
   }
 
   function openTeach(prefill = "") {
+    editingEntry = null;
     teachPrefill = prefill;
     teachDialogOpen = true;
   }
@@ -135,13 +124,9 @@
   function handleCorrect() {
     const blob = selectedBlob;
     if (!blob) return;
-    if (blob.kind === "person") {
-      openTeach(`${blob.label} is my ${blob.subtitle}`);
-    } else if (blob.kind === "preference") {
-      openTeach(`My ${blob.label.toLowerCase()} is ${blob.subtitle}`);
-    } else {
-      openTeach(blob.subtitle || blob.label);
-    }
+    editingEntry = blob.entry;
+    teachPrefill = blob.entry?.subtitle ?? blob.subtitle;
+    teachDialogOpen = true;
   }
 
   async function switchProfile(profileId: string) {
@@ -179,7 +164,7 @@
           <div class="min-w-0">
             <h1 class="text-base font-semibold text-surface-50">You</h1>
             <p class="workshop-header-line mt-1">
-              Who she knows you as — feel the field, tap to focus
+              Your profile and saved context
             </p>
           </div>
         </div>
@@ -232,7 +217,7 @@
         profilesSelection.select(null);
       }}
       onOpenChat={onOpenChat}
-      onCorrect={selectedBlob ? handleCorrect : undefined}
+      onCorrect={selectedBlob?.entry ? handleCorrect : undefined}
     />
   </div>
 
@@ -240,6 +225,7 @@
     open={teachDialogOpen}
     {readOnly}
     prefill={teachPrefill}
+    entry={editingEntry}
     onClose={() => {
       teachDialogOpen = false;
       teachPrefill = "";

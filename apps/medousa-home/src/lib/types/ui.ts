@@ -1,8 +1,8 @@
 export type BuiltinSurface =
   | "home"
   | "chat"
-  | "work"
   | "code"
+  | "reviews"
   | "library"
   | "notes"
   | "files"

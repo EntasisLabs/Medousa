@@ -179,11 +179,6 @@ export const loadLmePanel = catalogLoader(
   "panel",
   () => import("$lib/components/lme/LmePanel.svelte"),
 );
-export const loadWorkPanel = catalogLoader(
-  "code-work",
-  "panel",
-  () => import("$lib/components/work/WorkPanel.svelte"),
-);
 export const loadHumanBrowserPanel = catalogLoader(
   "browser",
   "panel",
@@ -242,8 +237,12 @@ export const loadWizardContainer = catalogLoader(
   "view",
   () => import("$lib/components/wizard/WizardContainer.svelte"),
 );
-export const loadWorkAskDockPopover = () =>
-  import("$lib/components/work/WorkAskDockPopover.svelte");
+export const loadNewAskDialog = () =>
+  import("$lib/components/tasks/NewAskDialog.svelte");
+export const loadTaskDetailsOverlay = () =>
+  import("$lib/components/tasks/TaskDetailsOverlay.svelte");
+export const loadTaskCompletionDialog = () =>
+  import("$lib/components/tasks/TaskCompletionDialog.svelte");
 export const loadVaultGarageImportWizard = catalogLoader(
   "export-import",
   "import",
@@ -285,6 +284,11 @@ export const loadUndertakingsPanel = catalogLoader(
   "undertakings",
   () => import("$lib/components/work/UndertakingsPanel.svelte"),
 );
+export const loadReviewsPanel = catalogLoader(
+  "code-work",
+  "reviews",
+  () => import("$lib/components/work/ReviewsPanel.svelte"),
+);
 export const loadCodeSourceEditor = catalogLoader(
   "code-work",
   "editor",
@@ -313,6 +317,8 @@ export const loadSettingsRuntimeSection = () =>
   import("$lib/components/settings/SettingsRuntimeSection.svelte");
 export const loadSettingsNetworkSection = () =>
   import("$lib/components/settings/SettingsNetworkSection.svelte");
+export const loadSettingsAccountsSection = () =>
+  import("$lib/components/settings/SettingsAccountsSection.svelte");
 export const loadSettingsConnectionsSection = () =>
   import("$lib/components/settings/SettingsConnectionsSection.svelte");
 export const loadSettingsPackagesSection = () =>
@@ -321,3 +327,11 @@ export const loadSettingsMcpSection = () =>
   import("$lib/components/settings/SettingsMcpSection.svelte");
 export const loadSettingsBasementSection = () =>
   import("$lib/components/settings/SettingsBasementSection.svelte");
+
+export const loadAskHistoryDialog = () => import("$lib/components/chat/AskHistoryDialog.svelte");
+
+export const loadAutomationsRunList = catalogLoader(
+  "vault-browse",
+  "automations-run-list",
+  () => import("$lib/components/automations/AutomationsRunList.svelte"),
+);

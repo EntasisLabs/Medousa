@@ -32,7 +32,7 @@ describe("contentZoom", () => {
   });
 
   it("formats percent", () => {
-    expect(contentZoomPercent(CONTENT_ZOOM_DEFAULT)).toBe("100%");
+    expect(contentZoomPercent(CONTENT_ZOOM_DEFAULT)).toBe("110%");
     expect(contentZoomPercent(1.2)).toBe("120%");
   });
 
