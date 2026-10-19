@@ -15,6 +15,8 @@ export async function openInBrowser(
     workCardId?: string | null;
     title?: string;
     openWorkshop?: boolean;
+    /** Preserve the currently open page when following a link from another view. */
+    newTab?: boolean;
   },
 ) {
   const trimmed = url.trim();
@@ -47,7 +49,11 @@ export async function openInBrowser(
     await browser.handleAgentNavigation(normalized, options?.title);
   }
 
-  await humanBrowser.navigate(normalized);
+  if (options?.newTab) {
+    await humanBrowser.openTab(normalized);
+  } else {
+    await humanBrowser.navigate(normalized);
+  }
 
   if (openedBy === "user") {
     await browser.syncFromNative(normalized);

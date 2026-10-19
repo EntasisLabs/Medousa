@@ -23,8 +23,10 @@
     presentation?: "document";
     content: string;
     titleByPath?: Map<string, string>;
-    /** Open http(s) links in the Web surface instead of a new tab. */
+    /** Open http(s) links in a new in-app browser tab. */
     openLinksInWeb?: boolean;
+    /** Provider page used to resolve relative links in hosted content. */
+    linkBaseUrl?: string;
     /** Optional override; defaults to inherited Liquid context when inside a scene. */
     liquidContext?: LiquidRenderContext;
     /** Retain completed blocks while only the final Markdown token is changing. */
@@ -36,6 +38,7 @@
     presentation,
     titleByPath,
     openLinksInWeb = false,
+    linkBaseUrl,
     liquidContext,
     streaming = false,
   }: Props = $props();
@@ -115,15 +118,19 @@
     tailHtml = renderSession.renderTail(update.tail);
   });
 
-  function handleLinkClick(event: MouseEvent) {
-    if (!openLinksInWeb) return;
-    const target = (event.target as HTMLElement | null)?.closest("a");
+  function handleLinkClick(event: MouseEvent | KeyboardEvent) {
+    if (!openLinksInWeb || event.defaultPrevented) return;
+    if (event instanceof MouseEvent && event.button > 1) return;
+    const target = (event.target as Element | null)?.closest("a");
     if (!target || !(target instanceof HTMLAnchorElement)) return;
     const href = target.getAttribute("href")?.trim();
-    if (!href || !isHttpUrl(href)) return;
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1) return;
+    if (!href || href.startsWith("#")) return;
+    let url: string;
+    try { url = linkBaseUrl ? new URL(href, linkBaseUrl).href : href; }
+    catch { return; }
+    if (!isHttpUrl(url)) return;
     event.preventDefault();
-    void openInBrowser(href, { openedBy: "user" });
+    void openInBrowser(url, { openedBy: "user", newTab: true });
   }
 
   function handleClick(event: MouseEvent) {
@@ -135,7 +142,7 @@
 
   function handleLinkKeydown(event: KeyboardEvent) {
     if (event.key !== "Enter" && event.key !== " ") return;
-    handleLinkClick(event as unknown as MouseEvent);
+    handleLinkClick(event);
   }
 
   // The mutable suffix can become a stable block. Carry explicit code choices
@@ -183,6 +190,7 @@
   class:markdown-document={presentation === "document"}
   role="document"
   onclick={handleClick}
+  onauxclick={handleLinkClick}
   onkeydown={handleLinkKeydown}
 >
   {#if stableMode}
