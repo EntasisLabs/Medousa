@@ -274,10 +274,9 @@
     }
   }
 
-  /** Quieter tree parents — closer to Cursor folder icons. */
-  const treeIconProps = { size: 14, strokeWidth: 2 };
-  const heroIconProps = { size: 17, strokeWidth: 2.15 };
-  const utilityIconProps = { size: 14, strokeWidth: 2 };
+  /** Match the Settings rail's glyph size and stroke. */
+  const treeIconProps = { size: 16, strokeWidth: 1.7 };
+  const utilityIconProps = treeIconProps;
   /** In-place flyout — replaces rail view-mode swaps for list surfaces. */
   let railPopover = $state<RailPopoverTarget | null>(null);
   let railPopoverTriggerEl = $state<HTMLElement | null>(null);
@@ -731,7 +730,7 @@
             </div>
           {/if}
 
-          {#snippet railDest(item: LifeRailItem, hero = false, orderIndex = -1)}
+          {#snippet railDest(item: LifeRailItem, orderIndex = -1)}
             {#if item.kind === "surface"}
               {@const surface = item.surface}
               {@const Icon = environmentIcon(surface.icon)}
@@ -761,7 +760,6 @@
                 railInsertIndex === orderIndex}
               <div
                 class="workshop-rail-dest"
-                class:workshop-rail-dest-hero={hero}
                 class:workshop-rail-dest-dragging={isDragging}
                 class:workshop-rail-dest-drop-before={showDropBefore}
                 data-rail-reorder-id={canReorder ? surface.id : undefined}
@@ -801,7 +799,7 @@
                     }}
                   >
                     <span class="workshop-rail-btn-icon" aria-hidden="true">
-                      <Icon {...(hero ? heroIconProps : treeIconProps)} />
+                      <Icon {...treeIconProps} />
                       {#if badge > 0 && showCountBadge(surface.id)}
                         <span class="workshop-rail-count-badge">{badge > 9 ? "9+" : badge}</span>
                       {:else if badge > 0}
@@ -871,7 +869,7 @@
               {:else if lifeRail.customStartIndex >= 0 && index === lifeRail.customStartIndex}
                 <div class="workshop-rail-breath" aria-hidden="true"></div>
               {/if}
-              {@render railDest(item, item.id === "chat", index)}
+              {@render railDest(item, index)}
             {/each}
             {#if railLayoutEditing && railDragId !== null}
               <div

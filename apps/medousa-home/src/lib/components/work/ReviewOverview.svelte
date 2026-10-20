@@ -52,8 +52,8 @@
     <section aria-label="Recorded checks">
       <h2>Checks</h2>
       <p class="overview-check-status" class:passed={verification?.success} class:failed={verification && !verification.success}>
-        {#if verification?.success}<CircleCheck size={14} />{:else if verification}<CircleAlert size={14} />{:else}<CircleDashed size={14} />{/if}
-        {verification ? (verification.success ? "Check passed" : "Check failed") : "No checks recorded"}
+        <span class="overview-symbol" aria-hidden="true">{#if verification?.success}<CircleCheck size={14} />{:else if verification}<CircleAlert size={14} />{:else}<CircleDashed size={14} />{/if}</span>
+        <span>{verification ? (verification.success ? "Check passed" : "Check failed") : "No checks recorded"}</span>
       </p>
       {#if verification}<p class="overview-check-label">{verification.label}{verification.exit_code != null ? ` · exit ${verification.exit_code}` : ""}</p><details class="overview-command"><summary>Command</summary><code>{verification.command.join(" ")}</code></details>{/if}
     </section>
@@ -92,14 +92,16 @@
   .overview-details section { border-bottom:1px solid rgb(var(--theme-border)/.35); padding-bottom:1rem; margin-bottom:1rem; }
   .overview-details section:last-child { border:0; }
   .overview-details h2 { font-size:.6875rem; color:rgb(var(--theme-text-tertiary)); font-weight:500; margin-bottom:.5rem; }
-  .overview-change-count { display:flex; align-items:baseline; flex-wrap:wrap; gap:.5rem .75rem; color:rgb(var(--theme-text)); font-size:.8125rem; }
+  .overview-change-count { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem .75rem; color:rgb(var(--theme-text)); font-size:.8125rem; }
   .overview-stats { display:inline-flex; gap:.4rem; font-size:.6875rem; font-variant-numeric:tabular-nums; }
   .added,.passed { color:rgb(var(--theme-success)); }
   .removed,.failed { color:rgb(var(--theme-error)); }
   .overview-view-all { display:inline-flex; align-items:center; gap:.35rem; margin-top:.4rem; padding:0; border:0; background:transparent; color:rgb(var(--theme-text-secondary)); font-size:.6875rem; cursor:pointer; }
   .overview-view-all:hover { color:rgb(var(--theme-text)); }
-  .overview-check-status { display:flex; align-items:center; gap:.4rem; font-size:.75rem; }
-  .overview-check-status > :global(svg) { flex-shrink:0; }
+  .overview-check-status { display:flex; align-items:flex-start; gap:.4rem; font-size:.75rem; line-height:1.5; }
+  .overview-symbol { display:inline-flex; align-items:center; justify-content:center; flex:0 0 1.125rem; width:1.125rem; height:1.125rem; }
+  .overview-symbol :global(svg) { display:block; flex-shrink:0; }
+  .overview-check-status > span:last-child { min-width:0; overflow-wrap:anywhere; }
   .overview-check-label { font-size:.6875rem; overflow-wrap:anywhere; }
   .overview-branch { font-size:.75rem; overflow-wrap:anywhere; }
   .overview-risk { font-size:.75rem; }
