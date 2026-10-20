@@ -7,6 +7,7 @@
 
   interface Props {
     file: DiffFileSection;
+    embedded?: boolean;
     mode: "inline" | "side";
     busy?: boolean;
     density?: "comfortable" | "compact";
@@ -33,6 +34,7 @@
 
   let {
     file,
+    embedded = false,
     mode,
     busy = false,
     density = "comfortable",
@@ -109,10 +111,12 @@
 
 <article
   class="diff-file"
+  class:diff-file--embedded={embedded}
   class:diff-file--viewed={viewed}
   class:diff-file--collapsed={collapsed}
   class:diff-file--inventory={inventory}
 >
+  {#if !embedded}
   <header class="diff-file-header">
     <button
       type="button"
@@ -200,6 +204,7 @@
       {/if}
     </div>
   </header>
+  {/if}
 
   {#if !collapsed}
     {#if file.binary}
@@ -241,6 +246,7 @@
     {:else if mountHunks}
       <DiffHunkView
         hunks={file.hunks}
+        continuous={embedded}
         {mode}
         {density}
         {wrap}
@@ -266,6 +272,8 @@
 </article>
 
 <style>
+  .diff-file.diff-file--embedded { border:0; border-radius:0; background:transparent; }
+
   .diff-file {
     min-width: 0;
     max-width: 100%;

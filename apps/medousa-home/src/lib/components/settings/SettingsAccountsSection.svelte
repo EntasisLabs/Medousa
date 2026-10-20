@@ -4,6 +4,7 @@
   import { Check, Copy, GitPullRequest, LogOut, ExternalLink } from "@lucide/svelte";
   import { daemonUnary } from "$lib/daemon/contractClient";
   import { hostedReviews } from "$lib/code/hostedReviews.svelte";
+  import { hostedReviewCache } from "$lib/code/hostedReviewCache";
   import { chat } from "$lib/stores/chat.svelte";
   import { isTauri } from "$lib/window";
   import type { IntegrationConnection } from "$lib/integrationsClient";
@@ -126,6 +127,7 @@
     busy = account.connection_id; error = null; notice = null;
     try {
       await daemonUnary("integrations.by_connection_id.delete", {connection_id:account.connection_id});
+      hostedReviewCache.clear();
       if (run !== generation || scope !== chat.workshopScopeId) return;
       if (hostedReviews.connectionId === account.connection_id) hostedReviews.selectAccount(null);
       await refresh(scope, run);

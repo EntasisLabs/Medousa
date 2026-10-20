@@ -16,7 +16,13 @@ working copy in Code.
   risk sit alongside the reading column.
 - **Changes** uses the same file diffs, inline comments, and source-file links
   available from Code. Diffs load as files expand. Use the directory selector to
-  narrow the list, or choose **All files** to clear it.
+  narrow the list, or choose **All files** to clear it. Each file has one compact
+  header with its diff directly beneath it. **Diff view options** applies inline
+  or side-by-side layout, density, and line wrapping across the review. Inline
+  diffs use one line-number column (before numbers for deletions, after numbers
+  for other lines). Context can expand when source content is available; patch-only
+  gaps show the count of omitted lines. Forge file actions stay in the file menu,
+  and **Changed symbols** provides optional symbol-level comparisons.
 - The revision picker selects a prepared attempt. Navigation remembers that
   revision, directory filter, selected lens, and reading position for the current app
   session. A later attempt does not silently replace the one being read.
@@ -68,9 +74,20 @@ You can also paste an HTTPS pull request URL and press Enter, or enter
 `owner/repository` to list its pull requests. When several provider packages are
 installed, select the provider. Hosted reviews open in separate tabs with
 **Summary**, **Changes**, **Discussion**, and **Checks**. File patches load when
-expanded; only one patch is retained by the page. Load-more controls fetch
+expanded; only one patch is rendered by the page. Load-more controls fetch
 additional pages explicitly. The rail keeps up to 500 metadata records for the
-current workshop and app session, without retaining review descriptions or diffs.
+current workshop and app session.
+
+Visited hosted reviews reuse a bounded in-memory response cache when switching
+tabs. Cached content appears immediately; older summaries, inboxes, discussion,
+and checks refresh quietly without clearing the page. **Refresh** requests fresh
+data. Responses are scoped to the workshop, provider, account, and review; file
+lists and patches also belong to a specific commit. Account changes clear the
+cache, and new commits discard cached comparisons for older revisions. The cache
+reserves at most 12 MiB of estimated payload storage, including at most 4 MiB for
+patches; patches over 1 MiB estimated size remain viewable but are not cached.
+Least recently used responses are evicted as needed. Closing the window ends
+this cache; descriptions and patches are not written to browser storage.
 
 Use **Leave a comment…** on Summary, or **Pull request actions → Comment**, for a conversation comment.
 The composed Summary places the description beside reviewers, current checks, and merge status.

@@ -86,3 +86,23 @@ it("limits Repository root to files outside directories", async () => {
   await settle();
   expect(buttons().map((button) => button.textContent?.trim())).toEqual(["README.md"]);
 });
+
+it("shows code under the file row and keeps source and restore actions in its menu", async () => {
+  api.file.mockImplementation(async (_work, path) => ({ ...comparison(path), binary: false,
+    baseline: { exists: true, binary: false, byte_size: 3, content: "old" },
+    reviewed: { exists: true, binary: false, byte_size: 3, content: "new" },
+    hunks: [{ old_start: 1, old_count: 1, new_start: 1, new_count: 1, lines: [{ kind: "deletion", old_line: 1, content: "old" }, { kind: "addition", new_line: 1, content: "new" }] }],
+  }));
+  const onOpenFile = vi.fn(), onRestore = vi.fn();
+  component = mount(ReviewFileChanges, { target: document.body, props: { review: review(1), onOpenFile, onRestore } });
+  await settle(); buttons()[0].click(); await settle();
+  expect(document.querySelector(".diff-file-header")).toBeNull();
+  expect(document.querySelector(".diff-view--continuous")?.textContent).toContain("new");
+  expect(document.querySelectorAll('button[aria-label="Diff view options"]')).toHaveLength(1);
+  document.querySelector<HTMLButtonElement>('button[aria-label="File actions"]')!.click(); await settle();
+  [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent?.includes("Open in Code"))!.click(); await settle();
+  expect(onOpenFile).toHaveBeenCalledWith("file-00", 1);
+  document.querySelector<HTMLButtonElement>('button[aria-label="File actions"]')!.click(); await settle();
+  [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent?.includes("Restore before"))!.click(); await settle();
+  expect(onRestore).toHaveBeenCalledWith(expect.objectContaining({ path: "file-00", binary: false }));
+});

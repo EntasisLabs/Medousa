@@ -18,7 +18,7 @@ export function reviewReadingState(scope: string, workId: string): ReviewReading
   const key = JSON.stringify([scope, workId]);
   let state = readingStates.get(key);
   if (!state) {
-    const fresh = $state<ReviewReadingState>({ attemptId: null, lens: "overview", directory: null, scroll: { overview: 0, changes: 0 }, diff: { comparison: "", expanded: [], mode: "inline", wrap: false, density: "compact" } });
+    const fresh = $state<ReviewReadingState>({ attemptId: null, lens: "overview", directory: null, scroll: { overview: 0, changes: 0 }, diff: { comparison: "", expanded: [], mode: "inline", wrap: true, density: "compact" } });
     state = fresh;
     readingStates.set(key, state);
   }
