@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { onMount, untrack, type Component } from "svelte";
+  import { createSpotlightConversation, openAddressedConversation } from "$lib/spotlight/spotlightConversation.svelte";
+  import { mentionQuery } from "$lib/spotlight/conversationTargets";
+  import SpotlightAddressInput from "./SpotlightAddressInput.svelte";
+  import SpotlightTranscript from "./SpotlightTranscript.svelte";
   import BotAvatar from "$lib/components/chat/BotAvatar.svelte";
   import { bots } from "$lib/stores/bots.svelte";
   import { connectedAgents } from "$lib/stores/connectedAgents.svelte";
@@ -9,8 +13,8 @@
     collectWorkshopCommands,
     collectWorkshopLensCommands,
     parseSpotlightQuery,
+    type SpotlightLens,
   } from "$lib/commands/collectCommands";
-  import type { SpotlightLens } from "$lib/commands/collectCommands";
   import { jumpPinSlot } from "$lib/commands/pinCommands";
   import { executeWorkshopCommand } from "$lib/commands/runWorkshopCommand";
   import { buildWorkspaceCommands } from "$lib/commands/registry";
@@ -63,11 +67,8 @@
     TerminalSquare,
     Zap,
   } from "@lucide/svelte";
-  import type { Component } from "svelte";
 
-  interface Props {
-    onFocusChat?: () => void;
-  }
+  interface Props { onFocusChat?: () => void; }
 
   interface SpotlightGroup {
     id: string;
@@ -78,6 +79,11 @@
   let { onFocusChat }: Props = $props();
 
   let query = $state("");
+  const conversation = createSpotlightConversation(() => Boolean(mention), () => { query = ""; });
+  let addressInput = $state<{ handleKeydown: (event: KeyboardEvent) => boolean }>();
+  const mention = $derived(commandSpotlight.mode === "default" && !commandSpotlight.promptStep && !conversation.target ? mentionQuery(query) : null);
+  const addressing = $derived(Boolean(conversation.target) || Boolean(mention));
+  function removeTarget() { conversation.clear(); query = ""; }
   let highlightIndex = $state(0);
   let busy = $state(false);
   let commandError = $state<string | null>(null);
@@ -112,7 +118,7 @@
   });
   const notesMode = $derived(commandSpotlight.mode === "notes");
   const sshMode = $derived(commandSpotlight.mode === "ssh");
-  const activityMode = $derived(!notesMode && !sshMode && selectedScopeId === "home" && selectedLens === "activity");
+  const activityMode = $derived(!addressing && !notesMode && !sshMode && selectedScopeId === "home" && selectedLens === "activity");
   const promptStep = $derived(commandSpotlight.promptStep);
 
   const ctx = $derived(
@@ -433,7 +439,9 @@
 
     try {
       const layout = selectedDesktopLayout;
-      if (sshMode) {
+      if (addressing) {
+        groups = [];
+      } else if (sshMode) {
         groups = [{ id: "ssh-servers", label: "Saved SSH servers", commands: filterAndSortCommands(buildSshTerminalCommands(sshData?.targets ?? [], sshData?.scope ?? ""), query, 64) }];
       } else if (selectedScopeId !== "home" && layout) {
         groups = collectDesktopGroups(selectedScopeId, layout, query);
@@ -469,6 +477,7 @@
     const step = promptStep;
     const mode = commandSpotlight.mode;
     if (!isOpen) {
+      conversation.clear();
       query = "";
       selectedScopeId = "home";
       selectedLens = "overview";
@@ -672,7 +681,9 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (!commandSpotlight.open) return;
+    if (!commandSpotlight.open || event.isComposing) return;
+
+    if (!notesMode && !sshMode && !promptStep && addressInput?.handleKeydown(event)) return;
 
     if (event.key === "Escape") {
       event.preventDefault();
@@ -804,18 +815,8 @@
           disabled={busy}
         />
       {:else}
-        <input
-          bind:this={inputEl}
-          class="command-spotlight-input"
-          {placeholder}
-          bind:value={query}
-          oninput={() => {
-            highlightNavigation = "data";
-            highlightIndex = 0;
-          }}
-          disabled={busy}
-        />
-        {#if prefixHint !== "default" && !activityMode && !sshMode}
+        <SpotlightAddressInput bind:this={addressInput} bind:inputEl bind:query {conversation} {placeholder} {busy} enabled={!notesMode && !sshMode} onQueryChange={() => { highlightNavigation = "data"; highlightIndex = 0; }}/>
+        {#if prefixHint !== "default" && !addressing && !activityMode && !sshMode}
           <p class="command-spotlight-mode-chip">
             {#if prefixHint === "create"}
               Create
@@ -829,10 +830,14 @@
       {/if}
 
       {#if !promptStep && !sshMode}
-        <SpotlightNavigation {scopeTabs} {selectedScopeId} {selectedLens} {lensTabs} {query} {notesMode} {activityMode} {selectScope} {selectLens} {createWorkspace} />
+        <SpotlightNavigation {scopeTabs} {selectedScopeId} {selectedLens} {lensTabs} {query} {notesMode} {activityMode} conversationLabel={addressing ? "Conversation" : null} selectScope={(id) => { if (addressing) removeTarget(); selectScope(id); }} {selectLens} {createWorkspace} />
       {/if}
 
-      {#if activityMode}
+      {#if conversation.target}
+        <SpotlightTranscript {conversation} onOpen={() => openAddressedConversation(conversation)}/>
+      {:else if mention}
+        <div class="command-spotlight-conversation"><p class="command-spotlight-conversation-empty">Choose who to talk to. Continue a conversation or start something new.</p></div>
+      {:else if activityMode}
         {#key chat.workshopScopeId}
           <SpotlightActivity {query} {ctx} />
         {/key}
@@ -971,7 +976,7 @@
       {/if}
 
       <footer class="command-spotlight-footer">
-        <span>{activityMode ? "↑↓ Navigate · ←→ Expand · ↵ Open · esc Close" : sshMode ? "↑↓ Navigate · ↵ Open · esc Back" : "↑↓ Navigate · ↵ Run · esc Close"}</span>
+        <span>{mention ? "↑↓ Choose · ↵ Select · esc Dismiss" : conversation.target ? "↵ Send · ⌫ Remove empty target · esc Close" : activityMode ? "↑↓ Navigate · ←→ Expand · ↵ Open · esc Close" : sshMode ? "↑↓ Navigate · ↵ Open · esc Back" : "↑↓ Navigate · ↵ Run · esc Close"}</span>
         <span class="command-spotlight-kbd">{formatShortcut("K")}</span>
       </footer>
     </div>

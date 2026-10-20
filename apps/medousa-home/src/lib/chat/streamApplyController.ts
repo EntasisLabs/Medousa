@@ -12,6 +12,7 @@ import {
   operatorStreamErrorDetail,
   operatorStreamErrorLine,
   operatorStreamStatusLine,
+  visibleChatStatusLine,
 } from "$lib/utils/chatStreamDisplay";
 import { shouldAcceptStreamEvent } from "$lib/utils/streamOwnership";
 import { applyStreamSeq } from "$lib/stream/reconnect";
@@ -727,10 +728,10 @@ function resolveStatusLine(
   event: InteractiveTurnStreamEvent,
   current: string | null | undefined,
 ): string | null {
-  if (event.message?.trim()) {
+  if (event.message?.trim() || event.operator_message?.trim() || event.debug_message?.trim()) {
     return operatorStreamStatusLine(event, chatSettingsPort().showEngineDetailsInChat());
   }
-  return current ?? null;
+  return visibleChatStatusLine(current, chatSettingsPort().showEngineDetailsInChat());
 }
 
 function phaseFromEvent(event: InteractiveTurnStreamEvent): string {

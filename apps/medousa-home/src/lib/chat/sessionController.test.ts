@@ -102,3 +102,16 @@ describe("mapTurns chronological history", () => {
     expect(messages[0]?.toolRuns?.[0]?.runId).toBe("run-1");
   });
 });
+
+it("removes saved runtime plumbing from assistant bodies, progress, and chronological parts", () => {
+  const noise = "interactive turn accepted; agent runtime started";
+  const saved = { ...turn([{ kind: "text", markdown: noise, segment_id: "startup" }, { kind: "progress", markdown: noise }]), content: noise };
+  const [message] = mapTurns([saved]);
+  expect(message.content).toBe(""); expect(message.statusLine).toBeNull(); expect(message.segments ?? []).toEqual([]);
+  const [user] = mapTurns([{ ...saved, role: "user" }]);
+  expect(user.content).toBe(noise);
+});
+it("keeps useful saved progress when the latest part is only a startup acknowledgement", () => {
+  const [message] = mapTurns([turn([{ kind: "progress", markdown: "Reading the project files" }, { kind: "progress", markdown: "Agent runtime started" }])]);
+  expect(message.statusLine).toBe("Reading the project files");
+});

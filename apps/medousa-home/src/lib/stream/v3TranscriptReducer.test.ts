@@ -343,3 +343,21 @@ describe("Turn Stream V3 chronological presentation fold", () => {
     );
   });
 });
+
+describe("quiet lifecycle status", () => {
+  it.each(["accepted", "running"])("never projects runtime startup prose in %s status", (phase) => {
+    const result = applyV3EnvelopeToMessage({ ...assistant(), statusLine: "Agent runtime accepted" }, envelope(1, { type: "status", phase, operator_message: "interactive turn accepted; agent runtime started" }));
+    expect(result.content).toBe(""); expect(result.statusLine).toBeNull(); expect(result.streaming).toBe(true);
+  });
+  it("skips startup progress without creating a transcript entry or losing useful work", () => {
+    const noise = { type: "progress" as const, message: "Agent runtime started" };
+    expect(v3EventPromotesChatMessage(noise)).toBe(false);
+    const result = foldV3Envelopes(assistant(), [envelope(1, noise), envelope(2, { type: "progress", message: "Reading the project files." }), envelope(3, noise)]);
+    expect(result.segments).toEqual([{ kind: "progress", progressId: "progress:turn-1:2", markdown: "Reading the project files." }]);
+  });
+  it("keeps actionable waiting and failure messages", () => {
+    const result = applyV3EnvelopeToMessage(assistant(), envelope(1, { type: "status", phase: "blocked", operator_message: "Waiting for permission to run the build" }));
+    expect(result.statusLine).toBe("Waiting for permission to run the build");
+    expect(applyV3EnvelopeToMessage(result, envelope(2, { type: "status", phase: "failed", operator_message: "Agent runtime failed to start" })).statusLine).toBe("Agent runtime failed to start");
+  });
+});

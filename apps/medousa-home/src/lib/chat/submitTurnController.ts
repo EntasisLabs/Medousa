@@ -30,6 +30,8 @@ import {
 import type { PreparedAgentSession } from "./agentSessionController.svelte";
 
 export async function submitChatTurn(input: {
+  /** Explicit destination for surfaces such as Spotlight; never changes focused chat. */
+  sessionId?: string;
   userContent: string;
   prompt: string;
   mode: "interactive" | "background";
@@ -45,8 +47,8 @@ export async function submitChatTurn(input: {
   responseVoiceAppendix?: string;
 }): Promise<void> {
   const workshopEpoch = chat.workshopEpoch;
-  const sessionId = chat.focusedSessionId || chat.sessionId;
-  const current = () => chat.workshopEpoch === workshopEpoch && (chat.focusedSessionId || chat.sessionId) === sessionId;
+  const sessionId = input.sessionId ?? (chat.focusedSessionId || chat.sessionId);
+  const current = () => chat.workshopEpoch === workshopEpoch && (input.sessionId != null || (chat.focusedSessionId || chat.sessionId) === sessionId);
   if (!chat.workshopScopeId) {
     throw new Error("Workshop is switching; wait for it to reconnect");
   }
@@ -60,7 +62,7 @@ export async function submitChatTurn(input: {
     if (result.binding) { runtime = "medousa"; bot = result.bot ?? null; }
   }
   if (bot?.external_agent) {
-    if (chat.pendingMediaRefs.length > 0) throw new Error("Runtime Bots currently accept text only.");
+    if (!input.sessionId && chat.pendingMediaRefs.length > 0) throw new Error("Runtime Bots currently accept text only.");
     const admitted = await sendRuntimeBotTurn(bot, sessionId, input.prompt);
     if (!current() || !admitted) return;
     input.onAccepted?.({turn_id: admitted.ticket.turnId,session_id:sessionId,mode:input.mode,phase:"accepted",accepted_at_utc:new Date().toISOString(),stream_url:"",stream_ready:false});
@@ -92,9 +94,9 @@ export async function submitChatTurn(input: {
     if (!current()) {
       throw new Error("Conversation changed while the turn was being admitted");
     }
-    chat.beginTurn(input.userContent, ticket, [], identityUserId);
+    chat.withSessionFields(sessionId, () => chat.beginTurn(input.userContent, ticket, [], identityUserId));
     input.onAccepted?.(ticket);
-    chat.clearPendingMedia();
+    if (!input.sessionId) chat.clearPendingMedia();
     input.scrollToLatest(true);
     await chat.startTurnStream(ticket.turn_id, ticket.session_id, ticket.stream_url);
     if (!current()) {
@@ -115,9 +117,9 @@ export async function submitChatTurn(input: {
     return;
   }
 
-  const opts = await prepareInteractiveTurnOptions(chat);
+  const opts = await prepareInteractiveTurnOptions(input.sessionId ? { sessionId, workshopScopeId: chat.workshopScopeId, messages: chat.messagesFor(sessionId) } : chat);
   if (!current()) throw new Error("Conversation changed while preparing the turn");
-  const mediaRefs = [...chat.pendingMediaRefs];
+  const mediaRefs = input.sessionId ? [] : [...chat.pendingMediaRefs];
   const voice = voicePresets.turnVoiceFields();
   const codeContext = activeCodeContext(sessionId);
   const liquidInteractions = chatInteractions.envelopes(sessionId);
@@ -148,13 +150,13 @@ export async function submitChatTurn(input: {
   }
   chatInteractions.ack(sessionId, liquidInteractions.length);
   recordLiquidMetric("interactionsDelivered", liquidInteractions.length);
-  chat.beginTurn(
+  chat.withSessionFields(sessionId, () => chat.beginTurn(
     input.userContent,
     accepted,
     mediaRefs,
     opts.identityUserId ?? identityUserId,
-  );
-  chat.clearPendingMedia();
+  ));
+  if (!input.sessionId) chat.clearPendingMedia();
   input.scrollToLatest(true);
   input.onAccepted?.(accepted);
   await chat.startTurnStream(accepted.turn_id, accepted.session_id, accepted.stream_url);

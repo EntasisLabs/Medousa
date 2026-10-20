@@ -1,12 +1,13 @@
 <script lang="ts">
   import { House, Plus } from "@lucide/svelte";
   import type { SpotlightLens } from "$lib/commands/collectCommands";
-  let { scopeTabs, selectedScopeId, selectedLens, lensTabs, query, notesMode, activityMode, selectScope, selectLens, createWorkspace }: {
+  let { scopeTabs, selectedScopeId, selectedLens, lensTabs, query, notesMode, activityMode, conversationLabel = null, selectScope, selectLens, createWorkspace }: {
     scopeTabs: Array<{ id: string; label: string }>;
     selectedScopeId: string;
     selectedLens: SpotlightLens;
     lensTabs: Array<{ id: SpotlightLens; label: string }>;
     query: string;
+    conversationLabel?: string | null;
     notesMode: boolean;
     activityMode: boolean;
     selectScope: (id: string) => void;
@@ -49,7 +50,9 @@
   </nav>
 
   {#if selectedScopeId === "home" && !notesMode}
-    {#if query.trim() && !activityMode}
+    {#if conversationLabel}
+      <span class="command-spotlight-searching-all">{conversationLabel}</span>
+    {:else if query.trim() && !activityMode}
       <span class="command-spotlight-searching-all">All results</span>
     {:else}
       <nav class="command-spotlight-lenses" aria-label="Spotlight categories">

@@ -24,3 +24,9 @@ describe("stageWhisperAfterFinish", () => {
     ).toBe("New interim");
   });
 });
+
+it("does not preserve runtime admission noise as a completed-turn whisper", () => {
+  expect(stageWhisperAfterFinish("interactive turn accepted; agent runtime started", "Hello", null)).toBeNull();
+  expect(stageWhisperAfterFinish(null, "Hello", "Agent runtime accepted")).toBeNull();
+  expect(stageWhisperAfterFinish("Agent runtime started", "Hello", "Checking the files")).toBe("Checking the files");
+});
