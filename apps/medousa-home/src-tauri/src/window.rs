@@ -162,23 +162,33 @@ fn prepare_desktop_toolbar(window: &WebviewWindow) -> Result<(), String> {
     window
         .set_always_on_top(true)
         .map_err(|err| err.to_string())?;
-    clear_desktop_toolbar_native_background(window);
+    clear_desktop_toolbar_native_background(window)?;
     Ok(())
 }
 
 /// Kill the default opaque WKWebView / NSWindow fill so CSS transparency can show through.
-fn clear_desktop_toolbar_native_background(window: &WebviewWindow) {
+fn clear_desktop_toolbar_native_background(window: &WebviewWindow) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         use objc2_app_kit::{NSColor, NSWindow};
 
-        if let Ok(ptr) = window.ns_window() {
-            let ns_window = unsafe { &*(ptr as *const NSWindow) };
-            ns_window.setOpaque(false);
-            ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
-        }
+        let native_window = window.clone();
+        // This is also called by async commands; AppKit mutations require the main thread.
+        window
+            .run_on_main_thread(move || {
+                if let Ok(ptr) = native_window.ns_window() {
+                    let ns_window = unsafe { &*(ptr as *const NSWindow) };
+                    ns_window.setOpaque(false);
+                    ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
+                    // The cross-platform shadow setter excludes macOS.
+                    ns_window.setHasShadow(false);
+                    ns_window.invalidateShadow();
+                }
+            })
+            .map_err(|err| err.to_string())?;
     }
     let _ = window;
+    Ok(())
 }
 
 #[tauri::command]
@@ -353,7 +363,7 @@ async fn ensure_desktop_toolbar(app: &AppHandle) -> Result<WebviewWindow, String
             width: 112.0,
             height: 170.0,
             min_width: 72.0,
-            min_height: 120.0,
+            min_height: 72.0,
             resizable: false,
             decorations: false,
             transparent: true,

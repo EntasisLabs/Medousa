@@ -1,9 +1,11 @@
 <script lang="ts">
   import { Bot, MessageSquare, Plus } from "@lucide/svelte";
   import type { ConversationTarget } from "$lib/spotlight/conversationTargets";
-  let { targets, index, loading, error, onSelect, onHighlight }: {
+  let { targets, index, loading, error, onSelect, onHighlight, idPrefix = "spotlight", inline = false }: {
     targets: ConversationTarget[]; index: number; loading: boolean; error: string | null;
     onSelect: (target: ConversationTarget) => void; onHighlight: (index: number) => void;
+    idPrefix?: string;
+    inline?: boolean;
   } = $props();
   let list: HTMLDivElement;
   $effect(() => {
@@ -12,10 +14,10 @@
   });
 </script>
 
-<div class="command-spotlight-target-picker" id="spotlight-targets" role="listbox" aria-label="Message destination" bind:this={list}>
+<div class="command-spotlight-target-picker" class:command-spotlight-target-picker-inline={inline} id={`${idPrefix}-targets`} role="listbox" aria-label="Message destination" bind:this={list}>
   {#each targets as target, i (target.id)}
     {#if i === 0 || targets[i - 1].group !== target.group}<div class="command-spotlight-section-label" role="presentation">{target.group}</div>{/if}
-    <button type="button" role="option" aria-selected={i === index} tabindex="-1" id={`spotlight-target-${i}`} data-target-index={i}
+    <button type="button" role="option" aria-selected={i === index} tabindex="-1" id={`${idPrefix}-target-${i}`} data-target-index={i}
       class="command-spotlight-row" class:command-spotlight-row-active={i === index}
       onpointermove={() => onHighlight(i)} onpointerdown={event => event.preventDefault()} onclick={() => onSelect(target)}>
       <span class="command-spotlight-row-icon" aria-hidden="true">

@@ -70,10 +70,10 @@ export class AddressedConversation {
     this.error = null;
     // Dismissing a surface never cancels an admitted turn or its stream.
   }
-  select(target: ConversationTarget) {
+  select(target: ConversationTarget, resumedSessionId: string | null = null) {
     this.clear();
     this.target = target;
-    this.sessionId = target.kind === "session" ? target.sessionId : target.kind === "bot" ? target.bot.primary_session_id || null : null;
+    this.sessionId = target.kind === "session" ? target.sessionId : target.kind === "bot" ? target.bot.primary_session_id || null : resumedSessionId;
     void this.refresh();
   }
   async refresh() {

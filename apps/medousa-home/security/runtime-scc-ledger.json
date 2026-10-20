@@ -45,6 +45,10 @@
       "specifier": "$lib/styles/vault-workshop.postcss"
     },
     {
+      "from": "src/lib/components/brand/CompanionConversation.svelte",
+      "specifier": "$lib/styles/command-spotlight.postcss"
+    },
+    {
       "from": "src/lib/components/browser/HumanBrowserPanel.svelte",
       "specifier": "$lib/styles/browser.postcss"
     },

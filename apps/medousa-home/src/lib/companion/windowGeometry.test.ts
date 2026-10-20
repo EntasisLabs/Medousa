@@ -102,3 +102,24 @@ describe("companionWorkAreaForWindow", () => {
     ).toEqual(right);
   });
 });
+
+describe("floating bar input anchor", () => {
+  const full = { width: 620, height: 422 };
+  const slim = { width: 620, height: 82 };
+  const workArea = { position: { x: 0, y: 24 }, size: { width: 1920, height: 1056 } };
+  it("keeps the input at the same position when results and transcripts expand and contract", () => {
+    const position = { x: 800, y: 250 };
+    const expanded = anchoredCompanionPosition({ position, previousSize: slim, targetSize: full, workArea, anchor: "top-left", reserveSize: full });
+    expect(expanded).toEqual(position);
+    expect(anchoredCompanionPosition({ position: expanded, previousSize: full, targetSize: slim, workArea, anchor: "top-left", reserveSize: full })).toEqual(position);
+  });
+  it("reserves expansion room when the slim bar first opens near the screen edge", () => {
+    const position = anchoredCompanionPosition({ position: { x: 1850, y: 950 }, previousSize: slim, targetSize: slim, workArea, anchor: "top-left", reserveSize: full });
+    expect(position).toEqual({ x: 1300, y: 658 });
+    expect(anchoredCompanionPosition({ position, previousSize: slim, targetSize: full, workArea, anchor: "top-left", reserveSize: full })).toEqual(position);
+  });
+  it("keeps the same anchor on a Retina display with negative desktop coordinates", () => {
+    const position = { x: -2200, y: 300 };
+    expect(anchoredCompanionPosition({ position, previousSize: { width: 1240, height: 164 }, targetSize: { width: 1240, height: 844 }, anchor: "top-left", workArea: { position: { x: -3840, y: 0 }, size: { width: 3840, height: 2160 } } })).toEqual(position);
+  });
+});

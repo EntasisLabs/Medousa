@@ -64,24 +64,28 @@ export function companionWorkAreaForWindow(input: {
 }
 
 /**
- * Resize around the window's bottom-right corner, then keep the result inside
- * the monitor work area (excluding menu bars, docks, and taskbars).
+ * Pet/bubble transitions use the bottom-right anchor. The floating bar keeps
+ * its top-left input anchored and can reserve room for its expanded body.
+ * Clamp against the usable screen, excluding menu bars, docks, and taskbars.
  */
 export function anchoredCompanionPosition(input: {
   position: PhysicalPoint;
   previousSize: PhysicalExtent;
   targetSize: PhysicalExtent;
   workArea?: PhysicalRect | null;
+  anchor?: "bottom-right" | "top-left";
+  reserveSize?: PhysicalExtent;
 }): PhysicalPoint {
-  let x = input.position.x + input.previousSize.width - input.targetSize.width;
-  let y = input.position.y + input.previousSize.height - input.targetSize.height;
+  let x = input.position.x + (input.anchor === "top-left" ? 0 : input.previousSize.width - input.targetSize.width);
+  let y = input.position.y + (input.anchor === "top-left" ? 0 : input.previousSize.height - input.targetSize.height);
   const workArea = input.workArea;
   if (!workArea) return { x, y };
 
   const minX = workArea.position.x;
   const minY = workArea.position.y;
-  const maxX = Math.max(minX, minX + workArea.size.width - input.targetSize.width);
-  const maxY = Math.max(minY, minY + workArea.size.height - input.targetSize.height);
+  const reserved = input.reserveSize ?? input.targetSize;
+  const maxX = Math.max(minX, minX + workArea.size.width - reserved.width);
+  const maxY = Math.max(minY, minY + workArea.size.height - reserved.height);
   x = Math.min(Math.max(x, minX), maxX);
   y = Math.min(Math.max(y, minY), maxY);
   return { x, y };

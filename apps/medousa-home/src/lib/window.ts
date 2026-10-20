@@ -1,8 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
+import { writeChatPopoutRequest } from "$lib/utils/chatPopout";
 import { writeViewPopoutSurface } from "$lib/utils/viewPopout";
 
-export async function showChatPopout(): Promise<void> {
-  return invoke("window_show_chat_popout");
+export async function showChatPopout(sessionId?: string, scope?: string): Promise<void> {
+  const request = sessionId && scope ? writeChatPopoutRequest(sessionId, scope) : null;
+  await invoke("window_show_chat_popout");
+  if (request) {
+    const { emitTo } = await import("@tauri-apps/api/event");
+    await emitTo("chat-popout", "chat-popout-session", request).catch(() => {});
+  }
 }
 
 export async function hideChatPopout(): Promise<void> {
