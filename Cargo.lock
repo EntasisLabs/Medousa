@@ -7641,6 +7641,7 @@ dependencies = [
  "medousa-browser-bridge",
  "medousa-browser-lite",
  "medousa-computer-bridge",
+ "medousa-create",
  "medousa-engine",
  "medousa-forge",
  "medousa-host",
@@ -7837,6 +7838,22 @@ dependencies = [
  "medousa-world",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "medousa-create"
+version = "0.11.1"
+dependencies = [
+ "chrono",
+ "fs2",
+ "medousa-store",
+ "medousa-types",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "uuid 1.23.1",
 ]
 
 [[package]]

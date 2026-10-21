@@ -91,6 +91,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::mcp_daemon_handlers::policy_surface().inventory())
         .expect("duplicate MCP policy route policy");
     inventory
+        .extend(crate::creative_handlers::surface().inventory())
+        .expect("duplicate Create route policy");
+    inventory
         .extend(crate::vault_handlers::vault_surface().inventory())
         .expect("duplicate vault route policy");
     inventory

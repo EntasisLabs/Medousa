@@ -11,6 +11,7 @@ description = "Permanent AI workspace — Medousa Engine and related crates"
 members = [
     ".",
     "crates/medousa-types",
+    "crates/medousa-create",
     "crates/medousa-types-schema",
     "crates/medousa-api-contract",
     "crates/medousa-tool-macros",
@@ -81,6 +82,7 @@ required-features = ["full-daemon"]
 
 [dependencies]
 tempfile = { version = "3", optional = true }
+medousa-create = { path = "crates/medousa-create", optional = true }
 medousa-types = { path = "crates/medousa-types" }
 medousa-api-contract = { path = "crates/medousa-api-contract", optional = true }
 medousa-tool-macros = { path = "crates/medousa-tool-macros", optional = true }
@@ -238,6 +240,7 @@ full-daemon = [
     "dep:medousa-engine",
     "dep:medousa-runtime",
     "dep:medousa-store",
+    "dep:medousa-create",
     "dep:medousa-work",
     "dep:genai",
     "dep:tempfile",
@@ -328,6 +331,7 @@ embedded-daemon = [
     "dep:medousa-engine",
     "dep:medousa-runtime",
     "dep:medousa-store",
+    "dep:medousa-create",
     "dep:genai",
     "dep:tempfile",
     "stasis-rs/grapheme-host",

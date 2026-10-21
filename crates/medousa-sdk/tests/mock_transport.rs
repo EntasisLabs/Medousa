@@ -703,3 +703,56 @@ async fn mock_transport_routes_vault_list_roots() {
     assert!(roots.roots.is_empty());
     assert_eq!(transport.call_count(), 1);
 }
+
+#[tokio::test]
+async fn creative_helpers_use_generated_project_paths_and_decode_revisions() {
+    use medousa_types::{CreativeHistoryRequest, CreativeListQuery};
+    let view = serde_json::json!({"document":{"id":"project_one","revision":4,"title":"Release","pinned":false,"created_at":"now","updated_at":"now","scene":{"schema":"medousa-create","version":3,"background":"transparent","nodes":[]},"assets":{}},"applied_revision":4,"duplicate":true,"can_undo":true,"can_redo":false});
+    let transport = MockTransport::new()
+        .on_get(
+            "/v1/create/projects?limit=20",
+            serde_json::json!({"projects":[],"next_cursor":null}),
+        )
+        .on_get("/v1/create/projects/project_one", view.clone())
+        .on_post("/v1/create/projects/project_one/history", view);
+    let calls = transport.calls.clone();
+    let client = medousa_sdk::MedousaClient::with_transport(Arc::new(transport), "http://workshop");
+    assert!(
+        client
+            .creative()
+            .list(&CreativeListQuery {
+                cursor: None,
+                limit: Some(20)
+            })
+            .await
+            .unwrap()
+            .projects
+            .is_empty()
+    );
+    assert_eq!(
+        client
+            .creative()
+            .get("project_one")
+            .await
+            .unwrap()
+            .document
+            .revision,
+        4
+    );
+    assert!(
+        client
+            .creative()
+            .history(
+                "project_one",
+                &CreativeHistoryRequest {
+                    id: "undo_one".into(),
+                    expected_revision: 3,
+                    redo: false
+                }
+            )
+            .await
+            .unwrap()
+            .duplicate
+    );
+    assert_eq!(calls.lock().unwrap().len(), 3);
+}

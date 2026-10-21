@@ -1,6 +1,7 @@
 # Creative workspace epic
 
-> **Status:** Product direction agreed 2026-10-21; delivery planned. No implementation started.
+> **Status:** Canvas first agreed 2026-10-21; backend foundation implemented.
+> Scene-engine selection, canvas UI and end-to-end creative-job integration remain open.
 > **Scope:** Expand Drawing into a practical place to sketch, compose, refine,
 > and export creative work with Medousa's brain.
 > **First release:** S0–S3, ending in one complete human-and-AI creation loop.
@@ -207,6 +208,34 @@ flowchart LR
 - Saving, previewing, version recovery, and explicit conflict handling work
   across local and remote workshops. Older readers receive a useful static
   representation and preserve unsupported source rather than stripping it.
+
+## Backend foundation delivered
+
+Implemented independently of a scene renderer:
+
+- `medousa-create` owns strict mixed-scene validation, atomic workshop persistence,
+  per-project locking, revision-fenced command batches, idempotent retries and
+  bounded shared undo/redo. Future source versions remain untouched.
+- `/v1/create/projects` exposes authenticated native content APIs, generated
+  contracts and Rust/Python SDK helpers. Home uses the existing workshop-bound
+  operation bridge; no separate auth service or provider-specific backend exists.
+- Project-owned immutable bitmap assets can be imported or promoted from existing
+  session media under its deletion lease. Assets survive scene undo and source
+  chat deletion; collection is deliberately deferred until all retained references
+  can be accounted for.
+- Selection context and persisted edit proposals extend existing store tools.
+  Accepting a proposal is an ordinary undoable transaction; stale revisions and
+  changes outside the captured selection are rejected.
+- Home has renderer-free shared sessions, bounded clean-session eviction, retained
+  failed drafts/history requests, inert document references and pure legacy-ink
+  migration. A shared TypeScript/Rust fixture checks the migration boundary.
+
+This does not complete S0 or S1–S3 as user-facing releases. The measured engine
+spike, Notes adoption/rendering UI, actual canvas tools, export renderer, durable
+creative-job dispatch/recovery and full human/AI creation journey still need
+integration. Existing Drawing behavior is unchanged. See the implemented
+[service contract](../docs/engine/creative-workspace.md) for storage limits and
+current behavior; the slices below retain their complete acceptance criteria.
 
 ## Delivery slices
 

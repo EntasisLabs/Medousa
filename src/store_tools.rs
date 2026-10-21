@@ -46,6 +46,9 @@ const STORE_WRITE_ID: ToolId = ToolId::new(COGNITION_STORE_WRITE);
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action")]
 pub enum StoreReadAction {
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "creative.read")]
+    CreativeRead(crate::creative_tools::CreativeRead),
     #[serde(rename = "vault.list")]
     VaultList(VaultList),
     #[serde(rename = "vault.read")]
@@ -73,6 +76,12 @@ pub enum StoreReadAction {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action")]
 pub enum StoreWriteAction {
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "creative.propose")]
+    CreativePropose(crate::creative_tools::CreativePropose),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "creative.promote_media")]
+    CreativePromoteMedia(crate::creative_tools::CreativePromoteMedia),
     #[serde(rename = "vault.write")]
     VaultWrite(VaultWrite),
     #[serde(rename = "vault.delete")]
@@ -378,6 +387,8 @@ impl JsonSchema for StoreReadAction {
         advertised_object_schema(&[(
             "action",
             string_enum_schema(&[
+                #[cfg(feature = "full-daemon")]
+                "creative.read",
                 "vault.list",
                 "vault.read",
                 "vault.search",
@@ -404,6 +415,10 @@ impl JsonSchema for StoreWriteAction {
         advertised_object_schema(&[(
             "action",
             string_enum_schema(&[
+                #[cfg(feature = "full-daemon")]
+                "creative.propose",
+                #[cfg(feature = "full-daemon")]
+                "creative.promote_media",
                 "vault.write",
                 "vault.delete",
                 "vault.move",
@@ -420,6 +435,24 @@ impl JsonSchema for StoreWriteAction {
 
 pub fn store_type_schemas() -> Vec<TypedActionSchema> {
     vec![
+        #[cfg(feature = "full-daemon")]
+        typed_action_schema::<crate::creative_tools::CreativeRead>(
+            STORE_READ_ID,
+            "creative.read",
+            "Read a bounded creative selection and its revision",
+        ),
+        #[cfg(feature = "full-daemon")]
+        typed_action_schema::<crate::creative_tools::CreativePropose>(
+            STORE_WRITE_ID,
+            "creative.propose",
+            "Save a selection-bound creative edit proposal for explicit acceptance",
+        ),
+        #[cfg(feature = "full-daemon")]
+        typed_action_schema::<crate::creative_tools::CreativePromoteMedia>(
+            STORE_WRITE_ID,
+            "creative.promote_media",
+            "Copy a generated or uploaded image from this conversation into a creative project",
+        ),
         typed_action_schema::<VaultList>(STORE_READ_ID, "vault.list", "List vault notes"),
         typed_action_schema::<VaultRead>(STORE_READ_ID, "vault.read", "Read a vault note"),
         typed_action_schema::<VaultSearch>(
@@ -529,7 +562,7 @@ pub fn register_store_tools(
 
 #[medousa_tool(id = STORE_READ_ID)]
 impl CognitionStoreReadTool {
-    /// Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].
+    /// Read or search vault notes, creative selections, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, action: StoreReadAction) -> stasis::prelude::Result<ExternalJson> {
         Ok(ExternalJson::new(dispatch_read(self, action).await?))
     }
@@ -537,7 +570,7 @@ impl CognitionStoreReadTool {
 
 #[medousa_tool(id = STORE_WRITE_ID)]
 impl CognitionStoreWriteTool {
-    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].
+    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: StoreWriteAction,
@@ -551,6 +584,8 @@ async fn dispatch_read(
     action: StoreReadAction,
 ) -> stasis::prelude::Result<Value> {
     match action {
+        #[cfg(feature = "full-daemon")]
+        StoreReadAction::CreativeRead(params) => params.execute().await,
         StoreReadAction::VaultList(params) => params.execute(tool).await,
         StoreReadAction::VaultRead(params) => params.execute(tool).await,
         StoreReadAction::VaultSearch(params) => params.execute(tool).await,
@@ -570,6 +605,12 @@ async fn dispatch_write(
     action: StoreWriteAction,
 ) -> stasis::prelude::Result<Value> {
     match action {
+        #[cfg(feature = "full-daemon")]
+        StoreWriteAction::CreativePropose(params) => params.execute().await,
+        #[cfg(feature = "full-daemon")]
+        StoreWriteAction::CreativePromoteMedia(params) => {
+            params.execute(tool.fallback_chat_session_id.clone()).await
+        }
         StoreWriteAction::VaultWrite(params) => params.execute(tool).await,
         StoreWriteAction::VaultDelete(params) => params.execute(tool).await,
         StoreWriteAction::VaultMove(params) => params.execute(tool).await,
@@ -690,9 +731,9 @@ impl ArtifactsSearch {
 impl CodeRead {
     async fn execute(self) -> stasis::prelude::Result<Value> {
         #[cfg(feature = "full-daemon")]
-        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
-            COGNITION_STORE_READ,
-        ) {
+        if let Some(invocation) =
+            crate::work_environment_tools::EnvironmentToolInvocation::active(COGNITION_STORE_READ)
+        {
             return crate::work_environment_tools::code_read(
                 &invocation,
                 crate::work_environment_tools::EnvironmentCodeReadRequest {
@@ -876,9 +917,9 @@ impl CodeWrite {
     async fn execute(self) -> stasis::prelude::Result<Value> {
         let expected_sha256 = self.expected_sha256.into_option().unwrap_or_default();
         #[cfg(feature = "full-daemon")]
-        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
-            COGNITION_STORE_WRITE,
-        ) {
+        if let Some(invocation) =
+            crate::work_environment_tools::EnvironmentToolInvocation::active(COGNITION_STORE_WRITE)
+        {
             return crate::work_environment_tools::code_write(
                 &invocation,
                 crate::work_environment_tools::EnvironmentCodeWriteRequest {

@@ -616,6 +616,198 @@ class TurnTicketMode(Enum):
     background = 'background'
 
 
+class CreativeAsset(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    byte_size: int = Field(..., ge=0)
+    id: str
+    mime: str
+    sha256: str
+
+
+class CreativeBrushKind(Enum):
+    pen = 'pen'
+    pencil = 'pencil'
+    marker = 'marker'
+    highlighter = 'highlighter'
+
+
+class Kind3(Enum):
+    ink = 'ink'
+
+
+class Kind4(Enum):
+    text = 'text'
+
+
+class CreativeContent2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    color: str
+    font_family: str
+    font_size: float
+    kind: Kind4
+    text: str
+
+
+class Kind5(Enum):
+    shape = 'shape'
+
+
+class Kind6(Enum):
+    image = 'image'
+
+
+class Kind7(Enum):
+    group = 'group'
+
+
+class CreativeContent5(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Kind7
+
+
+class Kind8(Enum):
+    frame = 'frame'
+
+
+class CreativeContent6(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    background: str
+    kind: Kind8
+    name: str
+
+
+class CreativeCrop(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    height: float
+    width: float
+    x: float
+    y: float
+
+
+class CreativeInputKind(Enum):
+    pen = 'pen'
+    touch = 'touch'
+    mouse = 'mouse'
+    unknown = 'unknown'
+
+
+class CreativePoint(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    elapsed_ms: float | None = None
+    pressure: float | None = None
+    tilt_x: float | None = None
+    tilt_y: float | None = None
+    x: float
+    y: float
+
+
+class CreativeShapeKind(Enum):
+    rectangle = 'rectangle'
+    ellipse = 'ellipse'
+    line = 'line'
+
+
+class CreativeTransform(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    height: float
+    rotation: float
+    width: float
+    x: float
+    y: float
+
+
+class CreativeProjectSummary(MedousaModel):
+    id: str
+    pinned: bool
+    revision: int = Field(..., ge=0)
+    title: str
+    updated_at: str
+
+
+class Op(Enum):
+    put_node = 'put_node'
+
+
+class Op1(Enum):
+    remove_node = 'remove_node'
+
+
+class CreativeOperation2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    id: str
+    op: Op1
+
+
+class Op2(Enum):
+    reorder = 'reorder'
+
+
+class CreativeOperation3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    ids: list[str]
+    op: Op2
+
+
+class Op3(Enum):
+    set_background = 'set_background'
+
+
+class CreativeOperation4(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    color: str
+    op: Op3
+
+
+class Op4(Enum):
+    rename = 'rename'
+
+
+class CreativeOperation5(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    op: Op4
+    title: str
+
+
+class Op5(Enum):
+    pin = 'pin'
+
+
+class CreativeOperation6(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    op: Op5
+    pinned: bool
+
+
+class CreativeProposalStatus(Enum):
+    ready = 'ready'
+    accepted = 'accepted'
+    cancelled = 'cancelled'
+
+
 class PromptStashId(RootModel[str]):
     root: str = Field(..., title='PromptStashId')
 
@@ -947,37 +1139,37 @@ class IntegrationSecretSlot(Enum):
     auth_key = 'auth_key'
 
 
-class Kind3(Enum):
+class Kind9(Enum):
     acknowledge = 'acknowledge'
 
 
 class WakeAuthority1(MedousaModel):
-    kind: Kind3
+    kind: Kind9
 
 
-class Kind4(Enum):
+class Kind10(Enum):
     report = 'report'
 
 
 class WakeAuthority2(MedousaModel):
-    kind: Kind4
+    kind: Kind10
 
 
-class Kind5(Enum):
+class Kind11(Enum):
     continue_bounded = 'continue_bounded'
 
 
 class WakeAuthority3(MedousaModel):
-    kind: Kind5
+    kind: Kind11
     rounds: int = Field(..., ge=0)
 
 
-class Kind6(Enum):
+class Kind12(Enum):
     execute = 'execute'
 
 
 class WakeAuthority4(MedousaModel):
-    kind: Kind6
+    kind: Kind12
 
 
 class WakeAuthority(RootModel[WakeAuthority1 | WakeAuthority2 | WakeAuthority3 | WakeAuthority4]):
@@ -1388,7 +1580,7 @@ class ResourceRef(MedousaModel):
     kind: ResourceKind
 
 
-class Kind7(Enum):
+class Kind13(Enum):
     silent = 'silent'
 
 
@@ -1396,10 +1588,10 @@ class WorkContactPreference1(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind7
+    kind: Kind13
 
 
-class Kind8(Enum):
+class Kind14(Enum):
     return_to_origin = 'return_to_origin'
 
 
@@ -1407,10 +1599,10 @@ class WorkContactPreference2(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind8
+    kind: Kind14
 
 
-class Kind9(Enum):
+class Kind15(Enum):
     participant = 'participant'
 
 
@@ -1418,11 +1610,11 @@ class WorkContactPreference3(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind9
+    kind: Kind15
     participant: ResourceRef
 
 
-class Kind10(Enum):
+class Kind16(Enum):
     channel = 'channel'
 
 
@@ -1431,7 +1623,7 @@ class WorkContactPreference4(MedousaModel):
         extra='forbid',
     )
     channel: ResourceRef
-    kind: Kind10
+    kind: Kind16
 
 
 class WorkContactPreference(
@@ -1955,120 +2147,120 @@ class Status1(Enum):
     error = 'error'
 
 
-class Kind11(Enum):
+class Kind17(Enum):
     labels = 'labels'
 
 
 class ReviewProviderResult1(MedousaModel):
-    kind: Kind11
+    kind: Kind17
     labels: list[ReviewLabel]
     next_cursor: str | None = None
 
 
-class Kind12(Enum):
+class Kind18(Enum):
     people = 'people'
 
 
 class ReviewProviderResult2(MedousaModel):
-    kind: Kind12
+    kind: Kind18
     next_cursor: str | None = None
     people: list[ReviewPerson]
 
 
-class Kind13(Enum):
+class Kind19(Enum):
     updated = 'updated'
 
 
 class ReviewProviderResult3(MedousaModel):
-    kind: Kind13
+    kind: Kind19
     message: str
 
 
-class Kind14(Enum):
+class Kind20(Enum):
     check_details = 'check_details'
 
 
 class ReviewProviderResult4(MedousaModel):
     annotations: list[str]
-    kind: Kind14
+    kind: Kind20
     summary: str
     text: str
     title: str
     url: str | None = None
 
 
-class Kind15(Enum):
+class Kind21(Enum):
     repository = 'repository'
 
 
 class ReviewProviderResult5(MedousaModel):
     host: str
-    kind: Kind15
+    kind: Kind21
     provider_id: str
     repository: str
 
 
-class Kind16(Enum):
+class Kind22(Enum):
     published = 'published'
 
 
-class Kind17(Enum):
+class Kind23(Enum):
     connection = 'connection'
 
 
 class ReviewProviderResult7(MedousaModel):
     account: str | None = None
     authenticated: bool
-    kind: Kind17
+    kind: Kind23
     message: str
 
 
-class Kind18(Enum):
+class Kind24(Enum):
     reviews = 'reviews'
 
 
-class Kind19(Enum):
+class Kind25(Enum):
     review = 'review'
 
 
-class Kind20(Enum):
+class Kind26(Enum):
     files = 'files'
 
 
 class ReviewProviderResult10(MedousaModel):
     files: list[HostedReviewFile]
-    kind: Kind20
+    kind: Kind26
     next_cursor: str | None = None
 
 
-class Kind21(Enum):
+class Kind27(Enum):
     diff = 'diff'
 
 
 class ReviewProviderResult11(MedousaModel):
-    kind: Kind21
+    kind: Kind27
     message: str | None = None
     patch: str | None = None
     path: str
 
 
-class Kind22(Enum):
+class Kind28(Enum):
     checks = 'checks'
 
 
 class ReviewProviderResult12(MedousaModel):
     checks: list[HostedReviewCheck]
-    kind: Kind22
+    kind: Kind28
     next_cursor: str | None = None
 
 
-class Kind23(Enum):
+class Kind29(Enum):
     discussion = 'discussion'
 
 
 class ReviewProviderResult13(MedousaModel):
     entries: list[HostedReviewDiscussionEntry]
-    kind: Kind23
+    kind: Kind29
     next_cursor: str | None = None
 
 
@@ -2135,46 +2327,46 @@ class TurnArtifactRef(MedousaModel):
     role: str
 
 
-class Kind24(Enum):
+class Kind30(Enum):
     model_receipt = 'model_receipt'
 
 
 class TurnPart1(MedousaModel):
-    kind: Kind24
+    kind: Kind30
     model: str
     provider: str
 
 
-class Kind25(Enum):
+class Kind31(Enum):
     text = 'text'
 
 
 class TurnPart2(MedousaModel):
-    kind: Kind25
+    kind: Kind31
     markdown: str
     model_round: int | None = Field(None, ge=0)
     segment_id: str | None = None
 
 
-class Kind26(Enum):
+class Kind32(Enum):
     progress = 'progress'
 
 
 class TurnPart3(MedousaModel):
-    kind: Kind26
+    kind: Kind32
     markdown: str
 
 
-class Kind27(Enum):
+class Kind33(Enum):
     reasoning = 'reasoning'
 
 
 class TurnPart4(MedousaModel):
-    kind: Kind27
+    kind: Kind33
     markdown: str
 
 
-class Kind28(Enum):
+class Kind34(Enum):
     tool_run = 'tool_run'
 
 
@@ -2183,7 +2375,7 @@ class TurnPart5(MedousaModel):
     finished_at: AwareDatetime | None = None
     input_params: list[ToolInputParam] | None = None
     input_summary: str
-    kind: Kind28
+    kind: Kind34
     output_summary: str | None = None
     run_id: str
     started_at: AwareDatetime
@@ -2192,43 +2384,43 @@ class TurnPart5(MedousaModel):
     tool_round: int | None = Field(None, ge=0)
 
 
-class Kind29(Enum):
+class Kind35(Enum):
     handoff = 'handoff'
 
 
 class TurnPart6(MedousaModel):
     handoff_kind: str
-    kind: Kind29
+    kind: Kind35
     text: str
     work_id: str | None = None
 
 
-class Kind30(Enum):
+class Kind36(Enum):
     user_media = 'user_media'
 
 
 class TurnPart7(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind30
+    kind: Kind36
     label: str | None = None
     media_id: str
     mime: str
 
 
-class Kind31(Enum):
+class Kind37(Enum):
     user_drawing = 'user_drawing'
 
 
 class TurnPart8(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind31
+    kind: Kind37
     label: str | None = None
     media_id: str
     mime: str
     preview_media_id: str
 
 
-class Kind32(Enum):
+class Kind38(Enum):
     generated_media = 'generated_media'
 
 
@@ -2236,7 +2428,7 @@ class TurnPart9(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
     generation_id: str
     height_px: int | None = Field(None, ge=0)
-    kind: Kind32
+    kind: Kind38
     label: str
     media_id: str
     mime: str
@@ -2246,11 +2438,11 @@ class TurnPart9(MedousaModel):
     width_px: int | None = Field(None, ge=0)
 
 
-class Kind33(Enum):
+class Kind39(Enum):
     host_context = 'host_context'
 
 
-class Kind34(Enum):
+class Kind40(Enum):
     attachment_ref = 'attachment_ref'
 
 
@@ -2258,18 +2450,18 @@ class TurnPart11(MedousaModel):
     artifact_id: str
     byte_size: int | None = Field(None, ge=0)
     height_px: int | None = Field(None, ge=0)
-    kind: Kind34
+    kind: Kind40
     label: str
     mime: str
     presentation: str | None = None
 
 
-class Kind35(Enum):
+class Kind41(Enum):
     unknown = 'unknown'
 
 
 class TurnPart12(MedousaModel):
-    kind: Kind35
+    kind: Kind41
 
 
 class TurnSliceSummary(MedousaModel):
@@ -3768,48 +3960,48 @@ class WorldRecipe(MedousaModel):
     steps: list[WorldRecipeStep]
 
 
-class Kind36(Enum):
+class Kind42(Enum):
     text = 'text'
 
 
 class WorldRecipeRunInputValue1(MedousaModel):
-    kind: Kind36
+    kind: Kind42
     text: str
 
 
-class Kind37(Enum):
+class Kind43(Enum):
     selection = 'selection'
 
 
 class WorldRecipeRunInputValue2(MedousaModel):
-    kind: Kind37
+    kind: Kind43
     value: str
 
 
-class Kind38(Enum):
+class Kind44(Enum):
     key = 'key'
 
 
 class WorldRecipeRunInputValue3(MedousaModel):
     key: str
-    kind: Kind38
+    kind: Kind44
 
 
-class Kind39(Enum):
+class Kind45(Enum):
     scroll_delta = 'scroll_delta'
 
 
 class WorldRecipeRunInputValue4(MedousaModel):
     delta_y: int
-    kind: Kind39
+    kind: Kind45
 
 
-class Kind40(Enum):
+class Kind46(Enum):
     wait_duration = 'wait_duration'
 
 
 class WorldRecipeRunInputValue5(MedousaModel):
-    kind: Kind40
+    kind: Kind46
     milliseconds: int = Field(..., ge=0)
 
 
@@ -4306,6 +4498,79 @@ class CreateSessionResponse(MedousaModel):
     display_name: str | None = None
     member_profile_ids: list[str] | None = None
     session_id: str
+
+
+class CreativeAssetData(MedousaModel):
+    asset: CreativeAsset
+    data_base64: str
+
+
+class CreativeAssetImportRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    data_base64: str
+
+
+class CreativeContextRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    selected_ids: list[str]
+
+
+class CreativeDeleteRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
+
+
+class CreativeDeleteResponse(MedousaModel):
+    deleted: bool
+
+
+class CreativeDocumentRef(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    document_id: str
+    frame_id: str | None = None
+
+
+class CreativeHistoryRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
+    id: str
+    redo: bool
+
+
+class CreativeListQuery(MedousaModel):
+    cursor: str | None = None
+    limit: int | None = Field(None, ge=0)
+
+
+class CreativeListResponse(MedousaModel):
+    next_cursor: str | None = None
+    projects: list[CreativeProjectSummary]
+
+
+class CreativePromoteMediaRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    media_id: str
+    session_id: str
+
+
+class CreativeProposalDecision(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    accept: bool
+    expected_revision: int = Field(..., ge=0)
 
 
 class DecideAgentModeProposalRequest(MedousaModel):
@@ -5486,6 +5751,140 @@ class HostTurnContext(MedousaModel):
     workspace: str | None = None
 
 
+class CreativeBrush(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: CreativeBrushKind
+    opacity: float
+    size: float
+    smoothing: float
+    streamline: float
+    thinning: float
+
+
+class CreativeContent1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    brush: CreativeBrush
+    color: str
+    input: CreativeInputKind
+    kind: Kind3
+    points: list[CreativePoint]
+
+
+class CreativeContent3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    fill: str
+    kind: Kind5
+    shape: CreativeShapeKind
+    stroke: str
+    stroke_width: float
+
+
+class CreativeContent4(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    asset_id: str
+    crop: CreativeCrop | None = None
+    kind: Kind6
+
+
+class CreativeContent(
+    RootModel[
+        CreativeContent1
+        | CreativeContent2
+        | CreativeContent3
+        | CreativeContent4
+        | CreativeContent5
+        | CreativeContent6
+    ]
+):
+    root: CreativeContent1 | CreativeContent2 | CreativeContent3 | CreativeContent4 | CreativeContent5 | CreativeContent6
+
+
+class CreativeNode(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    content: CreativeContent
+    id: str
+    locked: bool
+    opacity: float
+    parent_id: str | None = None
+    transform: CreativeTransform
+    visible: bool
+
+
+class CreativeScene(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    background: str
+    nodes: list[CreativeNode] = Field(
+        ..., description='Back-to-front paint order. Parent relationships define containment.'
+    )
+    schema_: str = Field(..., alias='schema')
+    version: int = Field(..., ge=0)
+
+
+class CreativeDocument(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    assets: dict[str, CreativeAsset]
+    created_at: str
+    id: str
+    pinned: bool
+    revision: int = Field(..., ge=0)
+    scene: CreativeScene
+    title: str
+    updated_at: str
+
+
+class CreativeOperation1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    node: CreativeNode
+    op: Op
+
+
+class CreativeOperation(
+    RootModel[
+        CreativeOperation1
+        | CreativeOperation2
+        | CreativeOperation3
+        | CreativeOperation4
+        | CreativeOperation5
+        | CreativeOperation6
+    ]
+):
+    root: CreativeOperation1 | CreativeOperation2 | CreativeOperation3 | CreativeOperation4 | CreativeOperation5 | CreativeOperation6
+
+
+class CreativeProposalRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
+    id: str
+    label: str
+    operations: list[CreativeOperation]
+    selected_ids: list[str]
+
+
+class CreativeProposal(MedousaModel):
+    applied_revision: int | None = Field(None, ge=0)
+    created_at: str
+    request: CreativeProposalRequest
+    status: CreativeProposalStatus
+
+
 class ContextManifest(MedousaModel):
     created_at: AwareDatetime
     created_by: str
@@ -5773,18 +6172,18 @@ class ReviewProviderOutcome2(MedousaModel):
 
 class ReviewProviderResult6(MedousaModel):
     existing: bool
-    kind: Kind16
+    kind: Kind22
     review: HostedReview
 
 
 class ReviewProviderResult8(MedousaModel):
-    kind: Kind18
+    kind: Kind24
     next_cursor: str | None = None
     reviews: list[HostedReview]
 
 
 class ReviewProviderResult9(MedousaModel):
-    kind: Kind19
+    kind: Kind25
     review: HostedReview
 
 
@@ -5827,7 +6226,7 @@ class RuntimeConfigCommandSpec(
 
 class TurnPart10(MedousaModel):
     context: HostTurnContext
-    kind: Kind33
+    kind: Kind39
 
 
 class TurnPart(
@@ -6334,6 +6733,46 @@ class CreateTurnTicketRequest(MedousaModel):
     worker_execution_target: ExecutionTargetSelection | None = Field(
         None, description='User-selected default workshop for workers created during this turn.'
     )
+
+
+class CreativeCreateRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    id: str = Field(..., description='Client-generated stable id makes creation retries safe.')
+    scene: CreativeScene
+    title: str
+
+
+class CreativeMutationResponse(MedousaModel):
+    applied_revision: int = Field(..., ge=0)
+    can_redo: bool
+    can_undo: bool
+    document: CreativeDocument
+    duplicate: bool
+
+
+class CreativeProposalListResponse(MedousaModel):
+    proposals: list[CreativeProposal]
+
+
+class CreativeSelectionContext(MedousaModel):
+    assets: list[CreativeAsset]
+    document_id: str
+    fingerprint: str
+    nodes: list[CreativeNode]
+    revision: int = Field(..., ge=0)
+    selected_ids: list[str]
+
+
+class CreativeTransaction(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
+    id: str
+    label: str
+    operations: list[CreativeOperation]
 
 
 class DeriveSessionRequest(MedousaModel):

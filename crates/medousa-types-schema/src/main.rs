@@ -27,8 +27,61 @@ fn main() {
         "ReviewProviderListResponse"
     );
     export_type!(schemas, ReviewProviderMutation, "ReviewProviderMutation");
-    export_type!(schemas, ReviewProviderAuthRequest, "ReviewProviderAuthRequest");
-    export_type!(schemas, ReviewProviderAuthResponse, "ReviewProviderAuthResponse");
+    export_type!(schemas, CreativeCreateRequest, "CreativeCreateRequest");
+    export_type!(schemas, CreativeDocument, "CreativeDocument");
+    export_type!(
+        schemas,
+        CreativeMutationResponse,
+        "CreativeMutationResponse"
+    );
+    export_type!(schemas, CreativeTransaction, "CreativeTransaction");
+    export_type!(schemas, CreativeHistoryRequest, "CreativeHistoryRequest");
+    export_type!(schemas, CreativeListQuery, "CreativeListQuery");
+    export_type!(schemas, CreativeListResponse, "CreativeListResponse");
+    export_type!(
+        schemas,
+        CreativeAssetImportRequest,
+        "CreativeAssetImportRequest"
+    );
+    export_type!(schemas, CreativeAsset, "CreativeAsset");
+    export_type!(schemas, CreativeAssetData, "CreativeAssetData");
+    export_type!(
+        schemas,
+        CreativePromoteMediaRequest,
+        "CreativePromoteMediaRequest"
+    );
+    export_type!(schemas, CreativeProposalRequest, "CreativeProposalRequest");
+    export_type!(schemas, CreativeProposal, "CreativeProposal");
+    export_type!(
+        schemas,
+        CreativeProposalDecision,
+        "CreativeProposalDecision"
+    );
+    export_type!(
+        schemas,
+        CreativeProposalListResponse,
+        "CreativeProposalListResponse"
+    );
+    export_type!(schemas, CreativeDeleteRequest, "CreativeDeleteRequest");
+    export_type!(schemas, CreativeDeleteResponse, "CreativeDeleteResponse");
+    export_type!(schemas, CreativeDocumentRef, "CreativeDocumentRef");
+    export_type!(schemas, CreativeContextRequest, "CreativeContextRequest");
+    export_type!(
+        schemas,
+        CreativeSelectionContext,
+        "CreativeSelectionContext"
+    );
+
+    export_type!(
+        schemas,
+        ReviewProviderAuthRequest,
+        "ReviewProviderAuthRequest"
+    );
+    export_type!(
+        schemas,
+        ReviewProviderAuthResponse,
+        "ReviewProviderAuthResponse"
+    );
     export_type!(schemas, ReviewProviderQuery, "ReviewProviderQuery");
     export_type!(schemas, ReviewProviderResponse, "ReviewProviderResponse");
     export_type!(schemas, ChatGptAccountProfile, "ChatGptAccountProfile");

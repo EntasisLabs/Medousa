@@ -695,6 +695,97 @@ pub const COORDINATION_PROPOSALS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const CREATE_PROJECTS_BY_ID_ASSETS_BY_ASSET_ID_GET: Operation = Operation {
+    id: "create.projects.by_id.assets.by_asset_id.get",
+    method: "GET",
+    path: "/v1/create/projects/{id}/assets/{asset_id}",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_ASSETS_POST: Operation = Operation {
+    id: "create.projects.by_id.assets.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/assets",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_CONTEXT_POST: Operation = Operation {
+    id: "create.projects.by_id.context.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/context",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_DELETE_POST: Operation = Operation {
+    id: "create.projects.by_id.delete.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/delete",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_GET: Operation = Operation {
+    id: "create.projects.by_id.get",
+    method: "GET",
+    path: "/v1/create/projects/{id}",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_HISTORY_POST: Operation = Operation {
+    id: "create.projects.by_id.history.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/history",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_PROMOTE_MEDIA_POST: Operation = Operation {
+    id: "create.projects.by_id.promote_media.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/promote-media",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_PROPOSALS_BY_PROPOSAL_ID_DECISION_POST: Operation = Operation {
+    id: "create.projects.by_id.proposals.by_proposal_id.decision.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/proposals/{proposal_id}/decision",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_PROPOSALS_GET: Operation = Operation {
+    id: "create.projects.by_id.proposals.get",
+    method: "GET",
+    path: "/v1/create/projects/{id}/proposals",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_PROPOSALS_POST: Operation = Operation {
+    id: "create.projects.by_id.proposals.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/proposals",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_TRANSACTIONS_POST: Operation = Operation {
+    id: "create.projects.by_id.transactions.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/transactions",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_GET: Operation = Operation {
+    id: "create.projects.get",
+    method: "GET",
+    path: "/v1/create/projects",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_POST: Operation = Operation {
+    id: "create.projects.post",
+    method: "POST",
+    path: "/v1/create/projects",
+    streaming: false,
+};
+
 pub const DELIVER_OUTBOX_POST: Operation = Operation {
     id: "deliver.outbox.post",
     method: "POST",
@@ -3594,6 +3685,19 @@ pub static ALL: &[Operation] = &[
     COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DENY_POST,
     COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DISPATCH_POST,
     COORDINATION_PROPOSALS_GET,
+    CREATE_PROJECTS_BY_ID_ASSETS_BY_ASSET_ID_GET,
+    CREATE_PROJECTS_BY_ID_ASSETS_POST,
+    CREATE_PROJECTS_BY_ID_CONTEXT_POST,
+    CREATE_PROJECTS_BY_ID_DELETE_POST,
+    CREATE_PROJECTS_BY_ID_GET,
+    CREATE_PROJECTS_BY_ID_HISTORY_POST,
+    CREATE_PROJECTS_BY_ID_PROMOTE_MEDIA_POST,
+    CREATE_PROJECTS_BY_ID_PROPOSALS_BY_PROPOSAL_ID_DECISION_POST,
+    CREATE_PROJECTS_BY_ID_PROPOSALS_GET,
+    CREATE_PROJECTS_BY_ID_PROPOSALS_POST,
+    CREATE_PROJECTS_BY_ID_TRANSACTIONS_POST,
+    CREATE_PROJECTS_GET,
+    CREATE_PROJECTS_POST,
     DELIVER_OUTBOX_POST,
     DELIVER_POLL_BY_JOB_ID_GET,
     DELIVERY_STATUS_GET,

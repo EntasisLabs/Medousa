@@ -1,0 +1,20 @@
+[package]
+name = "medousa-create"
+version = "0.11.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Renderer-independent creative documents and durable workshop storage"
+
+[dependencies]
+medousa-types = { path = "../medousa-types" }
+medousa-store = { path = "../medousa-store" }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+fs2 = "0.4"
+
+[dev-dependencies]
+tempfile = "3"

@@ -24,8 +24,31 @@
       "method": "GET",
       "path": "/v1/vault/notes/{*note_path}",
       "streaming": false,
-      "params": { "note_path": "a/b.md" },
+      "params": {
+        "note_path": "a/b.md"
+      },
       "expanded": "/v1/vault/notes/a%2Fb.md"
+    },
+    {
+      "id": "create.projects.by_id.context.post",
+      "method": "POST",
+      "path": "/v1/create/projects/{id}/context",
+      "streaming": false,
+      "params": {
+        "id": "release_one"
+      },
+      "expanded": "/v1/create/projects/release_one/context"
+    },
+    {
+      "id": "create.projects.by_id.proposals.by_proposal_id.decision.post",
+      "method": "POST",
+      "path": "/v1/create/projects/{id}/proposals/{proposal_id}/decision",
+      "streaming": false,
+      "params": {
+        "id": "release_one",
+        "proposal_id": "variant_one"
+      },
+      "expanded": "/v1/create/projects/release_one/proposals/variant_one/decision"
     }
   ]
 }

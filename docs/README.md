@@ -104,6 +104,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Calendar](engine/calendar.md) | Personal `.ics` API + cognition calendar tools |
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
 | [Review providers](engine/review-providers.md) | Optional repository-host packages and the unified hosted-review API |
+- [Creative document service](engine/creative-workspace.md) — project persistence, assets, transactions and proposal contracts (canvas UI pending).
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
 | [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
 | [Work scopes and relationships](engine/work-units.md) | Durable user-domain intent, resource links, actor-bound inboxes, and correlated provider evidence through existing runtime tools |

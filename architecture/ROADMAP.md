@@ -231,13 +231,15 @@ shell tabs; Notes embed the same documents and Chat can contribute assets.
 
 Living epic: [creative-workspace-epic.md](creative-workspace-epic.md).
 The first release completes the import → compose → AI refine → export loop.
-Product direction and the Canvas first layout are agreed; implementation is
-planned. S0 still needs the remaining task/device studies and engine spike.
+Product direction and the Canvas first layout are agreed. The renderer-independent
+backend foundation now supplies project persistence, transactions, assets and
+proposals, with SDK/app contracts. S0 still needs the remaining task/device
+studies and engine spike; canvas and creative-job integration remain planned.
 
 | Slice | Status |
 |-------|--------|
 | S0 — experience mocks and scene-engine decision | ⬜ Planned |
-| S1 — mixed document, transactions and durable assets | ⬜ Planned |
+| S1 — mixed document, transactions and durable assets | 🔄 Backend foundation implemented; editor/adoption integration pending |
 | S2 — everyday composition and frame export | ⬜ Planned |
 | S3 — selection-directed AI and variants; first usable release | ⬜ Planned |
 | S4 — masks, image editing and expressive craft | ⬜ Planned |

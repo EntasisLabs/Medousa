@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from medousa.runtime import RuntimeApi
     from medousa.sessions import SessionsApi
     from medousa.vault import VaultApi
+    from medousa.creative import CreativeApi
     from medousa.workspace import WorkspaceApi
 
 
@@ -114,6 +115,11 @@ class MedousaClient:
         from medousa.budget import BudgetApi
 
         return BudgetApi(self)
+
+    def creative(self) -> CreativeApi:
+        from medousa.creative import CreativeApi
+
+        return CreativeApi(self)
 
     def vault(self) -> VaultApi:
         from medousa.vault import VaultApi

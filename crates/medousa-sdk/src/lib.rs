@@ -20,6 +20,8 @@ mod capabilities;
 #[cfg(feature = "async")]
 mod components;
 #[cfg(feature = "async")]
+mod creative;
+#[cfg(feature = "async")]
 mod environment;
 #[cfg(feature = "async")]
 mod feeds;

@@ -135,6 +135,29 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
         body.schema = SchemaRef::deferred("MeshAgentMessageRequest");
         spec.request_body = Some(body);
     }
+    if operation_id == "create.projects.get" {
+        spec.parameters.extend([
+            ParameterSpec {
+                name: "cursor".into(),
+                location: ParameterLocation::Query,
+                required: false,
+                schema: SchemaRef::named("string"),
+            },
+            ParameterSpec {
+                name: "limit".into(),
+                location: ParameterLocation::Query,
+                required: false,
+                schema: SchemaRef::named("integer"),
+            },
+        ]);
+    }
+    if operation_id.starts_with("create.") {
+        spec.responses.push(ResponseSpec {
+            status: 409,
+            media_type: "application/json".into(),
+            schema: SchemaRef::named("ApiErrorEnvelope"),
+        });
+    }
     if operation_id == "coordination.proposals.get" {
         spec.parameters.extend([
             ParameterSpec {
@@ -392,12 +415,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 479);
-        assert_eq!(with_pairing.len(), 498);
+        assert_eq!(without_pairing.len(), 492);
+        assert_eq!(with_pairing.len(), 511);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 498);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 511);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 

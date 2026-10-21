@@ -200,3 +200,12 @@ Paginated `labels`, `reviewer_candidates`, and `reviewers` queries supply reposi
 catalogs and normalized review decisions. `merge_conflicts` remains separate from
 CI/approval state; check `kind`/`actions` keep native check IDs opaque. Providers advertise supported operation names;
 see [review providers](../engine/review-providers.md) for revision and retry rules.
+
+
+### Creative documents
+
+The workshop-owned Create backend supports versioned mixed scenes, atomic edits,
+undo/redo, project-owned bitmap assets and selection-bound proposals. See the
+[creative document service](../engine/creative-workspace.md) for DTOs, bounds,
+revision conflicts and retry rules. Rust and Python callers use `client.creative()`; operations use the generated
+`create.projects.*` family; the main Create canvas UI is still pending.

@@ -200,6 +200,32 @@ pub enum DaemonOperation {
     CoordinationChannelsByChannelIdProposalsByProposalIdDispatchPost,
     #[serde(rename = "coordination.proposals.get")]
     CoordinationProposalsGet,
+    #[serde(rename = "create.projects.by_id.assets.by_asset_id.get")]
+    CreateProjectsByIdAssetsByAssetIdGet,
+    #[serde(rename = "create.projects.by_id.assets.post")]
+    CreateProjectsByIdAssetsPost,
+    #[serde(rename = "create.projects.by_id.context.post")]
+    CreateProjectsByIdContextPost,
+    #[serde(rename = "create.projects.by_id.delete.post")]
+    CreateProjectsByIdDeletePost,
+    #[serde(rename = "create.projects.by_id.get")]
+    CreateProjectsByIdGet,
+    #[serde(rename = "create.projects.by_id.history.post")]
+    CreateProjectsByIdHistoryPost,
+    #[serde(rename = "create.projects.by_id.promote_media.post")]
+    CreateProjectsByIdPromoteMediaPost,
+    #[serde(rename = "create.projects.by_id.proposals.by_proposal_id.decision.post")]
+    CreateProjectsByIdProposalsByProposalIdDecisionPost,
+    #[serde(rename = "create.projects.by_id.proposals.get")]
+    CreateProjectsByIdProposalsGet,
+    #[serde(rename = "create.projects.by_id.proposals.post")]
+    CreateProjectsByIdProposalsPost,
+    #[serde(rename = "create.projects.by_id.transactions.post")]
+    CreateProjectsByIdTransactionsPost,
+    #[serde(rename = "create.projects.get")]
+    CreateProjectsGet,
+    #[serde(rename = "create.projects.post")]
+    CreateProjectsPost,
     #[serde(rename = "deliver.outbox.post")]
     DeliverOutboxPost,
     #[serde(rename = "deliver.poll.by_job_id.get")]
@@ -1103,6 +1129,19 @@ impl DaemonOperation {
             Self::CoordinationChannelsByChannelIdProposalsByProposalIdDenyPost => "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
             Self::CoordinationChannelsByChannelIdProposalsByProposalIdDispatchPost => "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
             Self::CoordinationProposalsGet => "coordination.proposals.get",
+            Self::CreateProjectsByIdAssetsByAssetIdGet => "create.projects.by_id.assets.by_asset_id.get",
+            Self::CreateProjectsByIdAssetsPost => "create.projects.by_id.assets.post",
+            Self::CreateProjectsByIdContextPost => "create.projects.by_id.context.post",
+            Self::CreateProjectsByIdDeletePost => "create.projects.by_id.delete.post",
+            Self::CreateProjectsByIdGet => "create.projects.by_id.get",
+            Self::CreateProjectsByIdHistoryPost => "create.projects.by_id.history.post",
+            Self::CreateProjectsByIdPromoteMediaPost => "create.projects.by_id.promote_media.post",
+            Self::CreateProjectsByIdProposalsByProposalIdDecisionPost => "create.projects.by_id.proposals.by_proposal_id.decision.post",
+            Self::CreateProjectsByIdProposalsGet => "create.projects.by_id.proposals.get",
+            Self::CreateProjectsByIdProposalsPost => "create.projects.by_id.proposals.post",
+            Self::CreateProjectsByIdTransactionsPost => "create.projects.by_id.transactions.post",
+            Self::CreateProjectsGet => "create.projects.get",
+            Self::CreateProjectsPost => "create.projects.post",
             Self::DeliverOutboxPost => "deliver.outbox.post",
             Self::DeliverPollByJobIdGet => "deliver.poll.by_job_id.get",
             Self::DeliveryStatusGet => "delivery.status.get",

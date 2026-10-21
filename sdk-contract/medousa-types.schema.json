@@ -7071,6 +7071,4411 @@
       }
     }
   },
+  "CreativeAsset": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeAsset",
+    "type": "object",
+    "required": [
+      "byte_size",
+      "id",
+      "mime",
+      "sha256"
+    ],
+    "properties": {
+      "byte_size": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "id": {
+        "type": "string"
+      },
+      "mime": {
+        "type": "string"
+      },
+      "sha256": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "CreativeAssetData": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeAssetData",
+    "type": "object",
+    "required": [
+      "asset",
+      "data_base64"
+    ],
+    "properties": {
+      "asset": {
+        "$ref": "#/definitions/CreativeAsset"
+      },
+      "data_base64": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "CreativeAsset": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "id",
+          "mime",
+          "sha256"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeAssetImportRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeAssetImportRequest",
+    "type": "object",
+    "required": [
+      "data_base64"
+    ],
+    "properties": {
+      "data_base64": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "CreativeContextRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeContextRequest",
+    "type": "object",
+    "required": [
+      "selected_ids"
+    ],
+    "properties": {
+      "selected_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "CreativeCreateRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeCreateRequest",
+    "type": "object",
+    "required": [
+      "id",
+      "scene",
+      "title"
+    ],
+    "properties": {
+      "id": {
+        "description": "Client-generated stable id makes creation retries safe.",
+        "type": "string"
+      },
+      "scene": {
+        "$ref": "#/definitions/CreativeScene"
+      },
+      "title": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeScene": {
+        "type": "object",
+        "required": [
+          "background",
+          "nodes",
+          "schema",
+          "version"
+        ],
+        "properties": {
+          "background": {
+            "type": "string"
+          },
+          "nodes": {
+            "description": "Back-to-front paint order. Parent relationships define containment.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
+            }
+          },
+          "schema": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeDeleteRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeDeleteRequest",
+    "type": "object",
+    "required": [
+      "expected_revision"
+    ],
+    "properties": {
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "additionalProperties": false
+  },
+  "CreativeDeleteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeDeleteResponse",
+    "type": "object",
+    "required": [
+      "deleted"
+    ],
+    "properties": {
+      "deleted": {
+        "type": "boolean"
+      }
+    }
+  },
+  "CreativeDocument": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeDocument",
+    "type": "object",
+    "required": [
+      "assets",
+      "created_at",
+      "id",
+      "pinned",
+      "revision",
+      "scene",
+      "title",
+      "updated_at"
+    ],
+    "properties": {
+      "assets": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/definitions/CreativeAsset"
+        }
+      },
+      "created_at": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "pinned": {
+        "type": "boolean"
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "scene": {
+        "$ref": "#/definitions/CreativeScene"
+      },
+      "title": {
+        "type": "string"
+      },
+      "updated_at": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "CreativeAsset": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "id",
+          "mime",
+          "sha256"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeScene": {
+        "type": "object",
+        "required": [
+          "background",
+          "nodes",
+          "schema",
+          "version"
+        ],
+        "properties": {
+          "background": {
+            "type": "string"
+          },
+          "nodes": {
+            "description": "Back-to-front paint order. Parent relationships define containment.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
+            }
+          },
+          "schema": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeDocumentRef": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeDocumentRef",
+    "description": "Resolves within the currently addressed workshop; never contains a local path.",
+    "type": "object",
+    "required": [
+      "document_id"
+    ],
+    "properties": {
+      "document_id": {
+        "type": "string"
+      },
+      "frame_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "CreativeHistoryRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeHistoryRequest",
+    "type": "object",
+    "required": [
+      "expected_revision",
+      "id",
+      "redo"
+    ],
+    "properties": {
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "id": {
+        "type": "string"
+      },
+      "redo": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "CreativeListQuery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeListQuery",
+    "type": "object",
+    "properties": {
+      "cursor": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "limit": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      }
+    }
+  },
+  "CreativeListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeListResponse",
+    "type": "object",
+    "required": [
+      "projects"
+    ],
+    "properties": {
+      "next_cursor": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "projects": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CreativeProjectSummary"
+        }
+      }
+    },
+    "definitions": {
+      "CreativeProjectSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "pinned",
+          "revision",
+          "title",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "CreativeMutationResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeMutationResponse",
+    "type": "object",
+    "required": [
+      "applied_revision",
+      "can_redo",
+      "can_undo",
+      "document",
+      "duplicate"
+    ],
+    "properties": {
+      "applied_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "can_redo": {
+        "type": "boolean"
+      },
+      "can_undo": {
+        "type": "boolean"
+      },
+      "document": {
+        "$ref": "#/definitions/CreativeDocument"
+      },
+      "duplicate": {
+        "type": "boolean"
+      }
+    },
+    "definitions": {
+      "CreativeAsset": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "id",
+          "mime",
+          "sha256"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeDocument": {
+        "type": "object",
+        "required": [
+          "assets",
+          "created_at",
+          "id",
+          "pinned",
+          "revision",
+          "scene",
+          "title",
+          "updated_at"
+        ],
+        "properties": {
+          "assets": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/definitions/CreativeAsset"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "scene": {
+            "$ref": "#/definitions/CreativeScene"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeScene": {
+        "type": "object",
+        "required": [
+          "background",
+          "nodes",
+          "schema",
+          "version"
+        ],
+        "properties": {
+          "background": {
+            "type": "string"
+          },
+          "nodes": {
+            "description": "Back-to-front paint order. Parent relationships define containment.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
+            }
+          },
+          "schema": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativePromoteMediaRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativePromoteMediaRequest",
+    "type": "object",
+    "required": [
+      "media_id",
+      "session_id"
+    ],
+    "properties": {
+      "media_id": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "CreativeProposal": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeProposal",
+    "type": "object",
+    "required": [
+      "created_at",
+      "request",
+      "status"
+    ],
+    "properties": {
+      "applied_revision": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "created_at": {
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/definitions/CreativeProposalRequest"
+      },
+      "status": {
+        "$ref": "#/definitions/CreativeProposalStatus"
+      }
+    },
+    "definitions": {
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeOperation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "node",
+              "op"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/definitions/CreativeNode"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "put_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "op"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "remove_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Must be a permutation of all remaining node IDs.",
+            "type": "object",
+            "required": [
+              "ids",
+              "op"
+            ],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "reorder"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "op"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "set_background"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "title"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "rename"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "pinned"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "pin"
+                ]
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeProposalRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "id",
+          "label",
+          "operations",
+          "selected_ids"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeOperation"
+            }
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeProposalStatus": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "accepted",
+          "cancelled"
+        ]
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeProposalDecision": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeProposalDecision",
+    "type": "object",
+    "required": [
+      "accept",
+      "expected_revision"
+    ],
+    "properties": {
+      "accept": {
+        "type": "boolean"
+      },
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "additionalProperties": false
+  },
+  "CreativeProposalListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeProposalListResponse",
+    "type": "object",
+    "required": [
+      "proposals"
+    ],
+    "properties": {
+      "proposals": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CreativeProposal"
+        }
+      }
+    },
+    "definitions": {
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeOperation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "node",
+              "op"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/definitions/CreativeNode"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "put_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "op"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "remove_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Must be a permutation of all remaining node IDs.",
+            "type": "object",
+            "required": [
+              "ids",
+              "op"
+            ],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "reorder"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "op"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "set_background"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "title"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "rename"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "pinned"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "pin"
+                ]
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeProposal": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "request",
+          "status"
+        ],
+        "properties": {
+          "applied_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/definitions/CreativeProposalRequest"
+          },
+          "status": {
+            "$ref": "#/definitions/CreativeProposalStatus"
+          }
+        }
+      },
+      "CreativeProposalRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "id",
+          "label",
+          "operations",
+          "selected_ids"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeOperation"
+            }
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeProposalStatus": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "accepted",
+          "cancelled"
+        ]
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeProposalRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeProposalRequest",
+    "type": "object",
+    "required": [
+      "expected_revision",
+      "id",
+      "label",
+      "operations",
+      "selected_ids"
+    ],
+    "properties": {
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "id": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "operations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CreativeOperation"
+        }
+      },
+      "selected_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeOperation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "node",
+              "op"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/definitions/CreativeNode"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "put_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "op"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "remove_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Must be a permutation of all remaining node IDs.",
+            "type": "object",
+            "required": [
+              "ids",
+              "op"
+            ],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "reorder"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "op"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "set_background"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "title"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "rename"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "pinned"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "pin"
+                ]
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeSelectionContext": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeSelectionContext",
+    "type": "object",
+    "required": [
+      "assets",
+      "document_id",
+      "fingerprint",
+      "nodes",
+      "revision",
+      "selected_ids"
+    ],
+    "properties": {
+      "assets": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CreativeAsset"
+        }
+      },
+      "document_id": {
+        "type": "string"
+      },
+      "fingerprint": {
+        "type": "string"
+      },
+      "nodes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CreativeNode"
+        }
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "selected_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "definitions": {
+      "CreativeAsset": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "id",
+          "mime",
+          "sha256"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeTransaction": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeTransaction",
+    "type": "object",
+    "required": [
+      "expected_revision",
+      "id",
+      "label",
+      "operations"
+    ],
+    "properties": {
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "id": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "operations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CreativeOperation"
+        }
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeOperation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "node",
+              "op"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/definitions/CreativeNode"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "put_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "op"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "remove_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Must be a permutation of all remaining node IDs.",
+            "type": "object",
+            "required": [
+              "ids",
+              "op"
+            ],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "reorder"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "op"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "set_background"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "title"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "rename"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "pinned"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "pin"
+                ]
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
   "DaemonRuntimeDescriptor": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DaemonRuntimeDescriptor",

@@ -1,0 +1,63 @@
+{
+  "schema": "medousa-create",
+  "version": 3,
+  "background": "transparent",
+  "nodes": [
+    {
+      "id": "legacy_frame",
+      "parent_id": null,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 1200,
+        "height": 720,
+        "rotation": 0
+      },
+      "opacity": 1,
+      "visible": true,
+      "locked": false,
+      "content": {
+        "kind": "frame",
+        "name": "Drawing",
+        "background": "transparent"
+      }
+    },
+    {
+      "id": "stroke_one",
+      "parent_id": "legacy_frame",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 1200,
+        "height": 720,
+        "rotation": 0
+      },
+      "opacity": 1,
+      "visible": true,
+      "locked": false,
+      "content": {
+        "kind": "ink",
+        "color": "#123456",
+        "input": "pen",
+        "brush": {
+          "kind": "pencil",
+          "size": 5,
+          "thinning": 0.58,
+          "smoothing": 0.42,
+          "streamline": 0.38,
+          "opacity": 0.82
+        },
+        "points": [
+          {
+            "x": -25,
+            "y": 900,
+            "pressure": 0.3,
+            "elapsed_ms": 23,
+            "tilt_x": 4,
+            "tilt_y": -5
+          }
+        ]
+      }
+    }
+  ]
+}
