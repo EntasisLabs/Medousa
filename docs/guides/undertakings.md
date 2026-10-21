@@ -236,8 +236,12 @@ a private Code IDE chrome.
   second autosave, save-all or require-clean run preflight, and whether failed
   task matchers open Problems. The selected primary task remains scoped to the
   project and is changed from the Code command bar.
-- Markdown files offer **Source**, **Markdown**, **Preview**, and **Split** in
-  the same tab. Markdown opens a writing editor with the Notes formatting
+- The Code header keeps file location, document views, the command control,
+  and Terminal together. Problems shows its current count; the overflow menu
+  holds editor preferences and project actions. Narrow panes collapse document
+  views into a picker and keep secondary tools in the overflow menu.
+- Markdown files offer **Source**, **Write**, **Preview**, and a **Split** toggle
+  in the shared Code header. Write opens a writing editor with the Notes formatting
   controls; Preview renders the current draft, and Split keeps source beside
   its live preview. Switching views keeps the same project file, draft, and
   guarded save. Opening the writing editor does not rewrite the file. Edits
@@ -350,8 +354,10 @@ the tool or dependencies at the stated root, and reopen the project to refresh
 the catalog. Medousa prefers a healthy development/run task, then build, test,
 and check commands; an explicit selection remains the project default.
 
-- The project command bar remains available before a file is opened. Choose a
-  command and select **Run**; Medousa remembers that selection for the project.
+- The project command control remains available before a file is opened. With
+  no selection, **Run…** opens the command picker. Selecting a command does not
+  start it: use the play button beside its name to run, or its chevron to choose
+  another command. Medousa remembers that selection for the project.
   Run saves every dirty Code buffer first and does not start if a save conflict
   needs attention. A running command becomes a **Stop** action and can be
   cancelled without closing the project or Terminal.

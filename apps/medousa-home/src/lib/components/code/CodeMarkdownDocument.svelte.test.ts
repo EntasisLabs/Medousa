@@ -45,6 +45,17 @@ it("rich edits update the exact buffer that Code's save controller reads", async
   await click("Edit Markdown source");
   expect(document.querySelector(".cm-content")?.textContent).toContain("changed world");
 });
+
+it("does not dirty a README containing linked badges when Write finishes mounting", async () => {
+  const original = "\n# Example\n\n[![Build](https://example.com/build.svg)](https://example.com/build)\n[![Docs](https://example.com/docs.svg)](https://example.com/docs)\n\n<div align='center'>raw HTML</div>\n\nThe package is [`example`](https://example.com/package).\n\n```sh\nnpm test\n```\n";
+  const onDraft = open(original);
+  await click("Open in Markdown editor");
+  await new Promise(resolve => setTimeout(resolve, 100)); flushSync();
+  expect(onDraft).not.toHaveBeenCalled();
+  expect(component!.getValue()).toBe(original);
+  await click("Edit Markdown source");
+  expect(component!.getValue()).toBe(original);
+});
 it("preserves read-only custody and does not offer rich modes for bounded source previews", async () => {
   open("Hello\n", { readOnly: true });
   await click("Open in Markdown editor");

@@ -30,6 +30,16 @@ describe("repository Markdown source preservation", () => {
     expect(editor!.getJSON().content?.filter((node) => node.attrs?.sourceBlockId != null).every((node) => node.type === "markdownSourceBlock")).toBe(true);
     expect(doc.serialize(editor!.getJSON())).toBe("See [link][ref].\n\n[ref]: ../readme.md\n");
   });
+  it("preserves linked badges and code links while editing adjacent prose", () => {
+    const preserved = "[![Build](https://example.com/build.svg)](https://example.com/build)\n\nThe package is [`example`](https://example.com/package).\n";
+    const source = "Hello.\n\n" + preserved;
+    const doc = open(source);
+    expect(editor!.getJSON().content?.filter(node => node.type === "markdownSourceBlock")).toHaveLength(2);
+    editor!.commands.insertContentAt(1, "Updated ");
+    expect(doc.serialize(editor!.getJSON())).toBe("Updated Hello.\n\n" + preserved);
+    editor!.commands.undo();
+    expect(doc.serialize(editor!.getJSON())).toBe(source);
+  });
   it("serializes a new empty-file draft and undo returns to byte-for-byte empty", () => {
     const doc = open("");
     editor!.commands.insertContent("hello");

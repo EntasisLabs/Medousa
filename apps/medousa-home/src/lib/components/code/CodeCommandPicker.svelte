@@ -1,12 +1,14 @@
 <script lang="ts">
   import CodeOperationNotice from "./CodeOperationNotice.svelte";
   import { tick } from "svelte";
-  import { ChevronDown, Search, X } from "@lucide/svelte";
+  import { ChevronDown, Play, Search, Square, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
   import { commandKindLabel, commandRoot, currentCommandRoot, filterCommands } from "$lib/code/codeCommandContext";
   import type { CodeTasksController } from "$lib/code/codeTasksController.svelte";
-  let { tasks, path = "" }: { tasks: CodeTasksController; path?: string } = $props();
+  let { tasks, path = "", variant = "picker", runDisabled = false, runTitle = "" }: {
+    tasks: CodeTasksController; path?: string; variant?: "picker" | "run"; runDisabled?: boolean; runTitle?: string;
+  } = $props();
   let open = $state(false);
   let query = $state("");
   let all = $state(false);
@@ -44,9 +46,24 @@
     };
   });
 </script>
+{#if variant === "run"}
+  <div class="command-run" role="group" aria-label="Project command">
+    {#if tasks.running}
+      <button type="button" class="command-run-button command-stop" aria-label={tasks.run ? `Stop ${tasks.run.task.label}` : "Stop project command"} title={tasks.run ? `Stop ${tasks.run.task.label}` : "Stop project command"} onclick={() => void tasks.stopDetected()}><Square size={12}/><span>Stop</span></button>
+    {:else if selected}
+      <button type="button" class="command-run-button" disabled={runDisabled || tasks.preparing || tasks.testQueueActive || !tasks.taskAvailable(selected)} aria-label={`Run ${selected.label}`} title={runTitle || `${selected.label}: ${selected.argv.join(" ")}`} onclick={() => void tasks.runDetected()}><Play size={13}/><span>{tasks.preparing ? "Saving…" : selected.label}</span></button>
+    {/if}
+    {#if !tasks.running}
+      <button bind:this={trigger} type="button" class="command-run-button" class:command-chevron={!!selected} aria-haspopup="dialog" aria-expanded={open} aria-label="Choose project command" title={selected ? "Choose project command" : "Choose a command to run"} disabled={tasks.preparing || tasks.testQueueActive} onclick={() => (open = !open)}>
+        {#if selected}<ChevronDown size={12}/>{:else}<Play size={13}/><span>Run…</span>{/if}
+      </button>
+    {/if}
+  </div>
+{:else}
 <button bind:this={trigger} type="button" class="flex max-w-56 items-center gap-2 px-2 text-chrome-sm text-content-secondary hover:bg-primary-500/10" aria-haspopup="dialog" aria-expanded={open} aria-label="Choose project command" disabled={tasks.running || tasks.preparing || tasks.testQueueActive} onclick={() => (open = !open)}>
   <span class="truncate">{selected?.label ?? "Choose command…"}{#if selected && commandRoot(selected) !== "."}<span class="ml-1 text-content-quiet">· {commandRoot(selected)}</span>{/if}</span><ChevronDown size={12} />
 </button>
+{/if}
 {#if open}
   <BodyPortal>
     <button type="button" tabindex="-1" class="fixed inset-0 z-[120] cursor-default" aria-label="Dismiss command picker" onclick={close}></button>
@@ -76,6 +93,15 @@
 {/if}
 
 <style>
+  .command-run { display:flex; align-items:center; gap:0; min-width:0; flex-shrink:0; }
+  .command-run-button { display:inline-flex; align-items:center; gap:.35rem; min-height:28px; border:0; border-radius:4px; padding:.2rem .45rem; background:transparent; color:rgb(var(--theme-text-secondary)); font-size:12px; cursor:pointer; }
+  .command-run-button span { max-width:10rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .command-run-button:hover:not(:disabled) { background:rgb(var(--theme-text)/.055); color:rgb(var(--theme-text)); }
+  .command-run-button:disabled { opacity:.45; cursor:default; }
+  .command-chevron { padding-inline:.25rem; }
+  .command-stop { color:rgb(var(--theme-error)); }
+  @container code-editor (max-width:1050px) { .command-run-button span { max-width:7rem; } }
+  @container code-editor (max-width:600px) { .command-run-button span { max-width:5rem; } }
   .command-picker {
     max-height: min(400px, calc(100dvh - 16px));
     background: rgb(var(--color-surface-950));
