@@ -1,3 +1,4 @@
+import { isRuntimeStartupText } from "$lib/utils/chatStreamDisplay";
 import type { ChatSegment, ToolArtifactRef, ToolRunState, UiArtifact } from "$lib/types/chat";
 import type { ChatMediaAttachment } from "$lib/types/media";
 import type { HostTurnContext } from "$lib/types/generated/daemon_api";
@@ -144,7 +145,7 @@ export function chatSegmentsFromParts(parts?: TurnPart[] | null): ChatSegment[] 
     switch (part.kind) {
       case "text": {
         const segmentId = part.segment_id?.trim();
-        if (!segmentId) break;
+        if (!segmentId || isRuntimeStartupText(part.markdown)) break;
         segments.push({
           kind: "text",
           segmentId,
@@ -155,7 +156,7 @@ export function chatSegmentsFromParts(parts?: TurnPart[] | null): ChatSegment[] 
         break;
       }
       case "progress":
-        if (part.markdown.trim()) {
+        if (part.markdown.trim() && !isRuntimeStartupText(part.markdown)) {
           segments.push({
             kind: "progress",
             progressId: `history-progress:${partIndex}`,
@@ -243,7 +244,7 @@ export function progressFromParts(parts?: TurnPart[] | null): string | null {
   const chunks = parts
     .filter((part): part is Extract<TurnPart, { kind: "progress" }> => part.kind === "progress")
     .map((part) => part.markdown)
-    .filter((text) => text.trim().length > 0);
+    .filter((text) => text.trim().length > 0 && !isRuntimeStartupText(text));
   if (chunks.length === 0) return null;
   return chunks[chunks.length - 1] ?? null;
 }

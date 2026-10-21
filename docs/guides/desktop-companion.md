@@ -4,7 +4,7 @@ The desktop companion keeps a small, draggable Medousa pet and its most useful t
 
 ## Show or hide it
 
-Open Medousa's menu-bar menu and choose **Companion**. Choose it again, or use the close button in the expanded toolbelt, to hide it.
+Open Medousa's menu-bar menu and choose **Companion**. Choose it again, or choose **More → Hide companion** in the floating bar, to hide it.
 
 Closing the main Medousa window hides Home but leaves the companion and background process running. Use **Quit** in Medousa's menu-bar or tray menu when you want to stop Medousa completely.
 
@@ -14,16 +14,19 @@ Chat drafts are saved before closing. A sticky note saves pending edits first;
 if saving fails, the note stays open. Reopen a tool from Medousa or the companion
 when you need it again.
 
-Click the pet to open its toolbelt. Drag the pet to move it; Medousa keeps the expanded toolbelt inside the current screen's usable area.
+Click the pet to open a slim floating bar beside it. Drag the pet to move it. The same field stays anchored as search results, destinations, or recent messages open below it. Medousa keeps the bar inside the current screen’s usable area.
 
 ## What it can do
 
-- Switch between **Chat** for a quick conversational turn and **Ask** for delegated background work.
-- Chat in the current conversation and switch among recent conversations without opening the full chat window.
-- Keep separate Chat and Ask drafts while switching modes.
-- Start a new conversation or explicitly place clipboard text into a draft for review before sending.
-- Show the latest reply, active-work status, and approval requests.
-- Open Chat, a sticky note, Web, custom views, or the main Medousa window.
+- Type in the field to search conversations and tools, or send a new request to Medousa. Click the field or press **↓** to browse recent destinations.
+- Ask in the single message field to start a new Medousa conversation, without changing the conversation open in the main window.
+- Type **@** to choose a named bot, an existing conversation, or a new Medousa, Cursor, Codex, or Hermes session. Other agents appear when their runtimes are installed and available.
+- Read a short transcript below the same field and send follow-ups to the selected destination. **Open conversation** opens that exact session in the full Chat window.
+- Use **More → New request** to start fresh, remove the destination chip to choose another, or use **More → Use clipboard** to place clipboard text into a draft for review before sending.
+- Keep the draft and destination for each workshop when collapsing or reopening the companion. Older Chat or Ask drafts carry over from the previously selected mode.
+- Show active-work status and approval requests. Collapsing or hiding the companion leaves admitted work running.
+- Search for **Open Chat**, **New note**, **Open browser**, a custom view, or **Open Medousa** to open a tool. Additional companion controls are in **More**.
+- Press **Escape** or click the pet to collapse the bar. Escape dismisses the destination picker or overflow menu first.
 
 The companion is another client of the workshop daemon. Conversations, active turns, and approvals stay authoritative there rather than living only in the floating window.
 

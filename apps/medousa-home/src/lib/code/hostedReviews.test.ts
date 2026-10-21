@@ -58,3 +58,25 @@ it("replaces inbox folders, paginates within the account, and rejects late folde
   let finish!: (value: unknown) => void; api.query.mockImplementationOnce(() => new Promise(resolve => finish=resolve)); const old=queue.inbox("authored"); api.query.mockResolvedValueOnce({kind:"reviews",reviews:[review("participating")],next_cursor:null}); await queue.inbox("participating"); finish({kind:"reviews",reviews:[review("stale")],next_cursor:null}); await old;
   expect(queue.reviews.map(r=>r.title)).toEqual(["participating"]); expect(queue.folder).toBe("participating");
 });
+
+it("reuses the selected inbox and pagination on rail remounts, and restores other cached folders", async () => {
+  const queue = new HostedReviews(); queue.reset("workshop"); queue.providers = [{ ...provider, operations: ["inbox"] }];
+  api.query.mockResolvedValueOnce({ kind: "reviews", reviews: [review("first")], next_cursor: "2" });
+  await queue.inbox();
+  api.query.mockResolvedValueOnce({ kind: "reviews", reviews: [review("second")], next_cursor: "3" });
+  await queue.more(); await queue.refresh();
+  expect(api.query).toHaveBeenCalledTimes(2); expect(queue.reviews).toHaveLength(2); expect(queue.nextCursor).toBe("3");
+  api.query.mockResolvedValueOnce({ kind: "reviews", reviews: [review("authored")], next_cursor: null });
+  await queue.inbox("authored"); await queue.inbox("review_requested");
+  expect(api.query).toHaveBeenCalledTimes(3); expect(queue.reviews[0].title).toBe("first");
+  api.query.mockResolvedValueOnce({ kind: "reviews", reviews: [review("fresh")], next_cursor: null });
+  await queue.refresh(true); expect(api.query).toHaveBeenCalledTimes(4); expect(queue.reviews[0].title).toBe("fresh");
+});
+
+it("shares provider discovery and only repeats it when explicitly refreshed or stale", async () => {
+  const queue = new HostedReviews(); queue.reset("workshop");
+  api.providers.mockResolvedValue({ providers: [provider], problems: [] });
+  await Promise.all([queue.discover(), queue.discover()]); await queue.discover();
+  expect(api.providers).toHaveBeenCalledTimes(1);
+  await queue.discover(true); expect(api.providers).toHaveBeenCalledTimes(2);
+});

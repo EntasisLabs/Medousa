@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onDestroy, tick, untrack, type Snippet } from "svelte";
-  import { Columns2, Code2, Eye, FilePenLine } from "@lucide/svelte";
   import type CodeMirrorHost from "./CodeMirrorHost.svelte";
   import CodeMarkdownPreview from "./CodeMarkdownPreview.svelte";
   import CodeMarkdownWriter from "./CodeMarkdownWriter.svelte";
@@ -20,7 +19,7 @@
   const images = untrack(() => new ProjectMarkdownImages(tab.work_id, tab.path));
   onDestroy(() => images.dispose());
 
-  async function choose(next: CodeMarkdownMode) {
+  export async function choose(next: CodeMarkdownMode) {
     editor?.flushChanges();
     if (findState && next !== "source" && next !== "split") findState.open = false;
     if (next === "markdown") writerOpened = true;
@@ -48,15 +47,6 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="code-document flex h-full min-h-0 flex-col" onkeydown={keydown}>
-  {#if isMarkdown}
-    <div class="flex shrink-0 items-center justify-end gap-0.5 border-b border-surface-600/30 px-2 py-1" role="toolbar" aria-label="Markdown views">
-      {#each [{ value: 'source', label: 'Source', title: 'Edit Markdown source', Icon: Code2 }, { value: 'markdown', label: 'Markdown', title: 'Open in Markdown editor', Icon: FilePenLine }, { value: 'preview', label: 'Preview', title: 'Preview the current draft', Icon: Eye }, { value: 'split', label: 'Split', title: 'Source and live Markdown preview', Icon: Columns2 }] as item (item.value)}
-        <button type="button" class="markdown-view inline-flex items-center gap-1.5 rounded px-2 py-1 text-chrome-sm text-content-secondary hover:bg-surface-700/40" class:active={mode === item.value} aria-label={item.title} title={item.title} aria-pressed={mode === item.value} onclick={() => void choose(item.value as CodeMarkdownMode)}>
-          <item.Icon size={13} /><span>{item.label}</span>
-        </button>
-      {/each}
-    </div>
-  {/if}
   <div class="document-panes flex min-h-0 flex-1 overflow-hidden" class:split={mode === 'split'}>
     <div class="source-pane min-h-0 min-w-0 flex-1" hidden={mode === 'markdown' || mode === 'preview'}>
       {@render source()}
@@ -76,7 +66,6 @@
 
 <style>
   .source-pane[hidden], .writer-pane[hidden], .preview-pane[hidden] { display: none; }
-  .markdown-view.active { background: rgb(var(--color-primary-500) / .15); color: rgb(var(--color-primary-200)); }
   .preview-pane { border-color: rgb(var(--color-surface-600) / .3); }
   .split > .source-pane, .split > .preview-pane { flex-basis: 50%; }
   @media (max-width: 700px) { .document-panes.split { flex-direction: column; } .split > .preview-pane { border-left: 0; border-top: 1px solid rgb(var(--color-surface-600) / .3); } }

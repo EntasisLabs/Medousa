@@ -158,6 +158,7 @@
   let dockBusy = $state(false);
   let dockError = $state<string | null>(null);
   let editor = $state<CodeMirrorHost | undefined>();
+  let workspaceView = $state<CodeEditorWorkspace>();
   let lspSession = new CodeLspSession();
   const lspClient = $derived(lspSession.client);
   const lspError = $derived(lspSession.error);
@@ -1961,6 +1962,7 @@
   <CodeEditorChrome
     {workId}
     {activeTab}
+    onMarkdownModeChange={(mode) => workspaceView?.chooseMarkdownMode(mode)}
     {projectTitle}
     {phaseLabel}
     {reviewAvailable}
@@ -2019,6 +2021,7 @@
   />
 
   <CodeEditorWorkspace
+    bind:this={workspaceView}
     findState={activeFindState}
     {workspaceScope}
     {workId}
@@ -2103,6 +2106,7 @@
 </section>
 
 <style>
+  .code-source-editor { container:code-editor / inline-size; }
   .code-source-editor--fill {
     border: 0;
     border-radius: 0;

@@ -7,6 +7,7 @@
 
   interface Props {
     hunks: DiffHunk[];
+    continuous?: boolean;
     mode?: "inline" | "side";
     /** Full before-file text for real gap expansion. */
     beforeText?: string | null;
@@ -29,6 +30,7 @@
 
   let {
     hunks,
+    continuous = false,
     mode = "inline",
     beforeText = null,
     afterText = null,
@@ -221,7 +223,9 @@
 
 {#snippet gapControls(key: string, total: number, middle: number, fullyOpen: boolean)}
   <div class="diff-gap" class:diff-gap--side={mode === "side"}>
-    {#if fullyOpen}
+    {#if !canExpandReal}
+      <span>{middle} unmodified lines</span>
+    {:else if fullyOpen}
       <button type="button" class="diff-gap-action" onclick={() => collapseGap(key)}>
         Collapse unmodified lines
       </button>
@@ -252,7 +256,7 @@
 {#snippet inlineContextRow(line: number, content: string)}
   <div class="diff-line diff-line--context" data-diff-line={line}>
     <span class="diff-comment-slot"></span>
-    <span class="diff-gutter diff-gutter--old"></span>
+    {#if !continuous}<span class="diff-gutter diff-gutter--old"></span>{/if}
     <span class="diff-gutter diff-gutter--new">{line}</span>
     <span class="diff-marker" aria-hidden="true"> </span>
     <DiffCodeLine {content} {languageHint} {wrap} />
@@ -288,6 +292,8 @@
     class="diff-view diff-view--inline"
     class:diff-view--compact={density === "compact"}
     class:diff-view--wrap={wrap}
+    class:diff-view--continuous={continuous}
+    class:diff-view--comments={!!onComment}
   >
     {#each hunks as hunk, hi (`${hunk.old_start}:${hunk.new_start}:${hi}`)}
       {#if deletionCollapsed(hunk, hi)}
@@ -305,10 +311,7 @@
           {@const key = "lead"}
           {@const reveal = revealFor(key)}
           {@const rows = canExpandReal ? leadGapRows(hunk).after : []}
-          {@const split = splitGapRows(rows.length ? rows : Array.from({ length: lead }, (_, i) => ({
-            line: i + 1,
-            content: "",
-          })), reveal)}
+          {@const split = splitGapRows(rows, reveal)}
           {#each split.head as row (row.line)}
             {#if canExpandReal && row.content !== undefined}
               {@render inlineContextRow(row.line, "content" in row ? row.content : "")}
@@ -331,10 +334,7 @@
           {@const key = `between:${hi}`}
           {@const reveal = revealFor(key)}
           {@const rows = canExpandReal ? betweenGapRows(hunks[hi - 1]!, hunk).after : []}
-          {@const split = splitGapRows(rows.length ? rows : Array.from({ length: gap }, (_, i) => ({
-            line: i + 1,
-            content: "",
-          })), reveal)}
+          {@const split = splitGapRows(rows, reveal)}
           {#each split.head as row (row.line)}
             {#if canExpandReal}
               {@render inlineContextRow(row.line, row.content)}
@@ -353,6 +353,7 @@
         {/if}
       {/if}
 
+      {#if !continuous || onRevertHunk}
       <div class="diff-hunk-meta">
         <span>{hunkLineLabel(hunk)}</span>
         {#if onRevertHunk}
@@ -367,6 +368,7 @@
           >Revert hunk</button>
         {/if}
       </div>
+      {/if}
       {#each hunk.lines as line, index (`${line.old_line ?? ""}:${line.new_line ?? ""}:${index}`)}
         {@const peer = peerForInline(hunk.lines, index)}
         <div class="diff-line diff-line--{line.kind}" data-diff-line={line.new_line ?? line.old_line ?? ""}>
@@ -386,8 +388,12 @@
               ><MessageSquarePlus size={11} /></button>
             {/if}
           </span>
-          <span class="diff-gutter diff-gutter--old">{line.old_line ?? ""}</span>
-          <span class="diff-gutter diff-gutter--new">{line.new_line ?? ""}</span>
+          {#if continuous}
+            <span class="diff-gutter diff-gutter--new" title={line.kind === "deletion" ? `Before · line ${line.old_line}` : `After · line ${line.new_line}`}>{line.new_line ?? line.old_line ?? ""}</span>
+          {:else}
+            <span class="diff-gutter diff-gutter--old">{line.old_line ?? ""}</span>
+            <span class="diff-gutter diff-gutter--new">{line.new_line ?? ""}</span>
+          {/if}
           <span class="diff-marker" aria-hidden="true">{lineMarker(line.kind)}</span>
           <DiffCodeLine
             content={line.content}
@@ -406,6 +412,8 @@
     class="diff-view diff-view--side"
     class:diff-view--compact={density === "compact"}
     class:diff-view--wrap={wrap}
+    class:diff-view--continuous={continuous}
+    class:diff-view--comments={!!onComment}
   >
     <div class="diff-side-labels"><span>Before</span><span>After</span></div>
     {#each hunks as hunk, hi (`${hunk.old_start}:${hunk.new_start}:side:${hi}`)}
@@ -430,10 +438,7 @@
                   after: row,
                   before: full.before[i],
                 }))
-              : Array.from({ length: lead }, (_, i) => ({
-                  after: { line: i + 1, content: "" },
-                  before: undefined as { line: number; content: string } | undefined,
-                })),
+              : [],
             reveal,
           )}
           {#each split.head as row (`h-${row.after.line}`)}
@@ -474,10 +479,7 @@
                   after: row,
                   before: full.before[i],
                 }))
-              : Array.from({ length: gap }, (_, i) => ({
-                  after: { line: i + 1, content: "" },
-                  before: undefined as { line: number; content: string } | undefined,
-                })),
+              : [],
             reveal,
           )}
           {#each split.head as row (`h-${row.after.line}`)}
@@ -508,6 +510,7 @@
         {/if}
       {/if}
 
+      {#if !continuous || onRevertHunk}
       <div class="diff-hunk-meta diff-hunk-meta--side">
         <span>{hunkLineLabel(hunk)}</span>
         {#if onRevertHunk}
@@ -519,6 +522,7 @@
           >Revert hunk</button>
         {/if}
       </div>
+      {/if}
 
       {#each sideRowsForHunk(`${hunk.old_start}:${hunk.new_start}:${hi}`, hunk.lines) as row (row.key)}
         <div class="diff-side-row" data-diff-line={row.newNumber ?? row.oldNumber ?? ""}>
@@ -931,5 +935,20 @@
     .diff-line-comment { opacity: 1; width: 44px; height: 44px; background: transparent; }
     .diff-line { grid-template-columns: 44px 24px 24px 12px minmax(0, 1fr); }
     .diff-comment-slot { width: 44px; }
+  }
+  .diff-view--continuous { --comment-width:0rem; --number-width:3rem; }
+  .diff-view--continuous.diff-view--comments { --comment-width:1.25rem; }
+  .diff-view--continuous .diff-line,
+  .diff-view--continuous .diff-side-row > div { grid-template-columns:var(--comment-width) var(--number-width) .9rem minmax(0,1fr); }
+  .diff-view--continuous .diff-comment-slot { width:var(--comment-width); }
+  .diff-view--continuous .diff-gutter--old,
+  .diff-view--continuous .diff-gutter--new,
+  .diff-view--continuous .diff-side-row > div .diff-gutter { left:var(--comment-width); }
+  .diff-view--continuous .diff-marker,
+  .diff-view--continuous .diff-side-row > div .diff-marker { left:calc(var(--comment-width) + var(--number-width)); }
+  .diff-view--continuous .diff-gap { justify-content:flex-start; min-height:1.65rem; padding:0 .5rem; font-size:.625rem; }
+  .diff-view--continuous .diff-delete-collapse { border:0; border-radius:0; margin:0; }
+  @media (max-width:767px), (pointer:coarse) {
+    .diff-view--continuous.diff-view--comments { --comment-width:44px; }
   }
 </style>

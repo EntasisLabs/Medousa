@@ -90,7 +90,7 @@
   style={`--medousa-companion-size: ${size}`}
 >
   {#if mascot}
-    <img class="medousa-companion-mark mascot-image" src={mascotImage(mascot, expression)} alt="" aria-hidden="true" />
+    <img class="medousa-companion-mark mascot-image" src={mascotImage(mascot, expression)} alt="" aria-hidden="true" draggable="false" />
   {:else}
     <MedousaSprite
       variant={variant}
@@ -128,6 +128,7 @@
     height: 100%;
     object-fit: contain;
     image-rendering: pixelated;
+    -webkit-user-drag: none;
   }
 
   :global(.medousa-companion-mark) {

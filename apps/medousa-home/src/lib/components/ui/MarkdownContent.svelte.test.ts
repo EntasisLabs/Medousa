@@ -4,9 +4,14 @@ import { flushSync, mount, tick, unmount } from "svelte";
 import { fromStore, writable } from "svelte/store";
 import MarkdownContent from "./MarkdownContent.svelte";
 
-const { highlight, writeText } = vi.hoisted(() => ({
+const { highlight, writeText, openInBrowser } = vi.hoisted(() => ({
   highlight: vi.fn().mockResolvedValue(undefined),
   writeText: vi.fn().mockResolvedValue(undefined),
+  openInBrowser: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("$lib/utils/openInBrowser", async (importOriginal) => ({
+  ...await importOriginal<typeof import("$lib/utils/openInBrowser")>(),
+  openInBrowser,
 }));
 vi.mock("$lib/markdown/highlight", () => ({ highlightCodeBlocks: highlight }));
 vi.mock("$lib/haptics", () => ({ haptic: vi.fn() }));
@@ -84,4 +89,38 @@ it("uses Liquid disclosure styling and real linked badges in document presentati
   expect(document.querySelector(".liquid-accordion-panel strong")?.textContent).toBe("Fixed");
   expect(document.querySelector("a .markdown-image-inline img")?.getAttribute("src")).toBe("https://example.com/status.svg");
   expect(document.body.textContent).not.toContain("![Build status]");
+});
+
+it.each([
+  ["click", {}],
+  ["click", { metaKey: true }],
+  ["click", { ctrlKey: true }],
+  ["click", { shiftKey: true }],
+  ["auxclick", { button: 1 }],
+])("opens nested review links in an app tab and cancels native %s navigation (%o)", async (type, options) => {
+  component = mount(MarkdownContent, {
+    target: document.body,
+    props: { openLinksInWeb: true, presentation: "document", content: '<details open><summary>Notes</summary>\n\n[![Build](https://example.com/badge.svg)](https://example.com/build)\n\n</details>' },
+  });
+  flushSync(); await tick();
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...options });
+  document.querySelector("a img")!.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+  expect(openInBrowser).toHaveBeenCalledExactlyOnceWith("https://example.com/build", { openedBy: "user", newTab: true });
+});
+
+it("resolves raw relative review links against the provider page and preserves local anchors", async () => {
+  component = mount(MarkdownContent, {
+    target: document.body,
+    props: { openLinksInWeb: true, linkBaseUrl: "https://git.example.test/team/repo/pull/4", content: '<a href="/team/repo/issues/7"><strong>Issue</strong></a>\n\n[Section](#section)' },
+  });
+  flushSync(); await tick();
+  const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  document.querySelector("a strong")!.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+  expect(openInBrowser).toHaveBeenCalledExactlyOnceWith("https://git.example.test/team/repo/issues/7", { openedBy: "user", newTab: true });
+  const anchorEvent = new MouseEvent("click", { bubbles: true, cancelable: true });
+  document.querySelector('a[href="#section"]')!.dispatchEvent(anchorEvent);
+  expect(anchorEvent.defaultPrevented).toBe(false);
+  expect(openInBrowser).toHaveBeenCalledTimes(1);
 });

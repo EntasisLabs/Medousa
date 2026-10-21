@@ -25,6 +25,7 @@
   }));
   const sources = $derived([...new Set([...hostedReviews.providers.filter(p => p.id === hostedReviews.accountProvider || (!hostedReviews.accountProvider && hostedReviews.providers.length === 1)).map(p => p.id), ...hostedRows.map(r => r.reference.provider_id)])].map(id => ({ id, label: hostedReviews.providers.find(p => p.id === id)?.label ?? id, rows: hostedRows.filter(r => r.reference.provider_id === id) })));
   const providerLookup = $derived(query.trim().startsWith("https://") || /^[\w.-]+\/[\w.-]+$/.test(query.trim()));
+  const inboxAvailable = $derived(hostedReviews.providers.some(p => p.operations.includes("inbox")));
   const rows = $derived(reviewQueue(undertakings.items, "all", query).filter(item => filter === "all" || (filter === "active" ? reviewQueueState(item) !== "reviewed" : reviewQueueState(item) === "reviewed")));
   const labels = { ready: "Ready", drafts: "In progress", reviewed: "Reviewed" };
   function toggleSource(id: string) { collapsed = collapsed.includes(id) ? collapsed.filter(value => value !== id) : [...collapsed, id]; }
@@ -47,8 +48,7 @@
 
   $effect(() => {
     const account = hostedReviews.connectionId;
-    const available = hostedReviews.providers.some(p => p.operations.includes("inbox"));
-    if (rail && available) untrack(() => { void account; void hostedReviews.refresh(); });
+    if (rail && inboxAvailable) untrack(() => { void account; void hostedReviews.refresh(); });
   });
   function chooseInbox(value: string) {
     if (value === "repository") { void hostedReviews.refresh(); return; }
@@ -77,7 +77,7 @@
 
 {#if rail}
 <section class="reviews-rail" aria-label="Review list">
-  <header class="lme-side-rail-dock"><span>Reviews</span><button type="button" aria-label="Refresh reviews" disabled={undertakings.loading} onclick={() => { void undertakings.refreshList(); void hostedReviews.discover(); void hostedReviews.refresh(); }}><RefreshCw size={14} /></button></header>
+  <header class="lme-side-rail-dock"><span>Reviews</span><button type="button" aria-label="Refresh reviews" disabled={undertakings.loading} onclick={() => { void undertakings.refreshList(); void hostedReviews.discover(true); void hostedReviews.refresh(true); }}><RefreshCw size={14} /></button></header>
   <div class="queue-controls">
     <label class="queue-search"><Search size={14} /><input type="search" aria-label="Search reviews" placeholder="Search reviews or paste a URL…" bind:value={query} onkeydown={(event) => { if (event.key === "Enter" && providerLookup) { event.preventDefault(); void openProviderQuery(); } }} /></label>
     {#if hostedReviews.providers.length}

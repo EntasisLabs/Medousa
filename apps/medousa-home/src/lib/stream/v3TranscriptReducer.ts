@@ -6,6 +6,7 @@
  * reconnect/deduplication cursor, never as presentation identity.
  */
 
+import { isRuntimeStartupText, visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
 import { mapStreamUiArtifact } from "$lib/types/artifact";
 import type { ChatMessage, ChatSegment, ToolRunState, UiArtifact } from "$lib/types/chat";
 import type {
@@ -295,9 +296,10 @@ export function applyV3EnvelopeToMessage(
       chrome = { reasoning: `${message.reasoning ?? ""}${event.text}` };
       break;
     case "status":
-      chrome = { phase: event.phase, statusLine: event.operator_message ?? message.statusLine ?? null };
+      chrome = { phase: event.phase, statusLine: event.phase === "accepted" ? null : visibleChatStatusLine(event.operator_message ?? message.statusLine, false) };
       break;
     case "progress":
+      if (isRuntimeStartupText(event.message)) break;
       segments = applyProgress(segments, envelope, event);
       chrome = { statusLine: null };
       break;
@@ -359,8 +361,9 @@ export function v3EventPromotesChatMessage(event: TurnStreamEventV3): boolean {
     case "ui_scene":
     case "worker_ack":
     case "budget_approval_required":
-    case "progress":
       return true;
+    case "progress":
+      return !isRuntimeStartupText(event.message);
     case "reaction":
       return true;
     case "turn_completed":

@@ -16,6 +16,7 @@ import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 import {
   isEngineTelemetryText,
   operatorStreamStatusLine,
+  visibleChatStatusLine,
   shouldSuppressStreamContentDelta,
 } from "$lib/utils/chatStreamDisplay";
 import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
@@ -107,13 +108,13 @@ function resolveStatusLine(
   current: string | null | undefined,
   showEngineDetails: boolean,
 ): string | null {
-  if (event.message?.trim()) {
+  if (event.message?.trim() || event.operator_message?.trim() || event.debug_message?.trim()) {
     return operatorStreamStatusLine(event, showEngineDetails);
   }
   if (!showEngineDetails && isEngineTelemetryText(current)) {
     return null;
   }
-  return current ?? null;
+  return visibleChatStatusLine(current, showEngineDetails);
 }
 
 function handoffFollowUp(event: InteractiveTurnStreamEvent): StreamMessageFollowUp {

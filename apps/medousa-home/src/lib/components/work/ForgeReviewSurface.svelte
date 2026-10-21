@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { ReviewChangeKind } from "$lib/code/reviewChangeKinds";
   import type { ReviewReadingState } from "$lib/code/reviewPage.svelte";
   import ReviewFileChanges from "$lib/components/work/ReviewFileChanges.svelte";
   import type { ReviewFileDiff, ReviewProjection } from "$lib/forge";
@@ -6,6 +7,7 @@
   interface Props {
     review: ReviewProjection;
     directory?: string | null;
+    changeKind?: ReviewChangeKind | null;
     viewState?: ReviewReadingState["diff"];
     onReady?: () => void;
     projectTitle?: string | null;
@@ -25,6 +27,7 @@
   let {
     review,
     directory = null,
+    changeKind = null,
     viewState,
     onReady,
     projectTitle: _projectTitle = null,
@@ -45,7 +48,7 @@
       <span>Nothing was sealed — or pick another attempt from project actions if several exist.</span>
     </div>
   {:else}
-    <ReviewFileChanges {directory} {viewState} {onReady} {review} {busy} {onOpenFile} {onRestore} {onComment} />
+    <ReviewFileChanges {changeKind} {directory} {viewState} {onReady} {review} {busy} {onOpenFile} {onRestore} {onComment} />
   {/if}
 </div>
 

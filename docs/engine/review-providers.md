@@ -45,7 +45,8 @@ Transport authentication failures use the usual HTTP errors. See
 
 A query supplies `provider_id`, `host`, optional `connection_id`, and `request`.
 The tagged request operations are `connection_status`, `resolve_repository`, `inbox`, `list`, `resolve`, `get`,
-`files`, `diff`, `checks`, `check_details`, and `discussion`. Packages advertise implemented
+`files`, `diff`, `checks`, `check_details`, `discussion`, `labels`,
+`reviewer_candidates`, and `reviewers`. Packages advertise implemented
 operations. Cursors are opaque to callers. Follow returned cursors explicitly;
 checks and discussions can span multiple native collections. The write operation
 `publish` takes repository, head/base branches, title, body, draft, and
@@ -157,3 +158,30 @@ authorization substitute. `check_details` returns bounded Markdown output and
 annotations or job steps; full provider logs/artifacts remain external links.
 GitHub-specific permissions, REST/GraphQL calls, search qualifiers, CI resource
 IDs, and projections live entirely in `medousa-github`.
+
+## Inspector metadata
+
+`HostedReview.labels` contains opaque IDs, display names, descriptions and optional
+six-digit hex colors. `labels` queries the paginated repository catalog;
+`reviewer_candidates` returns eligible people; `reviewers` returns chronological
+submitted decisions. People have opaque IDs, names and normalized states:
+`approved`, `changes_requested`, `commented`, or `dismissed`. Pending requests
+come from `requested_reviewers`. Comments do not replace a previous decision.
+A repeated request is displayed as pending. Cursors remain package-owned.
+
+Writes `add_labels`, `remove_label`, and `remove_reviewers` are incremental;
+`request_reviewers` adds requests. Removing a request never dismisses a submitted
+review. Each write is capability-gated, invalidates the app's account-scoped
+review cache even on an uncertain response, and is never automatically retried.
+The GitHub package maps labels to issue-label resources, candidates to repository
+collaborators, and decisions/requests to pull-request review resources. Repository
+triage/write access enables label controls; PR ownership/write access enables
+review requests. GitHub remains authoritative when access changes.
+
+`merge_conflicts` is optional conflict information, independent of checks and
+approval requirements. Check `kind` and `actions` describe normalized presentation
+and supported `details`, `rerun`, or `cancel` interactions. Clients do not inspect
+native check IDs. These fields default when reading older package responses.
+Typed change categories are app-side path hints over file metadata, shared with
+Forge; patches are not fetched to calculate them. The daemon only dispatches the
+shared contract and has no provider-specific label, permission or review logic.

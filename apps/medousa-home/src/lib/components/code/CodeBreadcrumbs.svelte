@@ -22,7 +22,7 @@
 </script>
 
 <nav
-  class="code-breadcrumbs flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+  class="code-breadcrumbs flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden"
   aria-label="File location"
   title={fullPathTitle}
 >
@@ -85,8 +85,9 @@
   }
 
   .code-breadcrumb-seg {
+    min-width: 0;
     max-width: 9rem;
-    flex-shrink: 1;
+    flex-shrink: 3;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -117,14 +118,14 @@
   }
 
   .code-breadcrumb-seg--file {
-    flex-shrink: 0;
-    max-width: 12rem;
+    flex-shrink: 1;
+    max-width: 24rem;
     color: rgb(var(--theme-text));
     font-weight: 500;
   }
 
   .code-breadcrumb-seg--symbol {
-    flex-shrink: 0;
+    flex-shrink: 1;
     max-width: 10rem;
     color: color-mix(
       in srgb,

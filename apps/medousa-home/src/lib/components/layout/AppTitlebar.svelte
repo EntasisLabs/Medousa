@@ -125,10 +125,8 @@
 
 <style>
   /*
-   * y on trafficLightPosition moves lights DOWN (I had been lowering y — oops).
-   * Bar height centers controls on light midline: y18 + 6 ≈ 24 → ~36–40px bar.
-   *
    * Native and custom chrome keep their own platform-appropriate footprints.
+   * macOS traffic-light insets live in the Tauri window configuration.
    */
   .app-titlebar {
     --titlebar-height: 40px;

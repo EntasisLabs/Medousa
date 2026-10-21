@@ -5,6 +5,8 @@
  * bubble via `stageWhisper` so it survives `statusLine: null`.
  */
 
+import { isRuntimeStartupText } from "$lib/utils/chatStreamDisplay";
+
 /**
  * Preserve interim whisper when finishing a turn.
  * Prefer a non-empty statusLine that differs from the final body; else keep
@@ -17,9 +19,9 @@ export function stageWhisperAfterFinish(
 ): string | null {
   const whisper = statusLine?.trim();
   const body = content?.trim() ?? "";
-  if (whisper && whisper !== body) {
+  if (whisper && whisper !== body && !isRuntimeStartupText(whisper)) {
     return whisper;
   }
   const existing = existingStageWhisper?.trim();
-  return existing || null;
+  return existing && !isRuntimeStartupText(existing) ? existing : null;
 }

@@ -24,6 +24,7 @@ import {
   userMediaFromParts,
   uiArtifactsFromParts,
 } from "$lib/types/turnParts";
+import { isRuntimeStartupText } from "$lib/utils/chatStreamDisplay";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import { dedupeMessagesById, mergeTranscript } from "$lib/utils/mergeTranscript";
 import { attachLiveTranscripts } from "$lib/liveTranscriptAttachments";
@@ -131,7 +132,7 @@ export function mapTurns(
       role: normalizeRole(turn.role),
       createdAt: turn.timestamp,
       turnId: turn.role === "assistant" ? turn.caused_by?.execution_id : undefined,
-      content: turn.content,
+      content: turn.role === "assistant" && isRuntimeStartupText(turn.content) ? "" : turn.content,
       reactions: turn.reactions?.length ? turn.reactions : undefined,
       lane,
       askJobId,

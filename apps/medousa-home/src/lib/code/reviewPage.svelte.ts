@@ -1,3 +1,4 @@
+import type { ReviewChangeKind } from "$lib/code/reviewChangeKinds";
 import { reviewFileInDirectory } from "$lib/code/reviewAreas";
 import { getReview, getUndertaking, type ItemProjection, type ReviewProjection } from "$lib/forge";
 
@@ -6,6 +7,7 @@ export type ReviewReadingState = {
   attemptId: string | null;
   lens: ReviewLens;
   directory: string | null;
+  changeKind?: ReviewChangeKind | null;
   scroll: Record<ReviewLens, number>;
   diff: { comparison: string; expanded: string[]; mode: "inline" | "side"; wrap: boolean; density: "comfortable" | "compact" };
 };
@@ -18,7 +20,7 @@ export function reviewReadingState(scope: string, workId: string): ReviewReading
   const key = JSON.stringify([scope, workId]);
   let state = readingStates.get(key);
   if (!state) {
-    const fresh = $state<ReviewReadingState>({ attemptId: null, lens: "overview", directory: null, scroll: { overview: 0, changes: 0 }, diff: { comparison: "", expanded: [], mode: "inline", wrap: false, density: "compact" } });
+    const fresh = $state<ReviewReadingState>({ attemptId: null, lens: "overview", directory: null, changeKind: null, scroll: { overview: 0, changes: 0 }, diff: { comparison: "", expanded: [], mode: "inline", wrap: true, density: "compact" } });
     state = fresh;
     readingStates.set(key, state);
   }

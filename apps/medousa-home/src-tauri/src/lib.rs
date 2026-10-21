@@ -245,18 +245,10 @@ fn run_home() {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         setup_desktop_tray(app)?;
 
-        // Unified title bar: macOS Overlay traffic lights over content; Win/Linux
-        // frameless so HTML window controls own the chrome (see AppTitlebar).
-        // Platform tauri.*.conf.json must also set these — those files replace the
-        // windows[] list and previously dropped Overlay/hiddenTitle (double chrome).
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(main) = app.get_webview_window("main") {
-                if let Err(err) = main.set_title_bar_style(tauri::TitleBarStyle::Overlay) {
-                    eprintln!("[medousa-home] set_title_bar_style(Overlay): {err}");
-                }
-            }
-        }
+        // macOS Overlay/hiddenTitle and trafficLightPosition come from tauri.conf
+        // and tauri.macos.conf. Reapplying the style here resets the native button
+        // frames after their configured inset has been applied.
+        // Win/Linux use HTML window controls (see AppTitlebar).
         #[cfg(all(
             not(any(target_os = "ios", target_os = "android")),
             not(target_os = "macos")

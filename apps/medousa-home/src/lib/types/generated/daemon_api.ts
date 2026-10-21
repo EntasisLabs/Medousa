@@ -23,7 +23,7 @@ export interface HostedReviewRef {
 
 export type ReviewInboxFolder = "authored" | "review_requested" | "participating";
 
-export type ReviewProviderOperation = { cursor?: string | null; folder: ReviewInboxFolder; operation: "inbox" } | { check_id: string; operation: "check_details"; review: HostedReviewRef; revision: string } | { operation: "connection_status" } | { operation: "resolve_repository"; remote_url: string } | { cursor?: string | null; operation: "list"; repository: string } | { operation: "resolve"; url: string } | { operation: "get"; review: HostedReviewRef } | { cursor?: string | null; operation: "files"; review: HostedReviewRef; revision: string } | { operation: "diff"; path: string; review: HostedReviewRef; revision: string } | { cursor?: string | null; operation: "checks"; review: HostedReviewRef; revision: string } | { cursor?: string | null; operation: "discussion"; review: HostedReviewRef };
+export type ReviewProviderOperation = { cursor?: string | null; operation: "labels"; review: HostedReviewRef } | { cursor?: string | null; operation: "reviewer_candidates"; review: HostedReviewRef } | { cursor?: string | null; operation: "reviewers"; review: HostedReviewRef } | { cursor?: string | null; folder: ReviewInboxFolder; operation: "inbox" } | { check_id: string; operation: "check_details"; review: HostedReviewRef; revision: string } | { operation: "connection_status" } | { operation: "resolve_repository"; remote_url: string } | { cursor?: string | null; operation: "list"; repository: string } | { operation: "resolve"; url: string } | { operation: "get"; review: HostedReviewRef } | { cursor?: string | null; operation: "files"; review: HostedReviewRef; revision: string } | { operation: "diff"; path: string; review: HostedReviewRef; revision: string } | { cursor?: string | null; operation: "checks"; review: HostedReviewRef; revision: string } | { cursor?: string | null; operation: "discussion"; review: HostedReviewRef };
 
 export interface ReviewProviderQuery {
   connection_id?: string | null;
@@ -47,7 +47,7 @@ export type ReviewLifecycle = "close" | "reopen" | "ready" | "draft";
 
 export type ReviewMergeMethod = "merge" | "squash" | "rebase";
 
-export type ReviewProviderWrite = { body: string; operation: "comment"; reply_to?: string | null; review: HostedReviewRef } | { body: string; comments: ReviewInlineComment[]; decision: ReviewDecision; operation: "submit_review"; review: HostedReviewRef; revision: string } | { body: string; operation: "edit"; review: HostedReviewRef; title: string } | { operation: "set_state"; review: HostedReviewRef; state: ReviewLifecycle } | { operation: "request_reviewers"; review: HostedReviewRef; reviewers: string[] } | { method: ReviewMergeMethod; operation: "merge"; review: HostedReviewRef; revision: string } | { check_id: string; failed_only: boolean; operation: "rerun_check"; review: HostedReviewRef; revision: string } | { check_id: string; operation: "cancel_check"; review: HostedReviewRef; revision: string } | { base: string; body: string; draft: boolean; head: string; operation: "publish"; repository: string; title: string; update_existing: boolean };
+export type ReviewProviderWrite = { labels: string[]; operation: "add_labels"; review: HostedReviewRef } | { label: string; operation: "remove_label"; review: HostedReviewRef } | { operation: "remove_reviewers"; review: HostedReviewRef; reviewers: string[] } | { body: string; operation: "comment"; reply_to?: string | null; review: HostedReviewRef } | { body: string; comments: ReviewInlineComment[]; decision: ReviewDecision; operation: "submit_review"; review: HostedReviewRef; revision: string } | { body: string; operation: "edit"; review: HostedReviewRef; title: string } | { operation: "set_state"; review: HostedReviewRef; state: ReviewLifecycle } | { operation: "request_reviewers"; review: HostedReviewRef; reviewers: string[] } | { method: ReviewMergeMethod; operation: "merge"; review: HostedReviewRef; revision: string } | { check_id: string; failed_only: boolean; operation: "rerun_check"; review: HostedReviewRef; revision: string } | { check_id: string; operation: "cancel_check"; review: HostedReviewRef; revision: string } | { base: string; body: string; draft: boolean; head: string; operation: "publish"; repository: string; title: string; update_existing: boolean };
 
 export interface ReviewProviderMutation {
   connection_id?: string | null;
@@ -67,6 +67,13 @@ export interface ReviewProviderError {
   message: string;
 }
 
+export interface ReviewLabel {
+  color?: string | null;
+  description: string;
+  id: string;
+  name: string;
+}
+
 export interface HostedReview {
   actions: string[];
   additions: number;
@@ -78,6 +85,8 @@ export interface HostedReview {
   deletions: number;
   head_branch: string;
   head_revision: string;
+  labels?: ReviewLabel[];
+  merge_conflicts?: boolean | null;
   merge_methods?: string[];
   merge_state?: string | null;
   native_state: string;
@@ -90,8 +99,10 @@ export interface HostedReview {
 }
 
 export interface HostedReviewCheck {
+  actions?: string[];
   conclusion?: string | null;
   id: string;
+  kind?: string;
   name: string;
   status: string;
   url?: string | null;
@@ -119,7 +130,13 @@ export interface HostedReviewFile {
   status: string;
 }
 
-export type ReviewProviderResult = { kind: "updated"; message: string } | { annotations: string[]; kind: "check_details"; summary: string; text: string; title: string; url?: string | null } | { host: string; kind: "repository"; provider_id: string; repository: string } | { existing: boolean; kind: "published"; review: HostedReview } | { account?: string | null; authenticated: boolean; kind: "connection"; message: string } | { kind: "reviews"; next_cursor?: string | null; reviews: HostedReview[] } | { kind: "review"; review: HostedReview } | { files: HostedReviewFile[]; kind: "files"; next_cursor?: string | null } | { kind: "diff"; message?: string | null; patch?: string | null; path: string } | { checks: HostedReviewCheck[]; kind: "checks"; next_cursor?: string | null } | { entries: HostedReviewDiscussionEntry[]; kind: "discussion"; next_cursor?: string | null };
+export interface ReviewPerson {
+  id: string;
+  name: string;
+  state?: string | null;
+}
+
+export type ReviewProviderResult = { kind: "labels"; labels: ReviewLabel[]; next_cursor?: string | null } | { kind: "people"; next_cursor?: string | null; people: ReviewPerson[] } | { kind: "updated"; message: string } | { annotations: string[]; kind: "check_details"; summary: string; text: string; title: string; url?: string | null } | { host: string; kind: "repository"; provider_id: string; repository: string } | { existing: boolean; kind: "published"; review: HostedReview } | { account?: string | null; authenticated: boolean; kind: "connection"; message: string } | { kind: "reviews"; next_cursor?: string | null; reviews: HostedReview[] } | { kind: "review"; review: HostedReview } | { files: HostedReviewFile[]; kind: "files"; next_cursor?: string | null } | { kind: "diff"; message?: string | null; patch?: string | null; path: string } | { checks: HostedReviewCheck[]; kind: "checks"; next_cursor?: string | null } | { entries: HostedReviewDiscussionEntry[]; kind: "discussion"; next_cursor?: string | null };
 
 export type ReviewProviderOutcome = { result: ReviewProviderResult; status: "success" } | { error: ReviewProviderError; status: "error" };
 

@@ -16,9 +16,15 @@ working copy in Code.
   risk sit alongside the reading column.
 - **Changes** uses the same file diffs, inline comments, and source-file links
   available from Code. Diffs load as files expand. Use the directory selector to
-  narrow the list, or choose **All files** to clear it.
+  narrow the list, or choose **All files** to clear it. Each file has one compact
+  header with its diff directly beneath it. **Diff view options** applies inline
+  or side-by-side layout, density, and line wrapping across the review. Inline
+  diffs use one line-number column (before numbers for deletions, after numbers
+  for other lines). Context can expand when source content is available; patch-only
+  gaps show the count of omitted lines. Forge file actions stay in the file menu,
+  and **Changed symbols** provides optional symbol-level comparisons.
 - The revision picker selects a prepared attempt. Navigation remembers that
-  revision, directory filter, selected lens, and reading position for the current app
+  revision, directory/type filter, selected lens, and reading position for the current app
   session. A later attempt does not silently replace the one being read.
 - **Review notes** opens comments on demand. Add comments from a diff line, or
   add a decision note through project actions. **Request changes** uses that
@@ -68,13 +74,24 @@ You can also paste an HTTPS pull request URL and press Enter, or enter
 `owner/repository` to list its pull requests. When several provider packages are
 installed, select the provider. Hosted reviews open in separate tabs with
 **Summary**, **Changes**, **Discussion**, and **Checks**. File patches load when
-expanded; only one patch is retained by the page. Load-more controls fetch
+expanded; only one patch is rendered by the page. Load-more controls fetch
 additional pages explicitly. The rail keeps up to 500 metadata records for the
-current workshop and app session, without retaining review descriptions or diffs.
+current workshop and app session.
+
+Visited hosted reviews reuse a bounded in-memory response cache when switching
+tabs. Cached content appears immediately; older summaries, inboxes, discussion,
+and checks refresh quietly without clearing the page. **Refresh** requests fresh
+data. Responses are scoped to the workshop, provider, account, and review; file
+lists and patches also belong to a specific commit. Account changes clear the
+cache, and new commits discard cached comparisons for older revisions. The cache
+reserves at most 12 MiB of estimated payload storage, including at most 4 MiB for
+patches; patches over 1 MiB estimated size remain viewable but are not cached.
+Least recently used responses are evicted as needed. Closing the window ends
+this cache; descriptions and patches are not written to browser storage.
 
 Use **Leave a comment…** on Summary, or **Pull request actions → Comment**, for a conversation comment.
 The composed Summary places the description beside reviewers, current checks, and merge status.
-Checks load when the review opens; file patches and discussion still load on demand.
+Checks and file metadata load when the review opens; file patches and discussion still load on demand.
 Descriptions, discussion, and check output use Liquid Markdown’s reading presentation,
 including styled disclosure sections, tables, code controls, and linked image badges. In **Changes**, line comments are
 staged locally until you choose **Review** and submit Comment, Approve, or Request
@@ -83,6 +100,24 @@ comments remain across refreshes in the open tab; if the head changes, remove th
 old pending comments before reviewing the new revision. Draft text and pending comments survive switching or reopening tabs within this
 Medousa window, scoped to the workshop, PR, and account; closing the window ends
 that temporary draft storage.
+
+The Summary inspector groups file changes into **Code**, **Tests**, **CI**,
+**Docs**, and **Other**, showing file counts and line additions/removals. These
+are path-based hints, not semantic analysis; each file appears in one group.
+Choose a group to open Changes filtered to that type, then **Show all files** to
+clear it. Forge uses the same breakdown. Missing line statistics are marked
+unavailable. Hosted metadata is capped at 3,000 files; partial coverage is explicit.
+
+**Labels → +** searches the repository's existing labels. Select a label to add
+or remove it immediately. **Reviewers → +** searches repository collaborators;
+you can also enter a person's account ID when they aren't in the loaded list.
+Select a person to request review, or uncheck a pending request to remove it.
+This does not dismiss an existing review decision. Picker controls follow the
+provider's capabilities and your repository permissions. Reviewers show pending
+requests and submitted decisions; unavailable or partial history is identified.
+
+The inspector's **Merge…** button uses the existing commit-pinned confirmation.
+Conflict status is shown separately from CI and approval requirements.
 
 **Pull request actions** includes editing the title/description, requesting reviewers by
 username, draft/ready state, and close/reopen. **Merge…** lets you select a merge
@@ -99,7 +134,7 @@ new CI state. Large collections use explicit load-more controls.
 Writes are never automatically retried. If a response is interrupted, the draft
 stays in the form; refresh and check the discussion/state before submitting again.
 
-**Open on …** opens the provider's page in your default browser. Forge's **Share** and chat's **Create pull request** use the
+**Open on …** opens the provider's page in a new in-app browser tab. Forge's **Share** and chat's **Create pull request** use the
 selected account and provider package to publish a branch's review. Repeating the
 action reuses an existing open review for those head/base branches; Forge sharing
 also updates its description. Git branch pushes still use the workshop's Git/SSH

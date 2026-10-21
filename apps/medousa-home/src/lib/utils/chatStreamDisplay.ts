@@ -1,9 +1,11 @@
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import { friendlyTurnError } from "$lib/utils/normieErrors";
 
-/** Startup acknowledgements add no useful progress, including in saved turns. */
-function isRuntimeStartupText(message: string | null | undefined): boolean {
-  return /^(?:(?:interactive turn|ingest) accepted;\s*)?agent runtime (?:started|accepted)[.!]?$/i.test(message?.trim() ?? "");
+/** Routine lifecycle acknowledgements add no useful progress, including in saved turns. */
+export function isRuntimeStartupText(message: string | null | undefined): boolean {
+  const text = message?.trim() ?? "";
+  return /^(?:(?:(?:interactive|background) turn|ingest) accepted;\s*)?(?:daemon )?agent runtime (?:started|accepted|running|ready|streaming active|completed|finished)[.!]?$/i.test(text)
+    || /^(?:(?:interactive|background) turn accepted|background turn started)(?:;\s*streaming to attached clients)?[.!]?$/i.test(text);
 }
 
 function isQuietStartupEvent(event: InteractiveTurnStreamEvent): boolean {

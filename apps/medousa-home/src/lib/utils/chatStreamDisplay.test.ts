@@ -62,7 +62,9 @@ describe("startup status noise", () => {
     for (const text of [
       "Interactive turn accepted; agent runtime started",
       "ingest accepted; agent runtime started",
-      "Agent runtime started", "Agent runtime accepted",
+      "Agent runtime started", "Agent runtime accepted", "Agent runtime completed",
+      "interactive turn accepted; daemon agent runtime streaming active",
+      "background turn accepted; streaming to attached clients", "Background turn started",
     ]) {
       expect(visibleChatStatusLine(text, details)).toBeNull();
       expect(operatorStreamStatusLine({

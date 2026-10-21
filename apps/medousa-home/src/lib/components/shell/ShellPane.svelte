@@ -144,12 +144,7 @@
 
 <section
   class="shell-pane relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden
-    {focused ? 'shell-pane-focused' : 'shell-pane-idle'}
-    {dropTarget ? 'shell-pane-drop-target' : ''}
-    {splitEdge === 'left' ? 'shell-pane-split-left' : ''}
-    {splitEdge === 'right' ? 'shell-pane-split-right' : ''}
-    {splitEdge === 'top' ? 'shell-pane-split-top' : ''}
-    {splitEdge === 'bottom' ? 'shell-pane-split-bottom' : ''}"
+    {focused ? 'shell-pane-focused' : 'shell-pane-idle'}"
   data-debug-label="shell-pane"
   data-group-id={groupId}
   role="group"
@@ -322,6 +317,11 @@
       </div>
     {/if}
   </div>
+  {#if dropTarget || splitEdge}
+    <div class="shell-pane-drop-preview" class:split-left={splitEdge === "left"} class:split-right={splitEdge === "right"} class:split-top={splitEdge === "top"} class:split-bottom={splitEdge === "bottom"} aria-hidden="true" data-debug-label="tab-drop-preview">
+      <span>{splitEdge ? `Split ${splitEdge}` : "Move tab here"}</span>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -331,45 +331,30 @@
   .shell-pane-idle {
     opacity: 0.92;
   }
-  .shell-pane-drop-target {
-    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-primary-400, #a78bfa) 80%, transparent);
-    background: color-mix(in oklab, var(--color-primary-500, #8b5cf6) 8%, transparent);
+  .shell-pane-drop-preview {
+    position: absolute;
+    inset: 4px;
+    z-index: 100;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(var(--theme-text) / .28);
+    border-radius: 5px;
+    background: rgb(var(--theme-text) / .1);
+    box-shadow: inset 0 0 0 1px rgb(var(--theme-pane) / .4);
   }
-  .shell-pane-split-left {
-    background: linear-gradient(
-      to right,
-      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 0%,
-      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 28%,
-      transparent 28%
-    );
-    box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--color-primary-400, #a78bfa) 85%, transparent);
-  }
-  .shell-pane-split-right {
-    background: linear-gradient(
-      to left,
-      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 0%,
-      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 28%,
-      transparent 28%
-    );
-    box-shadow: inset -3px 0 0 0 color-mix(in oklab, var(--color-primary-400, #a78bfa) 85%, transparent);
-  }
-  .shell-pane-split-top {
-    background: linear-gradient(
-      to bottom,
-      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 0%,
-      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 28%,
-      transparent 28%
-    );
-    box-shadow: inset 0 3px 0 0 color-mix(in oklab, var(--color-primary-400, #a78bfa) 85%, transparent);
-  }
-  .shell-pane-split-bottom {
-    background: linear-gradient(
-      to top,
-      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 0%,
-      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 28%,
-      transparent 28%
-    );
-    box-shadow: inset 0 -3px 0 0 color-mix(in oklab, var(--color-primary-400, #a78bfa) 85%, transparent);
+  .shell-pane-drop-preview.split-left { right: 50%; }
+  .shell-pane-drop-preview.split-right { left: 50%; }
+  .shell-pane-drop-preview.split-top { bottom: 50%; }
+  .shell-pane-drop-preview.split-bottom { top: 50%; }
+  .shell-pane-drop-preview span {
+    padding: .4rem .65rem;
+    border-radius: 5px;
+    background: rgb(var(--theme-pane) / .95);
+    color: rgb(var(--theme-text));
+    font-size: 12px;
+    box-shadow: 0 2px 10px #0003;
   }
   .shell-pane-tabs {
     animation: shell-tabs-in 120ms ease-out;
@@ -393,9 +378,10 @@
       transform: translateY(0);
     }
   }
-  :global(body.shell-tab-dragging) {
-    cursor: grabbing;
-    user-select: none;
+  :global(body.shell-tab-dragging),
+  :global(body.shell-tab-dragging *) {
+    cursor: grabbing !important;
+    user-select: none !important;
   }
   @media (prefers-reduced-motion: reduce) {
     .shell-pane-tabs {

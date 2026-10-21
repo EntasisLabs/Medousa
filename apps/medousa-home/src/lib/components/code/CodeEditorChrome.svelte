@@ -4,10 +4,9 @@
     CircleAlert,
     ArrowLeft,
     ArrowRight,
-    FolderKanban,
     Pencil,
     Save,
-    Settings2,
+    Ellipsis,
     Square,
     SquareTerminal,
     GitPullRequestArrow,
@@ -17,6 +16,8 @@
     GitBranch,
   } from "@lucide/svelte";
   import CodeCommandPicker from "./CodeCommandPicker.svelte";
+  import CodeMarkdownViewControls from "./CodeMarkdownViewControls.svelte";
+  import type { CodeMarkdownMode } from "$lib/code/codeMarkdownDocument";
   import CodeBreadcrumbs from "$lib/components/code/CodeBreadcrumbs.svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import type { CodeChangesController } from "$lib/code/codeChangesController.svelte";
@@ -27,11 +28,12 @@
   import { codeSyntaxThemePreference } from "$lib/stores/codeSyntaxThemePreference.svelte";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
 
-  type ActiveTab = { path: string; loading: boolean; language: string };
+  type ActiveTab = { path: string; loading: boolean; language: string; preview?: boolean; markdownMode?: CodeMarkdownMode };
 
   interface Props {
     workId: string;
     activeTab: ActiveTab | null;
+    onMarkdownModeChange: (mode: CodeMarkdownMode) => void | Promise<void>;
     projectTitle?: string | null;
     phaseLabel?: string | null;
     reviewAvailable?: boolean;
@@ -89,6 +91,7 @@
   let {
     workId,
     activeTab,
+    onMarkdownModeChange,
     projectTitle = null,
     phaseLabel = null,
     reviewAvailable = false,
@@ -185,10 +188,14 @@
   function repairLanguageSupport() {
     onRepairLanguage();
   }
+  // Give long filenames/deep paths the same quieter actions as a narrow pane.
+  const compactActions = $derived(!!activeTab && (
+    (activeTab.path.split("/").at(-1)?.length ?? 0) > 28 || activeTab.path.length > 64
+  ));
   const activeTabLanguage = $derived(activeTab?.language ?? "");
 </script>
-  <header class="code-editor-chrome relative z-20 flex shrink-0 items-center gap-1.5 border-b border-surface-500/30 px-1.5">
-    <div class="flex min-w-0 flex-1 items-center gap-1">
+  <header class="code-editor-chrome relative z-20 flex shrink-0 items-center gap-1.5 border-b border-surface-500/30 px-3" class:code-editor-chrome--document={!!activeTab} class:code-editor-chrome--compact={compactActions}>
+    <div class="code-editor-location flex min-w-0 flex-1 items-center gap-1">
       <div class="flex shrink-0 items-center">
         <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go back" title="Go back" disabled={!activeTab || !codeWorkspace.canNavigate(workId, -1)} onclick={() => void navigate(-1)}><ArrowLeft size={14} strokeWidth={1.75} /></button>
         <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go forward" title="Go forward" disabled={!activeTab || !codeWorkspace.canNavigate(workId, 1)} onclick={() => void navigate(1)}><ArrowRight size={14} strokeWidth={1.75} /></button>
@@ -206,9 +213,13 @@
           path={activeTab.path}
           onPathSegment={onPathSegment}
         />
+        {#if dirty || savingFile}<span class="code-file-state" title={savingFile ? "Saving…" : "Unsaved changes"} role="status" aria-label={savingFile ? "Saving file" : "Unsaved changes"}>●</span>{/if}
       {/if}
     </div>
     <div class="code-editor-chrome-actions flex shrink-0 items-center gap-0.5">
+      {#if activeTab?.language === "markdown" && !activeTab.preview}
+        <CodeMarkdownViewControls compact={compactActions} mode={activeTab.markdownMode ?? "source"} disabled={activeTab.loading} onchange={onMarkdownModeChange}/>
+      {/if}
       {#if reviewAvailable}
         <button
           type="button"
@@ -240,70 +251,43 @@
         ><Play size={14} strokeWidth={1.75} /></button>
       {/if}
       {#if tasks.projectTasks.length > 0 || activeTab}
-        <div class="code-run-control" aria-label="Project command">
-          {#if tasks.running}
-            <button
-              type="button"
-              class="code-run-button code-run-button--stop"
-              title={tasks.run ? `Stop ${tasks.run.task.label}` : "Stop project command"}
-              aria-label={tasks.run ? `Stop ${tasks.run.task.label}` : "Stop project command"}
-              onclick={() => void tasks.stopDetected()}
-            ><Square size={12} strokeWidth={2} /><span>Stop</span></button>
-          {:else}
-            <button
-              type="button"
-              class="code-run-button"
-              disabled={agentHasControl || busy || tasks.preparing || tasks.testQueueActive || !tasks.selectedTask || !tasks.taskAvailable(tasks.selectedTask)}
-              title={agentHasControl
+        <CodeCommandPicker {tasks} path={activeTab?.path ?? ""} variant="run" runDisabled={agentHasControl || busy}
+              runTitle={agentHasControl
                 ? `Resume editing before running ${tasks.selectedTask?.label ?? "this command"}`
                 : !tasks.taskAvailable(tasks.selectedTask)
                   ? tasks.taskRepair(tasks.selectedTask) ?? `${tasks.selectedTask?.label ?? "Command"} is unavailable`
                 : tasks.selectedTask
                   ? `Run ${tasks.selectedTask.label}: ${tasks.selectedTask.argv.join(" ")}`
-                  : "No project command selected"}
-              aria-label={tasks.selectedTask ? `Run ${tasks.selectedTask.label}` : "Run project command"}
-              onclick={() => void tasks.runDetected()}
-            ><Play size={12} strokeWidth={2} /><span>{tasks.preparing ? "Saving…" : "Run"}</span></button>
-          {/if}
-          <CodeCommandPicker {tasks} path={activeTab?.path ?? ""} />
-        </div>
+                  : "Choose a project command"}/>
       {/if}
       {#if activeTab}
+        {#if terminalAvailable}
+          <button type="button" class="scripts-workbench-toolbar-btn code-terminal-button {terminalDockOpen ? 'scripts-workbench-toolbar-btn-active' : ''}" title={titleWithShortcut("Toggle terminal", "code-terminal")} aria-label="Toggle terminal" aria-pressed={terminalDockOpen} onclick={() => void toggleTerminalDock()}><SquareTerminal size={14} strokeWidth={1.75}/><span class="code-terminal-label">Terminal</span></button>
+        {/if}
         <button
           type="button"
-          class="scripts-workbench-toolbar-btn {problems.panel === 'problems' ? 'scripts-workbench-toolbar-btn-active' : ''}"
-          title="Issues"
-          aria-label="Show issues"
+          class="scripts-workbench-toolbar-btn code-secondary-action {problems.panel === 'problems' ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          title={problems.counts.total ? `Problems · ${problems.counts.errors} errors, ${problems.counts.warnings} warnings` : "Problems"}
+          aria-label={problems.counts.total ? `Show issues (${problems.counts.total})` : "Show issues"}
           aria-pressed={problems.panel === "problems"}
           onclick={() => void problems.showProblems()}
-        ><CircleAlert size={14} strokeWidth={1.75} /><span class="code-action-label">Problems</span></button>
+        ><CircleAlert size={14} strokeWidth={1.75} />{#if problems.counts.total}<span class="code-problem-count" class:code-problem-count--error={problems.counts.errors > 0}>{problems.counts.total}</span>{/if}</button>
         <button
           type="button"
-          class="scripts-workbench-toolbar-btn {searchOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          class="scripts-workbench-toolbar-btn code-secondary-action {searchOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
           title={titleWithShortcut("Search in files", "code-search")}
           aria-label="Search in files"
           aria-pressed={searchOpen}
           onclick={() => toggleSearch()}
-        ><Search size={14} strokeWidth={1.75} /><span class="code-action-label">Search</span></button>
+        ><Search size={14} strokeWidth={1.75} /></button>
         <button
           type="button"
-          class="scripts-workbench-toolbar-btn {changes.open ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          class="scripts-workbench-toolbar-btn code-secondary-action {changes.open ? 'scripts-workbench-toolbar-btn-active' : ''}"
           title="Changes"
           aria-label="Show changes"
           aria-pressed={changes.open}
           onclick={() => void changes.toggle()}
         ><GitBranch size={14} strokeWidth={1.75} /></button>
-        {#if terminalAvailable}
-          <button
-            type="button"
-            class="scripts-workbench-toolbar-btn {terminalDockOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-            title={titleWithShortcut("Toggle terminal", "code-terminal")}
-            aria-label="Toggle terminal"
-            aria-pressed={terminalDockOpen}
-            onclick={() => void toggleTerminalDock()}
-          ><SquareTerminal size={14} strokeWidth={1.75} /><span class="code-action-label">Terminal</span></button>
-        {/if}
-        <span class="code-editor-chrome-divider" aria-hidden="true"></span>
 
         {#if agentHasControl && !agentRunning}
           <button
@@ -323,7 +307,7 @@
             aria-label="Edit file"
             title="Start editing (or just type)"
           ><Pencil size={14} strokeWidth={1.75} /></button>
-        {:else}
+        {:else if dirty || savingFile}
           <button
             type="button"
             class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
@@ -349,9 +333,14 @@
               aria-haspopup="menu"
               onclick={toggle}
             >
-              <Settings2 size={14} strokeWidth={1.75} />
+              <Ellipsis size={15} strokeWidth={1.75} />
             </button>
           {/snippet}
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={() => void problems.showProblems()}><span>Problems</span><span class="code-chrome-menu-meta">{problems.counts.total}</span></button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={toggleSearch}>Search in files</button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={() => void changes.toggle()}>Changes</button>
+          <button type="button" role="menuitem" class="code-chrome-menu-item" disabled={!editable || !dirty || savingFile} onclick={onSave}>Save file</button>
+          <div class="code-chrome-menu-sep" role="separator"></div>
           <button type="button" role="menuitem" class="code-chrome-menu-item" title={titleWithShortcut("Find in file", "code-find")} onclick={onOpenFind}>Find in file</button>
           <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={() => tasks.toggleOutput()}>
             <span>Output</span>
@@ -364,15 +353,6 @@
             <span>Understand this code</span>
             <span class="code-chrome-menu-meta">{worldOpen ? "On" : "Off"}</span>
           </button>
-          {#if tasks.selectedTask && !tasks.running}
-            <button
-              type="button"
-              role="menuitem"
-              class="code-chrome-menu-item"
-              title={`${tasks.selectedTask.label}: ${tasks.selectedTask.argv.join(" ")}`}
-              onclick={() => void tasks.runDetected()}
-            >Run {tasks.selectedTask.label}</button>
-          {/if}
           <button type="button" role="menuitem" class="code-chrome-menu-item" disabled={activeTab.loading || busy} onclick={() => void reload()}>Reload file</button>
           <div class="code-chrome-menu-sep" role="separator"></div>
           <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={toggleWordWrap}>
@@ -415,36 +395,19 @@
           {#if lspError}
             <button type="button" role="menuitem" class="code-chrome-menu-item code-chrome-menu-item--warn" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
           {/if}
-        </OverflowMenu>
-        {#if projectMenu}
-          <OverflowMenu
-            label="Project actions"
-            title="Project actions"
-            panelClass="w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
-          >
-            {#snippet trigger({ open, toggle })}
-              <button
-                type="button"
-                class="scripts-workbench-toolbar-btn {open ? 'scripts-workbench-toolbar-btn-active' : ''}"
-                title="Project actions — agent, terminal, discard"
-                aria-label="Project actions"
-                aria-expanded={open}
-                aria-haspopup="menu"
-                onclick={toggle}
-              >
-                <FolderKanban size={14} strokeWidth={1.75} />
-              </button>
-            {/snippet}
+          {#if projectMenu}
+            <div class="code-chrome-menu-sep" role="separator"></div>
             {@render projectMenu()}
-          </OverflowMenu>
-        {/if}
+          {/if}
+        </OverflowMenu>
       {/if}
     </div>
   </header>
 
 <style>
   .code-editor-chrome {
-    min-height: 30px;
+    min-height: 44px;
+    padding-block:6px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: transparent;
@@ -456,19 +419,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-text)) 92%,
-      rgb(var(--theme-text-secondary))
-    );
+    color: rgb(var(--theme-text-tertiary));
     font-family:
       -apple-system,
       BlinkMacSystemFont,
       "Segoe UI",
       system-ui,
       sans-serif;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 400;
     letter-spacing: 0;
     line-height: 1.2;
   }
@@ -504,56 +463,29 @@
     font-weight: 400;
   }
 
-  .code-editor-chrome-divider {
-    margin: 0 0.15rem;
-    height: 1rem;
-    width: 1px;
-    flex-shrink: 0;
-    background: rgb(var(--color-surface-500) / 0.35);
-  }
-
-  .code-run-control {
-    display: flex;
-    min-width: 0;
-    height: 24px;
-    align-items: stretch;
-    border: 1px solid rgb(var(--color-primary-500) / 0.32);
-    border-radius: 0.35rem;
-    background: rgb(var(--color-primary-500) / 0.09);
-  }
-
-  .code-run-button {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 0.25rem;
-    border: 0;
-    border-right: 1px solid rgb(var(--color-primary-500) / 0.25);
-    background: rgb(var(--color-primary-500) / 0.12);
-    padding: 0 0.45rem;
-    color: rgb(var(--theme-text));
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  .code-run-button:hover:not(:disabled) {
-    background: rgb(var(--color-primary-500) / 0.24);
-  }
-
-  .code-run-button:disabled {
-    cursor: default;
-    opacity: 0.45;
-  }
-
-  .code-run-button--stop {
-    border-right-color: rgb(251 113 133 / 0.25);
-    background: rgb(244 63 94 / 0.12);
-    color: rgb(254 205 211);
-  }
-
   .code-editor-chrome-actions > button { display: inline-flex; align-items: center; }
-  .code-action-label { margin-left: 0.25rem; font-size: 11px; }
-  @media (max-width: 1100px) { .code-action-label { display: none; } }
+  .code-editor-chrome :global(.scripts-workbench-toolbar-btn) { min-width:28px; height:28px; padding-inline:6px; gap:.35rem; }
+  .code-terminal-label { font-size:12px; }
+  .code-file-state { flex-shrink:0; color:rgb(var(--theme-text-tertiary)); font-size:8px; }
+  .code-problem-count { color:rgb(var(--theme-warning)); font-size:11px; font-variant-numeric:tabular-nums; }
+  .code-problem-count--error { color:rgb(var(--theme-error)); }
+  .code-editor-chrome--compact .code-editor-chrome-title,
+  .code-editor-chrome--compact .code-editor-chrome-sep,
+  .code-editor-chrome--compact .code-terminal-label,
+  .code-editor-chrome--compact .code-secondary-action { display:none !important; }
+  .code-editor-chrome--compact :global(.command-run-button span) { max-width:5rem; }
+  @container code-editor (max-width:1050px) {
+    .code-editor-chrome--document .code-editor-chrome-title, .code-editor-chrome--document .code-editor-chrome-sep { display:none; }
+  }
+  @container code-editor (max-width:700px) {
+    .code-terminal-label { display:none; }
+    .code-secondary-action { display:none !important; }
+  }
+  @container code-editor (max-width:500px) {
+    .code-editor-chrome { flex-wrap:wrap; row-gap:4px; }
+    .code-editor-location { flex-basis:100%; }
+    .code-editor-chrome-actions { margin-left:auto; max-width:100%; flex-wrap:wrap; justify-content:flex-end; }
+  }
 
   :global(.code-chrome-menu-item) {
     display: flex;

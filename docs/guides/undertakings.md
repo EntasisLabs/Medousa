@@ -191,7 +191,10 @@ a private Code IDE chrome.
   open files for the project. `Cmd/Ctrl+Shift+T` reopens the last closed file.
   Close and cycle tabs with Workshop shell controls (`Ctrl+;` then `n` / `p`,
   or close from the tab strip). Split Editor (`Ctrl+;` then `%` / `"`) keeps the
-  current file visible in both panes; drag a tab to a pane edge to move it.
+  current file visible in both panes. Drag a tab from the top bar onto the left,
+  right, top, or bottom of an editor pane to split it there; a preview shows
+  where the tab will land. Drop in the center of another pane to move the tab
+  into it. Press Escape to cancel a drag.
   Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
   Code Back/Forward restores the remembered pane when that group still exists.
   Problems, Structure, Search, Changes, Tests, the selected project command,
@@ -236,8 +239,14 @@ a private Code IDE chrome.
   second autosave, save-all or require-clean run preflight, and whether failed
   task matchers open Problems. The selected primary task remains scoped to the
   project and is changed from the Code command bar.
-- Markdown files offer **Source**, **Markdown**, **Preview**, and **Split** in
-  the same tab. Markdown opens a writing editor with the Notes formatting
+- The Code header keeps file location, document views, the command control,
+  and Terminal together. Problems shows its current count; the overflow menu
+  holds editor preferences and project actions. Narrow panes and long file paths
+  collapse document views into a picker and keep secondary tools in the overflow
+  menu. Breadcrumbs shorten in place, keeping the filename visible without a
+  horizontal scrollbar.
+- Markdown files offer **Source**, **Write**, **Preview**, and a **Split** toggle
+  in the shared Code header. Write opens a writing editor with the Notes formatting
   controls; Preview renders the current draft, and Split keeps source beside
   its live preview. Switching views keeps the same project file, draft, and
   guarded save. Opening the writing editor does not rewrite the file. Edits
@@ -350,8 +359,10 @@ the tool or dependencies at the stated root, and reopen the project to refresh
 the catalog. Medousa prefers a healthy development/run task, then build, test,
 and check commands; an explicit selection remains the project default.
 
-- The project command bar remains available before a file is opened. Choose a
-  command and select **Run**; Medousa remembers that selection for the project.
+- The project command control remains available before a file is opened. With
+  no selection, **Run…** opens the command picker. Selecting a command does not
+  start it: use the play button beside its name to run, or its chevron to choose
+  another command. Medousa remembers that selection for the project.
   Run saves every dirty Code buffer first and does not start if a save conflict
   needs attention. A running command becomes a **Stop** action and can be
   cancelled without closing the project or Terminal.

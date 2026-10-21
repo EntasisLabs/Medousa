@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { Columns2, Rows3 } from "@lucide/svelte";
   import DiffFileSection from "./DiffFileSection.svelte";
-  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
+  import DiffViewOptions from "./DiffViewOptions.svelte";
   import { countStackStats, type DiffFileSection as DiffFileSectionType } from "$lib/diff/diffTypes";
   import { onMount } from "svelte";
 
@@ -13,6 +12,8 @@
     showJumpList?: boolean;
     /** full = summary + prefs; prefs = overflow only; none = no header. */
     chrome?: "full" | "prefs" | "none";
+    /** The review owns the file header; render only its diff body. */
+    embedded?: boolean;
     busy?: boolean;
     title?: string;
     subtitle?: string;
@@ -43,6 +44,7 @@
     density = $bindable<"comfortable" | "compact">("comfortable"),
     showJumpList = false,
     chrome = "full",
+    embedded = false,
     busy = false,
     title,
     subtitle,
@@ -75,7 +77,6 @@
   let mounted = $state<Record<string, boolean>>({});
   let itemEls = $state<Record<string, HTMLElement | null>>({});
   let intersectionObserver = $state<IntersectionObserver | null>(null);
-  let prefsOpen = $state(false);
 
   onMount(() => {
     intersectionObserver = new IntersectionObserver(
@@ -131,22 +132,6 @@
     return collapsedSet.has(file.path);
   }
 
-  function setDensity(next: "comfortable" | "compact") {
-    density = next;
-    onDensityChange?.(next);
-    prefsOpen = false;
-  }
-
-  function setMode(next: "inline" | "side") {
-    mode = next;
-    prefsOpen = false;
-  }
-
-  function setWrap(next: boolean) {
-    wrap = next;
-    onWrapChange?.(next);
-    prefsOpen = false;
-  }
 </script>
 
 <section class="diff-stack">
@@ -173,56 +158,7 @@
       </div>
       {#if chrome === "full" || chrome === "prefs"}
         <div class="diff-stack-controls">
-          <OverflowMenu
-            bind:open={prefsOpen}
-            label="Diff view options"
-            title="Diff view options"
-            panelClass="w-48 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
-          >
-            <button
-              type="button"
-              role="menuitemcheckbox"
-              aria-checked={density === "comfortable"}
-              class="secondary-action"
-              onclick={() => setDensity("comfortable")}
-            >Comfortable density</button>
-            <button
-              type="button"
-              role="menuitemcheckbox"
-              aria-checked={density === "compact"}
-              class="secondary-action"
-              onclick={() => setDensity("compact")}
-            >Compact density</button>
-            <div class="my-1 border-t border-surface-500/25" role="separator"></div>
-            <button
-              type="button"
-              role="menuitemcheckbox"
-              aria-checked={mode === "inline"}
-              class="secondary-action"
-              onclick={() => setMode("inline")}
-            >
-              <Rows3 size={13} />
-              <span>Inline</span>
-            </button>
-            <button
-              type="button"
-              role="menuitemcheckbox"
-              aria-checked={mode === "side"}
-              class="secondary-action"
-              onclick={() => setMode("side")}
-            >
-              <Columns2 size={13} />
-              <span>Side by side</span>
-            </button>
-            <div class="my-1 border-t border-surface-500/25" role="separator"></div>
-            <button
-              type="button"
-              role="menuitemcheckbox"
-              aria-checked={wrap}
-              class="secondary-action"
-              onclick={() => setWrap(!wrap)}
-            >Wrap long lines</button>
-          </OverflowMenu>
+          <DiffViewOptions bind:mode bind:density bind:wrap {onDensityChange} {onWrapChange} />
         </div>
       {/if}
     </header>
@@ -264,6 +200,7 @@
         >
           <DiffFileSection
             {file}
+            {embedded}
             {mode}
             {density}
             {wrap}
@@ -426,25 +363,4 @@
     font-size: 0.6875rem;
   }
 
-  :global(.diff-stack-controls .secondary-action) {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    gap: 0.45rem;
-    border: 0;
-    border-radius: 0.4rem;
-    background: transparent;
-    padding: 0.4rem 0.55rem;
-    color: rgb(var(--color-surface-200));
-    font-size: 0.6875rem;
-    text-align: left;
-  }
-
-  :global(.diff-stack-controls .secondary-action:hover) {
-    background: rgb(var(--color-surface-700) / 0.55);
-  }
-
-  :global(.diff-stack-controls .secondary-action[aria-checked="true"]) {
-    color: rgb(var(--theme-link));
-  }
 </style>

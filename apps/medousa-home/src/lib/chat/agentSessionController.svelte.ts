@@ -6,18 +6,13 @@
 import { untrack } from "svelte";
 import {
   cancelAgentSession,
-  createAgentSession,
-  getSessionAgentMode,
-  getSessionCodeBinding,
   setAgentSessionConfigOption,
   type AgentSessionConfigOption,
 } from "$lib/daemon";
-import { getSessionBot } from "$lib/daemon/bot";
 import { bots } from "$lib/stores/bots.svelte";
 import { chat } from "$lib/stores/chat.svelte";
-import { planAgentWorkspace } from "$lib/utils/agentWorkspacePlan";
+import { prepareAgentSession } from "./prepareAgentSession";
 import {
-  agentSessionStreamUrl,
   clearSessionAgentSessionId,
   getSessionAgentRuntime,
   getSessionAgentSessionId,
@@ -78,75 +73,9 @@ export function createAgentSessionController() {
     options?: { openChooserWhenMissing?: boolean; stopWhenUnbound?: boolean },
   ): Promise<PreparedAgentSession | null> {
     return queueAgentLifecycle(async () => {
-      const botResponse = await getSessionBot(sessionId);
-      if (botResponse.binding) throw new Error("A Bot’s conversation uses its configured runtime.");
-      const [binding, mode] = await Promise.all([
-        getSessionCodeBinding(sessionId),
-        getSessionAgentMode(sessionId),
-      ]);
-      if (getSessionAgentRuntime(sessionId) !== runtimeChoice) return null;
-
-      const bindingWorkId = binding.work_id?.trim() || null;
-      const currentAgentId = getSessionAgentSessionId(sessionId);
-      const action =
-        options?.stopWhenUnbound && !bindingWorkId
-          ? currentAgentId
-            ? "stop"
-            : "keep"
-          : planAgentWorkspace({
-              runtime: runtimeChoice,
-              mode: mode.effective_mode,
-              bindingWorkId,
-              agentSessionId: currentAgentId,
-              agentWorkId: getSessionAgentWorkId(sessionId),
-            });
-
-      if ((action === "stop" || action === "restart") && currentAgentId) {
-        await cancelKnownAgent(sessionId, currentAgentId);
-      }
-      if (action === "stop" || action === "wait_for_project") {
-        if (options?.openChooserWhenMissing && chat.focusedSessionId === sessionId) {
-          window.dispatchEvent(new CustomEvent("medousa-open-code-project-chooser"));
-        }
-        return null;
-      }
-
-      const retainedAgentId = getSessionAgentSessionId(sessionId);
-      if (action === "keep" && retainedAgentId) {
-        return {
-          agentSessionId: retainedAgentId,
-          streamUrl: agentSessionStreamUrl(retainedAgentId),
-          streamReady: true,
-          acceptedAt: new Date().toISOString(),
-        };
-      }
-
-      const accepted = await createAgentSession({
-        session_id: sessionId,
-        runtime: runtimeChoice,
-        work_id: bindingWorkId,
-      });
-      const latestBinding = await getSessionCodeBinding(sessionId);
-      const latestWorkId = latestBinding.work_id?.trim() || null;
-      if (
-        getSessionAgentRuntime(sessionId) !== runtimeChoice ||
-        latestWorkId !== bindingWorkId
-      ) {
-        await cancelAgentSession(accepted.agent_session_id).catch(() => undefined);
-        return null;
-      }
-
-      setSessionAgentSessionId(sessionId, accepted.agent_session_id);
-      setSessionAgentWorkId(sessionId, bindingWorkId);
-      const configOptions = accepted.config_options ?? [];
-      setSessionAgentConfigOptions(sessionId, configOptions);
-      if (chat.focusedSessionId === sessionId) agentConfigOptions = configOptions;
-      return {
-        agentSessionId: accepted.agent_session_id,
-        streamUrl: accepted.stream_url,
-        streamReady: accepted.stream_ready,
-        acceptedAt: accepted.accepted_at_utc ?? new Date().toISOString(),
-      };
+      const prepared = await prepareAgentSession(sessionId, runtimeChoice, options);
+      if (chat.focusedSessionId === sessionId) agentConfigOptions = getSessionAgentConfigOptions(sessionId) as AgentSessionConfigOption[];
+      return prepared;
     });
   }
 

@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { reviewChangeKind, type ReviewChangeKind } from "$lib/code/reviewChangeKinds";
   import { reviewFileInDirectory } from "$lib/code/reviewAreas";
   import { basename, parentDir, shortKind, symbolName } from "$lib/code/reviewFileLabels";
   import type { ReviewReadingState } from "$lib/code/reviewPage.svelte";
-  import { ChevronRight, MessageSquareText } from "@lucide/svelte";
+  import { ChevronRight, MessageSquareText, FileCode2 } from "@lucide/svelte";
+  import DiffViewOptions from "$lib/components/diff/DiffViewOptions.svelte";
+  import ReviewDiffFileActions from "./ReviewDiffFileActions.svelte";
   import DiffStack from "$lib/components/diff/DiffStack.svelte";
   import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
   import {
@@ -19,6 +22,7 @@
   interface Props {
     review: ReviewProjection;
     directory?: string | null;
+    changeKind?: ReviewChangeKind | null;
     viewState?: ReviewReadingState["diff"];
     onReady?: () => void;
     busy?: boolean;
@@ -35,6 +39,7 @@
   let {
     review,
     directory = null,
+    changeKind = null,
     viewState,
     onReady,
     busy = false,
@@ -45,7 +50,6 @@
 
   let expandedPaths = $state<Set<string>>(new Set());
   let expandedScopeKeys = $state<Set<string>>(new Set());
-  let fullDiffPaths = $state<Set<string>>(new Set());
   let pinnedIntentsPath = $state<string | null>(null);
   let hoverIntentsPath = $state<string | null>(null);
   let fileDiffs = $state<Record<string, ReviewFileDiff>>({});
@@ -54,7 +58,7 @@
   let scopesByPath = $state<Record<string, ReviewSymbolScope[]>>({});
   let scopesLoading = $state<Record<string, boolean>>({});
   let density = $state<"comfortable" | "compact">("compact");
-  let wrap = $state(false);
+  let wrap = $state(true);
   let mode = $state<"inline" | "side">("inline");
   let resetForEvidenceId: string | null | undefined = undefined;
   let loadEpoch = 0;
@@ -79,7 +83,7 @@
   });
 
   const files = $derived.by(() => {
-    const list = review.changed_files.filter((file) => reviewFileInDirectory(file.path, directory));
+    const list = review.changed_files.filter((file) => reviewFileInDirectory(file.path, directory) && (!changeKind || reviewChangeKind(file.path) === changeKind));
     return list.sort((a, b) => {
       const ar = riskPaths.has(a.path) ? 0 : 1;
       const br = riskPaths.has(b.path) ? 0 : 1;
@@ -105,7 +109,6 @@
     untrack(() => {
       expandedPaths = new Set();
       expandedScopeKeys = new Set();
-      fullDiffPaths = new Set();
       pinnedIntentsPath = null;
       hoverIntentsPath = null;
       fileDiffs = {};
@@ -306,9 +309,6 @@
       [...expandedScopeKeys].filter((key) => !key.startsWith(`${path}\0`)),
     );
     expandedScopeKeys = nextScopes;
-    const nextFull = new Set(fullDiffPaths);
-    nextFull.delete(path);
-    fullDiffPaths = nextFull;
     const nextDiffs = { ...fileDiffs };
     delete nextDiffs[path];
     fileDiffs = nextDiffs;
@@ -350,7 +350,6 @@
     fileLoadGenerations.clear();
     expandedPaths = new Set();
     expandedScopeKeys = new Set();
-    fullDiffPaths = new Set();
     fileDiffs = {};
     fileErrors = {};
     loadingPaths = new Set();
@@ -402,19 +401,14 @@
     }
   }
 
-  function toggleFullDiff(path: string) {
-    const next = new Set(fullDiffPaths);
-    if (next.has(path)) next.delete(path);
-    else next.add(path);
-    fullDiffPaths = next;
-  }
 </script>
 
 {#if files.length === 0}
-  <p class="file-empty">{directory === null ? "No file changes in this revision." : "No changed files in this directory."}</p>
+  <p class="file-empty">{changeKind ? "No changed files of this type." : directory === null ? "No file changes in this revision." : "No changed files in this directory."}</p>
 {:else}
   <div class="file-skim-chrome">
     <div class="file-skim-toolbar">
+      <span class="file-skim-count">{files.length} {files.length === 1 ? "file" : "files"}</span>
       {#if allExpanded && bulkExpandAvailable}
         <button type="button" class="file-skim-action" onclick={collapseAll}>Collapse all</button>
       {:else if bulkExpandAvailable}
@@ -429,6 +423,7 @@
       {:else}
         <span class="file-skim-hint">Open a file to load its diff</span>
       {/if}
+      <DiffViewOptions bind:mode bind:density bind:wrap />
     </div>
 
     <ul class="file-skim" aria-label="Changed files">
@@ -448,6 +443,7 @@
               onclick={() => void toggleFile(file.path)}
             >
               <ChevronRight size={12} class="file-chevron {open ? 'file-chevron--open' : ''}" />
+              <FileCode2 size={13} />
               <span class="file-identity">
                 <span class="file-path">{basename(file.path)}</span>
                 {#if dir}
@@ -485,6 +481,11 @@
                 <span class="file-add tabular-nums">+{file.lines_added ?? 0}</span>
                 <span class="file-del tabular-nums">−{file.lines_removed ?? 0}</span>
               {/if}
+              <ReviewDiffFileActions
+                onOpenFile={() => onOpenFile(file.path, fileDiffs[file.path]?.hunks[0]?.new_start || 1)}
+                onRestore={onRestore && fileDiffs[file.path] ? () => onRestore(fileDiffs[file.path]) : undefined}
+                {busy}
+              />
             </div>
           </div>
 
@@ -525,6 +526,7 @@
                   </p>
                 {/if}
                 {#if scopes.length > 0}
+                  <details class="file-symbols"><summary>Changed symbols · {scopes.length}</summary>
                   <ul class="scope-list" aria-label="Changed symbols">
                     {#each scopes as scope (scope.id)}
                       {@const scopeOpen = expandedScopeKeys.has(scopeKey(file.path, scope.id))}
@@ -553,15 +555,9 @@
                               {density}
                               {wrap}
                               chrome="none"
+                              embedded
                               collapsedPaths={[]}
                               onToggleCollapsed={() => {}}
-                              onOpenFile={(path, line) => onOpenFile(path, line)}
-                              onRestoreFile={onRestore
-                                ? async (path) => {
-                                    const comparison = fileDiffs[path];
-                                    if (comparison) await onRestore(comparison);
-                                  }
-                                : undefined}
                               onComment={onComment
                                 ? (input) =>
                                     onComment({
@@ -577,57 +573,17 @@
                       </li>
                     {/each}
                   </ul>
-                  <button
-                    type="button"
-                    class="file-full-diff"
-                    disabled={busy}
-                    onclick={() => toggleFullDiff(file.path)}
-                  >
-                    {fullDiffPaths.has(file.path) ? "Hide full file diff" : "Show full file diff"}
-                  </button>
-                  {#if fullDiffPaths.has(file.path)}
-                    <DiffStack
-                      files={[toStackFile(diff)]}
-                      {mode}
-                      {density}
-                      {wrap}
-                      chrome="prefs"
-                      collapsedPaths={[]}
-                      onToggleCollapsed={() => {}}
-                      onOpenFile={(path, line) => onOpenFile(path, line)}
-                      onRestoreFile={onRestore
-                        ? async (path) => {
-                            const comparison = fileDiffs[path];
-                            if (comparison) await onRestore(comparison);
-                          }
-                        : undefined}
-                      onComment={onComment
-                        ? (input) =>
-                            onComment({
-                              path: input.path,
-                              side: input.side,
-                              line: input.line,
-                              content: input.content,
-                            })
-                        : undefined}
-                    />
-                  {/if}
-                {:else}
+                  </details>
+                {/if}
                   <DiffStack
                     files={[toStackFile(diff)]}
                     {mode}
                     {density}
                     {wrap}
-                    chrome="prefs"
+                    chrome="none"
+                    embedded
                     collapsedPaths={[]}
                     onToggleCollapsed={() => {}}
-                    onOpenFile={(path, line) => onOpenFile(path, line)}
-                    onRestoreFile={onRestore
-                      ? async (path) => {
-                          const comparison = fileDiffs[path];
-                          if (comparison) await onRestore(comparison);
-                        }
-                      : undefined}
                     onComment={onComment
                       ? (input) =>
                           onComment({
@@ -638,7 +594,6 @@
                           })
                       : undefined}
                   />
-                {/if}
               {/if}
             </div>
           {/if}
@@ -663,10 +618,13 @@
 
   .file-skim-toolbar {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 0.55rem;
-    padding: 0 0.1rem;
+    padding: 0 .4rem .3rem;
   }
+
+  .file-skim-count { margin-right:auto; font-size:.6875rem; color:rgb(var(--theme-text-tertiary)); }
 
   .file-skim-action {
     border: 0;
@@ -701,9 +659,7 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    border: 1px solid rgb(var(--theme-border) / 0.22);
-    border-radius: var(--theme-container-radius, 0.55rem);
-    background: rgb(var(--theme-card) / calc(var(--theme-pane-alpha, 0.82) * 0.55));
+    border-top: 1px solid rgb(var(--theme-border) / 0.22);
     overflow: hidden;
   }
 
@@ -735,8 +691,8 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.55rem;
-    min-height: 1.7rem;
-    padding: 0.22rem 0.55rem;
+    min-height: 2.3rem;
+    padding: 0.25rem 0.45rem;
   }
 
   .file-expand {
@@ -901,8 +857,10 @@
     color: rgb(var(--theme-text));
   }
 
+  .file-symbols > summary { padding:.4rem .65rem; font-size:.6875rem; color:rgb(var(--theme-text-secondary)); cursor:pointer; }
+
   .file-body {
-    padding: 0 0.45rem 0.45rem 1.35rem;
+    padding: 0;
     border-top: 1px solid rgb(var(--theme-border) / 0.12);
     animation: body-in 160ms ease;
   }
@@ -978,22 +936,5 @@
     margin: 0.1rem 0 0.25rem;
   }
 
-  .file-full-diff {
-    margin: 0.3rem 0 0.1rem;
-    border: 0;
-    background: transparent;
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-link)) 55%,
-      rgb(var(--theme-text-secondary))
-    );
-    font-size: 0.6875rem;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    cursor: pointer;
-  }
 
-  .file-full-diff:hover {
-    color: rgb(var(--theme-link));
-  }
 </style>

@@ -16,6 +16,11 @@ pub(super) async fn project_details(
         .iter()
         .any(|key| repo["permissions"][key] == true);
     review.actions.push("comment".into());
+    if manage || repo["permissions"]["triage"] == true {
+        review
+            .actions
+            .extend(["add_labels".into(), "remove_label".into()]);
+    }
     if review.state != "merged" && (owner || manage) {
         review.actions.push("edit".into());
         review.actions.push(
@@ -36,6 +41,7 @@ pub(super) async fn project_details(
                 .into(),
             );
             review.actions.push("request_reviewers".into());
+            review.actions.push("remove_reviewers".into());
         }
     }
     if review.state == "open" || review.state == "draft" {
@@ -265,6 +271,51 @@ pub(super) async fn mutate(
     validate_ref(github.host, &review)?;
     let pr = format!("repos/{}/pulls/{}", review.repository, review.native_id);
     let message = match request {
+        ReviewProviderWrite::AddLabels { labels, .. } => {
+            metadata::validate_labels(&labels)?;
+            github
+                .request(
+                    "POST",
+                    &format!(
+                        "repos/{}/issues/{}/labels",
+                        review.repository, review.native_id
+                    ),
+                    Some(json!({"labels": labels})),
+                )
+                .await?;
+            "Labels added."
+        }
+        ReviewProviderWrite::RemoveLabel { label, .. } => {
+            metadata::validate_labels(std::slice::from_ref(&label))?;
+            if label == "." || label == ".." {
+                return Err(invalid("This label must be removed on GitHub."));
+            }
+            let encoded: String = url::form_urlencoded::byte_serialize(label.as_bytes()).collect();
+            github
+                .request(
+                    "DELETE",
+                    &format!(
+                        "repos/{}/issues/{}/labels/{}",
+                        review.repository,
+                        review.native_id,
+                        encoded.replace('+', "%20")
+                    ),
+                    None,
+                )
+                .await?;
+            "Label removed."
+        }
+        ReviewProviderWrite::RemoveReviewers { reviewers, .. } => {
+            metadata::validate_reviewers(&reviewers)?;
+            github
+                .request(
+                    "DELETE",
+                    &format!("{pr}/requested_reviewers"),
+                    Some(metadata::reviewer_body(&reviewers)),
+                )
+                .await?;
+            "Review requests removed."
+        }
         ReviewProviderWrite::Comment { body, reply_to, .. } => {
             body_valid(&body)?;
             let endpoint = if let Some(id) = reply_to {
@@ -365,19 +416,12 @@ pub(super) async fn mutate(
             "Pull request state updated."
         }
         ReviewProviderWrite::RequestReviewers { reviewers, .. } => {
-            if reviewers.is_empty()
-                || reviewers.len() > 15
-                || reviewers.iter().any(|v| {
-                    v.is_empty() || !v.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
-                })
-            {
-                return Err(invalid("Enter up to 15 reviewer usernames."));
-            }
+            metadata::validate_reviewers(&reviewers)?;
             github
                 .request(
                     "POST",
                     &format!("{pr}/requested_reviewers"),
-                    Some(json!({"reviewers":reviewers})),
+                    Some(metadata::reviewer_body(&reviewers)),
                 )
                 .await?;
             "Reviewers requested."

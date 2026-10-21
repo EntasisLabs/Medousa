@@ -10,6 +10,11 @@ const fingerprint = (node: JSONContent): string => {
   if (copy.attrs) delete copy.attrs.sourceBlockId;
   return JSON.stringify(copy);
 };
+// The live schema uses block images and exclusive code marks. Preserve inline
+// badges and marked code as source instead of letting DOM normalization rewrite them.
+const hasUnsupportedInlineContent = (node: JSONContent): boolean =>
+  (node.marks?.some(mark => mark.type === "code") && node.marks.length > 1) ||
+  (node.content?.some(child => child.type === "image" || hasUnsupportedInlineContent(child)) ?? false);
 
 /** Source remains authoritative. Only edited rich blocks are serialized. */
 export class MarkdownSourceDocument {
@@ -58,7 +63,7 @@ export class MarkdownSourceDocument {
       if (token.type === "space") { leading += raw; continue; }
       // Raw HTML, definitions, and unsupported composites never pass through a lossy codec.
       const parsed = markdownToLiveDoc(raw).content ?? [];
-      const node: JSONContent = token.type === "html" || token.type === "def" || (token.type !== "code" && /<\/?[a-z][^>]*>|\]\[[^\]]*\]/i.test(raw)) || parsed.length !== 1
+      const node: JSONContent = token.type === "html" || token.type === "def" || (token.type !== "code" && /<\/?[a-z][^>]*>|\]\[[^\]]*\]/i.test(raw)) || parsed.length !== 1 || hasUnsupportedInlineContent(parsed[0])
         ? { type: "markdownSourceBlock", attrs: { raw } }
         : parsed[0];
       // A codec must account for all visible text before we allow rich editing.

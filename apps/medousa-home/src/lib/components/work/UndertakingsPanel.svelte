@@ -786,7 +786,7 @@
 
 </script>
 
-<div class="undertaking-panel flex h-full min-h-0 flex-col text-sm text-surface-100" class:focused-review={reviewCanvas} class:project-panel={!reviewCanvas}>
+<div class="undertaking-panel flex h-full min-h-0 flex-col text-sm text-surface-100" class:focused-review={reviewCanvas} class:project-panel={!reviewCanvas && showBrowser}>
   {#if showBrowser}<header class="flex flex-wrap items-center justify-between gap-2 border-b border-surface-500/40 pb-2">
     <div>
       <h2 class="text-base font-semibold text-surface-50">Code projects</h2>

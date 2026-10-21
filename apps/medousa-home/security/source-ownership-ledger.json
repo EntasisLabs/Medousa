@@ -61,14 +61,6 @@
       "blocksValidation": false
     },
     {
-      "path": "src/routes/popout/toolbar/+page.svelte",
-      "maxLines": 1411,
-      "owner": "Home",
-      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
-      "expires": "2026-10-01",
-      "blocksValidation": false
-    },
-    {
       "path": "src/lib/stores/vault.svelte.ts",
       "maxLines": 1408,
       "owner": "Home / Vault",
