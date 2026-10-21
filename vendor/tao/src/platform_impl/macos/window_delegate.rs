@@ -16,6 +16,7 @@ use objc2::{
 };
 use objc2_app_kit::{
   self as appkit, NSApplicationPresentationOptions, NSPasteboard, NSView, NSWindow,
+  NSWindowStyleMask,
 };
 use objc2_foundation::{ns_string, NSArray, NSAutoreleasePool, NSString, NSUInteger};
 use once_cell::sync::Lazy;
@@ -29,7 +30,7 @@ use crate::{
     event::{EventProxy, EventWrapper},
     ffi::{id, nil, BOOL, NO, YES},
     util::{self, IdRef},
-    view::ViewState,
+    view::{inset_traffic_lights, ViewState},
     window::{get_ns_theme, get_window_id, UnownedWindow},
   },
   window::{Fullscreen, WindowId},
@@ -82,6 +83,26 @@ impl WindowDelegateState {
 
   fn ns_view(&self) -> Retained<NSView> {
     self.ns_window.contentView().unwrap()
+  }
+
+  fn restore_traffic_light_inset(&self) {
+    // AppKit resets the title-bar frames during window layout. A WebView can
+    // completely cover TaoView, so its drawRect hook may never run afterward.
+    // Restore the configured inset from native lifecycle events as well.
+    if self
+      .ns_window
+      .styleMask()
+      .contains(NSWindowStyleMask::FullScreen)
+    {
+      return;
+    }
+    unsafe {
+      let state_ptr: *mut c_void = *(self.ns_view).get_ivar("taoState");
+      let position = (*(state_ptr as *const ViewState)).traffic_light_inset;
+      if let Some(position) = position {
+        inset_traffic_lights(&self.ns_window, position);
+      }
+    }
   }
 
   fn with_window<F, T>(&mut self, callback: F) -> Option<T>
@@ -347,6 +368,7 @@ extern "C" fn window_did_resize(this: &Object, _: Sel, _: id) {
   trace!("Triggered `windowDidResize:`");
   with_state(this, |state| {
     if !state.is_checking_zoomed_in {
+      state.restore_traffic_light_inset();
       state.emit_resize_event();
       state.emit_move_event();
     }
@@ -374,6 +396,7 @@ extern "C" fn window_did_change_backing_properties(this: &Object, _: Sel, _: id)
 extern "C" fn window_did_become_key(this: &Object, _: Sel, _: id) {
   trace!("Triggered `windowDidBecomeKey:`");
   with_state(this, |state| {
+    state.restore_traffic_light_inset();
     // TODO: center the cursor if the window had mouse grab when it
     // lost focus
     state.emit_event(WindowEvent::Focused(true));
@@ -606,6 +629,7 @@ extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
         window.set_fullscreen(target_fullscreen);
       }
     });
+    state.restore_traffic_light_inset();
     state.emit_resize_event();
     state.emit_move_event();
   });
