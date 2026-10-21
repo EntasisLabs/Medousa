@@ -75,7 +75,11 @@ not a separate inference worker or image-generation scheduler.
 revision, selected IDs and prompt. It atomically captures the original document
 and bounded selection before returning `queued`. An identical retry returns the
 same job, session and turn; changing input or owner under that ID is rejected.
-Job reads/decisions are scoped to the bound profile. Admission and decisions also
+Job reads/decisions are scoped to the bound profile. Trusted local app/CLI and
+root credentials resolve the active workshop profile; that identity is captured
+on admission. Personal-mode operator Portals use the existing workshop-owner
+resolver too. Shared/member credentials must carry their own profile and cannot
+fall back to the local operator. Admission and decisions also
 require `workshop.interact`, in addition to content authority.
 
 A small durable outbox index finds pending work without polling idle project
@@ -83,9 +87,10 @@ records. Each entry is reconciled independently, so a damaged project cannot
 block unrelated dispatch. The daemon dispatches through the existing native Assistant runtime,
 model routing, image-generation port, turn streams and cancellation token. It
 runs at most two creative turns concurrently and uses an exact tool ceiling:
-store read/write, schema discovery and image generation. During a creative turn,
+store read/write, schema discovery, image generation and turn control (finish only). During a creative turn,
 store actions can only read its captured selection, propose its result or promote
-media from its bound session. It cannot create unrelated worker jobs or mutate
+media from its bound session. Generated media and reference lookups use the active
+turn session, never the shared runtime's bootstrap label. It cannot create unrelated worker jobs or mutate
 vaults/code. No additional provider client, credential flow or model executor is
 introduced. Execution has a 30-minute runtime deadline.
 

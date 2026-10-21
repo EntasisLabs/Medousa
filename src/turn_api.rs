@@ -246,8 +246,20 @@ pub fn register_turn_tools(
 impl CognitionTurnTool {
     /// Record nonterminal progress with turn.update_user and continue, deliberately hand back with turn.checkpoint only when principal input is needed or work must pause, or end with turn.finish after the full requested outcome is complete and verified or a concrete blocker prevents further authorized progress. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, action: TurnAction) -> stasis::prelude::Result<ExternalJson> {
+        #[cfg(feature = "full-daemon")]
+        validate_creative_action(&action, crate::creative_jobs::in_creative_turn())?;
         Ok(ExternalJson::new(dispatch(self, action).await?))
     }
+}
+
+#[cfg(feature = "full-daemon")]
+fn validate_creative_action(action: &TurnAction, creative: bool) -> stasis::prelude::Result<()> {
+    if creative && !matches!(action, TurnAction::Finish(_)) {
+        return Err(stasis::prelude::StasisError::PortFailure(
+            "creative jobs may only use turn.finish for turn control".into(),
+        ));
+    }
+    Ok(())
 }
 
 async fn dispatch(tool: &CognitionTurnTool, action: TurnAction) -> stasis::prelude::Result<Value> {
@@ -390,6 +402,22 @@ impl TurnProposeMode {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(feature = "full-daemon")]
+    #[test]
+    fn creative_turn_control_allows_finish_but_cannot_launch_workers_or_expand_authority() {
+        let finish = serde_json::from_value(json!({"action":"turn.finish"})).unwrap();
+        assert!(validate_creative_action(&finish, true).is_ok());
+        for value in [
+            json!({"action":"turn.begin_work","message":"Starting","goal":"Unrelated work"}),
+            json!({"action":"turn.request_more_rounds","requested_rounds":10,"reason":"Keep going"}),
+            json!({"action":"turn.update_user","message":"Working"}),
+        ] {
+            let action = serde_json::from_value(value).unwrap();
+            assert!(validate_creative_action(&action, true).is_err());
+            assert!(validate_creative_action(&action, false).is_ok());
+        }
+    }
 
     #[test]
     fn turn_actions_carry_their_params() {

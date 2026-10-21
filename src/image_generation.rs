@@ -226,11 +226,22 @@ pub struct ImageGenerateInput {
     #[serde(default)] parent_generation_id: Option<String>,
 }
 
-pub struct CognitionImageGenerateTool { session_id: String, port: Arc<dyn ImageGenerationPort> }
+pub struct CognitionImageGenerateTool {
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+    port: Arc<dyn ImageGenerationPort>,
+}
 
 impl CognitionImageGenerateTool {
-    pub fn new(session_id: impl Into<String>) -> Self {
-        Self { session_id: session_id.into(), port: Arc::new(OpenAiImageGenerationPort::default()) }
+    pub fn new(turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess) -> Self {
+        Self { turn_scope, port: Arc::new(OpenAiImageGenerationPort::default()) }
+    }
+
+    async fn resolve_session_id(&self) -> stasis::prelude::Result<String> {
+        crate::runtime_session::require_active_chat_session_id_async(
+            &self.turn_scope,
+            crate::runtime_session::runtime_bootstrap_session_id(),
+            COGNITION_IMAGE_GENERATE,
+        ).await
     }
 }
 
@@ -243,6 +254,7 @@ impl CognitionImageGenerateTool {
     ) -> stasis::prelude::Result<ExternalJson> {
         #[cfg(feature = "full-daemon")]
         crate::creative_jobs::guard_image_generation().await?;
+        let session_id = self.resolve_session_id().await?;
         let prompt = input.prompt.trim();
         if prompt.is_empty() || prompt.chars().count() > MAX_PROMPT_CHARS {
             return Err(StasisError::PortFailure(format!("prompt must be 1–{MAX_PROMPT_CHARS} characters")));
@@ -262,7 +274,7 @@ impl CognitionImageGenerateTool {
         }
         let mut references = Vec::new();
         for media_id in &input.reference_media_ids {
-            let record = crate::media_store::get_media_record(&self.session_id, media_id)
+            let record = crate::media_store::get_media_record(&session_id, media_id)
                 .ok_or_else(|| StasisError::PortFailure(format!("unknown reference media_id '{media_id}' for session")))?;
             if !record.mime.starts_with("image/") {
                 return Err(StasisError::PortFailure(format!("reference media '{media_id}' is not an image")));
@@ -321,7 +333,7 @@ impl CognitionImageGenerateTool {
         let mut outputs = Vec::new();
         for (index, image) in result.outputs.iter().enumerate() {
             let label = if result.outputs.len() == 1 { "Generated image".to_string() } else { format!("Generated image {}", index + 1) };
-            let upload = crate::media_store::persist_generated_media(&self.session_id, &image.bytes, &image.mime, Some(&label))
+            let upload = crate::media_store::persist_generated_media(&session_id, &image.bytes, &image.mime, Some(&label))
                 .map_err(StasisError::PortFailure)?;
             outputs.push(json!({
                 "media_id": upload.media_id, "mime": upload.mime, "label": label,
@@ -356,6 +368,39 @@ pub fn generated_media_from_tool_output(output: &Value) -> Vec<medousa_types::Tu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn image_generation_requires_an_active_session_before_provider_work() {
+        let tool = CognitionImageGenerateTool::new(Default::default());
+        let error = tool.invoke_typed(serde_json::from_value(json!({
+            "prompt": "A green star"
+        })).unwrap()).await.unwrap_err();
+        assert!(error.to_string().contains("execution context required"));
+    }
+
+    #[tokio::test]
+    async fn image_generation_uses_the_turn_session_not_a_bootstrap_label() {
+        let scope = crate::turn_continuation::TurnContinuationScope {
+            turn_correlation_id: "creative_job_test".into(),
+            session_id: "ses_create_test".into(),
+            identity_user_id: Some("user:alice".into()),
+            original_prompt: "A green star".into(),
+            delivery_target: None,
+            provider: "test".into(),
+            model: "test".into(),
+            response_depth_mode: "standard".into(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            browser_driver_id: None,
+            selected_worlds: Vec::new(),
+            channel_surface: None,
+        };
+        let tool = CognitionImageGenerateTool::new(
+            crate::agent_runtime::execution_context::TurnScopeAccess::for_test(scope),
+        );
+        assert_eq!(tool.resolve_session_id().await.unwrap(), "ses_create_test");
+    }
 
     #[test]
     fn parses_generated_media_with_lineage() {

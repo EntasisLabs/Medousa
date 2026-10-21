@@ -617,7 +617,12 @@ async fn dispatch_write(
         StoreWriteAction::CreativePropose(params) => params.execute().await,
         #[cfg(feature = "full-daemon")]
         StoreWriteAction::CreativePromoteMedia(params) => {
-            params.execute(tool.fallback_chat_session_id.clone()).await
+            let session_id = crate::runtime_session::require_active_chat_session_id_async(
+                &tool.turn_scope,
+                &tool.fallback_chat_session_id,
+                "creative.promote_media",
+            ).await?;
+            params.execute(session_id).await
         }
         StoreWriteAction::VaultWrite(params) => params.execute(tool).await,
         StoreWriteAction::VaultDelete(params) => params.execute(tool).await,
@@ -1019,6 +1024,23 @@ mod tests {
                 fallback_chat_session_id: session_id.into(),
             },
         )
+    }
+
+    #[cfg(feature = "full-daemon")]
+    #[tokio::test]
+    async fn creative_media_promotion_cannot_use_the_bootstrap_fallback_without_a_turn() {
+        let (event_tx, _) = mpsc::channel(1);
+        let tool = CognitionStoreWriteTool {
+            event_tx,
+            turn_scope: Default::default(),
+            fallback_chat_session_id: crate::runtime_session::runtime_bootstrap_session_id().into(),
+        };
+        let error = dispatch_write(&tool, StoreWriteAction::CreativePromoteMedia(
+            crate::creative_tools::CreativePromoteMedia {
+                document_id: "test".into(), media_id: "test".into(),
+            },
+        )).await.unwrap_err();
+        assert!(error.to_string().contains("execution context required"));
     }
 
     #[tokio::test]
