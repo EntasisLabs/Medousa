@@ -1,3 +1,4 @@
+import {focusSurfaceHint} from "$lib/utils/shellTabDestination";
 /**
  * Shell-level tab host + binary split tree (TMUX-style panes).
  */
@@ -89,34 +90,6 @@ function newTabId(prefix: string): string {
 }
 
 
-function focusSurfaceHint(tab: ShellTab | null): string | null {
-  if (!tab) return null;
-  if (tab.kind === "chat") return "chat";
-  if (tab.kind === "lme") {
-    // Prefer the open tab’s family — explorerMode is intentionally not synced on activate.
-    // Inline map (avoid importing lmeExplorerModes → circular init with lmeWorkspace).
-    const lme = ports().lme.tabs().find((entry) => entry.tabId === tab.lmeTabId);
-    switch (lme?.kind) {
-      case "manuscript":
-        return "workshop";
-      case "script":
-      case "flow":
-      case "schedule":
-        return "automations";
-      case "note":
-      case "file":
-      case "deck":
-        return "library";
-      case "code":
-        return (lme.resource.kind === "review" || lme.resource.kind === "hosted_review") ? "reviews" : "code";
-      default:
-        return "library";
-    }
-  }
-  if (tab.kind === "web") return "web";
-  if (tab.kind === "terminal") return null;
-  return tab.surfaceId;
-}
 
 function newDesktopId(): string {
   return `desktop-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -547,10 +520,10 @@ export class ShellTabsStore {
   }
 
   private syncLayoutHint(tab: ShellTab | null) {
-    const surface = focusSurfaceHint(tab);
+    const surface = focusSurfaceHint(tab, ports().lme.tabs());
     if (!surface) return;
     layout.focusDesktopSurface(surface);
-    if (surface === "reviews") layout.openShellSidebarView("reviews");
+    if (surface === "reviews" || surface === "create") layout.openShellSidebarView(surface);
   }
 
   private patchGroup(groupId: string, patch: Partial<EditorGroup>) {
@@ -908,6 +881,21 @@ export class ShellTabsStore {
     this.insertTabIntoGroup(tab, groupId, false);
     if (activate) void this.activate(tab.id);
     else this.persist();
+    return tab.id;
+  }
+
+  openCreative(documentId: string, workshopId: string, options?: {title?: string; groupId?: string}): string | null {
+    if (!documentId.trim() || !workshopId.trim()) return null;
+    const groupId = options?.groupId ?? this.activeGroupId;
+    const existing = this.tabs.find(tab => tab.kind === "create" && tab.documentId === documentId && tab.workshopId === workshopId && (options?.groupId === undefined || this.groupForTab(tab.id)?.id === groupId));
+    if (existing) {
+      if (options?.title) this.patchTitle(existing.id, options.title);
+      void this.activate(existing.id);
+      return existing.id;
+    }
+    const tab: ShellTab = {id: newTabId("create"), kind: "create", documentId, workshopId, title: options?.title?.trim() || "Canvas"};
+    this.insertTabIntoGroup(tab, groupId, false);
+    void this.activate(tab.id);
     return tab.id;
   }
 

@@ -25,6 +25,7 @@
     loadProfilesPanel,
     loadRuntimePanel,
     loadReviewsPanel,
+    loadCreatePanel,
     loadSettingsPanel,
     loadTerminalPane,
   } from "$lib/runtime/viewLoaders";
@@ -199,6 +200,8 @@
           title={activeTab.title}
         />
       {/if}
+    {:else if activeTab?.kind === "create"}
+      {#key `${activeTab.workshopId}:${activeTab.documentId}`}<LazyFeatureView loader={loadCreatePanel} documentId={activeTab.documentId} workshopId={activeTab.workshopId}/>{/key}
     {:else if activeTab?.kind === "terminal"}
       {#if isBrowserWorkshop()}
         <EmptyState
@@ -246,7 +249,9 @@
         {:then { default: EnvironmentRenderer }}
           <EnvironmentRenderer surfaceId={showSurface}>
             {#snippet builtin()}
-              {#if showSurface === "reviews"}
+              {#if showSurface === "create"}
+                {#key chat.workshopScopeId}<LazyFeatureView loader={loadCreatePanel}/>{/key}
+              {:else if showSurface === "reviews"}
                 {#key chat.workshopScopeId}<LazyFeatureView loader={loadReviewsPanel} />{/key}
               {:else if showSurface === "automations"}
                 {#key chat.workshopScopeId}<LazyFeatureView loader={loadAutomationsRunList} />{/key}

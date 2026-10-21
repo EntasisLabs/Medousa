@@ -892,6 +892,20 @@ describe("shellTabs store", () => {
     }
   });
 
+  it("keeps creative project identity scoped and the browser distinct from project tabs", async () => {
+    const {shellTabs} = await loadShellTabs();
+    const one = shellTabs.openCreative("same-doc", "one", {title:"One"});
+    const duplicate = shellTabs.openCreative("same-doc", "one", {title:"Renamed"});
+    expect(duplicate).toBe(one);
+    expect(shellTabs.tabs.find(tab => tab.id === one)?.title).toBe("Renamed");
+    const two = shellTabs.openCreative("same-doc", "two", {title:"Two"});
+    expect(two).not.toBe(one);
+    shellTabs.openSurface("create");
+    expect(shellTabs.activeTab).toMatchObject({kind:"surface",surfaceId:"create"});
+    expect(shellTabs.tabs.filter(tab => tab.kind === "create")).toHaveLength(2);
+    expect(layoutState.openShellSidebarView).toHaveBeenCalledWith("create");
+  });
+
   it("moves a tab between panes", async () => {
     const { shellTabs } = await loadShellTabs();
     const a = shellTabs.openChat("session-a", { activate: true });

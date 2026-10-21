@@ -8,6 +8,7 @@ const LIFE_IDS = new Set([
   "chat",
   "code",
   "reviews",
+  "create",
   "notes",
   "files",
   "artifacts",
@@ -29,6 +30,7 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "artifacts",
   "code",
   "reviews",
+  "create",
   "automations",
   "workshop",
   "peers",
@@ -97,6 +99,8 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Artifacts";
     case "code":
       return "Projects";
+    case "create":
+      return "Create";
     case "reviews":
       return "Reviews";
     case "workshop":

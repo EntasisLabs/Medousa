@@ -25,6 +25,7 @@ export const NAV_DESTINATION_GROUPS: Array<{ label: string; surfaceIds: string[]
       "peers",
       "code",
       "reviews",
+      "create",
       "notes",
       "files",
       "artifacts",

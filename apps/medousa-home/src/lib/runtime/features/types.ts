@@ -4,6 +4,7 @@ export type FeatureId =
   | "vault-browse"
   | "vault-edit"
   | "code-work"
+  | "create"
   | "browser"
   | "settings"
   | "spotlight"

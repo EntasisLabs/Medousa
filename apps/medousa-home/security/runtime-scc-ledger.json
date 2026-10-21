@@ -117,6 +117,10 @@
       "specifier": "$lib/styles/context.postcss"
     },
     {
+      "from": "src/lib/components/create/CreatePanel.svelte",
+      "specifier": "$lib/styles/create-workspace.postcss"
+    },
+    {
       "from": "src/lib/components/cron/CronPanel.svelte",
       "specifier": "$lib/styles/composer.postcss"
     },

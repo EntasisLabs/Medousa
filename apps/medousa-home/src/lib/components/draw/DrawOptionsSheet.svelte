@@ -1,7 +1,7 @@
 <script lang="ts">
   import X from "@lucide/svelte/icons/x";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
-  import type { DrawBrushKind } from "$lib/draw/drawDocument";
+  import { DRAW_BRUSHES as BRUSHES, DRAW_BRUSH_SIZES as SIZES, type DrawBrushKind } from "$lib/draw/drawDocument";
 
   type DrawTool = "ink" | "eraser" | "select" | "hand";
   type EraserMode = "partial" | "stroke";
@@ -65,14 +65,6 @@
   }: Props = $props();
 
   const COLORS = ["#e7e5e4", "#f87171", "#fb923c", "#facc15", "#4ade80", "#38bdf8", "#a78bfa"];
-  const SIZES = [3, 6, 12, 24];
-  const BRUSHES: { kind: DrawBrushKind; label: string }[] = [
-    { kind: "pen", label: "Pen" },
-    { kind: "pencil", label: "Pencil" },
-    { kind: "marker", label: "Marker" },
-    { kind: "highlighter", label: "Highlighter" },
-  ];
-
   const summary = $derived(
     tool === "ink"
       ? `${BRUSHES.find((brush) => brush.kind === brushKind)?.label ?? "Pen"} · ${size}px`

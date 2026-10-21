@@ -4,6 +4,7 @@ import {
   retireWorkSurfaceInSpec,
   ensureCalendarSurfaceInSpec,
   ensureCodeSurfaceInSpec,
+  ensureCreateSurfaceInSpec,
   ensureMapSurfaceInSpec,
   ensurePeersSurfaceInSpec,
 } from "$lib/utils/environmentDefault";
@@ -189,4 +190,15 @@ describe("retired Work surface migration", () => {
     expect(spec.surfaces).toContainEqual(legacy);
     expect(retireWorkSurfaceInSpec(migrated)).toBe(migrated);
   });
+});
+
+it("introduces Create once without overriding later hidden-nav preferences", () => {
+  const old=defaultEnvironmentSpec();old.surfaces=old.surfaces.filter(s=>s.id!=="create");
+  for(const preset of old.layoutPresets??[])preset.surfaces=preset.surfaces.filter(id=>id!=="create");
+  const introduced=ensureCreateSurfaceInSpec(old);
+  expect(introduced.surfaces.filter(s=>s.id==="create")).toHaveLength(1);
+  expect(introduced.layoutPresets?.[0].surfaces).toContain("create");
+  introduced.layoutPresets![0].surfaces=introduced.layoutPresets![0].surfaces.filter(id=>id!=="create");
+  expect(ensureCreateSurfaceInSpec(introduced)).toBe(introduced);
+  expect(ensureCreateSurfaceInSpec(introduced).layoutPresets![0].surfaces).not.toContain("create");
 });

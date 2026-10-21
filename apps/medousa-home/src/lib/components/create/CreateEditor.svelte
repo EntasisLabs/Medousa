@@ -1,0 +1,819 @@
+<script lang="ts">
+  import { onMount, untrack } from "svelte";
+  import {
+    MousePointer2,
+    Hand,
+    PenTool,
+    Type,
+    Square,
+    Frame,
+    ImagePlus,
+    PanelRight,
+    Undo2,
+    Redo2,
+    ChevronDown,
+    Minus,
+    Plus,
+    Download,
+    ArrowLeft,
+    Pin,
+    Eraser,
+    Shapes,
+    Circle,
+    MoveUpRight,
+    Sparkles,
+    SlidersHorizontal,
+    CopyPlus,
+    Trash2,
+    X,
+  } from "@lucide/svelte";
+  import CreateCanvas from "./CreateCanvas.svelte";
+  import CreateStylePalette from "./CreateStylePalette.svelte";
+  import CreateInspector from "./CreateInspector.svelte";
+  import CreateAsk from "./CreateAsk.svelte";
+  import type { CreativeProjectLease } from "$lib/create/creativeWorkspace.svelte";
+  import {
+    applySceneOperations,
+    createNode,
+    nodeName,
+    editableNode,
+    type CreativeTool,
+  } from "$lib/create/creativeScene";
+  import {
+    canvasSizes,
+    nodeColor,
+    nodeFill,
+    nodeSize,
+    styleNode,
+    type CanvasShape,
+    type CanvasFill,
+    type CanvasSize,
+  } from "$lib/create/creativeInteraction";
+  import { createDrawBrush, type DrawBrushKind } from "$lib/draw/drawDocument";
+  import type { DrawEraserMode } from "$lib/draw/drawInteraction";
+  import { creativeAssets } from "$lib/create/creativeAssets";
+  import { exportCreativeScene } from "$lib/create/creativeExport";
+  import type {
+    CreativeNode,
+    CreativeOperation,
+  } from "$lib/types/generated/daemon_api";
+  import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  let {
+    lease,
+    onBrowse = () => shellTabs.openSurface("create"),
+  }: { lease: CreativeProjectLease; onBrowse?: () => void } = $props();
+  let editorElement = $state<HTMLDivElement>(),
+    inkColor = $state("#393e33");
+  let version = $state(0),
+    canvas = $state<ReturnType<typeof CreateCanvas>>(),
+    selected = $state<string[]>([]),
+    tool = $state<CreativeTool>("select"),
+    color = $state("#393e33"),
+    size = $state<CanvasSize>("m"),
+    brushKind = $state<DrawBrushKind>("pen"),
+    drawSize = $state(6),
+    eraserMode = $state<DrawEraserMode>("partial"),
+    fingerDraw = $state(false),
+    shape = $state<CanvasShape>("rectangle"),
+    fill = $state<CanvasFill>("soft"),
+    palette = $state(true),
+    shapePicker = $state(false),
+    askOpen = $state(false),
+    inspector = $state(false),
+    error = $state<string | null>(null),
+    images = $state.raw<Record<string, string>>({}),
+    imageErrors = $state<string | null>(null),
+    importing = $state(false),
+    exporting = $state(false),
+    upload = $state<HTMLInputElement>(),
+    zoom = $state(100);
+  const session = $derived(lease.session),
+    document = $derived.by(() => {
+      void version;
+      return session.document;
+    });
+  const busy = $derived.by(() => {
+      void version;
+      return session.busy;
+    }),
+    dirty = $derived.by(() => {
+      void version;
+      return session.dirty;
+    });
+  const job = $derived.by(() => {
+    void version;
+    return lease.state.jobs.job;
+  });
+  const base = $derived(document ? session.scene : null);
+  const preview = $derived(
+    Boolean(
+      lease.state.preview &&
+      job?.status === "ready" &&
+      job.result?.expected_revision === document?.revision &&
+      !dirty,
+    ),
+  );
+  const scene = $derived(
+    base && preview && job?.result
+      ? applySceneOperations(base, job.result.operations)
+      : base,
+  );
+  const deciding = $derived.by(() => {
+    void version;
+    return lease.state.jobs.pendingDecision !== null;
+  });
+  const disabled = $derived.by(() => {
+    void version;
+    return !session.canEdit || preview || importing || deciding;
+  });
+  const assets = untrack(() =>
+    creativeAssets(lease.api, lease.session.document?.id ?? ""),
+  );
+  // The editor is keyed to its project; acquire() is allowed before its first load.
+  const assetId = $derived(document?.id ?? "");
+  let assetStore = assets;
+  let disposed = false,
+    imageEpoch = 0;
+  let editingNode = $state.raw<CreativeNode | null>(null);
+  const selectedNodes = $derived(
+    scene?.nodes.filter((n) => selected.includes(n.id)) ?? [],
+  );
+  const styledNode = $derived(
+    editingNode ?? selectedNodes.find((n) => nodeColor(n) !== null),
+  );
+  const styleColor = $derived(styledNode ? nodeColor(styledNode)! : color);
+  const styleSize = $derived(styledNode ? nodeSize(styledNode) : size);
+  const styleFill = $derived(
+    styledNode?.content.kind === "shape" ? nodeFill(styledNode) : fill,
+  );
+  const shapeChoices = [
+    { id: "rectangle", label: "Rectangle", icon: Square },
+    { id: "ellipse", label: "Ellipse", icon: Circle },
+    { id: "line", label: "Line", icon: Minus },
+    { id: "arrow", label: "Arrow", icon: MoveUpRight },
+  ] as const;
+  function chooseTool(next: CreativeTool) {
+    canvas?.finishText();
+    tool = next;
+    shapePicker = false;
+    if (next !== "select") selected = [];
+  }
+  function styleSelection(patch: {
+    color?: string;
+    size?: CanvasSize;
+    fill?: CanvasFill;
+  }) {
+    if (disabled) return;
+    if (patch.color) color = patch.color;
+    if (patch.size) size = patch.size;
+    if (patch.fill) fill = patch.fill;
+    if (canvas?.styleText(patch)) return;
+    const operations: CreativeOperation[] = selectedNodes
+      .filter((n) => scene && editableNode(n, scene.nodes))
+      .flatMap((node) => {
+        const next = styleNode(node, patch);
+        return JSON.stringify(next) === JSON.stringify(node)
+          ? []
+          : [{ op: "put_node" as const, node: next }];
+      });
+    if (operations.length) void commit("Style selection", operations);
+  }
+  const tools = [
+    { id: "select", icon: MousePointer2, label: "Select", key: "V" },
+    { id: "hand", icon: Hand, label: "Move", key: "H" },
+    { id: "ink", icon: PenTool, label: "Draw", key: "P" },
+    { id: "erase", icon: Eraser, label: "Erase", key: "E" },
+    { id: "shape", icon: Shapes, label: "Shapes", key: "R" },
+    { id: "text", icon: Type, label: "Text", key: "T" },
+  ] as const;
+  function report(e: unknown) {
+    error = e instanceof Error ? e.message : String(e);
+  }
+  async function commit(label: string, operations: CreativeOperation[]) {
+    if (!operations.length || !session.canEdit || preview || deciding) return;
+    try {
+      error = null;
+      session.enqueue(label, operations);
+      await session.save();
+      if (document) {
+        shellTabs.tabs
+          .filter(
+            (t) =>
+              t.kind === "create" &&
+              t.documentId === document.id &&
+              t.workshopId === lease.api.scope,
+          )
+          .forEach((t) => shellTabs.patchTitle(t.id, document!.title));
+      }
+      window.dispatchEvent(
+        new CustomEvent("medousa:create-updated", { detail: lease.api.scope }),
+      );
+    } catch (e) {
+      report(e);
+    }
+  }
+  async function history(redo = false) {
+    if (busy || dirty) return;
+    try {
+      error = null;
+      await session.history(redo);
+      selected = selected.filter((id) =>
+        session.document?.scene.nodes.some((n) => n.id === id),
+      );
+    } catch (e) {
+      report(e);
+    }
+  }
+  async function reload() {
+    try {
+      error = null;
+      await session.load();
+    } catch (e) {
+      report(e);
+    }
+  }
+  async function retry() {
+    try {
+      error = null;
+      if (session.pending) await session.save();
+      else if (session.pendingHistory)
+        await session.history(session.pendingHistory.redo);
+      else await session.load();
+    } catch (e) {
+      report(e);
+    }
+  }
+  async function discard() {
+    try {
+      session.discardPending();
+      await reload();
+    } catch (e) {
+      report(e);
+    }
+  }
+  async function loadImages() {
+    if (!scene || !assetId) return;
+    const epoch = ++imageEpoch,
+      currentStore = assetStore;
+    const wanted = new Set(
+      scene.nodes.flatMap((n) =>
+        n.content.kind === "image" ? [n.content.asset_id] : [],
+      ),
+    );
+    imageErrors = null;
+    for (const id of wanted) {
+      try {
+        const url = await currentStore.get(id);
+        if (disposed || epoch !== imageEpoch) return;
+        images = { ...images, [id]: url };
+      } catch (e) {
+        if (!disposed && epoch === imageEpoch)
+          imageErrors = e instanceof Error ? e.message : String(e);
+      }
+    }
+    if (!disposed && epoch === imageEpoch) {
+      images = Object.fromEntries(
+        Object.entries(images).filter(([id]) => wanted.has(id)),
+      );
+      assetStore.retainOnly(wanted);
+    }
+  }
+  $effect(() => {
+    if (assetId) {
+      assetStore.dispose();
+      assetStore = creativeAssets(lease.api, assetId);
+      images = {};
+    }
+  });
+  $effect(() => {
+    const current = scene,
+      id = assetId;
+    if (current && id) untrack(() => void loadImages());
+  });
+  async function importImage(file?: File) {
+    if (!file || !document || disabled || busy || dirty) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      error = "Choose a PNG, JPEG, or WebP image";
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      error = "Choose an image under 25 MiB";
+      return;
+    }
+    importing = true;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 32768)
+        binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+      const asset = await lease.api.importAsset(document.id, btoa(binary));
+      await session.load();
+      const url = await assetStore.get(asset.id),
+        img = new Image();
+      img.src = url;
+      await img.decode();
+      const parent =
+        document.scene.nodes.find(
+          (n) =>
+            selected.includes(n.id) &&
+            (n.content.kind === "frame" || n.content.kind === "group") &&
+            !n.locked,
+        ) ??
+        document.scene.nodes.find(
+          (n) => n.content.kind === "frame" && !n.locked,
+        );
+      const maxWidth = parent?.transform.width ?? 1200,
+        maxHeight = parent?.transform.height ?? 920,
+        scale = Math.min(
+          1,
+          maxWidth / img.naturalWidth,
+          maxHeight / img.naturalHeight,
+        ),
+        width = img.naturalWidth * scale,
+        height = img.naturalHeight * scale;
+      const node = createNode(
+        { kind: "image", asset_id: asset.id, crop: null },
+        {
+          x: (maxWidth - width) / 2,
+          y: (maxHeight - height) / 2,
+          width,
+          height,
+        },
+        parent?.id ?? null,
+      );
+      await commit("Import image", [{ op: "put_node", node }]);
+      selected = [node.id];
+      images = { ...images, [asset.id]: url };
+    } catch (e) {
+      report(e);
+    } finally {
+      importing = false;
+      if (upload) upload.value = "";
+    }
+  }
+  async function exportImage(format: "png" | "svg") {
+    if (!document || !canvas?.element() || busy || dirty) return;
+    exporting = true;
+    try {
+      await loadImages();
+      await exportCreativeScene(
+        canvas.element()!,
+        document.scene.nodes,
+        assetStore,
+        document.title,
+        format,
+        selected.find(
+          (id) =>
+            document?.scene.nodes.find((n) => n.id === id)?.content.kind ===
+            "frame",
+        ),
+      );
+    } catch (e) {
+      report(e);
+    } finally {
+      exporting = false;
+    }
+  }
+  function key(e: KeyboardEvent) {
+    if (
+      (e.target as HTMLElement).closest(
+        "input,textarea,select,[contenteditable=true]",
+      )
+    )
+      return;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (!disabled) void history(e.shiftKey);
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Escape") {
+      shapePicker = false;
+      askOpen = false;
+      tool = "select";
+      return;
+    }
+    if (e.key.toLowerCase() === "f") {
+      chooseTool("frame");
+      e.preventDefault();
+      return;
+    }
+    const next = tools.find((t) => t.key.toLowerCase() === e.key.toLowerCase());
+    if (next) {
+      chooseTool(next.id);
+      e.preventDefault();
+    }
+  }
+  onMount(() => {
+    const rgb =
+      editorElement &&
+      getComputedStyle(editorElement).color.match(
+        /^(?:rgb|rgba)\((\d+)[, ]+(\d+)[, ]+(\d+)/,
+      );
+    if (rgb) {
+      inkColor =
+        "#" +
+        rgb
+          .slice(1, 4)
+          .map((n) => Number(n).toString(16).padStart(2, "0"))
+          .join("");
+      color = inkColor;
+    }
+    if (window.matchMedia("(max-width: 600px)").matches) palette = false;
+    const a = session.subscribe(() => version++),
+      b = lease.state.jobs.subscribe(() => version++);
+    if (!session.document && !session.busy) void reload();
+    return () => {
+      disposed = true;
+      a();
+      b();
+      assetStore.dispose();
+    };
+  });
+</script>
+
+<div
+  bind:this={editorElement}
+  class="create-editor"
+  onkeydown={key}
+  ondragover={(event) => {
+    if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+  }}
+  ondrop={(event) => {
+    if (event.dataTransfer?.files.length) {
+      event.preventDefault();
+      void importImage(event.dataTransfer.files[0]);
+    }
+  }}
+  onpaste={(event) => {
+    if (
+      (event.target as HTMLElement).closest(
+        "input,textarea,select,[contenteditable=true]",
+      )
+    )
+      return;
+    const image = [...(event.clipboardData?.files ?? [])].find((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (image) {
+      event.preventDefault();
+      void importImage(image);
+    }
+  }}
+  role="presentation"
+>
+  {#if document && scene}
+    <header class="create-heading">
+      <div class="create-breadcrumb">
+        <button
+          type="button"
+          aria-label="Back to creative projects"
+          onclick={onBrowse}
+          ><ArrowLeft size={14} class="create-back-icon" /><span
+            class="create-browse-label">Create</span
+          ></button
+        ><span>/</span><input
+          aria-label="Project title"
+          value={document.title}
+          {disabled}
+          maxlength="256"
+          onchange={(e) => {
+            const title = e.currentTarget.value.trim();
+            if (title && title !== document?.title)
+              void commit("Rename project", [{ op: "rename", title }]);
+          }}
+        />
+      </div>
+      <button
+        type="button"
+        aria-label={document.pinned ? "Unpin project" : "Pin project"}
+        aria-pressed={document.pinned}
+        {disabled}
+        onclick={() =>
+          void commit("Pin project", [
+            { op: "pin", pinned: !document!.pinned },
+          ])}><Pin size={13} /></button
+      >
+      <span class="create-save"
+        >{busy
+          ? "Saving…"
+          : dirty
+            ? "Unsaved edit"
+            : preview
+              ? "Preview"
+              : "Saved"}</span
+      >
+      <button
+        type="button"
+        title="Undo (⌘Z)"
+        aria-label="Undo"
+        disabled={disabled || busy || dirty || !session.canUndo}
+        onclick={() => void history()}><Undo2 size={15} /></button
+      ><button
+        type="button"
+        title="Redo (⇧⌘Z)"
+        aria-label="Redo"
+        disabled={disabled || busy || dirty || !session.canRedo}
+        onclick={() => void history(true)}><Redo2 size={15} /></button
+      >
+      <details class="create-export">
+        <summary><Download size={13} />Export<ChevronDown size={11} /></summary>
+        <div>
+          <button
+            type="button"
+            disabled={exporting || disabled || busy || dirty}
+            onclick={() => void exportImage("png")}>PNG image</button
+          ><button
+            type="button"
+            disabled={exporting || disabled || busy || dirty}
+            onclick={() => void exportImage("svg")}>SVG document</button
+          >
+        </div>
+      </details>
+    </header>
+    {#if error || (dirty && !busy)}<div class="create-error" role="alert">
+        <span
+          >{error || "An edit needs your attention before you continue."}</span
+        ><button type="button" disabled={busy} onclick={() => void retry()}
+          >Retry</button
+        >{#if dirty}<button
+            type="button"
+            disabled={busy}
+            onclick={() => void discard()}>Discard draft and reload</button
+          >{:else}<button type="button" onclick={() => (error = null)}
+            >Dismiss</button
+          >{/if}
+      </div>{/if}
+    {#if imageErrors}<div class="create-error" role="status">
+        <span>{imageErrors}</span><button
+          type="button"
+          onclick={() => void loadImages()}>Retry images</button
+        >
+      </div>{/if}
+    <div class="create-editor-body">
+      <main class="create-workarea">
+        <div class="create-canvas-controls">
+          <span aria-live="polite"
+            >{preview
+              ? "Preview · original preserved"
+              : selected.length
+                ? `${selected.length} selected`
+                : tool === "text"
+                  ? "Click to type"
+                  : tool === "shape"
+                    ? `${shapeChoices.find((s) => s.id === shape)?.label} · drag to draw`
+                    : tool === "ink"
+                      ? "Draw freely"
+                      : tool === "frame"
+                        ? "Drag to add a frame"
+                        : tool === "erase"
+                          ? eraserMode === "partial"
+                            ? "Erase ink"
+                            : "Erase whole objects"
+                          : "Double-click to type"}</span
+          >
+          <div>
+            <button
+              type="button"
+              aria-label="Show style palette"
+              aria-expanded={palette}
+              onclick={() => (palette = !palette)}
+              ><span class="create-current-color" style:background={styleColor}
+              ></span>Style<SlidersHorizontal size={13} /></button
+            >
+          </div>
+        </div>
+        <CreateCanvas
+          bind:this={canvas}
+          {scene}
+          {images}
+          bind:selected
+          bind:tool
+          {color}
+          automaticInk={color === inkColor}
+          {shape}
+          {fill}
+          textSize={size}
+          {brushKind}
+          {eraserMode}
+          {fingerDraw}
+          brushSize={tool === "ink" || tool === "erase"
+            ? drawSize
+            : canvasSizes[size].stroke}
+          {disabled}
+          onselect={() => (shapePicker = false)}
+          onzoom={(value) => (zoom = value)}
+          oncommit={(label, ops) => void commit(label, ops)}
+          onerror={report}
+          onediting={(node) => (editingNode = node)}
+        />
+        {#if palette}<div class="create-palette-position">
+            <CreateStylePalette
+              {tool}
+              {brushKind}
+              {drawSize}
+              {eraserMode}
+              {fingerDraw}
+              onDrawOptions={(patch) => {
+                if (patch.brush) {
+                  brushKind = patch.brush;
+                  drawSize = createDrawBrush(patch.brush).size;
+                }
+                if (patch.size) drawSize = patch.size;
+                if (patch.eraser) eraserMode = patch.eraser;
+                if (patch.finger !== undefined) fingerDraw = patch.finger;
+              }}
+              {inkColor}
+              color={styleColor}
+              size={styleSize}
+              fill={styleFill}
+              context={styledNode ? nodeName(styledNode) : "Next object"}
+              {disabled}
+              showFill={tool === "shape" ||
+                selectedNodes.some(
+                  (n) =>
+                    n.content.kind === "shape" && n.content.shape !== "line",
+                )}
+              onchange={styleSelection}
+              onclose={() => (palette = false)}
+            />
+          </div>{/if}
+        <div
+          class="create-zoom"
+          class:has-selection={selected.length > 0}
+          class:has-popover={shapePicker || askOpen}
+        >
+          <button
+            type="button"
+            aria-label="Zoom out"
+            onclick={() => canvas?.zoomBy(0.8)}><Minus size={12} /></button
+          >
+          <button
+            type="button"
+            aria-label="Fit canvas"
+            onclick={() => canvas?.fit()}>{zoom}%</button
+          >
+          <button
+            type="button"
+            aria-label="Zoom in"
+            onclick={() => canvas?.zoomBy(1.25)}><Plus size={12} /></button
+          >
+        </div>
+        <div class="create-bottom">
+          {#if askOpen}<div class="create-ask-popover">
+              <header>
+                <span>Ask Medousa</span><button
+                  type="button"
+                  aria-label="Close Ask Medousa"
+                  onclick={() => (askOpen = false)}><X size={14} /></button
+                >
+              </header>
+              <CreateAsk
+                {lease}
+                {selected}
+                disabled={busy || dirty || importing}
+                onerror={report}
+              />
+            </div>{/if}
+          {#if selected.length && tool === "select" && !askOpen}<div
+              class="create-selection-actions"
+            >
+              <span>{selected.length} selected</span><button
+                type="button"
+                aria-label="Duplicate selection"
+                {disabled}
+                onclick={() => canvas?.duplicate()}
+                ><CopyPlus size={15} /></button
+              >
+              <button
+                type="button"
+                aria-label="Delete selection"
+                {disabled}
+                onclick={() => canvas?.deleteSelection()}
+                ><Trash2 size={15} /></button
+              >
+              <button
+                type="button"
+                aria-label="Toggle inspector"
+                aria-pressed={inspector}
+                onclick={() => (inspector = !inspector)}
+                ><SlidersHorizontal size={15} /></button
+              >
+            </div>{/if}
+          {#if shapePicker}<div
+              class="create-shape-picker"
+              role="group"
+              aria-label="Choose a shape"
+            >
+              {#each shapeChoices as choice}<button
+                  type="button"
+                  aria-pressed={shape === choice.id && tool === "shape"}
+                  {disabled}
+                  onclick={() => {
+                    shape = choice.id;
+                    chooseTool("shape");
+                  }}
+                  ><choice.icon size={17} /><span>{choice.label}</span></button
+                >{/each}
+              <button
+                type="button"
+                {disabled}
+                class="create-frame-choice"
+                onclick={() => chooseTool("frame")}
+                ><Frame size={17} /><span>Frame</span><small>F</small></button
+              >
+            </div>{/if}
+          <div
+            class="create-toolstrip"
+            role="toolbar"
+            aria-label="Canvas tools"
+          >
+            {#each tools as item}<button
+                type="button"
+                class:chosen={tool === item.id}
+                aria-label={item.label}
+                aria-pressed={tool === item.id}
+                aria-expanded={item.id === "shape" ? shapePicker : undefined}
+                title={`${item.label} (${item.key})`}
+                disabled={disabled && item.id !== "hand"}
+                onclick={() => {
+                  if (item.id === "shape") {
+                    const open = !shapePicker;
+                    chooseTool("shape");
+                    shapePicker = open;
+                  } else chooseTool(item.id);
+                }}><item.icon size={16} /><span>{item.label}</span></button
+              >{/each}
+            <button
+              type="button"
+              aria-label="Import image"
+              disabled={disabled || busy || dirty}
+              onclick={() => upload?.click()}
+              ><ImagePlus size={16} /><span>Image</span></button
+            >
+            <button
+              type="button"
+              class="create-ask-toggle"
+              aria-label="Ask Medousa"
+              aria-expanded={askOpen}
+              onclick={() => {
+                canvas?.finishText();
+                shapePicker = false;
+                askOpen = !askOpen;
+              }}
+              ><Sparkles size={16} /><span>Ask Medousa</span
+              >{#if job && (job.status === "ready" || job.status === "running" || job.status === "queued" || job.status === "dispatching")}<span
+                  class="create-job-dot"
+                  aria-label={job.status === "ready"
+                    ? "Proposal ready"
+                    : "Request in progress"}
+                ></span>{/if}</button
+            >
+          </div>
+        </div>
+        <footer class="create-canvas-footer">
+          <span
+            >{editingNode
+              ? "Type here · Esc to finish"
+              : tool === "select"
+                ? "Double-click to type · draw a lasso to select"
+                : tool === "hand"
+                  ? "Drag to move · Space temporarily pans"
+                  : tool === "ink"
+                    ? "Draw freely · Esc returns to Select"
+                    : tool === "erase"
+                      ? "Erase ink · Esc returns to Select"
+                      : tool === "text"
+                        ? "Click to type"
+                        : "Drag to draw · release to select"}</span
+          ><button
+            type="button"
+            aria-label="Toggle inspector"
+            aria-pressed={inspector}
+            onclick={() => (inspector = !inspector)}
+            >Details<PanelRight size={12} /></button
+          >
+        </footer>
+        <input
+          bind:this={upload}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          onchange={(e) => void importImage(e.currentTarget.files?.[0])}
+        />
+      </main>
+      {#if inspector}<CreateInspector
+          nodes={scene.nodes}
+          {selected}
+          {disabled}
+          onselect={(ids) => (selected = ids)}
+          oncommit={(label, ops) => void commit(label, ops)}
+          onclose={() => (inspector = false)}
+        />{/if}
+    </div>
+  {:else}<div class="create-loading">
+      {#if error}<p role="alert">{error}</p>
+        <button type="button" onclick={() => void reload()}>Try again</button
+        >{:else}Opening canvas…{/if}
+    </div>{/if}
+</div>

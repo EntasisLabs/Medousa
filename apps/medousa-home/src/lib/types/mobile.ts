@@ -7,6 +7,7 @@ export type MoreDestination =
   | "workshop"
   | "automations"
   | "code"
+  | "create"
   | "calendar"
   | "messaging"
   | "peers"
@@ -34,6 +35,7 @@ export const MORE_DESTINATIONS: {
     label: "Automations",
     hint: "Scripts, flows, schedules & history",
   },
+  { id: "create", label: "Create", hint: "Sketch, compose, and create with Medousa" },
   { id: "code", label: "Code", hint: "Governed repository workspaces" },
   { id: "calendar", label: "Calendar", hint: "Meetings, reminders & .ics" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
@@ -52,6 +54,7 @@ export const MORE_HUB_SECTIONS: {
     title: "Stay in touch",
     subtitle: "Memory, agents, scripts, and channels",
     destinations: [
+      "create",
       "profiles",
       "map",
       "workshop",

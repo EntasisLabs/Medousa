@@ -54,6 +54,12 @@ export type ParsedDrawFence = {
   document: DrawDocument;
 };
 
+export const DRAW_BRUSHES: { kind: DrawBrushKind; label: string }[] = [
+  { kind: "pen", label: "Pen" }, { kind: "pencil", label: "Pencil" },
+  { kind: "marker", label: "Marker" }, { kind: "highlighter", label: "Highlighter" },
+];
+export const DRAW_BRUSH_SIZES = [3, 6, 12, 24];
+
 const BRUSH_DEFAULTS: Record<DrawBrushKind, Omit<DrawBrush, "kind" | "size"> & { size: number }> = {
   pen: { size: 6, thinning: 0.68, smoothing: 0.55, streamline: 0.5, opacity: 1 },
   pencil: { size: 5, thinning: 0.58, smoothing: 0.42, streamline: 0.38, opacity: 0.82 },

@@ -2,6 +2,7 @@ import type { Surface } from "$lib/types/ui";
 
 /** Shell center tab — first-class open work (chat, doc, page, or singleton surface). */
 export type ShellTab =
+  | { id: string; kind: "create"; documentId: string; workshopId: string; title: string }
   | {
       id: string;
       kind: "chat";
@@ -92,6 +93,7 @@ export const SHELL_SURFACE_TAB_IDS = new Set<string>([
   "automations",
   "code",
   "reviews",
+  "create",
   "peers",
   "messaging",
   "map",

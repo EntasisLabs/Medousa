@@ -1,6 +1,6 @@
 <script lang="ts">
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
-  import { loadReviewsPanel } from "$lib/runtime/viewLoaders";
+  import { loadReviewsPanel, loadCreatePanel } from "$lib/runtime/viewLoaders";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import MapSidePanel from "$lib/components/context/MapSidePanel.svelte";
   import MapRailToolbar from "$lib/components/context/MapRailToolbar.svelte";
@@ -108,7 +108,6 @@
     if (appUpdate.updateAvailable) badges.basement = 1;
     return badges;
   });
-
   const surfaces = $derived(environment.navSurfaces());
   const lifeRail = $derived(buildLifeRailLayout(surfaces));
   const railLayoutEditing = $derived(layout.railLayoutEditing);
@@ -136,7 +135,6 @@
       .map((id) => byId.get(id)!)
       .filter((surface) => isNavDestinationToggleable(surface.id));
   });
-
   let railLayoutBusy = $state(false);
   let editingCustomSurfaceId = $state<string | null>(null);
   let editingCustomAnchorEl = $state<HTMLElement | null>(null);
@@ -528,6 +526,7 @@
     event?.stopPropagation();
     closeRailPopover();
     ensureFamilyForSurface(surfaceId);
+    if (surfaceId === "create") { onSelect(surfaceId); layout.openShellSidebarView(surfaceId); return; }
     if (surfaceId === "automations") {
       onSelect(surfaceId);
       layout.setShellSidebarMode("nav");
@@ -630,6 +629,7 @@
                 <SessionSidebar open={true} variant="inline" chrome="rail-list" />
               </div>
             </div>
+          {:else if viewSurface === "create"}<LazyFeatureView loader={loadCreatePanel} rail={true}/>
           {:else if viewSurface === "reviews"}
             <LazyFeatureView loader={loadReviewsPanel} rail={true} />
           {:else if viewSurface === "workshop"}
@@ -1018,6 +1018,7 @@
             ? "automations"
             : "library"}
       />
+    {:else if popover.surfaceId === "create"}<LazyFeatureView loader={loadCreatePanel} rail={true} onPick={closeRailPopover}/>
     {:else if popover.surfaceId === "reviews"}
       <LazyFeatureView loader={loadReviewsPanel} rail={true} onPick={closeRailPopover} />
     {:else if popover.surfaceId === "workshop"}

@@ -1,7 +1,9 @@
 # Creative workspace epic
 
 > **Status:** Canvas first agreed 2026-10-21; backend foundation and durable creative dispatch implemented.
-> Scene-engine selection, canvas UI and the end-to-end creation journey remain open.
+> Canvas-first UI now uses the existing drawing geometry/input with a mixed-object SVG renderer.
+> Project tabs, shared edits/history, contextual native jobs, proposal comparison and PNG/SVG export are wired.
+> Named bot routing, legacy-note adoption/live embeds, richer painting and physical-device validation remain follow-up work.
 > **Scope:** Expand Drawing into a practical place to sketch, compose, refine,
 > and export creative work with Medousa's brain.
 > **First release:** S0–S3, ending in one complete human-and-AI creation loop.

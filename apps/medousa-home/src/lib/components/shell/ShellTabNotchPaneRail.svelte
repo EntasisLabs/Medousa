@@ -2,7 +2,7 @@
   /**
    * Arc/Zen-style vertical tab rail for a notch map pane.
    */
-  import {
+  import { PenTool,
     Bot,
     CalendarClock,
     Code2,
@@ -35,6 +35,7 @@
   const activeTabId = $derived(group?.activeTabId ?? null);
 
   function iconFor(tab: ShellTab) {
+    if (tab.kind === "create") return PenTool;
     if (tab.kind === "chat") return MessageSquare;
     if (tab.kind === "web") return Globe;
     if (tab.kind === "surface") return LayoutGrid;

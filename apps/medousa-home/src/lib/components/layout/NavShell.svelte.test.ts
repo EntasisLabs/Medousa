@@ -11,7 +11,7 @@ import type { SurfaceDef } from "$lib/types/environment";
 let component: ReturnType<typeof mount> | undefined;
 const onSelect = vi.fn();
 const ids = ["chat", "code", "reviews", "notes", "files", "artifacts", "workshop", "map", "peers", "web", "calendar"];
-const surfaces: SurfaceDef[] = [...ids, "automations"].map(id => ({
+const surfaces: SurfaceDef[] = [...ids, "create", "automations"].map(id => ({
   id, label: id, icon: "file", kind: "builtin", builtinId: id,
   layout: "single", slots: [], mobileTab: null,
 }));
@@ -74,4 +74,10 @@ it("still opens a custom destination with no side-rail list", () => {
   clickDestination("custom-view");
   expect(onSelect).toHaveBeenCalledExactlyOnceWith("custom-view");
   expect(layout.openShellSidebarView).not.toHaveBeenCalled();
+});
+
+it("opens the Create browser intentionally while showing its project rail",()=>{
+ clickDestination("create");
+ expect(onSelect).toHaveBeenCalledExactlyOnceWith("create");
+ expect(layout.openShellSidebarView).toHaveBeenCalledWith("create");
 });
