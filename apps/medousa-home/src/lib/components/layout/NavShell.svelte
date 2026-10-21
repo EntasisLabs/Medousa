@@ -519,8 +519,8 @@
   }
 
   /**
-   * Row click — host the list in the master rail when available, and open the
-   * matching center tab/surface so switching doors actually changes context.
+   * Row click — browse the list in the master rail without selecting content.
+   * A concrete pick in that list opens or activates its tab.
    * Custom destinations without a rail view just navigate.
    */
   function selectDestination(surfaceId: string, event?: MouseEvent) {
@@ -533,10 +533,8 @@
       layout.setShellSidebarMode("nav");
       return;
     }
-    if (surfaceId === "workshop") lmeWorkspace.setExplorerMode("agents");
     if (surfaceHasShellSidebarView(surfaceId)) {
       layout.openShellSidebarView(surfaceId);
-      onSelect(surfaceId);
       return;
     }
     onSelect(surfaceId);

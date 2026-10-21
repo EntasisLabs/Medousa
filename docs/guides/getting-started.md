@@ -145,6 +145,12 @@ ordinary per-conversation draft recovery remains private to the app.
 
 ## 4. Orient yourself (desktop)
 
+Choose **Chat**, **Code**, **Reviews**, or another list destination in the
+navigation to browse its side rail. Your current content tab stays in place
+until you select a conversation, project, review, or other item from the list.
+**Automations** opens its run list in the main pane; custom views also open
+directly.
+
 | Surface | What it’s for |
 |---------|----------------|
 | **Chat** | Talk, think, attach context |
