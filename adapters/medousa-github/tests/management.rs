@@ -19,11 +19,14 @@ method=args[args.index('--method')+1]
 body=json.load(sys.stdin) if '--input' in args else None
 with open(os.environ['FIXTURE_TRACE'],'a') as f: f.write(json.dumps({'endpoint':endpoint,'method':method,'body':body})+'\n')
 scenario=os.environ['FIXTURE_SCENARIO']
-pr={'number':42,'node_id':'PR_fixture','html_url':'https://github.com/team/repo/pull/42','title':'Change','state':'open','user':{'login':'author'},'head':{'sha':'abc','ref':'feature'},'base':{'sha':'def','ref':'main'},'requested_reviewers':[{'login':'reviewer'}],'mergeable_state':'clean'}
+pr={'number':42,'node_id':'PR_fixture','html_url':'https://github.com/team/repo/pull/42','title':'Change','state':'open','user':{'login':'author'},'head':{'sha':'abc','ref':'feature'},'base':{'sha':'def','ref':'main'},'requested_reviewers':[{'login':'reviewer'}],'mergeable_state':'clean','labels':[{'name':'bug','description':'A bug','color':'ff0000'}]}
 if scenario=='draft': pr['draft']=True
 if scenario=='lost' and method!='GET': sys.exit(1)
 if endpoint=='user': result={'login':'author' if scenario=='owner' else 'reviewer'}
-elif endpoint=='repos/team/repo': result={'permissions':{'push':True},'allow_squash_merge':True}
+elif endpoint=='repos/team/repo': result={'permissions':{'push':scenario!='read-only'},'allow_squash_merge':True}
+elif endpoint.startswith('repos/team/repo/labels?'): result=[{'name':'needs review/ci','description':'CI work','color':'00ff11'}]
+elif endpoint.startswith('repos/team/repo/collaborators?'): result=[{'login':'reviewer'},{'login':'author'}]
+elif endpoint.startswith('repos/team/repo/pulls/42/reviews?'): result=[{'user':{'login':'reviewer'},'state':'APPROVED'},{'user':{'login':'other'},'state':'CHANGES_REQUESTED'},{'user':{'login':'private'},'state':'PENDING'}]
 elif endpoint.startswith('search/issues?'): result={'items':[pr],'total_count':1,'incomplete_results':False}
 elif endpoint.endswith('/merge'): result={'merged':scenario!='blocked'}
 elif endpoint=='graphql': result={'data':{('markPullRequestReadyForReview' if 'markPullRequestReadyForReview' in body['query'] else 'convertPullRequestToDraft'):{'pullRequest':{'id':'PR_fixture'}}}} if scenario!='graphql-error' else {'errors':[{'message':'Denied'}]}
@@ -252,4 +255,101 @@ fn rejects_cross_host_writes_and_never_retries_an_uncertain_post() {
     let (response, calls) = run(request, true, "");
     assert_eq!(response["outcome"]["status"], "error");
     assert!(calls.is_empty());
+}
+
+#[test]
+fn metadata_catalogs_and_review_states_use_repository_scoped_reads() {
+    for (operation, kind, field) in [
+        ("labels", "labels", "labels"),
+        ("reviewer_candidates", "people", "people"),
+        ("reviewers", "people", "people"),
+    ] {
+        let (response, calls) = run(
+            json!({"operation":operation,"review":reference(),"cursor":null}),
+            false,
+            "",
+        );
+        assert_eq!(response["outcome"]["status"], "success", "{response}");
+        assert_eq!(response["outcome"]["result"]["kind"], kind);
+        assert!(
+            !response["outcome"]["result"][field]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(calls.iter().all(|c| c["method"] == "GET"));
+        if operation == "reviewers" {
+            let people = &response["outcome"]["result"]["people"];
+            assert_eq!(people.as_array().unwrap().len(), 2);
+            assert_eq!(people[0]["state"], "approved");
+            assert_eq!(people[1]["state"], "changes_requested");
+        }
+    }
+    let (response, _) = run(json!({"operation":"get","review":reference()}), false, "");
+    assert_eq!(
+        response["outcome"]["result"]["review"]["labels"][0]["id"],
+        "bug"
+    );
+    assert_eq!(
+        response["outcome"]["result"]["review"]["merge_conflicts"],
+        false
+    );
+}
+#[test]
+fn label_edits_are_incremental_and_review_removal_only_removes_requests() {
+    for (request, method, endpoint) in [
+        (
+            json!({"operation":"add_labels","review":reference(),"labels":["bug"]}),
+            "POST",
+            "repos/team/repo/issues/42/labels",
+        ),
+        (
+            json!({"operation":"remove_label","review":reference(),"label":"needs review/ci"}),
+            "DELETE",
+            "repos/team/repo/issues/42/labels/needs%20review%2Fci",
+        ),
+        (
+            json!({"operation":"remove_reviewers","review":reference(),"reviewers":["reviewer"]}),
+            "DELETE",
+            "repos/team/repo/pulls/42/requested_reviewers",
+        ),
+    ] {
+        let (response, calls) = run(request, true, "");
+        assert_eq!(response["outcome"]["status"], "success", "{response}");
+        let call = calls.last().unwrap();
+        assert_eq!(call["method"], method);
+        assert_eq!(call["endpoint"], endpoint);
+    }
+    for request in [
+        json!({"operation":"add_labels","review":reference(),"labels":[""]}),
+        json!({"operation":"remove_reviewers","review":reference(),"reviewers":["../bad"]}),
+    ] {
+        let (response, calls) = run(request, true, "");
+        assert_eq!(response["outcome"]["error"]["code"], "invalid_parameter");
+        assert!(calls.is_empty());
+    }
+}
+
+#[test]
+fn metadata_controls_respect_repository_permissions_and_support_team_requests() {
+    let (response, _) = run(
+        json!({"operation":"get", "review":reference()}),
+        false,
+        "read-only",
+    );
+    let actions = response["outcome"]["result"]["review"]["actions"]
+        .as_array()
+        .unwrap();
+    assert!(!actions.contains(&json!("add_labels")));
+    assert!(!actions.contains(&json!("request_reviewers")));
+    let (response, calls) = run(
+        json!({"operation":"remove_reviewers", "review":reference(), "reviewers":["team:core", "person"]}),
+        true,
+        "",
+    );
+    assert_eq!(response["outcome"]["status"], "success");
+    assert_eq!(
+        calls.last().unwrap()["body"],
+        json!({"reviewers":["person"], "team_reviewers":["core"]})
+    );
 }

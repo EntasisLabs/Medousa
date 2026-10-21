@@ -2,6 +2,7 @@
 //! executable package; the daemon has no dependency on it.
 pub mod auth;
 mod manage;
+mod metadata;
 mod publish;
 use std::time::Duration;
 
@@ -46,6 +47,12 @@ pub fn descriptor() -> ReviewProviderDescriptor {
             "diff",
             "discussion",
             "checks",
+            "labels",
+            "reviewer_candidates",
+            "reviewers",
+            "add_labels",
+            "remove_label",
+            "remove_reviewers",
         ]
         .into_iter()
         .map(str::to_string)
@@ -148,6 +155,12 @@ pub fn project_review(host: &str, repository: &str, raw: &Value) -> HostedReview
         deletions: number(raw, "deletions"),
         changed_files: number(raw, "changed_files"),
         actions: vec![],
+        labels: raw["labels"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(metadata::label)
+            .collect(),
         requested_reviewers: raw["requested_reviewers"]
             .as_array()
             .into_iter()
@@ -163,6 +176,13 @@ pub fn project_review(host: &str, repository: &str, raw: &Value) -> HostedReview
             .collect(),
         merge_state: raw["mergeable_state"].as_str().map(str::to_string),
         merge_methods: vec![],
+        merge_conflicts: raw["mergeable"].as_bool().map(|v| !v).or_else(|| {
+            match raw["mergeable_state"].as_str() {
+                Some("clean") => Some(false),
+                Some("dirty") => Some(true),
+                _ => None,
+            }
+        }),
     }
 }
 
@@ -388,6 +408,15 @@ pub async fn invoke(
         credential: credential.as_deref(),
     };
     match input.query.request {
+        ReviewProviderOperation::Labels { review, cursor } => {
+            metadata::labels(&github, &review, cursor).await
+        }
+        ReviewProviderOperation::ReviewerCandidates { review, cursor } => {
+            metadata::candidates(&github, &review, cursor).await
+        }
+        ReviewProviderOperation::Reviewers { review, cursor } => {
+            metadata::reviewers(&github, &review, cursor).await
+        }
         ReviewProviderOperation::Inbox { folder, cursor } => {
             manage::inbox(&github, folder, cursor).await
         }
@@ -551,6 +580,19 @@ pub async fn invoke(
             let checks = rows
                 .iter()
                 .map(|row| HostedReviewCheck {
+                    kind: match collection {
+                        "workflows" => "workflow",
+                        "statuses" => "status",
+                        _ => "check",
+                    }
+                    .into(),
+                    actions: if collection == "workflows" {
+                        vec!["details".into(), "rerun".into(), "cancel".into()]
+                    } else if collection == "runs" {
+                        vec!["details".into()]
+                    } else {
+                        vec![]
+                    },
                     id: format!("{collection}:{}", number(row, "id")),
                     name: text(
                         row,

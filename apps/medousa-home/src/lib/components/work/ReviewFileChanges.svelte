@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reviewChangeKind, type ReviewChangeKind } from "$lib/code/reviewChangeKinds";
   import { reviewFileInDirectory } from "$lib/code/reviewAreas";
   import { basename, parentDir, shortKind, symbolName } from "$lib/code/reviewFileLabels";
   import type { ReviewReadingState } from "$lib/code/reviewPage.svelte";
@@ -21,6 +22,7 @@
   interface Props {
     review: ReviewProjection;
     directory?: string | null;
+    changeKind?: ReviewChangeKind | null;
     viewState?: ReviewReadingState["diff"];
     onReady?: () => void;
     busy?: boolean;
@@ -37,6 +39,7 @@
   let {
     review,
     directory = null,
+    changeKind = null,
     viewState,
     onReady,
     busy = false,
@@ -80,7 +83,7 @@
   });
 
   const files = $derived.by(() => {
-    const list = review.changed_files.filter((file) => reviewFileInDirectory(file.path, directory));
+    const list = review.changed_files.filter((file) => reviewFileInDirectory(file.path, directory) && (!changeKind || reviewChangeKind(file.path) === changeKind));
     return list.sort((a, b) => {
       const ar = riskPaths.has(a.path) ? 0 : 1;
       const br = riskPaths.has(b.path) ? 0 : 1;
@@ -401,7 +404,7 @@
 </script>
 
 {#if files.length === 0}
-  <p class="file-empty">{directory === null ? "No file changes in this revision." : "No changed files in this directory."}</p>
+  <p class="file-empty">{changeKind ? "No changed files of this type." : directory === null ? "No file changes in this revision." : "No changed files in this directory."}</p>
 {:else}
   <div class="file-skim-chrome">
     <div class="file-skim-toolbar">

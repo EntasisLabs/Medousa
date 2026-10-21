@@ -188,11 +188,18 @@
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {#key `${chat.workshopScopeId}:${active.workId}:${active.resource.kind}`}
         {#if active.resource.kind === "hosted_review"}
+          <svelte:boundary>
           {#await import("$lib/components/work/HostedReviewPanel.svelte")}
             <div class="p-6 text-sm text-content-quiet">Loading review…</div>
           {:then { default: HostedReviewPanel }}
             <HostedReviewPanel reference={active.resource.reference} connectionId={active.resource.connectionId} scope={chat.workshopScopeId} />
+          {:catch}
+            <div class="p-6 text-sm text-content-error" role="alert">Couldn’t load this review. Reopen the tab to try again.</div>
           {/await}
+          {#snippet failed(_error, reset)}
+            <div class="p-6 text-sm text-content-error" role="alert"><p>Couldn’t display this review.</p><button type="button" onclick={reset}>Retry</button></div>
+          {/snippet}
+          </svelte:boundary>
         {:else}
         <LazyFeatureView
           loader={loadUndertakingsPanel}

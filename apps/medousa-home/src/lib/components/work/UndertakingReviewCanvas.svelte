@@ -1,6 +1,7 @@
 <script lang="ts">
   import "$lib/styles/review-canvas.postcss";
   import { tick, untrack } from "svelte";
+  import { changeKindLabels, type ReviewChangeKind } from "$lib/code/reviewChangeKinds";
   import { reviewAreas } from "$lib/code/reviewAreas";
   import ReviewPageHeading from "./ReviewPageHeading.svelte";
   import ReviewOverview from "$lib/components/work/ReviewOverview.svelte";
@@ -138,6 +139,7 @@
     const lens = readingState.lens;
     const attempt = selectedRevision;
     void readingState.directory;
+    void readingState.changeKind;
     const waitForDiff = untrack(() => lens === "changes" && !changesVisited && readingState.diff.expanded.length > 0);
     if (lens === "changes") changesVisited = true;
     restoreGeneration += 1;
@@ -152,7 +154,11 @@
   function saveScroll() {
     if (scrollEl && !restoringScroll) readingState.scroll[readingState.lens] = scrollEl.scrollTop;
   }
+  function showKind(kind: ReviewChangeKind | null) {
+    showDirectory(null); readingState.changeKind = kind;
+  }
   function showDirectory(directory: string | null) {
+    readingState.changeKind = null;
     readingState.directory = directory;
     setLens("changes");
     readingState.scroll.changes = 0;
@@ -171,7 +177,7 @@
               <button type="button" aria-pressed={readingState.lens === "overview"} onclick={() => setLens("overview")}>Summary</button>
               <button type="button" aria-pressed={readingState.lens === "changes"} onclick={() => setLens("changes")}>Changes <span>{review.changed_files.length}</span></button>
               <div class="review-lens-controls">
-              {#if readingState.lens === "changes"}<select aria-label="Filter changed files by directory" value={JSON.stringify(readingState.directory)} onchange={(event) => showDirectory(JSON.parse(event.currentTarget.value))}>
+              {#if readingState.lens === "changes"}{#if readingState.changeKind}<button type="button" onclick={() => showKind(null)}>{changeKindLabels[readingState.changeKind!]} · Show all</button>{/if}<select aria-label="Filter changed files by directory" value={JSON.stringify(readingState.directory)} onchange={(event) => showDirectory(JSON.parse(event.currentTarget.value))}>
                 <option value="null">All files · {review.changed_files.length}</option>
                 {#each areas as area}<option value={JSON.stringify(area.directory)}>{area.label} · {area.count}</option>{/each}
               </select>{/if}
@@ -252,13 +258,14 @@
                 {/if}
 
                 {#if readingState.lens === "overview"}
-                  <ReviewOverview title={projectTitle} {review} {originalRequest} {sourceBranch} onShowChanges={showDirectory} />
+                  <ReviewOverview title={projectTitle} {review} {originalRequest} {sourceBranch} onShowChanges={showDirectory} onShowKind={showKind} />
                 {/if}
                 {#if changesVisited}
                 <div hidden={readingState.lens !== "changes"}>
                 <ForgeReviewSurface
                   {review}
                   directory={readingState.directory}
+                  changeKind={readingState.changeKind}
                   viewState={readingState.diff}
                   onReady={() => void restoreScroll()}
                   projectTitle={projectTitle}

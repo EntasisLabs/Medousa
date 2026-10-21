@@ -22546,6 +22546,79 @@
       "ReviewProviderWrite": {
         "oneOf": [
           {
+            "description": "Incremental edits preserve labels added concurrently by other users.",
+            "type": "object",
+            "required": [
+              "labels",
+              "operation",
+              "review"
+            ],
+            "properties": {
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "add_labels"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "label",
+              "operation",
+              "review"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "remove_label"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review",
+              "reviewers"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "remove_reviewers"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              },
+              "reviewers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
             "type": "object",
             "required": [
               "body",
@@ -22878,6 +22951,78 @@
           {
             "type": "object",
             "required": [
+              "operation",
+              "review"
+            ],
+            "properties": {
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "labels"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review"
+            ],
+            "properties": {
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "reviewer_candidates"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "review"
+            ],
+            "properties": {
+              "cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "reviewers"
+                ]
+              },
+              "review": {
+                "$ref": "#/definitions/HostedReviewRef"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
               "folder",
               "operation"
             ],
@@ -23207,6 +23352,21 @@
           "head_revision": {
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ReviewLabel"
+            }
+          },
+          "merge_conflicts": {
+            "description": "Conflict information is separate from checks, approvals and merge permission.",
+            "default": null,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "merge_methods": {
             "default": [],
             "type": "array",
@@ -23257,6 +23417,13 @@
           "status"
         ],
         "properties": {
+          "actions": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "conclusion": {
             "type": [
               "string",
@@ -23264,6 +23431,10 @@
             ]
           },
           "id": {
+            "type": "string"
+          },
+          "kind": {
+            "default": "",
             "type": "string"
           },
           "name": {
@@ -23399,6 +23570,55 @@
           }
         }
       },
+      "ReviewLabel": {
+        "type": "object",
+        "required": [
+          "description",
+          "id",
+          "name"
+        ],
+        "properties": {
+          "color": {
+            "description": "Optional six-digit RGB hex, without a leading #.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "description": "Opaque label identity used for mutations.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewPerson": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "description": "pending, approved, changes_requested, commented, or dismissed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ReviewProviderError": {
         "type": "object",
         "required": [
@@ -23469,6 +23689,60 @@
       },
       "ReviewProviderResult": {
         "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "labels"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "labels"
+                ]
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ReviewLabel"
+                }
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "people"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "people"
+                ]
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "people": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ReviewPerson"
+                }
+              }
+            }
+          },
           {
             "type": "object",
             "required": [

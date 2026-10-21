@@ -195,5 +195,8 @@ by the SDK. See [Review-provider protocol](../engine/review-providers.md).
 Hosted review queries also support account-relative PR inboxes and CI details.
 The provider-neutral mutation DTO supports comments/replies, review decisions
 with inline comments, PR editing/lifecycle/reviewer requests, revision-pinned
-merges, and workflow rerun/cancel. Providers advertise supported operation names;
+merges, incremental label edits, pending-review request removal, and workflow rerun/cancel.
+Paginated `labels`, `reviewer_candidates`, and `reviewers` queries supply repository
+catalogs and normalized review decisions. `merge_conflicts` remains separate from
+CI/approval state; check `kind`/`actions` keep native check IDs opaque. Providers advertise supported operation names;
 see [review providers](../engine/review-providers.md) for revision and retry rules.

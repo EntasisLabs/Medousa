@@ -57,9 +57,34 @@ pub struct HostedReview {
     #[serde(default)]
     pub requested_reviewers: Vec<String>,
     #[serde(default)]
+    pub labels: Vec<ReviewLabel>,
+    #[serde(default)]
     pub merge_state: Option<String>,
     #[serde(default)]
     pub merge_methods: Vec<String>,
+    /// Conflict information is separate from checks, approvals and merge permission.
+    #[serde(default)]
+    pub merge_conflicts: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ReviewLabel {
+    /// Opaque label identity used for mutations.
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    /// Optional six-digit RGB hex, without a leading #.
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ReviewPerson {
+    pub id: String,
+    pub name: String,
+    /// pending, approved, changes_requested, commented, or dismissed.
+    pub state: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,12 +121,28 @@ pub struct HostedReviewCheck {
     pub status: String,
     pub conclusion: Option<String>,
     pub url: Option<String>,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub actions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ReviewProviderOperation {
+    Labels {
+        review: HostedReviewRef,
+        cursor: Option<String>,
+    },
+    ReviewerCandidates {
+        review: HostedReviewRef,
+        cursor: Option<String>,
+    },
+    Reviewers {
+        review: HostedReviewRef,
+        cursor: Option<String>,
+    },
     Inbox {
         folder: ReviewInboxFolder,
         cursor: Option<String>,
@@ -149,6 +190,9 @@ pub enum ReviewProviderOperation {
 impl ReviewProviderOperation {
     pub fn name(&self) -> &'static str {
         match self {
+            Self::Labels { .. } => "labels",
+            Self::ReviewerCandidates { .. } => "reviewer_candidates",
+            Self::Reviewers { .. } => "reviewers",
             Self::Inbox { .. } => "inbox",
             Self::CheckDetails { .. } => "check_details",
             Self::ConnectionStatus => "connection_status",
@@ -165,7 +209,10 @@ impl ReviewProviderOperation {
 
     pub fn review_ref(&self) -> Option<&HostedReviewRef> {
         match self {
-            Self::CheckDetails { review, .. }
+            Self::Labels { review, .. }
+            | Self::ReviewerCandidates { review, .. }
+            | Self::Reviewers { review, .. }
+            | Self::CheckDetails { review, .. }
             | Self::Get { review }
             | Self::Files { review, .. }
             | Self::Diff { review, .. }
@@ -199,6 +246,14 @@ pub struct ReviewProviderInvocation {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ReviewProviderResult {
+    Labels {
+        labels: Vec<ReviewLabel>,
+        next_cursor: Option<String>,
+    },
+    People {
+        people: Vec<ReviewPerson>,
+        next_cursor: Option<String>,
+    },
     Updated {
         message: String,
     },
@@ -365,6 +420,19 @@ pub struct ReviewProviderMutation {
 #[serde(tag = "operation", rename_all = "snake_case")]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ReviewProviderWrite {
+    /// Incremental edits preserve labels added concurrently by other users.
+    AddLabels {
+        review: HostedReviewRef,
+        labels: Vec<String>,
+    },
+    RemoveLabel {
+        review: HostedReviewRef,
+        label: String,
+    },
+    RemoveReviewers {
+        review: HostedReviewRef,
+        reviewers: Vec<String>,
+    },
     Comment {
         review: HostedReviewRef,
         body: String,
@@ -422,6 +490,9 @@ pub enum ReviewProviderWrite {
 impl ReviewProviderWrite {
     pub fn name(&self) -> &'static str {
         match self {
+            Self::AddLabels { .. } => "add_labels",
+            Self::RemoveLabel { .. } => "remove_label",
+            Self::RemoveReviewers { .. } => "remove_reviewers",
             Self::Publish { .. } => "publish",
             Self::Comment { .. } => "comment",
             Self::SubmitReview { .. } => "submit_review",
@@ -437,6 +508,9 @@ impl ReviewProviderWrite {
         match self {
             Self::Publish { .. } => None,
             Self::Comment { review, .. }
+            | Self::AddLabels { review, .. }
+            | Self::RemoveLabel { review, .. }
+            | Self::RemoveReviewers { review, .. }
             | Self::SubmitReview { review, .. }
             | Self::Edit { review, .. }
             | Self::SetState { review, .. }
@@ -521,4 +595,36 @@ pub enum ReviewProviderAuthResult {
 pub struct ReviewProviderAuthPackageResponse {
     pub protocol_version: u32,
     pub result: Result<ReviewProviderAuthResult, ReviewProviderError>,
+}
+
+#[cfg(test)]
+mod inspector_contract_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn metadata_operations_preserve_provider_neutral_identities() {
+        let review = json!({"provider_id":"example", "host":"forge.example", "repository":"opaque/repo", "native_id":"not-a-number"});
+        for operation in ["labels", "reviewer_candidates", "reviewers"] {
+            let query: ReviewProviderOperation = serde_json::from_value(
+                json!({"operation":operation,"review":review,"cursor":"opaque-page"}),
+            )
+            .unwrap();
+            assert_eq!(query.name(), operation);
+            assert_eq!(query.review_ref().unwrap().native_id, "not-a-number");
+        }
+        let write: ReviewProviderWrite = serde_json::from_value(
+            json!({"operation":"remove_label", "review":review, "label":"opaque-label"}),
+        )
+        .unwrap();
+        assert_eq!(write.name(), "remove_label");
+        assert_eq!(write.review_ref().unwrap().provider_id, "example");
+    }
+
+    #[test]
+    fn older_check_responses_remain_readable() {
+        let check: HostedReviewCheck = serde_json::from_value(json!({"id":"opaque", "name":"Build", "status":"success", "conclusion":null, "url":null})).unwrap();
+        assert!(check.actions.is_empty());
+        assert!(check.kind.is_empty());
+    }
 }
