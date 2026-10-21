@@ -191,7 +191,10 @@ a private Code IDE chrome.
   open files for the project. `Cmd/Ctrl+Shift+T` reopens the last closed file.
   Close and cycle tabs with Workshop shell controls (`Ctrl+;` then `n` / `p`,
   or close from the tab strip). Split Editor (`Ctrl+;` then `%` / `"`) keeps the
-  current file visible in both panes; drag a tab to a pane edge to move it.
+  current file visible in both panes. Drag a tab from the top bar onto the left,
+  right, top, or bottom of an editor pane to split it there; a preview shows
+  where the tab will land. Drop in the center of another pane to move the tab
+  into it. Press Escape to cancel a drag.
   Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
   Code Back/Forward restores the remembered pane when that group still exists.
   Problems, Structure, Search, Changes, Tests, the selected project command,

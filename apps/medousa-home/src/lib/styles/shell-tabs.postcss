@@ -542,3 +542,21 @@
     text-align: center;
   }
 }
+
+/* Pointer-drag feedback stays above editor content and never intercepts the drop. */
+.shell-tab-drag-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: .35rem .6rem;
+  border: 1px solid rgb(var(--theme-text) / .18);
+  border-radius: 5px;
+  background: rgb(var(--theme-pane));
+  color: rgb(var(--theme-text));
+  font: 12px/1.4 var(--font-family-base, system-ui);
+  box-shadow: 0 4px 18px #0004;
+}
