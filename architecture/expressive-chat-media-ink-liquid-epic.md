@@ -9,6 +9,11 @@
 > [interaction-and-state-model.md](interaction-and-state-model.md),
 > [sttp-native-prompt-and-chronological-turn-plan.md](sttp-native-prompt-and-chronological-turn-plan.md)
 
+The proposed [Creative workspace epic](creative-workspace-epic.md) extends
+Drawing into mixed-object composition, layers and selection-directed AI work.
+Those additions belong to that follow-up; this epic retains its original scope
+and outstanding validation checkpoints.
+
 ---
 
 ## North star

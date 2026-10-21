@@ -1,0 +1,275 @@
+<style>
+#create-mocks { --md-bg:light-dark(#f7f6f3,#100f0d); --md-panel:light-dark(#eeede9,#151412); --md-canvas:light-dark(#e4e3df,#1a1916); --md-raised:light-dark(#fffefa,#23221f); --md-text:light-dark(#252522,#e7e6df); --md-dim:light-dark(#73736d,#95948d); --md-line:light-dark(#d8d7d1,#30302b); --md-soft:light-dark(#e2e1da,#302f2a); --md-mark:light-dark(#78653c,#c9b17e); --md-active:light-dark(#33332f,#e7e4dc); --md-active-text:light-dark(#fffefa,#22221e); font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--md-text); width:100%; }
+#create-mocks .md-app * { box-sizing:border-box; }
+#create-mocks .md-app button, #create-mocks .md-app input { font:inherit; color:inherit; }
+#create-mocks .md-app button { cursor:inherit; }
+#create-mocks .md-app button { background:transparent; border:0; padding:6px 8px; border-radius:6px; display:inline-flex; align-items:center; gap:7px; justify-content:center; white-space:nowrap; }
+#create-mocks .md-app button:hover { background:var(--md-soft); }
+#create-mocks .md-app button:focus-visible, #create-mocks .md-app input:focus-visible { outline:2px solid var(--md-mark); outline-offset:2px; }
+#create-mocks .md-app svg { width:15px; height:15px; flex:none; }
+#create-mocks .md-app { background:var(--md-bg); border:1px solid var(--md-line); border-radius:12px; overflow:hidden; height:740px; display:flex; flex-direction:column; }
+#create-mocks .md-chrome { height:47px; flex:none; display:flex; align-items:center; gap:18px; padding:0 15px; border-bottom:1px solid var(--md-line); }
+#create-mocks .md-lights { display:flex; gap:7px; margin-right:12px; }
+#create-mocks .md-lights span { width:11px; height:11px; border-radius:50%; background:light-dark(#ea6a60,#f36e63); }
+#create-mocks .md-lights span:nth-child(2){background:light-dark(#e8b348,#edbd50);} #create-mocks .md-lights span:nth-child(3){background:light-dark(#69b473,#68bc78);}
+#create-mocks .md-history { display:flex; gap:6px; color:var(--md-dim); }
+#create-mocks .md-tab { background:var(--md-soft); border-radius:5px; padding:4px 11px; display:flex; align-items:center; gap:9px; max-width:260px; }
+#create-mocks .md-tab .md-tab-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#create-mocks .md-tab-x { color:var(--md-dim); }
+#create-mocks .md-workshop { margin-left:auto; color:var(--md-dim); font-size:11px; }
+#create-mocks .md-body { display:flex; min-height:0; flex:1; }
+#create-mocks .md-rail { width:166px; padding:14px 10px; border-right:1px solid var(--md-line); flex:none; display:flex; flex-direction:column; gap:3px; background:var(--md-bg); }
+#create-mocks .md-rail button { justify-content:flex-start; width:100%; text-align:left; }
+#create-mocks .md-nav-main { margin-bottom:3px; font-weight:500; }
+#create-mocks .md-section-label { color:var(--md-dim); font-size:11px; margin:18px 8px 5px; display:flex; align-items:center; justify-content:space-between; }
+#create-mocks .md-project { color:var(--md-dim); font-size:12px; }
+#create-mocks .md-project.is-current { background:var(--md-soft); color:var(--md-text); }
+#create-mocks .md-project span { text-overflow:ellipsis; overflow:hidden; }
+#create-mocks .md-rail-bottom { margin-top:auto; padding-top:12px; border-top:1px solid var(--md-line); color:var(--md-dim); }
+#create-mocks .md-editor { flex:1; min-width:0; display:flex; flex-direction:column; position:relative; }
+#create-mocks .md-heading { height:51px; flex:none; display:flex; align-items:center; gap:9px; padding:0 18px; border-bottom:1px solid var(--md-line); }
+#create-mocks .md-breadcrumb { display:flex; gap:9px; align-items:center; flex:1; min-width:0; }
+#create-mocks .md-breadcrumb strong { font-weight:500; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; }
+#create-mocks .md-save { font-size:11px; color:var(--md-dim); white-space:nowrap; }
+#create-mocks .md-export { background:var(--md-soft); font-size:12px; }
+#create-mocks .md-stage { display:flex; flex:1; min-height:0; position:relative; }
+#create-mocks .md-canvas { background:var(--md-canvas); flex:1; min-width:0; position:relative; display:flex; flex-direction:column; padding:16px 22px 18px; background-image:radial-gradient(var(--md-line) .65px,transparent .65px); background-size:18px 18px; }
+#create-mocks .md-canvas-head { display:flex; align-items:center; gap:6px; color:var(--md-dim); font-size:11px; min-height:30px; }
+#create-mocks .md-canvas-head .md-canvas-controls { margin-left:auto; display:flex; align-items:center; gap:3px; }
+#create-mocks .md-canvas-controls button { font-size:11px; padding:4px 6px; }
+#create-mocks .md-art-area { flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:0; position:relative; }
+#create-mocks .md-frame-label { width:min(100%,430px); display:flex; justify-content:space-between; color:var(--md-dim); font-size:11px; margin-bottom:8px; }
+#create-mocks .md-art { width:min(100%,430px); min-height:320px; aspect-ratio:1.3; position:relative; padding:25px 26px; color:light-dark(#333b2e,#333b2e); background:light-dark(#e5e9dc,#e5e9dc); box-shadow:0 12px 28px light-dark(#24231b18,#00000030); display:flex; flex-direction:column; justify-content:space-between; overflow:visible; }
+#create-mocks .md-art-brand { display:flex; align-items:center; justify-content:space-between; font-size:10px; letter-spacing:.12em; }
+#create-mocks .md-art-brand span:last-child { letter-spacing:0; opacity:.65; }
+#create-mocks .md-headline { white-space:normal; flex-shrink:0; display:block; font-size:clamp(23px,3.3vw,43px); line-height:1.03; letter-spacing:-.045em; font-weight:500; position:relative; align-self:flex-start; padding:3px 5px; margin:13px -5px 5px; max-width:100%; text-align:left; border-radius:0; }
+#create-mocks .md-app button.md-headline:hover { background:transparent; }
+#create-mocks .md-art[data-selected="title"] .md-headline { outline:1px solid light-dark(#6d6fa2,#6d6fa2); }
+#create-mocks .md-art[data-selected="title"] .md-headline:before, #create-mocks .md-art[data-selected="title"] .md-headline:after { content:"";position:absolute;width:5px;height:5px;background:light-dark(#f8f7f2,#f8f7f2);border:1px solid light-dark(#6d6fa2,#6d6fa2); }
+#create-mocks .md-headline:before { left:-3px;top:-3px; } #create-mocks .md-headline:after { right:-3px;bottom:-3px; }
+#create-mocks .md-art-caption { font-size:11px; margin:2px 0 15px; opacity:.75; }
+#create-mocks .md-screenshot { white-space:normal; flex-shrink:0; border-radius:7px; background:light-dark(#262c28,#262c28); color:light-dark(#e4e7dc,#e4e7dc); padding:11px 13px; text-align:left; width:100%; display:block; box-shadow:0 4px 10px light-dark(#25251c25,#25251c25); }
+#create-mocks .md-app button.md-screenshot:hover { background:light-dark(#303832,#303832); }
+#create-mocks .md-art[data-selected="image"] .md-screenshot { outline:1px solid light-dark(#6d6fa2,#6d6fa2); outline-offset:3px; }
+#create-mocks .md-mini-input { font-size:11px; border-bottom:1px solid light-dark(#424a42,#424a42); padding-bottom:8px; margin-bottom:8px; display:flex; align-items:center; gap:7px; }
+#create-mocks .md-mini-input b { font-weight:500; background:light-dark(#414b40,#414b40); border-radius:4px; padding:2px 5px; }
+#create-mocks .md-mini-line { font-size:10px; opacity:.65; margin:3px 0; }
+#create-mocks .md-mini-answer { font-size:11px; margin-top:7px; }
+#create-mocks .md-art-footer { font-size:10px; display:flex; justify-content:space-between; margin-top:15px; opacity:.7; }
+#create-mocks .md-ink { position:absolute; right:20px; top:52px; width:49px; height:31px; border-top:3px solid light-dark(#919e6b,#919e6b); border-radius:60%; transform:rotate(24deg); pointer-events:none; }
+#create-mocks .md-toolbar { display:flex; align-items:center; gap:3px; padding:5px; border:1px solid var(--md-line); border-radius:9px; background:var(--md-raised); }
+#create-mocks .md-toolbar button { width:32px; height:32px; padding:7px; }
+#create-mocks .md-toolbar button.is-active { background:var(--md-soft); }
+#create-mocks .md-tool-divider { width:1px; height:19px; margin:0 4px; background:var(--md-line); }
+#create-mocks .md-tools-anchor { display:flex; justify-content:center; margin:11px 0 5px; }
+#create-mocks .md-ask { background:var(--md-raised); border:1px solid var(--md-line); border-radius:10px; width:min(100%,530px); margin:14px auto 0; box-shadow:0 4px 15px light-dark(#29291b09,#00000014); }
+#create-mocks .md-context { font-size:11px; display:flex; align-items:center; gap:6px; color:var(--md-dim); padding:9px 12px 0; }
+#create-mocks .md-context svg { width:12px;height:12px; }
+#create-mocks .md-ask-row { display:flex; align-items:center; padding:7px 8px; gap:3px; }
+#create-mocks .md-target { background:var(--md-soft); font-size:11px; padding:5px 7px; }
+#create-mocks .md-ask input { min-width:0; flex:1; border:0; outline-offset:0; background:transparent; padding:5px 6px; font-size:12px; }
+#create-mocks .md-ask input::placeholder { color:var(--md-dim); }
+#create-mocks .md-send { background:var(--md-active); color:var(--md-active-text); border-radius:50%; width:26px;height:26px; padding:5px; }
+#create-mocks .md-reply { font-size:12px; padding:0 12px 10px; display:none; }
+#create-mocks .md-reply.is-visible { display:block; }
+#create-mocks .md-reply-header { display:flex; align-items:center; gap:7px; margin-bottom:5px; color:var(--md-dim); font-size:11px; }
+#create-mocks .md-variants { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-top:6px; }
+#create-mocks .md-variants button { font-size:11px; background:var(--md-soft); padding:4px 8px; }
+#create-mocks .md-variants button.is-chosen { box-shadow:inset 0 0 0 1px var(--md-mark); }
+#create-mocks .md-variants .md-apply { margin-left:auto; background:var(--md-active); color:var(--md-active-text); }
+#create-mocks .md-inspector { width:190px; flex:none; border-left:1px solid var(--md-line); background:var(--md-bg); padding:14px; display:none; }
+#create-mocks .md-inspector.is-open { display:block; }
+#create-mocks .md-inspector h3 { font-size:12px; font-weight:500; margin:0 0 14px; display:flex; gap:7px;align-items:center; }
+#create-mocks .md-property { display:flex; justify-content:space-between; font-size:11px; margin:12px 0; color:var(--md-dim); }
+#create-mocks .md-property span:last-child { color:var(--md-text); }
+#create-mocks .md-prop-pair { display:flex;gap:6px;margin:8px 0; }
+#create-mocks .md-prop-pair span { background:var(--md-panel);border:1px solid var(--md-line);border-radius:5px;padding:5px 7px;flex:1;font-size:11px; }
+#create-mocks .md-rule { height:1px;background:var(--md-line);margin:18px 0; }
+#create-mocks .md-layer { display:flex; align-items:center; gap:7px; padding:8px 5px; font-size:11px; border-radius:4px; }
+#create-mocks .md-layer.is-selected { background:var(--md-soft); }
+#create-mocks .md-layer svg { width:13px;height:13px; }
+#create-mocks .md-layer button { padding:0;justify-content:flex-start;white-space:normal;text-align:left; }
+#create-mocks .md-frame-nav { display:none; }
+#create-mocks .md-frame-thumb { background:var(--md-canvas);padding:10px;border-radius:5px;border:1px solid var(--md-line);margin:9px 5px; }
+#create-mocks .md-frame-thumb span { display:block;background:light-dark(#dfe3d4,#dfe3d4);height:46px;border-radius:2px; }
+#create-mocks .md-frame-thumb small { display:block;font-size:11px;color:var(--md-dim);margin-top:7px; }
+#create-mocks .md-references { display:none; }
+#create-mocks .md-asset { margin-bottom:15px; }
+#create-mocks .md-asset-visual { height:75px;border-radius:5px;background:var(--md-canvas);padding:11px;display:flex;flex-direction:column;justify-content:center;gap:5px; }
+#create-mocks .md-asset-visual div { height:5px;border-radius:2px;background:var(--md-dim);opacity:.35;width:75%; }
+#create-mocks .md-asset-visual div:first-child { width:35%;opacity:.7; }
+#create-mocks .md-asset-name { display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-top:6px; }
+#create-mocks .md-asset-name svg { width:12px;height:12px;color:var(--md-mark); }
+#create-mocks .md-palette { display:flex;gap:5px;margin-top:8px; }
+#create-mocks .md-palette span { width:25px;height:25px;border-radius:50%;background:light-dark(#e5e9dc,#e5e9dc);border:1px solid var(--md-line); }
+#create-mocks .md-palette span:nth-child(2) {background:light-dark(#343d32,#343d32);} #create-mocks .md-palette span:nth-child(3){background:light-dark(#b1bb96,#b1bb96);} #create-mocks .md-palette span:nth-child(4){background:light-dark(#b3a5cb,#b3a5cb);}
+#create-mocks .md-reference-foot { color:var(--md-dim);font-size:11px;margin-top:16px; }
+#create-mocks .md-footer { height:27px;display:flex;align-items:center;gap:13px;padding:0 12px;font-size:11px;color:var(--md-dim);border-top:1px solid var(--md-line);flex:none; }
+#create-mocks .md-footer span:last-child { margin-left:auto; }
+#create-mocks .md-home, #create-mocks .md-note { display:none;flex:1;padding:32px;min-width:0; }
+#create-mocks .md-home h2,#create-mocks .md-note h2 {font-size:23px;font-weight:500;letter-spacing:-.03em;margin:4px 0 22px;}
+#create-mocks .md-starters {display:flex;gap:7px;flex-wrap:wrap;}
+#create-mocks .md-starters button {border:1px solid var(--md-line);background:var(--md-panel);font-size:12px;}
+#create-mocks .md-home-label {font-size:12px;color:var(--md-dim);margin:30px 0 12px;}
+#create-mocks .md-home-project {width:100%;max-width:420px;justify-content:flex-start;padding:14px;border:1px solid var(--md-line);background:var(--md-panel);text-align:left;}
+#create-mocks .md-home-project small {display:block;color:var(--md-dim);font-size:11px;}
+#create-mocks .md-note p {font-size:13px;color:var(--md-dim);max-width:440px;}
+#create-mocks .md-embed {margin-top:25px;max-width:420px;border:1px solid var(--md-line);border-radius:8px;padding:20px;background:var(--md-panel);}
+#create-mocks .md-embed-preview {background:light-dark(#e5e9dc,#e5e9dc);color:light-dark(#343d32,#343d32);padding:28px 22px;font-size:27px;letter-spacing:-.035em;font-weight:500;}
+#create-mocks .md-embed-footer {display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-top:14px;gap:8px;flex-wrap:wrap;}
+#create-mocks .md-mode-home .md-editor,#create-mocks .md-mode-notes .md-editor {display:none;}
+#create-mocks .md-mode-home .md-home,#create-mocks .md-mode-notes .md-note {display:block;}
+#create-mocks .md-target-menu {display:none;padding:0 10px 8px;gap:5px;flex-wrap:wrap;}
+#create-mocks .md-target-menu.is-visible {display:flex;}
+#create-mocks .md-target-menu button {font-size:11px;background:var(--md-panel);}
+#create-mocks .md-toast {min-height:18px;font-size:11px;color:var(--md-dim);margin-top:8px;text-align:center;}
+#create-mocks [data-layout="canvas"] .md-canvas {padding-left:44px;padding-right:44px;}
+#create-mocks [data-layout="frames"] .md-frame-nav {display:block;}
+#create-mocks [data-layout="frames"] .md-project-secondary {display:none;}
+#create-mocks [data-layout="frames"] .md-tools-anchor {order:-1;margin:0 0 16px;}
+#create-mocks [data-layout="frames"] .md-toolbar {border:0;border-radius:0;background:transparent;border-bottom:1px solid var(--md-line);width:100%;justify-content:center;padding-bottom:10px;}
+#create-mocks [data-layout="frames"] .md-canvas {padding:8px 16px 18px;}
+#create-mocks [data-layout="frames"] .md-art {padding:20px;}
+#create-mocks [data-layout="frames"] .md-headline {font-size:clamp(23px,3vw,34px);}
+#create-mocks [data-layout="references"] .md-references {display:block;}
+#create-mocks [data-layout="references"] .md-properties {display:none;}
+#create-mocks [data-layout="references"] .md-tools-anchor {position:absolute;left:9px;top:70px;z-index:1;}
+#create-mocks [data-layout="references"] .md-toolbar {flex-direction:column;}
+#create-mocks [data-layout="references"] .md-tool-divider {width:19px;height:1px;margin:4px;}
+#create-mocks [data-layout="references"] .md-canvas {padding-left:57px;padding-right:24px;}
+#create-mocks [data-layout="references"] .md-headline {font-size:clamp(23px,3vw,34px);}
+@media(max-width:850px) {#create-mocks .md-rail{width:140px;}#create-mocks .md-inspector{width:165px;padding:11px;}#create-mocks [data-layout="canvas"] .md-canvas{padding-left:24px;padding-right:24px;}#create-mocks .md-art{padding:20px;}#create-mocks .md-chrome{gap:8px;}#create-mocks .md-headline{font-size:30px;}#create-mocks .md-heading{padding:0 10px;}#create-mocks .md-save{display:none;}}
+@media(max-width:650px) {#create-mocks .md-app{height:auto;min-height:800px;}#create-mocks .md-chrome{gap:8px;padding:0 10px;}#create-mocks .md-history,#create-mocks .md-workshop,#create-mocks .md-chrome>.md-plus{display:none;}#create-mocks .md-lights{margin-right:4px;gap:5px;}#create-mocks .md-tab{font-size:11px;}#create-mocks .md-body{flex-direction:column;min-height:725px;}#create-mocks .md-rail{width:auto;flex-direction:row;align-items:center;padding:7px;gap:6px;border-right:0;border-bottom:1px solid var(--md-line);}#create-mocks .md-rail button{width:auto;}#create-mocks .md-mobile-notes{display:inline-flex!important;}#create-mocks .md-project-secondary,#create-mocks .md-rail .md-project,#create-mocks .md-section-label,#create-mocks .md-frame-nav,#create-mocks .md-rail-bottom,#create-mocks [data-layout="frames"] .md-frame-nav{display:none;}#create-mocks .md-editor{min-height:650px;}#create-mocks .md-stage{flex-direction:column;}#create-mocks .md-canvas{min-height:540px;padding:10px 16px!important;}#create-mocks .md-art-area{padding:17px 0;}#create-mocks .md-art{max-width:360px;min-height:350px;aspect-ratio:auto;}#create-mocks .md-art-brand{font-size:10px;}#create-mocks .md-headline{font-size:31px!important;}#create-mocks .md-art-caption{font-size:11px;}#create-mocks .md-inspector{width:100%;border-left:0;border-top:1px solid var(--md-line);}#create-mocks .md-inspector.is-open{display:block;}#create-mocks .md-properties .md-rule,#create-mocks .md-properties .md-layer,#create-mocks .md-properties .md-property,#create-mocks .md-properties .md-prop-pair{display:none;}#create-mocks .md-properties h3{margin:0;}#create-mocks .md-references .md-asset{display:inline-block;width:45%;margin:0 3% 5px 0;vertical-align:top;}#create-mocks .md-references .md-asset-visual{height:55px;}#create-mocks .md-references .md-rule,#create-mocks .md-references .md-reference-foot{display:none;}#create-mocks .md-references h3{margin-bottom:8px;}#create-mocks [data-layout="references"] .md-tools-anchor{position:static;}#create-mocks [data-layout="references"] .md-toolbar{flex-direction:row;}#create-mocks [data-layout="references"] .md-tool-divider{width:1px;height:19px;margin:0 4px;}#create-mocks .md-footer{font-size:10px;gap:7px;}#create-mocks .md-home,#create-mocks .md-note{padding:22px 15px;min-height:650px;}#create-mocks .md-heading .md-breadcrumb>span{display:none;}#create-mocks .md-ask-row{flex-wrap:wrap;}#create-mocks .md-ask input{width:120px;}#create-mocks .md-app button{min-height:30px;}}
+@media(pointer:coarse) {#create-mocks .md-app button{min-height:44px;}#create-mocks .md-toolbar button{width:40px;height:44px;}#create-mocks .md-ask input{font-size:16px;}#create-mocks .md-app{height:auto;min-height:850px;}#create-mocks .md-canvas{min-height:650px;}#create-mocks .md-target{white-space:normal;} }
+</style>
+<div id="create-mocks">
+  <div class="viz-carousel" aria-label="Create workspace layouts">
+    <section data-variant="Canvas first" data-layout="canvas" aria-label="Canvas first workspace"></section>
+    <section data-variant="Frame first" data-layout="frames" aria-label="Frame first workspace" hidden></section>
+    <section data-variant="Reference first" data-layout="references" aria-label="Reference first workspace" hidden></section>
+  </div>
+  <template id="create-shell-template">
+    <div class="md-app">
+      <header class="md-chrome">
+        <div class="md-lights" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="md-history" aria-hidden="true"><i data-lucide="arrow-left"></i><i data-lucide="arrow-right"></i></div>
+        <i data-lucide="panel-left" aria-hidden="true"></i>
+        <div class="md-tab"><i data-lucide="pen-tool" aria-hidden="true"></i><span class="md-tab-title">Spotlight release</span><span class="md-tab-x">×</span></div>
+        <span class="md-plus" aria-hidden="true">＋</span><span class="md-workshop">Mac mini</span>
+      </header>
+      <div class="md-body">
+        <aside class="md-rail" aria-label="Create projects">
+          <button class="md-nav-main cursor-interaction" data-action="home"><i data-lucide="pen-tool" aria-hidden="true"></i>Create</button>
+          <button class="md-project cursor-interaction" data-action="home"><i data-lucide="plus" aria-hidden="true"></i>New project</button>
+          <div class="md-section-label">Pinned</div>
+          <button class="md-project is-current cursor-interaction" data-action="open"><i data-lucide="layout-template" aria-hidden="true"></i><span>Spotlight release</span></button>
+          <div class="md-project-secondary"><div class="md-section-label">Recent</div><div class="md-layer"><i data-lucide="workflow" aria-hidden="true"></i>Engine diagram</div><div class="md-layer"><i data-lucide="image" aria-hidden="true"></i>Weekend sketches</div></div>
+          <div class="md-frame-nav"><div class="md-section-label">Frames <span>＋</span></div><div class="md-frame-thumb"><span></span><small>Release graphic</small></div><div class="md-layer"><i data-lucide="frame" aria-hidden="true"></i>Square crop</div></div>
+          <div class="md-rail-bottom"><button class="cursor-interaction" data-action="notes"><i data-lucide="notebook-pen" aria-hidden="true"></i>Notes</button><div class="md-layer"><i data-lucide="settings-2" aria-hidden="true"></i>Settings</div></div>
+          <button class="md-mobile-notes cursor-interaction" data-action="notes" style="display:none">Notes</button>
+        </aside>
+        <main class="md-editor">
+          <div class="md-heading"><div class="md-breadcrumb"><span style="color:var(--md-dim)">Create</span><span style="color:var(--md-dim)">/</span><strong>Spotlight release</strong></div><span class="md-save">Saved</span><button class="cursor-interaction" data-action="undo" aria-label="Undo accepted change"><i data-lucide="undo-2" aria-hidden="true"></i></button><button class="md-export cursor-interaction" data-action="export">Export<i data-lucide="chevron-down" aria-hidden="true"></i></button></div>
+          <div class="md-stage">
+            <div class="md-canvas">
+              <div class="md-canvas-head"><span>Release graphic</span><div class="md-canvas-controls"><button class="cursor-interaction" data-action="panel" aria-label="Toggle context panel"><i data-lucide="panel-right" aria-hidden="true"></i></button><span>64%</span><i data-lucide="chevron-down" aria-hidden="true"></i></div></div>
+              <div class="md-art-area">
+                <div class="md-frame-label"><span>Release graphic</span><span>1200 × 920</span></div>
+                <div class="md-art" data-selected="title">
+                  <div class="md-art-brand"><span>MEDOUSA</span><span>FIELD NOTES / 021</span></div>
+                  <button class="md-headline cursor-interaction" data-action="select-title" aria-label="Select headline">Made for the way<br>you work.</button>
+                  <div class="md-art-caption">A little less chat. A lot more possibility.</div>
+                  <button class="md-screenshot cursor-interaction" data-action="select-image" aria-label="Select Spotlight screenshot"><div class="md-mini-input"><b>@Taco</b><span>spin up the playground</span></div><div class="md-mini-line">Taco · Workshop</div><div class="md-mini-answer">Playground is up. Pick it up whenever you're ready.</div></button>
+                  <div class="md-art-footer"><span>Your ideas, in motion.</span><span>medousa.dev ↗</span></div><div class="md-ink" aria-hidden="true"></div>
+                </div>
+              </div>
+              <div class="md-tools-anchor"><div class="md-toolbar" aria-label="Canvas tools"><button class="is-active cursor-interaction" data-tool="select" aria-label="Select"><i data-lucide="mouse-pointer-2" aria-hidden="true"></i></button><button class="cursor-interaction" data-tool="ink" aria-label="Ink"><i data-lucide="pencil" aria-hidden="true"></i></button><button class="cursor-interaction" data-tool="text" aria-label="Text"><i data-lucide="type" aria-hidden="true"></i></button><button class="cursor-interaction" data-tool="shape" aria-label="Shape"><i data-lucide="square" aria-hidden="true"></i></button><div class="md-tool-divider"></div><button class="cursor-interaction" data-tool="frame" aria-label="Frame"><i data-lucide="frame" aria-hidden="true"></i></button><button class="cursor-interaction" data-action="select-image" aria-label="Image"><i data-lucide="image" aria-hidden="true"></i></button></div></div>
+              <div class="md-ask" aria-label="Ask about selected work">
+                <div class="md-context"><i data-lucide="scan" aria-hidden="true"></i><span class="md-context-text">Headline selected · text + frame preview</span></div>
+                <div class="md-ask-row"><button class="md-target cursor-interaction" type="button" data-action="targets">@Medousa<i data-lucide="chevron-down" aria-hidden="true"></i></button><input aria-label="Ask about selected work" placeholder="Make this feel a little more playful…"><button class="md-send cursor-interaction" type="button" data-action="preview" aria-label="Preview variations"><i data-lucide="arrow-up" aria-hidden="true"></i></button></div>
+                <div class="md-target-menu"><button type="button" class="cursor-interaction" data-target="Medousa">@Medousa</button><button type="button" class="cursor-interaction" data-target="Taco">@Taco</button></div>
+                <div class="md-reply" aria-live="polite"><div class="md-reply-header"><i data-lucide="sparkles" aria-hidden="true"></i><span>Medousa · Preview</span></div><span class="md-result-text">Two directions. Your original is still here.</span><div class="md-variants"><button type="button" class="cursor-interaction" data-preview="original">Original</button><button type="button" class="is-chosen cursor-interaction" data-preview="warm">Warm</button><button type="button" class="cursor-interaction" data-preview="bold">Bold</button><button type="button" class="md-apply cursor-interaction" data-action="apply">Use this<i data-lucide="check" aria-hidden="true"></i></button></div></div>
+              </div>
+              <div class="md-toast" aria-live="polite"></div>
+            </div>
+            <aside class="md-inspector" aria-label="Selection and project context">
+              <div class="md-properties"><h3><i data-lucide="type" aria-hidden="true"></i><span class="md-selected-name">Headline</span></h3><div class="md-property"><span>Typeface</span><span>Inter</span></div><div class="md-prop-pair"><span>Medium</span><span>72 px</span></div><div class="md-property"><span>Fill</span><span>● Forest</span></div><div class="md-property"><span>Position</span><span>64, 148</span></div><div class="md-rule"></div><h3>Layers</h3><div class="md-layer is-selected"><i data-lucide="type" aria-hidden="true"></i><button class="cursor-interaction" data-action="select-title">Headline</button></div><div class="md-layer"><i data-lucide="image" aria-hidden="true"></i><button class="cursor-interaction" data-action="select-image">Spotlight screenshot</button></div><div class="md-layer"><i data-lucide="pencil" aria-hidden="true"></i>Ink annotation</div><div class="md-layer"><i data-lucide="square" aria-hidden="true"></i>Background</div></div>
+              <div class="md-references"><h3><i data-lucide="paperclip" aria-hidden="true"></i>Project references</h3><div class="md-asset"><div class="md-asset-visual"><div></div><div></div><div></div></div><div class="md-asset-name">Spotlight.png<i data-lucide="check" aria-label="Included"></i></div></div><div class="md-asset"><div class="md-palette"><span></span><span></span><span></span><span></span></div><div class="md-asset-name">Medousa palette<i data-lucide="check" aria-label="Included"></i></div></div><div class="md-rule"></div><div class="md-layer"><i data-lucide="file-text" aria-hidden="true"></i>Release notes</div><p class="md-reference-foot">2 references included with the selection. Originals stay in this project.</p></div>
+            </aside>
+          </div>
+        </main>
+        <div class="md-home"><div class="md-home-label">CREATE</div><h2>What are we making?</h2><div class="md-starters"><button class="cursor-interaction" data-starter="Blank canvas"><i data-lucide="plus" aria-hidden="true"></i>Blank canvas</button><button class="cursor-interaction" data-starter="Screenshot markup">Screenshot markup</button><button class="cursor-interaction" data-starter="Diagram">Diagram</button><button class="cursor-interaction" data-starter="UI concept">UI concept</button><button class="cursor-interaction" data-starter="Image composition">Image composition</button></div><div class="md-home-label">Pinned project</div><button class="md-home-project cursor-interaction" data-action="open"><i data-lucide="layout-template" aria-hidden="true"></i><span>Spotlight release<small>Release graphic · edited just now</small></span><i data-lucide="arrow-up-right" aria-hidden="true"></i></button><div class="md-toast" aria-live="polite"></div></div>
+        <div class="md-note"><div class="md-home-label">NOTES / RELEASE LOG</div><h2>Spotlight, everywhere.</h2><p>A quick visual for the release. The project stays editable in Create; this frame is linked to its source.</p><div class="md-embed"><div class="md-embed-preview">Made for the way<br>you work.</div><div class="md-embed-footer"><span>Spotlight release / Release graphic</span><button class="cursor-interaction" data-action="open">Open in Create<i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div></div></div>
+      </div>
+      <footer class="md-footer"><span>○ Connected</span><span>Mac mini</span><span class="md-status">All changes saved</span><span>Create</span></footer>
+    </div>
+  </template>
+</div>
+<script>
+(() => {
+ const root=document.getElementById('create-mocks');
+ const template=root.querySelector('#create-shell-template');
+ const saved=window.openai?.widgetState;
+ const initial=saved?.privateContent?.variants||{};
+ const remembered={};
+ const instances={};
+ const texts={original:'Made for the way<br>you work.',warm:'Your ideas.<br>In motion.',bold:'Less friction.<br>More making.'};
+ const palettes={original:['#e5e9dc','#333b2e'],warm:['#e6ddce','#403a2e'],bold:['#c9bfd9','#332d43']};
+ const persist=()=>{window.openai?.setWidgetState?.({modelContent:{mock:'Create workspace',choices:remembered},privateContent:{variants:remembered}})?.catch(()=>{});};
+ root.querySelectorAll('[data-layout]').forEach(section=>{
+   section.append(template.content.cloneNode(true));
+   const layout=section.dataset.layout;
+   const app=section.querySelector('.md-app');
+   const art=section.querySelector('.md-art');
+   const ask=section.querySelector('.md-ask');
+   const panel=section.querySelector('.md-inspector');
+   const reply=section.querySelector('.md-reply');
+   const state={selection:'title',target:'Medousa',preview:'original',accepted:'original',panel:layout!=='canvas',mode:'editor',draft:'',resultOpen:false,...initial[layout]};
+   const sync=()=>{remembered[layout]={...state};persist();};
+   const draw=()=>{
+     app.classList.toggle('md-mode-home',state.mode==='home');app.classList.toggle('md-mode-notes',state.mode==='notes');
+     panel.classList.toggle('is-open',state.panel);
+     reply.classList.toggle('is-visible',state.resultOpen);
+     section.querySelector('.md-reply-header span').textContent=state.target+' · Preview';
+     art.dataset.selected=state.selection;
+     const treatment=palettes[state.preview]||palettes.original;
+     art.style.background=treatment[0];art.style.color=treatment[1];
+     section.querySelector('.md-headline').innerHTML=texts[state.preview]||texts.original;
+     section.querySelector('.md-embed-preview').innerHTML=texts[state.accepted]||texts.original;
+     section.querySelector('.md-target').firstChild.textContent='@'+state.target;
+     section.querySelector('.md-selected-name').textContent=state.selection==='title'?'Headline':'Spotlight screenshot';
+     section.querySelector('.md-context-text').textContent=(state.selection==='title'?'Headline selected · text + frame preview':'Screenshot selected · image + frame preview')+(layout==='references'?' · 2 references':'');
+     section.querySelectorAll('[data-preview]').forEach(b=>b.classList.toggle('is-chosen',b.dataset.preview===state.preview));
+     const input=ask.querySelector('input');if(document.activeElement!==input)input.value=state.draft;
+   };
+   const toast=(message)=>{section.querySelector('.md-canvas .md-toast').textContent=message;};
+   draw();remembered[layout]={...state};instances[layout]={state,draw};
+   const preview=()=>{state.resultOpen=true;state.preview='warm';section.querySelector('.md-result-text').textContent=state.selection==='title'?'Two headline directions. Your original is still here.':'Two composition directions. The source image stays untouched.';toast('Previewing a suggestion · not applied');draw();sync();};
+   ask.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();preview();}});
+   ask.querySelector('input').addEventListener('input',e=>{state.draft=e.target.value;sync();});
+   section.addEventListener('click',e=>{
+     const button=e.target.closest('button');if(!button)return;
+     const action=button.dataset.action;
+     if(action==='preview')preview();
+     if(button.dataset.preview){state.preview=button.dataset.preview;toast('Previewing '+button.textContent.toLowerCase()+' · not applied');}
+     if(button.dataset.target){state.target=button.dataset.target;section.querySelector('.md-target-menu').classList.remove('is-visible');}
+     if(button.dataset.starter){state.mode='editor';state.draft='';toast(button.dataset.starter+' starter · sample project preview');}
+     if(button.dataset.tool){section.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('is-active',b===button));toast({select:'Select an object on the canvas',ink:'Ink · draw directly on the canvas',text:'Text · click to place editable type',shape:'Shape · rectangle selected',frame:'Frame · release graphic selected'}[button.dataset.tool]);}
+     if(action==='home')state.mode='home';
+     if(action==='notes')state.mode='notes';
+     if(action==='open')state.mode='editor';
+     if(action==='panel')state.panel=!state.panel;
+     if(action==='targets')section.querySelector('.md-target-menu').classList.toggle('is-visible');
+     if(action==='select-title')state.selection='title';
+     if(action==='select-image')state.selection='image';
+     if(action==='apply'){state.accepted=state.preview;state.resultOpen=false;toast('Applied to this frame · undo available');}
+     if(action==='undo'){state.preview='original';state.accepted='original';state.resultOpen=false;toast('Restored original · source assets preserved');}
+     if(action==='export')toast('Release graphic · PNG · 1200 × 920 · export preview');
+     draw();sync();
+   });
+   if(globalThis.Tweak){const settings={showContext:state.panel,showAsk:true};const tweaks=new Tweak({container:app,onChange:()=>{state.panel=settings.showContext;ask.hidden=!settings.showAsk;draw();}});tweaks.addToggle(settings,'showContext',{label:layout==='references'?'References panel':'Selection panel'});tweaks.addToggle(settings,'showAsk',{label:'Contextual Ask'});}
+ });
+ window.addEventListener('openai:set_globals',event=>{const next=event.detail?.globals?.widgetState?.privateContent?.variants;if(next){Object.assign(remembered,next);for(const [name,value] of Object.entries(next)){if(instances[name]){Object.assign(instances[name].state,value);instances[name].draw();}}}});
+ if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});
+})();
+</script>
