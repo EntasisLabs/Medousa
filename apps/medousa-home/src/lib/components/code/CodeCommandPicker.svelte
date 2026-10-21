@@ -1,7 +1,7 @@
 <script lang="ts">
   import CodeOperationNotice from "./CodeOperationNotice.svelte";
   import { tick } from "svelte";
-  import { ChevronDown, Play, Search, Square, X } from "@lucide/svelte";
+  import { Check, ChevronDown, Play, Search, Square, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
   import { commandKindLabel, commandRoot, currentCommandRoot, filterCommands } from "$lib/code/codeCommandContext";
@@ -67,27 +67,31 @@
 {#if open}
   <BodyPortal>
     <button type="button" tabindex="-1" class="fixed inset-0 z-[120] cursor-default" aria-label="Dismiss command picker" onclick={close}></button>
-    <div bind:this={panel} class="command-picker z-[121] flex flex-col overflow-hidden rounded-lg border border-surface-500/40 shadow-2xl" role="dialog" aria-label="Choose project command" tabindex="-1" onkeydown={keydown}>
-      <div class="shrink-0 flex items-center gap-2 border-b border-surface-500/25 p-3"><Search size={14} /><input bind:this={input} bind:value={query} oninput={() => (limit = 60)} class="min-w-0 flex-1 bg-transparent text-chrome-md outline-none" aria-label="Search project commands" placeholder="Search commands, packages, or tools…" /><button type="button" aria-label="Close command picker" onclick={close}><X size={14} /></button></div>
-      <div class="shrink-0 flex flex-wrap items-center gap-2 border-b border-surface-500/20 px-3 py-2 text-chrome-xs">
-        <button type="button" class="rounded px-2 py-1 {all ? 'text-content-tertiary' : 'bg-primary-500/20 text-primary-100'}" disabled={root === null} aria-pressed={!all} onclick={() => { all = false; limit = 60; }}>Current package</button>
-        <button type="button" class="rounded px-2 py-1 {all ? 'bg-primary-500/20 text-primary-100' : 'text-content-tertiary'}" aria-pressed={all} onclick={() => { all = true; limit = 60; }}>Whole project</button>
-        <span class="min-w-0 truncate text-content-secondary">{all ? "All discovered packages" : root === "." ? "Project root" : root}</span>
+    <div bind:this={panel} class="command-picker z-[121] flex flex-col overflow-hidden" role="dialog" aria-label="Choose project command" tabindex="-1" onkeydown={keydown}>
+      <div class="command-picker-search">
+        <Search size={14} />
+        <input bind:this={input} bind:value={query} oninput={() => (limit = 60)} class="command-picker-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search project commands" placeholder="Search commands…" />
+        <button type="button" class="command-picker-close" aria-label="Close command picker" onclick={close}><X size={13} /></button>
+      </div>
+      <div class="command-picker-scopes">
+        <button type="button" disabled={root === null} aria-pressed={!all} onclick={() => { all = false; limit = 60; }}>Current package</button>
+        <button type="button" aria-pressed={all} onclick={() => { all = true; limit = 60; }}>Whole project</button>
+        {#if !all && root && root !== "."}<span title={root}>{root}</span>{/if}
       </div>
       {#if tasks.catalogError}<CodeOperationNotice message={tasks.catalogError} />{/if}
-      <div class="command-picker-list min-h-0 flex-1 overflow-y-auto p-2">
+      <div class="command-picker-list min-h-0 flex-1 overflow-y-auto">
         {#each visible as task, index (task.id)}
-          {#if index === 0 || visible[index - 1].kind !== task.kind}<p class="px-2 pb-1 pt-2 text-chrome-xs font-medium text-content-secondary">{commandKindLabel(task.kind)}</p>{/if}
-          <button type="button" data-command title={task.argv.join(" ")} class="flex w-full flex-col gap-1 rounded px-2 py-2 text-left hover:bg-surface-800 focus:bg-surface-800 focus:outline focus:outline-1 focus:outline-primary-400" aria-pressed={tasks.selectedTaskId === task.id} onclick={() => select(task.id)}>
-            <span class="w-full truncate text-chrome-sm text-content-primary">{task.label}{#if task.available === false}<span class="ml-2 text-amber-200">Unavailable</span>{/if}</span>
-            <span class="w-full truncate text-chrome-xs text-content-secondary">{commandRoot(task) === "." ? "Project root" : commandRoot(task)} · {task.provider}{task.long_running ? " · background" : ""} · {task.argv.join(" ")}</span>
-            {#if task.available === false}<span class="text-chrome-xs text-amber-200">{tasks.taskRepair(task) ?? "Required tool is unavailable on this workshop."}</span>{/if}
+          {#if index === 0 || visible[index - 1].kind !== task.kind}<p class="command-picker-heading">{commandKindLabel(task.kind)}</p>{/if}
+          <button type="button" data-command title={task.argv.join(" ")} class="command-picker-row" aria-pressed={tasks.selectedTaskId === task.id} onclick={() => select(task.id)}>
+            <span class="command-picker-row-title"><span>{task.label}</span>{#if tasks.selectedTaskId === task.id}<Check size={13} />{/if}</span>
+            <span class="command-picker-row-detail">{#if all && commandRoot(task) !== "."}{commandRoot(task)} · {/if}{task.argv.join(" ")}{#if task.long_running} · background{/if}</span>
+            {#if task.available === false}<span class="command-picker-unavailable">{tasks.taskRepair(task) ?? "Required tool is unavailable on this workshop."}</span>{/if}
           </button>
         {/each}
         {#if matches.length === 0}<p class="px-2 py-5 text-chrome-sm text-content-secondary">{query ? "No commands match this search." : "No commands were discovered in this scope. Try Whole project."}</p>{/if}
         {#if matches.length > limit}<button type="button" class="m-2 rounded px-2 py-1 text-chrome-sm text-content-link" onclick={() => (limit += 60)}>Show more · {matches.length - limit} remaining</button>{/if}
       </div>
-      <p class="shrink-0 border-t border-surface-500/20 px-3 py-2 text-chrome-xs text-content-secondary">Select, then Run · ↑↓ navigate · Esc closes</p>
+      <p class="command-picker-footer">Select, then Run · ↑↓ navigate · Esc closes</p>
     </div>
   </BodyPortal>
 {/if}
@@ -104,11 +108,43 @@
   @container code-editor (max-width:600px) { .command-run-button span { max-width:5rem; } }
   .command-picker {
     max-height: min(400px, calc(100dvh - 16px));
-    background: rgb(var(--color-surface-950));
+    border: 1px solid rgb(var(--theme-border) / .5);
+    border-radius: 10px;
+    background: rgb(var(--theme-pane));
     color: rgb(var(--theme-text));
+    font-size: 12px; line-height: 1.4;
+    box-shadow: 0 12px 36px #0004;
   }
-  .command-picker-list {
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
+  .command-picker-search {
+    display: flex; flex-shrink: 0; align-items: center; gap: .5rem;
+    margin: .5rem .5rem .25rem; padding: .35rem .5rem;
+    border: 1px solid rgb(var(--theme-border) / .45); border-radius: 6px;
+    background: rgb(var(--theme-text) / .025); color: rgb(var(--theme-text-tertiary));
   }
+  .command-picker-search:focus-within { border-color: rgb(var(--theme-text) / .22); }
+  .command-picker-input, .command-picker-input:focus {
+    min-width: 0; width: 100%; flex: 1; appearance: none; -webkit-appearance: none;
+    padding: .15rem 0; border: 0; border-radius: 0; background: transparent;
+    box-shadow: none; outline: none; --tw-ring-shadow: 0 0 #0000;
+    color: rgb(var(--theme-text)); font: inherit; font-size: 13px; line-height: 1.5;
+  }
+  .command-picker-input::placeholder { color: rgb(var(--theme-text-tertiary)); }
+  .command-picker-input::-webkit-search-cancel-button, .command-picker-input::-webkit-search-decoration { display: none; }
+  .command-picker-close { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; }
+  .command-picker-close:hover { color: rgb(var(--theme-text)); background: rgb(var(--theme-text) / .06); }
+  .command-picker-scopes { display: flex; align-items: center; gap: .25rem; padding: .25rem .5rem .5rem; flex-shrink: 0; border-bottom: 1px solid rgb(var(--theme-border) / .3); }
+  .command-picker-scopes button { padding: .25rem .5rem; border: 0; border-radius: 4px; background: transparent; color: rgb(var(--theme-text-tertiary)); font-size: 11px; white-space: nowrap; }
+  .command-picker-scopes button[aria-pressed="true"], .command-picker-scopes button:hover:not(:disabled) { background: rgb(var(--theme-text) / .07); color: rgb(var(--theme-text)); }
+  .command-picker-scopes button:disabled { opacity: .45; }
+  .command-picker-scopes > span { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(var(--theme-text-tertiary)); font-size: 11px; }
+  .command-picker-list { padding: .25rem; overscroll-behavior: contain; scrollbar-width: thin; }
+  .command-picker-heading { margin: 0; line-height: 1.4; padding: .5rem .5rem .25rem; color: rgb(var(--theme-text-tertiary)); font-size: 11px; }
+  .command-picker-row { display: flex; width: 100%; min-width: 0; flex-direction: column; gap: .2rem; padding: .35rem .5rem; border: 0; border-radius: 5px; text-align: left; background: transparent; font-size: 12px; line-height: 1.4; }
+  .command-picker-row:hover, .command-picker-row:focus-visible { background: rgb(var(--theme-text) / .06); }
+  .command-picker-row:focus-visible { outline: 1px solid rgb(var(--theme-text) / .25); outline-offset: -1px; }
+  .command-picker-row-title { display: flex; align-items: center; gap: .5rem; width: 100%; color: rgb(var(--theme-text)); font-size: 12px; }
+  .command-picker-row-title > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .command-picker-row-detail { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(var(--theme-text-tertiary)); font: 11px/1.4 var(--font-family-mono, monospace); }
+  .command-picker-unavailable { color: rgb(var(--theme-warning)); font-size: 11px; }
+  .command-picker-footer { margin: 0; line-height: 1.4; flex-shrink: 0; padding: .45rem .75rem; border-top: 1px solid rgb(var(--theme-border) / .3); color: rgb(var(--theme-text-tertiary)); font-size: 11px; }
 </style>

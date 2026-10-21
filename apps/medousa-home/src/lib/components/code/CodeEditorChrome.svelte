@@ -188,9 +188,13 @@
   function repairLanguageSupport() {
     onRepairLanguage();
   }
+  // Give long filenames/deep paths the same quieter actions as a narrow pane.
+  const compactActions = $derived(!!activeTab && (
+    (activeTab.path.split("/").at(-1)?.length ?? 0) > 28 || activeTab.path.length > 64
+  ));
   const activeTabLanguage = $derived(activeTab?.language ?? "");
 </script>
-  <header class="code-editor-chrome relative z-20 flex shrink-0 items-center gap-1.5 border-b border-surface-500/30 px-3" class:code-editor-chrome--document={!!activeTab}>
+  <header class="code-editor-chrome relative z-20 flex shrink-0 items-center gap-1.5 border-b border-surface-500/30 px-3" class:code-editor-chrome--document={!!activeTab} class:code-editor-chrome--compact={compactActions}>
     <div class="code-editor-location flex min-w-0 flex-1 items-center gap-1">
       <div class="flex shrink-0 items-center">
         <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go back" title="Go back" disabled={!activeTab || !codeWorkspace.canNavigate(workId, -1)} onclick={() => void navigate(-1)}><ArrowLeft size={14} strokeWidth={1.75} /></button>
@@ -214,7 +218,7 @@
     </div>
     <div class="code-editor-chrome-actions flex shrink-0 items-center gap-0.5">
       {#if activeTab?.language === "markdown" && !activeTab.preview}
-        <CodeMarkdownViewControls mode={activeTab.markdownMode ?? "source"} disabled={activeTab.loading} onchange={onMarkdownModeChange}/>
+        <CodeMarkdownViewControls compact={compactActions} mode={activeTab.markdownMode ?? "source"} disabled={activeTab.loading} onchange={onMarkdownModeChange}/>
       {/if}
       {#if reviewAvailable}
         <button
@@ -465,6 +469,11 @@
   .code-file-state { flex-shrink:0; color:rgb(var(--theme-text-tertiary)); font-size:8px; }
   .code-problem-count { color:rgb(var(--theme-warning)); font-size:11px; font-variant-numeric:tabular-nums; }
   .code-problem-count--error { color:rgb(var(--theme-error)); }
+  .code-editor-chrome--compact .code-editor-chrome-title,
+  .code-editor-chrome--compact .code-editor-chrome-sep,
+  .code-editor-chrome--compact .code-terminal-label,
+  .code-editor-chrome--compact .code-secondary-action { display:none !important; }
+  .code-editor-chrome--compact :global(.command-run-button span) { max-width:5rem; }
   @container code-editor (max-width:1050px) {
     .code-editor-chrome--document .code-editor-chrome-title, .code-editor-chrome--document .code-editor-chrome-sep { display:none; }
   }

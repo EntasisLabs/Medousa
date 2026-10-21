@@ -241,8 +241,10 @@ a private Code IDE chrome.
   project and is changed from the Code command bar.
 - The Code header keeps file location, document views, the command control,
   and Terminal together. Problems shows its current count; the overflow menu
-  holds editor preferences and project actions. Narrow panes collapse document
-  views into a picker and keep secondary tools in the overflow menu.
+  holds editor preferences and project actions. Narrow panes and long file paths
+  collapse document views into a picker and keep secondary tools in the overflow
+  menu. Breadcrumbs shorten in place, keeping the filename visible without a
+  horizontal scrollbar.
 - Markdown files offer **Source**, **Write**, **Preview**, and a **Split** toggle
   in the shared Code header. Write opens a writing editor with the Notes formatting
   controls; Preview renders the current draft, and Split keeps source beside

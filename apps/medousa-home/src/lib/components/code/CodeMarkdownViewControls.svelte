@@ -3,9 +3,10 @@
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import type { CodeMarkdownMode } from "$lib/code/codeMarkdownDocument";
 
-  let { mode, disabled = false, onchange }: {
+  let { mode, disabled = false, compact = false, onchange }: {
     mode: CodeMarkdownMode;
     disabled?: boolean;
+    compact?: boolean;
     onchange: (mode: CodeMarkdownMode) => void | Promise<void>;
   } = $props();
   let compactOpen = $state(false);
@@ -18,7 +19,7 @@
   const selected = $derived(views.find(view => view.value === mode) ?? views[0]);
 </script>
 
-<div class="markdown-views" role="group" aria-label="Markdown views">
+<div class="markdown-views" class:markdown-views--compact={compact} role="group" aria-label="Markdown views">
   <div class="markdown-view-segments">
     {#each views as view (view.value)}
       <button type="button" {disabled} class="markdown-view" aria-label={view.title} title={view.title} aria-pressed={selected.value === view.value} onclick={() => void onchange(view.value)}>
@@ -49,6 +50,8 @@
   .markdown-view[aria-pressed="true"] { background:rgb(var(--theme-text)/.08); color:rgb(var(--theme-text)); }
   .markdown-view:disabled { opacity:.45; cursor:default; }
   .markdown-view-compact { display:none; }
+  .markdown-views--compact .markdown-view-segments { display:none; }
+  .markdown-views--compact .markdown-view-compact { display:block; }
   @container code-editor (max-width:1050px) { .markdown-view-segments .markdown-view :global(svg) { display:none; } }
   @container code-editor (max-width:800px) { .markdown-view-segments { display:none; } .markdown-view-compact { display:block; } }
 </style>
