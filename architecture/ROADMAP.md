@@ -233,8 +233,8 @@ Living epic: [creative-workspace-epic.md](creative-workspace-epic.md).
 The first release completes the import → compose → AI refine → export loop.
 Product direction and the Canvas first layout are agreed. The renderer-independent
 backend foundation now supplies project persistence, transactions, assets and
-proposals, with SDK/app contracts. S0 still needs the remaining task/device
-studies and engine spike; canvas and creative-job integration remain planned.
+proposals, with SDK/app contracts and durable native-runtime creative dispatch. S0 still needs the remaining task/device
+studies and engine spike; canvas and user-facing creative-job integration remain planned.
 
 | Slice | Status |
 |-------|--------|

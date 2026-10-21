@@ -212,6 +212,14 @@ pub enum DaemonOperation {
     CreateProjectsByIdGet,
     #[serde(rename = "create.projects.by_id.history.post")]
     CreateProjectsByIdHistoryPost,
+    #[serde(rename = "create.projects.by_id.jobs.by_job_id.decision.post")]
+    CreateProjectsByIdJobsByJobIdDecisionPost,
+    #[serde(rename = "create.projects.by_id.jobs.by_job_id.get")]
+    CreateProjectsByIdJobsByJobIdGet,
+    #[serde(rename = "create.projects.by_id.jobs.get")]
+    CreateProjectsByIdJobsGet,
+    #[serde(rename = "create.projects.by_id.jobs.post")]
+    CreateProjectsByIdJobsPost,
     #[serde(rename = "create.projects.by_id.promote_media.post")]
     CreateProjectsByIdPromoteMediaPost,
     #[serde(rename = "create.projects.by_id.proposals.by_proposal_id.decision.post")]
@@ -1135,6 +1143,10 @@ impl DaemonOperation {
             Self::CreateProjectsByIdDeletePost => "create.projects.by_id.delete.post",
             Self::CreateProjectsByIdGet => "create.projects.by_id.get",
             Self::CreateProjectsByIdHistoryPost => "create.projects.by_id.history.post",
+            Self::CreateProjectsByIdJobsByJobIdDecisionPost => "create.projects.by_id.jobs.by_job_id.decision.post",
+            Self::CreateProjectsByIdJobsByJobIdGet => "create.projects.by_id.jobs.by_job_id.get",
+            Self::CreateProjectsByIdJobsGet => "create.projects.by_id.jobs.get",
+            Self::CreateProjectsByIdJobsPost => "create.projects.by_id.jobs.post",
             Self::CreateProjectsByIdPromoteMediaPost => "create.projects.by_id.promote_media.post",
             Self::CreateProjectsByIdProposalsByProposalIdDecisionPost => "create.projects.by_id.proposals.by_proposal_id.decision.post",
             Self::CreateProjectsByIdProposalsGet => "create.projects.by_id.proposals.get",

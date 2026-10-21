@@ -1093,6 +1093,7 @@ async fn start_daemon() -> Result<()> {
     }
     declared = declared
         .merge(medousa::creative_handlers::surface().with_state(creative_api))
+        .merge(medousa::creative_jobs::surface().with_state(state.clone()))
         .merge(medousa::workspace_handlers::workspace_surface().with_state(
             medousa::workspace_handlers::WorkspaceHandlerState {
                 composition: std::sync::Arc::new(state.composition().clone()),
@@ -1191,6 +1192,7 @@ async fn start_daemon() -> Result<()> {
                 None
             }
         };
+    let _creative_jobs = medousa::creative_jobs::start(state.clone(), shutdown_rx.clone());
     medousa::process_supervisor::bind_daemon(state.clone());
     let scheduler_ctx = SchedulerHeartbeatContext {
         platform: state.platform.clone(),

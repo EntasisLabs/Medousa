@@ -209,3 +209,10 @@ undo/redo, project-owned bitmap assets and selection-bound proposals. See the
 [creative document service](../engine/creative-workspace.md) for DTOs, bounds,
 revision conflicts and retry rules. Rust and Python callers use `client.creative()`; operations use the generated
 `create.projects.*` family; the main Create canvas UI is still pending.
+
+Creative jobs use `creative().create_job`, `jobs`, `job` and `decide_job` in both
+Rust and Python. Preserve the request ID/body when retrying admission; use a new
+ID to retry an interrupted execution. Read the job result before explicitly
+accepting against its captured document revision. See the
+[creative service contract](../engine/creative-workspace.md#durable-creative-jobs)
+for recovery, cancellation and capacity behavior.

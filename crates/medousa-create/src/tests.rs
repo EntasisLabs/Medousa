@@ -616,3 +616,669 @@ fn cancelled_proposal_retries_do_not_resurrect_after_terminal_eviction() {
         Err(CreativeError::Conflict(_))
     ));
 }
+
+fn job_request(id: &str) -> CreativeJobRequest {
+    CreativeJobRequest {
+        id: id.into(),
+        expected_revision: 1,
+        selected_ids: vec!["title".into()],
+        prompt: "Make the title clearer".into(),
+    }
+}
+fn job_result(id: &str) -> CreativeProposalRequest {
+    let mut node = text("title");
+    if let CreativeContent::Text { text, .. } = &mut node.content {
+        *text = "A clearer title".into();
+    }
+    CreativeProposalRequest {
+        id: id.into(),
+        expected_revision: 1,
+        selected_ids: vec!["title".into()],
+        label: "Clarify title".into(),
+        operations: vec![CreativeOperation::PutNode { node }],
+    }
+}
+fn job_store() -> (tempfile::TempDir, Arc<CreativeStore>) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap());
+    create(&store);
+    store
+        .transact("project_one", edit("seed", 0, text("title")))
+        .unwrap();
+    (dir, store)
+}
+fn decision(accept: bool, revision: u64) -> CreativeProposalDecision {
+    CreativeProposalDecision {
+        accept,
+        expected_revision: revision,
+    }
+}
+
+#[test]
+fn creative_job_admission_retries_keep_the_original_snapshot_after_restart() {
+    let (dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    assert_eq!(job.status, CreativeJobStatus::Queued);
+    store
+        .transact("project_one", edit("human", 1, text("second")))
+        .unwrap();
+    drop(store);
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    let duplicate = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    assert_eq!(duplicate.turn_id, job.turn_id);
+    assert_eq!(duplicate.context.nodes.len(), 1);
+    assert_eq!(duplicate.context.revision, 1);
+    let mut changed = job_request("first");
+    changed.prompt.push('!');
+    assert!(store.enqueue_job("project_one", "owner", changed).is_err());
+    assert!(
+        store
+            .enqueue_job("project_one", "other", job_request("first"))
+            .is_err()
+    );
+    assert!(store.jobs("project_one", "other").unwrap().jobs.is_empty());
+    assert!(store.job("project_one", "first", "other").is_err());
+}
+#[test]
+fn creative_job_claim_is_atomic_across_store_instances() {
+    let (dir, store) = job_store();
+    store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    let other = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let a = barrier.clone();
+    let task = std::thread::spawn(move || {
+        a.wait();
+        store.claim_job("project_one", "first").unwrap()
+    });
+    barrier.wait();
+    let second = other.claim_job("project_one", "first").unwrap();
+    assert_eq!(
+        usize::from(second.is_some()) + usize::from(task.join().unwrap().is_some()),
+        1
+    );
+}
+#[test]
+fn creative_job_recovery_distinguishes_queued_from_ambiguous_dispatch() {
+    let (dir, store) = job_store();
+    for id in ["queued", "claimed", "running"] {
+        store
+            .enqueue_job("project_one", "owner", job_request(id))
+            .unwrap();
+    }
+    store.claim_job("project_one", "claimed").unwrap();
+    store.claim_job("project_one", "running").unwrap();
+    store.mark_job_running("project_one", "running").unwrap();
+    drop(store);
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    let (page, _, _) = store.job_dispatch_page(None).unwrap();
+    assert_eq!(page.len(), 3);
+    for id in ["claimed", "running"] {
+        store
+            .observe_job_turn("project_one", id, "interrupted")
+            .unwrap();
+        assert!(store.claim_job("project_one", id).unwrap().is_none());
+        let job = store.job("project_one", id, "owner").unwrap();
+        assert_eq!(job.status, CreativeJobStatus::Interrupted);
+        assert!(
+            store
+                .complete_job("project_one", id, &job.turn_id, job_result(id))
+                .is_err()
+        );
+    }
+    assert!(store.claim_job("project_one", "queued").unwrap().is_some());
+}
+#[test]
+fn creative_job_accept_is_one_atomic_undoable_transaction_and_never_replays() {
+    let (dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    let ready = store
+        .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+        .unwrap();
+    assert_eq!(ready.status, CreativeJobStatus::Ready);
+    store.mark_job_running("project_one", "first").unwrap(); // completion beat spawn acknowledgement
+    store
+        .observe_job_turn("project_one", "first", "error")
+        .unwrap(); // late error cannot discard output
+    assert_eq!(store.get("project_one").unwrap().document.revision, 1);
+    let accepted = store
+        .decide_job("project_one", "first", "owner", decision(true, 1))
+        .unwrap();
+    assert_eq!(accepted.applied_revision, Some(2));
+    store
+        .history("project_one", history("undo_job", 2, false))
+        .unwrap();
+    let original = store
+        .get("project_one")
+        .unwrap()
+        .document
+        .scene
+        .nodes
+        .clone();
+    drop(store);
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    assert_eq!(
+        store
+            .decide_job("project_one", "first", "owner", decision(true, 1))
+            .unwrap()
+            .applied_revision,
+        Some(2)
+    );
+    assert_eq!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+            .unwrap()
+            .status,
+        CreativeJobStatus::Accepted
+    );
+    let mut different = job_result("first");
+    different.label.push('!');
+    assert!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, different)
+            .is_err()
+    );
+    assert_eq!(
+        store.get("project_one").unwrap().document.scene.nodes,
+        original
+    );
+    assert_eq!(store.get("project_one").unwrap().document.revision, 3);
+}
+#[test]
+fn creative_job_stale_completion_keeps_its_result_but_cannot_overwrite() {
+    let (_dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    let mut human = text("title");
+    human.transform.x = 200.;
+    store
+        .transact("project_one", edit("human", 1, human.clone()))
+        .unwrap();
+    assert_eq!(
+        store
+            .job_context("project_one", "first", &job.turn_id)
+            .unwrap()
+            .nodes[0]
+            .transform
+            .x,
+        -100_000.
+    );
+    let result = store
+        .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+        .unwrap();
+    assert_eq!(result.status, CreativeJobStatus::Stale);
+    assert!(result.result.is_some());
+    assert!(
+        store
+            .decide_job("project_one", "first", "owner", decision(true, 2))
+            .is_err()
+    );
+    assert_eq!(
+        store.get("project_one").unwrap().document.scene.nodes[0],
+        human
+    );
+}
+#[test]
+fn creative_job_ready_output_becomes_stale_after_human_undo_or_edit() {
+    let (_dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    store
+        .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+        .unwrap();
+    store
+        .history("project_one", history("human_undo", 1, false))
+        .unwrap();
+    assert_eq!(
+        store.job("project_one", "first", "owner").unwrap().status,
+        CreativeJobStatus::Stale
+    );
+    store
+        .history("project_one", history("human_redo", 2, true))
+        .unwrap();
+    assert!(
+        store
+            .decide_job("project_one", "first", "owner", decision(true, 3))
+            .is_err()
+    );
+}
+#[test]
+fn creative_job_cancel_fences_late_results_and_runtime_acknowledgements() {
+    let (_dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    let cancelled = store
+        .decide_job("project_one", "first", "owner", decision(false, 0))
+        .unwrap();
+    assert_eq!(cancelled.status, CreativeJobStatus::Cancelled);
+    store.mark_job_running("project_one", "first").unwrap();
+    store
+        .reject_job_dispatch("project_one", "first", true, "late rejection".into())
+        .unwrap();
+    store
+        .observe_job_turn("project_one", "first", "done")
+        .unwrap();
+    assert!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+            .is_err()
+    );
+    assert!(store.claim_job("project_one", "first").unwrap().is_none());
+    assert_eq!(
+        store
+            .enqueue_job("project_one", "owner", job_request("first"))
+            .unwrap()
+            .status,
+        CreativeJobStatus::Cancelled
+    );
+    assert_eq!(store.get("project_one").unwrap().document.revision, 1);
+}
+#[test]
+fn creative_job_cancel_racing_completion_always_wins_before_acceptance() {
+    let (_dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    let other = store.clone();
+    let task = std::thread::spawn(move || {
+        other.complete_job("project_one", "first", &job.turn_id, job_result("first"))
+    });
+    store
+        .decide_job("project_one", "first", "owner", decision(false, 1))
+        .unwrap();
+    let _ = task.join().unwrap();
+    assert_eq!(
+        store.job("project_one", "first", "owner").unwrap().status,
+        CreativeJobStatus::Cancelled
+    );
+    assert!(
+        store
+            .decide_job("project_one", "first", "owner", decision(true, 1))
+            .is_err()
+    );
+    assert_eq!(store.get("project_one").unwrap().document.revision, 1);
+}
+#[test]
+fn creative_job_outputs_are_bound_to_execution_and_captured_selection() {
+    let (_dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    assert!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+            .is_err()
+    );
+    store.claim_job("project_one", "first").unwrap();
+    assert!(
+        store
+            .complete_job("project_one", "first", "wrong_turn", job_result("first"))
+            .is_err()
+    );
+    for field in ["id", "revision", "selection", "operation"] {
+        let mut result = job_result("first");
+        match field {
+            "id" => result.id = "other".into(),
+            "revision" => result.expected_revision = 2,
+            "selection" => result.selected_ids = vec!["other".into()],
+            _ => {
+                result.operations = vec![CreativeOperation::Rename {
+                    title: "escape".into(),
+                }]
+            }
+        }
+        assert!(
+            store
+                .complete_job("project_one", "first", &job.turn_id, result)
+                .is_err()
+        );
+    }
+    assert_eq!(
+        store.job("project_one", "first", "owner").unwrap().status,
+        CreativeJobStatus::Dispatching
+    );
+}
+#[test]
+fn creative_job_stages_images_without_invalidating_its_own_base() {
+    let (_dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    let png = b"\x89PNG\r\n\x1a\nimage payload";
+    let asset = store
+        .import_job_asset("project_one", "first", &job.turn_id, png)
+        .unwrap();
+    assert_eq!(
+        store
+            .import_job_asset("project_one", "first", &job.turn_id, png)
+            .unwrap(),
+        asset
+    );
+    let before = store.get("project_one").unwrap().document;
+    assert_eq!(before.revision, 1);
+    assert!(before.assets.is_empty());
+    assert_eq!(store.asset("project_one", &asset.id).unwrap().1, png);
+    let mut result = job_result("first");
+    if let CreativeOperation::PutNode { node } = &mut result.operations[0] {
+        node.content = CreativeContent::Image {
+            asset_id: asset.id.clone(),
+            crop: None,
+        };
+    }
+    assert_eq!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, result)
+            .unwrap()
+            .status,
+        CreativeJobStatus::Ready
+    );
+    store
+        .decide_job("project_one", "first", "owner", decision(true, 1))
+        .unwrap();
+    assert!(
+        store
+            .get("project_one")
+            .unwrap()
+            .document
+            .assets
+            .contains_key(&asset.id)
+    );
+    store
+        .history("project_one", history("undo_image", 2, false))
+        .unwrap();
+    assert!(
+        store
+            .get("project_one")
+            .unwrap()
+            .document
+            .assets
+            .contains_key(&asset.id)
+    );
+    assert_eq!(store.asset("project_one", &asset.id).unwrap().1, png);
+}
+#[test]
+fn creative_job_no_output_and_deleted_projects_are_terminal() {
+    let (_dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    store
+        .observe_job_turn("project_one", "first", "done")
+        .unwrap();
+    assert_eq!(
+        store.job("project_one", "first", "owner").unwrap().status,
+        CreativeJobStatus::Failed
+    );
+    assert!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+            .is_err()
+    );
+    let second = store
+        .enqueue_job("project_one", "owner", job_request("second"))
+        .unwrap();
+    store.claim_job("project_one", "second").unwrap();
+    store.delete("project_one", 1).unwrap();
+    assert_eq!(
+        store.job("project_one", "second", "owner").unwrap().status,
+        CreativeJobStatus::Cancelled
+    );
+    assert!(
+        store
+            .complete_job(
+                "project_one",
+                "second",
+                &second.turn_id,
+                job_result("second")
+            )
+            .is_err()
+    );
+    assert!(
+        store
+            .job_dispatch_page(None)
+            .unwrap()
+            .0
+            .iter()
+            .any(|j| j.job_id == "second" && j.status == CreativeJobStatus::Cancelled)
+    );
+}
+#[test]
+fn creative_job_limits_never_evict_an_admission_identity() {
+    let (_dir, store) = job_store();
+    for n in 0..32 {
+        let id = format!("job_{n}");
+        store
+            .enqueue_job("project_one", "owner", job_request(&id))
+            .unwrap();
+        store
+            .decide_job("project_one", &id, "owner", decision(false, 1))
+            .unwrap();
+    }
+    assert!(
+        store
+            .enqueue_job("project_one", "owner", job_request("overflow"))
+            .is_err()
+    );
+    assert_eq!(
+        store
+            .enqueue_job("project_one", "owner", job_request("job_0"))
+            .unwrap()
+            .status,
+        CreativeJobStatus::Cancelled
+    );
+}
+#[test]
+fn creative_job_only_proven_dispatch_rejection_can_requeue() {
+    let (_dir, store) = job_store();
+    store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    store
+        .reject_job_dispatch("project_one", "first", true, "capacity".into())
+        .unwrap();
+    assert!(store.claim_job("project_one", "first").unwrap().is_some());
+    store.mark_job_running("project_one", "first").unwrap();
+    store
+        .reject_job_dispatch("project_one", "first", true, "late rejection".into())
+        .unwrap();
+    assert_eq!(
+        store.job("project_one", "first", "owner").unwrap().status,
+        CreativeJobStatus::Running
+    );
+}
+
+#[test]
+fn creative_job_locator_recovers_missing_publication_and_rejects_orphan_authority() {
+    let (dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::remove_file(root.join("jobs").join(format!("{}.json", job.turn_id))).unwrap();
+    assert!(store.job_for_turn(&job.turn_id).is_err());
+    store.job_dispatch_page(None).unwrap();
+    assert_eq!(store.job_for_turn(&job.turn_id).unwrap().job_id, "first");
+    std::fs::write(
+        root.join("jobs/creative_job_orphan.json"),
+        b"[\"project_one\",\"missing\"]",
+    )
+    .unwrap();
+    assert!(store.job_for_turn("creative_job_orphan").is_err());
+    std::fs::write(
+        root.join("jobs/creative_job_wrong.json"),
+        b"[\"project_one\",\"first\"]",
+    )
+    .unwrap();
+    assert!(store.job_for_turn("creative_job_wrong").is_err());
+}
+#[test]
+fn creative_job_rejects_oversized_result_without_losing_the_job() {
+    let (_dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    let mut result = job_result("first");
+    let mut node = text("title");
+    if let CreativeContent::Text { text, .. } = &mut node.content {
+        *text = "a".repeat(100_000);
+    }
+    result.operations = vec![CreativeOperation::PutNode { node }; 6];
+    assert!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, result)
+            .is_err()
+    );
+    assert_eq!(store.get("project_one").unwrap().document.revision, 1);
+    assert_eq!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+            .unwrap()
+            .status,
+        CreativeJobStatus::Ready
+    );
+}
+#[test]
+fn creative_job_snapshot_budget_does_not_corrupt_large_documents() {
+    let (_dir, store) = job_store();
+    let mut operations = vec![];
+    for n in 0..24 {
+        let mut node = text(&format!("large_{n}"));
+        if let CreativeContent::Text { text, .. } = &mut node.content {
+            *text = "a".repeat(100_000);
+        }
+        operations.push(CreativeOperation::PutNode { node });
+    }
+    store
+        .transact(
+            "project_one",
+            CreativeTransaction {
+                id: "large_edit".into(),
+                expected_revision: 1,
+                label: "Large scene".into(),
+                operations,
+            },
+        )
+        .unwrap();
+    let mut request = job_request("oversized");
+    request.expected_revision = 2;
+    assert!(store.enqueue_job("project_one", "owner", request).is_err());
+    assert_eq!(
+        store.get("project_one").unwrap().document.scene.nodes.len(),
+        25
+    );
+    assert!(store.jobs("project_one", "owner").unwrap().jobs.is_empty());
+}
+
+#[test]
+fn creative_job_outbox_cleans_orphans_and_does_not_scan_idle_or_damaged_projects() {
+    let (dir, store) = job_store();
+    let job = store
+        .enqueue_job("project_one", "owner", job_request("first"))
+        .unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::write(root.join("projects/idle.json"), b"damaged idle project").unwrap();
+    std::fs::write(
+        root.join("projects/damaged.json"),
+        b"damaged active project",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("outbox/creative_job_damaged.json"),
+        b"[\"damaged\",\"first\"]",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("outbox/creative_job_orphan.json"),
+        b"[\"missing\",\"first\"]",
+    )
+    .unwrap();
+    let (dispatches, _, errors) = store.job_dispatch_page(None).unwrap();
+    assert_eq!(dispatches.len(), 1);
+    assert_eq!(dispatches[0].turn_id, job.turn_id);
+    assert_eq!(errors.len(), 1);
+    assert!(!root.join("outbox/creative_job_orphan.json").exists());
+    store.claim_job("project_one", "first").unwrap();
+    store
+        .complete_job("project_one", "first", &job.turn_id, job_result("first"))
+        .unwrap();
+    assert!(store.job_dispatch_page(None).unwrap().0.is_empty());
+    assert!(
+        !root
+            .join("outbox")
+            .join(format!("{}.json", job.turn_id))
+            .exists()
+    );
+    assert!(store.job_for_turn(&job.turn_id).is_ok()); // callback locator survives terminal cleanup
+}
+
+#[test]
+fn creative_job_cannot_reparent_a_selected_node_into_an_unselected_or_locked_container() {
+    let (_dir, store) = job_store();
+    let mut outside = text("outside");
+    outside.content = CreativeContent::Frame {
+        name: "Outside".into(),
+        background: "#fff".into(),
+    };
+    store
+        .transact("project_one", edit("outside", 1, outside.clone()))
+        .unwrap();
+    let mut request = job_request("first");
+    request.expected_revision = 2;
+    let job = store.enqueue_job("project_one", "owner", request).unwrap();
+    store.claim_job("project_one", "first").unwrap();
+    let mut result = job_result("first");
+    result.expected_revision = 2;
+    if let CreativeOperation::PutNode { node } = &mut result.operations[0] {
+        node.parent_id = Some("outside".into());
+    }
+    assert!(
+        store
+            .complete_job("project_one", "first", &job.turn_id, result)
+            .is_err()
+    );
+    outside.locked = true;
+    store
+        .transact("project_one", edit("lock_outside", 2, outside))
+        .unwrap();
+    let mut request = job_request("locked");
+    request.expected_revision = 3;
+    request.selected_ids.push("outside".into());
+    let job = store
+        .enqueue_job("project_one", "owner", request.clone())
+        .unwrap();
+    store.claim_job("project_one", "locked").unwrap();
+    let mut result = job_result("locked");
+    result.expected_revision = 3;
+    result.selected_ids = request.selected_ids;
+    if let CreativeOperation::PutNode { node } = &mut result.operations[0] {
+        node.parent_id = Some("outside".into());
+    }
+    assert!(
+        store
+            .complete_job("project_one", "locked", &job.turn_id, result)
+            .is_err()
+    );
+    assert_eq!(
+        store.get("project_one").unwrap().document.scene.nodes[0].parent_id,
+        None
+    );
+}

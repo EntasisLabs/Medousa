@@ -9,6 +9,55 @@ pub struct CreativeApi<'a> {
     pub(crate) client: &'a MedousaClient,
 }
 impl CreativeApi<'_> {
+    pub async fn create_job(
+        &self,
+        id: &str,
+        request: &CreativeJobRequest,
+    ) -> Result<CreativeJob, crate::SdkError> {
+        self.client
+            .http()
+            .post(
+                &op_path(&ops::CREATE_PROJECTS_BY_ID_JOBS_POST, &[("id", id)])?,
+                request,
+            )
+            .await
+    }
+    pub async fn jobs(&self, id: &str) -> Result<CreativeJobListResponse, crate::SdkError> {
+        self.client
+            .http()
+            .get(&op_path(
+                &ops::CREATE_PROJECTS_BY_ID_JOBS_GET,
+                &[("id", id)],
+            )?)
+            .await
+    }
+    pub async fn job(&self, id: &str, job_id: &str) -> Result<CreativeJob, crate::SdkError> {
+        self.client
+            .http()
+            .get(&op_path(
+                &ops::CREATE_PROJECTS_BY_ID_JOBS_BY_JOB_ID_GET,
+                &[("id", id), ("job_id", job_id)],
+            )?)
+            .await
+    }
+    pub async fn decide_job(
+        &self,
+        id: &str,
+        job_id: &str,
+        request: &CreativeProposalDecision,
+    ) -> Result<CreativeJob, crate::SdkError> {
+        self.client
+            .http()
+            .post(
+                &op_path(
+                    &ops::CREATE_PROJECTS_BY_ID_JOBS_BY_JOB_ID_DECISION_POST,
+                    &[("id", id), ("job_id", job_id)],
+                )?,
+                request,
+            )
+            .await
+    }
+
     pub async fn list(
         &self,
         query: &CreativeListQuery,

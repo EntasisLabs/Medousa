@@ -1,7 +1,7 @@
 # Creative workspace epic
 
-> **Status:** Canvas first agreed 2026-10-21; backend foundation implemented.
-> Scene-engine selection, canvas UI and end-to-end creative-job integration remain open.
+> **Status:** Canvas first agreed 2026-10-21; backend foundation and durable creative dispatch implemented.
+> Scene-engine selection, canvas UI and the end-to-end creation journey remain open.
 > **Scope:** Expand Drawing into a practical place to sketch, compose, refine,
 > and export creative work with Medousa's brain.
 > **First release:** S0–S3, ending in one complete human-and-AI creation loop.
@@ -163,8 +163,11 @@ style references and conversation context within the same workshop scope.
 Capture this context at submission so a later selection cannot redirect a job.
 
 Reuse the existing agent runtime, addressed targets, inference profiles, media
-services and Activity lifecycle. Add the durable creative-job/result association
-they need; a closed canvas must not orphan accepted work. Generation uses the
+services and Activity lifecycle. The document service now owns durable native
+creative-job/result association and captures structured document/revision/selection
+snapshots. Addressed targets, visual previews, project/style references and Activity
+presentation remain integration work; a closed canvas must not orphan accepted
+work. Generation uses the
 existing image-generation port. Capability reporting distinguishes image
 generation, reference editing and mask editing; missing capabilities produce
 an actionable result rather than a pretend local edit.
@@ -226,13 +229,16 @@ Implemented independently of a scene renderer:
 - Selection context and persisted edit proposals extend existing store tools.
   Accepting a proposal is an ordinary undoable transaction; stale revisions and
   changes outside the captured selection are rejected.
+- Durable creative-job admission captures the base before dispatch through the
+  existing native runtime. Queued jobs recover; ambiguous in-flight work is fenced
+  as interrupted instead of replayed. Results remain selection-bound proposals,
+  staged images do not invalidate their own base, and acceptance is undoable.
 - Home has renderer-free shared sessions, bounded clean-session eviction, retained
   failed drafts/history requests, inert document references and pure legacy-ink
   migration. A shared TypeScript/Rust fixture checks the migration boundary.
 
 This does not complete S0 or S1–S3 as user-facing releases. The measured engine
-spike, Notes adoption/rendering UI, actual canvas tools, export renderer, durable
-creative-job dispatch/recovery and full human/AI creation journey still need
+spike, Notes adoption/rendering UI, actual canvas tools, export renderer and full human/AI creation journey still need
 integration. Existing Drawing behavior is unchanged. See the implemented
 [service contract](../docs/engine/creative-workspace.md) for storage limits and
 current behavior; the slices below retain their complete acceptance criteria.

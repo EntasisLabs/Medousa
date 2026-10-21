@@ -34,3 +34,40 @@ def test_sync_creative_sdk_uses_its_bound_transport(monkeypatch):
     client = MedousaClientSync("http://workshop")
     monkeypatch.setattr(client, "_transport", Transport())
     assert client.creative().get("project_one").document.revision == 4
+
+
+def creative_job():
+    return {"request": {"id": "retry_same", "expected_revision": 3, "selected_ids": ["frame"], "prompt": "Add a title"},
+            "document_id": "doc", "context": {"document_id": "doc", "revision": 3, "selected_ids": ["frame"], "nodes": [], "assets": [], "fingerprint": "digest"},
+            "status": "interrupted", "session_id": "ses_create_test", "turn_id": "creative_job_test",
+            "created_at": "now", "updated_at": "now", "result": None, "assets": [], "error": "Interrupted", "applied_revision": None}
+
+
+@pytest.mark.asyncio
+async def test_creative_jobs_preserve_admission_identity_and_explicit_decisions():
+    from medousa.types import CreativeJobRequest, CreativeProposalDecision
+    transport = MockTransport({
+        ("POST", "/v1/create/projects/doc/jobs"): lambda *_: creative_job(),
+        ("GET", "/v1/create/projects/doc/jobs"): lambda *_: {"jobs": [creative_job()]},
+        ("GET", "/v1/create/projects/doc/jobs/retry_same"): lambda *_: creative_job(),
+        ("POST", "/v1/create/projects/doc/jobs/retry_same/decision"): lambda *_: {**creative_job(), "status": "cancelled"},
+    })
+    client = MedousaClient("http://workshop", transport=transport)
+    request = CreativeJobRequest(**creative_job()["request"])
+    assert (await client.creative().create_job("doc", request)).status.value == "interrupted"
+    assert len((await client.creative().jobs("doc")).jobs) == 1
+    assert (await client.creative().job("doc", "retry_same")).context.revision == 3
+    assert (await client.creative().decide_job("doc", "retry_same", CreativeProposalDecision(accept=False, expected_revision=3))).status.value == "cancelled"
+    assert transport.calls[0][2] == creative_job()["request"]
+    assert transport.calls[-1][2] == {"accept": False, "expected_revision": 3}
+
+
+def test_sync_creative_jobs_use_bound_transport(monkeypatch):
+    class Transport:
+        def get_json(self, base_url, path):
+            assert base_url == "http://workshop"
+            assert path == "/v1/create/projects/doc/jobs/retry_same"
+            return creative_job()
+    client = MedousaClientSync("http://workshop")
+    monkeypatch.setattr(client, "_transport", Transport())
+    assert client.creative().job("doc", "retry_same").status.value == "interrupted"

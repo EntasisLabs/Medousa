@@ -45,7 +45,7 @@ fn error(error: CreativeError) -> HttpError {
     };
     (status, error.to_string())
 }
-fn policy(method: Method, path: &'static str, body_limit: usize) -> RoutePolicy {
+pub(crate) fn policy(method: Method, path: &'static str, body_limit: usize) -> RoutePolicy {
     let read = method == Method::GET;
     RoutePolicy {
         method,
@@ -253,12 +253,31 @@ pub(crate) fn promote_media_into_project(
     id: &str,
     request: &CreativePromoteMediaRequest,
 ) -> medousa_create::Result<CreativeAsset> {
+    copy_media(store, id, request, None)
+}
+pub(crate) fn promote_media_for_job(
+    store: &CreativeStore,
+    id: &str,
+    request: &CreativePromoteMediaRequest,
+    job: &medousa_create::CreativeDispatch,
+) -> medousa_create::Result<CreativeAsset> {
+    copy_media(store, id, request, Some(job))
+}
+fn copy_media(
+    store: &CreativeStore,
+    id: &str,
+    request: &CreativePromoteMediaRequest,
+    job: Option<&medousa_create::CreativeDispatch>,
+) -> medousa_create::Result<CreativeAsset> {
     let (_, lease) = crate::session_deletion::acquire_mutation_for_str(&request.session_id)
         .map_err(CreativeError::Invalid)?;
     let record = crate::media_store::get_media_record(&request.session_id, &request.media_id)
         .ok_or(CreativeError::NotFound)?;
     let bytes = crate::media_store::open_media_payload(&record).map_err(CreativeError::Storage)?;
-    let asset = store.import_asset(id, &bytes)?;
+    let asset = match job {
+        Some(job) => store.import_job_asset(id, &job.job_id, &job.turn_id, &bytes)?,
+        None => store.import_asset(id, &bytes)?,
+    };
     drop(lease);
     Ok(asset)
 }

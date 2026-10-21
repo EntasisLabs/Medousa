@@ -27,6 +27,9 @@ fn main() {
         "ReviewProviderListResponse"
     );
     export_type!(schemas, ReviewProviderMutation, "ReviewProviderMutation");
+    export_type!(schemas, CreativeJobRequest, "CreativeJobRequest");
+    export_type!(schemas, CreativeJob, "CreativeJob");
+    export_type!(schemas, CreativeJobListResponse, "CreativeJobListResponse");
     export_type!(schemas, CreativeCreateRequest, "CreativeCreateRequest");
     export_type!(schemas, CreativeDocument, "CreativeDocument");
     export_type!(

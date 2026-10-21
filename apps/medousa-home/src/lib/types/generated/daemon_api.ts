@@ -77,7 +77,22 @@ export interface CreativeDocument {
   updated_at: string;
 }
 
-export interface CreativeContextRequest {
+export interface CreativeJobRequest {
+  expected_revision: number;
+  id: string;
+  prompt: string;
+  selected_ids: string[];
+}
+
+export type CreativeJobStatus = "queued" | "dispatching" | "running" | "ready" | "stale" | "accepted" | "failed" | "interrupted" | "cancelled";
+
+export type CreativeOperation = { node: CreativeNode; op: "put_node" } | { id: string; op: "remove_node" } | { ids: string[]; op: "reorder" } | { color: string; op: "set_background" } | { op: "rename"; title: string } | { op: "pin"; pinned: boolean };
+
+export interface CreativeProposalRequest {
+  expected_revision: number;
+  id: string;
+  label: string;
+  operations: CreativeOperation[];
   selected_ids: string[];
 }
 
@@ -87,6 +102,29 @@ export interface CreativeSelectionContext {
   fingerprint: string;
   nodes: CreativeNode[];
   revision: number;
+  selected_ids: string[];
+}
+
+export interface CreativeJob {
+  applied_revision?: number | null;
+  assets: CreativeAsset[];
+  context: CreativeSelectionContext;
+  created_at: string;
+  document_id: string;
+  error?: string | null;
+  request: CreativeJobRequest;
+  result?: CreativeProposalRequest | null;
+  session_id: string;
+  status: CreativeJobStatus;
+  turn_id: string;
+  updated_at: string;
+}
+
+export interface CreativeJobListResponse {
+  jobs: CreativeJob[];
+}
+
+export interface CreativeContextRequest {
   selected_ids: string[];
 }
 
@@ -103,8 +141,6 @@ export interface CreativeMutationResponse {
   document: CreativeDocument;
   duplicate: boolean;
 }
-
-export type CreativeOperation = { node: CreativeNode; op: "put_node" } | { id: string; op: "remove_node" } | { ids: string[]; op: "reorder" } | { color: string; op: "set_background" } | { op: "rename"; title: string } | { op: "pin"; pinned: boolean };
 
 export interface CreativeTransaction {
   expected_revision: number;
@@ -149,14 +185,6 @@ export interface CreativeAssetData {
 export interface CreativePromoteMediaRequest {
   media_id: string;
   session_id: string;
-}
-
-export interface CreativeProposalRequest {
-  expected_revision: number;
-  id: string;
-  label: string;
-  operations: CreativeOperation[];
-  selected_ids: string[];
 }
 
 export type CreativeProposalStatus = "ready" | "accepted" | "cancelled";

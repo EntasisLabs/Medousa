@@ -211,6 +211,7 @@ pub mod vault_git;
 pub mod vault_git_handlers;
 pub mod vault_handlers;
 pub mod creative_handlers;
+pub mod creative_jobs;
 pub mod creative_tools;
 pub mod vault_tools;
 pub mod workspace;

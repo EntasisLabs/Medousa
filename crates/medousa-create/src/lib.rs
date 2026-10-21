@@ -2,7 +2,7 @@
 //! admitted through the daemon's bounded execution service before async use.
 mod store;
 pub use medousa_types::creative::*;
-pub use store::CreativeStore;
+pub use store::{CreativeDispatch, CreativeStore};
 
 use std::collections::{BTreeMap, BTreeSet};
 

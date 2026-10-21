@@ -8165,6 +8165,1496 @@
     },
     "additionalProperties": false
   },
+  "CreativeJob": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeJob",
+    "type": "object",
+    "required": [
+      "assets",
+      "context",
+      "created_at",
+      "document_id",
+      "request",
+      "session_id",
+      "status",
+      "turn_id",
+      "updated_at"
+    ],
+    "properties": {
+      "applied_revision": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "assets": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CreativeAsset"
+        }
+      },
+      "context": {
+        "$ref": "#/definitions/CreativeSelectionContext"
+      },
+      "created_at": {
+        "type": "string"
+      },
+      "document_id": {
+        "type": "string"
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "request": {
+        "$ref": "#/definitions/CreativeJobRequest"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CreativeProposalRequest"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "status": {
+        "$ref": "#/definitions/CreativeJobStatus"
+      },
+      "turn_id": {
+        "type": "string"
+      },
+      "updated_at": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "CreativeAsset": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "id",
+          "mime",
+          "sha256"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeJobRequest": {
+        "description": "Stable admission identity. Retrying an ID must repeat the exact input.",
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "id",
+          "prompt",
+          "selected_ids"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeJobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "dispatching",
+          "running",
+          "ready",
+          "stale",
+          "accepted",
+          "failed",
+          "interrupted",
+          "cancelled"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeOperation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "node",
+              "op"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/definitions/CreativeNode"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "put_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "op"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "remove_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Must be a permutation of all remaining node IDs.",
+            "type": "object",
+            "required": [
+              "ids",
+              "op"
+            ],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "reorder"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "op"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "set_background"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "title"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "rename"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "pinned"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "pin"
+                ]
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeProposalRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "id",
+          "label",
+          "operations",
+          "selected_ids"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeOperation"
+            }
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeSelectionContext": {
+        "type": "object",
+        "required": [
+          "assets",
+          "document_id",
+          "fingerprint",
+          "nodes",
+          "revision",
+          "selected_ids"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeAsset"
+            }
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeJobListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeJobListResponse",
+    "type": "object",
+    "required": [
+      "jobs"
+    ],
+    "properties": {
+      "jobs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CreativeJob"
+        }
+      }
+    },
+    "definitions": {
+      "CreativeAsset": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "id",
+          "mime",
+          "sha256"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeJob": {
+        "type": "object",
+        "required": [
+          "assets",
+          "context",
+          "created_at",
+          "document_id",
+          "request",
+          "session_id",
+          "status",
+          "turn_id",
+          "updated_at"
+        ],
+        "properties": {
+          "applied_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeAsset"
+            }
+          },
+          "context": {
+            "$ref": "#/definitions/CreativeSelectionContext"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request": {
+            "$ref": "#/definitions/CreativeJobRequest"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeProposalRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/CreativeJobStatus"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "CreativeJobRequest": {
+        "description": "Stable admission identity. Retrying an ID must repeat the exact input.",
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "id",
+          "prompt",
+          "selected_ids"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeJobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "dispatching",
+          "running",
+          "ready",
+          "stale",
+          "accepted",
+          "failed",
+          "interrupted",
+          "cancelled"
+        ]
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeOperation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "node",
+              "op"
+            ],
+            "properties": {
+              "node": {
+                "$ref": "#/definitions/CreativeNode"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "put_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "op"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "remove_node"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Must be a permutation of all remaining node IDs.",
+            "type": "object",
+            "required": [
+              "ids",
+              "op"
+            ],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "reorder"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "op"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "set_background"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "title"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "rename"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "op",
+              "pinned"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "pin"
+                ]
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeProposalRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "id",
+          "label",
+          "operations",
+          "selected_ids"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeOperation"
+            }
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeSelectionContext": {
+        "type": "object",
+        "required": [
+          "assets",
+          "document_id",
+          "fingerprint",
+          "nodes",
+          "revision",
+          "selected_ids"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeAsset"
+            }
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "CreativeJobRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeJobRequest",
+    "description": "Stable admission identity. Retrying an ID must repeat the exact input.",
+    "type": "object",
+    "required": [
+      "expected_revision",
+      "id",
+      "prompt",
+      "selected_ids"
+    ],
+    "properties": {
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "id": {
+        "type": "string"
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "selected_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "additionalProperties": false
+  },
   "CreativeListQuery": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CreativeListQuery",

@@ -17,6 +17,9 @@ OUT = ROOT / "apps" / "medousa-home" / "src" / "lib" / "types" / "generated" / "
 # Nested $ref targets (MediaRef, ContextUsageReport, …) are resolved automatically.
 EXPORTED_TYPES = [
     "CreativeDocument",
+    "CreativeJob",
+    "CreativeJobRequest",
+    "CreativeJobListResponse",
     "CreativeContextRequest",
     "CreativeSelectionContext",
     "CreativeCreateRequest",

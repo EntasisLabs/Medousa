@@ -1,5 +1,6 @@
 import { daemonUnary } from "$lib/daemon/contractClient";
 import type {
+  CreativeJob, CreativeJobRequest, CreativeJobListResponse,
   CreativeAsset, CreativeAssetData, CreativeCreateRequest, CreativeDocument,
   CreativeHistoryRequest, CreativeListResponse, CreativeMutationResponse,
   CreativeProposal, CreativeProposalDecision, CreativeProposalListResponse,
@@ -12,6 +13,10 @@ export function creativeApi(executionRuntimeId: string) {
   const scope = executionRuntimeId.trim();
   return {
     scope,
+    createJob: (id: string, request: CreativeJobRequest) => daemonUnary<CreativeJob>("create.projects.by_id.jobs.post", { id }, request, scope),
+    jobs: (id: string) => daemonUnary<CreativeJobListResponse>("create.projects.by_id.jobs.get", { id }, undefined, scope),
+    job: (id: string, jobId: string) => daemonUnary<CreativeJob>("create.projects.by_id.jobs.by_job_id.get", { id, job_id: jobId }, undefined, scope),
+    decideJob: (id: string, jobId: string, request: CreativeProposalDecision) => daemonUnary<CreativeJob>("create.projects.by_id.jobs.by_job_id.decision.post", { id, job_id: jobId }, request, scope),
     list: (cursor?: string, limit = 50) => daemonUnary<CreativeListResponse>("create.projects.get", {}, undefined, scope, { limit: String(limit), ...(cursor ? { cursor } : {}) }),
     create: (request: CreativeCreateRequest) => daemonUnary<CreativeDocument>("create.projects.post", {}, request, scope),
     get: (id: string) => daemonUnary<CreativeMutationResponse>("create.projects.by_id.get", { id }, undefined, scope),

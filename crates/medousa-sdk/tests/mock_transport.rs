@@ -756,3 +756,60 @@ async fn creative_helpers_use_generated_project_paths_and_decode_revisions() {
     );
     assert_eq!(calls.lock().unwrap().len(), 3);
 }
+
+#[tokio::test]
+async fn creative_jobs_use_generated_routes_and_decode_terminal_receipts() {
+    use medousa_types::{CreativeJobRequest, CreativeJobStatus, CreativeProposalDecision};
+    let job = serde_json::json!({"request":{"id":"job_one","expected_revision":3,"selected_ids":["frame"],"prompt":"Add a title"},"document_id":"doc","context":{"document_id":"doc","revision":3,"selected_ids":["frame"],"nodes":[],"assets":[],"fingerprint":"digest"},"status":"interrupted","session_id":"ses_create_test","turn_id":"creative_job_test","created_at":"now","updated_at":"now","result":null,"assets":[],"error":"Interrupted","applied_revision":null});
+    let transport = MockTransport::new()
+        .on_post("/v1/create/projects/doc/jobs", job.clone())
+        .on_get(
+            "/v1/create/projects/doc/jobs",
+            serde_json::json!({"jobs":[job.clone()]}),
+        )
+        .on_get("/v1/create/projects/doc/jobs/job_one", job.clone())
+        .on_post("/v1/create/projects/doc/jobs/job_one/decision", job);
+    let client = medousa_sdk::MedousaClient::with_transport(Arc::new(transport), "http://workshop");
+    let request = CreativeJobRequest {
+        id: "job_one".into(),
+        expected_revision: 3,
+        selected_ids: vec!["frame".into()],
+        prompt: "Add a title".into(),
+    };
+    assert_eq!(
+        client
+            .creative()
+            .create_job("doc", &request)
+            .await
+            .unwrap()
+            .status,
+        CreativeJobStatus::Interrupted
+    );
+    assert_eq!(client.creative().jobs("doc").await.unwrap().jobs.len(), 1);
+    assert_eq!(
+        client
+            .creative()
+            .job("doc", "job_one")
+            .await
+            .unwrap()
+            .context
+            .revision,
+        3
+    );
+    assert_eq!(
+        client
+            .creative()
+            .decide_job(
+                "doc",
+                "job_one",
+                &CreativeProposalDecision {
+                    accept: false,
+                    expected_revision: 3
+                }
+            )
+            .await
+            .unwrap()
+            .turn_id,
+        "creative_job_test"
+    );
+}

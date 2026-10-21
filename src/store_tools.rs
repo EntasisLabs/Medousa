@@ -564,6 +564,10 @@ pub fn register_store_tools(
 impl CognitionStoreReadTool {
     /// Read or search vault notes, creative selections, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, action: StoreReadAction) -> stasis::prelude::Result<ExternalJson> {
+        #[cfg(feature = "full-daemon")]
+        if crate::creative_jobs::in_creative_turn() && !matches!(&action, StoreReadAction::CreativeRead(_)) {
+            return Err(stasis::prelude::StasisError::PortFailure("creative jobs can only read their admitted selection".into()));
+        }
         Ok(ExternalJson::new(dispatch_read(self, action).await?))
     }
 }
@@ -575,6 +579,10 @@ impl CognitionStoreWriteTool {
         &self,
         action: StoreWriteAction,
     ) -> stasis::prelude::Result<ExternalJson> {
+        #[cfg(feature = "full-daemon")]
+        if crate::creative_jobs::in_creative_turn() && !matches!(&action, StoreWriteAction::CreativePropose(_) | StoreWriteAction::CreativePromoteMedia(_)) {
+            return Err(stasis::prelude::StasisError::PortFailure("creative jobs can only propose changes or promote their own media".into()));
+        }
         Ok(ExternalJson::new(dispatch_write(self, action).await?))
     }
 }

@@ -730,12 +730,26 @@ class CreativeTransform(MedousaModel):
     y: float
 
 
-class CreativeProjectSummary(MedousaModel):
+class CreativeJobRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
     id: str
-    pinned: bool
-    revision: int = Field(..., ge=0)
-    title: str
-    updated_at: str
+    prompt: str
+    selected_ids: list[str]
+
+
+class CreativeJobStatus(Enum):
+    queued = 'queued'
+    dispatching = 'dispatching'
+    running = 'running'
+    ready = 'ready'
+    stale = 'stale'
+    accepted = 'accepted'
+    failed = 'failed'
+    interrupted = 'interrupted'
+    cancelled = 'cancelled'
 
 
 class Op(Enum):
@@ -800,6 +814,14 @@ class CreativeOperation6(MedousaModel):
     )
     op: Op5
     pinned: bool
+
+
+class CreativeProjectSummary(MedousaModel):
+    id: str
+    pinned: bool
+    revision: int = Field(..., ge=0)
+    title: str
+    updated_at: str
 
 
 class CreativeProposalStatus(Enum):
@@ -5832,20 +5854,6 @@ class CreativeScene(MedousaModel):
     version: int = Field(..., ge=0)
 
 
-class CreativeDocument(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    assets: dict[str, CreativeAsset]
-    created_at: str
-    id: str
-    pinned: bool
-    revision: int = Field(..., ge=0)
-    scene: CreativeScene
-    title: str
-    updated_at: str
-
-
 class CreativeOperation1(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5876,6 +5884,44 @@ class CreativeProposalRequest(MedousaModel):
     label: str
     operations: list[CreativeOperation]
     selected_ids: list[str]
+
+
+class CreativeSelectionContext(MedousaModel):
+    assets: list[CreativeAsset]
+    document_id: str
+    fingerprint: str
+    nodes: list[CreativeNode]
+    revision: int = Field(..., ge=0)
+    selected_ids: list[str]
+
+
+class CreativeJob(MedousaModel):
+    applied_revision: int | None = Field(None, ge=0)
+    assets: list[CreativeAsset]
+    context: CreativeSelectionContext
+    created_at: str
+    document_id: str
+    error: str | None = None
+    request: CreativeJobRequest
+    result: CreativeProposalRequest | None = None
+    session_id: str
+    status: CreativeJobStatus
+    turn_id: str
+    updated_at: str
+
+
+class CreativeDocument(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    assets: dict[str, CreativeAsset]
+    created_at: str
+    id: str
+    pinned: bool
+    revision: int = Field(..., ge=0)
+    scene: CreativeScene
+    title: str
+    updated_at: str
 
 
 class CreativeProposal(MedousaModel):
@@ -6744,6 +6790,10 @@ class CreativeCreateRequest(MedousaModel):
     title: str
 
 
+class CreativeJobListResponse(MedousaModel):
+    jobs: list[CreativeJob]
+
+
 class CreativeMutationResponse(MedousaModel):
     applied_revision: int = Field(..., ge=0)
     can_redo: bool
@@ -6754,15 +6804,6 @@ class CreativeMutationResponse(MedousaModel):
 
 class CreativeProposalListResponse(MedousaModel):
     proposals: list[CreativeProposal]
-
-
-class CreativeSelectionContext(MedousaModel):
-    assets: list[CreativeAsset]
-    document_id: str
-    fingerprint: str
-    nodes: list[CreativeNode]
-    revision: int = Field(..., ge=0)
-    selected_ids: list[str]
 
 
 class CreativeTransaction(MedousaModel):

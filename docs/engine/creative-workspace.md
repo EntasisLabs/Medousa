@@ -69,6 +69,68 @@ terminal proposals are evicted before ready ones. Cancellation advances the
 revision fence, so evicting an old terminal entry cannot resurrect it on retry. This is the proposal foundation,
 not a separate inference worker or image-generation scheduler.
 
+## Durable creative jobs
+
+`POST /{id}/jobs` admits a `CreativeJobRequest` with a stable ID, expected
+revision, selected IDs and prompt. It atomically captures the original document
+and bounded selection before returning `queued`. An identical retry returns the
+same job, session and turn; changing input or owner under that ID is rejected.
+Job reads/decisions are scoped to the bound profile. Admission and decisions also
+require `workshop.interact`, in addition to content authority.
+
+A small durable outbox index finds pending work without polling idle project
+records. Each entry is reconciled independently, so a damaged project cannot
+block unrelated dispatch. The daemon dispatches through the existing native Assistant runtime,
+model routing, image-generation port, turn streams and cancellation token. It
+runs at most two creative turns concurrently and uses an exact tool ceiling:
+store read/write, schema discovery and image generation. During a creative turn,
+store actions can only read its captured selection, propose its result or promote
+media from its bound session. It cannot create unrelated worker jobs or mutate
+vaults/code. No additional provider client, credential flow or model executor is
+introduced. Execution has a 30-minute runtime deadline.
+
+The persisted state moves from `queued` to `dispatching` before runtime admission,
+then `running`. A synchronous capacity rejection can safely return to `queued`.
+After restart, queued jobs dispatch normally. A dispatching/running job without a
+live runtime ticket becomes `interrupted`; the daemon never blindly replays an
+execution that might have called a provider before crashing. Retry an interrupted
+or failed job with a **new ID**. This is durable, at-most-once dispatch, not an
+exactly-once provider guarantee. A persisted proposal survives a lost runtime
+acknowledgement or later error.
+
+In a creative job, `creative.read` returns the immutable admitted context.
+`creative.propose` must use the job ID, original revision and original selected
+IDs. Its operations are validated against the captured document and locks. The
+result is stored atomically as `ready` or `stale`, independently of later human
+edits. Later edits/undo also turn ready jobs stale. Stale results remain readable
+but cannot be applied; submit a new job against current work. A turn that ends
+without producing a proposal becomes `failed`.
+
+Generated images promoted during a job are staged as immutable project-owned
+assets without advancing the document revision. Accepting a ready job publishes
+its asset manifest and edits in one ordinary undoable transaction. A duplicate
+accept returns the original applied revision, even after undo, without applying
+again. Project assets survive source-chat deletion and undo.
+
+`POST /{id}/jobs/{job_id}/decision` uses `CreativeProposalDecision`. With
+`accept: true`, both the supplied revision and admitted revision must equal the
+current document revision. With `accept: false`, it cancels the job regardless of
+newer document edits; `expected_revision` is unused for cancellation. Cancellation
+is persisted before signaling that exact runtime turn. Late results/admission
+acknowledgements cannot resurrect cancelled work. Accepted edits use ordinary
+undo rather than cancellation. Deleting a project cancels queued/executing jobs
+and keeps their records readable to their owner.
+
+Job storage retains at most 32 IDs per project and 8 MiB of job metadata, contexts,
+results and active validation snapshots. Admission snapshots are limited to 2 MiB,
+selection contexts and results to 512 KiB each, prompts to 16 KiB, and staged job
+assets to 16 per job within the shared project asset budget. Snapshots are released
+on completion/cancellation/failure. IDs are never evicted automatically, so a very
+old retry cannot silently run again; at capacity, admission fails explicitly.
+These limits also fit within the overall 16 MiB project-record ceiling. Images
+remain on disk, outside job metadata. Cleanup/archival and the canvas job UI are
+follow-up work.
+
 ## HTTP surface
 
 All routes require native authenticated content authority. Reads, including the
@@ -90,6 +152,10 @@ There are no public preview or unauthenticated asset routes.
 | GET | `/{id}/proposals` | → `CreativeProposalListResponse` |
 | POST | `/{id}/proposals` | `CreativeProposalRequest` → `CreativeProposal` |
 | POST | `/{id}/proposals/{proposal_id}/decision` | `CreativeProposalDecision` → `CreativeMutationResponse` |
+| GET | `/{id}/jobs` | → `CreativeJobListResponse` |
+| POST | `/{id}/jobs` | `CreativeJobRequest` → `CreativeJob` |
+| GET | `/{id}/jobs/{job_id}` | → `CreativeJob` |
+| POST | `/{id}/jobs/{job_id}/decision` | `CreativeProposalDecision` → `CreativeJob` |
 
 Listing uses stable ID order with an exclusive cursor and limits of 1–100. The
 client may order the returned summaries by timestamp or pinned status. Deleted

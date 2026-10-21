@@ -47,6 +47,22 @@ pub(crate) fn stream_spec(transport: StreamTransport, item_name: &str) -> Stream
 
 pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
     Some(match operation_id {
+        "create.projects.by_id.jobs.get" => WireBinding {
+            request: None,
+            response: "CreativeJobListResponse",
+        },
+        "create.projects.by_id.jobs.post" => WireBinding {
+            request: Some("CreativeJobRequest"),
+            response: "CreativeJob",
+        },
+        "create.projects.by_id.jobs.by_job_id.get" => WireBinding {
+            request: None,
+            response: "CreativeJob",
+        },
+        "create.projects.by_id.jobs.by_job_id.decision.post" => WireBinding {
+            request: Some("CreativeProposalDecision"),
+            response: "CreativeJob",
+        },
         "create.projects.by_id.context.post" => WireBinding {
             request: Some("CreativeContextRequest"),
             response: "CreativeSelectionContext",

@@ -241,6 +241,8 @@ impl CognitionImageGenerateTool {
         &self,
         input: ImageGenerateInput,
     ) -> stasis::prelude::Result<ExternalJson> {
+        #[cfg(feature = "full-daemon")]
+        crate::creative_jobs::guard_image_generation().await?;
         let prompt = input.prompt.trim();
         if prompt.is_empty() || prompt.chars().count() > MAX_PROMPT_CHARS {
             return Err(StasisError::PortFailure(format!("prompt must be 1–{MAX_PROMPT_CHARS} characters")));

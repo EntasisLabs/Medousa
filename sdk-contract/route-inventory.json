@@ -1943,6 +1943,70 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "create.projects.by_id.jobs.get",
+      "path": "/v1/create/projects/{id}/jobs",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.jobs.post",
+      "path": "/v1/create/projects/{id}/jobs",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "create.projects.by_id.jobs.by_job_id.get",
+      "path": "/v1/create/projects/{id}/jobs/{job_id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.jobs.by_job_id.decision.post",
+      "path": "/v1/create/projects/{id}/jobs/{job_id}/decision",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 4096,
       "bootstrap_public": false,
       "browser_policy": "native_only",

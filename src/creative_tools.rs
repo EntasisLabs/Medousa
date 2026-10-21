@@ -20,8 +20,22 @@ pub struct CreativePropose {
 }
 impl CreativeRead {
     pub async fn execute(self) -> Result<Value> {
+        let job = crate::creative_jobs::bound_job(Some(&self.document_id)).await?;
         let response =
             crate::creative_handlers::run(crate::creative_handlers::service()?, move |store| {
+                if let Some(job) = job {
+                    let context =
+                        store.job_context(&self.document_id, &job.job_id, &job.turn_id)?;
+                    let captured = store.job(&self.document_id, &job.job_id, &job.owner)?;
+                    if self.selected_ids != captured.request.selected_ids
+                        && self.selected_ids != context.selected_ids
+                    {
+                        return Err(medousa_create::CreativeError::Invalid(
+                            "read must use the admitted selection".into(),
+                        ));
+                    }
+                    return Ok(context);
+                }
                 store.context(
                     &self.document_id,
                     CreativeContextRequest {
@@ -36,9 +50,19 @@ impl CreativeRead {
 }
 impl CreativePropose {
     pub async fn execute(self) -> Result<Value> {
+        let job = crate::creative_jobs::bound_job(Some(&self.document_id)).await?;
         let response =
             crate::creative_handlers::run(crate::creative_handlers::service()?, move |store| {
-                store.propose(&self.document_id, self.proposal)
+                let value = match job {
+                    Some(job) => serde_json::to_value(store.complete_job(
+                        &self.document_id,
+                        &job.job_id,
+                        &job.turn_id,
+                        self.proposal,
+                    )?),
+                    None => serde_json::to_value(store.propose(&self.document_id, self.proposal)?),
+                };
+                value.map_err(|e| medousa_create::CreativeError::Storage(e.to_string()))
             })
             .await
             .map_err(|(_, e)| StasisError::PortFailure(e))?;
@@ -54,16 +78,33 @@ pub struct CreativePromoteMedia {
 }
 impl CreativePromoteMedia {
     pub async fn execute(self, session_id: String) -> Result<Value> {
+        let job = crate::creative_jobs::bound_job(Some(&self.document_id)).await?;
         let response =
             crate::creative_handlers::run(crate::creative_handlers::service()?, move |store| {
-                crate::creative_handlers::promote_media_into_project(
-                    store,
-                    &self.document_id,
-                    &medousa_types::CreativePromoteMediaRequest {
-                        session_id,
-                        media_id: self.media_id,
-                    },
-                )
+                let request = medousa_types::CreativePromoteMediaRequest {
+                    session_id,
+                    media_id: self.media_id,
+                };
+                match job {
+                    Some(job) => {
+                        if request.session_id != job.session_id {
+                            return Err(medousa_create::CreativeError::Invalid(
+                                "media must belong to the creative job session".into(),
+                            ));
+                        }
+                        crate::creative_handlers::promote_media_for_job(
+                            store,
+                            &self.document_id,
+                            &request,
+                            &job,
+                        )
+                    }
+                    None => crate::creative_handlers::promote_media_into_project(
+                        store,
+                        &self.document_id,
+                        &request,
+                    ),
+                }
             })
             .await
             .map_err(|(_, e)| StasisError::PortFailure(e))?;

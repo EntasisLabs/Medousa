@@ -366,3 +366,57 @@ pub struct CreativeSelectionContext {
     pub assets: Vec<CreativeAsset>,
     pub fingerprint: String,
 }
+
+/// Stable admission identity. Retrying an ID must repeat the exact input.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeJobRequest {
+    pub id: String,
+    pub expected_revision: u64,
+    pub selected_ids: Vec<String>,
+    pub prompt: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CreativeJobStatus {
+    Queued,
+    Dispatching,
+    Running,
+    Ready,
+    Stale,
+    Accepted,
+    Failed,
+    Interrupted,
+    Cancelled,
+}
+impl CreativeJobStatus {
+    pub fn executing(self) -> bool {
+        matches!(self, Self::Dispatching | Self::Running)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreativeJob {
+    pub request: CreativeJobRequest,
+    pub document_id: String,
+    pub context: CreativeSelectionContext,
+    pub status: CreativeJobStatus,
+    pub session_id: String,
+    pub turn_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub result: Option<CreativeProposalRequest>,
+    pub assets: Vec<CreativeAsset>,
+    pub error: Option<String>,
+    pub applied_revision: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreativeJobListResponse {
+    pub jobs: Vec<CreativeJob>,
+}

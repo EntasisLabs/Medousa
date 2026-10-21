@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+mod jobs;
+pub use jobs::CreativeDispatch;
+
 const HISTORY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_RECORD_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_RECEIPTS: usize = 128;
@@ -91,6 +94,8 @@ struct Record {
     redo: Vec<History>,
     receipts: Vec<Receipt>,
     proposals: Vec<CreativeProposal>,
+    #[serde(default)]
+    jobs: Vec<jobs::JobRecord>,
 }
 fn storage(error: impl std::fmt::Display) -> CreativeError {
     CreativeError::Storage(error.to_string())
@@ -112,6 +117,8 @@ impl CreativeStore {
         let root = StoreRoot::open_or_create_nofollow(root).map_err(storage)?;
         root.create_dir_all(&path("projects")?).map_err(storage)?;
         root.create_dir_all(&path("assets")?).map_err(storage)?;
+        root.create_dir_all(&path("jobs")?).map_err(storage)?;
+        root.create_dir_all(&path("outbox")?).map_err(storage)?;
         Ok(Self { root })
     }
     fn file(id: &str) -> Result<StorePath> {
@@ -164,6 +171,17 @@ impl CreativeStore {
         Ok(record)
     }
     fn write(&self, record: &Record) -> Result<()> {
+        let mut assets = record.document.assets.clone();
+        for asset in record.jobs.iter().flat_map(|j| &j.job.assets) {
+            assets.insert(asset.id.clone(), asset.clone());
+        }
+        if assets.len() > 256
+            || assets.values().map(|a| a.byte_size).sum::<u64>() > 512 * 1024 * 1024
+        {
+            return Err(invalid(
+                "project asset capacity reached, including staged job images",
+            ));
+        }
         let bytes = serde_json::to_vec(record).map_err(storage)?;
         if bytes.len() as u64 > MAX_RECORD_BYTES {
             return Err(invalid("project record capacity exceeded"));
@@ -197,6 +215,12 @@ impl CreativeStore {
             .checked_add(1)
             .ok_or_else(|| invalid("revision exhausted"))?;
         record.document.updated_at = now();
+        for job in &mut record.jobs {
+            if job.job.status == CreativeJobStatus::Ready {
+                job.job.status = CreativeJobStatus::Stale;
+                job.job.updated_at = now();
+            }
+        }
         record.receipts.push(Receipt {
             id: id.into(),
             hash,
@@ -249,6 +273,7 @@ impl CreativeStore {
             redo: vec![],
             receipts: vec![],
             proposals: vec![],
+            jobs: vec![],
         };
         self.write(&record)?;
         Ok(document)
@@ -380,9 +405,38 @@ impl CreativeStore {
         let mut record = self.read_record(id, true)?;
         Self::check_revision(&record, revision)?;
         record.deleted = true;
+        for job in &mut record.jobs {
+            if job.job.status.executing() || job.job.status == CreativeJobStatus::Queued {
+                job.job.status = CreativeJobStatus::Cancelled;
+                job.job.updated_at = now();
+                job.snapshot = None;
+            }
+        }
         self.write(&record)
     }
     pub fn import_asset(&self, id: &str, bytes: &[u8]) -> Result<CreativeAsset> {
+        let _lock = self.lock(id)?;
+        let mut record = self.read(id)?;
+        let asset = Self::bitmap_asset(bytes)?;
+        let existing = record.document.assets.get(&asset.id).cloned();
+        record
+            .document
+            .assets
+            .insert(asset.id.clone(), asset.clone());
+        validate_document(&record.document)?;
+        self.publish_asset(id, &asset, bytes)?;
+        if let Some(existing) = existing {
+            return Ok(existing);
+        }
+        Self::bump(
+            &mut record,
+            &format!("asset_{}", uuid::Uuid::new_v4().simple()),
+            hash(&asset)?,
+        )?;
+        self.write(&record)?;
+        Ok(asset)
+    }
+    fn bitmap_asset(bytes: &[u8]) -> Result<CreativeAsset> {
         if bytes.is_empty() || bytes.len() > MAX_CREATIVE_ASSET_BYTES {
             return Err(invalid("asset must contain 1–25 MiB"));
         }
@@ -397,8 +451,6 @@ impl CreativeStore {
         } else {
             return Err(invalid("asset must be a PNG, JPEG, GIF or WebP bitmap"));
         };
-        let _lock = self.lock(id)?;
-        let mut record = self.read(id)?;
         let sha256 = format!("{:x}", Sha256::digest(bytes));
         let asset = CreativeAsset {
             id: format!("a_{sha256}"),
@@ -406,12 +458,9 @@ impl CreativeStore {
             byte_size: bytes.len() as u64,
             sha256,
         };
-        let existing = record.document.assets.get(&asset.id).cloned();
-        record
-            .document
-            .assets
-            .insert(asset.id.clone(), asset.clone());
-        validate_document(&record.document)?;
+        Ok(asset)
+    }
+    fn publish_asset(&self, id: &str, asset: &CreativeAsset, bytes: &[u8]) -> Result<()> {
         let asset_path = path(&format!("assets/{id}/{}", asset.id))?;
         // Retry after a crash between blob and manifest publication reuses the
         // exact immutable bytes. Reimport also repairs an absent payload.
@@ -428,16 +477,7 @@ impl CreativeStore {
                 .atomic_create(&asset_path, bytes)
                 .map_err(storage)?;
         }
-        if let Some(existing) = existing {
-            return Ok(existing);
-        }
-        Self::bump(
-            &mut record,
-            &format!("asset_{}", uuid::Uuid::new_v4().simple()),
-            hash(&asset)?,
-        )?;
-        self.write(&record)?;
-        Ok(asset)
+        Ok(())
     }
     pub fn asset(&self, id: &str, asset_id: &str) -> Result<(CreativeAsset, Vec<u8>)> {
         validate_id(asset_id)?;
@@ -446,6 +486,13 @@ impl CreativeStore {
             .document
             .assets
             .get(asset_id)
+            .or_else(|| {
+                record
+                    .jobs
+                    .iter()
+                    .flat_map(|j| &j.job.assets)
+                    .find(|a| a.id == asset_id)
+            })
             .ok_or(CreativeError::NotFound)?
             .clone();
         let bytes = self
@@ -471,65 +518,7 @@ impl CreativeStore {
             return Err(invalid("proposal id reused with different input"));
         }
         Self::check_revision(&record, request.expected_revision)?;
-        if request.selected_ids.is_empty() || request.selected_ids.len() > 1000 {
-            return Err(invalid("proposal requires 1–1000 selected objects"));
-        }
-        for selected in &request.selected_ids {
-            if !record
-                .document
-                .scene
-                .nodes
-                .iter()
-                .any(|n| &n.id == selected)
-            {
-                return Err(invalid("proposal selection does not exist"));
-            }
-        }
-        let captured = Self::selection(&record.document, &request.selected_ids)?;
-        let selected: BTreeSet<_> = captured.iter().map(|n| n.id.as_str()).collect();
-        let new_ids: BTreeSet<_> = request
-            .operations
-            .iter()
-            .filter_map(|op| match op {
-                CreativeOperation::PutNode { node }
-                    if !record.document.scene.nodes.iter().any(|n| n.id == node.id) =>
-                {
-                    Some(node.id.as_str())
-                }
-                _ => None,
-            })
-            .collect();
-        for op in &request.operations {
-            let target = match op {
-                CreativeOperation::PutNode { node } => node
-                    .parent_id
-                    .as_deref()
-                    .filter(|_| new_ids.contains(node.id.as_str()))
-                    .unwrap_or(&node.id),
-                CreativeOperation::RemoveNode { id } => id.as_str(),
-                _ => "",
-            };
-            if Self::locked(&record.document, target) {
-                return Err(invalid("unlock selected objects before proposing changes"));
-            }
-            let allowed = match op {
-                CreativeOperation::PutNode { node } => {
-                    selected.contains(node.id.as_str())
-                        || (new_ids.contains(node.id.as_str())
-                            && node
-                                .parent_id
-                                .as_deref()
-                                .is_some_and(|p| selected.contains(p) || new_ids.contains(p)))
-                }
-                CreativeOperation::RemoveNode { id } => selected.contains(id.as_str()),
-                _ => false,
-            };
-            if !allowed {
-                return Err(invalid("proposal operation escapes its captured selection"));
-            }
-        }
-        bounded_text(&request.label, 256, "proposal label")?;
-        apply_operations(&record.document, &request.operations)?;
+        Self::validate_proposal(&record.document, &request)?;
         while record.proposals.len() >= 32 {
             let terminal = record
                 .proposals
@@ -554,6 +543,87 @@ impl CreativeStore {
         }
         self.write(&record)?;
         Ok(proposal)
+    }
+    fn validate_proposal(
+        document: &CreativeDocument,
+        request: &CreativeProposalRequest,
+    ) -> Result<()> {
+        if request.selected_ids.is_empty() || request.selected_ids.len() > 1000 {
+            return Err(invalid("proposal requires 1–1000 selected objects"));
+        }
+        for selected in &request.selected_ids {
+            if !document.scene.nodes.iter().any(|n| &n.id == selected) {
+                return Err(invalid("proposal selection does not exist"));
+            }
+        }
+        let captured = Self::selection(document, &request.selected_ids)?;
+        let selected: BTreeSet<_> = captured.iter().map(|n| n.id.as_str()).collect();
+        let new_ids: BTreeSet<_> = request
+            .operations
+            .iter()
+            .filter_map(|op| match op {
+                CreativeOperation::PutNode { node }
+                    if !document.scene.nodes.iter().any(|n| n.id == node.id) =>
+                {
+                    Some(node.id.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        for op in &request.operations {
+            let target = match op {
+                CreativeOperation::PutNode { node } => node
+                    .parent_id
+                    .as_deref()
+                    .filter(|_| new_ids.contains(node.id.as_str()))
+                    .unwrap_or(&node.id),
+                CreativeOperation::RemoveNode { id } => id.as_str(),
+                _ => "",
+            };
+            if Self::locked(document, target) {
+                return Err(invalid("unlock selected objects before proposing changes"));
+            }
+            if let CreativeOperation::PutNode { node } = op {
+                if node
+                    .parent_id
+                    .as_deref()
+                    .is_some_and(|parent| Self::locked(document, parent))
+                {
+                    return Err(invalid(
+                        "proposal cannot move objects into locked containers",
+                    ));
+                }
+                if let Some(previous) = document.scene.nodes.iter().find(|n| n.id == node.id)
+                    && previous.parent_id != node.parent_id
+                    && node
+                        .parent_id
+                        .as_deref()
+                        .is_some_and(|p| !selected.contains(p) && !new_ids.contains(p))
+                {
+                    return Err(invalid(
+                        "proposal cannot reparent into an uncaptured container",
+                    ));
+                }
+            }
+            let allowed = match op {
+                CreativeOperation::PutNode { node } => {
+                    selected.contains(node.id.as_str())
+                        || (new_ids.contains(node.id.as_str())
+                            && node
+                                .parent_id
+                                .as_deref()
+                                .is_some_and(|p| selected.contains(p) || new_ids.contains(p)))
+                }
+                CreativeOperation::RemoveNode { id } => selected.contains(id.as_str()),
+                _ => false,
+            };
+            if !allowed {
+                return Err(invalid("proposal operation escapes its captured selection"));
+            }
+        }
+        bounded_text(&request.label, 256, "proposal label")?;
+        apply_operations(document, &request.operations)?;
+        Ok(())
     }
     fn selection(doc: &CreativeDocument, ids: &[String]) -> Result<Vec<CreativeNode>> {
         if ids.is_empty() || ids.len() > 1000 {
@@ -616,7 +686,14 @@ impl CreativeStore {
         request: CreativeContextRequest,
     ) -> Result<CreativeSelectionContext> {
         let record = self.read(id)?;
-        let nodes = Self::selection(&record.document, &request.selected_ids)?;
+        Self::selection_context(&record.document, request)
+    }
+    fn selection_context(
+        document: &CreativeDocument,
+        request: CreativeContextRequest,
+    ) -> Result<CreativeSelectionContext> {
+        let id = &document.id;
+        let nodes = Self::selection(document, &request.selected_ids)?;
         let asset_ids: BTreeSet<_> = nodes
             .iter()
             .filter_map(|n| match &n.content {
@@ -626,11 +703,11 @@ impl CreativeStore {
             .collect();
         let assets = asset_ids
             .into_iter()
-            .map(|id| record.document.assets[id].clone())
+            .map(|id| document.assets[id].clone())
             .collect();
         let context = CreativeSelectionContext {
             document_id: id.into(),
-            revision: record.document.revision,
+            revision: document.revision,
             selected_ids: nodes.iter().map(|n| n.id.clone()).collect(),
             fingerprint: hash(&nodes)?,
             nodes,

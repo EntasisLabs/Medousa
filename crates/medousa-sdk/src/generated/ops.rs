@@ -737,6 +737,34 @@ pub const CREATE_PROJECTS_BY_ID_HISTORY_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const CREATE_PROJECTS_BY_ID_JOBS_BY_JOB_ID_DECISION_POST: Operation = Operation {
+    id: "create.projects.by_id.jobs.by_job_id.decision.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/jobs/{job_id}/decision",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_JOBS_BY_JOB_ID_GET: Operation = Operation {
+    id: "create.projects.by_id.jobs.by_job_id.get",
+    method: "GET",
+    path: "/v1/create/projects/{id}/jobs/{job_id}",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_JOBS_GET: Operation = Operation {
+    id: "create.projects.by_id.jobs.get",
+    method: "GET",
+    path: "/v1/create/projects/{id}/jobs",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_JOBS_POST: Operation = Operation {
+    id: "create.projects.by_id.jobs.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/jobs",
+    streaming: false,
+};
+
 pub const CREATE_PROJECTS_BY_ID_PROMOTE_MEDIA_POST: Operation = Operation {
     id: "create.projects.by_id.promote_media.post",
     method: "POST",
@@ -3691,6 +3719,10 @@ pub static ALL: &[Operation] = &[
     CREATE_PROJECTS_BY_ID_DELETE_POST,
     CREATE_PROJECTS_BY_ID_GET,
     CREATE_PROJECTS_BY_ID_HISTORY_POST,
+    CREATE_PROJECTS_BY_ID_JOBS_BY_JOB_ID_DECISION_POST,
+    CREATE_PROJECTS_BY_ID_JOBS_BY_JOB_ID_GET,
+    CREATE_PROJECTS_BY_ID_JOBS_GET,
+    CREATE_PROJECTS_BY_ID_JOBS_POST,
     CREATE_PROJECTS_BY_ID_PROMOTE_MEDIA_POST,
     CREATE_PROJECTS_BY_ID_PROPOSALS_BY_PROPOSAL_ID_DECISION_POST,
     CREATE_PROJECTS_BY_ID_PROPOSALS_GET,

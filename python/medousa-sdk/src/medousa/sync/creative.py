@@ -4,6 +4,9 @@ from medousa._decode import decode
 from medousa._ops import op_path, op_path_query
 from medousa.sync.client import MedousaClientSync
 from medousa.types import (
+    CreativeJob,
+    CreativeJobRequest,
+    CreativeJobListResponse,
     CreativeAsset,
     CreativeAssetData,
     CreativeAssetImportRequest,
@@ -133,3 +136,29 @@ class CreativeApiSync:
         )
         return decode(CreativeMutationResponse, value)
 
+
+    def create_job(self, id: str, request: CreativeJobRequest) -> CreativeJob:
+        value = self._client._transport.post_json(
+            self._client.base_url, op_path("create.projects.by_id.jobs.post", id=id),
+            request.model_dump(mode="json", exclude_none=True),
+        )
+        return decode(CreativeJob, value)
+
+    def jobs(self, id: str) -> CreativeJobListResponse:
+        value = self._client._transport.get_json(
+            self._client.base_url, op_path("create.projects.by_id.jobs.get", id=id),
+        )
+        return decode(CreativeJobListResponse, value)
+
+    def job(self, id: str, job_id: str) -> CreativeJob:
+        value = self._client._transport.get_json(
+            self._client.base_url, op_path("create.projects.by_id.jobs.by_job_id.get", id=id, job_id=job_id),
+        )
+        return decode(CreativeJob, value)
+
+    def decide_job(self, id: str, job_id: str, request: CreativeProposalDecision) -> CreativeJob:
+        value = self._client._transport.post_json(
+            self._client.base_url, op_path("create.projects.by_id.jobs.by_job_id.decision.post", id=id, job_id=job_id),
+            request.model_dump(mode="json", exclude_none=True),
+        )
+        return decode(CreativeJob, value)
