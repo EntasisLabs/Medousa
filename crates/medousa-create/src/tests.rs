@@ -16,6 +16,7 @@ fn text(id: &str) -> CreativeNode {
         id: id.into(),
         name: None,
         appearance: None,
+        design_source: None,
         text_layout: None,
         parent_id: None,
         transform: CreativeTransform {
@@ -1764,5 +1765,109 @@ fn editable_shell_wireframe_roundtrips_through_the_real_store() {
             .nodes
             .iter()
             .any(|n| n.appearance.as_ref().is_some_and(|a| a.shadow.is_some()))
+    );
+}
+
+#[test]
+fn code_handoff_context_requires_the_exact_frame_revision_and_visual() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    let scene: CreativeScene = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/creative/medousa-shell-wireframe.json"
+    ))
+    .unwrap();
+    store
+        .create(CreativeCreateRequest {
+            id: "shell".into(),
+            title: "Shell".into(),
+            scene,
+        })
+        .unwrap();
+    let visual = store
+        .import_visual_context(
+            "shell",
+            CreativeVisualContextRequest {
+                expected_revision: 0,
+                selected_ids: vec!["shell".into()],
+            },
+            b"\x89PNG\r\n\x1a\nframe",
+        )
+        .unwrap();
+    let mut request = CreativeCodeContextRequest {
+        expected_revision: 0,
+        frame_id: "shell".into(),
+        visual_asset_id: visual.id,
+        session_id: "build_session".into(),
+    };
+    let (context, _) = store.code_context("shell", &request).unwrap();
+    assert_eq!(context.revision, 0);
+    assert!(context.nodes.len() > 20);
+    assert_eq!(store.get("shell").unwrap().document.revision, 0);
+    request.frame_id = "composer".into();
+    assert!(store.code_context("shell", &request).is_err());
+    request.frame_id = "shell".into();
+    request.expected_revision = 1;
+    assert!(store.code_context("shell", &request).is_err());
+    store
+        .transact(
+            "shell",
+            CreativeTransaction {
+                id: "rename_for_handoff".into(),
+                expected_revision: 0,
+                label: "Rename".into(),
+                operations: vec![CreativeOperation::Rename {
+                    title: "Updated shell".into(),
+                }],
+            },
+        )
+        .unwrap();
+    // A matching document revision cannot reuse an older visual.
+    assert!(store.code_context("shell", &request).is_err());
+    let fresh = store
+        .import_visual_context(
+            "shell",
+            CreativeVisualContextRequest {
+                expected_revision: 1,
+                selected_ids: vec!["shell".into()],
+            },
+            b"\x89PNG\r\n\x1a\nframe",
+        )
+        .unwrap();
+    request.visual_asset_id = fresh.id;
+    assert_eq!(store.code_context("shell", &request).unwrap().0.revision, 1);
+    request.session_id = "../escape".into();
+    assert!(store.code_context("shell", &request).is_err());
+}
+
+#[test]
+fn design_origin_is_advisory_frame_metadata_and_survives_storage() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    create(&store);
+    let mut node = text("frame");
+    node.content = CreativeContent::Frame {
+        name: "From preview".into(),
+        background: "#fff".into(),
+    };
+    node.design_source = Some(CreativeDesignSource {
+        work_id: Some("code_project".into()),
+        session_id: Some("build_session".into()),
+        url: "http://localhost:5173/".into(),
+        viewport_width: 1280,
+        viewport_height: 720,
+        captured_at_ms: 1,
+    });
+    let saved = store
+        .transact("project_one", edit("origin", 0, node.clone()))
+        .unwrap();
+    assert_eq!(
+        saved.document.scene.nodes[0].design_source,
+        node.design_source
+    );
+    node.content = text("label").content;
+    assert!(
+        store
+            .transact("project_one", edit("invalid_origin", 1, node))
+            .is_err()
     );
 }

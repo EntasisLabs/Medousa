@@ -553,6 +553,7 @@ mod tests {
             id: "frame".into(),
             name: None,
             appearance: None,
+            design_source: None,
             text_layout: None,
             parent_id: None,
             transform: CreativeTransform {

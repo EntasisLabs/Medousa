@@ -32,6 +32,7 @@
   import CreateCanvas from "./CreateCanvas.svelte";
   import CreateStylePalette from "./CreateStylePalette.svelte";
   import CreateInspector from "./CreateInspector.svelte";
+  import CreateCodeBridge from "./CreateCodeBridge.svelte";
   import CreateAsk from "./CreateAsk.svelte";
   import CreateViewControls from "./CreateViewControls.svelte";
   import CreateAlignmentControls from "./CreateAlignmentControls.svelte";
@@ -578,6 +579,7 @@
         disabled={disabled || busy || dirty || !session.canRedo}
         onclick={() => void history(true)}><Redo2 size={15} /></button
       >
+      <CreateCodeBridge {lease} {document} frame={selected.length === 1 ? scene?.nodes.find(n => n.id === selected[0] && n.content.kind === "frame") : undefined} disabled={disabled || busy || dirty || Boolean(editingNode)} capture={captureSelection}/>
       <details class="create-export">
         <summary><Download size={13} />Export<ChevronDown size={11} /></summary>
         <div>

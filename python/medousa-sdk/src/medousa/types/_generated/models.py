@@ -286,12 +286,181 @@ class BotSessionKind(Enum):
     secondary = 'secondary'
 
 
+class BrowserDesignRaster(MedousaModel):
+    asset_id: str
+    height: float
+    width: float
+    x: float
+    y: float
+
+
 class BrowserPresentationViewport(MedousaModel):
     device_scale_factor: float
     height: int = Field(..., ge=0)
     scroll_x: int
     scroll_y: int
     width: int = Field(..., ge=0)
+
+
+class CreativeBrushKind(Enum):
+    pen = 'pen'
+    pencil = 'pencil'
+    marker = 'marker'
+    highlighter = 'highlighter'
+
+
+class Kind(Enum):
+    ink = 'ink'
+
+
+class Kind1(Enum):
+    text = 'text'
+
+
+class Kind2(Enum):
+    shape = 'shape'
+
+
+class Kind3(Enum):
+    image = 'image'
+
+
+class Kind4(Enum):
+    group = 'group'
+
+
+class CreativeContent5(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Kind4
+
+
+class Kind5(Enum):
+    frame = 'frame'
+
+
+class CreativeContent6(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    background: str
+    kind: Kind5
+    name: str
+
+
+class CreativeCrop(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    height: float
+    width: float
+    x: float
+    y: float
+
+
+class CreativeDesignSource(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    captured_at_ms: int = Field(..., ge=0)
+    session_id: str | None = None
+    url: str
+    viewport_height: int = Field(..., ge=0)
+    viewport_width: int = Field(..., ge=0)
+    work_id: str | None = None
+
+
+class CreativeFontStyle(Enum):
+    normal = 'normal'
+    italic = 'italic'
+
+
+class CreativeInputKind(Enum):
+    pen = 'pen'
+    touch = 'touch'
+    mouse = 'mouse'
+    unknown = 'unknown'
+
+
+class CreativeLinePoint(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    x: float
+    y: float
+
+
+class CreativePoint(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    elapsed_ms: float | None = None
+    pressure: float | None = None
+    tilt_x: float | None = None
+    tilt_y: float | None = None
+    x: float
+    y: float
+
+
+class CreativeShadow(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    blur: float = Field(..., description='Gaussian standard deviation in canvas pixels.')
+    color: str
+    opacity: float
+    x: float
+    y: float
+
+
+class CreativeShapeKind(Enum):
+    rectangle = 'rectangle'
+    ellipse = 'ellipse'
+    line = 'line'
+
+
+class CreativeTextAlign(Enum):
+    left = 'left'
+    center = 'center'
+    right = 'right'
+
+
+class CreativeTextLayout(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    align: CreativeTextAlign
+    line_height: float = Field(..., description='Multiplier of the font size.')
+    width: float | None = Field(
+        None, description='None keeps automatic width; a width wraps text and lets height grow.'
+    )
+
+
+class CreativeTransform(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    height: float
+    rotation: float
+    width: float
+    x: float
+    y: float
+
+
+class BrowserPresentationObservation(MedousaModel):
+    base_revision: int | None = Field(None, ge=0)
+    captured_at_ms: int = Field(..., ge=0)
+    document_id: str
+    full: bool
+    revision: int = Field(..., ge=0)
+    schema_version: int = Field(..., ge=0)
+    tab_id: str
+    title: str
+    truncated: bool
+    untrusted_content: bool
+    url: str
+    viewport: BrowserPresentationViewport
 
 
 class CalendarAlarm(MedousaModel):
@@ -526,29 +695,29 @@ class ExecutionTargetRequirements(MedousaModel):
     selection_key: str | None = None
 
 
-class Kind(Enum):
+class Kind6(Enum):
     same_as_parent = 'same_as_parent'
 
 
 class ExecutionTargetSelection1(MedousaModel):
-    kind: Kind
+    kind: Kind6
 
 
-class Kind1(Enum):
+class Kind7(Enum):
     exact = 'exact'
 
 
 class ExecutionTargetSelection2(MedousaModel):
-    kind: Kind1
+    kind: Kind7
     runtime_id: str
 
 
-class Kind2(Enum):
+class Kind8(Enum):
     auto = 'auto'
 
 
 class ExecutionTargetSelection3(MedousaModel):
-    kind: Kind2
+    kind: Kind8
     requirements: ExecutionTargetRequirements | None = Field({}, validate_default=True)
 
 
@@ -632,140 +801,6 @@ class CreativeVisualContextRequest(MedousaModel):
     )
     expected_revision: int = Field(..., ge=0)
     selected_ids: list[str]
-
-
-class CreativeBrushKind(Enum):
-    pen = 'pen'
-    pencil = 'pencil'
-    marker = 'marker'
-    highlighter = 'highlighter'
-
-
-class Kind3(Enum):
-    ink = 'ink'
-
-
-class Kind4(Enum):
-    text = 'text'
-
-
-class Kind5(Enum):
-    shape = 'shape'
-
-
-class Kind6(Enum):
-    image = 'image'
-
-
-class Kind7(Enum):
-    group = 'group'
-
-
-class CreativeContent5(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    kind: Kind7
-
-
-class Kind8(Enum):
-    frame = 'frame'
-
-
-class CreativeContent6(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    background: str
-    kind: Kind8
-    name: str
-
-
-class CreativeCrop(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    height: float
-    width: float
-    x: float
-    y: float
-
-
-class CreativeFontStyle(Enum):
-    normal = 'normal'
-    italic = 'italic'
-
-
-class CreativeInputKind(Enum):
-    pen = 'pen'
-    touch = 'touch'
-    mouse = 'mouse'
-    unknown = 'unknown'
-
-
-class CreativeLinePoint(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    x: float
-    y: float
-
-
-class CreativePoint(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    elapsed_ms: float | None = None
-    pressure: float | None = None
-    tilt_x: float | None = None
-    tilt_y: float | None = None
-    x: float
-    y: float
-
-
-class CreativeShadow(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    blur: float = Field(..., description='Gaussian standard deviation in canvas pixels.')
-    color: str
-    opacity: float
-    x: float
-    y: float
-
-
-class CreativeShapeKind(Enum):
-    rectangle = 'rectangle'
-    ellipse = 'ellipse'
-    line = 'line'
-
-
-class CreativeTextAlign(Enum):
-    left = 'left'
-    center = 'center'
-    right = 'right'
-
-
-class CreativeTextLayout(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    align: CreativeTextAlign
-    line_height: float = Field(..., description='Multiplier of the font size.')
-    width: float | None = Field(
-        None, description='None keeps automatic width; a width wraps text and lets height grow.'
-    )
-
-
-class CreativeTransform(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    height: float
-    rotation: float
-    width: float
-    x: float
-    y: float
 
 
 class CreativeJobRequest(MedousaModel):
@@ -4581,6 +4616,16 @@ class CreativeAssetImportRequest(MedousaModel):
     data_base64: str
 
 
+class CreativeCodeContextRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
+    frame_id: str
+    session_id: str
+    visual_asset_id: str
+
+
 class CreativeContextRequest(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5713,21 +5758,6 @@ class BotSessionBinding(MedousaModel):
     session_id: str
 
 
-class BrowserPresentationObservation(MedousaModel):
-    base_revision: int | None = Field(None, ge=0)
-    captured_at_ms: int = Field(..., ge=0)
-    document_id: str
-    full: bool
-    revision: int = Field(..., ge=0)
-    schema_version: int = Field(..., ge=0)
-    tab_id: str
-    title: str
-    truncated: bool
-    untrusted_content: bool
-    url: str
-    viewport: BrowserPresentationViewport
-
-
 class BrowserPresentationScreenshot(MedousaModel):
     byte_size: int = Field(..., ge=0)
     captured_at_ms: int = Field(..., ge=0)
@@ -5746,6 +5776,70 @@ class BrowserPresentationScreenshot(MedousaModel):
     untrusted_content: bool
     url: str
     viewport: BrowserPresentationViewport
+
+
+class CreativeAppearance(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    corner_radius: float
+    shadow: CreativeShadow | None = None
+
+
+class CreativeBrush(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: CreativeBrushKind
+    opacity: float
+    size: float
+    smoothing: float
+    streamline: float
+    thinning: float
+
+
+class CreativeContent1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    brush: CreativeBrush
+    color: str
+    input: CreativeInputKind
+    kind: Kind
+    points: list[CreativePoint]
+
+
+class CreativeContent2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    color: str
+    font_family: str
+    font_size: float
+    font_style: CreativeFontStyle | None = None
+    font_weight: int | None = Field(None, ge=0)
+    kind: Kind1
+    text: str
+
+
+class CreativeContent4(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    asset_id: str
+    crop: CreativeCrop | None = None
+    kind: Kind3
+
+
+class CreativeLine(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    dashed: bool | None = False
+    end: CreativeLinePoint
+    end_arrow: bool | None = False
+    start: CreativeLinePoint
+    start_arrow: bool | None = False
 
 
 class ConversationRangeSelection(MedousaModel):
@@ -5818,70 +5912,6 @@ class HostTurnContext(MedousaModel):
     selection: HostContextSelection | None = None
     source: str
     workspace: str | None = None
-
-
-class CreativeAppearance(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    corner_radius: float
-    shadow: CreativeShadow | None = None
-
-
-class CreativeBrush(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    kind: CreativeBrushKind
-    opacity: float
-    size: float
-    smoothing: float
-    streamline: float
-    thinning: float
-
-
-class CreativeContent1(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    brush: CreativeBrush
-    color: str
-    input: CreativeInputKind
-    kind: Kind3
-    points: list[CreativePoint]
-
-
-class CreativeContent2(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    color: str
-    font_family: str
-    font_size: float
-    font_style: CreativeFontStyle | None = None
-    font_weight: int | None = Field(None, ge=0)
-    kind: Kind4
-    text: str
-
-
-class CreativeContent4(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    asset_id: str
-    crop: CreativeCrop | None = None
-    kind: Kind6
-
-
-class CreativeLine(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    dashed: bool | None = False
-    end: CreativeLinePoint
-    end_arrow: bool | None = False
-    start: CreativeLinePoint
-    start_arrow: bool | None = False
 
 
 class ContextManifest(MedousaModel):
@@ -7144,34 +7174,12 @@ class BotProfile(MedousaModel):
     world_binding: BotWorldBinding | None = None
 
 
-class ExternalConversationEvent(MedousaModel):
-    created_at: AwareDatetime
-    event_id: str
-    kind: ExternalEventKind
-    reaction: MessageReaction | None = None
-    request_id: str | None = None
-    sequence: int = Field(..., ge=0)
-    text: str
-
-
-class ExternalConversationView(MedousaModel):
-    api_access: ExternalAgentAccessStatus | None = None
-    created_at: AwareDatetime
-    dot_user_id: str | None = None
-    events: list[ExternalConversationEvent]
-    id: str
-    label: str
-    provider: ExternalProvider
-    target: str
-    updated_at: AwareDatetime
-
-
 class CreativeContent3(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     fill: str
-    kind: Kind5
+    kind: Kind2
     line: CreativeLine | None = None
     shape: CreativeShapeKind
     stroke: str
@@ -7197,6 +7205,7 @@ class CreativeNode(MedousaModel):
     )
     appearance: CreativeAppearance | None = None
     content: CreativeContent
+    design_source: CreativeDesignSource | None = None
     id: str
     locked: bool
     name: str | None = Field(
@@ -7219,6 +7228,37 @@ class CreativeScene(MedousaModel):
     )
     schema_: str = Field(..., alias='schema')
     version: int = Field(..., ge=0)
+
+
+class ExternalConversationEvent(MedousaModel):
+    created_at: AwareDatetime
+    event_id: str
+    kind: ExternalEventKind
+    reaction: MessageReaction | None = None
+    request_id: str | None = None
+    sequence: int = Field(..., ge=0)
+    text: str
+
+
+class ExternalConversationView(MedousaModel):
+    api_access: ExternalAgentAccessStatus | None = None
+    created_at: AwareDatetime
+    dot_user_id: str | None = None
+    events: list[ExternalConversationEvent]
+    id: str
+    label: str
+    provider: ExternalProvider
+    target: str
+    updated_at: AwareDatetime
+
+
+class CreativeSelectionContext(MedousaModel):
+    assets: list[CreativeAsset]
+    document_id: str
+    fingerprint: str
+    nodes: list[CreativeNode]
+    revision: int = Field(..., ge=0)
+    selected_ids: list[str]
 
 
 class CreativeOperation1(MedousaModel):
@@ -7250,15 +7290,6 @@ class CreativeProposalRequest(MedousaModel):
     id: str
     label: str
     operations: list[CreativeOperation]
-    selected_ids: list[str]
-
-
-class CreativeSelectionContext(MedousaModel):
-    assets: list[CreativeAsset]
-    document_id: str
-    fingerprint: str
-    nodes: list[CreativeNode]
-    revision: int = Field(..., ge=0)
     selected_ids: list[str]
 
 
@@ -7404,9 +7435,22 @@ class BotOpenResponse(MedousaModel):
     bot: BotProfile
 
 
+class BrowserDesignCapture(MedousaModel):
+    raster_regions: list[BrowserDesignRaster]
+    scene: CreativeScene
+    screenshot: BrowserPresentationScreenshot
+    warnings: list[str]
+    world_id: str
+
+
 class CreateExternalConversationResponse(MedousaModel):
     callback_key: str | None = None
     conversation: ExternalConversationView
+
+
+class CreativeCodeContext(MedousaModel):
+    context: CreativeSelectionContext
+    media_refs: list[MediaRef]
 
 
 class CreativeCreateRequest(MedousaModel):

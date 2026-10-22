@@ -100,6 +100,20 @@ impl CreativeApi<'_> {
             )
             .await
     }
+    /// Freeze a validated frame preview as session-owned media for the existing Code runtime.
+    pub async fn code_context(
+        &self,
+        id: &str,
+        request: &CreativeCodeContextRequest,
+    ) -> Result<CreativeCodeContext, crate::SdkError> {
+        self.client
+            .http()
+            .post(
+                &op_path(&ops::CREATE_PROJECTS_BY_ID_CODE_CONTEXT_POST, &[("id", id)])?,
+                request,
+            )
+            .await
+    }
     pub async fn transact(
         &self,
         id: &str,

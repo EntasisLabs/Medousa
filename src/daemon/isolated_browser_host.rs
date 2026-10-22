@@ -5,6 +5,8 @@
 //! profile identity, process ownership, control state, and the concrete driver
 //! id remain explicit and durable until the owner cleans the world up.
 
+mod design_capture;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -3319,6 +3321,16 @@ mod tests {
                     .as_deref()
                     .is_some_and(|value| value.contains(" Home"))
         }));
+        evaluate(&mut connection, &session_id, Some(context_id), r##"document.body.innerHTML = '<section style="background:#f1e6cf;border:2px solid #735b31;border-radius:12px;padding:24px"><h1 style="font:700 24px Arial;color:oklch(50% 0.15 150)">Hello design</h1><input type="password" value="never-copy-this"><svg width="32" height="32"><circle cx="16" cy="16" r="12" fill="red"/></svg></section>'; true"##.to_string()).await.unwrap();
+        let (design, _, pixels) = host.capture_design(&owner, &world.world_id).await.unwrap();
+        assert!(pixels.byte_size > 0);
+        let scene: medousa_types::CreativeScene = serde_json::from_value(design["scene"].clone()).unwrap();
+        assert!(scene.nodes.iter().any(|node| matches!(&node.content, medousa_types::CreativeContent::Text { text, .. } if text.contains("Hello design"))));
+        assert!(scene.nodes.iter().any(|node| matches!(&node.content, medousa_types::CreativeContent::Text { text, color, .. } if text.contains("Hello design") && color != "transparent")));
+        assert!(scene.nodes.iter().any(|node| node.appearance.as_ref().is_some_and(|a| a.corner_radius == 12.)));
+        assert!(!design["scene"].to_string().contains("never-copy-this"));
+        assert_eq!(design["raster_regions"].as_array().unwrap().len(), 1);
+        assert!(host.capture_design("another-owner", &world.world_id).await.is_err());
         let detached = host
             .lifecycle(
                 &owner,

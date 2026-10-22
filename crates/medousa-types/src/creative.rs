@@ -151,6 +151,20 @@ pub enum CreativeContent {
     },
 }
 
+/// Advisory origin of an editable design; never grants repository or browser authority.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeDesignSource {
+    pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    pub url: String,
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+    pub captured_at_ms: u64,
+}
+
 /// Saved surface styling. Omitted by legacy version-3 documents.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -202,6 +216,8 @@ pub struct CreativeNode {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub appearance: Option<CreativeAppearance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_source: Option<CreativeDesignSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_layout: Option<CreativeTextLayout>,
     pub parent_id: Option<String>,
@@ -527,4 +543,20 @@ pub struct CreativeJob {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreativeJobListResponse {
     pub jobs: Vec<CreativeJob>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeCodeContextRequest {
+    pub expected_revision: u64,
+    pub frame_id: String,
+    pub visual_asset_id: String,
+    pub session_id: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreativeCodeContext {
+    pub context: CreativeSelectionContext,
+    pub media_refs: Vec<crate::MediaRef>,
 }

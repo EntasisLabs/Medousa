@@ -935,6 +935,22 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.design_capture.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/design-capture",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 49152,
       "bootstrap_public": false,
       "browser_policy": "exact_origin",
@@ -1890,6 +1906,22 @@
       "operation_id": "create.projects.by_id.assets.by_asset_id.get",
       "path": "/v1/create/projects/{id}/assets/{asset_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 4096,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.code_context.post",
+      "path": "/v1/create/projects/{id}/code-context",
+      "rate_limit_class": "mutation",
       "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"

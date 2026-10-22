@@ -81,6 +81,10 @@ pub fn surface() -> DeclaredRouter<CreativeApiState> {
             get(read),
         )
         .route(
+            policy(Method::POST, "/v1/create/projects/{id}/code-context", 4096),
+            post(code_context),
+        )
+        .route(
             RoutePolicy {
                 required_capability: Some(Capability::ContentRead),
                 rate_limit_class: RateLimitClass::Read,
@@ -159,6 +163,46 @@ pub(crate) async fn run<T: Send + 'static>(
         .map(Json)
         .map_err(error)
 }
+async fn code_context(
+    State(state): State<CreativeApiState>,
+    Path(id): Path<String>,
+    Json(request): Json<CreativeCodeContextRequest>,
+) -> Result<Json<CreativeCodeContext>, HttpError> {
+    crate::session_storage::validate_session_id(&request.session_id)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let store = state.store.clone();
+    let result = crate::media_vision::run_image_operation(
+        crate::media_vision::MAX_MODEL_IMAGE_BYTES as usize,
+        move || {
+            use medousa_forge::ForgeError;
+            let (context, asset) = store
+                .code_context(&id, &request)
+                .map_err(|e| ForgeError::Store(e.to_string()))?;
+            let (_, bytes) = store
+                .asset(&id, &asset.id)
+                .map_err(|e| ForgeError::Store(e.to_string()))?;
+            let media = crate::media_store::persist_context_media(
+                &request.session_id,
+                &format!(
+                    "create-code:{}:{}:{}",
+                    id, context.revision, request.frame_id
+                ),
+                &bytes,
+                &asset.mime,
+                "Selected Create frame",
+            )
+            .map_err(ForgeError::Store)?;
+            Ok(CreativeCodeContext {
+                context,
+                media_refs: vec![media],
+            })
+        },
+    )
+    .await
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(result))
+}
+
 async fn list(
     State(state): State<CreativeApiState>,
     Query(query): Query<CreativeListQuery>,
@@ -314,7 +358,7 @@ mod tests {
         let declared = surface();
         let inventory = declared.inventory();
         let routes: Vec<_> = inventory.entries().collect();
-        assert_eq!(routes.len(), 13);
+        assert_eq!(routes.len(), 14);
         for route in routes {
             assert!(!route.bootstrap_public);
             assert_eq!(route.browser_policy, BrowserPolicy::NativeOnly);

@@ -93,6 +93,25 @@ pub fn validate_scene(
         number(t.height, 0., 1e7)?;
         number(t.rotation, -360_000., 360_000.)?;
         number(node.opacity, 0., 1.)?;
+        if let Some(source) = &node.design_source {
+            if !matches!(node.content, CreativeContent::Frame { .. }) {
+                return Err(invalid("design source requires a frame"));
+            }
+            bounded_text(&source.url, 2048, "design source URL")?;
+            if let Some(session) = &source.session_id {
+                validate_id(session)?;
+            }
+            if let Some(work_id) = &source.work_id {
+                validate_id(work_id)?;
+            }
+            if source.viewport_width == 0
+                || source.viewport_width > 8192
+                || source.viewport_height == 0
+                || source.viewport_height > 8192
+            {
+                return Err(invalid("design source viewport is out of bounds"));
+            }
+        }
         if let Some(appearance) = &node.appearance {
             if !matches!(
                 node.content,

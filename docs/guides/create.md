@@ -226,3 +226,35 @@ Existing [drawing notes](drawing.md) and chat drawings keep their supported
 editing paths. Opening them does not silently migrate them or create a second
 creative project. Notes-to-Create adoption and live embeds are separate follow-up
 work.
+
+## Move between Create and Code
+
+Select one unlocked frame and choose **Build in Code** in the project header.
+Choose an existing Code project and describe what to build. Save open Code files
+first. Medousa receives a saved image of the frame and a compact editable blueprint,
+then uses the existing Code conversation and repository tools to implement it.
+The conversation opens so you can follow the work and review the source changes.
+
+The frame remembers its project and conversation. **Update Code** sends a new
+saved snapshot to that project; moving objects does not patch the running site.
+Changes to the repo refresh its existing dev server through the project's normal
+workflow. Canvas changes made after a handoff wait for the next Update Code.
+If sending times out, use **Check conversation** before submitting again.
+
+Choose **Import page** on Create's home screen or in the rail's **+** menu to
+start from a running site. You can also choose **Import into Create** from the
+browser's page menu. Pick an optional Code project and a running workshop browser,
+or enter a dev-server URL to open it in a new managed workshop browser. A URL opens
+on the workshop's machine; `localhost` refers to that machine. Opening a URL does
+not copy another browser's sign-in state, unsaved inputs, or scroll position.
+
+The import creates two frames side by side: a locked screenshot of the original
+viewport and an editable copy. Text and simple surfaces become editable objects;
+images, icons, and complex graphics remain cropped image layers. Font availability,
+clipping, gradients, shadows, and complex CSS can require manual adjustment.
+Capture requires a stable page and reports limits before you open the design.
+It captures the viewport, not offscreen content or interactive behavior. Form
+values are excluded from editable text; screenshot redaction follows the existing
+browser rules. Normal save, undo, export, and Ask Medousa work on the imported copy.
+Select its frame and use **Update Code** when ready to implement your redesign.
+Both directions require updated app and daemon builds.

@@ -289,3 +289,40 @@ conversion. Adoption IDs include workshop, vault root, note path and a stable
 anchor. Accepting adoption must persist the resulting document reference in the
 note using its existing revision check; the conversion helper alone never edits
 the source note. Notes rendering and that adoption UI have not shipped yet.
+
+## Code handoffs and browser design capture
+
+Frames may store optional `design_source` provenance: `work_id`, `session_id`,
+`url`, `viewport_width`, `viewport_height`, and `captured_at_ms`. IDs use the
+existing identifier grammar, URLs are bounded to 2,048 bytes, and viewport sides
+are 1–8,192. Home strips URL credentials, query strings, fragments, and Forge
+preview capability paths before saving. This metadata is advisory; it grants no
+repository or browser authority. It uses ordinary transactions and undo history.
+
+`POST /v1/create/projects/{id}/code-context` accepts `CreativeCodeContextRequest`
+(`expected_revision`, `frame_id`, `visual_asset_id`, `session_id`) and returns
+`CreativeCodeContext` (`context`, `media_refs`). The store checks a visible frame,
+exact revision, selection, and the saved visual fingerprint. Preparing context
+does not advance the document revision. Bounded image work persists the validated
+preview through the existing session media store. The client then uses existing
+session Code binding and `turns.post` with `agent_mode: coder` and `code_context`;
+the normal runtime resolves repository authority. A timed-out turn admission must
+be recovered from its session, never blindly replayed.
+
+`POST /v1/browser/worlds/isolated/{world_id}/design-capture` returns
+`BrowserDesignCapture`: a scene, raster crop regions, the redacted presentation
+screenshot, and warnings. This native workshop-read route requires ownership of
+the managed browser world. Fixed read-only capture code runs in an isolated
+execution context; it is not a general evaluation endpoint. It fences the DOM
+projection and screenshot against document, observation, and viewport changes.
+A changing page returns a conflict without publishing a partial design. Capture
+is bounded to a 4,096-pixel viewport side, 512 KiB projection, 1,200 layers plus
+a frame, 16,000 text characters and 20 raster regions. It excludes form values
+and editable drafts from editable text. Browser screenshot redaction remains in
+force; cropped image bytes come only from that screenshot, without fetching
+page-provided asset URLs.
+
+Home imports assets into a new workshop-owned document and publishes the original
+and editable frames in one transaction. Stable creation/import IDs permit retries;
+an acknowledged import is opened rather than replayed over subsequent edits.
+This is an approximate visual snapshot, not a DOM/CSS round-trip contract.

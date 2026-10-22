@@ -441,6 +441,71 @@ fn presentation_frame(
     }
 }
 
+/// Importable viewport data. Never executes page-supplied code or fetches its assets.
+pub async fn capture_isolated_browser_design(
+    State(state): State<AppState>,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    Path(world_id): Path<String>,
+) -> Result<Json<medousa_types::BrowserDesignCapture>, (StatusCode, String)> {
+    let (raw, observation, screenshot) = state
+        .isolated_browser
+        .capture_design(&principal_profile_id(&principal), &world_id)
+        .await
+        .map_err(isolated_browser_error)?;
+    let scene: medousa_types::CreativeScene = serde_json::from_value(raw["scene"].clone())
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let regions: Vec<medousa_types::BrowserDesignRaster> =
+        serde_json::from_value(raw["raster_regions"].clone())
+            .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let mut ids = std::collections::HashSet::new();
+    if regions.len() > 20
+        || scene.nodes.len() > 1201
+        || regions.iter().any(|r| {
+            !ids.insert(&r.asset_id)
+                || !r.x.is_finite()
+                || !r.y.is_finite()
+                || !r.width.is_finite()
+                || !r.height.is_finite()
+                || r.x < 0.0
+                || r.y < 0.0
+                || r.width < 1.0
+                || r.height < 1.0
+                || r.x + r.width > observation.viewport.width as f64
+                || r.y + r.height > observation.viewport.height as f64
+        })
+    {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "page capture exceeds its layer budget".into(),
+        ));
+    }
+    let assets = regions
+        .iter()
+        .map(|r| {
+            (
+                r.asset_id.clone(),
+                medousa_types::CreativeAsset {
+                    id: r.asset_id.clone(),
+                    mime: "image/png".into(),
+                    byte_size: 1,
+                    sha256: "0".repeat(64),
+                },
+            )
+        })
+        .collect();
+    medousa_create::validate_scene(&scene, &assets)
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let warnings: Vec<String> = serde_json::from_value(raw["warnings"].clone())
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(medousa_types::BrowserDesignCapture {
+        world_id: world_id.clone(),
+        scene,
+        raster_regions: regions,
+        screenshot: presentation_frame(&world_id, observation, screenshot).screenshot,
+        warnings,
+    }))
+}
+
 pub async fn screenshot_isolated_browser_world(
     State(state): State<AppState>,
     Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
@@ -951,6 +1016,16 @@ pub fn browser_surface() -> DeclaredRouter<AppState> {
                 RateLimitClass::Stream,
             ),
             get(stream_isolated_browser_world_presentation),
+        )
+        .route(
+            browser_policy(
+                axum::http::Method::POST,
+                "/v1/browser/worlds/isolated/{world_id}/design-capture",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Read,
+            ),
+            post(capture_isolated_browser_design),
         )
         .route(
             browser_policy(

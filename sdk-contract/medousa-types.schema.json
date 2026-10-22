@@ -2981,6 +2981,859 @@
       "persistent_browser"
     ]
   },
+  "BrowserDesignCapture": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserDesignCapture",
+    "description": "A viewport import is data, never a live DOM binding or permission to edit code.",
+    "type": "object",
+    "required": [
+      "raster_regions",
+      "scene",
+      "screenshot",
+      "warnings",
+      "world_id"
+    ],
+    "properties": {
+      "raster_regions": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/BrowserDesignRaster"
+        }
+      },
+      "scene": {
+        "$ref": "#/definitions/CreativeScene"
+      },
+      "screenshot": {
+        "$ref": "#/definitions/BrowserPresentationScreenshot"
+      },
+      "warnings": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "world_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "BrowserDesignRaster": {
+        "type": "object",
+        "required": [
+          "asset_id",
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string"
+          },
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "BrowserPresentationScreenshot": {
+        "description": "One redacted, size-capped viewport artifact paired to its observation.",
+        "type": "object",
+        "required": [
+          "byte_size",
+          "captured_at_ms",
+          "coordinate_frame",
+          "document_id",
+          "image_base64",
+          "image_height",
+          "image_width",
+          "mime",
+          "observation_revision",
+          "schema_version",
+          "sensitive_regions_redacted",
+          "sha256",
+          "tab_id",
+          "title",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "coordinate_frame": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "image_base64": {
+            "type": "string"
+          },
+          "image_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "image_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "mime": {
+            "type": "string"
+          },
+          "observation_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "sensitive_regions_redacted": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/definitions/BrowserPresentationViewport"
+          }
+        }
+      },
+      "BrowserPresentationViewport": {
+        "type": "object",
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "properties": {
+          "device_scale_factor": {
+            "type": "number",
+            "format": "double"
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_x": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scroll_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeScene": {
+        "type": "object",
+        "required": [
+          "background",
+          "nodes",
+          "schema",
+          "version"
+        ],
+        "properties": {
+          "background": {
+            "type": "string"
+          },
+          "nodes": {
+            "description": "Back-to-front paint order. Parent relationships define containment.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
+            }
+          },
+          "schema": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
   "BrowserPresentationFrame": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "BrowserPresentationFrame",
@@ -7192,6 +8045,800 @@
       }
     }
   },
+  "CreativeCodeContext": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeCodeContext",
+    "type": "object",
+    "required": [
+      "context",
+      "media_refs"
+    ],
+    "properties": {
+      "context": {
+        "$ref": "#/definitions/CreativeSelectionContext"
+      },
+      "media_refs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/MediaRef"
+        }
+      }
+    },
+    "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeAsset": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "id",
+          "mime",
+          "sha256"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeSelectionContext": {
+        "type": "object",
+        "required": [
+          "assets",
+          "document_id",
+          "fingerprint",
+          "nodes",
+          "revision",
+          "selected_ids"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeAsset"
+            }
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "image | drawing | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "parent_generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_media_id": {
+            "description": "Editable vector source paired with a raster drawing preview.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "CreativeCodeContextRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeCodeContextRequest",
+    "type": "object",
+    "required": [
+      "expected_revision",
+      "frame_id",
+      "session_id",
+      "visual_asset_id"
+    ],
+    "properties": {
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "frame_id": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "visual_asset_id": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
   "CreativeContextRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CreativeContextRequest",
@@ -7527,6 +9174,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -7612,6 +9302,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -8238,6 +9938,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -8323,6 +10066,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -9010,6 +10763,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -9157,6 +10953,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -9893,6 +11699,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -10130,6 +11979,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -11004,6 +12863,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeDocument": {
         "type": "object",
         "required": [
@@ -11134,6 +13036,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -11705,6 +13617,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -11790,6 +13745,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -12486,6 +14451,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -12571,6 +14579,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -13296,6 +15314,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -13381,6 +15442,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -14067,6 +16138,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -14152,6 +16266,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -14677,6 +16801,49 @@
         },
         "additionalProperties": false
       },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeFontStyle": {
         "type": "string",
         "enum": [
@@ -14762,6 +16929,16 @@
           },
           "content": {
             "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"

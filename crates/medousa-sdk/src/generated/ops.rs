@@ -289,6 +289,13 @@ pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DELETE: Operation = Operation {
     streaming: false,
 };
 
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DESIGN_CAPTURE_POST: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.design_capture.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated/{world_id}/design-capture",
+    streaming: false,
+};
+
 pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_GET: Operation = Operation {
     id: "browser.worlds.isolated.by_world_id.get",
     method: "GET",
@@ -706,6 +713,13 @@ pub const CREATE_PROJECTS_BY_ID_ASSETS_POST: Operation = Operation {
     id: "create.projects.by_id.assets.post",
     method: "POST",
     path: "/v1/create/projects/{id}/assets",
+    streaming: false,
+};
+
+pub const CREATE_PROJECTS_BY_ID_CODE_CONTEXT_POST: Operation = Operation {
+    id: "create.projects.by_id.code_context.post",
+    method: "POST",
+    path: "/v1/create/projects/{id}/code-context",
     streaming: false,
 };
 
@@ -3655,6 +3669,7 @@ pub static ALL: &[Operation] = &[
     BROWSER_SESSIONS_BY_SESSION_ID_GET,
     BROWSER_SESSIONS_BY_SESSION_ID_RESUME_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DELETE,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DESIGN_CAPTURE_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_GET,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_INPUT_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_LIFECYCLE_POST,
@@ -3715,6 +3730,7 @@ pub static ALL: &[Operation] = &[
     COORDINATION_PROPOSALS_GET,
     CREATE_PROJECTS_BY_ID_ASSETS_BY_ASSET_ID_GET,
     CREATE_PROJECTS_BY_ID_ASSETS_POST,
+    CREATE_PROJECTS_BY_ID_CODE_CONTEXT_POST,
     CREATE_PROJECTS_BY_ID_CONTEXT_POST,
     CREATE_PROJECTS_BY_ID_DELETE_POST,
     CREATE_PROJECTS_BY_ID_GET,

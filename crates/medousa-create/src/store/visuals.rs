@@ -9,6 +9,46 @@ pub(super) struct VisualRecord {
 }
 
 impl CreativeStore {
+    /// Freeze a selected frame and its matching visual for the existing Code turn path.
+    pub fn code_context(
+        &self,
+        id: &str,
+        request: &CreativeCodeContextRequest,
+    ) -> Result<(CreativeSelectionContext, CreativeAsset)> {
+        validate_id(&request.session_id)?;
+        let _lock = self.lock(id)?;
+        let record = self.read(id)?;
+        Self::check_revision(&record, request.expected_revision)?;
+        let frame = record
+            .document
+            .scene
+            .nodes
+            .iter()
+            .find(|n| {
+                n.id == request.frame_id
+                    && n.visible
+                    && matches!(n.content, CreativeContent::Frame { .. })
+            })
+            .ok_or_else(|| invalid("select a visible frame to build"))?;
+        let context = Self::selection_context(
+            &record.document,
+            CreativeContextRequest {
+                selected_ids: vec![frame.id.clone()],
+            },
+        )?;
+        let visual = record
+            .visuals
+            .get(&request.visual_asset_id)
+            .ok_or_else(|| invalid("capture the frame again"))?;
+        if visual.revision != request.expected_revision
+            || visual.selected_ids != vec![frame.id.clone()]
+            || visual.fingerprint != context.fingerprint
+        {
+            return Err(invalid("frame preview does not match the design revision"));
+        }
+        Ok((context, visual.asset.clone()))
+    }
+
     /// A context image is staged separately from editable assets and undo history.
     pub fn import_visual_context(
         &self,

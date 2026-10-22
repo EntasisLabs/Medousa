@@ -255,3 +255,9 @@ before preview refinements. Ready/stale results can apply to the latest supplied
 revision when field changes reconcile safely. Conflicting edits preserve the
 result; they never trigger regeneration or overwrite current work. Updated app
 and daemon builds are required for this behavior.
+
+Creative Code handoffs use `client.creative().code_context(id, request)` in Rust
+and `client.creative().code_context(id, request)` in Python (async and sync). The
+request binds a saved frame revision and matching preview asset to a session;
+the response contains selection context and session media refs for the existing
+Code turn API. See [the creative service contract](../engine/creative-workspace.md#code-handoffs-and-browser-design-capture).

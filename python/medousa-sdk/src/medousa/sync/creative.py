@@ -11,6 +11,8 @@ from medousa.types import (
     CreativeAssetData,
     CreativeAssetImportRequest,
     CreativeContextRequest,
+    CreativeCodeContext,
+    CreativeCodeContextRequest,
     CreativeCreateRequest,
     CreativeDeleteRequest,
     CreativeDeleteResponse,
@@ -65,6 +67,14 @@ class CreativeApiSync:
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(CreativeSelectionContext, value)
+
+    def code_context(self, id: str, request: CreativeCodeContextRequest) -> CreativeCodeContext:
+        value = self._client.transport.post_json(
+            self._client.base_url,
+            op_path("create.projects.by_id.code_context.post", id=id),
+            request.model_dump(mode="json", exclude_none=True),
+        )
+        return decode(CreativeCodeContext, value)
 
     def transact(self, id: str, request: CreativeTransaction) -> CreativeMutationResponse:
         value = self._client._transport.post_json(

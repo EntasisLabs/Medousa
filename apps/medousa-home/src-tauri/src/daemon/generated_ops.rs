@@ -84,6 +84,8 @@ pub enum DaemonOperation {
     BrowserSessionsBySessionIdResumePost,
     #[serde(rename = "browser.worlds.isolated.by_world_id.delete")]
     BrowserWorldsIsolatedByWorldIdDelete,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.design_capture.post")]
+    BrowserWorldsIsolatedByWorldIdDesignCapturePost,
     #[serde(rename = "browser.worlds.isolated.by_world_id.get")]
     BrowserWorldsIsolatedByWorldIdGet,
     #[serde(rename = "browser.worlds.isolated.by_world_id.input.post")]
@@ -204,6 +206,8 @@ pub enum DaemonOperation {
     CreateProjectsByIdAssetsByAssetIdGet,
     #[serde(rename = "create.projects.by_id.assets.post")]
     CreateProjectsByIdAssetsPost,
+    #[serde(rename = "create.projects.by_id.code_context.post")]
+    CreateProjectsByIdCodeContextPost,
     #[serde(rename = "create.projects.by_id.context.post")]
     CreateProjectsByIdContextPost,
     #[serde(rename = "create.projects.by_id.delete.post")]
@@ -1079,6 +1083,7 @@ impl DaemonOperation {
             Self::BrowserSessionsBySessionIdGet => "browser.sessions.by_session_id.get",
             Self::BrowserSessionsBySessionIdResumePost => "browser.sessions.by_session_id.resume.post",
             Self::BrowserWorldsIsolatedByWorldIdDelete => "browser.worlds.isolated.by_world_id.delete",
+            Self::BrowserWorldsIsolatedByWorldIdDesignCapturePost => "browser.worlds.isolated.by_world_id.design_capture.post",
             Self::BrowserWorldsIsolatedByWorldIdGet => "browser.worlds.isolated.by_world_id.get",
             Self::BrowserWorldsIsolatedByWorldIdInputPost => "browser.worlds.isolated.by_world_id.input.post",
             Self::BrowserWorldsIsolatedByWorldIdLifecyclePost => "browser.worlds.isolated.by_world_id.lifecycle.post",
@@ -1139,6 +1144,7 @@ impl DaemonOperation {
             Self::CoordinationProposalsGet => "coordination.proposals.get",
             Self::CreateProjectsByIdAssetsByAssetIdGet => "create.projects.by_id.assets.by_asset_id.get",
             Self::CreateProjectsByIdAssetsPost => "create.projects.by_id.assets.post",
+            Self::CreateProjectsByIdCodeContextPost => "create.projects.by_id.code_context.post",
             Self::CreateProjectsByIdContextPost => "create.projects.by_id.context.post",
             Self::CreateProjectsByIdDeletePost => "create.projects.by_id.delete.post",
             Self::CreateProjectsByIdGet => "create.projects.by_id.get",

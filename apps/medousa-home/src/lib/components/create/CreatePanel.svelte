@@ -6,6 +6,7 @@
     ArrowUpRight,
     Pin,
     RefreshCw,
+    Scan,
   } from "@lucide/svelte";
   import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import { createBrowser } from "$lib/create/createBrowser.svelte";
@@ -15,6 +16,7 @@
   } from "$lib/create/creativeWorkspace.svelte";
   import type { CreativeStarter } from "$lib/create/creativeScene";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import CreatePageImport from "./CreatePageImport.svelte";
   import CreateEditor from "./CreateEditor.svelte";
   import CreateRail from "./CreateRail.svelte";
   import { creativeStarters as starters } from "$lib/create/creativeStarters";
@@ -36,6 +38,7 @@
   } = $props();
   const scope = $derived(workshopId ?? activeWorkshopId());
   const browser = $derived(createBrowser(scope));
+  let importOpen = $state(false);
   let query = $state(""),
     lease = $state.raw<CreativeProjectLease | null>(null),
     openError = $state<string | null>(null);
@@ -91,7 +94,7 @@
         {openError ?? "Opening canvas…"}
       </div>{/if}
   {:else if rail}
-    {#key scope}<CreateRail {browser} {scope} onopen={open} oncreate={(starter) => void create(starter)}/>{/key}
+    {#key scope}<CreateRail {browser} {scope} onopen={open} onimport={() => importOpen = true} oncreate={(starter) => void create(starter)}/>{/key}
   {:else}
     <main class="create-home">
       <div class="create-home-kicker"><PenTool size={14} />Create</div>
@@ -100,6 +103,7 @@
         A place for the idea, the rough edges, and the finished thing.
       </p>
       <div class="create-starters">
+        <button type="button" onclick={() => importOpen = true}><Scan size={15}/>Import page</button>
         {#each starters as starter}<button
             type="button"
             disabled={browser.creating || Boolean(browser.pending)}
@@ -171,6 +175,7 @@
     </main>
   {/if}
 </div>
+<CreatePageImport {scope} bind:open={importOpen} onimport={doc => open(doc.id, doc.title)}/>
 {#snippet FrameIcon()}<svg
     width="48"
     height="40"

@@ -702,6 +702,72 @@
         ],
         "type": "string"
       },
+      "BrowserDesignCapture": {
+        "description": "A viewport import is data, never a live DOM binding or permission to edit code.",
+        "properties": {
+          "raster_regions": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserDesignRaster"
+            },
+            "type": "array"
+          },
+          "scene": {
+            "$ref": "#/components/schemas/CreativeScene"
+          },
+          "screenshot": {
+            "$ref": "#/components/schemas/BrowserPresentationScreenshot"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "raster_regions",
+          "scene",
+          "screenshot",
+          "warnings",
+          "world_id"
+        ],
+        "title": "BrowserDesignCapture",
+        "type": "object"
+      },
+      "BrowserDesignRaster": {
+        "properties": {
+          "asset_id": {
+            "type": "string"
+          },
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "asset_id",
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
       "BrowserPresentationFrame": {
         "description": "Atomic presentation update. Keeping the semantic fence and pixels in one event prevents Home from pairing an observation with a different frame.",
         "properties": {
@@ -2949,6 +3015,52 @@
         ],
         "type": "string"
       },
+      "CreativeCodeContext": {
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/CreativeSelectionContext"
+          },
+          "media_refs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaRef"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "context",
+          "media_refs"
+        ],
+        "title": "CreativeCodeContext",
+        "type": "object"
+      },
+      "CreativeCodeContextRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "frame_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "visual_asset_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "frame_id",
+          "session_id",
+          "visual_asset_id"
+        ],
+        "title": "CreativeCodeContextRequest",
+        "type": "object"
+      },
       "CreativeContent": {
         "oneOf": [
           {
@@ -3237,6 +3349,49 @@
           "deleted"
         ],
         "title": "CreativeDeleteResponse",
+        "type": "object"
+      },
+      "CreativeDesignSource": {
+        "additionalProperties": false,
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "properties": {
+          "captured_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "viewport_width": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
         "type": "object"
       },
       "CreativeDocument": {
@@ -3603,6 +3758,16 @@
           },
           "content": {
             "$ref": "#/components/schemas/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "type": "string"
@@ -4043,7 +4208,6 @@
           "revision",
           "selected_ids"
         ],
-        "title": "CreativeSelectionContext",
         "type": "object"
       },
       "CreativeShadow": {
@@ -19783,6 +19947,65 @@
         }
       }
     },
+    "/v1/browser/worlds/isolated/{world_id}/design-capture": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.design_capture.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserDesignCapture"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/browser/worlds/isolated/{world_id}/input": {
       "post": {
         "operationId": "browser.worlds.isolated.by_world_id.input.post",
@@ -23344,6 +23567,85 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/code-context": {
+      "post": {
+        "operationId": "create.projects.by_id.code_context.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeCodeContextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeCodeContext"
+                }
+              }
+            },
+            "description": "create.projects.by_id.code_context.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.code_context.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.code_context.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.code_context.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
           "trust_group": "portal"
         }
       }

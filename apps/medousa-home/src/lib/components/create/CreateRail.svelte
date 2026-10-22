@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { Plus, Search, X, Ellipsis, ChevronDown, Check, RefreshCw } from "@lucide/svelte";
+  import { Plus, Search, X, Ellipsis, ChevronDown, Check, RefreshCw, Scan } from "@lucide/svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import CreateProjectRow from "./CreateProjectRow.svelte";
   import type { CreateBrowser } from "$lib/create/createBrowser.svelte";
@@ -13,9 +13,9 @@
   import "$lib/styles/lme.postcss";
   import "$lib/styles/vault-workshop.postcss";
   import "$lib/styles/create-rail.postcss";
-  let { browser, scope, onopen, oncreate }: {
+  let { browser, scope, onopen, oncreate, onimport = () => {} }: {
     browser: CreateBrowser; scope: string; onopen: (id: string, title: string) => void;
-    oncreate: (starter: CreativeStarter) => void;
+    oncreate: (starter: CreativeStarter) => void; onimport?: () => void;
   } = $props();
   let searching = $state(false), query = $state(""), newMenu = $state(false), options = $state(false);
   let input = $state<HTMLInputElement | null>(null), list = $state<HTMLDivElement | null>(null);
@@ -77,6 +77,7 @@
           <button type="button" class="vault-dock-icon-btn" aria-label="New project" title="New project" aria-haspopup="menu" aria-expanded={open}
             disabled={browser.creating || Boolean(browser.pending)} onclick={toggle}><Plus size={16} strokeWidth={1.75}/></button>
         {/snippet}
+        <button type="button" role="menuitem" onclick={() => { newMenu = false; onimport(); }}><Scan size={14}/>Import page</button>
         {#each creativeStarters as starter}
           <button type="button" role="menuitem" onclick={() => { newMenu = false; oncreate(starter.id); }}><starter.icon size={14}/>{starter.label}</button>
         {/each}
