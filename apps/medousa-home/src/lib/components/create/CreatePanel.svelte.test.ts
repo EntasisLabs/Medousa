@@ -5,6 +5,7 @@ import CreatePanel from "./CreatePanel.svelte";
 import { applySceneOperations, createNode } from "$lib/create/creativeScene";
 import { dragShape } from "$lib/create/creativeInteraction";
 import { lineGeometry } from "$lib/create/creativeLine";
+import { createBrowser } from "$lib/create/createBrowser.svelte";
 import type {
   CreativeDocument,
   CreativeOperation,
@@ -518,4 +519,16 @@ it("keeps a text draft and live font controls together in one durable edit", asy
   const before = text.transform.height;
   size.value = "16"; size.dispatchEvent(new Event("input", { bubbles: true })); await settle();
   expect(doc.scene.nodes.find(n => n.id === "title")!.transform.height).toBeLessThan(before);
+});
+
+it("keeps the project browser in sync when undo changes a project's name and pin", async () => {
+  doc.title = "Renamed"; doc.pinned = true; doc.revision = 1;
+  const root = render(); await settle(); await settle();
+  expect(createBrowser("ui-test").projects.find(p => p.id === doc.id)).toMatchObject({ title: "Renamed", pinned: true });
+  request.mockImplementationOnce(async () => {
+    doc = { ...doc, title: "Original", pinned: false, revision: 2 };
+    return { document: structuredClone(doc), applied_revision: 2, duplicate: false, can_undo: false, can_redo: true };
+  });
+  button("Undo", root).click(); await settle();
+  expect(createBrowser("ui-test").projects.find(p => p.id === doc.id)).toMatchObject({ title: "Original", pinned: false });
 });

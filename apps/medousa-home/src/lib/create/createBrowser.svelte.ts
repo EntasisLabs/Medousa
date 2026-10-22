@@ -1,6 +1,7 @@
 import { creativeApi } from "./creativeApi";
 import { starterScene, type CreativeStarter } from "./creativeScene";
 import { randomUuid } from "$lib/utils/randomUuid";
+import { loadCreativeRailPreferences, type CreativeRailPreferences } from "./creativeRailPreferences";
 import type {
   CreativeCreateRequest,
   CreativeProjectSummary,
@@ -13,23 +14,37 @@ export class CreateBrowser {
   error = $state<string | null>(null);
   cursor = $state<string | null>(null);
   pending: CreativeCreateRequest | null = null;
+  rail = $state<CreativeRailPreferences>({ sort: "recent", pinnedOpen: true, recentOpen: true, scrollTop: 0 });
+  private changes = 0;
+  private changed = new Map<string, number>();
+  private removed = new Set<string>();
   private epoch = 0;
   private api;
   constructor(readonly scope: string) {
     this.api = creativeApi(scope);
+    this.rail = loadCreativeRailPreferences(scope);
   }
   acknowledge(document: CreativeDocument) {
+    if (this.removed.has(document.id)) return;
     const summary: CreativeProjectSummary = {
       id: document.id, title: document.title, pinned: document.pinned,
       revision: document.revision, updated_at: document.updated_at,
     };
     const current = this.projects.find((p) => p.id === document.id);
+    if (current && current.revision > summary.revision) return;
     if (current && JSON.stringify(current) === JSON.stringify(summary)) return;
+    this.changed.set(document.id, ++this.changes);
     this.projects = [summary, ...this.projects.filter((p) => p.id !== document.id)];
+  }
+  forget(id: string) {
+    this.removed.add(id);
+    this.changed.set(id, ++this.changes);
+    this.projects = this.projects.filter((p) => p.id !== id);
   }
   async load(more = false) {
     if (this.loading) return;
     const generation = ++this.epoch;
+    const before = this.changes;
     this.loading = true;
     this.error = null;
     try {
@@ -38,7 +53,15 @@ export class CreateBrowser {
       );
       if (generation !== this.epoch) return;
       const byId = new Map((more ? this.projects : []).map((p) => [p.id, p]));
-      result.projects.forEach((p) => byId.set(p.id, p));
+      result.projects.forEach((p) => {
+        const current = this.projects.find((entry) => entry.id === p.id);
+        if (!this.removed.has(p.id)) byId.set(p.id, current && current.revision > p.revision ? current : p);
+      });
+      // A read admitted before a local save/delete must not undo its receipt.
+      this.projects.forEach((p) => {
+        if ((this.changed.get(p.id) ?? 0) > before && !this.removed.has(p.id)) byId.set(p.id, p);
+      });
+      this.removed.forEach((id) => byId.delete(id));
       this.projects = [...byId.values()];
       this.cursor = result.next_cursor ?? null;
     } catch (e) {
@@ -69,16 +92,7 @@ export class CreateBrowser {
     try {
       const doc = await this.api.create(this.pending);
       this.pending = null;
-      this.projects = [
-        {
-          id: doc.id,
-          title: doc.title,
-          pinned: doc.pinned,
-          revision: doc.revision,
-          updated_at: doc.updated_at,
-        },
-        ...this.projects.filter((p) => p.id !== doc.id),
-      ];
+      this.acknowledge(doc);
       return doc;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);

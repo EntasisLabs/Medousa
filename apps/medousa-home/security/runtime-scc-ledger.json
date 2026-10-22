@@ -121,6 +121,18 @@
       "specifier": "$lib/styles/create-workspace.postcss"
     },
     {
+      "from": "src/lib/components/create/CreateRail.svelte",
+      "specifier": "$lib/styles/create-rail.postcss"
+    },
+    {
+      "from": "src/lib/components/create/CreateRail.svelte",
+      "specifier": "$lib/styles/lme.postcss"
+    },
+    {
+      "from": "src/lib/components/create/CreateRail.svelte",
+      "specifier": "$lib/styles/vault-workshop.postcss"
+    },
+    {
       "from": "src/lib/components/cron/CronPanel.svelte",
       "specifier": "$lib/styles/composer.postcss"
     },

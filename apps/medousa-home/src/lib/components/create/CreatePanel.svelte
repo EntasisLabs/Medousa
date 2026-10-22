@@ -1,13 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import {
-    Plus,
     Search,
     PenTool,
-    ImagePlus,
-    Workflow,
-    PanelsTopLeft,
-    Image,
     ArrowUpRight,
     Pin,
     RefreshCw,
@@ -21,6 +16,8 @@
   import type { CreativeStarter } from "$lib/create/creativeScene";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import CreateEditor from "./CreateEditor.svelte";
+  import CreateRail from "./CreateRail.svelte";
+  import { creativeStarters as starters } from "$lib/create/creativeStarters";
   import "$lib/styles/create-workspace.postcss";
   let {
     rail = false,
@@ -53,13 +50,6 @@
           b.updated_at.localeCompare(a.updated_at),
       ),
   );
-  const starters = [
-    { id: "blank", label: "Blank canvas", icon: Plus },
-    { id: "screenshot", label: "Screenshot markup", icon: ImagePlus },
-    { id: "diagram", label: "Diagram", icon: Workflow },
-    { id: "concept", label: "UI concept", icon: PanelsTopLeft },
-    { id: "composition", label: "Image composition", icon: Image },
-  ] as const;
   function open(id: string, title: string) {
     if (onOpenProject) onOpenProject(id, scope, title);
     else shellTabs.openCreative(id, scope, { title });
@@ -101,65 +91,7 @@
         {openError ?? "Opening canvas…"}
       </div>{/if}
   {:else if rail}
-    <header class="create-rail-heading">
-      <button
-        type="button"
-        disabled={browser.creating}
-        onclick={() => void create("blank")}
-        ><Plus size={14} />New project</button
-      ><button
-        type="button"
-        aria-label="Refresh creative projects"
-        disabled={browser.loading}
-        onclick={() => void browser.load()}><RefreshCw size={13} /></button
-      >
-    </header>
-    <label class="create-search"
-      ><Search size={13} /><input
-        aria-label="Search creative projects"
-        placeholder="Search projects…"
-        bind:value={query}
-      /></label
-    >
-    {#if browser.error}<div class="create-browser-error" role="alert">
-        {browser.error}<button
-          type="button"
-          onclick={() =>
-            browser.pending ? void create("blank") : void browser.load()}
-          >Retry</button
-        >
-      </div>{/if}
-    <div class="create-project-list">
-      {#each projects as project, i (project.id)}
-        {#if i === 0 || projects[i - 1].pinned !== project.pinned}<div
-            class="create-section-label"
-          >
-            {project.pinned ? "Pinned" : "Recent"}
-          </div>{/if}
-        <button
-          type="button"
-          class="create-project-row"
-          class:current={shellTabs.activeTab?.kind === "create" &&
-            shellTabs.activeTab.documentId === project.id &&
-            shellTabs.activeTab.workshopId === scope}
-          onclick={() => open(project.id, project.title)}
-          ><PenTool size={14} /><span>{project.title}</span
-          >{#if project.pinned}<Pin size={11} />{/if}</button
-        >
-      {:else}<p class="create-panel-hint">
-          {browser.loading
-            ? "Loading projects…"
-            : query
-              ? "No matching projects"
-              : "Make something new."}
-        </p>{/each}
-      {#if browser.cursor}<button
-          type="button"
-          class="create-more"
-          disabled={browser.loading}
-          onclick={() => void browser.load(true)}>Load more</button
-        >{/if}
-    </div>
+    {#key scope}<CreateRail {browser} {scope} onopen={open} oncreate={(starter) => void create(starter)}/>{/key}
   {:else}
     <main class="create-home">
       <div class="create-home-kicker"><PenTool size={14} />Create</div>

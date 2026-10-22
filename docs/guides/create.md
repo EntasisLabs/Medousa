@@ -19,6 +19,19 @@ pin button beside a project's title adds it to **Pinned**. Click the title to
 rename it. Returning to Create's browser does not open a random previous canvas.
 On phones, Create is available in the destinations menu.
 
+The rail's **+** menu offers the same project starters. Use its search button to
+find a project; Escape closes search. The **…** menu sorts by recently edited or
+name and includes Refresh. **Pinned** and **Recent** can be collapsed. Sorting,
+section choices, and list position are remembered on this device per workshop.
+Search shows matches even inside collapsed sections.
+
+Hover a project and choose **…**, or right-click it, to rename, pin/unpin, or
+delete it. Delete asks for confirmation; finish pending saves before deleting.
+It removes the project's canvas and images and closes its open tabs. Arrow keys
+move focus through the rail; Home/End jump to its ends, Enter opens a project,
+F2 renames, and Delete/Backspace asks to delete. Left/right collapse or expand a
+focused section. Rename and pin share the canvas's existing save and undo history.
+
 ## Work on the canvas
 
 - **Select** (`V`): click and drag objects. Drag a box in empty space to select several;

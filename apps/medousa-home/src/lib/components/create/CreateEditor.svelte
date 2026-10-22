@@ -66,7 +66,7 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { loadCreativePreferences, saveCreativePreferences } from "$lib/create/creativePreferences";
   import { canGroup, type Alignment } from "$lib/create/creativeSelection";
-  import { createBrowser } from "$lib/create/createBrowser.svelte";
+  import { acknowledgeCreativeProject } from "$lib/create/creativeProjectActions";
   let {
     lease,
     onBrowse = () => shellTabs.openSurface("create"),
@@ -123,6 +123,10 @@
       void version;
       return session.document;
     });
+  $effect(() => {
+    const current = document;
+    if (current) untrack(() => acknowledgeCreativeProject(lease.api.scope, current));
+  });
   const busy = $derived.by(() => {
       void version;
       return session.busy;
@@ -242,17 +246,6 @@
       error = null;
       session.enqueue(label, operations);
       await session.save();
-      if (document) {
-        shellTabs.tabs
-          .filter(
-            (t) =>
-              t.kind === "create" &&
-              t.documentId === document.id &&
-              t.workshopId === lease.api.scope && t.title !== document.title,
-          )
-          .forEach((t) => shellTabs.patchTitle(t.id, document!.title));
-      }
-      if (document) createBrowser(lease.api.scope).acknowledge(document);
     } catch (e) {
       report(e);
     }

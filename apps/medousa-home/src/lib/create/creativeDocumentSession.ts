@@ -22,7 +22,8 @@ export function creativeDocumentSession(
   let pending: CreativeTransaction | null = null;
   let pendingHistory: CreativeHistoryRequest | null = null;
   let busy = false;
-  let action: "load" | "save" | "history" | null = null;
+  let action: "load" | "save" | "history" | "delete" | null = null;
+  let deleted = false;
   let failed = false;
   let queue: { id: string; label: string; operations: CreativeOperation[] }[] =
     [];
@@ -87,7 +88,7 @@ export function creativeDocumentSession(
     },
     get canEdit() {
       return (
-        document !== null &&
+        document !== null && !deleted &&
         !failed &&
         (action === null || action === "save") &&
         !pendingHistory
@@ -115,6 +116,7 @@ export function creativeDocumentSession(
       return api.get(id);
     },
     async load() {
+      if (deleted) throw new Error("This project has been deleted");
       if (busy || pending || pendingHistory || queue.length)
         throw new Error(
           "Resolve the pending edit before refreshing this document",
@@ -175,6 +177,25 @@ export function creativeDocumentSession(
       queue.push(edit);
       promote();
       notify();
+    },
+    async remove(remove: CreativeApi["delete"]) {
+      if (busy || pending || pendingHistory || queue.length || !document || deleted)
+        throw new Error("Finish saving this project before deleting it");
+      busy = true;
+      action = "delete";
+      notify();
+      try {
+        await remove(id, document.revision);
+        deleted = true;
+        document = null;
+        scene = null;
+        canUndo = false;
+        canRedo = false;
+      } finally {
+        busy = false;
+        action = null;
+        notify();
+      }
     },
     save(): Promise<void> {
       if (saving) return saving;

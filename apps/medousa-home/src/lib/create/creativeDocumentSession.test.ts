@@ -6,6 +6,28 @@ import type { CreativeMutationResponse } from "$lib/types/generated/daemon_api";
 const response = (revision = 0): CreativeMutationResponse => ({ document: { id: "doc", revision, title: "Release", pinned: false, created_at: "now", updated_at: "now", scene: { schema: "medousa-create", version: 3, background: "transparent", nodes: [] }, assets: {} }, applied_revision: revision, duplicate: false, can_undo: revision > 0, can_redo: false });
 function api(scope = "workshop_one") { return { scope, get: vi.fn().mockResolvedValue(response()), transact: vi.fn().mockResolvedValue(response(1)), history: vi.fn().mockResolvedValue(response(2)) } as unknown as CreativeApi; }
 describe("creative document session", () => {
+  it("excludes edits during deletion, sends the saved revision, and tombstones the shared session", async () => {
+    const session = creativeDocumentSession(api(), "doc"); await session.load();
+    let finish!: () => void;
+    const remove = vi.fn(() => new Promise<void>(resolve => finish = resolve)) as unknown as CreativeApi["delete"];
+    const deleting = session.remove(remove);
+    expect(remove).toHaveBeenCalledWith("doc", 0);
+    expect(session.canEdit).toBe(false);
+    expect(() => session.enqueue("New drawing", [])).toThrow("pending edit");
+    finish(); await deleting;
+    expect(session.document).toBeNull(); expect(session.scene).toBeNull();
+    await expect(session.load()).rejects.toThrow("deleted");
+  });
+  it("retains pending edits and the document when deletion is refused or fails", async () => {
+    const session = creativeDocumentSession(api(), "doc"); await session.load();
+    const remove = vi.fn().mockRejectedValue(new Error("Revision conflict"));
+    session.enqueue("Rename", [{ op: "rename", title: "Unsaved" }]);
+    await expect(session.remove(remove)).rejects.toThrow("Finish saving");
+    expect(remove).not.toHaveBeenCalled(); expect(session.pending).not.toBeNull();
+    await session.save();
+    await expect(session.remove(remove)).rejects.toThrow("Revision conflict");
+    expect(session.document?.revision).toBe(1); expect(session.canEdit).toBe(true);
+  });
   it("retains the exact request and base revision after a lost response", async () => {
     const port = api(); vi.mocked(port.transact).mockRejectedValueOnce(new Error("lost response"));
     const session = creativeDocumentSession(port, "doc"); await session.load();
