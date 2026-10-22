@@ -4,7 +4,7 @@
   import { textMetricsVersion } from "$lib/create/creativeText";
   import { lineGeometry } from "$lib/create/creativeLine";
   import { selectionFrame, type SelectionFrame } from "$lib/create/creativeSelection";
-  let { nodes, selected, zoom, disabled = false, showAngle = false, frameOverride }: { nodes: CreativeNode[]; selected: string[]; zoom: number; disabled?: boolean; showAngle?: boolean; frameOverride?: SelectionFrame } = $props();
+  let { nodes, selected, zoom, disabled = false, frameOverride }: { nodes: CreativeNode[]; selected: string[]; zoom: number; disabled?: boolean; frameOverride?: SelectionFrame } = $props();
   const roots = $derived(selectionRoots(selected, nodes));
   const frame = $derived.by(() => { void $textMetricsVersion; return frameOverride ?? selectionFrame(selected, nodes); });
   const single = $derived(roots.length === 1 ? roots[0] : null);
@@ -42,7 +42,6 @@
     {#if !disabled}
       <line x1={width / 2} y1="0" x2={width / 2} y2={-28 / zoom}/>
       <circle data-rotate="selection" aria-label="Rotate selection" cx={width / 2} cy={-28 / zoom} r={5 / zoom} fill="var(--create-handle,#fff)" pointer-events="all" style:cursor="grab"/>
-      {#if showAngle}<text x={width / 2 + 12 / zoom} y={-28 / zoom} transform={`rotate(${-frame.angle} ${width / 2} ${-28 / zoom})`} stroke="none" fill="var(--create-text)" font-size={11 / zoom} dominant-baseline="middle">{Math.round(frame.angle)}°</text>{/if}
     {/if}
   </g>
 {/if}

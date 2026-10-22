@@ -2,6 +2,7 @@
   import { onMount, onDestroy, untrack, tick } from "svelte";
   import CreateTextEditor from "./CreateTextEditor.svelte";
   import CreateSelection from "./CreateSelection.svelte";
+  import CreateRotationLabel from "./CreateRotationLabel.svelte";
   import { groupSelection, ungroupSelection, selectionTarget, selectionBounds, objectBounds, resizeSelectionFromHandle, alignSelection, arrangeSelection, descendants, selectionFrame, rotateSelection, rotateSelectionFrame, moveLineEndpoint, type Alignment, type SelectionFrame } from "$lib/create/creativeSelection";
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type {
@@ -492,6 +493,10 @@
   function canvasShapeWidth() {
     return Math.max(1, brushSize / zoom);
   }
+  // Match Notes: WebKit's own SVG selection/drag chrome must not compete with the canvas.
+  function suppressNativeGesture(event: Event) {
+    event.preventDefault();
+  }
   function move(e: PointerEvent) {
     if (interaction.move(e)) return;
     const g = gesture;
@@ -832,6 +837,9 @@
     onpointerleave={() => interaction.leave()}
     onpointercancel={(e) => finish(e, true)}
     onlostpointercapture={(e) => finish(e, true)}
+    onselectstart={suppressNativeGesture}
+    ondragstart={suppressNativeGesture}
+    oncontextmenu={suppressNativeGesture}
   >
     <g
       data-camera
@@ -905,9 +913,12 @@
           pointer-events="none"
         />
       {/if}
-      {#if tool === "select" && !editing}<CreateSelection nodes={rendered} {selected} {zoom} {disabled} showAngle={gesture?.kind === "rotate"} frameOverride={gesture?.kind === "rotate" && gesture.frame ? rotateSelectionFrame(gesture.frame, gesture.rotation ?? 0) : undefined} />{/if}
+      {#if tool === "select" && !editing}<CreateSelection nodes={rendered} {selected} {zoom} {disabled} frameOverride={gesture?.kind === "rotate" && gesture.frame ? rotateSelectionFrame(gesture.frame, gesture.rotation ?? 0) : undefined} />{/if}
     </g>
   </svg>
+  {#if gesture?.kind === "rotate" && gesture.frame}
+    <CreateRotationLabel frame={rotateSelectionFrame(gesture.frame, gesture.rotation ?? 0)} {camera}/>
+  {/if}
   {#if editing && editMatrix && editing.node.content.kind === "text"}
     <CreateTextEditor node={editing.node as CreativeNode & { content: Extract<CreativeNode["content"], { kind: "text" }> }} matrix={editMatrix} bind:value={textDraft} bind:input={textInput} {disabled}
       oninput={(value) => { textDraft = value; if (editing) onediting(updateTextNode(editing.node, { text: value })); }}
@@ -932,6 +943,15 @@
     display: block;
     overflow: hidden;
     touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+  }
+  .create-stage :global(svg *) {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
   }
   .create-stage[data-tool="hand"] {
     cursor: grab;

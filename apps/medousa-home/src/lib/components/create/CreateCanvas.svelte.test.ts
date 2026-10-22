@@ -118,6 +118,24 @@ it("types directly without committing placeholder text, then saves one complete 
     ],
   ]);
 });
+it("blocks native SVG drag and selection chrome while retaining normal text editing", async () => {
+  const node = title(), root = render([node]);
+  const text = root.querySelector(`[data-node-id="${node.id}"] text`)!;
+  for (const type of ["dragstart", "selectstart", "contextmenu"]) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    text.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  }
+  text.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  await tick(); flushSync();
+  const input = root.querySelector<HTMLTextAreaElement>('[aria-label="Canvas text"]')!;
+  const event = new Event("selectstart", { bubbles: true, cancelable: true });
+  input.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(false);
+  input.value = "Editable label"; input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); flushSync();
+  expect(commit).toHaveBeenCalledWith("Edit text", [expect.objectContaining({ node: expect.objectContaining({ content: expect.objectContaining({ text: "Editable label" }) }) })]);
+});
 it("double-click edits existing text without opening an inspector or adding a second node", async () => {
   const node = title(),
     root = render([node]);
@@ -408,6 +426,22 @@ it("rotates around the visible center with 15 degree Shift snapping and cancels 
   expect(commit).toHaveBeenCalledTimes(1);
   expect(root.querySelector('[data-selection-box]')!.getAttribute("transform")).toBe("matrix(1 0 0 1 0 0)");
 });
+it("keeps click-only rotation feedback outside the image SVG and clears it without an edit", () => {
+  const image = createNode({ kind: "image", asset_id: "background" }, { x: 0, y: 0, width: 400, height: 300 });
+  const arrow = dragShape(title(), "arrow", { x: 50, y: 80 }, { x: 250, y: 80 }, "#000", 4, "none");
+  const root = render([image, arrow], { selected: [arrow.id], images: { background: "data:image/png;base64,AA==" } }), svg = root.querySelector("svg")!;
+  const bitmap = svg.querySelector("image")!;
+  pointer(root.querySelector('[data-rotate]')!, "pointerdown", 150, 52);
+  const badge = root.querySelector<HTMLElement>('[aria-label="Rotation angle"]')!;
+  expect(badge.textContent).toBe("0°");
+  expect(badge.closest("svg")).toBeNull();
+  expect(badge.style.left).toBe("162px");
+  expect(badge.style.top).toBe("52px");
+  pointer(svg, "pointerup", 150, 52);
+  expect(root.querySelector('[aria-label="Rotation angle"]')).toBeNull();
+  expect(svg.querySelector("image")).toBe(bitmap);
+  expect(commit).not.toHaveBeenCalled();
+});
 it("lets touch reshape an endpoint, but cancels the draft when a second finger starts navigation", () => {
   const node = dragShape(title(), "arrow", { x: 50, y: 80 }, { x: 250, y: 80 }, "#123456", 4, "none");
   const root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
@@ -430,10 +464,14 @@ it("keeps the multi-selection frame and angle attached while rotating its object
   pointer(root.querySelector('[data-rotate]')!, "pointerdown", 150, -28);
   pointer(svg, "pointermove", 228, 50, true);
   const box = root.querySelector('[data-selection-box]')!;
-  expect(box.querySelector("text")!.textContent).toBe("90°");
+  expect(box.querySelector("text")).toBeNull();
+  const label = root.querySelector('[aria-label="Rotation angle"]')!;
+  expect(label.textContent).toBe("90°");
+  expect(label.closest("svg")).toBeNull();
   expect(box.querySelector("rect")!.getAttribute("width")).toBe("300");
   expect(box.querySelector("rect")!.getAttribute("height")).toBe("100");
   pointer(svg, "pointerup", 228, 50, true);
+  expect(root.querySelector('[aria-label="Rotation angle"]')).toBeNull();
   expect(commit).toHaveBeenCalledTimes(1);
   const operations = commit.mock.calls[0][1] as { node: CreativeNode }[];
   expect(operations).toHaveLength(2);
