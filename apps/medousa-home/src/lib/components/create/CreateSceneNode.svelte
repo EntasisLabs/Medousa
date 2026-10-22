@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { cornerRadius } from "$lib/create/creativeAppearance";
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type { CreativeNode } from "$lib/types/generated/daemon_api";
   import { inkPath, localMatrix, nodeName } from "$lib/create/creativeScene";
@@ -26,11 +27,15 @@
   const content = $derived(node.content);
   const connector = $derived(lineGeometry(node));
   const paint = $derived(connector ? linePaint(connector) : null);
-  const textLayout = $derived.by(() => { void $textMetricsVersion; return content.kind === "text" ? layoutText(content) : null; });
+  const textLayout = $derived.by(() => { void $textMetricsVersion; return content.kind === "text" ? layoutText(content, undefined, node.text_layout) : null; });
   const w = $derived(textLayout?.width ?? node.transform.width),
     h = $derived(textLayout?.height ?? node.transform.height);
   const children = $derived(nodes.filter((n) => n.parent_id === node.id));
   const isLocked = $derived(locked || node.locked);
+  const radius = $derived(cornerRadius(node));
+  const shadow = $derived(node.appearance?.shadow);
+  const shadowId = $derived(`${prefix}-shadow-${node.id}`);
+  const shadowPad = $derived(shadow ? shadow.blur * 4 + Math.max(Math.abs(shadow.x), Math.abs(shadow.y)) + (content.kind === "shape" ? content.stroke_width / 2 : 0) + 2 : 0);
   const clip = $derived(`${prefix}-clip-${node.id}`);
 </script>
 
@@ -41,9 +46,14 @@
     data-node-id={node.id}
     data-locked={isLocked ? "true" : undefined}
   >
+    {#if shadow}
+      <defs><filter id={shadowId} filterUnits="userSpaceOnUse" x={-shadowPad} y={-shadowPad} width={w + shadowPad * 2} height={h + shadowPad * 2} color-interpolation-filters="sRGB">
+        <feDropShadow dx={shadow.x} dy={shadow.y} stdDeviation={shadow.blur} flood-color={shadow.color} flood-opacity={shadow.opacity}/>
+      </filter></defs>
+    {/if}
     {#if content.kind === "frame"}
-      <defs><clipPath id={clip}><rect width={w} height={h} /></clipPath></defs>
-      <rect width={w} height={h} fill={content.background} />
+      <defs><clipPath id={clip}><rect width={w} height={h} rx={radius}/></clipPath></defs>
+      <rect width={w} height={h} rx={radius} fill={content.background} filter={shadow ? `url(#${shadowId})` : undefined} />
       <g clip-path={`url(#${clip})`}
         >{#each children as child (child.id)}<CreateSceneNode
             node={child}
@@ -84,7 +94,8 @@
         fill={content.color}
         style={`font-family:${content.font_family};font-size:${content.font_size}px;font-weight:${content.font_weight ?? 400};font-style:${content.font_style ?? "normal"};white-space:pre;letter-spacing:normal;word-spacing:normal;text-transform:none;dominant-baseline:alphabetic;`}
         >{#each textLayout!.lines as line, i}<tspan
-            x={textLayout!.insetX}
+            x={textLayout!.align === "center" ? w / 2 : textLayout!.align === "right" ? w - textLayout!.padding : textLayout!.insetX}
+            text-anchor={textLayout!.align === "center" ? "middle" : textLayout!.align === "right" ? "end" : "start"}
             y={textLayout!.baseline + i * textLayout!.lineHeight}>{line || " "}</tspan
           >{/each}</text
       >
@@ -103,13 +114,16 @@
           fill={content.fill}
           stroke={content.stroke}
           stroke-width={content.stroke_width}
+          filter={shadow ? `url(#${shadowId})` : undefined}
         />
       {:else}<rect
+          rx={radius}
           width={w}
           height={h}
           fill={content.fill}
           stroke={content.stroke}
           stroke-width={content.stroke_width}
+          filter={shadow ? `url(#${shadowId})` : undefined}
         />{/if}
     {:else if content.kind === "ink"}
       <path
@@ -119,6 +133,8 @@
       />
     {:else if content.kind === "image"}
       {#if images[content.asset_id]}
+        <defs><clipPath id={clip}><rect width={w} height={h} rx={radius}/></clipPath></defs>
+        <g filter={shadow ? `url(#${shadowId})` : undefined}><g clip-path={`url(#${clip})`}>
         <svg
           width={w}
           height={h}
@@ -135,8 +151,9 @@
             height="1"
             preserveAspectRatio="none"
           />
-        </svg>
+        </svg></g></g>
       {:else}<rect
+          rx={radius}
           width={w}
           height={h}
           fill="#88888818"

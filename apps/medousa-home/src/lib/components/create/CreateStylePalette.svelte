@@ -1,4 +1,8 @@
 <script lang="ts">
+  import CreateAppearanceControls from "./CreateAppearanceControls.svelte";
+  import { hasSurface } from "$lib/create/creativeAppearance";
+  import type { CreativeNode } from "$lib/types/generated/daemon_api";
+  import type { CanvasStylePatch } from "$lib/create/creativeInteraction";
   import CreateLineControls from "./CreateLineControls.svelte";
   import type { LineStyle, LineStylePatch } from "$lib/create/creativeLine";
   import CreateTextControls from "./CreateTextControls.svelte";
@@ -17,6 +21,7 @@
     type CanvasSize,
   } from "$lib/create/creativeInteraction";
   let {
+    node,
     tool = "select",
     brushKind = "pen",
     drawSize = 6,
@@ -42,6 +47,7 @@
     onchange,
     onclose,
   }: {
+    node?: CreativeNode;
     tool?: CreativeTool;
     brushKind?: DrawBrushKind;
     drawSize?: number;
@@ -69,13 +75,10 @@
     onTextLeave?: () => void;
     context: string;
     disabled: boolean;
-    onchange: (patch: {
-      color?: string;
-      size?: CanvasSize;
-      fill?: CanvasFill;
-    }) => void;
+    onchange: (patch: CanvasStylePatch) => void;
     onclose: () => void;
   } = $props();
+  const surface = $derived(node && hasSurface(node));
 </script>
 
 <section
@@ -127,7 +130,7 @@
       >
     </div>
   {/if}
-  {#if showPaint}<div class="create-swatches" role="group" aria-label="Color">
+  {#if showPaint && !surface}<div class="create-swatches" role="group" aria-label="Color">
     {#each canvasColors.map( (c) => (c.name === "Ink" ? { ...c, value: inkColor } : c) ) as swatch}
       <button
         type="button"
@@ -144,7 +147,7 @@
     <CreateTextControls value={textStyle} {disabled} onchange={onTextStyle} onleave={onTextLeave}/>
   </div>{/if}
   {#if lineStyle}<div class="create-style-section"><CreateLineControls value={lineStyle} {disabled} onchange={onLineStyle}/></div>{/if}
-  {#if showSize && !textStyle && !lineStyle}<div class="create-style-section">
+  {#if showSize && !textStyle && !lineStyle && !surface}<div class="create-style-section">
     <span
       >{tool === "ink" || tool === "erase"
         ? `Size · ${drawSize}px`
@@ -186,7 +189,7 @@
       >
     </div>
   {/if}
-  {#if showFill}<div class="create-style-section">
+  {#if showFill && !surface}<div class="create-style-section">
       <span>Fill</span>
       <div class="create-fills" role="group" aria-label="Shape fill">
         <button
@@ -215,6 +218,7 @@
         >
       </div>
     </div>{/if}
+  {#if node && hasSurface(node)}<div class="create-style-section"><CreateAppearanceControls {node} {disabled} {onchange}/></div>{/if}
 </section>
 
 <style>

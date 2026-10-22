@@ -8,6 +8,19 @@ export interface CreativeAsset {
   sha256: string;
 }
 
+export interface CreativeShadow {
+  blur: number;
+  color: string;
+  opacity: number;
+  x: number;
+  y: number;
+}
+
+export interface CreativeAppearance {
+  corner_radius: number;
+  shadow?: CreativeShadow | null;
+}
+
 export type CreativeBrushKind = "pen" | "pencil" | "marker" | "highlighter";
 
 export interface CreativeBrush {
@@ -56,6 +69,14 @@ export type CreativeShapeKind = "rectangle" | "ellipse" | "line";
 
 export type CreativeContent = { brush: CreativeBrush; color: string; input: CreativeInputKind; kind: "ink"; points: CreativePoint[] } | { color: string; font_family: string; font_size: number; font_style?: CreativeFontStyle | null; font_weight?: number | null; kind: "text"; text: string } | { fill: string; kind: "shape"; line?: CreativeLine | null; shape: CreativeShapeKind; stroke: string; stroke_width: number } | { asset_id: string; crop?: CreativeCrop | null; kind: "image" } | { kind: "group" } | { background: string; kind: "frame"; name: string };
 
+export type CreativeTextAlign = "left" | "center" | "right";
+
+export interface CreativeTextLayout {
+  align: CreativeTextAlign;
+  line_height: number;
+  width?: number | null;
+}
+
 export interface CreativeTransform {
   height: number;
   rotation: number;
@@ -65,12 +86,14 @@ export interface CreativeTransform {
 }
 
 export interface CreativeNode {
+  appearance?: CreativeAppearance | null;
   content: CreativeContent;
   id: string;
   locked: boolean;
   name?: string | null;
   opacity: number;
   parent_id?: string | null;
+  text_layout?: CreativeTextLayout | null;
   transform: CreativeTransform;
   visible: boolean;
 }

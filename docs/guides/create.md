@@ -63,7 +63,9 @@ focused section. Rename and pin share the canvas's existing save and undo histor
   do not add placeholder objects. The editor is transparent and uses the same
   font, line spacing, and measured bounds as the saved text. Text grows and
   shrinks to fit its content, including manual line breaks. Corner handles scale
-  its font proportionally.
+  its font proportionally. Drag the left/right side handles to wrap text to a
+  box width instead; the height grows with its content. Hold Shift on a side
+  handle to scale instead of wrapping.
 - **Shapes** (`R`): choose Rectangle, Ellipse, Line, or Arrow in the tool picker,
   then drag to draw. Shapes return to Select after placement. Lines and arrows
   have two endpoint handles: drag either tip to change their direction or length,
@@ -90,8 +92,20 @@ an arrowhead at either or both ends. **Details** includes the same controls.
 Line and arrow defaults are remembered separately. Existing tool-created arrows
 get endpoint controls too; ordinary freehand strokes keep their drawing tools.
 
+For rectangles, ellipses, frames, and images, **Style** and **Details** include
+surface controls. Set shape fill and border independently, use a zero-width border for
+no outline, and add a soft shadow with offset, blur, color, and strength. Rectangles,
+frames, and images support rounded corners; drag the small inset circle near the
+selection's top-left corner or enter an exact **Radius**. Frame contents and image
+crops follow the rounded edge. These properties save with the document and share
+its undo history. Canvas exports and AI visual context use the same styling;
+exporting a frame keeps the exact artboard dimensions.
+
 For text, **Style** includes a font family, exact font size with smaller/larger
-buttons, **Bold**, and **Italic**. These controls also work while typing, keeping
+buttons, **Bold**, **Italic**, left/center/right alignment, and line spacing.
+Choose **Auto width** for labels or **Wrap to width** for paragraphs. Side handles
+change the wrap width; corner handles scale both font size and a fixed box.
+These controls also work while typing, keeping
 the draft and its styling in the same completed edit. The selection updates when
 the font or content changes. **Details** offers the same text controls and a text
 field for longer edits. Text defaults are remembered for new labels on this device.
@@ -131,7 +145,8 @@ that the workshop already committed.
 
 ## Grid, guides, and arranging objects
 
-Open **View** near Style to choose a dot or line grid and 8/16/32/64 px spacing.
+Open **View** in the shared **View | Style** control to choose a dot or line
+grid and 8/16/32/64 px spacing. Opening View closes Style; opening Style closes View.
 **Snap to grid** works independently of grid visibility for moving objects,
 placing shapes/frames, resizing, and line endpoints. **Smart guides & snapping**
 helps match nearby edges and centers while moving or duplicating objects. Hold

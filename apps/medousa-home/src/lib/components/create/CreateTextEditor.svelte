@@ -10,10 +10,11 @@
     oninput: (value: string) => void;
     onfinish: (focus: boolean) => void;
   } = $props();
-  const layout = $derived.by(() => { void $textMetricsVersion; return layoutText({ ...node.content, text: value }); });
+  const layout = $derived.by(() => { void $textMetricsVersion; return layoutText({ ...node.content, text: value }, undefined, node.text_layout); });
 </script>
 
-<textarea bind:this={input} bind:value class="create-inline-text" aria-label="Canvas text" maxlength="16000" spellcheck="false" wrap="off"
+<textarea bind:this={input} bind:value class="create-inline-text" aria-label="Canvas text" maxlength="16000" spellcheck="false" wrap={node.text_layout?.width ? "soft" : "off"}
+  style:white-space={node.text_layout?.width ? "pre-wrap" : "pre"} style:overflow-wrap="anywhere" style:text-align={layout.align}
   style:transform={`matrix(${matrix.join(",")})`} style:width={`${layout.width}px`} style:height={`${layout.height}px`}
   style:padding={`${layout.padding}px ${layout.padding}px ${layout.padding}px ${layout.insetX}px`} style:line-height={`${layout.lineHeight}px`}
   style:font-weight={node.content.font_weight ?? 400} style:font-style={node.content.font_style ?? "normal"} style:font-size={`${node.content.font_size}px`}

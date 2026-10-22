@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { cornerRadius, hasCorners } from "$lib/create/creativeAppearance";
+  import { resizeCursor, rotationCursor } from "$lib/create/creativeCursors";
   import type { CreativeNode } from "$lib/types/generated/daemon_api";
   import { selectionRoots } from "$lib/create/creativeScene";
   import { textMetricsVersion } from "$lib/create/creativeText";
@@ -15,10 +17,9 @@
     { id: "nw", x: 0, y: 0, cursor: "nwse-resize" },
     { id: "ne", x: width, y: 0, cursor: "nesw-resize" },
     { id: "sw", x: 0, y: height, cursor: "nesw-resize" },
-    ...(single && single.content.kind !== "group" && single.content.kind !== "text" ? [
-      { id: "n", x: width / 2, y: 0, cursor: "ns-resize" },
+    ...(single && single.content.kind !== "group" ? [
+      ...(single.content.kind === "text" ? [] : [{ id: "n", x: width / 2, y: 0, cursor: "ns-resize" }, { id: "s", x: width / 2, y: height, cursor: "ns-resize" }]),
       { id: "e", x: width, y: height / 2, cursor: "ew-resize" },
-      { id: "s", x: width / 2, y: height, cursor: "ns-resize" },
       { id: "w", x: 0, y: height / 2, cursor: "ew-resize" },
     ] : []),
   ]);
@@ -36,12 +37,16 @@
     {:else}
       <rect {width} {height}/>
       {#if !disabled}{#each handles as handle}
-        <rect data-resize="selection" data-handle={handle.id} x={handle.x - 4 / zoom} y={handle.y - 4 / zoom} width={8 / zoom} height={8 / zoom} rx={1 / zoom} fill="var(--create-handle,#fff)" pointer-events="all" style:cursor={handle.cursor}/>
+        <rect data-resize="selection" data-handle={handle.id} x={handle.x - 4 / zoom} y={handle.y - 4 / zoom} width={8 / zoom} height={8 / zoom} rx={1 / zoom} fill="var(--create-handle,#fff)" pointer-events="all" style:cursor={resizeCursor(handle.id, frame.angle)}/>
       {/each}{/if}
+    {/if}
+    {#if !disabled && single && hasCorners(single)}
+      {@const inset = Math.max(12 / zoom, cornerRadius(single))}
+      <circle data-radius="selection" aria-label="Corner radius" cx={Math.min(width / 2, inset)} cy={Math.min(height / 2, inset)} r={4 / zoom} fill="var(--create-handle,#fff)" pointer-events="all" style:cursor="ew-resize"/>
     {/if}
     {#if !disabled}
       <line x1={width / 2} y1="0" x2={width / 2} y2={-28 / zoom}/>
-      <circle data-rotate="selection" aria-label="Rotate selection" cx={width / 2} cy={-28 / zoom} r={5 / zoom} fill="var(--create-handle,#fff)" pointer-events="all" style:cursor="grab"/>
+      <circle data-rotate="selection" aria-label="Rotate selection" cx={width / 2} cy={-28 / zoom} r={5 / zoom} fill="var(--create-handle,#fff)" pointer-events="all" style:cursor={rotationCursor}/>
     {/if}
   </g>
 {/if}

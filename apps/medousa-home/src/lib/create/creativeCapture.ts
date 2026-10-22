@@ -1,10 +1,10 @@
-import { nodeBounds } from "./creativeScene";
+import { visualBounds } from "./creativeAppearance";
 import { cloneCreativeSvg, creativeSvgBlob, rasterizeCreativeSvg } from "./creativeRender";
 import type { CreativeNode } from "$lib/types/generated/daemon_api";
 import type { CreativeAssets } from "./creativeAssets";
 
 export function selectionCaptureBounds(nodes: CreativeNode[], selected: string[]) {
-  const bounds = nodes.filter(n => selected.includes(n.id) && n.visible).map(n => nodeBounds(n, nodes));
+  const bounds = nodes.filter(n => selected.includes(n.id) && n.visible).map(n => visualBounds(n, nodes));
   if (!bounds.length) throw new Error("Select visible objects to give Medousa visual context");
   const x = Math.min(...bounds.map(b => b.x)), y = Math.min(...bounds.map(b => b.y));
   const right = Math.max(...bounds.map(b => b.x + b.width)), bottom = Math.max(...bounds.map(b => b.y + b.height));

@@ -78,7 +78,7 @@ export function parentPoint(
   return parent ? mapPoint(inverse(worldMatrix(parent, nodes)), point) : point;
 }
 export function nodeDimensions(node: CreativeNode): { width: number; height: number } {
-  return node.content.kind === "text" ? layoutText(node.content) : node.transform;
+  return node.content.kind === "text" ? layoutText(node.content, undefined, node.text_layout) : node.transform;
 }
 export function nodeBounds(
   node: CreativeNode,

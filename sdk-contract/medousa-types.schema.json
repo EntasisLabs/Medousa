@@ -7232,6 +7232,30 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeBrush": {
         "type": "object",
         "required": [
@@ -7576,6 +7600,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -7600,6 +7634,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -7687,6 +7731,39 @@
         },
         "additionalProperties": false
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -7694,6 +7771,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -7806,6 +7917,30 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeAsset": {
         "type": "object",
         "required": [
@@ -8176,6 +8311,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -8200,6 +8345,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -8287,6 +8442,39 @@
         },
         "additionalProperties": false
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -8294,6 +8482,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -8467,6 +8689,30 @@
       }
     },
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeAsset": {
         "type": "object",
         "required": [
@@ -8899,6 +9145,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -8923,6 +9179,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -9180,6 +9446,39 @@
           }
         }
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -9187,6 +9486,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -9239,6 +9572,30 @@
       }
     },
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeAsset": {
         "type": "object",
         "required": [
@@ -9761,6 +10118,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -9785,6 +10152,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -10042,6 +10419,39 @@
           }
         }
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -10049,6 +10459,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -10239,6 +10683,30 @@
       }
     },
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeAsset": {
         "type": "object",
         "required": [
@@ -10654,6 +11122,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -10678,6 +11156,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -10765,6 +11253,39 @@
         },
         "additionalProperties": false
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -10772,6 +11293,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -10855,6 +11410,30 @@
       }
     },
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeBrush": {
         "type": "object",
         "required": [
@@ -11199,6 +11778,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -11223,6 +11812,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -11446,6 +12045,39 @@
           "cancelled"
         ]
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -11453,6 +12085,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -11525,6 +12191,30 @@
       }
     },
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeBrush": {
         "type": "object",
         "required": [
@@ -11869,6 +12559,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -11893,6 +12593,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -12143,6 +12853,39 @@
           "cancelled"
         ]
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -12150,6 +12893,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -12224,6 +13001,30 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeBrush": {
         "type": "object",
         "required": [
@@ -12568,6 +13369,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -12592,6 +13403,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -12771,6 +13592,39 @@
         },
         "additionalProperties": false
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -12778,6 +13632,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -12858,6 +13746,30 @@
       }
     },
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeAsset": {
         "type": "object",
         "required": [
@@ -13228,6 +14140,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -13252,6 +14174,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -13309,6 +14241,39 @@
         },
         "additionalProperties": false
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -13316,6 +14281,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",
@@ -13383,6 +14382,30 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeBrush": {
         "type": "object",
         "required": [
@@ -13727,6 +14750,16 @@
           "visible"
         ],
         "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content": {
             "$ref": "#/definitions/CreativeContent"
           },
@@ -13751,6 +14784,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "transform": {
@@ -13930,6 +14973,39 @@
         },
         "additionalProperties": false
       },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreativeShapeKind": {
         "type": "string",
         "enum": [
@@ -13937,6 +15013,40 @@
           "ellipse",
           "line"
         ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeTransform": {
         "type": "object",

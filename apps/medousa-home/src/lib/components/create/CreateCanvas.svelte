@@ -6,6 +6,8 @@
   import CreateLayoutOverlay from "./CreateLayoutOverlay.svelte";
   import { alignObjects, distributeObjects, defaultLayout, snapLayoutPoint, type AlignmentTarget, type LayoutGuide, type LayoutPreferences } from "$lib/create/creativeLayout";
   import { creativeLayoutDrag } from "$lib/create/creativeLayoutDrag";
+  import { dragCornerRadius } from "$lib/create/creativeAppearance";
+  import { rotationCursor, resizeCursor } from "$lib/create/creativeCursors";
   import { groupSelection, ungroupSelection, selectionTarget, selectionBounds, objectBounds, resizeSelectionFromHandle, arrangeSelection, descendants, selectionFrame, rotateSelection, rotateSelectionFrame, moveLineEndpoint, type Alignment, type SelectionFrame } from "$lib/create/creativeSelection";
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type {
@@ -127,7 +129,7 @@
     space = $state(false);
   type Gesture = {
     id: number;
-    kind: "resize" | "shape" | "frame" | "duplicate" | "endpoint" | "rotate";
+    kind: "resize" | "shape" | "frame" | "duplicate" | "endpoint" | "rotate" | "radius";
     center?: DrawVector;
     angle?: number;
     rotationDelta?: number;
@@ -398,7 +400,7 @@
       finishText();
       if (editing) return;
     }
-    const resizeHandle = (e.target as Element).closest<SVGElement>("[data-resize], [data-endpoint], [data-rotate]");
+    const resizeHandle = (e.target as Element).closest<SVGElement>("[data-resize], [data-endpoint], [data-rotate], [data-radius]");
     const resize = resizeHandle?.dataset.resize;
     const control = !space && e.button === 0 && tool === "select" ? resizeHandle : null;
     if (!disabled && !space && !control && tool === "select" && e.altKey && e.button === 0) {
@@ -432,7 +434,7 @@
       if (!nodes.length || !frame) return;
       gesture = {
         id: e.pointerId,
-        kind: control.dataset.endpoint ? "endpoint" : control.dataset.rotate ? "rotate" : "resize",
+        kind: control.dataset.endpoint ? "endpoint" : control.dataset.rotate ? "rotate" : control.dataset.radius ? "radius" : "resize",
         handle: control.dataset.endpoint ?? control.dataset.handle ?? "se",
         initial: [...selected],
         center: frame.center,
@@ -515,6 +517,9 @@
     const p = ["resize", "endpoint", "shape", "frame"].includes(g.kind) ? snapLayoutPoint(point(e), layout, e.ctrlKey) : point(e);
     if (g.kind === "resize") {
       draft = resizeSelectionFromHandle(g.nodes.map(n => n.id), g.base, g.handle ?? "se", p, e.shiftKey);
+    } else if (g.kind === "radius") {
+      const next = dragCornerRadius(g.nodes[0], g.base, p);
+      draft = g.base.map(n => n.id === next.id ? next : n);
     } else if (g.kind === "endpoint") {
       const next = moveLineEndpoint(g.nodes[0], g.base, g.handle as "start" | "end", p, e.shiftKey);
       draft = g.base.map(n => n.id === next.id ? next : n);
@@ -576,7 +581,7 @@
       if (operations.length > 1000) onerror(new Error("This selection is too large to transform in one edit. Select fewer objects."));
       else if (operations.length)
         oncommit(
-          g.kind === "rotate" ? "Rotate selection" : g.kind === "endpoint" ? "Move endpoint" : g.kind === "resize"
+          g.kind === "radius" ? "Round corners" : g.kind === "rotate" ? "Rotate selection" : g.kind === "endpoint" ? "Move endpoint" : g.kind === "resize"
             ? "Resize selection"
             : g.kind === "frame"
               ? "Add frame"
@@ -827,6 +832,8 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (The canvas is a keyboard-operated graphics application.) -->
 <div
   class="create-stage"
+  class:transforming={gesture?.kind === "rotate" || gesture?.kind === "resize"}
+  style:cursor={gesture?.kind === "rotate" ? rotationCursor : gesture?.kind === "resize" ? resizeCursor(gesture.handle ?? "se", gesture.baseAngle ?? 0) : undefined}
   bind:this={stage}
   role="application"
   aria-label="Creative canvas"
@@ -966,6 +973,7 @@
     -webkit-user-select: none;
     -webkit-user-drag: none;
   }
+  .create-stage.transforming :global(svg *) { cursor: inherit !important; }
   .create-stage[data-tool="hand"] {
     cursor: grab;
   }

@@ -58,7 +58,7 @@
     type CanvasStylePatch,
   } from "$lib/create/creativeInteraction";
   import { lineGeometry } from "$lib/create/creativeLine";
-  import { defaultTextStyle } from "$lib/create/creativeText";
+  import { textStyleFor, defaultTextStyle } from "$lib/create/creativeText";
   import type { DrawBrushKind } from "$lib/draw/drawDocument";
   import type { DrawEraserMode } from "$lib/draw/drawInteraction";
   import { creativeAssets } from "$lib/create/creativeAssets";
@@ -101,6 +101,7 @@
     shape = $state<CanvasShape>(preferences.shape),
     fill = $state<CanvasFill>(preferences.fill),
     palette = $state(true),
+    viewOpen = $state(false),
     shapePicker = $state(false),
     askOpen = $state(false),
     inspector = $state(false),
@@ -122,6 +123,7 @@
   function togglePalette() {
     const open = !palette;
     if (open && compactPanels) inspector = false;
+    if (open) viewOpen = false;
     palette = open;
   }
   $effect(() => { lease.state.selected = [...selected]; });
@@ -217,6 +219,7 @@
     if (patch.font_size !== undefined && Number.isFinite(patch.font_size)) textStyle.font_size = Math.max(4, Math.min(512, patch.font_size));
     if (patch.font_weight !== undefined && patch.font_weight !== null) textStyle.font_weight = patch.font_weight;
     if (patch.font_style) textStyle.font_style = patch.font_style;
+    for (const key of ["text_width", "text_align", "line_height"] as const) if (patch[key] !== undefined) textStyle = { ...textStyle, [key]: patch[key] };
     if (patch.stroke_width !== undefined || patch.dashed !== undefined || patch.start_arrow !== undefined || patch.end_arrow !== undefined) {
       const key = tool === "shape" ? shape === "arrow" ? "arrow" : "line" : selectedLine?.end_arrow || selectedLine?.start_arrow ? "arrow" : "line";
       const next = { ...lineStyles[key] };
@@ -636,10 +639,11 @@
           >
           </div>
           <div class="create-style-controls">
-            <CreateViewControls bind:settings={layout} onfit={() => canvas?.fit()} onselection={() => canvas?.fitSelection()} hasSelection={selectedRoots.length > 0}/>
+            <CreateViewControls bind:settings={layout} bind:open={viewOpen} onopen={() => (palette = false)} onfit={() => canvas?.fit()} onselection={() => canvas?.fitSelection()} hasSelection={selectedRoots.length > 0}/>
             <button
               type="button"
               aria-label="Show style palette"
+              class="create-style-toggle"
               aria-expanded={palette}
               onclick={togglePalette}
               ><span class="create-current-color" style:background={styleColor}
@@ -658,7 +662,7 @@
           ontextstyle={styleSelection}
           onlinestyle={styleSelection}
           ontextleave={() => canvas?.finishText()}
-          editingTextStyle={editingNode?.content.kind === "text" ? editingNode.content : undefined}
+          editingTextStyle={editingNode?.content.kind === "text" ? textStyleFor(editingNode) : undefined}
           onclose={() => (inspector = false)}
         />{/if}
         <CreateCanvas
@@ -694,6 +698,7 @@
         />
         {#if palette && tool !== "hand"}<div class="create-palette-position">
             <CreateStylePalette
+              node={tool === "select" && selectedNodes.length === 1 ? selectedNodes[0] : undefined}
               {tool}
               {brushKind}
               {drawSize}
@@ -714,7 +719,7 @@
               }}
               lineStyle={selectedLine ?? (tool === "shape" && (shape === "line" || shape === "arrow") ? currentLineStyle : undefined)}
               onLineStyle={styleSelection}
-              textStyle={editingNode?.content.kind === "text" ? editingNode.content : tool === "text" ? textStyle : tool === "select" && selectedNodes.length > 0 && selectedNodes.every(n => n.content.kind === "text") && selectedNodes[0].content.kind === "text" ? selectedNodes[0].content : undefined}
+              textStyle={editingNode?.content.kind === "text" ? textStyleFor(editingNode) : tool === "text" ? textStyle : tool === "select" && selectedNodes.length > 0 && selectedNodes.every(n => n.content.kind === "text") && selectedNodes[0].content.kind === "text" ? textStyleFor(selectedNodes[0]) : undefined}
               onTextStyle={styleSelection}
               onTextLeave={() => canvas?.finishText()}
               {inkColor}
@@ -848,6 +853,7 @@
                 onclick={() => {
                   if (item.id === "select" && tool === "select") {
                     palette = true;
+                    viewOpen = false;
                   } else if (item.id === "shape") {
                     const open = !shapePicker;
                     chooseTool("shape");

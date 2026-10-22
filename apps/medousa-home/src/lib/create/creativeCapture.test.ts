@@ -10,7 +10,7 @@ beforeEach(() => { raster.mockReset().mockResolvedValue(new Blob(["png"])); sour
 it("captures rotated selection bounds with context padding independent of the camera", () => {
   const node = createNode({ kind: "shape", shape: "rectangle", fill: "#fff", stroke: "#000", stroke_width: 1 }, { x: 100, y: 200, width: 200, height: 100 });
   node.transform.rotation = 90;
-  expect(selectionCaptureBounds([node], [node.id])).toEqual({ x: 138, y: 138, width: 124, height: 224 });
+  expect(selectionCaptureBounds([node], [node.id])).toEqual({ x: 137.5, y: 137.5, width: 125, height: 225 });
 });
 it("reuses the scene renderer while removing selection chrome, camera transforms and huge intrinsic dimensions", async () => {
   const node = createNode({ kind: "frame", name: "Large", background: "#fff" }, { x: 0, y: 0, width: 1e8, height: 1e8 });

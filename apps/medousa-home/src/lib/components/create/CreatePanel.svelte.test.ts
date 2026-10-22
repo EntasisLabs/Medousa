@@ -548,3 +548,21 @@ it("keeps the project browser in sync when undo changes a project's name and pin
   button("Undo", root).click(); await settle();
   expect(createBrowser("ui-test").projects.find(p => p.id === doc.id)).toMatchObject({ title: "Original", pinned: false });
 });
+
+it("keeps View and Style mutually exclusive, including reopening Style from the tool strip", async () => {
+  const root = render(); await settle(); await settle();
+  const view = root.querySelector<HTMLElement>('[aria-label="Canvas view options"]')!;
+  const menu = view.closest("details")!;
+  expect(root.querySelector('[aria-label="Style palette"]')).not.toBeNull();
+  view.click(); await settle();
+  expect(menu.open).toBe(true);
+  expect(root.querySelector('[aria-label="Style palette"]')).toBeNull();
+  button("Show style palette", root).click(); await settle();
+  expect(menu.open).toBe(false);
+  expect(root.querySelector('[aria-label="Style palette"]')).not.toBeNull();
+  view.click(); await settle();
+  button("Select", root).click(); await settle();
+  expect(menu.open).toBe(false);
+  expect(root.querySelector('[aria-label="Style palette"]')).not.toBeNull();
+  expect(transactions).toEqual([]);
+});

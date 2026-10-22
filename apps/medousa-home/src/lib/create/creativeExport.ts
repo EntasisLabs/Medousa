@@ -1,6 +1,7 @@
 import type { CreativeAssets } from "./creativeAssets";
 import type { CreativeNode } from "$lib/types/generated/daemon_api";
-import { sceneBounds, nodeBounds } from "./creativeScene";
+import { nodeBounds } from "./creativeScene";
+import { unionVisualBounds, visualBounds } from "./creativeAppearance";
 import { cloneCreativeSvg, creativeSvgBlob, rasterizeCreativeSvg } from "./creativeRender";
 /** Serialize the same scene renderer, embedding daemon-owned image bytes. */
 export async function exportCreativeScene(
@@ -14,7 +15,7 @@ export async function exportCreativeScene(
   const frame = nodes.find(
     (n) => n.id === frameId && n.content.kind === "frame",
   );
-  const bounds = frame ? nodeBounds(frame, nodes) : sceneBounds(nodes);
+  const bounds = frame ? nodeBounds(frame, nodes) : unionVisualBounds(nodes.filter(n => n.visible && !n.parent_id).map(n => visualBounds(n, nodes)));
   if (!bounds) throw new Error("Add something to the canvas before exporting");
   if (
     bounds.width > 8192 ||

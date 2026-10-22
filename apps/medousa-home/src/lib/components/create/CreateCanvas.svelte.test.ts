@@ -513,3 +513,40 @@ it("snaps new shape endpoints to the grid without changing freehand behavior", (
   pointer(svg, "pointerdown", 13, 21); pointer(svg, "pointermove", 65, 79); pointer(svg, "pointerup", 65, 79);
   expect(commit.mock.calls[0][1]).toMatchObject([{ node: { transform: { x: 16, y: 16, width: 48, height: 64 } } }]);
 });
+
+it("drags corner radius once, cancels safely, and exports rounded surfaces with shadows", () => {
+  const node = createNode({ kind: "shape", shape: "rectangle", fill: "#fff", stroke: "#111", stroke_width: 1 }, { x: 0, y: 0, width: 200, height: 100 });
+  node.appearance = { corner_radius: 10, shadow: { x: 0, y: 6, blur: 8, color: "#000", opacity: .2 } };
+  const root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  pointer(root.querySelector('[data-radius]')!, "pointerdown", 12, 12);
+  pointer(svg, "pointermove", 30, 30);
+  expect(commit).not.toHaveBeenCalled();
+  expect(svg.querySelector(`[data-node-id="${node.id}"] > rect[rx]`)?.getAttribute("rx")).toBe("30");
+  pointer(svg, "pointerup", 30, 30);
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(commit.mock.calls[0]).toMatchObject(["Round corners", [{ node: { appearance: { corner_radius: 30 } } }]]);
+  pointer(root.querySelector('[data-radius]')!, "pointerdown", 12, 12); pointer(svg, "pointermove", 40, 40);
+  root.querySelector('[aria-label="Creative canvas"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })); flushSync();
+  expect(commit).toHaveBeenCalledTimes(1);
+  const clone = cloneCreativeSvg(svg, { x: 0, y: 0, width: 200, height: 100 });
+  expect(clone.querySelector("feDropShadow")?.getAttribute("stdDeviation")).toBe("8");
+  expect(clone.querySelector('[data-radius]')).toBeNull();
+});
+it("uses side handles to wrap text and keeps editing transparent with the same wrap width", async () => {
+  const node = title(), root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  const beforeSize = node.content.kind === "text" ? node.content.font_size : 0;
+  pointer(root.querySelector('[data-handle="e"]')!, "pointerdown", 220, 50);
+  pointer(svg, "pointermove", 100, 50); pointer(svg, "pointerup", 100, 50);
+  const next = commit.mock.calls[0][1][0].node as CreativeNode;
+  expect(next.text_layout?.width).toBe(80);
+  expect(next.content).toMatchObject({ font_size: beforeSize });
+  const edited = render([next], { selected: [next.id] });
+  const hit = edited.querySelector(`[data-node-id="${next.id}"] text`)!;
+  const editSvg = edited.querySelector("svg")!;
+  pointer(hit, "pointerdown", 30, 40); pointer(editSvg, "pointerup", 30, 40);
+  pointer(hit, "pointerdown", 30, 40); pointer(editSvg, "pointerup", 30, 40);
+  await tick(); flushSync();
+  const textarea = edited.querySelector<HTMLTextAreaElement>("textarea")!;
+  expect(textarea.style.width).toBe("80px");
+  expect(textarea.getAttribute("wrap")).toBe("soft");
+});

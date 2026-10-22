@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { textMetricsVersion, type TextStylePatch } from "$lib/create/creativeText";
+  import CreateAppearanceControls from "./CreateAppearanceControls.svelte";
+  import { hasSurface } from "$lib/create/creativeAppearance";
+  import { textStyleFor, textMetricsVersion, type TextStylePatch } from "$lib/create/creativeText";
   import CreateLineControls from "./CreateLineControls.svelte";
   import { lineGeometry, type LineStylePatch } from "$lib/create/creativeLine";
   import CreateTextControls from "./CreateTextControls.svelte";
@@ -152,7 +154,7 @@
       return;
     }
     if (Number.isFinite(value) && node.content.kind === "text" && (key === "width" || key === "height")) {
-      update(styleNode(node, { font_size: node.content.font_size * Math.max(1, value) / nodeDimensions(node)[key] }), "Resize text");
+      update(styleNode(node, key === "width" ? { text_width: Math.max(4, value) } : { font_size: node.content.font_size * Math.max(1, value) / nodeDimensions(node)[key] }), "Resize text");
       return;
     }
     if (Number.isFinite(value) && node.content.kind === "group" && (key === "width" || key === "height")) {
@@ -278,7 +280,8 @@
           /></label
         >
       </div>
-      {#if fill}<label class="property-color"
+      {#if node && hasSurface(node)}<CreateAppearanceControls {node} disabled={!editable} onchange={patch => node && update(styleNode(node, patch), "Style surface")}/>{/if}
+      {#if fill && !hasSurface(node)}<label class="property-color"
           >{connector ? "Color" : "Fill"}<input
             type="color"
             aria-label="Selection color"
@@ -296,7 +299,7 @@
             disabled={!editable}
             onchange={text}></textarea></label
         >
-        <CreateTextControls value={editingTextStyle ?? node.content} disabled={!editable} onleave={ontextleave} onchange={(patch) => { if (ontextstyle) ontextstyle(patch); else if (node) update(styleNode(node, patch), "Style text"); }}/>
+        <CreateTextControls value={editingTextStyle ?? textStyleFor(node)} disabled={!editable} onleave={ontextleave} onchange={(patch) => { if (ontextstyle) ontextstyle(patch); else if (node) update(styleNode(node, patch), "Style text"); }}/>
       {:else if node.content.kind === "frame"}<label class="property-stack"
           >Frame name<input
             aria-label="Frame name"
@@ -321,6 +324,7 @@
               if (node?.content.kind === "shape")
                 update({
                   ...node,
+                  appearance: e.currentTarget.value === "line" ? undefined : node.appearance,
                   content: {
                     ...node.content,
                     shape: e.currentTarget.value as

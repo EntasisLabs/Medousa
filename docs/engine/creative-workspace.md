@@ -36,6 +36,24 @@ selection, and hit testing, including older nodes with estimated stored bounds.
 Text edits persist fitted width/height alongside the content in the same
 transaction; a font change preserves the local top-left anchor of rotated text.
 
+Optional node fields extend version 3 without migrating older documents:
+
+- `appearance`: `corner_radius` (0–1e7 canvas units, rendered at most half the
+  shorter edge) and optional `shadow` (`x`/`y` ±1000, `blur` 0–128 Gaussian
+  standard deviation, safe paint `color`, `opacity` 0–1). Valid on rectangles,
+  ellipses, frames and images; ellipse geometry ignores corner radius. Frame
+  children and image crops clip to rounded bounds. Shadows affect pixel bounds,
+  not selection geometry. Frame export still uses exact artboard bounds.
+- `text_layout`: text-only `width` (null for auto width or 4–1e7 units), `align`
+  (`left`, `center`, `right`) and `line_height` (0.8–4 font-size multiplier).
+  Omission means automatic width, left alignment and 1.3 leading. Home wraps text
+  using the resolved font and persists fitted width/height with content changes.
+
+Both fields pass through existing transactions, AI proposals and undo/redo.
+Unknown fields, non-finite geometry, invalid paints and incompatible node kinds
+reject the entire transaction. Saving these optional fields requires updated app
+and daemon builds; old documents retain their existing rendering defaults.
+
 Line shapes additionally accept optional `line` geometry: local `start`/`end`
 points (`x`, `y`), `start_arrow`, `end_arrow`, and `dashed` booleans (default false).
 The field is valid only on `shape: "line"`; coordinates must be finite and within

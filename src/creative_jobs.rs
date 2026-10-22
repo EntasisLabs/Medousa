@@ -552,6 +552,8 @@ mod tests {
         let node = CreativeNode {
             id: "frame".into(),
             name: None,
+            appearance: None,
+            text_layout: None,
             parent_id: None,
             transform: CreativeTransform {
                 x: 0.,

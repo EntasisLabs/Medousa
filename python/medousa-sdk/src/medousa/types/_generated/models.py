@@ -723,10 +723,38 @@ class CreativePoint(MedousaModel):
     y: float
 
 
+class CreativeShadow(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    blur: float = Field(..., description='Gaussian standard deviation in canvas pixels.')
+    color: str
+    opacity: float
+    x: float
+    y: float
+
+
 class CreativeShapeKind(Enum):
     rectangle = 'rectangle'
     ellipse = 'ellipse'
     line = 'line'
+
+
+class CreativeTextAlign(Enum):
+    left = 'left'
+    center = 'center'
+    right = 'right'
+
+
+class CreativeTextLayout(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    align: CreativeTextAlign
+    line_height: float = Field(..., description='Multiplier of the font size.')
+    width: float | None = Field(
+        None, description='None keeps automatic width; a width wraps text and lets height grow.'
+    )
 
 
 class CreativeTransform(MedousaModel):
@@ -5792,6 +5820,14 @@ class HostTurnContext(MedousaModel):
     workspace: str | None = None
 
 
+class CreativeAppearance(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    corner_radius: float
+    shadow: CreativeShadow | None = None
+
+
 class CreativeBrush(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -7159,6 +7195,7 @@ class CreativeNode(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    appearance: CreativeAppearance | None = None
     content: CreativeContent
     id: str
     locked: bool
@@ -7167,6 +7204,7 @@ class CreativeNode(MedousaModel):
     )
     opacity: float
     parent_id: str | None = None
+    text_layout: CreativeTextLayout | None = None
     transform: CreativeTransform
     visible: bool
 

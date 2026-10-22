@@ -15,6 +15,8 @@ fn text(id: &str) -> CreativeNode {
     CreativeNode {
         id: id.into(),
         name: None,
+        appearance: None,
+        text_layout: None,
         parent_id: None,
         transform: CreativeTransform {
             x: -100_000.,
@@ -1613,5 +1615,154 @@ fn line_geometry_and_rotation_roundtrip_atomically_with_undo() {
         serde_json::to_value(parsed).unwrap()["content"]
             .get("line")
             .is_none()
+    );
+}
+
+#[test]
+fn surface_and_text_layout_are_durable_undoable_and_legacy_optional() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().canonicalize().unwrap();
+    let store = CreativeStore::open(&path).unwrap();
+    create(&store);
+    let mut node = text("label");
+    let legacy = serde_json::to_value(&node).unwrap();
+    assert!(legacy.get("appearance").is_none());
+    assert!(legacy.get("text_layout").is_none());
+    node.text_layout = Some(CreativeTextLayout {
+        width: Some(240.),
+        align: CreativeTextAlign::Center,
+        line_height: 1.5,
+    });
+    store
+        .transact("project_one", edit("wrap", 0, node.clone()))
+        .unwrap();
+    let mut card = text("card");
+    card.content = CreativeContent::Shape {
+        shape: CreativeShapeKind::Rectangle,
+        fill: "#fff".into(),
+        stroke: "#123456".into(),
+        stroke_width: 2.,
+        line: None,
+    };
+    card.appearance = Some(CreativeAppearance {
+        corner_radius: 16.,
+        shadow: Some(CreativeShadow {
+            x: 0.,
+            y: 6.,
+            blur: 12.,
+            color: "#000".into(),
+            opacity: 0.18,
+        }),
+    });
+    let applied = store
+        .transact("project_one", edit("surface", 1, card.clone()))
+        .unwrap();
+    drop(store);
+    let store = CreativeStore::open(&path).unwrap();
+    assert_eq!(store.get("project_one").unwrap().document, applied.document);
+    let undo = store
+        .history("project_one", history("undo_surface", 2, false))
+        .unwrap();
+    assert_eq!(undo.document.scene.nodes, vec![node]);
+    let redo = store
+        .history("project_one", history("redo_surface", 3, true))
+        .unwrap();
+    assert_eq!(redo.document.scene.nodes[1], card);
+}
+
+#[test]
+fn invalid_surface_and_text_layout_fail_atomically() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    let before = create(&store);
+    for (i, (width, leading)) in [
+        (Some(0.), 1.3),
+        (Some(f64::INFINITY), 1.3),
+        (None, 0.1),
+        (None, f64::NAN),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut node = text("label");
+        node.text_layout = Some(CreativeTextLayout {
+            width,
+            align: CreativeTextAlign::Left,
+            line_height: leading,
+        });
+        assert!(
+            store
+                .transact("project_one", edit(&format!("bad_text_{i}"), 0, node))
+                .is_err()
+        );
+    }
+    for (i, (radius, blur, opacity, color)) in [
+        (-1., 4., 0.2, "#000"),
+        (10., 129., 0.2, "#000"),
+        (10., 4., 2., "#000"),
+        (10., 4., 0.2, "url(https://example.com)"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut node = text("card");
+        node.content = CreativeContent::Shape {
+            shape: CreativeShapeKind::Rectangle,
+            fill: "#fff".into(),
+            stroke: "#000".into(),
+            stroke_width: 0.,
+            line: None,
+        };
+        node.appearance = Some(CreativeAppearance {
+            corner_radius: radius,
+            shadow: Some(CreativeShadow {
+                x: 0.,
+                y: 0.,
+                blur,
+                opacity,
+                color: color.into(),
+            }),
+        });
+        assert!(
+            store
+                .transact("project_one", edit(&format!("bad_surface_{i}"), 0, node))
+                .is_err()
+        );
+    }
+    let mut wrong_kind = text("title");
+    wrong_kind.appearance = Some(CreativeAppearance {
+        corner_radius: 2.,
+        shadow: None,
+    });
+    assert!(
+        store
+            .transact("project_one", edit("wrong_kind", 0, wrong_kind))
+            .is_err()
+    );
+    assert_eq!(store.get("project_one").unwrap().document, before);
+}
+
+#[test]
+fn editable_shell_wireframe_roundtrips_through_the_real_store() {
+    let scene: CreativeScene = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/creative/medousa-shell-wireframe.json"
+    ))
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    let doc = store
+        .create(CreativeCreateRequest {
+            id: "shell".into(),
+            title: "Medousa shell".into(),
+            scene: scene.clone(),
+        })
+        .unwrap();
+    assert_eq!(doc.scene, scene);
+    assert!(doc.scene.nodes.iter().any(|n| n.text_layout.is_some()));
+    assert!(
+        doc.scene
+            .nodes
+            .iter()
+            .any(|n| n.appearance.as_ref().is_some_and(|a| a.shadow.is_some()))
     );
 }

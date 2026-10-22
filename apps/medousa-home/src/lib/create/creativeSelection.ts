@@ -115,6 +115,8 @@ export function scaleSelection(ids: string[], nodes: CreativeNode[], anchor: Dra
     let next = resizeNode(n, n.transform.width * factor, n.transform.height * factor);
     const c = next.content;
     if (c.kind === "ink") next = { ...next, content: { ...c, brush: { ...c.brush, size: Math.max(.25, Math.min(160, c.brush.size * factor)) } } };
+    if (next.appearance) next = { ...next, appearance: { corner_radius: Math.min(1e7, next.appearance.corner_radius * factor), shadow: next.appearance.shadow ? { ...next.appearance.shadow, x: Math.max(-1000, Math.min(1000, next.appearance.shadow.x * factor)), y: Math.max(-1000, Math.min(1000, next.appearance.shadow.y * factor)), blur: Math.min(128, next.appearance.shadow.blur * factor) } : null } };
+    if (next.text_layout?.width) next = { ...next, text_layout: { ...next.text_layout, width: Math.min(1e7, next.text_layout.width * factor) } };
     if (c.kind === "text") next = { ...next, content: { ...c, font_size: Math.max(4, Math.min(512, c.font_size * factor)) } };
     if (c.kind === "shape") next = { ...next, content: { ...c, stroke_width: c.stroke_width * factor } };
     return atMatrix(next, multiply(inverse(parent), scaled.get(n.id)!), n.parent_id);
@@ -179,7 +181,8 @@ export function resizeSelectionFromHandle(ids: string[], nodes: CreativeNode[], 
   let y = handle.includes("n") ? Math.min(h - 4, q.y) : 0;
   let width = handle.includes("w") ? w - x : handle.includes("e") ? Math.max(4, q.x) : w;
   let height = handle.includes("n") ? h - y : handle.includes("s") ? Math.max(4, q.y) : h;
-  if (preserveAspect || node.content.kind === "text") {
+  const wrapText = node.content.kind === "text" && (handle === "e" || handle === "w") && !preserveAspect;
+  if (preserveAspect || node.content.kind === "text" && !wrapText) {
     const rx = width / Math.max(1, w), ry = height / Math.max(1, h);
     const factor = Math.max(.01, Math.abs(rx - 1) > Math.abs(ry - 1) ? rx : ry);
     width = Math.max(4, w * factor); height = Math.max(4, h * factor);
@@ -188,7 +191,7 @@ export function resizeSelectionFromHandle(ids: string[], nodes: CreativeNode[], 
   }
   let next = resizeNode(node, width, height);
   if (node.content.kind === "text") {
-    next = styleNode(node, { font_size: node.content.font_size * width / w });
+    next = styleNode(node, wrapText ? { text_width: width } : { font_size: node.content.font_size * width / w, ...(node.text_layout?.width ? { text_width: node.text_layout.width * width / w } : {}) });
     const fitted = nodeDimensions(next);
     x = handle.includes("w") ? w - fitted.width : 0;
     y = handle.includes("n") ? h - fitted.height : 0;

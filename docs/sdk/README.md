@@ -225,6 +225,12 @@ legacy box-diagonal endpoints. These version-3 fields also require an updated
 daemon. Endpoint, style, and rotation edits use ordinary atomic transactions and
 undo; preserve the geometry when updating a line.
 
+Creative nodes also accept optional `appearance` (rounded corners and shadows)
+and text-only `text_layout` (wrap width, alignment and line spacing). They use
+ordinary `put_node` transactions and history; omitted fields preserve legacy
+version-3 defaults. See the [creative document contract](../engine/creative-workspace.md)
+for bounds and supported node kinds. Update the daemon before sending these fields.
+
 Creative jobs use `creative().create_job`, `jobs`, `job` and `decide_job` in both
 Rust and Python. Preserve the request ID/body when retrying admission; use a new
 ID to retry an interrupted execution. Read the job result before explicitly

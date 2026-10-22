@@ -408,7 +408,7 @@
   border-radius: 11px;
   position: absolute;
   top: 52px;
-  right: 15px;
+  right: 18px;
   z-index: 3;
 }
 .create-editor .create-canvas-controls .create-style-controls,
@@ -419,6 +419,15 @@
   padding: 1px 4px;
   box-shadow: 0 2px 6px #0001;
 }
+.create-editor .create-canvas-controls .create-style-controls { position: relative; gap: 0; }
+.create-editor .create-canvas-controls .create-style-toggle {
+  border-inline-start: 1px solid var(--create-line);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  padding-inline-start: 8px;
+  margin-inline-start: 3px;
+}
+.create-editor .create-style-toggle[aria-expanded="true"] { background: var(--create-soft); color: var(--create-text); }
 .create-editor .create-canvas-controls .create-details-toggle { padding: 6px 8px; flex: none; }
 .create-editor .create-canvas-controls .create-details-controls { min-width: 0; gap: 10px; pointer-events: none; }
 .create-editor .create-details-controls > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

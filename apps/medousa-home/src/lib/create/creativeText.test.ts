@@ -26,3 +26,24 @@ it("grows and shrinks text around its original rotated origin, and removes stale
   expect(hitCanvasNode(smaller, [smaller], mapPoint(worldMatrix(smaller, [smaller]), { x: 400, y: 5 }), 0)).toBe(false);
   expect(smaller.content).toMatchObject({ text: "Hi", font_family: "monospace", font_size: 20, font_weight: 400, font_style: "normal" });
 });
+
+it("wraps words and long tokens, preserving explicit breaks and automatic height", () => {
+  const box = { width: 65, align: "center" as const, line_height: 1.5 };
+  const layout = layoutText({ ...content, text: "One two\nabcdefghij", font_size: 10 }, text => ({ width: [...text].length * 10 }), box);
+  expect(layout.width).toBe(65);
+  expect(layout.lines).toEqual(["One ", "two", "abcdef", "ghij"]);
+  expect(layout.height).toBeCloseTo(61.2);
+  expect(layout.align).toBe("center");
+});
+it("reflows fixed text boxes when fonts change while preserving their rotated origin", () => {
+  const node = createNode({ ...content, text: "A long sentence that wraps into several lines", font_size: 20 }, { x: 100, y: 100, width: 200, height: 40 });
+  node.transform.rotation = 33;
+  const origin = mapPoint(worldMatrix(node, [node]), { x: 0, y: 0 });
+  const wrapped = styleNode(node, { text_width: 130, text_align: "right", line_height: 1.6 });
+  const enlarged = styleNode(wrapped, { font_size: 40 });
+  expect(enlarged.text_layout).toEqual({ width: 130, align: "right", line_height: 1.6 });
+  expect(enlarged.transform.width).toBe(130);
+  expect(enlarged.transform.height).toBeGreaterThan(wrapped.transform.height);
+  expect(mapPoint(worldMatrix(enlarged, [enlarged]), { x: 0, y: 0 }).x).toBeCloseTo(origin.x);
+  expect(mapPoint(worldMatrix(enlarged, [enlarged]), { x: 0, y: 0 }).y).toBeCloseTo(origin.y);
+});

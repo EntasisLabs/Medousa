@@ -151,6 +151,47 @@ pub enum CreativeContent {
     },
 }
 
+/// Saved surface styling. Omitted by legacy version-3 documents.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeAppearance {
+    pub corner_radius: f64,
+    pub shadow: Option<CreativeShadow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeShadow {
+    pub x: f64,
+    pub y: f64,
+    /// Gaussian standard deviation in canvas pixels.
+    pub blur: f64,
+    pub color: String,
+    pub opacity: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CreativeTextAlign {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeTextLayout {
+    /// None keeps automatic width; a width wraps text and lets height grow.
+    pub width: Option<f64>,
+    pub align: CreativeTextAlign,
+    /// Multiplier of the font size.
+    pub line_height: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -159,6 +200,10 @@ pub struct CreativeNode {
     /// Optional layer label; omitted in existing version-3 documents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<CreativeAppearance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_layout: Option<CreativeTextLayout>,
     pub parent_id: Option<String>,
     pub transform: CreativeTransform,
     pub opacity: f64,

@@ -14,6 +14,7 @@ import {
   resizeNode,
 } from "./creativeScene";
 import { layoutText, type CreativeText, type TextStylePatch } from "./creativeText";
+import { styleAppearance, roundedDistance, type AppearancePatch } from "./creativeAppearance";
 import { randomUuid } from "$lib/utils/randomUuid";
 
 export type CanvasShape = "rectangle" | "ellipse" | "line" | "arrow";
@@ -95,6 +96,13 @@ export function hitCanvasNode(
     return false;
   const p = mapPoint(inverse(worldMatrix(node, nodes)), point),
     c = node.content;
+  // Rounded frames clip their descendants in the renderer, including picking.
+  let parent = nodes.find(n => n.id === node.parent_id);
+  while (parent) {
+    if (parent.content.kind === "frame" && roundedDistance(parent, mapPoint(inverse(worldMatrix(parent, nodes)), point)) > 0) return false;
+    parent = nodes.find(n => n.id === parent!.parent_id);
+  }
+  if (c.kind === "image") return roundedDistance(node, p) <= tolerance;
   const segment = (a: DrawVector, b: DrawVector) => {
     const dx = b.x - a.x,
       dy = b.y - a.y,
@@ -127,25 +135,8 @@ export function hitCanvasNode(
         (c.fill !== "transparent" || radius >= 1 - pad / Math.min(w / 2, h / 2))
       );
     }
-    if (c.fill === "transparent")
-      return [
-        [
-          { x: 0, y: 0 },
-          { x: w, y: 0 },
-        ],
-        [
-          { x: w, y: 0 },
-          { x: w, y: h },
-        ],
-        [
-          { x: w, y: h },
-          { x: 0, y: h },
-        ],
-        [
-          { x: 0, y: h },
-          { x: 0, y: 0 },
-        ],
-      ].some(([a, b]) => segment(a, b) <= pad);
+    const distance = roundedDistance(node, p);
+    return distance <= pad && (c.fill !== "transparent" || distance >= -pad);
   }
   return (
     p.x >= -tolerance &&
@@ -172,17 +163,18 @@ export function nodeSize(node: CreativeNode): CanvasSize {
       : best;
   }, "m");
 }
-export type CanvasStylePatch = { color?: string; size?: CanvasSize; fill?: CanvasFill } & TextStylePatch & LineStylePatch;
+export type CanvasStylePatch = { color?: string; size?: CanvasSize; fill?: CanvasFill } & TextStylePatch & LineStylePatch & AppearancePatch;
 export function updateTextNode(node: CreativeNode, patch: Partial<Omit<CreativeText, "kind">>): CreativeNode {
   if (node.content.kind !== "text") return node;
   const content = { ...node.content, ...patch };
-  const bounds = layoutText(content);
+  const bounds = layoutText(content, undefined, node.text_layout);
   return { ...resizeNode(node, bounds.width, bounds.height), content };
 }
 export function styleNode(
   node: CreativeNode,
   patch: CanvasStylePatch,
 ): CreativeNode {
+  node = styleAppearance(node, patch);
   const c = node.content,
     color = patch.color ?? nodeColor(node) ?? canvasColors[0].value;
   const connector = lineGeometry(node);
@@ -206,7 +198,9 @@ export function styleNode(
       },
     };
   if (c.kind === "text") {
-    return updateTextNode(node, {
+    const text_layout = { width: node.text_layout?.width ?? null, align: node.text_layout?.align ?? "left" as const, line_height: node.text_layout?.line_height ?? 1.3,
+      ...(patch.text_width !== undefined ? { width: patch.text_width } : {}), ...(patch.text_align ? { align: patch.text_align } : {}), ...(patch.line_height !== undefined ? { line_height: patch.line_height } : {}) };
+    return updateTextNode({ ...node, ...(node.text_layout || patch.text_width !== undefined || patch.text_align || patch.line_height !== undefined ? { text_layout } : {}) }, {
       color,
       ...(patch.size ? { font_size: canvasSizes[patch.size].text } : {}),
       ...(patch.font_size !== undefined && Number.isFinite(patch.font_size) ? { font_size: Math.max(4, Math.min(512, patch.font_size)) } : {}),
@@ -225,11 +219,11 @@ export function styleNode(
         fill:
           c.shape === "line"
             ? "transparent"
-            : shapeFill(color, patch.fill ?? nodeFill(node)),
-        stroke: color,
+            : patch.color || patch.fill ? shapeFill(color, patch.fill ?? nodeFill(node)) : c.fill,
+        stroke: patch.color ?? c.stroke,
         stroke_width: patch.size
           ? canvasSizes[patch.size].stroke
-          : Math.max(1, c.stroke_width),
+          : c.stroke_width,
       },
     };
   return node;
@@ -320,12 +314,12 @@ export function newCanvasText(
       kind: "text",
       text: "",
       color,
-      font_family: "sans-serif",
-      font_size: canvasSizes[size].text,
-      ...textStyle,
+      font_family: textStyle.font_family ?? "sans-serif",
+      font_size: textStyle.font_size ?? canvasSizes[size].text,
+      font_weight: textStyle.font_weight, font_style: textStyle.font_style,
     },
     { ...point, width: 240, height: canvasSizes[size].text * 1.3 },
     parentId,
   );
-  return updateTextNode(node, {});
+  return styleNode(node, textStyle);
 }

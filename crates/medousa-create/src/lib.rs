@@ -93,6 +93,37 @@ pub fn validate_scene(
         number(t.height, 0., 1e7)?;
         number(t.rotation, -360_000., 360_000.)?;
         number(node.opacity, 0., 1.)?;
+        if let Some(appearance) = &node.appearance {
+            if !matches!(
+                node.content,
+                CreativeContent::Shape {
+                    shape: CreativeShapeKind::Rectangle | CreativeShapeKind::Ellipse,
+                    ..
+                } | CreativeContent::Frame { .. }
+                    | CreativeContent::Image { .. }
+            ) {
+                return Err(invalid(
+                    "surface styling requires a rectangle, ellipse, frame or image",
+                ));
+            }
+            number(appearance.corner_radius, 0., 1e7)?;
+            if let Some(shadow) = &appearance.shadow {
+                number(shadow.x, -1000., 1000.)?;
+                number(shadow.y, -1000., 1000.)?;
+                number(shadow.blur, 0., 128.)?;
+                number(shadow.opacity, 0., 1.)?;
+                paint(&shadow.color)?;
+            }
+        }
+        if let Some(layout) = &node.text_layout {
+            if !matches!(node.content, CreativeContent::Text { .. }) {
+                return Err(invalid("text layout requires text"));
+            }
+            if let Some(width) = layout.width {
+                number(width, 4., 1e7)?;
+            }
+            number(layout.line_height, 0.8, 4.)?;
+        }
         match &node.content {
             CreativeContent::Ink {
                 color,

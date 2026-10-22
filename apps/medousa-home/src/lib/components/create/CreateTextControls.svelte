@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { AlignLeft, AlignCenter, AlignRight } from "@lucide/svelte";
   import { canvasFonts, defaultTextStyle, type TextStylePatch } from "$lib/create/creativeText";
   let { value = {}, disabled = false, onchange, onleave = () => {} }: {
     value?: TextStylePatch;
@@ -42,6 +43,14 @@
     <button type="button" aria-label="Italic" aria-pressed={value.font_style === "italic"} {disabled}
       onclick={() => onchange({ font_style: value.font_style === "italic" ? "normal" : "italic" })}><i>I</i></button>
   </div>
+  <div class="text-emphasis" role="group" aria-label="Text alignment">
+    {#each [{ value: "left", icon: AlignLeft }, { value: "center", icon: AlignCenter }, { value: "right", icon: AlignRight }] as alignment}
+      <button type="button" aria-label={`Align text ${alignment.value}`} aria-pressed={(value.text_align ?? "left") === alignment.value} {disabled} onclick={() => onchange({ text_align: alignment.value as "left" | "center" | "right" })}><alignment.icon size={14}/></button>
+    {/each}
+  </div>
+  <label>Text box<select aria-label="Text sizing" {disabled} value={value.text_width ? "fixed" : "auto"} onchange={e => onchange({ text_width: e.currentTarget.value === "auto" ? null : 240 })}><option value="auto">Auto width</option><option value="fixed">Wrap to width</option></select></label>
+  {#if value.text_width}<label>Box width<input aria-label="Text box width" type="number" min="4" max="10000000" value={value.text_width} {disabled} oninput={e => { if (Number.isFinite(e.currentTarget.valueAsNumber)) onchange({ text_width: Math.max(4, Math.min(1e7, e.currentTarget.valueAsNumber)) }); }}/></label>{/if}
+  <label>Line spacing<input aria-label="Line spacing" type="number" min=".8" max="4" step=".1" value={value.line_height ?? 1.3} {disabled} oninput={e => { if (Number.isFinite(e.currentTarget.valueAsNumber)) onchange({ line_height: Math.max(.8, Math.min(4, e.currentTarget.valueAsNumber)) }); }}/></label>
 </div>
 
 <style>
@@ -55,5 +64,5 @@
   button:hover, button[aria-pressed="true"] { background: var(--create-line); }
   button:disabled { opacity: .4; }
   .text-emphasis { display: flex; gap: 4px; }
-  .text-emphasis button { flex: 1; font: 14px serif; }
+  .text-emphasis button { display: grid; place-items: center; flex: 1; font: 14px serif; }
 </style>
