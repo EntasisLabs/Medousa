@@ -131,7 +131,8 @@ require `workshop.interact`, in addition to content authority.
 Optional `parent_job_id` continues an owned job's conversation within the same
 project. Clients cannot supply an arbitrary session ID. A follow-up captures the
 latest saved revision and selected objects. With `refine_proposal: true`, its
-parent must have a current ready preview with the same selected IDs. The captured
+parent must have a ready or stale preview with the same selected IDs that can
+be reconciled with the latest saved document. The captured
 context includes that preview's edits and staged assets. Result validation checks
 the incremental changes against that effective scene, then normalizes the full
 proposal against the unchanged human base. Applying the replacement remains one
@@ -173,8 +174,13 @@ In a creative job, `creative.read` returns the immutable admitted context.
 `creative.propose` must use the job ID, original revision and original selected
 IDs. Its operations are validated against the captured document and locks. The
 result is stored atomically as `ready` or `stale`, independently of later human
-edits. Later edits/undo also turn ready jobs stale. Stale results remain readable
-but cannot be applied; submit a new job against current work. A turn that ends
+edits. Later edits/undo also turn ready jobs stale. A stale result remains
+readable and can be previewed/applied after a field-level three-way reconciliation
+against `CreativeJob.base_nodes` and the current saved document. Independent
+changes are preserved; conflicting field edits, missing edited targets, locked
+objects, and removals that would delete new/changed descendants reject atomically
+without losing the result. Legacy jobs recover their original base from captured
+context and the refinement parent chain. A turn that ends
 without producing a proposal becomes `failed`.
 
 Generated images promoted during a job are staged as immutable project-owned
@@ -184,8 +190,11 @@ accept returns the original applied revision, even after undo, without applying
 again. Project assets survive source-chat deletion and undo.
 
 `POST /{id}/jobs/{job_id}/decision` uses `CreativeProposalDecision`. With
-`accept: true`, both the supplied revision and admitted revision must equal the
-current document revision. With `accept: false`, it cancels the job regardless of
+`accept: true`, the supplied revision must equal the current document revision.
+An older admission is reconciled under the project lock before applying; it never
+blindly overwrites a newer object. Preview repeats the same merge in the client,
+and the server remains authoritative. An already-present result is a no-op.
+With `accept: false`, it cancels the job regardless of
 newer document edits; `expected_revision` is unused for cancellation. Cancellation
 is persisted before signaling that exact runtime turn. Late results/admission
 acknowledgements cannot resurrect cancelled work. Accepted edits use ordinary

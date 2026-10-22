@@ -164,3 +164,14 @@ it("allows a fresh capture after a definite stale admission rejection while pres
   await jobs.start("Refine", 1, ["frame"], async () => "fresh-snapshot");
   expect(vi.mocked(port.createJob).mock.calls[1][1]).toMatchObject({ expected_revision: 1, visual_asset_id: "fresh-snapshot" });
 });
+
+it("allows retrying against the latest canvas after a definitive apply conflict", async () => {
+  const { CreativeRequestError } = await import("./creativeErrors");
+  const port = api(), jobs = creativeJobs(port, "doc", vi.fn());
+  await jobs.start("Red", 0, ["frame"]);
+  vi.mocked(port.decideJob).mockRejectedValueOnce(new CreativeRequestError("Conflict", 409));
+  await expect(jobs.decide(true, 1)).rejects.toThrow("Conflict");
+  expect(jobs.pendingDecision).toBeNull();
+  await jobs.decide(true, 2);
+  expect(vi.mocked(port.decideJob).mock.calls[1][2].expected_revision).toBe(2);
+});

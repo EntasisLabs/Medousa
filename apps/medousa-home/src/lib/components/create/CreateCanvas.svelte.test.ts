@@ -6,6 +6,8 @@ import { layoutText } from "$lib/create/creativeText";
 import { dragShape } from "$lib/create/creativeInteraction";
 import { lineGeometry } from "$lib/create/creativeLine";
 import { selectionFrame } from "$lib/create/creativeSelection";
+import { defaultLayout } from "$lib/create/creativeLayout";
+import { cloneCreativeSvg } from "$lib/create/creativeRender";
 import { createNode, nodeDimensions } from "$lib/create/creativeScene";
 import type {
   CreativeNode,
@@ -48,6 +50,7 @@ function render(
         oncommit: commit,
         onselect: select,
         onerror: error,
+        layout: { ...defaultLayout, smartGuides: false },
         ...options,
       },
     }),
@@ -62,6 +65,7 @@ function pointer(
   y: number,
   shiftKey = false,
   altKey = false,
+  ctrlKey = false,
 ) {
   target.dispatchEvent(
     new PointerEvent(type, {
@@ -73,6 +77,7 @@ function pointer(
       pointerType: "mouse",
       shiftKey,
       altKey,
+      ctrlKey,
     }),
   );
   flushSync();
@@ -476,4 +481,35 @@ it("keeps the multi-selection frame and angle attached while rotating its object
   const operations = commit.mock.calls[0][1] as { node: CreativeNode }[];
   expect(operations).toHaveLength(2);
   expect(operations.every(op => Math.abs(op.node.transform.rotation - 90) < .001)).toBe(true);
+});
+
+it("shows a world grid over frames without exporting it or selection guides", () => {
+  const frame = createNode({ kind: "frame", name: "Paper", background: "#fff" }, { x: 0, y: 0, width: 400, height: 300 });
+  const root = render([frame], { layout: { ...defaultLayout, grid: "dots" } });
+  const svg = root.querySelector("svg")!;
+  expect(svg.querySelector('[aria-label="Canvas grid"]')).not.toBeNull();
+  const clone = cloneCreativeSvg(svg, { x: 0, y: 0, width: 400, height: 300 });
+  expect(clone.querySelector("[data-layout-overlay]")).toBeNull();
+  expect(clone.querySelector(`[data-node-id="${frame.id}"]`)).not.toBeNull();
+  expect(commit).not.toHaveBeenCalled();
+});
+it("snaps an actual pointer drag, commits once, clears guides, and supports Ctrl bypass", () => {
+  const a = createNode({ kind: "shape", shape: "rectangle", fill: "#fff", stroke: "#000", stroke_width: 1 }, { x: 0, y: 0, width: 20, height: 20 });
+  const b = { ...a, id: "target", transform: { ...a.transform, x: 100, y: 50 } };
+  const root = render([a, b], { layout: { ...defaultLayout } }), svg = root.querySelector("svg")!;
+  pointer(svg, "pointerdown", 10, 10); pointer(svg, "pointermove", 87, 39);
+  expect(svg.querySelector('[aria-label="Alignment guide"]')).not.toBeNull();
+  expect(commit).not.toHaveBeenCalled();
+  pointer(svg, "pointerup", 87, 39);
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(commit.mock.calls[0][1]).toMatchObject([{ node: { transform: { x: 80, y: 30 } } }]);
+  expect(svg.querySelector('[aria-label="Alignment guide"]')).toBeNull();
+  pointer(svg, "pointerdown", 10, 10); pointer(svg, "pointermove", 87, 39, false, false, true); pointer(svg, "pointerup", 87, 39, false, false, true);
+  expect(commit.mock.calls[1][1]).toMatchObject([{ node: { transform: { x: 77, y: 29 } } }]);
+});
+
+it("snaps new shape endpoints to the grid without changing freehand behavior", () => {
+  const root = render([], { tool: "shape", layout: { ...defaultLayout, snapGrid: true, smartGuides: false } }), svg = root.querySelector("svg")!;
+  pointer(svg, "pointerdown", 13, 21); pointer(svg, "pointermove", 65, 79); pointer(svg, "pointerup", 65, 79);
+  expect(commit.mock.calls[0][1]).toMatchObject([{ node: { transform: { x: 16, y: 16, width: 48, height: 64 } } }]);
 });

@@ -193,7 +193,7 @@ fn refinement_keeps_generated_image_references_without_importing_a_human_edit() 
 }
 
 #[test]
-fn continuation_cannot_borrow_another_owner_or_refine_a_stale_preview() {
+fn continuation_cannot_borrow_another_owner_or_refine_a_conflicting_preview() {
     let (_dir, store) = job_store();
     let first = store
         .enqueue_job("project_one", "owner", job_request("first"))
@@ -219,8 +219,12 @@ fn continuation_cannot_borrow_another_owner_or_refine_a_stale_preview() {
             PNG,
         )
         .unwrap();
+    let mut human = text("title");
+    if let CreativeContent::Text { text, .. } = &mut human.content {
+        *text = "Human title".into();
+    }
     store
-        .transact("project_one", edit("human", 1, text("other")))
+        .transact("project_one", edit("human", 1, human))
         .unwrap();
     follow.expected_revision = 2;
     follow.refine_proposal = true;

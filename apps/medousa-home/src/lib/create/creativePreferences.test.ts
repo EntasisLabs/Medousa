@@ -20,3 +20,13 @@ it("rejects corrupt or unsupported preferences without blocking drawing", () => 
   localStorage.setItem("medousa:create-tools:v1:one", "broken json");
   expect(loadCreativePreferences("one").selectionMode).toBe("box");
 });
+
+it("remembers grid visibility and snapping independently per workshop", () => {
+  const prefs = loadCreativePreferences("layout");
+  prefs.layout = { grid: "lines", gridSize: 32, snapGrid: true, smartGuides: false };
+  saveCreativePreferences("layout", prefs);
+  expect(loadCreativePreferences("layout").layout).toEqual(prefs.layout);
+  expect(loadCreativePreferences("other").layout).toMatchObject({ grid: "none", gridSize: 16, snapGrid: false, smartGuides: true });
+  localStorage.setItem("medousa:create-tools:v1:bad", JSON.stringify({ layout: { grid: "invalid", gridSize: 0, smartGuides: "yes", snapGrid: null } }));
+  expect(loadCreativePreferences("bad").layout).toEqual(loadCreativePreferences("other").layout);
+});

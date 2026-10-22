@@ -1,5 +1,6 @@
 use super::*;
 use std::sync::{Arc, Barrier};
+mod job_reconcile;
 mod visual_jobs;
 fn create(store: &CreativeStore) -> CreativeDocument {
     store
@@ -798,7 +799,7 @@ fn creative_job_accept_is_one_atomic_undoable_transaction_and_never_replays() {
     assert_eq!(store.get("project_one").unwrap().document.revision, 3);
 }
 #[test]
-fn creative_job_stale_completion_keeps_its_result_but_cannot_overwrite() {
+fn creative_job_stale_completion_keeps_human_movement_when_applying_content() {
     let (_dir, store) = job_store();
     let job = store
         .enqueue_job("project_one", "owner", job_request("first"))
@@ -826,8 +827,11 @@ fn creative_job_stale_completion_keeps_its_result_but_cannot_overwrite() {
     assert!(
         store
             .decide_job("project_one", "first", "owner", decision(true, 2))
-            .is_err()
+            .is_ok()
     );
+    if let CreativeContent::Text { text, .. } = &mut human.content {
+        *text = "A clearer title".into();
+    }
     assert_eq!(
         store.get("project_one").unwrap().document.scene.nodes[0],
         human
@@ -856,7 +860,7 @@ fn creative_job_ready_output_becomes_stale_after_human_undo_or_edit() {
     assert!(
         store
             .decide_job("project_one", "first", "owner", decision(true, 3))
-            .is_err()
+            .is_ok()
     );
 }
 #[test]

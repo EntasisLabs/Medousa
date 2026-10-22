@@ -22,12 +22,14 @@
     disabled = false,
     onerror,
     capture,
+    previewError = null,
   }: {
     lease: CreativeProjectLease;
     selected: string[];
     disabled?: boolean;
     onerror: (error: unknown) => void;
     capture: (revision: number, ids: string[]) => Promise<string>;
+    previewError?: string | null;
   } = $props();
   let revision = $state(0),
     picker = $state(false);
@@ -115,7 +117,7 @@
     if (!doc || disabled || busy || executing || pending || !eligible) return;
     try {
       const base = doc.revision, ids = [...selected];
-      const refining = Boolean(draftState.preview && job?.status === "ready" && !stale);
+      const refining = Boolean(draftState.preview && (job?.status === "ready" || job?.status === "stale") && !previewError);
       await jobs.start(draftState.draft, base, ids, () => capture(base, ids), refining);
       draftState.preview = false;
       draftState.draft = "";
@@ -259,7 +261,7 @@
         >
       {:else if job?.result && (job.status === "ready" || job.status === "stale")}
         <div class="create-result-heading">
-          <span>Medousa · {stale ? "Earlier revision" : "Preview"}</span><button
+          <span>Medousa · {stale ? "Canvas updated" : "Preview"}</span><button
             type="button"
             disabled={busy || disabled}
             aria-label="Dismiss proposal"
@@ -267,11 +269,9 @@
           >
         </div>
         <p>{job.result.label}</p>
-        {#if stale}<p class="create-ask-notice">
-            The canvas changed since this request. Start a new request with the
-            current selection.
-          </p>
-        {:else}<div class="create-variants">
+        {#if previewError}<p class="create-ask-notice">{previewError}</p>
+        {:else if stale}<p class="create-ask-notice">Keeps your latest canvas edits. Applying checks for conflicts again.</p>{/if}
+        <div class="create-variants">
             <button
               type="button"
               class:chosen={!draftState.preview}
@@ -279,19 +279,21 @@
             ><button
               type="button"
               class:chosen={draftState.preview}
+              disabled={Boolean(previewError)}
               onclick={() => (draftState.preview = true)}>Preview</button
             ><button
               type="button"
+              disabled={Boolean(previewError)}
               onclick={() => { draftState.preview = true; askInput?.focus(); }}
               >Refine preview</button
             ><button
               type="button"
               class="create-apply"
-              disabled={busy || disabled}
+              disabled={busy || disabled || Boolean(previewError)}
               onclick={() => void decide(true)}
               >Use this<Check size={12} /></button
             >
-          </div>{/if}
+          </div>
       {:else if job?.status === "accepted"}<span
           ><Check size={12} />Applied to the canvas. You can undo this change.</span
         >

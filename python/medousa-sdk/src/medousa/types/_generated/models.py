@@ -7227,6 +7227,9 @@ class CreativeSelectionContext(MedousaModel):
 class CreativeJob(MedousaModel):
     applied_revision: int | None = Field(None, ge=0)
     assets: list[CreativeAsset]
+    base_nodes: list[CreativeNode] | None = Field(
+        None, description='Original editable selection, before any unapplied refinement operations.'
+    )
     context: CreativeSelectionContext
     created_at: str
     document_id: str

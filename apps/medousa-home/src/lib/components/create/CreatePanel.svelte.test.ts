@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync, tick } from "svelte";
 import CreatePanel from "./CreatePanel.svelte";
 import { applySceneOperations, createNode } from "$lib/create/creativeScene";
+import { reconcileCreativeProposal } from "$lib/create/creativeProposal";
 import { dragShape } from "$lib/create/creativeInteraction";
 import { lineGeometry } from "$lib/create/creativeLine";
 import { createBrowser } from "$lib/create/createBrowser.svelte";
@@ -238,7 +239,7 @@ it("keeps a failed edit visible after tab remount and retries the exact request"
   expect(transactions[0]).toEqual(transactions[1]);
   expect(second.textContent).toContain("Saved");
 });
-it("uses the scoped durable-job API and previews before explicit acceptance", async () => {
+it.each([false, true])("previews and applies a scoped job with later canvas movement: %s", async (moveAfterGeneration) => {
   const root = render();
   await settle();
   await settle();
@@ -256,6 +257,7 @@ it("uses the scoped durable-job API and previews before explicit acceptance", as
         if (changed.content.kind === "text")
           changed.content.text = "Previewed title";
         proposed = {
+          base_nodes: [structuredClone(doc.scene.nodes[1])],
           document_id: doc.id,
           request:
             body as import("$lib/types/generated/daemon_api").CreativeJobRequest,
@@ -285,13 +287,18 @@ it("uses the scoped durable-job API and previews before explicit acceptance", as
       }
       if (op === "create.projects.by_id.assets.post") return { id: "visual-test", mime: "image/png", sha256: "a".repeat(64), byte_size: 3 };
       if (op === "create.projects.by_id.jobs.by_job_id.decision.post") {
-        expect(body).toEqual({ accept: true, expected_revision: 0 });
+        expect(body).toEqual({ accept: true, expected_revision: moveAfterGeneration ? 1 : 0 });
         doc = {
           ...doc,
-          revision: 1,
-          scene: applySceneOperations(doc.scene, proposed.result!.operations),
+          revision: doc.revision + 1,
+          scene: applySceneOperations(doc.scene, reconcileCreativeProposal(doc.scene, doc.revision, proposed).operations),
         };
-        return { ...proposed, status: "accepted", applied_revision: 1 };
+        return { ...proposed, status: "accepted", applied_revision: doc.revision };
+      }
+      if (op === "create.projects.by_id.transactions.post") {
+        const transaction = body as { operations: CreativeOperation[] };
+        transactions.push(transaction);
+        doc = { ...doc, revision: doc.revision + 1, scene: applySceneOperations(doc.scene, transaction.operations) };
       }
       return {
         document: structuredClone(doc),
@@ -325,18 +332,24 @@ it("uses the scoped durable-job API and previews before explicit acceptance", as
   });
   expect(admitted[3]).toBeNull();
   expect(admitted[5]).toBe("ui-test");
+  if (moveAfterGeneration) {
+    root.querySelector('[aria-label="Creative canvas"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    await settle(); await settle();
+    expect(root.textContent).toContain("Keeps your latest canvas edits");
+  }
   button("Preview", root).click();
   flushSync();
   expect(
     root.querySelector('svg[aria-label="Editable creative project"]')
       ?.textContent,
   ).toContain("Previewed title");
-  expect(doc.revision).toBe(0);
-  expect(transactions).toEqual([]);
+  expect(doc.revision).toBe(moveAfterGeneration ? 1 : 0);
+  expect(transactions).toHaveLength(moveAfterGeneration ? 1 : 0);
   button("Use this", root).click();
   await settle();
   await settle();
-  expect(doc.revision).toBe(1);
+  expect(doc.revision).toBe(moveAfterGeneration ? 2 : 1);
+  expect(doc.scene.nodes[1].transform.x).toBe(moveAfterGeneration ? 61 : 60);
   expect(root.textContent).toContain("Applied to the canvas");
   expect(button("Undo", root).disabled).toBe(false);
 });

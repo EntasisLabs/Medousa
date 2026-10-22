@@ -3315,6 +3315,16 @@
             },
             "type": "array"
           },
+          "base_nodes": {
+            "description": "Original editable selection, before any unapplied refinement operations.",
+            "items": {
+              "$ref": "#/components/schemas/CreativeNode"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "context": {
             "$ref": "#/components/schemas/CreativeSelectionContext"
           },

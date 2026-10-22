@@ -462,6 +462,9 @@ pub struct CreativeJob {
     pub request: CreativeJobRequest,
     pub document_id: String,
     pub context: CreativeSelectionContext,
+    /// Original editable selection, before any unapplied refinement operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_nodes: Option<Vec<CreativeNode>>,
     pub status: CreativeJobStatus,
     pub session_id: String,
     pub turn_id: String,

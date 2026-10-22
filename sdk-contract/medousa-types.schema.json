@@ -8405,6 +8405,16 @@
           "$ref": "#/definitions/CreativeAsset"
         }
       },
+      "base_nodes": {
+        "description": "Original editable selection, before any unapplied refinement operations.",
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/CreativeNode"
+        }
+      },
       "context": {
         "$ref": "#/definitions/CreativeSelectionContext"
       },
@@ -9568,6 +9578,16 @@
             "type": "array",
             "items": {
               "$ref": "#/definitions/CreativeAsset"
+            }
+          },
+          "base_nodes": {
+            "description": "Original editable selection, before any unapplied refinement operations.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
             }
           },
           "context": {

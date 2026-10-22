@@ -6,8 +6,10 @@ import type { CreativeTool } from "./creativeScene";
 import type { CanvasFill, CanvasShape, CanvasSize } from "./creativeInteraction";
 import { canvasFonts, defaultTextStyle, type TextStylePatch } from "./creativeText";
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
+import { defaultLayout, type LayoutPreferences } from "./creativeLayout";
 
 export type CreativePreferences = {
+  layout: LayoutPreferences;
   tool: CreativeTool;
   selectionMode: "box" | "lasso";
   brushKind: DrawBrushKind;
@@ -26,6 +28,7 @@ export type CreativePreferences = {
 const key = (scope: string) => workshopScopedStorageKey("medousa:create-tools:v1", scope);
 export function loadCreativePreferences(scope: string): CreativePreferences {
   const defaults: CreativePreferences = {
+    layout: { ...defaultLayout },
     tool: "select", selectionMode: "box", brushKind: "pen",
     brushSizes: Object.fromEntries(DRAW_BRUSHES.map(b => [b.kind, createDrawBrush(b.kind).size])) as Record<DrawBrushKind, number>,
     eraserSize: 12, eraserMode: "partial", fingerDraw: false,
@@ -37,6 +40,9 @@ export function loadCreativePreferences(scope: string): CreativePreferences {
     const saved = JSON.parse(localStorage.getItem(key(scope)) ?? "null");
     if (!saved || typeof saved !== "object")
       return defaults;
+    if (["none", "dots", "lines"].includes(saved.layout?.grid)) defaults.layout.grid = saved.layout.grid;
+    if ([8, 16, 32, 64].includes(saved.layout?.gridSize)) defaults.layout.gridSize = saved.layout.gridSize;
+    for (const key of ["snapGrid", "smartGuides"] as const) if (typeof saved.layout?.[key] === "boolean") defaults.layout[key] = saved.layout[key];
     for (const section of ["properties", "layers"] as const) {
       if (typeof saved.detailsSections?.[section] === "boolean") defaults.detailsSections[section] = saved.detailsSections[section];
     }

@@ -127,6 +127,7 @@ export interface CreativeSelectionContext {
 export interface CreativeJob {
   applied_revision?: number | null;
   assets: CreativeAsset[];
+  base_nodes?: CreativeNode[] | null;
   context: CreativeSelectionContext;
   created_at: string;
   document_id: string;

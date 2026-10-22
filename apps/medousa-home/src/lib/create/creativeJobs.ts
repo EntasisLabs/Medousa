@@ -186,6 +186,7 @@ export function creativeJobs(
         decision = null;
         if (job?.status === "accepted") await onAccepted();
       } catch (e) {
+        if (e instanceof CreativeRequestError && e.rejected) decision = null;
         error = e instanceof Error ? e.message : String(e);
         throw e;
       } finally {

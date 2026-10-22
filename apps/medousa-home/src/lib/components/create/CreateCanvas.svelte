@@ -3,7 +3,10 @@
   import CreateTextEditor from "./CreateTextEditor.svelte";
   import CreateSelection from "./CreateSelection.svelte";
   import CreateRotationLabel from "./CreateRotationLabel.svelte";
-  import { groupSelection, ungroupSelection, selectionTarget, selectionBounds, objectBounds, resizeSelectionFromHandle, alignSelection, arrangeSelection, descendants, selectionFrame, rotateSelection, rotateSelectionFrame, moveLineEndpoint, type Alignment, type SelectionFrame } from "$lib/create/creativeSelection";
+  import CreateLayoutOverlay from "./CreateLayoutOverlay.svelte";
+  import { alignObjects, distributeObjects, defaultLayout, snapLayoutPoint, type AlignmentTarget, type LayoutGuide, type LayoutPreferences } from "$lib/create/creativeLayout";
+  import { creativeLayoutDrag } from "$lib/create/creativeLayoutDrag";
+  import { groupSelection, ungroupSelection, selectionTarget, selectionBounds, objectBounds, resizeSelectionFromHandle, arrangeSelection, descendants, selectionFrame, rotateSelection, rotateSelectionFrame, moveLineEndpoint, type Alignment, type SelectionFrame } from "$lib/create/creativeSelection";
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type {
     CreativeNode,
@@ -30,7 +33,6 @@
     eraseCreativeInk,
     hitCreativeScene,
     lassoCreativeScene,
-    moveCreativeSelection,
   } from "$lib/create/creativeInk";
   import {
     createNode,
@@ -80,6 +82,7 @@
     eraserMode = "partial",
     fingerDraw = false,
     selectionMode = "box",
+    layout = defaultLayout,
     initialView = null,
     onview = () => {},
     disabled = false,
@@ -106,6 +109,7 @@
     eraserMode?: DrawEraserMode;
     fingerDraw?: boolean;
     selectionMode?: "box" | "lasso";
+    layout?: LayoutPreferences;
     initialView?: { camera: DrawCamera; viewport: { width: number; height: number } } | null;
     onview?: (view: { camera: DrawCamera; viewport: { width: number; height: number } }) => void;
     disabled?: boolean;
@@ -140,6 +144,7 @@
     initial?: string[];
     end?: DrawVector;
     hit?: string;
+    layoutScene?: CreativeScene;
   };
   let gesture = $state.raw<Gesture | null>(null),
     draft = $state.raw<CreativeNode[] | null>(null);
@@ -176,6 +181,8 @@
   const roots = $derived(rendered.filter((n) => !n.parent_id));
   const prefix = `canvas-${randomUuid()}`;
   const zoom = $derived(camera.zoom);
+  let guides = $state.raw<LayoutGuide[]>([]), bypassSnap = false;
+  const layoutDrag = creativeLayoutDrag(() => ({ settings: layout, zoom, bypass: bypassSnap }), value => (guides = value));
   $effect(() => onzoom(Math.round(zoom * 100)));
   $effect(() => onview({ camera, viewport: { ...viewport } }));
   export function element() {
@@ -184,6 +191,7 @@
   export function fit() {
     camera = creativeFit(sceneBounds(scene.nodes), viewport);
   }
+  export function fitSelection() { const bounds = selectionBounds(selected, scene.nodes); if (bounds) camera = creativeFit(bounds, viewport); }
   export function zoomBy(factor: number) {
     camera = creativeZoom(
       camera,
@@ -255,6 +263,7 @@
     }
   }
   function release(id: number) {
+    layoutDrag.reset();
     try {
       if (svg?.hasPointerCapture(id)) svg.releasePointerCapture(id);
     } catch {
@@ -324,7 +333,7 @@
       nodes: [...base.nodes, creativeStrokeNode(stroke, base.nodes, inkParent)],
     }),
     erase: eraseCreativeInk,
-    move: moveCreativeSelection,
+    move: layoutDrag.move,
     hit: hitSelection,
     lasso: (base, path) => [...new Set(lassoCreativeScene(base, path).map(id => selectionTarget(id, base.nodes, groupScope)))],
     selected: () => selected,
@@ -398,7 +407,7 @@
         const initial = [...selected], ids = selected.includes(hit) ? selected : [hit];
         const copies = duplicateSelection(ids, scene.nodes, { x: 0, y: 0 });
         const roots = copies.filter(n => !copies.some(parent => parent.id === n.parent_id));
-        gesture = { id: e.pointerId, kind: "duplicate", start: p, view: view(e), nodes: copies, base: scene.nodes, started: e.timeStamp, parent: null, initial };
+        gesture = { id: e.pointerId, kind: "duplicate", start: p, view: view(e), nodes: copies, base: scene.nodes, started: e.timeStamp, parent: null, initial, layoutScene: { ...scene, nodes: [...scene.nodes, ...copies] } };
         draft = [...scene.nodes, ...copies]; pick(roots.map(n => n.id));
         stage?.focus({ preventScroll: true }); capture(e.pointerId); e.preventDefault(); return;
       }
@@ -440,7 +449,7 @@
       };
     } else {
       const parent = tool === "frame" ? null : parentFor(p),
-        q = local(p, parent);
+        q = local(tool === "shape" || tool === "frame" ? snapLayoutPoint(p, layout, e.ctrlKey) : p, parent);
       if (tool === "text") {
         e.preventDefault();
         void beginText(hit?.content.kind === "text" ? hit : null, q, parent);
@@ -498,11 +507,12 @@
     event.preventDefault();
   }
   function move(e: PointerEvent) {
+    bypassSnap = e.ctrlKey;
     if (interaction.move(e)) return;
     const g = gesture;
     if (!g || g.id !== e.pointerId) return;
     e.preventDefault();
-    const p = point(e);
+    const p = ["resize", "endpoint", "shape", "frame"].includes(g.kind) ? snapLayoutPoint(point(e), layout, e.ctrlKey) : point(e);
     if (g.kind === "resize") {
       draft = resizeSelectionFromHandle(g.nodes.map(n => n.id), g.base, g.handle ?? "se", p, e.shiftKey);
     } else if (g.kind === "endpoint") {
@@ -517,7 +527,7 @@
       gesture = { ...g, rotation };
       draft = rotateSelection(g.nodes.map(n => n.id), g.base, g.center, rotation);
     } else if (g.kind === "duplicate") {
-      draft = moveCreativeSelection({ ...scene, nodes: [...g.base, ...g.nodes] }, selected, { x: p.x - g.start.x, y: p.y - g.start.y }).nodes;
+      draft = layoutDrag.move(g.layoutScene!, selected, { x: p.x - g.start.x, y: p.y - g.start.y }).nodes;
     } else {
       const n = g.nodes[0];
       const startWorld = g.parent ? mapPoint(worldMatrix(g.parent, g.base), g.start) : g.start;
@@ -676,7 +686,8 @@
   }
   export function group() { selectionEdit(() => groupSelection(selected, scene.nodes), "Group selection"); }
   export function ungroup() { selectionEdit(() => ungroupSelection(selected, scene.nodes), "Ungroup selection"); }
-  export function align(alignment: Alignment) { selectionEdit(() => ({ operations: alignSelection(selected, scene.nodes, alignment), selected }), "Align selection"); }
+  export function align(alignment: Alignment, target: AlignmentTarget = "selection") { selectionEdit(() => ({ operations: alignObjects(selected, scene.nodes, alignment, target), selected }), target === "frame" ? "Align to frame" : "Align selection"); }
+  export function distribute(axis: "x" | "y") { selectionEdit(() => ({ operations: distributeObjects(selected, scene.nodes, axis), selected }), "Space selection evenly"); }
   export function arrange(direction: -1 | 1) { selectionEdit(() => ({ operations: arrangeSelection(selected, scene.nodes, direction), selected }), "Arrange selection"); }
 
   export function deleteSelection() {
@@ -718,6 +729,7 @@
     }
     if (e.type !== "keydown") return;
     if (e.key === "Escape") {
+      layoutDrag.reset();
       if (!gesture && !interaction.state.active && groupScope) { e.preventDefault(); e.stopPropagation(); exitGroup(); return; }
       const initial = gesture?.initial;
       const id = gesture?.id;
@@ -861,6 +873,7 @@
           {prefix}
           editingId={editing?.node.id}
         />{/each}
+      <CreateLayoutOverlay {camera} {viewport} settings={layout} {guides} {prefix}/>
       {#if interactionState.activeStroke}
         {#if inkParent?.content.kind === "frame"}
           <defs

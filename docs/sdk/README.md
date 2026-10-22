@@ -243,3 +243,9 @@ explicit acceptance against the captured revision. Finished requests are archive
 without losing their admission identity; `jobs` returns recent work and `job`
 can read an archived request by ID. Generated models include the optional fields
 and the `superseded` job status; upgrade the daemon before sending them.
+
+Creative job reads include optional `base_nodes`, the original selected nodes
+before preview refinements. Ready/stale results can apply to the latest supplied
+revision when field changes reconcile safely. Conflicting edits preserve the
+result; they never trigger regeneration or overwrite current work. Updated app
+and daemon builds are required for this behavior.

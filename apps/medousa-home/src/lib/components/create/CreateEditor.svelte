@@ -33,6 +33,10 @@
   import CreateStylePalette from "./CreateStylePalette.svelte";
   import CreateInspector from "./CreateInspector.svelte";
   import CreateAsk from "./CreateAsk.svelte";
+  import CreateViewControls from "./CreateViewControls.svelte";
+  import CreateAlignmentControls from "./CreateAlignmentControls.svelte";
+  import { containingFrame } from "$lib/create/creativeLayout";
+  import { reconcileCreativeProposal } from "$lib/create/creativeProposal";
   import type { CreativeProjectLease } from "$lib/create/creativeWorkspace.svelte";
   import {
     applySceneOperations,
@@ -66,7 +70,7 @@
   } from "$lib/types/generated/daemon_api";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { loadCreativePreferences, saveCreativePreferences } from "$lib/create/creativePreferences";
-  import { canGroup, type Alignment } from "$lib/create/creativeSelection";
+  import { canGroup } from "$lib/create/creativeSelection";
   import { acknowledgeCreativeProject } from "$lib/create/creativeProjectActions";
   let {
     lease,
@@ -85,6 +89,7 @@
     color = $state(preferences.color ?? "#393e33"),
     size = $state<CanvasSize>(preferences.size),
     lineStyles = $state(preferences.lineStyles),
+    layout = $state(preferences.layout),
     detailsSections = $state(preferences.detailsSections),
     textStyle = $state({ ...defaultTextStyle, ...preferences.textStyle }),
     brushKind = $state<DrawBrushKind>(preferences.brushKind),
@@ -109,6 +114,7 @@
     scopeName = $state<string | null>(null);
   const drawSize = $derived(tool === "erase" ? eraserSize : brushSizes[brushKind]);
   $effect(() => saveCreativePreferences(lease.api.scope, {
+    layout: { ...layout },
     tool, selectionMode, brushKind, brushSizes: { ...brushSizes }, eraserSize,
     lineStyles: { line: { ...lineStyles.line }, arrow: { ...lineStyles.arrow } }, detailsSections: { ...detailsSections }, textStyle: { ...textStyle }, eraserMode, fingerDraw, color: color === inkColor ? null : color, size, shape, fill,
   }));
@@ -144,17 +150,18 @@
     void version;
     return session.scene;
   });
+  const proposal = $derived(base && job && document ? reconcileCreativeProposal(base, document.revision, job) : { operations: [], error: null });
   const preview = $derived(
     Boolean(
       lease.state.preview &&
-      job?.status === "ready" &&
-      job.result?.expected_revision === document?.revision &&
+      (job?.status === "ready" || job?.status === "stale") &&
+      !proposal.error &&
       !dirty,
     ),
   );
   const scene = $derived(
     base && preview && job?.result
-      ? applySceneOperations(base, job.result.operations)
+      ? applySceneOperations(base, proposal.operations)
       : base,
   );
   const deciding = $derived.by(() => {
@@ -629,6 +636,7 @@
           >
           </div>
           <div class="create-style-controls">
+            <CreateViewControls bind:settings={layout} onfit={() => canvas?.fit()} onselection={() => canvas?.fitSelection()} hasSelection={selectedRoots.length > 0}/>
             <button
               type="button"
               aria-label="Show style palette"
@@ -669,6 +677,7 @@
           {brushKind}
           {eraserMode}
           {selectionMode}
+          {layout}
           initialView={retainedView}
           onview={(view) => { lease.state.view = view; }}
           {fingerDraw}
@@ -759,6 +768,7 @@
                 {lease}
                 {selected}
                 capture={captureSelection}
+                previewError={proposal.error}
                 disabled={busy || dirty || importing}
                 onerror={report}
               />
@@ -769,16 +779,7 @@
               <span>{selectedRoots.length === 1 && selectedRoots[0].content.kind === "group" ? nodeName(selectedRoots[0]) : `${selectedRoots.length} selected`}</span>
               {#if selectedRoots.length > 1}<button type="button" aria-label="Group selection" title="Group (⌘G)" disabled={disabled || !groupAllowed} onclick={() => canvas?.group()}><Group size={15}/></button>{/if}
               {#if ungroupAllowed}<button type="button" aria-label="Ungroup selection" title="Ungroup (⇧⌘G)" {disabled} onclick={() => canvas?.ungroup()}><Ungroup size={15}/></button>{/if}
-              {#if selectedRoots.length > 1}
-                <details class="create-selection-menu">
-                  <summary aria-label="Align selection">Align<ChevronDown size={11}/></summary>
-                  <div role="group" aria-label="Alignment">
-                    {#each ["left", "center", "right", "top", "middle", "bottom"] as alignment}
-                      <button type="button" {disabled} onclick={(event) => { canvas?.align(alignment as Alignment); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Align {alignment}</button>
-                    {/each}
-                  </div>
-                </details>
-              {/if}
+              <CreateAlignmentControls count={selectedRoots.length} hasFrame={Boolean(containingFrame(selected, scene.nodes))} {disabled} onalign={(alignment, target) => canvas?.align(alignment, target)} ondistribute={(axis) => canvas?.distribute(axis)}/>
               <details class="create-selection-menu">
                 <summary aria-label="Arrange selection">Arrange<ChevronDown size={11}/></summary>
                 <div role="group" aria-label="Layer order">

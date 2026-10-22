@@ -132,21 +132,16 @@ impl CreativeStore {
                 ));
             }
             if request.refine_proposal {
-                if previous.job.status != CreativeJobStatus::Ready
-                    || previous.job.context.revision != request.expected_revision
-                    || previous.job.request.selected_ids != request.selected_ids
+                if !matches!(
+                    previous.job.status,
+                    CreativeJobStatus::Ready | CreativeJobStatus::Stale
+                ) || previous.job.request.selected_ids != request.selected_ids
                 {
                     return Err(invalid(
                         "refine a current preview with its original selection",
                     ));
                 }
-                inherited = previous
-                    .job
-                    .result
-                    .as_ref()
-                    .ok_or_else(|| invalid("preview has no proposal"))?
-                    .operations
-                    .clone();
+                inherited = self.reconcile_job(&record, &previous.job)?.operations;
                 inherited_assets = previous.job.assets.clone();
                 for asset in &inherited_assets {
                     snapshot.assets.insert(asset.id.clone(), asset.clone());
@@ -197,19 +192,19 @@ impl CreativeStore {
             ));
         }
         let identity = hash(&(id, &request.id))?;
-        if let Some(parent) = &request.parent_job_id {
-            if let Some(previous) = record.jobs.iter_mut().find(|j| &j.job.request.id == parent) {
-                if matches!(
-                    previous.job.status,
-                    CreativeJobStatus::Ready | CreativeJobStatus::Stale
-                ) {
-                    previous.job.status = CreativeJobStatus::Superseded;
-                    previous.job.updated_at = now();
-                }
-            }
+        if let Some(parent) = &request.parent_job_id
+            && let Some(previous) = record.jobs.iter_mut().find(|j| &j.job.request.id == parent)
+            && matches!(
+                previous.job.status,
+                CreativeJobStatus::Ready | CreativeJobStatus::Stale
+            )
+        {
+            previous.job.status = CreativeJobStatus::Superseded;
+            previous.job.updated_at = now();
         }
         let time = now();
         let job = CreativeJob {
+            base_nodes: Some(Self::selection(&record.document, &request.selected_ids)?),
             request,
             document_id: id.into(),
             context,
@@ -255,17 +250,17 @@ impl CreativeStore {
         if job.owner != owner {
             return Err(CreativeError::NotFound);
         }
-        Ok(job.job.clone())
+        self.job_with_base(&record, &job.job)
     }
     pub fn jobs(&self, id: &str, owner: &str) -> Result<CreativeJobListResponse> {
+        let record = self.read_record(id, true)?;
         Ok(CreativeJobListResponse {
-            jobs: self
-                .read_record(id, true)?
+            jobs: record
                 .jobs
-                .into_iter()
+                .iter()
                 .filter(|j| j.owner == owner)
-                .map(|j| j.job)
-                .collect(),
+                .map(|j| self.job_with_base(&record, &j.job))
+                .collect::<Result<_>>()?,
         })
     }
     pub fn job_for_turn(&self, turn_id: &str) -> Result<CreativeDispatch> {
@@ -518,13 +513,13 @@ impl CreativeStore {
         }
         // A refinement is returned as a complete replacement proposal against
         // the unchanged human revision, so acceptance remains one undoable edit.
-        if !job.inherited.is_empty() {
-            if let Some(snapshot) = &job.snapshot {
-                let effective = apply_operations(snapshot, &job.inherited)?;
-                Self::validate_proposal(&effective, &request)?;
-                let next = apply_operations(&effective, &request.operations)?;
-                request.operations = proposal_delta(snapshot, &next);
-            }
+        if !job.inherited.is_empty()
+            && let Some(snapshot) = &job.snapshot
+        {
+            let effective = apply_operations(snapshot, &job.inherited)?;
+            Self::validate_proposal(&effective, &request)?;
+            let next = apply_operations(&effective, &request.operations)?;
+            request.operations = proposal_delta(snapshot, &next);
         }
         if let Some(result) = &job.job.result {
             if job.job.status != CreativeJobStatus::Cancelled && hash(result)? == hash(&request)? {
@@ -614,21 +609,21 @@ impl CreativeStore {
             if record.deleted {
                 return Err(CreativeError::NotFound);
             }
-            if job.status != CreativeJobStatus::Ready {
-                return Err(invalid(
-                    "creative result is not ready; stale results require a new job",
-                ));
+            if !matches!(
+                job.status,
+                CreativeJobStatus::Ready | CreativeJobStatus::Stale
+            ) {
+                return Err(invalid("creative result is not ready"));
             }
             Self::check_revision(&record, request.expected_revision)?;
-            Self::check_revision(&record, job.context.revision)?;
-            let result = job
-                .result
-                .clone()
-                .ok_or_else(|| storage("ready job has no result"))?;
+            let result = self.reconcile_job(&record, job)?;
             // Assets become part of the document in the same atomic edit, so
             // generation itself does not advance or invalidate the human base.
-            for asset in job.assets.clone() {
-                record.document.assets.insert(asset.id.clone(), asset);
+            if !result.operations.is_empty() {
+                for asset in job.assets.clone() {
+                    record.document.assets.insert(asset.id.clone(), asset);
+                }
+                Self::validate_proposal(&record.document, &result)?;
             }
             let transaction = CreativeTransaction {
                 id: format!("job_{}", hash(&(id, job_id))?),
@@ -637,7 +632,9 @@ impl CreativeStore {
                 operations: result.operations,
             };
             let digest = hash(&transaction)?;
-            Self::edit(&mut record, &transaction, digest)?;
+            if !transaction.operations.is_empty() {
+                Self::edit(&mut record, &transaction, digest)?;
+            }
             record.jobs[index].job.status = CreativeJobStatus::Accepted;
             record.jobs[index].job.applied_revision = Some(record.document.revision);
         }

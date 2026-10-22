@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 mod job_archive;
+mod job_merge;
 mod jobs;
 mod visuals;
 pub use jobs::CreativeDispatch;

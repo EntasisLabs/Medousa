@@ -129,6 +129,23 @@ visible. **Retry** resends the exact failed request before saving later gestures
 the local draft against the workshop's current version; it does not undo a change
 that the workshop already committed.
 
+## Grid, guides, and arranging objects
+
+Open **View** near Style to choose a dot or line grid and 8/16/32/64 px spacing.
+**Snap to grid** works independently of grid visibility for moving objects,
+placing shapes/frames, resizing, and line endpoints. **Smart guides & snapping**
+helps match nearby edges and centers while moving or duplicating objects. Hold
+**Ctrl** during a drag to temporarily bypass snapping. Freehand ink is unaffected.
+These settings are remembered per workshop on this device; the grid and guides
+never appear in exported images or AI snapshots.
+
+Select objects and open **Align** in the floating selection controls. Choose
+**Selection** to line objects up with each other, or **Frame** to use the enclosing
+frame. A single object aligns within its frame, including rotated frames and
+nested groups. With three or more objects, **Space horizontally/vertically**
+equalizes the gaps while leaving the outer objects fixed. Alignment and spacing
+use normal save/undo. **View → Zoom to selection** focuses the current selection.
+
 ## Ask Medousa about a selection
 
 Select objects or a frame, open **Ask Medousa** in the floating toolbar, and
@@ -151,9 +168,12 @@ request so the composition preview also fits in the assistant's image context.
 Visual understanding depends on the configured assistant model's vision support.
 
 When a result is ready, switch between **Original** and **Preview**. **Use this**
-applies the proposal as an undoable edit; dismissing preserves the original. A
-proposal from an earlier document revision cannot overwrite subsequent edits.
-Start a new request against the updated selection instead.
+applies the proposal as an undoable edit; dismissing preserves the original.
+You can keep working while generation runs. Preview and **Use this** combine the
+result with compatible canvas edits, including unrelated objects and movement.
+If both edits change the same field, or a removal would delete new work, applying
+explains the conflict and keeps the generation saved. Undoing the conflicting
+edit lets you try the same result again without regenerating.
 
 Keep typing in Ask Medousa to continue the same conversation. After applying a
 result, follow-ups capture the current saved canvas. To refine a suggestion
