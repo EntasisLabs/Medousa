@@ -2858,6 +2858,17 @@
       "CreativeAssetImportRequest": {
         "additionalProperties": false,
         "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeVisualContextRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stage a selection snapshot without editing the document or its history."
+          },
           "data_base64": {
             "type": "string"
           }
@@ -2963,6 +2974,24 @@
                 "format": "double",
                 "type": "number"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "format": "uint16",
+                "minimum": 0.0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "kind": {
                 "enum": [
                   "text"
@@ -2993,6 +3022,16 @@
                   "shape"
                 ],
                 "type": "string"
+              },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "shape": {
                 "$ref": "#/components/schemas/CreativeShapeKind"
@@ -3221,6 +3260,13 @@
         ],
         "type": "object"
       },
+      "CreativeFontStyle": {
+        "enum": [
+          "normal",
+          "italic"
+        ],
+        "type": "string"
+      },
       "CreativeHistoryRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3308,6 +3354,16 @@
           },
           "updated_at": {
             "type": "string"
+          },
+          "visual_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeAsset"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3351,14 +3407,31 @@
           "id": {
             "type": "string"
           },
+          "parent_job_id": {
+            "description": "Continue this project's owned conversation, never an arbitrary session.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "prompt": {
             "type": "string"
+          },
+          "refine_proposal": {
+            "default": false,
+            "type": "boolean"
           },
           "selected_ids": {
             "items": {
               "type": "string"
             },
             "type": "array"
+          },
+          "visual_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3379,9 +3452,56 @@
           "accepted",
           "failed",
           "interrupted",
-          "cancelled"
+          "cancelled",
+          "superseded"
         ],
         "type": "string"
+      },
+      "CreativeLine": {
+        "additionalProperties": false,
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/components/schemas/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/components/schemas/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "end",
+          "start"
+        ],
+        "type": "object"
+      },
+      "CreativeLinePoint": {
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "type": "object"
       },
       "CreativeListResponse": {
         "properties": {
@@ -3445,6 +3565,13 @@
           },
           "locked": {
             "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "opacity": {
             "format": "double",
@@ -3933,6 +4060,27 @@
           "width",
           "x",
           "y"
+        ],
+        "type": "object"
+      },
+      "CreativeVisualContextRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "selected_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "selected_ids"
         ],
         "type": "object"
       },

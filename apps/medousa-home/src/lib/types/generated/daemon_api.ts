@@ -96,11 +96,14 @@ export interface CreativeDocument {
 export interface CreativeJobRequest {
   expected_revision: number;
   id: string;
+  parent_job_id?: string | null;
   prompt: string;
+  refine_proposal?: boolean;
   selected_ids: string[];
+  visual_asset_id?: string | null;
 }
 
-export type CreativeJobStatus = "queued" | "dispatching" | "running" | "ready" | "stale" | "accepted" | "failed" | "interrupted" | "cancelled";
+export type CreativeJobStatus = "queued" | "dispatching" | "running" | "ready" | "stale" | "accepted" | "failed" | "interrupted" | "cancelled" | "superseded";
 
 export type CreativeOperation = { node: CreativeNode; op: "put_node" } | { id: string; op: "remove_node" } | { ids: string[]; op: "reorder" } | { color: string; op: "set_background" } | { op: "rename"; title: string } | { op: "pin"; pinned: boolean };
 
@@ -134,6 +137,7 @@ export interface CreativeJob {
   status: CreativeJobStatus;
   turn_id: string;
   updated_at: string;
+  visual_context?: CreativeAsset | null;
 }
 
 export interface CreativeJobListResponse {
@@ -189,7 +193,13 @@ export interface CreativeListResponse {
   projects: CreativeProjectSummary[];
 }
 
+export interface CreativeVisualContextRequest {
+  expected_revision: number;
+  selected_ids: string[];
+}
+
 export interface CreativeAssetImportRequest {
+  context?: CreativeVisualContextRequest | null;
   data_base64: string;
 }
 

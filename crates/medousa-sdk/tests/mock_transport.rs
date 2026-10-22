@@ -775,6 +775,7 @@ async fn creative_jobs_use_generated_routes_and_decode_terminal_receipts() {
         expected_revision: 3,
         selected_ids: vec!["frame".into()],
         prompt: "Add a title".into(),
+        ..Default::default()
     };
     assert_eq!(
         client

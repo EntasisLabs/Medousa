@@ -15,6 +15,7 @@ const { request, openCreative } = vi.hoisted(() => ({
   openCreative: vi.fn(),
 }));
 vi.mock("$lib/daemon/contractClient", () => ({ daemonUnary: request }));
+vi.mock("$lib/create/creativeCapture", () => ({ captureCreativeSelection: vi.fn().mockResolvedValue("cG5n") }));
 vi.mock("$lib/stores/shellTabs.svelte", () => ({
   shellTabs: {
     tabs: [],
@@ -282,6 +283,7 @@ it("uses the scoped durable-job API and previews before explicit acceptance", as
         };
         return proposed;
       }
+      if (op === "create.projects.by_id.assets.post") return { id: "visual-test", mime: "image/png", sha256: "a".repeat(64), byte_size: 3 };
       if (op === "create.projects.by_id.jobs.by_job_id.decision.post") {
         expect(body).toEqual({ accept: true, expected_revision: 0 });
         doc = {
@@ -319,6 +321,7 @@ it("uses the scoped durable-job API and previews before explicit acceptance", as
     expected_revision: 0,
     selected_ids: ["title"],
     prompt: "Change this title",
+    visual_asset_id: "visual-test",
   });
   expect(admitted[3]).toBeNull();
   expect(admitted[5]).toBe("ui-test");

@@ -71,6 +71,11 @@ fn main() {
     export_type!(schemas, CreativeContextRequest, "CreativeContextRequest");
     export_type!(
         schemas,
+        CreativeVisualContextRequest,
+        "CreativeVisualContextRequest"
+    );
+    export_type!(
+        schemas,
         CreativeSelectionContext,
         "CreativeSelectionContext"
     );

@@ -366,6 +366,17 @@ pub struct CreativeProposalListResponse {
 #[serde(deny_unknown_fields)]
 pub struct CreativeAssetImportRequest {
     pub data_base64: String,
+    /// Stage a selection snapshot without editing the document or its history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<CreativeVisualContextRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeVisualContextRequest {
+    pub expected_revision: u64,
+    pub selected_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -407,7 +418,7 @@ pub struct CreativeSelectionContext {
 }
 
 /// Stable admission identity. Retrying an ID must repeat the exact input.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CreativeJobRequest {
@@ -415,6 +426,13 @@ pub struct CreativeJobRequest {
     pub expected_revision: u64,
     pub selected_ids: Vec<String>,
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual_asset_id: Option<String>,
+    /// Continue this project's owned conversation, never an arbitrary session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_job_id: Option<String>,
+    #[serde(default)]
+    pub refine_proposal: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -430,6 +448,7 @@ pub enum CreativeJobStatus {
     Failed,
     Interrupted,
     Cancelled,
+    Superseded,
 }
 impl CreativeJobStatus {
     pub fn executing(self) -> bool {
@@ -450,6 +469,8 @@ pub struct CreativeJob {
     pub updated_at: String,
     pub result: Option<CreativeProposalRequest>,
     pub assets: Vec<CreativeAsset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual_context: Option<CreativeAsset>,
     pub error: Option<String>,
     pub applied_revision: Option<u64>,
 }

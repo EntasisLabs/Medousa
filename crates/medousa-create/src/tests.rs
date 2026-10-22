@@ -1,5 +1,6 @@
 use super::*;
 use std::sync::{Arc, Barrier};
+mod visual_jobs;
 fn create(store: &CreativeStore) -> CreativeDocument {
     store
         .create(CreativeCreateRequest {
@@ -626,6 +627,7 @@ fn job_request(id: &str) -> CreativeJobRequest {
         expected_revision: 1,
         selected_ids: vec!["title".into()],
         prompt: "Make the title clearer".into(),
+        ..Default::default()
     }
 }
 fn job_result(id: &str) -> CreativeProposalRequest {
@@ -1077,7 +1079,7 @@ fn creative_job_limits_never_evict_an_admission_identity() {
     assert!(
         store
             .enqueue_job("project_one", "owner", job_request("overflow"))
-            .is_err()
+            .is_ok()
     );
     assert_eq!(
         store

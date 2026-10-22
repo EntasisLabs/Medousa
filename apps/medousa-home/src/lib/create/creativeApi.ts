@@ -1,5 +1,5 @@
 import { daemonUnary as dispatch } from "$lib/daemon/contractClient";
-import { creativeErrorMessage, isCreativeAdmissionBusy } from "./creativeErrors";
+import { creativeRequestError, isCreativeAdmissionBusy } from "./creativeErrors";
 import type {
   CreativeJob,
   CreativeJobRequest,
@@ -18,6 +18,7 @@ import type {
   CreativeTransaction,
   CreativeDeleteResponse,
   CreativeSelectionContext,
+  CreativeVisualContextRequest,
 } from "$lib/types/generated/daemon_api";
 
 /** Bind once to a workshop. A later active-workshop change cannot redirect a save. */
@@ -43,7 +44,7 @@ export function creativeApi(workshopId: string) {
           await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
           continue;
         }
-        throw new Error(creativeErrorMessage(error));
+        throw creativeRequestError(error);
       }
     }
   };
@@ -106,6 +107,8 @@ export function creativeApi(workshopId: string) {
         { id },
         { data_base64: dataBase64 },
       ),
+    captureSelection: (id: string, dataBase64: string, context: CreativeVisualContextRequest) =>
+      send<CreativeAsset>("create.projects.by_id.assets.post", { id }, { data_base64: dataBase64, context }),
     asset: (id: string, assetId: string) =>
       send<CreativeAssetData>(
         "create.projects.by_id.assets.by_asset_id.get",

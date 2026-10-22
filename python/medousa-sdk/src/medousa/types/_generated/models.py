@@ -626,6 +626,14 @@ class CreativeAsset(MedousaModel):
     sha256: str
 
 
+class CreativeVisualContextRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
+    selected_ids: list[str]
+
+
 class CreativeBrushKind(Enum):
     pen = 'pen'
     pencil = 'pencil'
@@ -738,8 +746,13 @@ class CreativeJobRequest(MedousaModel):
     )
     expected_revision: int = Field(..., ge=0)
     id: str
+    parent_job_id: str | None = Field(
+        None, description="Continue this project's owned conversation, never an arbitrary session."
+    )
     prompt: str
+    refine_proposal: bool | None = False
     selected_ids: list[str]
+    visual_asset_id: str | None = None
 
 
 class CreativeJobStatus(Enum):
@@ -752,6 +765,7 @@ class CreativeJobStatus(Enum):
     failed = 'failed'
     interrupted = 'interrupted'
     cancelled = 'cancelled'
+    superseded = 'superseded'
 
 
 class Op(Enum):
@@ -4533,6 +4547,9 @@ class CreativeAssetImportRequest(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    context: CreativeVisualContextRequest | None = Field(
+        None, description='Stage a selection snapshot without editing the document or its history.'
+    )
     data_base64: str
 
 
@@ -7220,6 +7237,7 @@ class CreativeJob(MedousaModel):
     status: CreativeJobStatus
     turn_id: str
     updated_at: str
+    visual_context: CreativeAsset | None = None
 
 
 class CreativeDocument(MedousaModel):

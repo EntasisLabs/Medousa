@@ -7152,11 +7152,45 @@
       "data_base64"
     ],
     "properties": {
+      "context": {
+        "description": "Stage a selection snapshot without editing the document or its history.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CreativeVisualContextRequest"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "data_base64": {
         "type": "string"
       }
     },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "definitions": {
+      "CreativeVisualContextRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "selected_ids"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "selected_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
   },
   "CreativeContextRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -8410,6 +8444,16 @@
       },
       "updated_at": {
         "type": "string"
+      },
+      "visual_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CreativeAsset"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "definitions": {
@@ -8744,14 +8788,31 @@
           "id": {
             "type": "string"
           },
+          "parent_job_id": {
+            "description": "Continue this project's owned conversation, never an arbitrary session.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "prompt": {
             "type": "string"
+          },
+          "refine_proposal": {
+            "default": false,
+            "type": "boolean"
           },
           "selected_ids": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "visual_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -8767,7 +8828,8 @@
           "accepted",
           "failed",
           "interrupted",
-          "cancelled"
+          "cancelled",
+          "superseded"
         ]
       },
       "CreativeLine": {
@@ -9547,6 +9609,16 @@
           },
           "updated_at": {
             "type": "string"
+          },
+          "visual_context": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAsset"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -9568,14 +9640,31 @@
           "id": {
             "type": "string"
           },
+          "parent_job_id": {
+            "description": "Continue this project's owned conversation, never an arbitrary session.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "prompt": {
             "type": "string"
+          },
+          "refine_proposal": {
+            "default": false,
+            "type": "boolean"
           },
           "selected_ids": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "visual_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -9591,7 +9680,8 @@
           "accepted",
           "failed",
           "interrupted",
-          "cancelled"
+          "cancelled",
+          "superseded"
         ]
       },
       "CreativeLine": {
@@ -9995,14 +10085,31 @@
       "id": {
         "type": "string"
       },
+      "parent_job_id": {
+        "description": "Continue this project's owned conversation, never an arbitrary session.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "prompt": {
         "type": "string"
+      },
+      "refine_proposal": {
+        "default": false,
+        "type": "boolean"
       },
       "selected_ids": {
         "type": "array",
         "items": {
           "type": "string"
         }
+      },
+      "visual_asset_id": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "additionalProperties": false
@@ -13845,6 +13952,29 @@
         "additionalProperties": false
       }
     }
+  },
+  "CreativeVisualContextRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreativeVisualContextRequest",
+    "type": "object",
+    "required": [
+      "expected_revision",
+      "selected_ids"
+    ],
+    "properties": {
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "selected_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "additionalProperties": false
   },
   "DaemonRuntimeDescriptor": {
     "$schema": "http://json-schema.org/draft-07/schema#",

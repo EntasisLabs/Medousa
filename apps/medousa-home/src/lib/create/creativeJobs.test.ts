@@ -130,3 +130,37 @@ it("restores the current job when a view reopens during its first read", async (
   expect(jobs.job?.status).toBe("ready");
   second();
 });
+
+it("captures visual context once and retries admission with the exact thread, image and revision", async () => {
+  const port = api(), jobs = creativeJobs(port, "doc", vi.fn());
+  vi.mocked(port.createJob).mockImplementation(async (_id, request) => ({ ...job("ready"), request }));
+  await jobs.start("First", 0, ["frame"]);
+  const capture = vi.fn().mockResolvedValue("snapshot-asset");
+  vi.mocked(port.createJob).mockRejectedValueOnce(new Error("lost response"));
+  await expect(jobs.start("Make it warmer", 0, ["frame"], capture, true)).rejects.toThrow("lost response");
+  const request = structuredClone(vi.mocked(port.createJob).mock.calls[1][1]);
+  expect(request).toMatchObject({ visual_asset_id: "snapshot-asset", parent_job_id: jobs.job!.request.id, refine_proposal: true });
+  await jobs.retry(); expect(capture).toHaveBeenCalledOnce();
+  expect(vi.mocked(port.createJob).mock.calls[2][1]).toEqual(request);
+  expect(jobs.thread).toHaveLength(2);
+  jobs.newConversation(); await jobs.start("A new idea", 1, ["frame"], capture);
+  expect(vi.mocked(port.createJob).mock.calls[3][1]).not.toHaveProperty("parent_job_id");
+});
+it("blocks concurrent requests while capture is preparing and retains the draft on capture failure", async () => {
+  const port = api(), jobs = creativeJobs(port, "doc", vi.fn()); let reject!: (e: Error) => void;
+  const pending = jobs.start("Keep it", 0, ["frame"], () => new Promise((_resolve, fail) => reject = fail));
+  expect(jobs.busy).toBe(true); expect(jobs.preparing).toBe(true);
+  await expect(jobs.start("Other", 0, ["frame"])).rejects.toThrow("Finish");
+  reject(new Error("Capture unavailable")); await expect(pending).rejects.toThrow("Capture unavailable");
+  expect(port.createJob).not.toHaveBeenCalled(); expect(jobs.busy).toBe(false); expect(jobs.pending).toBe(false);
+});
+
+it("allows a fresh capture after a definite stale admission rejection while preserving uncertain receipts", async () => {
+  const { CreativeRequestError } = await import("./creativeErrors");
+  const port = api(), jobs = creativeJobs(port, "doc", vi.fn());
+  vi.mocked(port.createJob).mockRejectedValueOnce(new CreativeRequestError("The canvas changed", 409));
+  await expect(jobs.start("Refine", 0, ["frame"], async () => "old-snapshot")).rejects.toThrow("changed");
+  expect(jobs.pending).toBe(false);
+  await jobs.start("Refine", 1, ["frame"], async () => "fresh-snapshot");
+  expect(vi.mocked(port.createJob).mock.calls[1][1]).toMatchObject({ expected_revision: 1, visual_asset_id: "fresh-snapshot" });
+});

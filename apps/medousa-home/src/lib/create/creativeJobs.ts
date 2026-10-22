@@ -5,6 +5,7 @@ import type {
   CreativeProposalDecision,
 } from "$lib/types/generated/daemon_api";
 import { randomUuid } from "$lib/utils/randomUuid";
+import { CreativeRequestError } from "./creativeErrors";
 export type CreativeJobView = Omit<CreativeJob, "context">;
 const active = new Set(["queued", "dispatching", "running"]);
 export function creativeJobs(
@@ -21,11 +22,14 @@ export function creativeJobs(
     timer: ReturnType<typeof setTimeout> | null = null,
     epoch = 0,
     refreshing = false;
+  let preparing = false, fresh = false;
+  let history: CreativeJobView[] = [];
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((fn) => fn());
   const setJob = (value: CreativeJob) => {
     const { context: _, ...view } = value;
     job = view;
+    history = [...history.filter(j => j.request.id !== view.request.id), view].slice(-32);
   };
   function schedule() {
     if (timer) clearTimeout(timer);
@@ -35,6 +39,7 @@ export function creativeJobs(
         : null;
   }
   async function refresh() {
+    if (fresh || pending) return;
     if (refreshing || busy) {
       schedule();
       return;
@@ -42,12 +47,13 @@ export function creativeJobs(
     const generation = epoch;
     refreshing = true;
     try {
-      const value =
-        job && active.has(job.status)
-          ? await api.job(id, job.request.id)
-          : (await api.jobs(id)).jobs.sort((a, b) =>
-              b.created_at.localeCompare(a.created_at),
-            )[0];
+      let value: CreativeJob | undefined;
+      if (job && active.has(job.status)) value = await api.job(id, job.request.id);
+      else {
+        const values = (await api.jobs(id)).jobs.sort((a, b) => a.created_at.localeCompare(b.created_at));
+        if (generation === epoch) history = values.map(({ context: _, ...view }) => view);
+        value = values.at(-1);
+      }
       if (generation === epoch && value) {
         setJob(value);
         error = null;
@@ -73,6 +79,9 @@ export function creativeJobs(
       setJob(await api.createJob(id, structuredClone(pending)));
       pending = null;
     } catch (e) {
+      // A definite rejection never admitted work. Unknown/lost receipts keep
+      // their exact identity; users can recapture after a revision conflict.
+      if (e instanceof CreativeRequestError && e.rejected) pending = null;
       error = e instanceof Error ? e.message : String(e);
       throw e;
     } finally {
@@ -82,6 +91,12 @@ export function creativeJobs(
     }
   }
   return {
+    get preparing() { return preparing; },
+    get thread() { return job ? history.filter(j => j.session_id === job!.session_id) : []; },
+    newConversation() {
+      if (busy || pending || decision || (job && active.has(job.status))) throw new Error("Finish the current request first");
+      epoch++; fresh = true; job = null; error = null; notify();
+    },
     get job() {
       return job;
     },
@@ -122,7 +137,7 @@ export function creativeJobs(
       };
     },
     refresh,
-    async start(prompt: string, revision: number, selectedIds: string[]) {
+    async start(prompt: string, revision: number, selectedIds: string[], capture?: () => Promise<string>, refineProposal = false) {
       if (busy || pending || decision || (job && active.has(job.status)))
         throw new Error("Finish the current request first");
       if (!prompt.trim() || !selectedIds.length)
@@ -134,12 +149,24 @@ export function creativeJobs(
       if (selectedIds.length > 1000)
         throw new Error("Select fewer than 1,001 objects for this request");
       epoch++;
+      const parentId = fresh ? undefined : job?.request.id;
+      const capturedIds = [...selectedIds];
+      let visualAssetId: string | undefined;
+      if (capture) {
+        busy = true; preparing = true; error = null; notify();
+        try { visualAssetId = await capture(); }
+        finally { busy = false; preparing = false; notify(); }
+      }
       pending = {
         id: randomUuid(),
         expected_revision: revision,
-        selected_ids: [...selectedIds],
+        selected_ids: capturedIds,
         prompt: prompt.trim(),
+        ...(parentId ? { parent_job_id: parentId } : {}),
+        ...(visualAssetId ? { visual_asset_id: visualAssetId } : {}),
+        refine_proposal: Boolean(parentId && refineProposal),
       };
+      fresh = false;
       await submit();
     },
     retry: submit,

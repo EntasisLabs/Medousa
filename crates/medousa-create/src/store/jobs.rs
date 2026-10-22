@@ -2,7 +2,6 @@
 //! from a callback; only an explicit decision uses the normal undoable edit path.
 use super::*;
 
-const MAX_JOBS: usize = 32;
 const MAX_JOB_BYTES: usize = 8 * 1024 * 1024;
 const MAX_SNAPSHOT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RESULT_BYTES: usize = 512 * 1024;
@@ -13,6 +12,10 @@ pub(super) struct JobRecord {
     owner: String,
     /// Retained only during execution, for validation against the admitted base.
     pub(super) snapshot: Option<CreativeDocument>,
+    #[serde(default)]
+    inherited: Vec<CreativeOperation>,
+    #[serde(default)]
+    result_input: Option<String>,
 }
 
 /// Small recovery/outbox descriptor: no scenes, patches or bitmap payloads.
@@ -91,21 +94,120 @@ impl CreativeStore {
             }
             return Ok(existing.job.clone());
         }
-        Self::check_revision(&record, request.expected_revision)?;
-        if record.jobs.len() >= MAX_JOBS {
-            // Never evict an admission identity and accidentally replay an old job.
-            return Err(invalid("project has reached its 32-job capacity"));
+        if let Some(existing) = self.archived_job(id, &request.id)? {
+            if existing.owner != owner || existing.job.request != request {
+                return Err(invalid(
+                    "creative job id reused with different input or owner",
+                ));
+            }
+            return Ok(existing.job);
         }
+        Self::check_revision(&record, request.expected_revision)?;
         if serde_json::to_vec(&record.document).map_err(storage)?.len() > MAX_SNAPSHOT_BYTES {
             return Err(invalid("creative job base exceeds 2 MiB"));
         }
+        let mut snapshot = record.document.clone();
+        let mut inherited = vec![];
+        let mut inherited_assets = vec![];
+        let session_id = if let Some(parent) = &request.parent_job_id {
+            let archived = self.archived_job(id, parent)?;
+            let previous = record
+                .jobs
+                .iter()
+                .find(|j| &j.job.request.id == parent)
+                .or(archived.as_ref())
+                .ok_or(CreativeError::NotFound)?;
+            if previous.owner != owner {
+                return Err(CreativeError::NotFound);
+            }
+            if previous.job.status.executing() || previous.job.status == CreativeJobStatus::Queued {
+                return Err(invalid("finish the previous creative request first"));
+            }
+            if record.jobs.iter().any(|j| {
+                j.job.session_id == previous.job.session_id
+                    && (j.job.status.executing() || j.job.status == CreativeJobStatus::Queued)
+            }) {
+                return Err(invalid(
+                    "this creative conversation already has an active request",
+                ));
+            }
+            if request.refine_proposal {
+                if previous.job.status != CreativeJobStatus::Ready
+                    || previous.job.context.revision != request.expected_revision
+                    || previous.job.request.selected_ids != request.selected_ids
+                {
+                    return Err(invalid(
+                        "refine a current preview with its original selection",
+                    ));
+                }
+                inherited = previous
+                    .job
+                    .result
+                    .as_ref()
+                    .ok_or_else(|| invalid("preview has no proposal"))?
+                    .operations
+                    .clone();
+                inherited_assets = previous.job.assets.clone();
+                for asset in &inherited_assets {
+                    snapshot.assets.insert(asset.id.clone(), asset.clone());
+                }
+            }
+            previous.job.session_id.clone()
+        } else {
+            if request.refine_proposal {
+                return Err(invalid("refining requires a previous creative request"));
+            }
+            format!("ses_create_{}", hash(&(id, &request.id))?)
+        };
+        let effective = if inherited.is_empty() {
+            snapshot.clone()
+        } else {
+            apply_operations(&snapshot, &inherited)?
+        };
         let context = Self::selection_context(
-            &record.document,
+            &effective,
             CreativeContextRequest {
                 selected_ids: request.selected_ids.clone(),
             },
         )?;
+        let visual_context = if let Some(asset_id) = &request.visual_asset_id {
+            let visual = record
+                .visuals
+                .get(asset_id)
+                .ok_or_else(|| invalid("capture the selection preview again"))?;
+            let original = Self::selection_context(
+                &record.document,
+                CreativeContextRequest {
+                    selected_ids: request.selected_ids.clone(),
+                },
+            )?;
+            if visual.revision != request.expected_revision
+                || visual.selected_ids != request.selected_ids
+                || visual.fingerprint != original.fingerprint
+            {
+                return Err(invalid("selection preview does not match this request"));
+            }
+            Some(visual.asset.clone())
+        } else {
+            None
+        };
+        if context.assets.len() + usize::from(visual_context.is_some()) > 5 {
+            return Err(invalid(
+                "select at most four distinct images with a selection preview",
+            ));
+        }
         let identity = hash(&(id, &request.id))?;
+        if let Some(parent) = &request.parent_job_id {
+            if let Some(previous) = record.jobs.iter_mut().find(|j| &j.job.request.id == parent) {
+                if matches!(
+                    previous.job.status,
+                    CreativeJobStatus::Ready | CreativeJobStatus::Stale
+                ) {
+                    previous.job.status = CreativeJobStatus::Superseded;
+                    previous.job.updated_at = now();
+                }
+            }
+        }
         let time = now();
         let job = CreativeJob {
             request,
@@ -113,19 +215,26 @@ impl CreativeStore {
             context,
             status: CreativeJobStatus::Queued,
             turn_id: format!("creative_job_{identity}"),
-            session_id: format!("ses_create_{identity}"),
+            session_id,
             created_at: time.clone(),
             updated_at: time,
             result: None,
-            assets: vec![],
+            assets: inherited_assets,
+            visual_context,
             error: None,
             applied_revision: None,
         };
         record.jobs.push(JobRecord {
             job: job.clone(),
             owner: owner.into(),
-            snapshot: Some(record.document.clone()),
+            snapshot: Some(snapshot),
+            inherited,
+            result_input: None,
         });
+        self.archive_finished_jobs(id, &mut record, Some(&job.request.id))?;
+        if let Some(asset_id) = &job.request.visual_asset_id {
+            record.visuals.remove(asset_id);
+        }
         Self::job_budget(&record)?;
         // Publishing the locator first is safe: lookup also requires the atomic
         // project admission. An orphan locator cannot authorize an execution.
@@ -136,8 +245,13 @@ impl CreativeStore {
     }
     pub fn job(&self, id: &str, job_id: &str, owner: &str) -> Result<CreativeJob> {
         let record = self.read_record(id, true)?;
-        let index = Self::job_position(&record, job_id)?;
-        let job = &record.jobs[index];
+        let archived = self.archived_job(id, job_id)?;
+        let job = record
+            .jobs
+            .iter()
+            .find(|j| j.job.request.id == job_id)
+            .or(archived.as_ref())
+            .ok_or(CreativeError::NotFound)?;
         if job.owner != owner {
             return Err(CreativeError::NotFound);
         }
@@ -161,8 +275,13 @@ impl CreativeStore {
             .map_err(storage)?;
         let (id, job_id): (String, String) = serde_json::from_slice(&bytes).map_err(storage)?;
         let record = self.read_record(&id, true)?;
-        let index = Self::job_position(&record, &job_id)?;
-        let job = &record.jobs[index];
+        let archived = self.archived_job(&id, &job_id)?;
+        let job = record
+            .jobs
+            .iter()
+            .find(|j| j.job.request.id == job_id)
+            .or(archived.as_ref())
+            .ok_or(CreativeError::NotFound)?;
         if job.job.turn_id != turn_id {
             return Err(invalid("job execution identity mismatch"));
         }
@@ -382,14 +501,30 @@ impl CreativeStore {
         id: &str,
         job_id: &str,
         turn_id: &str,
-        request: CreativeProposalRequest,
+        mut request: CreativeProposalRequest,
     ) -> Result<CreativeJob> {
         let _lock = self.lock(id)?;
         let mut record = self.read(id)?;
         let index = Self::job_position(&record, job_id)?;
         let job = &record.jobs[index];
+        let input_digest = hash(&request)?;
         if job.job.turn_id != turn_id {
             return Err(invalid("wrong creative execution"));
+        }
+        if job.job.status != CreativeJobStatus::Cancelled
+            && job.result_input.as_ref() == Some(&input_digest)
+        {
+            return Ok(job.job.clone());
+        }
+        // A refinement is returned as a complete replacement proposal against
+        // the unchanged human revision, so acceptance remains one undoable edit.
+        if !job.inherited.is_empty() {
+            if let Some(snapshot) = &job.snapshot {
+                let effective = apply_operations(snapshot, &job.inherited)?;
+                Self::validate_proposal(&effective, &request)?;
+                let next = apply_operations(&effective, &request.operations)?;
+                request.operations = proposal_delta(snapshot, &next);
+            }
         }
         if let Some(result) = &job.job.result {
             if job.job.status != CreativeJobStatus::Cancelled && hash(result)? == hash(&request)? {
@@ -418,6 +553,7 @@ impl CreativeStore {
         Self::validate_proposal(snapshot, &request)?;
         let current = record.document.revision;
         let job = &mut record.jobs[index];
+        job.result_input = Some(input_digest);
         job.job.status = if current == request.expected_revision {
             CreativeJobStatus::Ready
         } else {
@@ -441,6 +577,22 @@ impl CreativeStore {
     ) -> Result<CreativeJob> {
         let _lock = self.lock(id)?;
         let mut record = self.read_record(id, true)?;
+        if !record.jobs.iter().any(|j| j.job.request.id == job_id) {
+            let archived = self
+                .archived_job(id, job_id)?
+                .ok_or(CreativeError::NotFound)?;
+            if archived.owner != owner {
+                return Err(CreativeError::NotFound);
+            }
+            if (request.accept && archived.job.status == CreativeJobStatus::Accepted)
+                || (!request.accept && archived.job.status == CreativeJobStatus::Cancelled)
+            {
+                return Ok(archived.job);
+            }
+            return Err(invalid(
+                "this creative request is archived; start a follow-up",
+            ));
+        }
         let index = Self::job_position(&record, job_id)?;
         if record.jobs[index].owner != owner {
             return Err(CreativeError::NotFound);
@@ -533,4 +685,24 @@ impl CreativeStore {
         self.write(&record)?;
         Ok(asset)
     }
+}
+
+fn proposal_delta(from: &CreativeDocument, to: &CreativeDocument) -> Vec<CreativeOperation> {
+    let old: BTreeMap<_, _> = from.scene.nodes.iter().map(|n| (&n.id, n)).collect();
+    let ids: BTreeSet<_> = to.scene.nodes.iter().map(|n| &n.id).collect();
+    let mut operations: Vec<_> = from
+        .scene
+        .nodes
+        .iter()
+        .filter(|n| !ids.contains(&n.id))
+        .map(|n| CreativeOperation::RemoveNode { id: n.id.clone() })
+        .collect();
+    operations.extend(
+        to.scene
+            .nodes
+            .iter()
+            .filter(|n| old.get(&n.id).copied() != Some(*n))
+            .map(|n| CreativeOperation::PutNode { node: n.clone() }),
+    );
+    operations
 }

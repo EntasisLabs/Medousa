@@ -84,6 +84,16 @@ Import publishes bytes before the manifest and recovers retries after an
 interrupted manifest write. Reading verifies the digest. Import increments the
 document revision: read the latest document before placing the image node.
 
+The same asset-import operation accepts optional `context: { expected_revision,
+selected_ids }` for a rendered selection snapshot. It stages a PNG up to 4 MiB
+separately from the document manifest and history and returns a `CreativeAsset`.
+The client uses the same SVG renderer as export, crops in world coordinates,
+removes editor chrome, and bounds the rendition to 1,536 px per side. Up to 32
+unsubmitted captures are retained in the working record. Submit its ID as
+`CreativeJobRequest.visual_asset_id`; admission validates the saved revision,
+selection IDs and fingerprint and consumes the staged descriptor. Identical
+admission retries still return the original job. Snapshot payloads remain on disk.
+
 `promote-media` copies an existing uploaded/generated session image into project
 ownership while holding a session mutation lease. Source-session deletion cannot
 race the read, and a later deletion cannot remove the project copy. It reuses the
@@ -117,6 +127,26 @@ on admission. Personal-mode operator Portals use the existing workshop-owner
 resolver too. Shared/member credentials must carry their own profile and cannot
 fall back to the local operator. Admission and decisions also
 require `workshop.interact`, in addition to content authority.
+
+Optional `parent_job_id` continues an owned job's conversation within the same
+project. Clients cannot supply an arbitrary session ID. A follow-up captures the
+latest saved revision and selected objects. With `refine_proposal: true`, its
+parent must have a current ready preview with the same selected IDs. The captured
+context includes that preview's edits and staged assets. Result validation checks
+the incremental changes against that effective scene, then normalizes the full
+proposal against the unchanged human base. Applying the replacement remains one
+ordinary transaction and undo step. Earlier ready/stale parent previews become
+`superseded`; their results cannot be accepted. New IDs without a parent start
+fresh conversations. One executing/queued request per conversation is admitted.
+
+Before dispatch, Forge-admitted media work copies the snapshot and selected
+original images into the existing session media store using stable job-scoped
+identities. Normal runtime `media_refs` deliver vision context, and the prompt
+maps source asset IDs to session media IDs for image-generation references.
+The admitted media refs are fenced along with the job's prompt, profile, mode
+and tool ceiling. The combined snapshot/original-image count is at most five.
+Each turn persists its user input in the same existing runtime conversation;
+session turn admission serializes follow-ups until the previous turn finishes.
 
 A small durable outbox index finds pending work without polling idle project
 records. Each entry is reconciled independently, so a damaged project cannot
@@ -162,15 +192,19 @@ acknowledgements cannot resurrect cancelled work. Accepted edits use ordinary
 undo rather than cancellation. Deleting a project cancels queued/executing jobs
 and keeps their records readable to their owner.
 
-Job storage retains at most 32 IDs per project and 8 MiB of job metadata, contexts,
+Working job storage retains at most 32 recent/unresolved jobs and 8 MiB of metadata, contexts,
 results and active validation snapshots. Admission snapshots are limited to 2 MiB,
 selection contexts and results to 512 KiB each, prompts to 16 KiB, and staged job
 assets to 16 per job within the shared project asset budget. Snapshots are released
-on completion/cancellation/failure. IDs are never evicted automatically, so a very
-old retry cannot silently run again; at capacity, admission fails explicitly.
-These limits also fit within the overall 16 MiB project-record ceiling. Images
-remain on disk, outside job metadata. Cleanup/archival and the canvas job UI are
-follow-up work.
+on completion/cancellation/failure. Finished jobs are archived under their original
+IDs before the working set grows beyond 32 entries or 6 MiB, preserving headroom
+within the overall 16 MiB project-record ceiling. Reads by ID and identical
+admission retries resolve archived jobs too; changed input or owner cannot replay
+an old execution. Lists return the recent working set; full conversations remain
+in the existing runtime transcript. If only unresolved jobs occupy capacity,
+admission asks the caller to finish or dismiss one. Images remain on disk outside
+job metadata. These fields and the `superseded` status require an updated daemon;
+older requests without visual/continuation fields remain supported.
 
 ## HTTP surface
 

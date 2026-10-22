@@ -214,7 +214,10 @@ async fn import_asset(
         let bytes = STANDARD
             .decode(request.data_base64)
             .map_err(|_| CreativeError::Invalid("invalid base64 asset".into()))?;
-        store.import_asset(&id, &bytes)
+        match request.context {
+            Some(context) => store.import_visual_context(&id, context, &bytes),
+            None => store.import_asset(&id, &bytes),
+        }
     })
     .await
 }

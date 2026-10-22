@@ -231,3 +231,15 @@ ID to retry an interrupted execution. Read the job result before explicitly
 accepting against its captured document revision. See the
 [creative service contract](../engine/creative-workspace.md#durable-creative-jobs)
 for recovery, cancellation and capacity behavior.
+
+For visual context, call `import_asset` with `CreativeAssetImportRequest.context`
+containing `expected_revision` and `selected_ids`, plus a bounded PNG in
+`data_base64`. This stages a snapshot without advancing the canvas revision.
+Pass the returned asset ID as `CreativeJobRequest.visual_asset_id`. The daemon
+also supplies original selected image assets as session media references.
+Continue a conversation with `parent_job_id`; set `refine_proposal` to refine a
+current unapplied preview with the same selection. Each result still requires
+explicit acceptance against the captured revision. Finished requests are archived
+without losing their admission identity; `jobs` returns recent work and `job`
+can read an archived request by ID. Generated models include the optional fields
+and the `superseded` job status; upgrade the daemon before sending them.

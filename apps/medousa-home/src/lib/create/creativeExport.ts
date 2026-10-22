@@ -1,14 +1,7 @@
 import type { CreativeAssets } from "./creativeAssets";
 import type { CreativeNode } from "$lib/types/generated/daemon_api";
 import { sceneBounds, nodeBounds } from "./creativeScene";
-function dataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Couldn’t read the canvas image"));
-    reader.readAsDataURL(blob);
-  });
-}
+import { cloneCreativeSvg, creativeSvgBlob, rasterizeCreativeSvg } from "./creativeRender";
 /** Serialize the same scene renderer, embedding daemon-owned image bytes. */
 export async function exportCreativeScene(
   svg: SVGSVGElement,
@@ -31,17 +24,7 @@ export async function exportCreativeScene(
     throw new Error(
       "Choose a smaller frame for export (up to 8,192 px per side and 32 megapixels)",
     );
-  const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.querySelectorAll("[data-editor-only]").forEach((n) => n.remove());
-  const camera = clone.querySelector("[data-camera]");
-  camera?.removeAttribute("transform");
-  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  clone.setAttribute(
-    "viewBox",
-    `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`,
-  );
-  clone.setAttribute("width", String(Math.ceil(bounds.width)));
-  clone.setAttribute("height", String(Math.ceil(bounds.height)));
+  const clone = cloneCreativeSvg(svg, bounds);
   if (frame) {
     const keep = new Set([frame.id]);
     for (const n of nodes)
@@ -63,40 +46,8 @@ export async function exportCreativeScene(
         n.remove();
     });
   }
-  for (const image of clone.querySelectorAll<SVGImageElement>(
-    "image[data-asset-id]",
-  )) {
-    const blob = assets.blob(image.dataset.assetId!);
-    if (!blob)
-      throw new Error("Wait for all canvas images to load before exporting");
-    image.setAttribute("href", await dataUrl(blob));
-  }
-  const source = new Blob([new XMLSerializer().serializeToString(clone)], {
-    type: "image/svg+xml",
-  });
-  let output = source;
-  if (format === "png") {
-    const url = URL.createObjectURL(source);
-    try {
-      const image = new Image();
-      image.src = url;
-      await image.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(bounds.width);
-      canvas.height = Math.ceil(bounds.height);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Image export is unavailable");
-      ctx.drawImage(image, 0, 0);
-      output = await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(
-          (b) => (b ? resolve(b) : reject(new Error("Couldn’t encode PNG"))),
-          "image/png",
-        ),
-      );
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
+  const source = await creativeSvgBlob(clone, assets);
+  const output = format === "png" ? await rasterizeCreativeSvg(source, bounds.width, bounds.height) : source;
   const url = URL.createObjectURL(output),
     link = document.createElement("a");
   link.href = url;

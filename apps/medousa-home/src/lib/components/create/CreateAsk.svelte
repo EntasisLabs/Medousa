@@ -21,11 +21,13 @@
     selected,
     disabled = false,
     onerror,
+    capture,
   }: {
     lease: CreativeProjectLease;
     selected: string[];
     disabled?: boolean;
     onerror: (error: unknown) => void;
+    capture: (revision: number, ids: string[]) => Promise<string>;
   } = $props();
   let revision = $state(0),
     picker = $state(false);
@@ -75,6 +77,8 @@
     void revision;
     return jobs.error;
   });
+  const preparing = $derived.by(() => { void revision; return jobs.preparing; });
+  const thread = $derived.by(() => { void revision; return jobs.thread; });
   const pendingDecision = $derived.by(() => {
     void revision;
     return jobs.pendingDecision;
@@ -110,8 +114,10 @@
   async function submit() {
     if (!doc || disabled || busy || executing || pending || !eligible) return;
     try {
+      const base = doc.revision, ids = [...selected];
+      const refining = Boolean(draftState.preview && job?.status === "ready" && !stale);
+      await jobs.start(draftState.draft, base, ids, () => capture(base, ids), refining);
       draftState.preview = false;
-      await jobs.start(draftState.draft, doc.revision, selected);
       draftState.draft = "";
     } catch (e) {
       onerror(e);
@@ -143,13 +149,20 @@
 </script>
 
 <div class="create-ask" aria-label="Ask about selected work">
-  <div class="create-ask-context">
+  <div class="create-ask-context" title="Requests include a canvas snapshot and the selected source images.">
     <Scan size={12} /><span
       >{selected.length
         ? `${context} selected`
         : "Select an object or frame to work with Medousa"}</span
     >
   </div>
+  {#if thread.length}<details class="create-ask-thread">
+      <summary>Conversation · {thread.length}{thread.length === 32 ? " recent" : ""} {thread.length === 1 ? "request" : "requests"}</summary>
+      {#each thread as previous (previous.request.id)}
+        <p><strong>You</strong> {previous.request.prompt}</p>
+        <p><strong>Medousa</strong> {previous.result?.label ?? previous.error ?? previous.status}</p>
+      {/each}
+    </details>{/if}
   <form
     onsubmit={(e) => {
       e.preventDefault();
@@ -174,7 +187,7 @@
       aria-controls={picker ? `${pickerId}-targets` : undefined}
       aria-expanded={picker}
       aria-activedescendant={picker ? `${pickerId}-target-0` : undefined}
-      placeholder="Make this feel a little more playful…"
+      placeholder={job ? "Keep refining this direction…" : "Make this feel a little more playful…"}
       bind:value={draftState.draft}
       disabled={busy || executing || pending}
       maxlength="16000"
@@ -226,9 +239,10 @@
         inline
       />
     </div>{/if}
-  {#if job || pending || jobError}
+  {#if job || pending || jobError || preparing}
     <div class="create-ask-result" aria-live="polite">
-      {#if pending && busy}<span>Sending request…</span>
+      {#if preparing}<span>Capturing selection and image references…</span>
+      {:else if pending && busy}<span>Sending request…</span>
       {:else if pending}<span
           >Your request is saved here. Retry to confirm it was received.</span
         ><button
@@ -268,6 +282,10 @@
               onclick={() => (draftState.preview = true)}>Preview</button
             ><button
               type="button"
+              onclick={() => { draftState.preview = true; askInput?.focus(); }}
+              >Refine preview</button
+            ><button
+              type="button"
               class="create-apply"
               disabled={busy || disabled}
               onclick={() => void decide(true)}
@@ -301,7 +319,8 @@
           disabled={activeWorkshopId() !== lease.api.scope}
           onclick={() => void openConversation().catch(onerror)}
           >Open conversation<ArrowUpRight size={11} /></button
-        >{/if}
+        ><button type="button" class="create-conversation" disabled={busy || executing || pending || Boolean(pendingDecision)}
+          onclick={() => { try { jobs.newConversation(); draftState.preview = false; askInput?.focus(); } catch (e) { onerror(e); } }}>New conversation</button>{/if}
     </div>{/if}
 </div>
 
@@ -394,6 +413,7 @@
   }
   .create-variants {
     display: flex;
+    flex-wrap: wrap;
     gap: 5px;
   }
   .create-variants button {
@@ -455,6 +475,9 @@
   .create-progress {
     color: var(--create-dim);
   }
+  .create-ask-thread { padding: 8px 13px 0; font-size: 11px; color: var(--create-dim); max-height: 150px; overflow: auto; }
+  .create-ask-thread p { margin: 7px 0; overflow-wrap: anywhere; }
+  .create-ask-thread strong { font-weight: 500; color: var(--create-text); margin-right: 5px; }
   @media (max-width: 600px) {
     .create-ask input {
       font-size: 16px;

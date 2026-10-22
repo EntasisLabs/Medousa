@@ -59,6 +59,7 @@
   import type { DrawEraserMode } from "$lib/draw/drawInteraction";
   import { creativeAssets } from "$lib/create/creativeAssets";
   import { exportCreativeScene } from "$lib/create/creativeExport";
+  import { captureCreativeSelection } from "$lib/create/creativeCapture";
   import type {
     CreativeNode,
     CreativeOperation,
@@ -412,6 +413,16 @@
       exporting = false;
     }
   }
+  async function captureSelection(revision: number, ids: string[]) {
+    if (!document || document.revision !== revision || busy || dirty || !canvas?.element())
+      throw new Error("Finish saving the canvas before capturing your selection");
+    await loadImages();
+    if (!scene || document.revision !== revision || busy || dirty)
+      throw new Error("The canvas changed. Capture the selection again");
+    const data = await captureCreativeSelection(canvas.element()!, scene.nodes, ids, assetStore);
+    const asset = await lease.api.captureSelection(document.id, data, { expected_revision: revision, selected_ids: ids });
+    return asset.id;
+  }
   function key(e: KeyboardEvent) {
     if (
       (e.target as HTMLElement).closest(
@@ -747,6 +758,7 @@
               <CreateAsk
                 {lease}
                 {selected}
+                capture={captureSelection}
                 disabled={busy || dirty || importing}
                 onerror={report}
               />

@@ -1,3 +1,12 @@
+export class CreativeRequestError extends Error {
+  constructor(message: string, readonly status: number | null) { super(message); }
+  get rejected() { return this.status !== null && [400, 403, 404, 409, 413, 422].includes(this.status); }
+}
+export function creativeRequestError(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error);
+  const status = /workshop returned HTTP (\d{3})\b/.exec(raw)?.[1];
+  return new CreativeRequestError(creativeErrorMessage(error), status ? Number(status) : null);
+}
 export function creativeErrorText(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const start = raw.indexOf("{");

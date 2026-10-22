@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+mod job_archive;
 mod jobs;
+mod visuals;
 pub use jobs::CreativeDispatch;
 
 const HISTORY_BYTES: usize = 4 * 1024 * 1024;
@@ -96,6 +98,8 @@ struct Record {
     proposals: Vec<CreativeProposal>,
     #[serde(default)]
     jobs: Vec<jobs::JobRecord>,
+    #[serde(default)]
+    visuals: BTreeMap<String, visuals::VisualRecord>,
 }
 fn storage(error: impl std::fmt::Display) -> CreativeError {
     CreativeError::Storage(error.to_string())
@@ -274,6 +278,7 @@ impl CreativeStore {
             receipts: vec![],
             proposals: vec![],
             jobs: vec![],
+            visuals: BTreeMap::new(),
         };
         self.write(&record)?;
         Ok(document)
@@ -491,6 +496,13 @@ impl CreativeStore {
                     .jobs
                     .iter()
                     .flat_map(|j| &j.job.assets)
+                    .find(|a| a.id == asset_id)
+            })
+            .or_else(|| {
+                record
+                    .jobs
+                    .iter()
+                    .filter_map(|j| j.job.visual_context.as_ref())
                     .find(|a| a.id == asset_id)
             })
             .ok_or(CreativeError::NotFound)?

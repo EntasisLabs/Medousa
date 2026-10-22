@@ -142,14 +142,35 @@ on the workshop if you leave the tab. Returning to the project restores the job'
 status. Use the stop button to cancel an executing request, or **Open conversation**
 to inspect its full session.
 
+Each request includes a rendered view of the selection, with nearby artwork
+inside the crop, plus the original images used by the selected objects. This lets
+Medousa see the composition and use those images as generation/editing references.
+The capture excludes selection handles and toolbars and does not change the
+canvas, save revision, or undo history. Select at most four distinct images per
+request so the composition preview also fits in the assistant's image context.
+Visual understanding depends on the configured assistant model's vision support.
+
 When a result is ready, switch between **Original** and **Preview**. **Use this**
 applies the proposal as an undoable edit; dismissing preserves the original. A
 proposal from an earlier document revision cannot overwrite subsequent edits.
 Start a new request against the updated selection instead.
 
+Keep typing in Ask Medousa to continue the same conversation. After applying a
+result, follow-ups capture the current saved canvas. To refine a suggestion
+before applying it, choose **Refine preview**, then describe the next change.
+The replacement preview includes the earlier suggestion and your refinement;
+**Use this** applies the combined result in one undoable edit. An older preview
+is superseded when its follow-up is admitted. **New conversation** starts a fresh
+thread. The compact conversation history shows recent requests; **Open conversation**
+opens the full runtime transcript. Finished older requests are archived so long
+conversations can continue beyond 32 requests.
+
 Bitmap generation uses your existing **Image generation** model setting and
 credentials. A generated image stays an image layer; Medousa does not present it
 as recovered editable text or shapes.
+The current image-generation adapter uses an OpenAI API key. A ChatGPT-backed
+assistant conversation can continue to use its existing connection, but this
+build cannot generate images directly through that subscription connection.
 
 If a creative request reports **Reconnect ChatGPT**, reconnect in
 **Settings → Medousa Agent → Models**, then submit a new request. Failed generation
