@@ -21,7 +21,8 @@ On phones, Create is available in the destinations menu.
 
 ## Work on the canvas
 
-- **Select** (`V`): click and drag objects. Draw a freehand lasso in empty space to select several;
+- **Select** (`V`): click and drag objects. Drag a box in empty space to select several;
+  **Box** is the default; choose **Lasso** in **Style** for freehand selection.
   Shift adds to the selection. Frames are selected by clicking their background,
   so a drag inside a frame can still select its contents. Drag the bottom-right
   handle to resize. Arrow keys nudge; Shift-arrow moves ten units. Delete or
@@ -59,12 +60,16 @@ no fill, soft fill, or solid fill for shapes. These controls update selected
 objects, or set the style for the next object when nothing is selected. The
 floating selection row provides Duplicate, Delete, and Details.
 
-**Details** shows **Layers** and the selected object's properties.
+**Details**, beside **Style** at the top right, shows **Layers** and the selected object's properties.
 Adjust position, size, rotation, opacity, color, ordering, visibility, and locks.
 Image crops preserve the original bytes. Frames can have transparent backgrounds.
 A locked frame also prevents direct manipulation of its children.
 
-Edits save after each completed gesture or property change. You can keep drawing
+Tool choices, individual brush sizes, eraser mode, color, and selection mode are remembered
+on this device for each workshop. Returning to an open project restores its selection
+and view.
+
+Edits save quietly after each completed gesture or property change. You can keep drawing
 while the workshop saves earlier gestures; a bounded queue retains those edits in
 order. Tabs and splits share the optimistic canvas, document revision, and undo
 history. Undo, export, image import, and AI requests wait for queued saves to finish. Use **Undo** and **Redo**, or
@@ -94,6 +99,10 @@ Start a new request against the updated selection instead.
 Bitmap generation uses your existing **Image generation** model setting and
 credentials. A generated image stays an image layer; Medousa does not present it
 as recovered editable text or shapes.
+
+If a creative request reports **Reconnect ChatGPT**, reconnect in
+**Settings → Medousa Agent → Models**, then submit a new request. Failed generation
+never applies changes to your canvas.
 
 ## Export and existing drawings
 

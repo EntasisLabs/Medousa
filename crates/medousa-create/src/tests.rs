@@ -1282,3 +1282,158 @@ fn creative_job_cannot_reparent_a_selected_node_into_an_unselected_or_locked_con
         None
     );
 }
+
+#[test]
+fn creative_job_keeps_runtime_failure_and_does_not_overwrite_ready_output() {
+    let (_dir, store) = job_store();
+    store
+        .enqueue_job("project_one", "owner", job_request("failure"))
+        .unwrap();
+    store.claim_job("project_one", "failure").unwrap();
+    let message =
+        "Reconnect ChatGPT in Settings → Medousa Agent → Models, then submit a new request.";
+    store
+        .observe_job_failure("project_one", "failure", message)
+        .unwrap();
+    store
+        .observe_job_turn("project_one", "failure", "done")
+        .unwrap();
+    let job = store.job("project_one", "failure", "owner").unwrap();
+    assert_eq!(job.status, CreativeJobStatus::Failed);
+    assert_eq!(job.error.as_deref(), Some(message));
+    assert!(store.claim_job("project_one", "failure").unwrap().is_none());
+    let next = store
+        .enqueue_job("project_one", "owner", job_request("ready"))
+        .unwrap();
+    store.claim_job("project_one", "ready").unwrap();
+    store
+        .complete_job("project_one", "ready", &next.turn_id, job_result("ready"))
+        .unwrap();
+    store
+        .observe_job_failure("project_one", "ready", message)
+        .unwrap();
+    let ready = store.job("project_one", "ready", "owner").unwrap();
+    assert_eq!(ready.status, CreativeJobStatus::Ready);
+    assert!(ready.error.is_none());
+}
+
+#[test]
+fn deleting_a_duplicated_frame_removes_its_subtree_atomically_and_undo_restores_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    let mut frame = text("original");
+    frame.content = CreativeContent::Frame {
+        name: "Original".into(),
+        background: "#fff".into(),
+    };
+    let mut group = text("original_group");
+    group.parent_id = Some(frame.id.clone());
+    group.content = CreativeContent::Group;
+    let mut child = text("original_text");
+    child.parent_id = Some(group.id.clone());
+    let mut duplicate = frame.clone();
+    duplicate.id = "duplicate".into();
+    let mut duplicate_group = group.clone();
+    duplicate_group.id = "duplicate_group".into();
+    duplicate_group.parent_id = Some(duplicate.id.clone());
+    let mut duplicate_child = child.clone();
+    duplicate_child.id = "duplicate_text".into();
+    duplicate_child.parent_id = Some(duplicate_group.id.clone());
+    // Children may precede their parent in persisted order.
+    let nodes = vec![
+        duplicate_child,
+        group,
+        child,
+        duplicate_group,
+        frame,
+        duplicate,
+    ];
+    let original = store
+        .create(CreativeCreateRequest {
+            id: "project_one".into(),
+            title: "Duplicated frames".into(),
+            scene: CreativeScene {
+                nodes,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    let deletion = CreativeTransaction {
+        id: "delete_frame".into(),
+        expected_revision: 0,
+        label: "Delete frame".into(),
+        operations: vec![CreativeOperation::RemoveNode {
+            id: "duplicate".into(),
+        }],
+    };
+    let deleted = store.transact("project_one", deletion.clone()).unwrap();
+    assert_eq!(deleted.document.scene.nodes.len(), 3);
+    assert!(
+        deleted
+            .document
+            .scene
+            .nodes
+            .iter()
+            .all(|n| n.id.starts_with("original"))
+    );
+    assert!(store.transact("project_one", deletion).unwrap().duplicate);
+    let restored = store
+        .history("project_one", history("restore", 1, false))
+        .unwrap();
+    assert_eq!(restored.document.scene, original.scene);
+    let redone = store
+        .history("project_one", history("remove_again", 2, true))
+        .unwrap();
+    assert_eq!(redone.document.scene, deleted.document.scene);
+}
+
+#[test]
+fn subtree_removal_accepts_explicit_children_but_rejects_unknown_targets_atomically() {
+    let mut frame = text("frame");
+    frame.content = CreativeContent::Group;
+    let mut child = text("child");
+    child.parent_id = Some("frame".into());
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    let document = store
+        .create(CreativeCreateRequest {
+            id: "project_one".into(),
+            title: "Nested".into(),
+            scene: CreativeScene {
+                nodes: vec![frame, child],
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    let parent = CreativeOperation::RemoveNode { id: "frame".into() };
+    let child = CreativeOperation::RemoveNode { id: "child".into() };
+    assert!(
+        apply_operations(&document, &[parent.clone(), child.clone()])
+            .unwrap()
+            .scene
+            .nodes
+            .is_empty()
+    );
+    assert!(
+        apply_operations(&document, &[child, parent.clone()])
+            .unwrap()
+            .scene
+            .nodes
+            .is_empty()
+    );
+    assert!(apply_operations(&document, &[parent.clone(), parent.clone()]).is_err());
+    let bad = CreativeTransaction {
+        id: "bad_delete".into(),
+        expected_revision: 0,
+        label: "Delete".into(),
+        operations: vec![
+            parent,
+            CreativeOperation::RemoveNode {
+                id: "unknown".into(),
+            },
+        ],
+    };
+    assert!(store.transact("project_one", bad).is_err());
+    assert_eq!(store.get("project_one").unwrap().document, document);
+    assert!(!store.get("project_one").unwrap().can_undo);
+}

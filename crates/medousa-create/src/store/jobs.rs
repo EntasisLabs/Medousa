@@ -317,6 +317,20 @@ impl CreativeStore {
         self.write(&record)
     }
     pub fn observe_job_turn(&self, id: &str, job_id: &str, phase: &str) -> Result<()> {
+        self.observe_job_outcome(id, job_id, phase, None)
+    }
+    /// Preserve safe runtime failure copy before terminal phase reconciliation.
+    /// Ready proposals and cancelled jobs remain fenced against late failures.
+    pub fn observe_job_failure(&self, id: &str, job_id: &str, message: &str) -> Result<()> {
+        self.observe_job_outcome(id, job_id, "error", Some(message))
+    }
+    fn observe_job_outcome(
+        &self,
+        id: &str,
+        job_id: &str,
+        phase: &str,
+        failure: Option<&str>,
+    ) -> Result<()> {
         let _lock = self.lock(id)?;
         let mut record = self.read_record(id, true)?;
         let index = Self::job_position(&record, job_id)?;
@@ -344,7 +358,7 @@ impl CreativeStore {
             _ => return Ok(()),
         };
         job.job.status = status;
-        job.job.error = Some(message.into());
+        job.job.error = Some(failure.unwrap_or(message).chars().take(2000).collect());
         job.job.updated_at = now();
         job.snapshot = None;
         self.write(&record)

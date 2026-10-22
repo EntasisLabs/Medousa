@@ -348,6 +348,8 @@
   border-radius: 4px;
 }
 .create-editor .create-save {
+  min-width: 68px;
+  text-align: right;
   font-size: 10px;
   color: var(--create-dim);
   white-space: nowrap;
@@ -394,6 +396,10 @@
 }
 .create-editor .create-canvas-controls button:hover {
   background: var(--create-soft);
+}
+.create-editor .create-canvas-controls button[aria-pressed="true"] {
+  background: var(--create-soft);
+  color: var(--create-text);
 }
 .create-editor .create-bottom {
   position: absolute;

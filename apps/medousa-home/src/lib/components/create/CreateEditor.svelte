@@ -49,7 +49,7 @@
     type CanvasFill,
     type CanvasSize,
   } from "$lib/create/creativeInteraction";
-  import { createDrawBrush, type DrawBrushKind } from "$lib/draw/drawDocument";
+  import type { DrawBrushKind } from "$lib/draw/drawDocument";
   import type { DrawEraserMode } from "$lib/draw/drawInteraction";
   import { creativeAssets } from "$lib/create/creativeAssets";
   import { exportCreativeScene } from "$lib/create/creativeExport";
@@ -58,24 +58,30 @@
     CreativeOperation,
   } from "$lib/types/generated/daemon_api";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import { loadCreativePreferences, saveCreativePreferences } from "$lib/create/creativePreferences";
+  import { createBrowser } from "$lib/create/createBrowser.svelte";
   let {
     lease,
     onBrowse = () => shellTabs.openSurface("create"),
   }: { lease: CreativeProjectLease; onBrowse?: () => void } = $props();
+  const preferences = untrack(() => loadCreativePreferences(lease.api.scope));
+  const retainedView = untrack(() => lease.state.view);
   let editorElement = $state<HTMLDivElement>(),
     inkColor = $state("#393e33");
   let version = $state(0),
     canvas = $state<ReturnType<typeof CreateCanvas>>(),
-    selected = $state<string[]>([]),
-    tool = $state<CreativeTool>("select"),
-    color = $state("#393e33"),
-    size = $state<CanvasSize>("m"),
-    brushKind = $state<DrawBrushKind>("pen"),
-    drawSize = $state(6),
-    eraserMode = $state<DrawEraserMode>("partial"),
-    fingerDraw = $state(false),
-    shape = $state<CanvasShape>("rectangle"),
-    fill = $state<CanvasFill>("soft"),
+    selected = $state<string[]>(untrack(() => [...lease.state.selected])),
+    tool = $state<CreativeTool>(preferences.tool),
+    color = $state(preferences.color ?? "#393e33"),
+    size = $state<CanvasSize>(preferences.size),
+    brushKind = $state<DrawBrushKind>(preferences.brushKind),
+    brushSizes = $state(preferences.brushSizes),
+    eraserSize = $state(preferences.eraserSize),
+    selectionMode = $state<"box" | "lasso">(preferences.selectionMode),
+    eraserMode = $state<DrawEraserMode>(preferences.eraserMode),
+    fingerDraw = $state(preferences.fingerDraw),
+    shape = $state<CanvasShape>(preferences.shape),
+    fill = $state<CanvasFill>(preferences.fill),
     palette = $state(true),
     shapePicker = $state(false),
     askOpen = $state(false),
@@ -87,6 +93,12 @@
     exporting = $state(false),
     upload = $state<HTMLInputElement>(),
     zoom = $state(100);
+  const drawSize = $derived(tool === "erase" ? eraserSize : brushSizes[brushKind]);
+  $effect(() => saveCreativePreferences(lease.api.scope, {
+    tool, selectionMode, brushKind, brushSizes: { ...brushSizes }, eraserSize,
+    eraserMode, fingerDraw, color: color === inkColor ? null : color, size, shape, fill,
+  }));
+  $effect(() => { lease.state.selected = [...selected]; });
   const session = $derived(lease.session),
     document = $derived.by(() => {
       void version;
@@ -104,7 +116,10 @@
     void version;
     return lease.state.jobs.job;
   });
-  const base = $derived(document ? session.scene : null);
+  const base = $derived.by(() => {
+    void version;
+    return session.scene;
+  });
   const preview = $derived(
     Boolean(
       lease.state.preview &&
@@ -139,7 +154,7 @@
     scene?.nodes.filter((n) => selected.includes(n.id)) ?? [],
   );
   const styledNode = $derived(
-    editingNode ?? selectedNodes.find((n) => nodeColor(n) !== null),
+    editingNode ?? (tool === "select" ? selectedNodes.find((n) => nodeColor(n) !== null) : undefined),
   );
   const styleColor = $derived(styledNode ? nodeColor(styledNode)! : color);
   const styleSize = $derived(styledNode ? nodeSize(styledNode) : size);
@@ -156,7 +171,6 @@
     canvas?.finishText();
     tool = next;
     shapePicker = false;
-    if (next !== "select") selected = [];
   }
   function styleSelection(patch: {
     color?: string;
@@ -168,7 +182,7 @@
     if (patch.size) size = patch.size;
     if (patch.fill) fill = patch.fill;
     if (canvas?.styleText(patch)) return;
-    const operations: CreativeOperation[] = selectedNodes
+    const operations: CreativeOperation[] = (tool === "select" ? selectedNodes : [])
       .filter((n) => scene && editableNode(n, scene.nodes))
       .flatMap((node) => {
         const next = styleNode(node, patch);
@@ -201,13 +215,11 @@
             (t) =>
               t.kind === "create" &&
               t.documentId === document.id &&
-              t.workshopId === lease.api.scope,
+              t.workshopId === lease.api.scope && t.title !== document.title,
           )
           .forEach((t) => shellTabs.patchTitle(t.id, document!.title));
       }
-      window.dispatchEvent(
-        new CustomEvent("medousa:create-updated", { detail: lease.api.scope }),
-      );
+      if (document) createBrowser(lease.api.scope).acknowledge(document);
     } catch (e) {
       report(e);
     }
@@ -417,7 +429,7 @@
           .slice(1, 4)
           .map((n) => Number(n).toString(16).padStart(2, "0"))
           .join("");
-      color = inkColor;
+      if (preferences.color === null) color = inkColor;
     }
     if (window.matchMedia("(max-width: 600px)").matches) palette = false;
     const a = session.subscribe(() => version++),
@@ -556,7 +568,7 @@
           <span aria-live="polite"
             >{preview
               ? "Preview · original preserved"
-              : selected.length
+              : selected.length && tool === "select"
                 ? `${selected.length} selected`
                 : tool === "text"
                   ? "Click to type"
@@ -581,6 +593,8 @@
               ><span class="create-current-color" style:background={styleColor}
               ></span>Style<SlidersHorizontal size={13} /></button
             >
+            <button type="button" aria-label="Toggle inspector" aria-pressed={inspector}
+              onclick={() => (inspector = !inspector)}><PanelRight size={13} />Details</button>
           </div>
         </div>
         <CreateCanvas
@@ -596,6 +610,9 @@
           textSize={size}
           {brushKind}
           {eraserMode}
+          {selectionMode}
+          initialView={retainedView}
+          onview={(view) => { lease.state.view = view; }}
           {fingerDraw}
           brushSize={tool === "ink" || tool === "erase"
             ? drawSize
@@ -613,13 +630,17 @@
               {brushKind}
               {drawSize}
               {eraserMode}
+              {selectionMode}
+              onSelectionMode={(mode) => (selectionMode = mode)}
               {fingerDraw}
               onDrawOptions={(patch) => {
                 if (patch.brush) {
                   brushKind = patch.brush;
-                  drawSize = createDrawBrush(patch.brush).size;
                 }
-                if (patch.size) drawSize = patch.size;
+                if (patch.size) {
+                  if (tool === "erase") eraserSize = patch.size;
+                  else brushSizes[brushKind] = patch.size;
+                }
                 if (patch.eraser) eraserMode = patch.eraser;
                 if (patch.finger !== undefined) fingerDraw = patch.finger;
               }}
@@ -737,7 +758,9 @@
                 title={`${item.label} (${item.key})`}
                 disabled={disabled && item.id !== "hand"}
                 onclick={() => {
-                  if (item.id === "shape") {
+                  if (item.id === "select" && tool === "select") {
+                    palette = true;
+                  } else if (item.id === "shape") {
                     const open = !shapePicker;
                     chooseTool("shape");
                     shapePicker = open;
@@ -776,22 +799,16 @@
             >{editingNode
               ? "Type here · Esc to finish"
               : tool === "select"
-                ? "Double-click to type · draw a lasso to select"
+                ? `Drag a ${selectionMode} to select · Shift adds to selection`
                 : tool === "hand"
                   ? "Drag to move · Space temporarily pans"
                   : tool === "ink"
                     ? "Draw freely · Esc returns to Select"
                     : tool === "erase"
-                      ? "Erase ink · Esc returns to Select"
+                      ? `${eraserMode === "partial" ? "Erase ink" : "Erase whole objects"} · Esc returns to Select`
                       : tool === "text"
                         ? "Click to type"
                         : "Drag to draw · release to select"}</span
-          ><button
-            type="button"
-            aria-label="Toggle inspector"
-            aria-pressed={inspector}
-            onclick={() => (inspector = !inspector)}
-            >Details<PanelRight size={12} /></button
           >
         </footer>
         <input

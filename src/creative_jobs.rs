@@ -271,6 +271,24 @@ pub(crate) async fn observe_phase(turn_id: &str, phase: &str) {
         tracing::warn!(%turn_id, %error, "creative outcome retained for reconciliation");
     }
 }
+pub(crate) async fn observe_failure(turn_id: &str, operator_message: &str) {
+    if !turn_id.starts_with(TURN_PREFIX) {
+        return;
+    }
+    let turn = turn_id.to_string();
+    let message = operator_message.to_string();
+    let result = async {
+        run(api()?, move |store| {
+            let job = store.job_for_turn(&turn)?;
+            store.observe_job_failure(&job.document_id, &job.job_id, &message)
+        })
+        .await
+    }
+    .await;
+    if let Err((_, error)) = result {
+        tracing::warn!(%turn_id, %error, "creative failure could not be retained");
+    }
+}
 async fn cancel_runtime(state: &AppState, session: &str, turn: &str) {
     if let Ok(session) = crate::session_storage::SessionId::parse(session) {
         state

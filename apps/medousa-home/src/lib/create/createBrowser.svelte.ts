@@ -4,6 +4,7 @@ import { randomUuid } from "$lib/utils/randomUuid";
 import type {
   CreativeCreateRequest,
   CreativeProjectSummary,
+  CreativeDocument,
 } from "$lib/types/generated/daemon_api";
 export class CreateBrowser {
   projects = $state.raw<CreativeProjectSummary[]>([]);
@@ -16,6 +17,15 @@ export class CreateBrowser {
   private api;
   constructor(readonly scope: string) {
     this.api = creativeApi(scope);
+  }
+  acknowledge(document: CreativeDocument) {
+    const summary: CreativeProjectSummary = {
+      id: document.id, title: document.title, pinned: document.pinned,
+      revision: document.revision, updated_at: document.updated_at,
+    };
+    const current = this.projects.find((p) => p.id === document.id);
+    if (current && JSON.stringify(current) === JSON.stringify(summary)) return;
+    this.projects = [summary, ...this.projects.filter((p) => p.id !== document.id)];
   }
   async load(more = false) {
     if (this.loading) return;

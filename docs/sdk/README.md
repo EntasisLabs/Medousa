@@ -208,7 +208,10 @@ The workshop-owned Create backend supports versioned mixed scenes, atomic edits,
 undo/redo, project-owned bitmap assets and selection-bound proposals. See the
 [creative document service](../engine/creative-workspace.md) for DTOs, bounds,
 revision conflicts and retry rules. Rust and Python callers use `client.creative()`; operations use the generated
-`create.projects.*` family; the main Create canvas UI is still pending.
+`create.projects.*` family; the main Create canvas uses the same document API.
+Removing a frame or group removes its entire subtree in the same transaction;
+undo restores the descendants and their order. See the service contract for
+batch removal and admission retry semantics.
 
 Creative jobs use `creative().create_job`, `jobs`, `job` and `decide_job` in both
 Rust and Python. Preserve the request ID/body when retrying admission; use a new

@@ -1,3 +1,4 @@
+import type { DrawCamera } from "$lib/draw/drawCamera";
 import { creativeApi } from "./creativeApi";
 import { creativeSessionPool } from "./creativeSessionPool";
 import { creativeJobs } from "./creativeJobs";
@@ -7,6 +8,11 @@ type Session = ReturnType<
   typeof import("./creativeDocumentSession").creativeDocumentSession
 >;
 class Entry {
+  selected = $state<string[]>([]);
+  view: {
+    camera: DrawCamera;
+    viewport: { width: number; height: number };
+  } | null = null;
   draft = $state("");
   preview = $state(false);
   jobs: ReturnType<typeof creativeJobs>;

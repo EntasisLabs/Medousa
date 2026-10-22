@@ -1,4 +1,5 @@
 import { daemonUnary as dispatch } from "$lib/daemon/contractClient";
+import { creativeErrorMessage, isCreativeAdmissionBusy } from "./creativeErrors";
 import type {
   CreativeJob,
   CreativeJobRequest,
@@ -25,12 +26,27 @@ export function creativeApi(workshopId: string) {
     throw new Error("A workshop is required for creative projects");
   const scope = workshopId.trim();
   // Client registry scopes must not be passed as daemon runtime overrides.
-  const send = <T>(
+  const send = async <T>(
     id: Parameters<typeof dispatch>[0],
     params: Record<string, string>,
     body: unknown,
     query?: Record<string, string>,
-  ) => dispatch<T>(id, params, body, null, query, scope);
+  ): Promise<T> => {
+    const delays = [150, 350, 700];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await dispatch<T>(id, params, body, null, query, scope);
+      } catch (error) {
+        // Startup restores several independent reads. Retain the loading view
+        // during brief admission contention; writes keep their explicit retry.
+        if (id.endsWith(".get") && isCreativeAdmissionBusy(error) && attempt < delays.length) {
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+          continue;
+        }
+        throw new Error(creativeErrorMessage(error));
+      }
+    }
+  };
   return {
     scope,
     createJob: (id: string, request: CreativeJobRequest) =>

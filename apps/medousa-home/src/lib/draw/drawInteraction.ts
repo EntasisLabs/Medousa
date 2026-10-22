@@ -41,6 +41,7 @@ type Gesture<S> = {
   stroke?: DrawStroke;
   hit?: string;
   initial: string[];
+  box?: boolean;
 };
 export interface DrawInteractionOptions<S> {
   editable: () => boolean;
@@ -84,6 +85,8 @@ export interface DrawInteractionOptions<S> {
   ) => void;
   zoomAt?: typeof zoomDrawCameraAt;
   multiselect?: boolean;
+  /** Notes keeps freehand lasso unless a host explicitly opts into a box. */
+  selectionMode?: () => "box" | "lasso";
   middlePan?: boolean;
   maxPoints?: number;
   maxBrushSize?: number;
@@ -293,6 +296,7 @@ export function createDrawInteraction<S>(o: DrawInteractionOptions<S>) {
         gesture = {
           ...common,
           kind: "lasso",
+          box: o.selectionMode?.() === "box",
           initial: o.multiselect && event.shiftKey ? common.initial : [],
         };
       }
@@ -405,7 +409,9 @@ export function createDrawInteraction<S>(o: DrawInteractionOptions<S>) {
       );
     } else if (g.kind === "lasso") {
       const last = g.path[g.path.length - 1];
-      if (Math.hypot(p.x - last.x, p.y - last.y) >= 2 / o.camera().zoom)
+      if (g.box)
+        gesture = { ...g, path: boxPath(g.start, p) };
+      else if (Math.hypot(p.x - last.x, p.y - last.y) >= 2 / o.camera().zoom)
         gesture = { ...g, path: [...g.path, p] };
     } else if (g.kind === "move")
       o.preview(
@@ -417,6 +423,11 @@ export function createDrawInteraction<S>(o: DrawInteractionOptions<S>) {
     publish();
     return true;
   }
+  function boxPath(start: DrawVector, end: DrawVector): DrawVector[] {
+    return Math.hypot(end.x - start.x, end.y - start.y) < 2 / o.camera().zoom
+      ? [start]
+      : [start, { x: end.x, y: start.y }, end, { x: start.x, y: end.y }, start];
+  }
   function finish(event: PointerEvent): boolean {
     if (event.pointerType === "touch") touches.delete(event.pointerId);
     if (event.pointerType === "pen") pens.delete(event.pointerId);
@@ -426,6 +437,10 @@ export function createDrawInteraction<S>(o: DrawInteractionOptions<S>) {
       publish();
       idle();
       return true;
+    }
+    if (gesture?.kind === "lasso" && gesture.box && gesture.pointerId === event.pointerId) {
+      const view = o.viewPoint(event.clientX, event.clientY);
+      if (view) gesture = { ...gesture, path: boxPath(gesture.start, viewToScene(o.camera(), view)) };
     }
     const g = gesture;
     if (!g || g.pointerId !== event.pointerId) {

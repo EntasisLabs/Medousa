@@ -11,6 +11,7 @@
     resizeDrawCamera,
     viewToScene,
     type DrawVector,
+    type DrawCamera,
   } from "$lib/draw/drawCamera";
   import {
     createDrawInteraction,
@@ -69,6 +70,9 @@
     brushKind = "pen",
     eraserMode = "partial",
     fingerDraw = false,
+    selectionMode = "box",
+    initialView = null,
+    onview = () => {},
     disabled = false,
     oncommit = () => {},
     onselect = () => {},
@@ -89,6 +93,9 @@
     brushKind?: DrawBrushKind;
     eraserMode?: DrawEraserMode;
     fingerDraw?: boolean;
+    selectionMode?: "box" | "lasso";
+    initialView?: { camera: DrawCamera; viewport: { width: number; height: number } } | null;
+    onview?: (view: { camera: DrawCamera; viewport: { width: number; height: number } }) => void;
     disabled?: boolean;
     oncommit?: (label: string, operations: CreativeOperation[]) => void;
     onselect?: (ids: string[]) => void;
@@ -98,8 +105,8 @@
   } = $props();
   let svg = $state<SVGSVGElement>(),
     stage = $state<HTMLDivElement>();
-  let camera = $state.raw(createDrawCamera()),
-    viewport = $state({ width: 1000, height: 600 }),
+  let camera = $state.raw(untrack(() => initialView?.camera ?? createDrawCamera())),
+    viewport = $state(untrack(() => initialView?.viewport ?? { width: 1000, height: 600 })),
     space = $state(false);
   type Gesture = {
     id: number;
@@ -144,6 +151,7 @@
   const prefix = `canvas-${randomUuid()}`;
   const zoom = $derived(camera.zoom);
   $effect(() => onzoom(Math.round(zoom * 100)));
+  $effect(() => onview({ camera, viewport: { ...viewport } }));
   export function element() {
     return svg;
   }
@@ -283,6 +291,7 @@
     update: (next) => (interactionState = next),
     zoomAt: creativeZoom,
     multiselect: true,
+    selectionMode: () => selectionMode,
     middlePan: true,
     maxPoints: 8000,
     maxBrushSize: 160,
@@ -630,6 +639,7 @@
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
       e.preventDefault();
+      tool = "select";
       pick(
         selectionRoots(
           scene.nodes
@@ -639,11 +649,11 @@
         ).map((n) => n.id),
       );
     }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
+    if (tool === "select" && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
       e.preventDefault();
       duplicate();
     }
-    if ((e.key === "Delete" || e.key === "Backspace") && selected.length) {
+    if (tool === "select" && (e.key === "Delete" || e.key === "Backspace") && selected.length) {
       e.preventDefault();
       deleteSelection();
     }
@@ -653,7 +663,7 @@
       ArrowUp: [0, -1],
       ArrowDown: [0, 1],
     }[e.key];
-    if (direction && !disabled && selected.length && !e.metaKey && !e.ctrlKey) {
+    if (tool === "select" && direction && !disabled && selected.length && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       const step = e.shiftKey ? 10 : 1;
       oncommit(
@@ -684,7 +694,7 @@
     finishText();
   });
   onMount(() => {
-    let initialized = false;
+    let initialized = initialView !== null;
     const observer = new ResizeObserver(() => {
       if (!stage) return;
       const next = {
@@ -747,7 +757,7 @@
           {node}
           nodes={rendered}
           {images}
-          {selected}
+          selected={tool === "select" ? selected : []}
           {zoom}
           {prefix}
           editingId={editing?.node.id}
@@ -778,6 +788,7 @@
       {#if interactionState.lassoPath.length > 1}
         <polyline
           data-editor-only
+          aria-label={selectionMode === "box" ? "Box selection" : "Lasso selection"}
           points={interactionState.lassoPath
             .map((p) => `${p.x},${p.y}`)
             .join(" ")}

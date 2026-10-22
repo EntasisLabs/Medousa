@@ -18,6 +18,8 @@
     drawSize = 6,
     eraserMode = "partial",
     fingerDraw = false,
+    selectionMode = "box",
+    onSelectionMode = () => {},
     onDrawOptions = () => {},
     inkColor,
     color,
@@ -34,6 +36,8 @@
     drawSize?: number;
     eraserMode?: DrawEraserMode;
     fingerDraw?: boolean;
+    selectionMode?: "box" | "lasso";
+    onSelectionMode?: (mode: "box" | "lasso") => void;
     onDrawOptions?: (patch: {
       brush?: DrawBrushKind;
       size?: number;
@@ -68,7 +72,14 @@
       onclick={onclose}><X size={13} /></button
     >
   </header>
-  {#if tool === "ink"}
+  {#if tool === "select"}
+    <div class="create-brushes" role="group" aria-label="Selection mode">
+      <button type="button" {disabled} aria-pressed={selectionMode === "box"}
+        onclick={() => onSelectionMode("box")}>Box</button>
+      <button type="button" {disabled} aria-pressed={selectionMode === "lasso"}
+        onclick={() => onSelectionMode("lasso")}>Lasso</button>
+    </div>
+  {:else if tool === "ink"}
     <div class="create-brushes" role="group" aria-label="Brush">
       {#each DRAW_BRUSHES as brush}<button
           type="button"

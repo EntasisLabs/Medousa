@@ -243,6 +243,7 @@ pub fn apply_operations(
         return Err(invalid("transaction must contain 1–1000 operations"));
     }
     let mut next = doc.clone();
+    let mut cascaded = BTreeSet::new();
     for op in ops {
         match op {
             CreativeOperation::PutNode { node } => {
@@ -254,9 +255,38 @@ pub fn apply_operations(
             }
             CreativeOperation::RemoveNode { id } => {
                 if !next.scene.nodes.iter().any(|n| &n.id == id) {
+                    // Older clients may include explicit descendant removals
+                    // after their parent. A genuinely absent target is invalid.
+                    if cascaded.contains(id) {
+                        continue;
+                    }
                     return Err(invalid("removed node does not exist"));
                 }
-                next.scene.nodes.retain(|n| &n.id != id);
+                let mut children: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+                for node in &next.scene.nodes {
+                    if let Some(parent) = node.parent_id.as_deref() {
+                        children.entry(parent).or_default().push(&node.id);
+                    }
+                }
+                let mut removed = BTreeSet::from([id.as_str()]);
+                let mut queue = vec![id.as_str()];
+                while let Some(parent) = queue.pop() {
+                    if let Some(descendants) = children.get(parent) {
+                        for child in descendants {
+                            if removed.insert(child) {
+                                queue.push(child);
+                            }
+                        }
+                    }
+                }
+                cascaded.extend(
+                    removed
+                        .iter()
+                        .filter(|target| **target != id)
+                        .map(|target| (*target).to_string()),
+                );
+                let removed: BTreeSet<String> = removed.into_iter().map(str::to_string).collect();
+                next.scene.nodes.retain(|node| !removed.contains(&node.id));
             }
             CreativeOperation::Reorder { ids } => {
                 let mut by_id: BTreeMap<_, _> = next

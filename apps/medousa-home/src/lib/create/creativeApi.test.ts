@@ -56,3 +56,35 @@ describe("creative job workshop binding", () => {
     ]);
   });
 });
+
+const overloaded = 'workshop returned HTTP 503 Service Unavailable: {"schema_version":1,"code":"unavailable_feature","message":"execution overloaded: forge queued-byte budget is exhausted (limit 8388608 bytes, this admission needs 8388608 bytes)","request_id":"unassigned","details":{}}';
+it("recovers startup reads quietly and keeps the original workshop binding", async () => {
+  vi.useFakeTimers();
+  try {
+    call.mockReset().mockRejectedValueOnce(new Error(overloaded)).mockResolvedValueOnce({ projects: [], next_cursor: null });
+    const loading = creativeApi("original-workshop").list();
+    await vi.advanceTimersByTimeAsync(150);
+    await expect(loading).resolves.toEqual({ projects: [], next_cursor: null });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(call.mock.calls.every(c => c[5] === "original-workshop")).toBe(true);
+  } finally { vi.useRealTimers(); call.mockReset().mockResolvedValue({}); }
+});
+it("bounds retries and presents useful copy instead of transport JSON", async () => {
+  vi.useFakeTimers();
+  try {
+    call.mockReset().mockRejectedValue(new Error(overloaded));
+    const result = expect(creativeApi("one").get("doc")).rejects.toThrow("workshop is busy");
+    await vi.runAllTimersAsync();
+    await result;
+    expect(call).toHaveBeenCalledTimes(4);
+  } finally { vi.useRealTimers(); call.mockReset().mockResolvedValue({}); }
+});
+it("does not automatically resend writes or retry validation failures", async () => {
+  call.mockReset().mockRejectedValue(new Error(overloaded));
+  await expect(creativeApi("one").delete("doc", 1)).rejects.toThrow("workshop is busy");
+  expect(call).toHaveBeenCalledTimes(1);
+  call.mockReset().mockRejectedValue(new Error('workshop returned HTTP 400: {"message":"invalid creative document: missing parent","code":"invalid_parameter"}'));
+  await expect(creativeApi("one").get("doc")).rejects.toThrow("invalid creative document: missing parent");
+  expect(call).toHaveBeenCalledTimes(1);
+  call.mockReset().mockResolvedValue({});
+});

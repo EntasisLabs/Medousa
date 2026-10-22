@@ -86,12 +86,7 @@
       }
     }
 
-    const updated = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === scope) void browser.load();
-    };
-    window.addEventListener("medousa:create-updated", updated);
     return () => {
-      window.removeEventListener("medousa:create-updated", updated);
       lease?.release();
     };
   });

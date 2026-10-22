@@ -135,7 +135,7 @@ it("double-click edits existing text without opening an inspector or adding a se
 it("lasso selection excludes locked nodes and commits no edit", () => {
   const first = title(),
     locked = { ...title(), locked: true },
-    root = render([first, locked]),
+    root = render([first, locked], { selectionMode: "lasso" }),
     svg = root.querySelector("svg")!;
   pointer(svg, "pointerdown", 0, 0);
   pointer(svg, "pointermove", 250, 0);
@@ -210,4 +210,59 @@ it("keeps resizing available through Create's existing handles", () => {
   const node=title(),root=render([node],{selected:[node.id]}),svg=root.querySelector("svg")!,handle=root.querySelector("[data-resize]")!;
   pointer(handle,"pointerdown",220,90);pointer(svg,"pointermove",320,150);pointer(svg,"pointerup",320,150);
   expect(commit).toHaveBeenCalledWith("Resize selection",[expect.objectContaining({op:"put_node",node:expect.objectContaining({id:node.id,transform:expect.objectContaining({width:300,height:120})})})]);
+});
+
+it("defaults to a box, adds with Shift, and keeps explicit lasso available", () => {
+  const a = title(), b = title();
+  b.transform.x = 350;
+  const root = render([a, b]), svg = root.querySelector("svg")!;
+  pointer(svg, "pointerdown", 5, 5);
+  pointer(svg, "pointermove", 250, 110);
+  expect(root.querySelector('[aria-label="Box selection"]')).toBeTruthy();
+  pointer(svg, "pointerup", 250, 110);
+  expect(select).toHaveBeenLastCalledWith([a.id]);
+  pointer(svg, "pointerdown", 330, 5, true);
+  pointer(svg, "pointermove", 570, 110, true);
+  pointer(svg, "pointerup", 570, 110, true);
+  expect(select).toHaveBeenLastCalledWith([a.id, b.id]);
+  const lasso = render([a], { selectionMode: "lasso" }), path = lasso.querySelector("svg")!;
+  pointer(path, "pointerdown", 5, 5);
+  pointer(path, "pointermove", 250, 5);
+  pointer(path, "pointermove", 250, 110);
+  pointer(path, "pointermove", 5, 110);
+  expect(lasso.querySelector('[aria-label="Lasso selection"]')).toBeTruthy();
+  pointer(path, "pointerup", 5, 5);
+  expect(select).toHaveBeenLastCalledWith([a.id]);
+});
+
+it("uses the release point for box selection and collapses boxes dragged back to their start", () => {
+  const node = title(), root = render([node]), svg = root.querySelector("svg")!;
+  pointer(svg, "pointerdown", 5, 5);
+  pointer(svg, "pointerup", 250, 110);
+  expect(select).toHaveBeenLastCalledWith([node.id]);
+  pointer(svg, "pointerdown", 5, 5);
+  pointer(svg, "pointermove", 250, 110);
+  pointer(svg, "pointerup", 5, 5);
+  expect(select).toHaveBeenLastCalledWith([]);
+});
+
+it("duplicates a frame with remapped descendants and deletes only the duplicate root", () => {
+  const frame = createNode({ kind: "frame", name: "Original", background: "#fff" }, { x: 0, y: 0, width: 500, height: 300 });
+  const child = title(); child.parent_id = frame.id;
+  const root = render([frame, child], { selected: [frame.id] });
+  const stage = root.querySelector('[aria-label="Creative canvas"]')!;
+  stage.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "d", metaKey: true }));
+  flushSync();
+  expect(commit).toHaveBeenCalledTimes(1);
+  const operations = commit.mock.calls[0][1] as CreativeOperation[];
+  const copies = operations.flatMap(op => op.op === "put_node" ? [op.node] : []);
+  const copy = copies.find(n => n.content.kind === "frame")!;
+  expect(copies).toHaveLength(2);
+  expect(copies.find(n => n.content.kind === "text")!.parent_id).toBe(copy.id);
+  expect(copy.id).not.toBe(frame.id);
+  // A newly rendered acknowledged scene, selected as after duplication.
+  const updated = render([frame, child, ...copies], { selected: [copy.id] });
+  updated.querySelector('[aria-label="Creative canvas"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Delete" }));
+  flushSync();
+  expect(commit).toHaveBeenLastCalledWith("Delete selection", [{ op: "remove_node", id: copy.id }]);
 });

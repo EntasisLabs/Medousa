@@ -11,11 +11,11 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use medousa_create::{CreativeError, CreativeStore};
-use medousa_forge::execution::{
-    ExecutionClass, ForgeExecutionService, MAX_COMPACTION_BUFFER_BYTES,
-};
+use medousa_forge::execution::ForgeExecutionService;
 use medousa_types::creative::*;
 use std::sync::Arc;
+
+mod execution;
 
 #[derive(Clone)]
 pub struct CreativeApiState {
@@ -151,16 +151,9 @@ pub(crate) async fn run<T: Send + 'static>(
     state: CreativeApiState,
     work: impl FnOnce(&CreativeStore) -> medousa_create::Result<T> + Send + 'static,
 ) -> Result<Json<T>, HttpError> {
-    // Reserve a full admission slot for scene work. Only one Create task can
-    // consume the default shared 8 MiB queue budget at a time. Scene/history and
-    // bitmap bounds are enforced independently by the storage contract.
-    state
-        .execution
-        .run(
-            ExecutionClass::Compaction,
-            MAX_COMPACTION_BUFFER_BYTES,
-            move || Ok(work(&state.store)),
-        )
+    // Startup loads the rail, scene, and jobs together. Wait briefly for
+    // admission without reducing the shared byte reservation or replaying work.
+    execution::run(state.execution, move || work(&state.store))
         .await
         .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?
         .map(Json)

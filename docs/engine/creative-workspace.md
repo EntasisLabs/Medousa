@@ -1,7 +1,7 @@
 # Creative document service
 
-Create's backend is available independently of the canvas renderer. The new main
-view is still being built; these contracts do not change existing Drawing notes.
+Create's backend is available independently of the canvas renderer. These
+contracts do not change existing Drawing notes.
 The workshop daemon owns projects under `{dataDir}/create`, including when the
 app connects remotely. Clients never resolve project asset paths on their disk.
 
@@ -25,6 +25,17 @@ Every human or accepted AI edit uses a `CreativeTransaction`: a stable request I
 fails. HTTP 409 means the current revision differs; retain the local draft and
 read the latest document before explicitly reconciling it. Do not automatically
 rebase a suggestion onto newer human work.
+
+`remove_node` removes the target and all its descendants, irrespective of stored
+node order. Explicit descendant removals later in the same batch are accepted;
+an unrelated missing target still rejects the entire batch. Undo restores the
+subtree and its original order. The server and optimistic canvas use the same
+subtree semantics.
+
+Create work uses the existing Forge execution service and its shared byte budget.
+Simultaneous startup reads briefly retry admission before any store work begins;
+they never replay a mutation after execution starts. Saturation remains bounded
+and returns HTTP 503 when the admission retries are exhausted.
 
 Retries must reuse the exact request ID and body. The last 128 mutation receipts
 are retained. A duplicate returns the current document and the original

@@ -5,6 +5,7 @@ import type {
   CreativeOperation,
   CreativeTransaction,
   CreativeHistoryRequest,
+  CreativeScene,
 } from "$lib/types/generated/daemon_api";
 import { applySceneOperations } from "./creativeScene";
 import { randomUuid } from "$lib/utils/randomUuid";
@@ -34,8 +35,28 @@ export function creativeDocumentSession(
   }
   let canUndo = false;
   let canRedo = false;
+  let scene: CreativeScene | null = null;
   const listeners = new Set<() => void>();
-  const notify = () => listeners.forEach((listener) => listener());
+  const notify = () => {
+    if (document) {
+      const next = applySceneOperations(document.scene, [
+        ...(pending?.operations ?? []),
+        ...queue.flatMap((edit) => edit.operations),
+      ]);
+      // A save receipt acknowledges pixels already on screen. Preserve their
+      // identity, including unchanged nodes, instead of rebuilding the canvas.
+      const previous = new Map(scene?.nodes.map((node) => [node.id, node]));
+      next.nodes = next.nodes.map((node) => {
+        const old = previous.get(node.id);
+        return old && (old === node || JSON.stringify(old) === JSON.stringify(node))
+          ? old : node;
+      });
+      if (!scene || scene.background !== next.background ||
+          scene.nodes.length !== next.nodes.length ||
+          next.nodes.some((node, i) => node !== scene!.nodes[i])) scene = freeze(next);
+    }
+    listeners.forEach((listener) => listener());
+  };
   function freeze<T>(value: T): T {
     if (value && typeof value === "object" && !Object.isFrozen(value)) {
       Object.freeze(value);
@@ -76,11 +97,7 @@ export function creativeDocumentSession(
       return failed;
     },
     get scene() {
-      if (!document) return null;
-      return applySceneOperations(document.scene, [
-        ...(pending?.operations ?? []),
-        ...queue.flatMap((edit) => edit.operations),
-      ]);
+      return scene;
     },
     get canUndo() {
       return canUndo;

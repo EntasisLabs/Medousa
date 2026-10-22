@@ -53,6 +53,7 @@ function render() {
   return target;
 }
 beforeEach(() => {
+  localStorage.clear();
   transactions = [];
   fail = false;
   doc = {
@@ -350,4 +351,58 @@ it("keeps the Ask draft when its floating panel is collapsed", async () => {
     )?.value,
   ).toBe("Keep this direction");
   expect(transactions).toEqual([]);
+});
+
+it("keeps a finished gesture visible during delayed autosave without refreshing the rail or replacing the canvas", async () => {
+  const root = render();
+  await settle(); await settle();
+  button("Toggle inspector", root).click(); flushSync();
+  button("Headline", root).click(); flushSync();
+  let finish!: () => void;
+  request.mockImplementationOnce(() => new Promise(resolve => {
+    finish = () => resolve({ document: structuredClone(doc), applied_revision: 1, duplicate: false, can_undo: true, can_redo: false });
+  }));
+  const originalSvg = root.querySelector('svg[aria-label="Editable creative project"]')!;
+  const originalText = root.querySelector('[data-node-id="title"] text')!;
+  const input = root.querySelector<HTMLTextAreaElement>('[aria-label="Text content"]')!;
+  input.value = "Optimistic, not a flash";
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+  expect(originalSvg.textContent).toContain("Optimistic, not a flash");
+  expect(root.textContent).toContain("Saving…");
+  doc = { ...doc, revision: 1, scene: applySceneOperations(doc.scene, (request.mock.calls.find(c => c[0] === "create.projects.by_id.transactions.post")![2] as { operations: CreativeOperation[] }).operations) };
+  finish(); await settle();
+  expect(root.querySelector('svg[aria-label="Editable creative project"]')).toBe(originalSvg);
+  expect(root.querySelector('[data-node-id="title"] text')).toBe(originalText);
+  expect(originalSvg.textContent).toContain("Optimistic, not a flash");
+  expect(request.mock.calls.filter(c => c[0] === "create.projects.get")).toHaveLength(0);
+  expect(root.textContent).toContain("Saved");
+});
+it("remembers tool settings and selection across tab remounts, with Details beside Style", async () => {
+  const first = render(); await settle(); await settle();
+  expect(first.querySelector('.create-canvas-controls [aria-label="Toggle inspector"]')).toBeTruthy();
+  expect(first.querySelector('footer [aria-label="Toggle inspector"]')).toBeNull();
+  button("Toggle inspector", first).click(); flushSync();
+  button("Headline", first).click(); flushSync();
+  button("Erase", first).click(); flushSync();
+  button("Whole object", first).click(); flushSync();
+  button("Draw", first).click(); flushSync();
+  button("Pencil", first).click(); flushSync();
+  button("Blue", first).click(); flushSync();
+  expect(transactions).toEqual([]);
+  expect(doc.scene.nodes[1].content).toMatchObject({ color: "#000" });
+  const svg = first.querySelector('svg[aria-label="Editable creative project"]')!;
+  svg.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaX: 40, deltaY: 25 }));
+  flushSync();
+  const camera = first.querySelector("[data-camera]")!.getAttribute("transform");
+  await unmount(mounted.pop()!); first.remove();
+  const second = render(); await settle(); await settle();
+  expect(second.querySelector("[data-camera]")!.getAttribute("transform")).toBe(camera);
+  expect(button("Pencil", second).getAttribute("aria-pressed")).toBe("true");
+  button("Erase", second).click(); flushSync();
+  expect(button("Whole object", second).getAttribute("aria-pressed")).toBe("true");
+  button("Select", second).click(); flushSync();
+  expect(second.querySelector('.create-selection-actions')?.textContent).toContain("1 selected");
+  button("Lasso", second).click(); flushSync();
+  expect(button("Lasso", second).getAttribute("aria-pressed")).toBe("true");
 });

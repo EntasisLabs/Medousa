@@ -88,3 +88,28 @@ it("never silently rebases queued edits over newer remote changes after an idemp
   expect(vi.mocked(port.transact).mock.calls[2][1].expected_revision).toBe(1);
   expect(session.pending).toMatchObject({label:"Later",expected_revision:1});expect(session.document?.revision).toBe(4);expect(session.canEdit).toBe(false);
 });
+
+it("keeps optimistic pixels and unchanged node identities stable through save receipts", async () => {
+  const port = api();
+  let finish!: (value: CreativeMutationResponse) => void;
+  vi.mocked(port.transact).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const session = creativeDocumentSession(port, "doc");
+  await session.load();
+  const node = { id: "ink", parent_id: null, visible: true, locked: false, opacity: 1,
+    transform: { x: 10, y: 20, width: 100, height: 50, rotation: 0 },
+    content: { kind: "text" as const, text: "Visible immediately", font_family: "sans-serif", font_size: 32, color: "#123456" } };
+  session.enqueue("Add text", [{ op: "put_node", node }]);
+  const optimistic = session.scene!;
+  expect(optimistic.nodes[0].content).toMatchObject({ text: "Visible immediately" });
+  const saving = session.save();
+  expect(session.scene).toBe(optimistic);
+  await Promise.resolve();
+  const receipt = response(1);
+  receipt.document.scene = structuredClone(optimistic);
+  finish(receipt);
+  await saving;
+  expect(session.scene).toBe(optimistic);
+  session.enqueue("Rename", [{ op: "rename", title: "New name" }]);
+  expect(session.scene).toBe(optimistic);
+  expect(session.scene!.nodes[0]).toBe(optimistic.nodes[0]);
+});
