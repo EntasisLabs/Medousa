@@ -249,6 +249,7 @@ stage_bin() {
   local bin="$1"
   local src="$2"
   local dst="${BIN_DIR}/$(medousa_binary_filename "${bin}" "${TARGET}")"
+  medousa_validate_native_binary "${src}" "${TARGET}"
   cp -f "${src}" "${dst}"
   chmod +x "${dst}" 2>/dev/null || true
   medousa_log "  ${bin}"

@@ -6,6 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOME_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MEDOUSA_ROOT="$(cd "${HOME_DIR}/../.." && pwd)"
+# shellcheck source=../../../scripts/release/common.sh
+source "${MEDOUSA_ROOT}/scripts/release/common.sh"
 BINARIES_DIR="${HOME_DIR}/src-tauri/binaries"
 
 TARGET="${CARGO_BUILD_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
@@ -170,6 +172,7 @@ else
   DAEMON_SRC="$(find_release_binary medousa_daemon)"
 fi
 
+medousa_validate_native_binary "${DAEMON_SRC}" "${TARGET}"
 cp -f "${DAEMON_SRC}" "${BINARIES_DIR}/${DAEMON_SIDECAR_NAME}"
 chmod +x "${BINARIES_DIR}/${DAEMON_SIDECAR_NAME}"
 echo "prepare-engine-sidecar: ${BINARIES_DIR}/${DAEMON_SIDECAR_NAME}"
@@ -191,6 +194,7 @@ if [[ "${WITH_LOCAL_BRAIN}" -eq 1 ]]; then
     )
     LOCAL_SRC="$(find_release_binary medousa_local)"
   fi
+  medousa_validate_native_binary "${LOCAL_SRC}" "${TARGET}"
   cp -f "${LOCAL_SRC}" "${BINARIES_DIR}/${LOCAL_SIDECAR_NAME}"
   chmod +x "${BINARIES_DIR}/${LOCAL_SIDECAR_NAME}"
   echo "prepare-engine-sidecar: ${BINARIES_DIR}/${LOCAL_SIDECAR_NAME}"

@@ -52,6 +52,22 @@ or unsaved notes.
 
 This matches Rust `stream_turn_reconnecting` and Python `stream_turn_reconnecting` — see [SDK interactive streaming](../sdk/interactive-streaming.md).
 
+## Local build starts with “cannot execute binary file”
+
+Inspect the daemon executable with `file`, including the copy bundled in
+`Medousa.app/Contents/MacOS` on macOS. A file reported only as `data` is damaged;
+changing its execute permissions will not repair it. A stripping failure caused
+by exhausted disk space can leave a tiny unusable output even when Cargo exits
+successfully. Check build warnings and free space before rebuilding.
+
+Move the damaged binary and its matching `release/deps/medousa_daemon-*`
+executable aside, then rebuild the daemon from the current checkout. Keeping
+the dependencies avoids a full clean build. Verify the new executable before
+preparing the app sidecar or reinstalling the CLI; check `/health` afterward.
+Unix release staging and sidecar preparation reject files whose native container
+header does not match the target. Run `bash scripts/ci/check-native-binary.sh`
+to verify that rejection preserves an existing sidecar.
+
 ---
 
 ## Shipped fixes (sprints A–C)

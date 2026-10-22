@@ -575,6 +575,29 @@ medousa_require_cmd() {
   fi
 }
 
+# Cargo can exit successfully after a failed strip leaves an unusable output.
+# Check the native container header without executing a potentially foreign binary.
+medousa_validate_native_binary() {
+  local path="$1" target="$2" magic="" valid=0
+  if [[ -f "${path}" && -r "${path}" ]]; then
+    magic="$(od -An -tx1 -N4 "${path}" | tr -d '[:space:]')"
+  fi
+  case "${target}" in
+    *-apple-*)
+      case "${magic}" in
+        cffaedfe | feedfacf | cafebabe | bebafeca | cafebabf | bfbafeca) valid=1 ;;
+      esac
+      ;;
+    *-windows-*) [[ "${magic}" == 4d5a???? ]] && valid=1 ;;
+    *) [[ "${magic}" == 7f454c46 ]] && valid=1 ;;
+  esac
+  if [[ "${valid}" -ne 1 ]]; then
+    echo "error: invalid native executable for ${target}: ${path}" >&2
+    echo "Check build warnings and free disk space, then rebuild this binary before packaging." >&2
+    return 1
+  fi
+}
+
 medousa_sha256_file() {
   local path="$1"
   if command -v sha256sum >/dev/null 2>&1; then
