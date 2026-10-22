@@ -12,6 +12,7 @@ fn create(store: &CreativeStore) -> CreativeDocument {
 fn text(id: &str) -> CreativeNode {
     CreativeNode {
         id: id.into(),
+        name: None,
         parent_id: None,
         transform: CreativeTransform {
             x: -100_000.,
@@ -1436,4 +1437,51 @@ fn subtree_removal_accepts_explicit_children_but_rejects_unknown_targets_atomica
     assert!(store.transact("project_one", bad).is_err());
     assert_eq!(store.get("project_one").unwrap().document, document);
     assert!(!store.get("project_one").unwrap().can_undo);
+}
+
+#[test]
+fn optional_layer_labels_roundtrip_with_undo_and_legacy_nodes_remain_unchanged() {
+    let mut node = text("title");
+    let legacy = serde_json::to_value(&node).unwrap();
+    assert!(legacy.get("name").is_none());
+    assert!(
+        serde_json::from_value::<CreativeNode>(legacy)
+            .unwrap()
+            .name
+            .is_none()
+    );
+    node.name = Some("Caption".into());
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    create(&store);
+    let first = store
+        .transact("project_one", edit("label", 0, node.clone()))
+        .unwrap();
+    assert_eq!(
+        first.document.scene.nodes[0].name.as_deref(),
+        Some("Caption")
+    );
+    let mut renamed = node.clone();
+    renamed.name = Some("Smiley".into());
+    store
+        .transact("project_one", edit("rename", 1, renamed))
+        .unwrap();
+    let restored = store
+        .history("project_one", history("undo_name", 2, false))
+        .unwrap();
+    assert_eq!(restored.document.scene.nodes[0], node);
+    let mut bad = node.clone();
+    bad.name = Some(" ".into());
+    assert!(
+        store
+            .transact("project_one", edit("bad_name", 3, bad))
+            .is_err()
+    );
+    node.name = Some("x".repeat(257));
+    assert!(
+        store
+            .transact("project_one", edit("long_name", 3, node))
+            .is_err()
+    );
+    assert_eq!(store.get("project_one").unwrap().document.revision, 3);
 }

@@ -24,10 +24,13 @@ On phones, Create is available in the destinations menu.
 - **Select** (`V`): click and drag objects. Drag a box in empty space to select several;
   **Box** is the default; choose **Lasso** in **Style** for freehand selection.
   Shift adds to the selection. Frames are selected by clicking their background,
-  so a drag inside a frame can still select its contents. Drag the bottom-right
-  handle to resize. Arrow keys nudge; Shift-arrow moves ten units. Delete or
+  so a drag inside a frame can still select its contents. Drag a corner or edge
+  handle to resize; Shift preserves a single object's proportions. Groups and
+  multiple selected objects share one box and resize proportionally, including
+  their ink and text. Arrow keys nudge; Shift-arrow moves ten units. Delete or
   Backspace removes the selected objects and their children. Command/Control-D
-  duplicates the selection with its children.
+  duplicates the selection with its children. Option/Alt-drag makes a copy while
+  moving; Escape cancels the copy.
 - **Move** (`H`): drag to move the view. Holding Space or using the middle mouse
   button also pans. Scroll pans; Control/Command-scroll zooms around the pointer.
   **Fit** returns the complete scene to view.
@@ -58,12 +61,25 @@ Pen input takes priority over nearby palm touches, as it does in drawing notes.
 **Style** opens a compact palette. Choose a color swatch, an S/M/L/XL size, or
 no fill, soft fill, or solid fill for shapes. These controls update selected
 objects, or set the style for the next object when nothing is selected. The
-floating selection row provides Duplicate, Delete, and Details.
+floating selection row provides Group/Ungroup, Align, Arrange, Duplicate, Delete,
+and Details when applicable. Color and size controls appear only for tools or
+objects that use them.
+
+Select objects in the same frame or group and use **Group** (Command/Control-G)
+to keep them together. A group moves, duplicates, and resizes as one object.
+Double-click to work inside it; Escape returns to the containing group or canvas.
+Use **Ungroup** (Shift-Command/Control-G) to release its children. Set a group's
+opacity to 100% before ungrouping so overlapping artwork keeps its appearance.
 
 **Details**, beside **Style** at the top right, shows **Layers** and the selected object's properties.
 Adjust position, size, rotation, opacity, color, ordering, visibility, and locks.
 Image crops preserve the original bytes. Frames can have transparent backgrounds.
 A locked frame also prevents direct manipulation of its children.
+Layers are nested inside their frames and groups. Use the chevron to collapse a
+container. Double-click a layer name, or press F2, to rename it; renaming a text
+layer does not change the text on the canvas. Shift-click selects a range;
+Command/Control-click toggles individual layers. Arrow keys navigate the layer
+list, and left/right collapse or expand containers.
 
 Tool choices, individual brush sizes, eraser mode, color, and selection mode are remembered
 on this device for each workshop. Returning to an open project restores its selection

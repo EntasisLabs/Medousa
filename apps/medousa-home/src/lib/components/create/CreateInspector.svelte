@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick, untrack } from "svelte";
+  import { layerRows, arrangeSelection, scaleSelection, objectBounds } from "$lib/create/creativeSelection";
   import {
     Eye,
     EyeOff,
@@ -13,6 +15,8 @@
     Square,
     Layers,
     X,
+    ChevronRight,
+    ChevronDown,
   } from "@lucide/svelte";
   import type {
     CreativeNode,
@@ -38,7 +42,65 @@
     oncommit: (label: string, operations: CreativeOperation[]) => void;
     onclose: () => void;
   } = $props();
-  const node = $derived(nodes.find((n) => n.id === selected[0]));
+  const node = $derived(selected.length === 1 ? nodes.find((n) => n.id === selected[0]) : undefined);
+  let expandedGroups = $state<string[]>([]), collapsedFrames = $state<string[]>([]);
+  let renaming = $state<string | null>(null), renameDraft = $state(""), renameError = $state("");
+  let renameInput = $state<HTMLInputElement>(), asideElement = $state<HTMLElement>();
+  const collapsed = (n: CreativeNode) => n.content.kind === "group" ? !expandedGroups.includes(n.id) : collapsedFrames.includes(n.id);
+  const rows = $derived(layerRows(nodes, collapsed));
+  const selectionKey = $derived(selected.join("|"));
+  $effect(() => {
+    void selectionKey;
+    untrack(() => {
+      for (const id of selected) {
+        let parent = nodes.find(n => n.id === nodes.find(n => n.id === id)?.parent_id);
+        while (parent) {
+          if (parent.content.kind === "group" && !expandedGroups.includes(parent.id)) expandedGroups = [...expandedGroups, parent.id];
+          if (parent.content.kind === "frame") collapsedFrames = collapsedFrames.filter(id => id !== parent!.id);
+          parent = nodes.find(n => n.id === parent!.parent_id);
+        }
+      }
+    });
+  });
+  function toggle(layer: CreativeNode) {
+    if (layer.content.kind === "group") expandedGroups = expandedGroups.includes(layer.id) ? expandedGroups.filter(id => id !== layer.id) : [...expandedGroups, layer.id];
+    else collapsedFrames = collapsedFrames.includes(layer.id) ? collapsedFrames.filter(id => id !== layer.id) : [...collapsedFrames, layer.id];
+  }
+  function selectLayer(layer: CreativeNode, event: MouseEvent | KeyboardEvent) {
+    if (event.shiftKey && selected.length) {
+      const a = rows.findIndex(row => row.node.id === selected[selected.length - 1]), b = rows.findIndex(row => row.node.id === layer.id);
+      if (a >= 0) { onselect([...new Set([...selected, ...rows.slice(Math.min(a, b), Math.max(a, b) + 1).map(r => r.node.id)])]); return; }
+    }
+    onselect(event.metaKey || event.ctrlKey ? selected.includes(layer.id) ? selected.filter(id => id !== layer.id) : [...selected, layer.id] : [layer.id]);
+  }
+  async function beginRename(layer: CreativeNode) {
+    if (!editableNode(layer, nodes) || disabled) return;
+    renaming = layer.id; renameDraft = nodeName(layer); renameError = "";
+    await tick(); renameInput?.focus(); renameInput?.select();
+  }
+  function finishRename() {
+    const layer = nodes.find(n => n.id === renaming), name = renameDraft.trim();
+    if (!layer) return;
+    if (new TextEncoder().encode(name).length > 256) { renameError = "Use a shorter layer name."; return; }
+    renaming = null;
+    if (name && name !== nodeName(layer)) update({ ...layer, name, content: layer.content.kind === "frame" ? { ...layer.content, name } : layer.content }, "Rename layer");
+  }
+  function layerKey(layer: CreativeNode, event: KeyboardEvent) {
+    if (event.key === "F2") { event.preventDefault(); void beginRename(layer); return; }
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      const row = rows.find(r => r.node.id === layer.id)!;
+      if (row.children && (event.key === "ArrowRight") === collapsed(layer)) toggle(layer);
+      else if (event.key === "ArrowLeft" && layer.parent_id) {
+        onselect([layer.parent_id]); asideElement?.querySelector<HTMLButtonElement>(`[data-layer-id="${layer.parent_id}"] .layer-name`)?.focus();
+      }
+    }
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      const i = rows.findIndex(r => r.node.id === layer.id), next = rows[i + (event.key === "ArrowUp" ? -1 : 1)];
+      if (next) { selectLayer(next.node, event); asideElement?.querySelector<HTMLButtonElement>(`[data-layer-id="${next.node.id}"] .layer-name`)?.focus(); }
+    }
+  }
   const editable = $derived(node && editableNode(node, nodes) && !disabled);
   const icon = (n: CreativeNode) =>
     n.content.kind === "frame"
@@ -58,6 +120,13 @@
   function transform(key: keyof CreativeNode["transform"], event: Event) {
     if (!node) return;
     const value = Number((event.target as HTMLInputElement).value);
+    if (Number.isFinite(value) && node.content.kind === "group" && (key === "width" || key === "height")) {
+      const b = objectBounds(node, nodes), factor = Math.max(1, value) / Math.max(1, node.transform[key]);
+      const scaled = scaleSelection([node.id], nodes, { x: b.x, y: b.y }, factor);
+      const operations = scaled.filter((n, i) => n !== nodes[i]).map(node => ({ op: "put_node" as const, node }));
+      if (operations.length <= 1000) oncommit("Resize group", operations);
+      return;
+    }
     if (Number.isFinite(value))
       update(
         key === "width"
@@ -101,12 +170,8 @@
   );
   function reorder(direction: number) {
     if (!node) return;
-    const ids = nodes.map((n) => n.id),
-      i = ids.indexOf(node.id),
-      j = i + direction;
-    if (j < 0 || j >= ids.length) return;
-    [ids[i], ids[j]] = [ids[j], ids[i]];
-    oncommit("Reorder layer", [{ op: "reorder", ids }]);
+    const operations = arrangeSelection([node.id], nodes, direction as -1 | 1);
+    if (operations.length) oncommit("Reorder layer", operations);
   }
   function crop(key: "x" | "y" | "width" | "height", value: number) {
     if (node?.content.kind !== "image" || !Number.isFinite(value)) return;
@@ -124,15 +189,12 @@
     c.height = Math.max(0.01, Math.min(c.height, 1 - c.y));
     update({ ...node, content: { ...node.content, crop: c } }, "Crop image");
   }
-  function depth(n: CreativeNode): number {
-    const parent = nodes.find((p) => p.id === n.parent_id);
-    return parent ? depth(parent) + 1 : 0;
-  }
+
 </script>
 
-<aside class="create-inspector" aria-label="Selection and layers">
+<aside bind:this={asideElement} class="create-inspector" aria-label="Selection and layers">
   <header>
-    <strong>{node ? nodeName(node) : "Project"}</strong><button
+    <strong>{node ? nodeName(node) : selected.length > 1 ? `${selected.length} objects` : "Project"}</strong><button
       type="button"
       onclick={onclose}
       aria-label="Close inspector"><X size={15} /></button
@@ -232,6 +294,7 @@
               if (node?.content.kind === "frame")
                 update({
                   ...node,
+                  name: e.currentTarget.value,
                   content: { ...node.content, name: e.currentTarget.value },
                 });
             }}
@@ -338,44 +401,35 @@
       </div>
     </div>
   {:else}<p class="create-hint">
-      Select an object to edit its properties.
+      {selected.length > 1 ? "Move or resize these objects together, or group them to keep them together." : "Select an object to edit its properties."}
     </p>{/if}
   <div class="create-layers">
     <h3>Layers</h3>
-    {#each [...nodes].reverse() as layer (layer.id)}{@const Icon = icon(layer)}
-      <div
-        class="create-layer"
-        class:selected={selected.includes(layer.id)}
-        style:padding-left={`${8 + depth(layer) * 10}px`}
-      >
-        <button
-          type="button"
-          class="layer-name"
-          onclick={() => onselect([layer.id])}
-          ><Icon size={13} /><span>{nodeName(layer)}</span></button
-        >
-        <button
-          type="button"
-          aria-label={layer.visible ? "Hide layer" : "Show layer"}
-          {disabled}
-          onclick={() =>
-            update({ ...layer, visible: !layer.visible }, "Toggle visibility")}
-          >{#if layer.visible}<Eye size={12} />{:else}<EyeOff
-              size={12}
-            />{/if}</button
-        >
-        <button
-          type="button"
-          aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
-          {disabled}
-          onclick={() =>
-            update({ ...layer, locked: !layer.locked }, "Toggle lock")}
-          >{#if layer.locked}<Lock size={12} />{:else}<Unlock
-              size={12}
-            />{/if}</button
-        >
-      </div>
-    {/each}
+    {#if renameError}<p class="create-hint" role="alert">{renameError}</p>{/if}
+    <div role="tree" aria-label="Canvas layers" aria-multiselectable="true">
+      {#each rows as row (row.node.id)}
+        {@const layer = row.node}
+        {@const Icon = icon(layer)}
+        <div class="create-layer" data-layer-id={layer.id} class:selected={selected.includes(layer.id)} class:muted={!layer.visible} role="treeitem" aria-level={row.depth + 1} aria-selected={selected.includes(layer.id)} aria-expanded={row.children ? !collapsed(layer) : undefined} style:padding-left={`${row.depth * 14}px`}>
+          {#if row.children}
+            <button type="button" class="layer-disclosure" aria-label={`${collapsed(layer) ? "Expand" : "Collapse"} ${nodeName(layer)}`} onclick={() => toggle(layer)}>{#if collapsed(layer)}<ChevronRight size={12}/>{:else}<ChevronDown size={12}/>{/if}</button>
+          {:else}<span class="layer-disclosure-spacer"></span>{/if}
+          {#if renaming === layer.id}
+            <input class="layer-rename" bind:this={renameInput} aria-label="Layer name" maxlength="128" bind:value={renameDraft} onblur={finishRename} onkeydown={(event) => {
+              event.stopPropagation();
+              if (event.key === "Enter") { event.preventDefault(); finishRename(); }
+              if (event.key === "Escape") { event.preventDefault(); renaming = null; renameError = ""; }
+            }}/>
+          {:else}
+            <button type="button" class="layer-name" aria-label={nodeName(layer)} onclick={(event) => selectLayer(layer, event)} ondblclick={() => void beginRename(layer)} onkeydown={(event) => layerKey(layer, event)} title="Double-click to rename · F2"><Icon size={13}/><span>{nodeName(layer)}</span>{#if row.children && collapsed(layer)}<small>{row.children}</small>{/if}</button>
+          {/if}
+          <div class="layer-actions" class:persistent={!layer.visible || layer.locked}>
+            <button type="button" aria-label={layer.visible ? "Hide layer" : "Show layer"} {disabled} onclick={() => update({ ...layer, visible: !layer.visible }, "Toggle visibility")}>{#if layer.visible}<Eye size={12}/>{:else}<EyeOff size={12}/>{/if}</button>
+            <button type="button" aria-label={layer.locked ? "Unlock layer" : "Lock layer"} {disabled} onclick={() => update({ ...layer, locked: !layer.locked }, "Toggle lock")}>{#if layer.locked}<Lock size={12}/>{:else}<Unlock size={12}/>{/if}</button>
+          </div>
+        </div>
+      {/each}
+    </div>
   </div>
 </aside>
 
@@ -504,6 +558,13 @@
   .create-layer.selected {
     background: var(--create-soft);
   }
+  .layer-disclosure, .layer-disclosure-spacer { width: 18px; flex: none; }
+  .layer-disclosure { justify-content: center; padding: 3px !important; }
+  .layer-rename { flex: 1; width: 0; }
+  .layer-actions { display: flex; opacity: 0; }
+  .layer-actions.persistent, .create-layer:hover .layer-actions, .create-layer:focus-within .layer-actions, .create-layer.selected .layer-actions { opacity: 1; }
+  .layer-name small { margin-left: auto; color: var(--create-dim); font-size: 10px; }
+  .create-layer.muted .layer-name { opacity: .5; }
   .create-layer .layer-name {
     flex: 1;
     min-width: 0;

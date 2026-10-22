@@ -5836,6 +5836,9 @@ class CreativeNode(MedousaModel):
     content: CreativeContent
     id: str
     locked: bool
+    name: str | None = Field(
+        None, description='Optional layer label; omitted in existing version-3 documents.'
+    )
     opacity: float
     parent_id: str | None = None
     transform: CreativeTransform

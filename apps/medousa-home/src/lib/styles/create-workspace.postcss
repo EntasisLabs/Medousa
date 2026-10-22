@@ -361,6 +361,7 @@
   position: relative;
 }
 .create-editor .create-workarea {
+  container: create-canvas / inline-size;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -388,6 +389,7 @@
   pointer-events: auto;
 }
 .create-editor .create-canvas-controls button {
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -411,6 +413,7 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  width: max-content;
   max-width: calc(100% - 28px);
   max-height: calc(100% - 100px);
 }
@@ -712,7 +715,7 @@
     padding: 0 9px;
   }
 }
-@container create-editor (max-width: 440px) {
+@container create-canvas (max-width: 440px) {
   .create-editor .create-toolstrip {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -740,6 +743,8 @@
   .create-editor .create-shape-picker {
     bottom: 110px;
   }
+}
+@container create-editor (max-width: 440px) {
   .create-editor .create-heading {
     height: 47px;
   }
@@ -765,3 +770,12 @@
     min-height: 36px;
   }
 }
+
+.create-editor .create-selection-menu { position: relative; }
+.create-editor .create-selection-menu summary { display: flex; align-items: center; gap: 4px; list-style: none; font-size: 11px; padding: 8px 6px; border-radius: 5px; cursor: pointer; }
+.create-editor .create-selection-menu summary::-webkit-details-marker { display: none; }
+.create-editor .create-selection-menu summary:hover { background: var(--create-soft); }
+.create-editor .create-selection-menu > div { position: absolute; bottom: calc(100% + 9px); left: 0; min-width: 145px; padding: 5px; border: 1px solid var(--create-line); border-radius: 8px; background: var(--create-raised); box-shadow: 0 5px 18px #0002; }
+.create-editor .create-selection-menu > div button { display: flex; justify-content: flex-start; width: 100%; height: auto; padding: 8px; font-size: 11px; white-space: nowrap; }
+.create-editor .create-selection-actions { max-width: 100%; flex-wrap: wrap; justify-content: center; box-sizing: border-box; }
+.create-editor .create-selection-actions > span { min-width: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }

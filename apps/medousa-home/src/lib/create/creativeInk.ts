@@ -20,6 +20,7 @@ import {
   selectionRoots,
   worldMatrix,
 } from "./creativeScene";
+import { layerRows } from "./creativeSelection";
 import { hitCanvasNode } from "./creativeInteraction";
 import { randomUuid } from "$lib/utils/randomUuid";
 
@@ -135,7 +136,7 @@ export function hitCreativeScene(
   point: DrawVector,
   padding: number,
 ): string | null {
-  for (const n of [...scene.nodes].reverse()) {
+  for (const { node: n } of layerRows(scene.nodes, () => false)) {
     if (
       !editableNode(n, scene.nodes) ||
       n.content.kind === "frame" ||

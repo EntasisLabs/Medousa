@@ -53,6 +53,7 @@ export interface CreativeNode {
   content: CreativeContent;
   id: string;
   locked: boolean;
+  name?: string | null;
   opacity: number;
   parent_id?: string | null;
   transform: CreativeTransform;

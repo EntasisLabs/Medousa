@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack, tick } from "svelte";
+  import CreateSelection from "./CreateSelection.svelte";
+  import { groupSelection, ungroupSelection, selectionTarget, selectionBounds, objectBounds, resizeSelectionFromHandle, alignSelection, arrangeSelection, descendants, type Alignment } from "$lib/create/creativeSelection";
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type {
     CreativeNode,
@@ -79,6 +81,7 @@
     onzoom = () => {},
     onerror = () => {},
     onediting = () => {},
+    onScope = () => {},
   }: {
     scene: CreativeScene;
     images: Record<string, string>;
@@ -102,6 +105,7 @@
     onzoom?: (percent: number) => void;
     onerror?: (error: unknown) => void;
     onediting?: (node: CreativeNode | null) => void;
+    onScope?: (name: string | null) => void;
   } = $props();
   let svg = $state<SVGSVGElement>(),
     stage = $state<HTMLDivElement>();
@@ -110,7 +114,8 @@
     space = $state(false);
   type Gesture = {
     id: number;
-    kind: "resize" | "shape" | "frame";
+    kind: "resize" | "shape" | "frame" | "duplicate";
+    handle?: string;
     start: DrawVector;
     view: DrawVector;
     nodes: CreativeNode[];
@@ -137,6 +142,12 @@
         )
       : null,
   );
+  let groupScope = $state<string | null>(null);
+  $effect(() => {
+    if (groupScope && !scene.nodes.some(n => n.id === groupScope)) groupScope = null;
+    onScope(groupScope ? scene.nodes.find(n => n.id === groupScope)?.name ?? "Group" : null);
+  });
+  let lastActivation: { point: DrawVector; time: number } | null = null;
   let lastTap: { id?: string; time: number; view: DrawVector } | null = null;
   let inkParent = $state.raw<CreativeNode | null>(null);
   let interactionState = $state.raw<DrawInteractionState>({
@@ -169,6 +180,7 @@
     return Math.round(camera.zoom * 100);
   }
   function pick(ids: string[]) {
+    if (groupScope && ids.some(id => !descendants([groupScope!], scene.nodes).has(id))) groupScope = null;
     selected = ids;
     onselect(ids);
   }
@@ -201,6 +213,8 @@
         editableNode(n, scene.nodes),
     );
     if (selectedFrame) return selectedFrame;
+    const scope = scene.nodes.find(n => n.id === groupScope);
+    if (scope && editableNode(scope, scene.nodes)) return scope;
     return (
       [...scene.nodes].reverse().find((n) => {
         if (n.content.kind !== "frame" || !editableNode(n, scene.nodes))
@@ -235,6 +249,38 @@
   function currentScene() {
     return draft ? { ...scene, nodes: draft } : scene;
   }
+  function inside(p: DrawVector, b: { x: number; y: number; width: number; height: number }) {
+    return p.x >= b.x && p.y >= b.y && p.x <= b.x + b.width && p.y <= b.y + b.height;
+  }
+  function hitSelection(base: CreativeScene, p: DrawVector, padding: number): string | null {
+    const hit = hitCreativeScene(base, p, padding);
+    if (hit) return selectionTarget(hit, base.nodes, groupScope, selected);
+    for (const node of [...base.nodes].reverse()) {
+      if (node.content.kind === "group" && node.id !== groupScope && (!groupScope || !descendants([node.id], base.nodes).has(groupScope)) && editableNode(node, base.nodes) && inside(p, objectBounds(node, base.nodes)))
+        return selectionTarget(node.id, base.nodes, groupScope, selected);
+    }
+    const roots = selectionRoots(selected, base.nodes), bounds = selectionBounds(selected, base.nodes);
+    return roots.length > 1 && bounds && inside(p, bounds) ? roots[0].id : null;
+  }
+  function activate(hit: CreativeNode | undefined, p: DrawVector) {
+    const target = hit && scene.nodes.find(n => n.id === selectionTarget(hit.id, scene.nodes, groupScope));
+    if (target?.content.kind === "group") {
+      groupScope = target.id;
+      pick(hit && hit.id !== target.id ? [selectionTarget(hit.id, scene.nodes, groupScope)] : []);
+      return;
+    }
+    const parent = parentFor(p);
+    if (!hit || hit.content.kind === "text" || hit.content.kind === "frame")
+      void beginText(hit?.content.kind === "text" ? hit : null, local(p, parent), parent);
+  }
+  export function exitGroup() {
+    if (!groupScope) return;
+    const id = groupScope;
+    let parent = scene.nodes.find(n => n.id === scene.nodes.find(n => n.id === id)?.parent_id);
+    while (parent && parent.content.kind !== "group") parent = scene.nodes.find(n => n.id === parent!.parent_id);
+    groupScope = parent?.id ?? null;
+    pick([id]);
+  }
   const interaction = createDrawInteraction<CreativeScene>({
     editable: () => !disabled,
     tool: () =>
@@ -263,8 +309,8 @@
     }),
     erase: eraseCreativeInk,
     move: moveCreativeSelection,
-    hit: hitCreativeScene,
-    lasso: lassoCreativeScene,
+    hit: hitSelection,
+    lasso: (base, path) => [...new Set(lassoCreativeScene(base, path).map(id => selectionTarget(id, base.nodes, groupScope)))],
     selected: () => selected,
     select: pick,
     brush: (p) => {
@@ -307,8 +353,9 @@
         Math.hypot(v.x - lastTap.view.x, v.y - lastTap.view.y) < 6
       ) {
         lastTap = null;
-        if (!node || node.content.kind === "text")
-          void beginText(node ?? null, local(p, parent), parent);
+        lastActivation = { point: v, time: event.timeStamp };
+        const raw = hitCreativeScene(scene, p, 8 / zoom);
+        activate(scene.nodes.find(n => n.id === raw) ?? node, p);
       } else {
         lastTap = { id, time: event.timeStamp, view: v };
         if (!node && parent) pick([parent.id]);
@@ -326,8 +373,19 @@
       finishText();
       if (editing) return;
     }
-    const resize = (e.target as Element).closest<SVGElement>("[data-resize]")
-      ?.dataset.resize;
+    const resizeHandle = (e.target as Element).closest<SVGElement>("[data-resize]");
+    const resize = resizeHandle?.dataset.resize;
+    if (!disabled && !space && !resize && tool === "select" && e.altKey && e.button === 0) {
+      const p = point(e), hit = hitSelection(scene, p, 8 / zoom);
+      if (hit) {
+        const initial = [...selected], ids = selected.includes(hit) ? selected : [hit];
+        const copies = duplicateSelection(ids, scene.nodes, { x: 0, y: 0 });
+        const roots = copies.filter(n => !copies.some(parent => parent.id === n.parent_id));
+        gesture = { id: e.pointerId, kind: "duplicate", start: p, view: view(e), nodes: copies, base: scene.nodes, started: e.timeStamp, parent: null, initial };
+        draft = [...scene.nodes, ...copies]; pick(roots.map(n => n.id));
+        stage?.focus({ preventScroll: true }); capture(e.pointerId); e.preventDefault(); return;
+      }
+    }
     if ((!resize || e.pointerType === "touch") && interaction.begin(e)) {
       if (interaction.state.pinching) {
         gesture = null;
@@ -341,11 +399,12 @@
       v = view(e),
       hit = targetNode(e);
     if (resize && tool === "select") {
-      const nodes = selectionRoots([resize], scene.nodes);
+      const nodes = selectionRoots(selected, scene.nodes);
       if (!nodes.length) return;
       gesture = {
         id: e.pointerId,
         kind: "resize",
+        handle: resizeHandle?.dataset.handle ?? "se",
         start: p,
         view: v,
         nodes,
@@ -415,10 +474,9 @@
     e.preventDefault();
     const p = point(e);
     if (g.kind === "resize") {
-      const n = g.nodes[0],
-        q = mapPoint(inverse(worldMatrix(n, g.base)), p),
-        next = resizeNode(n, Math.max(4, q.x), Math.max(4, q.y));
-      draft = g.base.map((n) => (n.id === next.id ? next : n));
+      draft = resizeSelectionFromHandle(g.nodes.map(n => n.id), g.base, g.handle ?? "se", p, e.shiftKey);
+    } else if (g.kind === "duplicate") {
+      draft = moveCreativeSelection({ ...scene, nodes: [...g.base, ...g.nodes] }, selected, { x: p.x - g.start.x, y: p.y - g.start.y }).nodes;
     } else {
       const q = local(p, g.parent),
         n = g.nodes[0];
@@ -462,13 +520,14 @@
         { ...scene, nodes: g.base },
         { ...scene, nodes: draft ?? g.base },
       );
-      if (operations.length)
+      if (operations.length > 1000) onerror(new Error("This selection is too large to transform in one edit. Select fewer objects."));
+      else if (operations.length)
         oncommit(
           g.kind === "resize"
             ? "Resize selection"
             : g.kind === "frame"
               ? "Add frame"
-              : "Add shape",
+              : g.kind === "duplicate" ? "Duplicate selection" : "Add shape",
           operations,
         );
       if (g.kind !== "resize") tool = "select";
@@ -479,7 +538,7 @@
     if (cancel) interaction.cancel(e);
     else interaction.finish(e);
     if (cancel || Math.hypot(view(e).x - g.view.x, view(e).y - g.view.y) < 3)
-      pick(selected.filter((id) => scene.nodes.some((n) => n.id === id)));
+      pick(g.initial ?? selected.filter((id) => scene.nodes.some((n) => n.id === id)));
   }
   async function beginText(
     node: CreativeNode | null,
@@ -575,20 +634,25 @@
   }
   function doubleClick(e: MouseEvent) {
     if (disabled || editing || space || tool !== "select") return;
-    const hit = targetNode(e);
-    if (hit && hit.content.kind !== "text" && hit.content.kind !== "frame")
-      return;
-    const p = viewToScene(camera, {
-      x: e.clientX - svg!.getBoundingClientRect().left,
-      y: e.clientY - svg!.getBoundingClientRect().top,
-    });
-    const parent = parentFor(p);
-    void beginText(
-      hit?.content.kind === "text" ? hit : null,
-      local(p, parent),
-      parent,
-    );
+    const v = viewPoint(e.clientX, e.clientY)!;
+    if (lastActivation && e.timeStamp - lastActivation.time < 80 && Math.hypot(v.x - lastActivation.point.x, v.y - lastActivation.point.y) < 6) return;
+    const p = viewToScene(camera, v);
+    activate(targetNode(e), p);
   }
+  function selectionEdit(action: () => { operations: CreativeOperation[]; selected: string[] }, label: string) {
+    if (disabled || gesture || interaction.state.active || editing) return;
+    try {
+      const result = action();
+      if (!result.operations.length) return;
+      oncommit(label, result.operations); pick(result.selected);
+      stage?.focus({ preventScroll: true });
+    } catch (error) { onerror(error); }
+  }
+  export function group() { selectionEdit(() => groupSelection(selected, scene.nodes), "Group selection"); }
+  export function ungroup() { selectionEdit(() => ungroupSelection(selected, scene.nodes), "Ungroup selection"); }
+  export function align(alignment: Alignment) { selectionEdit(() => ({ operations: alignSelection(selected, scene.nodes, alignment), selected }), "Align selection"); }
+  export function arrange(direction: -1 | 1) { selectionEdit(() => ({ operations: arrangeSelection(selected, scene.nodes, direction), selected }), "Arrange selection"); }
+
   export function deleteSelection() {
     if (disabled) return;
     const ops = selectionRoots(selected, scene.nodes).map((n) => ({
@@ -628,14 +692,20 @@
     }
     if (e.type !== "keydown") return;
     if (e.key === "Escape") {
+      if (!gesture && !interaction.state.active && groupScope) { e.preventDefault(); e.stopPropagation(); exitGroup(); return; }
+      const initial = gesture?.initial;
       const id = gesture?.id;
       interaction.cancel();
       gesture = null;
       draft = null;
-      pick([]);
+      pick(initial ?? []);
       tool = "select";
       if (id !== undefined && svg?.hasPointerCapture(id))
         svg.releasePointerCapture(id);
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "g") {
+      e.preventDefault(); e.stopPropagation();
+      if (e.shiftKey) ungroup(); else group(); return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
       e.preventDefault();
@@ -643,7 +713,7 @@
       pick(
         selectionRoots(
           scene.nodes
-            .filter((n) => n.content.kind !== "frame")
+            .filter((n) => n.content.kind !== "frame" && (!groupScope || n.id !== groupScope && descendants([groupScope], scene.nodes).has(n.id)))
             .map((n) => n.id),
           scene.nodes,
         ).map((n) => n.id),
@@ -814,6 +884,7 @@
           pointer-events="none"
         />
       {/if}
+      {#if tool === "select" && !editing}<CreateSelection nodes={rendered} {selected} {zoom} {disabled} />{/if}
     </g>
   </svg>
   {#if editing && editMatrix && editing.node.content.kind === "text"}

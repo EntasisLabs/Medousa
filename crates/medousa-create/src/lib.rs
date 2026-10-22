@@ -77,6 +77,12 @@ pub fn validate_scene(
     let mut total_points = 0usize;
     for node in &scene.nodes {
         validate_id(&node.id)?;
+        if let Some(name) = &node.name {
+            bounded_text(name, 256, "layer name")?;
+            if name.trim().is_empty() {
+                return Err(invalid("layer name is empty"));
+            }
+        }
         if nodes.insert(node.id.as_str(), node).is_some() {
             return Err(invalid("duplicate node id"));
         }

@@ -452,6 +452,7 @@ mod tests {
             medousa_create::CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
         let node = CreativeNode {
             id: "frame".into(),
+            name: None,
             parent_id: None,
             transform: CreativeTransform {
                 x: 0.,

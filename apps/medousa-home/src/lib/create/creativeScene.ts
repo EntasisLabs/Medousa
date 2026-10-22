@@ -109,6 +109,7 @@ export function sceneBounds(nodes: CreativeNode[]): DrawRect | null {
   };
 }
 export function nodeName(node: CreativeNode): string {
+  if (node.name?.trim()) return node.name;
   const c = node.content;
   return c.kind === "frame"
     ? c.name

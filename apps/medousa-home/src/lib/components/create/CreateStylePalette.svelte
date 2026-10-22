@@ -26,6 +26,8 @@
     size,
     fill,
     showFill,
+    showPaint = true,
+    showSize = true,
     context,
     disabled,
     onchange,
@@ -49,6 +51,8 @@
     size: CanvasSize;
     fill: CanvasFill;
     showFill: boolean;
+    showPaint?: boolean;
+    showSize?: boolean;
     context: string;
     disabled: boolean;
     onchange: (patch: {
@@ -109,7 +113,7 @@
       >
     </div>
   {/if}
-  <div class="create-swatches" role="group" aria-label="Color">
+  {#if showPaint}<div class="create-swatches" role="group" aria-label="Color">
     {#each canvasColors.map( (c) => (c.name === "Ink" ? { ...c, value: inkColor } : c) ) as swatch}
       <button
         type="button"
@@ -121,7 +125,8 @@
       >
     {/each}
   </div>
-  <div class="create-style-section">
+  {/if}
+  {#if showSize}<div class="create-style-section">
     <span
       >{tool === "ink" || tool === "erase"
         ? `Size · ${drawSize}px`
@@ -150,6 +155,7 @@
       {/if}
     </div>
   </div>
+  {/if}
   {#if tool === "ink" || tool === "erase"}
     <div class="create-style-section">
       <button

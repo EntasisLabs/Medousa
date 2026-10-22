@@ -91,3 +91,13 @@ it("respects inherited locks and does not select empty space inside ink bounds",
     scene,
   );
 });
+
+it("picks the frontmost painted leaf after grouping changes global storage order", () => {
+  const group = createNode({ kind: "group" }, { x: 0, y: 0, width: 200, height: 200 });
+  const shape = { kind: "shape", shape: "rectangle", fill: "#fff", stroke: "#000", stroke_width: 2 } as const;
+  const front = createNode(shape, { x: 10, y: 10, width: 50, height: 50 }, group.id);
+  const back = createNode(shape, { x: 10, y: 10, width: 50, height: 50 });
+  const scene: CreativeScene = { schema: "medousa-create", version: 3, background: "transparent", nodes: [front, back, group] };
+  expect(hitCreativeScene(scene, { x: 30, y: 30 }, 1)).toBe(front.id);
+  expect(hitCreativeScene({ ...scene, nodes: [front, group, back] }, { x: 30, y: 30 }, 1)).toBe(back.id);
+});

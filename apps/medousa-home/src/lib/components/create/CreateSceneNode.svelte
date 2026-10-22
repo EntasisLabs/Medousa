@@ -1,7 +1,7 @@
 <script lang="ts">
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type { CreativeNode } from "$lib/types/generated/daemon_api";
-  import { inkPath, localMatrix } from "$lib/create/creativeScene";
+  import { inkPath, localMatrix, nodeName } from "$lib/create/creativeScene";
   let {
     node,
     nodes,
@@ -58,7 +58,7 @@
         font-size={11 / zoom}
         fill="currentColor"
         opacity="0.6"
-        pointer-events="none">{content.name}</text
+        pointer-events="none">{nodeName(node)}</text
       >
     {:else if content.kind === "group"}
       <rect width={w} height={h} fill="transparent" />
@@ -150,28 +150,6 @@
           font-size={14 / zoom}>Loading image…</text
         >{/if}
     {/if}
-    {#if selected.includes(node.id)}
-      <g
-        data-editor-only
-        pointer-events="none"
-        stroke="var(--create-selection, #8e8bd6)"
-        fill="none"
-        stroke-width={1.5 / zoom}
-      >
-        <rect width={w} height={h} />
-        {#if !isLocked}
-          <rect
-            x={w - 4 / zoom}
-            y={h - 4 / zoom}
-            width={8 / zoom}
-            height={8 / zoom}
-            fill="var(--create-handle,#fff)"
-            pointer-events="all"
-            data-resize={node.id}
-            style="cursor:nwse-resize"
-          />
-        {/if}
-      </g>
-    {/if}
+
   </g>
 {/if}

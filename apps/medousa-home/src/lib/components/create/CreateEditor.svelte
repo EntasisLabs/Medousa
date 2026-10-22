@@ -26,6 +26,8 @@
     CopyPlus,
     Trash2,
     X,
+    Group,
+    Ungroup,
   } from "@lucide/svelte";
   import CreateCanvas from "./CreateCanvas.svelte";
   import CreateStylePalette from "./CreateStylePalette.svelte";
@@ -37,6 +39,7 @@
     createNode,
     nodeName,
     editableNode,
+    selectionRoots,
     type CreativeTool,
   } from "$lib/create/creativeScene";
   import {
@@ -59,6 +62,7 @@
   } from "$lib/types/generated/daemon_api";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { loadCreativePreferences, saveCreativePreferences } from "$lib/create/creativePreferences";
+  import { canGroup, type Alignment } from "$lib/create/creativeSelection";
   import { createBrowser } from "$lib/create/createBrowser.svelte";
   let {
     lease,
@@ -92,7 +96,8 @@
     importing = $state(false),
     exporting = $state(false),
     upload = $state<HTMLInputElement>(),
-    zoom = $state(100);
+    zoom = $state(100),
+    scopeName = $state<string | null>(null);
   const drawSize = $derived(tool === "erase" ? eraserSize : brushSizes[brushKind]);
   $effect(() => saveCreativePreferences(lease.api.scope, {
     tool, selectionMode, brushKind, brushSizes: { ...brushSizes }, eraserSize,
@@ -153,6 +158,9 @@
   const selectedNodes = $derived(
     scene?.nodes.filter((n) => selected.includes(n.id)) ?? [],
   );
+  const selectedRoots = $derived(scene ? selectionRoots(selected, scene.nodes) : []);
+  const groupAllowed = $derived(scene ? canGroup(selected, scene.nodes) : false);
+  const ungroupAllowed = $derived(selectedRoots.some(n => n.content.kind === "group"));
   const styledNode = $derived(
     editingNode ?? (tool === "select" ? selectedNodes.find((n) => nodeColor(n) !== null) : undefined),
   );
@@ -393,6 +401,9 @@
       )
     )
       return;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "g") {
+      e.preventDefault(); if (e.shiftKey) canvas?.ungroup(); else canvas?.group(); return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       if (!disabled) void history(e.shiftKey);
@@ -565,8 +576,8 @@
     <div class="create-editor-body">
       <main class="create-workarea">
         <div class="create-canvas-controls">
-          <span aria-live="polite"
-            >{preview
+          <span aria-live="polite">
+            {#if scopeName}<button type="button" aria-label="Exit group" onclick={() => canvas?.exitGroup()}><ArrowLeft size={12}/>{scopeName}</button>{:else}{preview
               ? "Preview · original preserved"
               : selected.length && tool === "select"
                 ? `${selected.length} selected`
@@ -582,7 +593,7 @@
                           ? eraserMode === "partial"
                             ? "Erase ink"
                             : "Erase whole objects"
-                          : "Double-click to type"}</span
+                          : scene.nodes.length ? "" : "Draw, type, or drop an image to start"}{/if}</span
           >
           <div>
             <button
@@ -623,8 +634,9 @@
           oncommit={(label, ops) => void commit(label, ops)}
           onerror={report}
           onediting={(node) => (editingNode = node)}
+          onScope={(name) => (scopeName = name)}
         />
-        {#if palette}<div class="create-palette-position">
+        {#if palette && tool !== "hand"}<div class="create-palette-position">
             <CreateStylePalette
               {tool}
               {brushKind}
@@ -645,10 +657,12 @@
                 if (patch.finger !== undefined) fingerDraw = patch.finger;
               }}
               {inkColor}
+              showPaint={tool !== "erase" && (tool !== "select" || Boolean(styledNode))}
+              showSize={tool !== "select" || Boolean(styledNode && ["text", "ink", "shape"].includes(styledNode.content.kind))}
               color={styleColor}
               size={styleSize}
               fill={styleFill}
-              context={styledNode ? nodeName(styledNode) : "Next object"}
+              context={selectedRoots.length > 1 ? `${selectedRoots.length} selected` : styledNode ? nodeName(styledNode) : selectedRoots.length === 1 ? nodeName(selectedRoots[0]) : tool === "select" ? "Selection" : "Next object"}
               {disabled}
               showFill={tool === "shape" ||
                 selectedNodes.some(
@@ -699,7 +713,27 @@
           {#if selected.length && tool === "select" && !askOpen}<div
               class="create-selection-actions"
             >
-              <span>{selected.length} selected</span><button
+              <span>{selectedRoots.length === 1 && selectedRoots[0].content.kind === "group" ? nodeName(selectedRoots[0]) : `${selectedRoots.length} selected`}</span>
+              {#if selectedRoots.length > 1}<button type="button" aria-label="Group selection" title="Group (⌘G)" disabled={disabled || !groupAllowed} onclick={() => canvas?.group()}><Group size={15}/></button>{/if}
+              {#if ungroupAllowed}<button type="button" aria-label="Ungroup selection" title="Ungroup (⇧⌘G)" {disabled} onclick={() => canvas?.ungroup()}><Ungroup size={15}/></button>{/if}
+              {#if selectedRoots.length > 1}
+                <details class="create-selection-menu">
+                  <summary aria-label="Align selection">Align<ChevronDown size={11}/></summary>
+                  <div role="group" aria-label="Alignment">
+                    {#each ["left", "center", "right", "top", "middle", "bottom"] as alignment}
+                      <button type="button" {disabled} onclick={(event) => { canvas?.align(alignment as Alignment); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Align {alignment}</button>
+                    {/each}
+                  </div>
+                </details>
+              {/if}
+              <details class="create-selection-menu">
+                <summary aria-label="Arrange selection">Arrange<ChevronDown size={11}/></summary>
+                <div role="group" aria-label="Layer order">
+                  <button type="button" {disabled} onclick={(event) => { canvas?.arrange(1); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Bring forward</button>
+                  <button type="button" {disabled} onclick={(event) => { canvas?.arrange(-1); event.currentTarget.closest("details")?.removeAttribute("open"); }}>Send backward</button>
+                </div>
+              </details>
+              <button
                 type="button"
                 aria-label="Duplicate selection"
                 {disabled}
@@ -799,7 +833,7 @@
             >{editingNode
               ? "Type here · Esc to finish"
               : tool === "select"
-                ? `Drag a ${selectionMode} to select · Shift adds to selection`
+                ? scopeName ? "Esc exits group" : selectedRoots.length > 1 ? "Shift adds · ⌘G groups · Option-drag duplicates" : selectedRoots.length ? "Double-click to edit · Option-drag duplicates" : ""
                 : tool === "hand"
                   ? "Drag to move · Space temporarily pans"
                   : tool === "ink"

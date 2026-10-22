@@ -7470,6 +7470,13 @@
           "locked": {
             "type": "boolean"
           },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "opacity": {
             "type": "number",
             "format": "double"
@@ -7981,6 +7988,13 @@
           },
           "locked": {
             "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "opacity": {
             "type": "number",
@@ -8578,6 +8592,13 @@
           },
           "locked": {
             "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "opacity": {
             "type": "number",
@@ -9314,6 +9335,13 @@
           },
           "locked": {
             "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "opacity": {
             "type": "number",
@@ -10103,6 +10131,13 @@
           "locked": {
             "type": "boolean"
           },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "opacity": {
             "type": "number",
             "format": "double"
@@ -10559,6 +10594,13 @@
           },
           "locked": {
             "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "opacity": {
             "type": "number",
@@ -11141,6 +11183,13 @@
           },
           "locked": {
             "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "opacity": {
             "type": "number",
@@ -11753,6 +11802,13 @@
           "locked": {
             "type": "boolean"
           },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "opacity": {
             "type": "number",
             "format": "double"
@@ -12325,6 +12381,13 @@
           "locked": {
             "type": "boolean"
           },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "opacity": {
             "type": "number",
             "format": "double"
@@ -12735,6 +12798,13 @@
           },
           "locked": {
             "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "opacity": {
             "type": "number",

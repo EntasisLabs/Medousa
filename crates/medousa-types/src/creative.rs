@@ -120,6 +120,9 @@ pub enum CreativeContent {
 #[serde(deny_unknown_fields)]
 pub struct CreativeNode {
     pub id: String,
+    /// Optional layer label; omitted in existing version-3 documents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub parent_id: Option<String>,
     pub transform: CreativeTransform,
     pub opacity: f64,

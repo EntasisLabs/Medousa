@@ -57,6 +57,7 @@ function pointer(
   x: number,
   y: number,
   shiftKey = false,
+  altKey = false,
 ) {
   target.dispatchEvent(
     new PointerEvent(type, {
@@ -67,6 +68,7 @@ function pointer(
       button: 0,
       pointerType: "mouse",
       shiftKey,
+      altKey,
     }),
   );
   flushSync();
@@ -265,4 +267,67 @@ it("duplicates a frame with remapped descendants and deletes only the duplicate 
   updated.querySelector('[aria-label="Creative canvas"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Delete" }));
   flushSync();
   expect(commit).toHaveBeenLastCalledWith("Delete selection", [{ op: "remove_node", id: copy.id }]);
+});
+
+it("picks and moves a group as one object, enters on double-click, and exits with Escape", async () => {
+  const group = createNode({ kind: "group" }, { x: 0, y: 0, width: 300, height: 200 }); group.name = "Smiley";
+  const child = title(); child.parent_id = group.id;
+  const scope = vi.fn(), root = render([group, child], { onScope: scope }), svg = root.querySelector("svg")!;
+  pointer(svg, "pointerdown", 40, 50); pointer(svg, "pointermove", 70, 80); pointer(svg, "pointerup", 70, 80);
+  expect(commit).toHaveBeenLastCalledWith("Move selection", [expect.objectContaining({ op: "put_node", node: expect.objectContaining({ id: group.id, transform: expect.objectContaining({ x: 30, y: 30 }) }) })]);
+  expect(select).toHaveBeenLastCalledWith([group.id]);
+  root.querySelector(`[data-node-id="${child.id}"] text`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 40, clientY: 50 }));
+  await tick(); flushSync();
+  expect(scope).toHaveBeenLastCalledWith("Smiley");
+  expect(select).toHaveBeenLastCalledWith([child.id]);
+  root.querySelector('[aria-label="Creative canvas"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })); flushSync();
+  expect(scope).toHaveBeenLastCalledWith(null);
+  expect(select).toHaveBeenLastCalledWith([group.id]);
+});
+it("renders one proportional resize box for a group and scales its contents", () => {
+  const group = createNode({ kind: "group" }, { x: 0, y: 0, width: 300, height: 200 }), child = title(); child.parent_id = group.id;
+  const root = render([group, child], { selected: [group.id] }), svg = root.querySelector("svg")!;
+  expect(root.querySelectorAll("[data-selection-box]")).toHaveLength(1);
+  expect(root.querySelectorAll("[data-resize]")).toHaveLength(4);
+  pointer(root.querySelector('[data-handle="se"]')!, "pointerdown", 220, 90);
+  pointer(svg, "pointermove", 420, 150); pointer(svg, "pointerup", 420, 150);
+  const operations = commit.mock.calls[0][1] as CreativeOperation[];
+  expect(operations).toHaveLength(2);
+  expect(operations.find(op => op.op === "put_node" && op.node.id === child.id)).toMatchObject({ node: { transform: { width: 400, height: 120 }, content: { font_size: 64 } } });
+});
+it("Option-drag duplicates a whole group and Escape cancels an unfinished duplicate", () => {
+  const group = createNode({ kind: "group" }, { x: 0, y: 0, width: 300, height: 200 }), child = title(); child.parent_id = group.id;
+  const root = render([group, child]), svg = root.querySelector("svg")!;
+  pointer(svg, "pointerdown", 40, 50, false, true); pointer(svg, "pointermove", 80, 90); pointer(svg, "pointerup", 80, 90);
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(commit.mock.calls[0][0]).toBe("Duplicate selection");
+  const copies = (commit.mock.calls[0][1] as CreativeOperation[]).flatMap(op => op.op === "put_node" ? [op.node] : []);
+  expect(copies).toHaveLength(2);
+  const copy = copies.find(n => n.content.kind === "group")!;
+  expect(copy.transform).toMatchObject({ x: 40, y: 40 });
+  expect(copies.find(n => n.content.kind === "text")!.parent_id).toBe(copy.id);
+  pointer(svg, "pointerdown", 40, 50, false, true);
+  root.querySelector('[aria-label="Creative canvas"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); flushSync();
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(root.querySelectorAll("[data-node-id]")).toHaveLength(2);
+});
+it("preserves a single object's aspect ratio with Shift-resize", () => {
+  const node = title(), root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  pointer(root.querySelector('[data-handle="se"]')!, "pointerdown", 220, 90);
+  pointer(svg, "pointermove", 320, 150, true); pointer(svg, "pointerup", 320, 150, true);
+  expect(commit.mock.calls[0][1]).toMatchObject([{ node: { transform: { x: 20, y: 30, width: 400, height: 120 } } }]);
+});
+
+it("creates new text inside the entered group after selecting a child", async () => {
+  const group = createNode({ kind: "group" }, { x: 100, y: 100, width: 300, height: 200 }), child = title(); child.parent_id = group.id;
+  const root = render([group, child]), svg = root.querySelector("svg")!;
+  root.querySelector(`[data-node-id="${child.id}"] text`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 140, clientY: 150 }));
+  await tick(); flushSync();
+  svg.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 380, clientY: 260 }));
+  await tick(); flushSync();
+  const input = root.querySelector<HTMLTextAreaElement>('[aria-label="Canvas text"]')!;
+  input.value = "New group caption"; input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); flushSync();
+  const operations = commit.mock.calls[0][1] as CreativeOperation[];
+  expect(operations).toMatchObject([{ op: "put_node", node: { parent_id: group.id, content: { kind: "text", text: "New group caption" } } }]);
 });

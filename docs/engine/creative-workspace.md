@@ -20,6 +20,14 @@ must resolve to a group/frame and form an acyclic hierarchy. Payloads, object
 counts, geometry, text, colors, crops and asset references are validated before
 publication. Unknown versions remain untouched and return HTTP 409.
 
+`CreativeNode.name` is an optional layer label in version 3, limited to 256 UTF-8
+bytes and nonblank when present. Unnamed nodes omit the field on serialization;
+existing documents need no migration. The label does not change text content or
+geometry. Updated app and daemon builds are needed to save labels; older daemons
+reject unknown node fields. Grouping and ungrouping use existing ordered
+`put_node`, `remove_node`, and `reorder` operations in one atomic transaction,
+including explicit child coordinate updates before removing a group.
+
 Every human or accepted AI edit uses a `CreativeTransaction`: a stable request ID,
 `expected_revision`, label and ordered operations. The whole batch succeeds or
 fails. HTTP 409 means the current revision differs; retain the local draft and

@@ -406,3 +406,34 @@ it("remembers tool settings and selection across tab remounts, with Details besi
   button("Lasso", second).click(); flushSync();
   expect(button("Lasso", second).getAttribute("aria-pressed")).toBe("true");
 });
+
+it("groups and renames a drawing through durable transactions, then ungroups its contents", async () => {
+  const subtitle = structuredClone(doc.scene.nodes[1]); subtitle.id = "subtitle";
+  if (subtitle.content.kind === "text") subtitle.content.text = "Subtitle";
+  subtitle.transform.y += 150;
+  doc.scene.nodes.push(subtitle);
+  const root = render(); await settle(); await settle();
+  button("Toggle inspector", root).click(); flushSync();
+  button("Headline", root).click(); flushSync();
+  button("Subtitle", root).dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })); flushSync();
+  expect(root.querySelectorAll("[data-selection-box]")).toHaveLength(1);
+  button("Group selection", root).click(); await settle();
+  const group = doc.scene.nodes.find(n => n.content.kind === "group")!;
+  expect(group.parent_id).toBe("frame");
+  expect(doc.scene.nodes.filter(n => n.parent_id === group.id)).toHaveLength(2);
+  expect(button("Expand Group 1", root)).toBeTruthy();
+  button("Group 1", root).dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); await tick(); flushSync();
+  const rename = root.querySelector<HTMLInputElement>('[aria-label="Layer name"]')!;
+  rename.value = "Smiley"; rename.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  rename.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); await settle();
+  expect(doc.scene.nodes.find(n => n.id === group.id)!.name).toBe("Smiley");
+  root.querySelector('[data-node-id="title"] text')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 40, clientY: 50 })); await settle();
+  expect(button("Exit group", root)).toBeTruthy();
+  button("Exit group", root).click(); await settle();
+  expect(root.querySelector('[aria-label="Exit group"]')).toBeNull();
+  button("Ungroup selection", root).click(); await settle();
+  expect(doc.scene.nodes.some(n => n.content.kind === "group")).toBe(false);
+  expect(doc.scene.nodes.find(n => n.id === "title")!.parent_id).toBe("frame");
+  expect(doc.scene.nodes.find(n => n.id === "subtitle")!.parent_id).toBe("frame");
+  expect(transactions).toHaveLength(3);
+});

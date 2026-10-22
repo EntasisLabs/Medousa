@@ -212,6 +212,10 @@ revision conflicts and retry rules. Rust and Python callers use `client.creative
 Removing a frame or group removes its entire subtree in the same transaction;
 undo restores the descendants and their order. See the service contract for
 batch removal and admission retry semantics.
+Version-3 nodes may include an optional `name` layer label (nonblank, at most
+256 UTF-8 bytes). Generated Rust, Python, and TypeScript models expose it; legacy
+unnamed nodes omit it. This field requires an updated daemon. Group/ungroup edits
+reuse the ordinary atomic transaction operations rather than a separate API.
 
 Creative jobs use `creative().create_job`, `jobs`, `job` and `decide_job` in both
 Rust and Python. Preserve the request ID/body when retrying admission; use a new
