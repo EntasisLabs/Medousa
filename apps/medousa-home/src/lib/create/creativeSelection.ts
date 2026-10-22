@@ -1,4 +1,5 @@
 import type { CreativeNode, CreativeOperation } from "$lib/types/generated/daemon_api";
+import { lineGeometry, lineOutline, snapLinePoint, setLineEndpoints } from "./creativeLine";
 import { styleNode } from "./creativeInteraction";
 import type { DrawRect, DrawVector } from "$lib/draw/drawCamera";
 import { createNode, inverse, localMatrix, mapPoint, multiply, nodeBounds, nodeDimensions, parentPoint, resizeNode, selectionRoots, worldMatrix, type Matrix } from "./creativeScene";
@@ -164,9 +165,11 @@ export function resizeSelectionFromHandle(ids: string[], nodes: CreativeNode[], 
   const roots = selectionRoots(ids, nodes), bounds = selectionBounds(ids, nodes);
   if (!bounds || !roots.length) return nodes;
   if (roots.length > 1 || roots[0].content.kind === "group") {
-    const anchor = { x: handle.includes("w") ? bounds.x + bounds.width : bounds.x, y: handle.includes("n") ? bounds.y + bounds.height : bounds.y };
-    const rx = (point.x - anchor.x) / (handle.includes("w") ? -bounds.width : bounds.width);
-    const ry = (point.y - anchor.y) / (handle.includes("n") ? -bounds.height : bounds.height);
+    const frame = selectionFrame(ids, nodes)!;
+    const pointLocal = mapPoint(inverse(frame.matrix), point);
+    const anchor = mapPoint(frame.matrix, { x: handle.includes("w") ? frame.width : 0, y: handle.includes("n") ? frame.height : 0 });
+    const rx = handle.includes("w") ? (frame.width - pointLocal.x) / frame.width : pointLocal.x / frame.width;
+    const ry = handle.includes("n") ? (frame.height - pointLocal.y) / frame.height : pointLocal.y / frame.height;
     const factor = Math.abs(rx - 1) > Math.abs(ry - 1) ? rx : ry;
     return scaleSelection(ids, nodes, anchor, factor);
   }
@@ -193,4 +196,64 @@ export function resizeSelectionFromHandle(ids: string[], nodes: CreativeNode[], 
   const target = mapPoint(localMatrix(node), { x, y }), origin = localMatrix(next);
   next.transform.x += target.x - origin[4]; next.transform.y += target.y - origin[5];
   return nodes.map(n => n.id === node.id ? next : n);
+}
+
+export type SelectionFrame = { matrix: Matrix; width: number; height: number; center: DrawVector; angle: number };
+export function selectionFrame(ids: string[], nodes: CreativeNode[]): SelectionFrame | null {
+  const roots = selectionRoots(ids, nodes), bounds = selectionBounds(ids, nodes);
+  if (!roots.length || !bounds) return null;
+  let matrix: Matrix = [1, 0, 0, 1, bounds.x, bounds.y], width = bounds.width, height = bounds.height;
+  if (roots.length === 1) {
+    const node = roots[0]; matrix = worldMatrix(node, nodes);
+    if (node.content.kind === "group") {
+      const points: DrawVector[] = [], toLocal = inverse(matrix), queue = [node.id];
+      while (queue.length) {
+        const parentId = queue.pop();
+        for (const child of nodes.filter(n => n.parent_id === parentId)) {
+        if (!child.visible) continue;
+        if (child.content.kind === "group") { queue.push(child.id); continue; }
+        const m = multiply(toLocal, worldMatrix(child, nodes)), line = lineGeometry(child), size = nodeDimensions(child);
+        const outline = line ? lineOutline(line) : [{ x: 0, y: 0 }, { x: size.width, y: 0 }, { x: size.width, y: size.height }, { x: 0, y: size.height }];
+        points.push(...outline.map(p => mapPoint(m, p)));
+        }
+      }
+      if (points.length) {
+        const x = Math.min(...points.map(p => p.x)), y = Math.min(...points.map(p => p.y));
+        width = Math.max(1, ...points.map(p => p.x - x)); height = Math.max(1, ...points.map(p => p.y - y));
+        matrix = multiply(matrix, [1, 0, 0, 1, x, y]);
+      } else { width = node.transform.width; height = node.transform.height; }
+    } else {
+      const line = lineGeometry(node);
+      if (line) {
+        const start = mapPoint(matrix, line.start), end = mapPoint(matrix, line.end), angle = Math.atan2(end.y - start.y, end.x - start.x);
+        const c = Math.cos(angle), s = Math.sin(angle);
+        width = Math.hypot(end.x - start.x, end.y - start.y); height = 0;
+        matrix = [c, s, -s, c, start.x, start.y];
+      } else { const size = nodeDimensions(node); width = size.width; height = size.height; }
+    }
+  }
+  return { matrix, width, height, center: mapPoint(matrix, { x: width / 2, y: height / 2 }), angle: Math.atan2(matrix[1], matrix[0]) * 180 / Math.PI };
+}
+function rotationMatrix(center: DrawVector, degrees: number): Matrix {
+  const a = degrees * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+  return [c, s, -s, c, center.x - c * center.x + s * center.y, center.y - s * center.x - c * center.y];
+}
+/** Keep the multi-selection box attached to the rotation gesture, rather than its changing AABB. */
+export function rotateSelectionFrame(frame: SelectionFrame, degrees: number): SelectionFrame {
+  return { ...frame, matrix: multiply(rotationMatrix(frame.center, degrees), frame.matrix), angle: frame.angle + degrees };
+}
+/** Rotate selected roots in world space; children inherit the change exactly once. */
+export function rotateSelection(ids: string[], nodes: CreativeNode[], center: DrawVector, degrees: number): CreativeNode[] {
+  const roots = new Set(selectionRoots(ids, nodes).map(n => n.id)), rotation = rotationMatrix(center, degrees);
+  return nodes.map(node => {
+    if (!roots.has(node.id)) return node;
+    const parent = nodes.find(n => n.id === node.parent_id), parentWorld: Matrix = parent ? worldMatrix(parent, nodes) : [1, 0, 0, 1, 0, 0];
+    return atMatrix(node, multiply(inverse(parentWorld), multiply(rotation, worldMatrix(node, nodes))), node.parent_id);
+  });
+}
+export function moveLineEndpoint(node: CreativeNode, nodes: CreativeNode[], endpoint: "start" | "end", point: DrawVector, snap: boolean): CreativeNode {
+  const line = lineGeometry(node);
+  if (!line) return node;
+  const m = worldMatrix(node, nodes), fixed = mapPoint(m, endpoint === "start" ? line.end : line.start), next = snapLinePoint(fixed, point, snap);
+  return setLineEndpoints(node, parentPoint(node, nodes, endpoint === "start" ? next : fixed), parentPoint(node, nodes, endpoint === "end" ? next : fixed));
 }

@@ -1,10 +1,12 @@
 <script lang="ts">
   import { textMetricsVersion, type TextStylePatch } from "$lib/create/creativeText";
+  import CreateLineControls from "./CreateLineControls.svelte";
+  import { lineGeometry, type LineStylePatch } from "$lib/create/creativeLine";
   import CreateTextControls from "./CreateTextControls.svelte";
   import { styleNode, updateTextNode } from "$lib/create/creativeInteraction";
   import { nodeDimensions } from "$lib/create/creativeScene";
   import { tick, untrack } from "svelte";
-  import { layerRows, arrangeSelection, scaleSelection, objectBounds } from "$lib/create/creativeSelection";
+  import { layerRows, arrangeSelection, scaleSelection, objectBounds, selectionFrame, rotateSelection } from "$lib/create/creativeSelection";
   import {
     Eye,
     EyeOff,
@@ -21,6 +23,8 @@
     X,
     ChevronRight,
     ChevronDown,
+    MoveUpRight,
+    Minus,
   } from "@lucide/svelte";
   import type {
     CreativeNode,
@@ -39,8 +43,11 @@
     oncommit,
     onclose,
     ontextstyle,
+    onlinestyle,
     ontextleave = () => {},
     editingTextStyle,
+    propertiesOpen = $bindable(true),
+    layersOpen = $bindable(true),
   }: {
     nodes: CreativeNode[];
     selected: string[];
@@ -48,11 +55,16 @@
     onselect: (ids: string[]) => void;
     oncommit: (label: string, operations: CreativeOperation[]) => void;
     onclose: () => void;
+    onlinestyle?: (patch: LineStylePatch) => void;
     ontextstyle?: (patch: TextStylePatch) => void;
     ontextleave?: () => void;
     editingTextStyle?: TextStylePatch;
+    propertiesOpen?: boolean;
+    layersOpen?: boolean;
   } = $props();
+  const panelId = $props.id();
   const node = $derived(selected.length === 1 ? nodes.find((n) => n.id === selected[0]) : undefined);
+  const connector = $derived(node ? lineGeometry(node) : null);
   const dimensions = $derived.by(() => { void $textMetricsVersion; return node ? nodeDimensions(node) : null; });
   let expandedGroups = $state<string[]>([]), collapsedFrames = $state<string[]>([]);
   let renaming = $state<string | null>(null), renameDraft = $state(""), renameError = $state("");
@@ -114,7 +126,7 @@
   }
   const editable = $derived(node && editableNode(node, nodes) && !disabled);
   const icon = (n: CreativeNode) =>
-    n.content.kind === "frame"
+    lineGeometry(n) ? lineGeometry(n)!.start_arrow || lineGeometry(n)!.end_arrow ? MoveUpRight : Minus : n.content.kind === "frame"
       ? Frame
       : n.content.kind === "text"
         ? Type
@@ -131,6 +143,14 @@
   function transform(key: keyof CreativeNode["transform"], event: Event) {
     if (!node) return;
     const value = Number((event.target as HTMLInputElement).value);
+    if (Number.isFinite(value) && key === "rotation") {
+      const frame = selectionFrame([node.id], nodes);
+      if (frame) {
+        const rotated = rotateSelection([node.id], nodes, frame.center, value - node.transform.rotation);
+        oncommit("Rotate selection", [{ op: "put_node", node: rotated.find(n => n.id === node!.id)! }]);
+      }
+      return;
+    }
     if (Number.isFinite(value) && node.content.kind === "text" && (key === "width" || key === "height")) {
       update(styleNode(node, { font_size: node.content.font_size * Math.max(1, value) / nodeDimensions(node)[key] }), "Resize text");
       return;
@@ -158,7 +178,8 @@
   function color(value: string) {
     if (!node) return;
     const c = node.content;
-    if (c.kind === "text" || c.kind === "ink")
+    if (connector) update(styleNode(node, { color: value }), "Style line");
+    else if (c.kind === "text" || c.kind === "ink")
       update({ ...node, content: { ...c, color: value } });
     else if (c.kind === "shape")
       update({ ...node, content: { ...c, fill: value } });
@@ -166,7 +187,7 @@
       update({ ...node, content: { ...c, background: value } });
   }
   const fill = $derived(
-    node?.content.kind === "text" || node?.content.kind === "ink"
+    connector ? connector.color : node?.content.kind === "text" || node?.content.kind === "ink"
       ? node.content.color
       : node?.content.kind === "shape"
         ? node.content.fill
@@ -206,6 +227,12 @@
       aria-label="Close inspector"><X size={15} /></button
     >
   </header>
+  <div class="inspector-content">
+  <section class="inspector-section">
+    <button type="button" class="section-toggle" aria-expanded={propertiesOpen} aria-controls={`${panelId}-properties`} onclick={() => (propertiesOpen = !propertiesOpen)}>
+      {#if propertiesOpen}<ChevronDown size={12}/>{:else}<ChevronRight size={12}/>{/if}Properties
+    </button>
+    <div id={`${panelId}-properties`} hidden={!propertiesOpen}>
   {#if node}
     <div class="create-properties">
       <div class="property-grid">
@@ -252,7 +279,7 @@
         >
       </div>
       {#if fill}<label class="property-color"
-          >Fill<input
+          >{connector ? "Color" : "Fill"}<input
             type="color"
             aria-label="Selection color"
             value={/^#[0-9a-f]{6}$/i.test(fill) ? fill : "#393e33"}
@@ -260,6 +287,7 @@
             onchange={(e) => color(e.currentTarget.value)}
           /></label
         >{/if}
+      {#if connector}<CreateLineControls value={connector} disabled={!editable} onchange={(patch) => { if (onlinestyle) onlinestyle(patch); else if (node) update(styleNode(node, patch), "Style line"); }}/>{/if}
       {#if node.content.kind === "text"}
         <label class="property-stack"
           >Text<textarea
@@ -387,8 +415,13 @@
   {:else}<p class="create-hint">
       {selected.length > 1 ? "Move or resize these objects together, or group them to keep them together." : "Select an object to edit its properties."}
     </p>{/if}
-  <div class="create-layers">
-    <h3>Layers</h3>
+    </div>
+  </section>
+  <section class="create-layers inspector-section">
+    <button type="button" class="section-toggle" aria-expanded={layersOpen} aria-controls={`${panelId}-layers`} onclick={() => (layersOpen = !layersOpen)}>
+      {#if layersOpen}<ChevronDown size={12}/>{:else}<ChevronRight size={12}/>{/if}Layers
+    </button>
+    <div id={`${panelId}-layers`} hidden={!layersOpen}>
     {#if renameError}<p class="create-hint" role="alert">{renameError}</p>{/if}
     <div role="tree" aria-label="Canvas layers" aria-multiselectable="true">
       {#each rows as row (row.node.id)}
@@ -414,26 +447,45 @@
         </div>
       {/each}
     </div>
+    </div>
+  </section>
   </div>
 </aside>
 
 <style>
   .create-inspector {
-    width: 230px;
-    flex: none;
-    overflow: auto;
-    border-left: 1px solid var(--create-line);
-    background: var(--create-bg);
-    padding: 14px;
+    position: absolute;
+    top: 52px;
+    left: 15px;
+    z-index: 3;
+    width: 258px;
+    max-width: calc(100% - 30px);
+    max-height: min(640px, max(120px, calc(100% - 210px)));
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--create-line);
+    border-radius: 11px;
+    background: var(--create-raised);
+    box-shadow: 0 3px 12px #0001;
+    padding: 11px;
     color: var(--create-text);
     font-size: 12px;
   }
   .create-inspector header {
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    margin-bottom: 8px;
   }
+  .inspector-content { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .inspector-section { min-width: 0; }
+  .create-inspector .section-toggle { width: 100%; padding: 6px 0; color: var(--create-dim); font-size: 11px; }
+  .inspector-content [hidden] { display: none; }
   .create-inspector strong {
     font-weight: 500;
     overflow: hidden;
@@ -451,7 +503,7 @@
     background: var(--create-soft);
   }
   .create-properties {
-    padding-top: 16px;
+    padding-top: 8px;
   }
   .property-grid {
     display: grid;
@@ -523,14 +575,8 @@
   }
   .create-layers {
     border-top: 1px solid var(--create-line);
-    margin-top: 20px;
-    padding-top: 14px;
-  }
-  .create-layers h3 {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--create-dim);
-    margin: 0 0 10px;
+    margin-top: 12px;
+    padding-top: 7px;
   }
   .create-layer {
     display: flex;
@@ -569,13 +615,5 @@
   .create-inspector input:disabled,
   .create-inspector textarea:disabled {
     opacity: 0.45;
-  }
-  @media (max-width: 720px) {
-    .create-inspector {
-      position: absolute;
-      inset: 0 0 0 auto;
-      z-index: 15;
-      box-shadow: -10px 0 30px #0002;
-    }
   }
 </style>

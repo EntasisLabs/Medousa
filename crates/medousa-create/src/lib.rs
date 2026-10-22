@@ -152,14 +152,24 @@ pub fn validate_scene(
                 }
             }
             CreativeContent::Shape {
+                shape,
                 fill,
                 stroke,
                 stroke_width,
-                ..
+                line,
             } => {
                 paint(fill)?;
                 paint(stroke)?;
                 number(*stroke_width, 0., 1000.)?;
+                if let Some(line) = line {
+                    if *shape != CreativeShapeKind::Line {
+                        return Err(invalid("line geometry requires a line shape"));
+                    }
+                    for point in [&line.start, &line.end] {
+                        number(point.x, -1e9, 1e9)?;
+                        number(point.y, -1e9, 1e9)?;
+                    }
+                }
             }
             CreativeContent::Image { asset_id, crop } => {
                 validate_id(asset_id)?;

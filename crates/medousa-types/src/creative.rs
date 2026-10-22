@@ -92,6 +92,28 @@ pub enum CreativeFontStyle {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeLinePoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeLine {
+    pub start: CreativeLinePoint,
+    pub end: CreativeLinePoint,
+    #[serde(default)]
+    pub start_arrow: bool,
+    #[serde(default)]
+    pub end_arrow: bool,
+    #[serde(default)]
+    pub dashed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CreativeContent {
     Ink {
@@ -115,6 +137,8 @@ pub enum CreativeContent {
         fill: String,
         stroke: String,
         stroke_width: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        line: Option<CreativeLine>,
     },
     Image {
         asset_id: String,

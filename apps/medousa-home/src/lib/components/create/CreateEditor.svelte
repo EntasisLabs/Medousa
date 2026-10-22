@@ -8,7 +8,7 @@
     Square,
     Frame,
     ImagePlus,
-    PanelRight,
+    PanelLeft,
     Undo2,
     Redo2,
     ChevronDown,
@@ -53,6 +53,7 @@
     type CanvasSize,
     type CanvasStylePatch,
   } from "$lib/create/creativeInteraction";
+  import { lineGeometry } from "$lib/create/creativeLine";
   import { defaultTextStyle } from "$lib/create/creativeText";
   import type { DrawBrushKind } from "$lib/draw/drawDocument";
   import type { DrawEraserMode } from "$lib/draw/drawInteraction";
@@ -73,13 +74,17 @@
   const preferences = untrack(() => loadCreativePreferences(lease.api.scope));
   const retainedView = untrack(() => lease.state.view);
   let editorElement = $state<HTMLDivElement>(),
+    workareaWidth = $state(0),
     inkColor = $state("#393e33");
+  const compactPanels = $derived(workareaWidth > 0 && workareaWidth < 500);
   let version = $state(0),
     canvas = $state<ReturnType<typeof CreateCanvas>>(),
     selected = $state<string[]>(untrack(() => [...lease.state.selected])),
     tool = $state<CreativeTool>(preferences.tool),
     color = $state(preferences.color ?? "#393e33"),
     size = $state<CanvasSize>(preferences.size),
+    lineStyles = $state(preferences.lineStyles),
+    detailsSections = $state(preferences.detailsSections),
     textStyle = $state({ ...defaultTextStyle, ...preferences.textStyle }),
     brushKind = $state<DrawBrushKind>(preferences.brushKind),
     brushSizes = $state(preferences.brushSizes),
@@ -104,8 +109,14 @@
   const drawSize = $derived(tool === "erase" ? eraserSize : brushSizes[brushKind]);
   $effect(() => saveCreativePreferences(lease.api.scope, {
     tool, selectionMode, brushKind, brushSizes: { ...brushSizes }, eraserSize,
-    textStyle: { ...textStyle }, eraserMode, fingerDraw, color: color === inkColor ? null : color, size, shape, fill,
+    lineStyles: { line: { ...lineStyles.line }, arrow: { ...lineStyles.arrow } }, detailsSections: { ...detailsSections }, textStyle: { ...textStyle }, eraserMode, fingerDraw, color: color === inkColor ? null : color, size, shape, fill,
   }));
+  $effect(() => { if (compactPanels && inspector) palette = false; });
+  function togglePalette() {
+    const open = !palette;
+    if (open && compactPanels) inspector = false;
+    palette = open;
+  }
   $effect(() => { lease.state.selected = [...selected]; });
   const session = $derived(lease.session),
     document = $derived.by(() => {
@@ -167,6 +178,8 @@
   const styledNode = $derived(
     editingNode ?? (tool === "select" ? selectedNodes.find((n) => nodeColor(n) !== null) : undefined),
   );
+  const selectedLine = $derived(tool === "select" && selectedNodes.length > 0 && selectedNodes.every(n => lineGeometry(n)) ? lineGeometry(selectedNodes[0]) : null);
+  const currentLineStyle = $derived(shape === "arrow" ? lineStyles.arrow : lineStyles.line);
   const styleColor = $derived(styledNode ? nodeColor(styledNode)! : color);
   const styleSize = $derived(styledNode ? nodeSize(styledNode) : size);
   const styleFill = $derived(
@@ -192,6 +205,15 @@
     if (patch.font_size !== undefined && Number.isFinite(patch.font_size)) textStyle.font_size = Math.max(4, Math.min(512, patch.font_size));
     if (patch.font_weight !== undefined && patch.font_weight !== null) textStyle.font_weight = patch.font_weight;
     if (patch.font_style) textStyle.font_style = patch.font_style;
+    if (patch.stroke_width !== undefined || patch.dashed !== undefined || patch.start_arrow !== undefined || patch.end_arrow !== undefined) {
+      const key = tool === "shape" ? shape === "arrow" ? "arrow" : "line" : selectedLine?.end_arrow || selectedLine?.start_arrow ? "arrow" : "line";
+      const next = { ...lineStyles[key] };
+      if (patch.stroke_width !== undefined) next.stroke_width = patch.stroke_width;
+      if (patch.dashed !== undefined) next.dashed = patch.dashed;
+      if (patch.start_arrow !== undefined) next.start_arrow = patch.start_arrow;
+      if (patch.end_arrow !== undefined) next.end_arrow = patch.end_arrow;
+      lineStyles[key] = next;
+    }
     if (canvas?.styleText(patch)) return;
     const operations: CreativeOperation[] = (tool === "select" ? selectedNodes : [])
       .filter((n) => scene && editableNode(n, scene.nodes))
@@ -577,8 +599,11 @@
         >
       </div>{/if}
     <div class="create-editor-body">
-      <main class="create-workarea">
+      <main class="create-workarea" bind:clientWidth={workareaWidth}>
         <div class="create-canvas-controls">
+          <div class="create-details-controls">
+            <button type="button" class="create-details-toggle" aria-label="Toggle inspector" aria-pressed={inspector}
+              onclick={() => (inspector = !inspector)}><PanelLeft size={13} />Details</button>
           <span aria-live="polite">
             {#if scopeName}<button type="button" aria-label="Exit group" onclick={() => canvas?.exitGroup()}><ArrowLeft size={12}/>{scopeName}</button>{:else}{preview
               ? "Preview · original preserved"
@@ -598,19 +623,32 @@
                             : "Erase whole objects"
                           : scene.nodes.length ? "" : "Draw, type, or drop an image to start"}{/if}</span
           >
-          <div>
+          </div>
+          <div class="create-style-controls">
             <button
               type="button"
               aria-label="Show style palette"
               aria-expanded={palette}
-              onclick={() => (palette = !palette)}
+              onclick={togglePalette}
               ><span class="create-current-color" style:background={styleColor}
               ></span>Style<SlidersHorizontal size={13} /></button
             >
-            <button type="button" aria-label="Toggle inspector" aria-pressed={inspector}
-              onclick={() => (inspector = !inspector)}><PanelRight size={13} />Details</button>
           </div>
         </div>
+        {#if inspector}<CreateInspector
+          nodes={scene.nodes}
+          {selected}
+          {disabled}
+          bind:propertiesOpen={detailsSections.properties}
+          bind:layersOpen={detailsSections.layers}
+          onselect={(ids) => (selected = ids)}
+          oncommit={(label, ops) => void commit(label, ops)}
+          ontextstyle={styleSelection}
+          onlinestyle={styleSelection}
+          ontextleave={() => canvas?.finishText()}
+          editingTextStyle={editingNode?.content.kind === "text" ? editingNode.content : undefined}
+          onclose={() => (inspector = false)}
+        />{/if}
         <CreateCanvas
           bind:this={canvas}
           {scene}
@@ -620,6 +658,7 @@
           {color}
           automaticInk={color === inkColor}
           {shape}
+          lineStyle={currentLineStyle}
           {fill}
           textSize={size}
           {textStyle}
@@ -660,6 +699,8 @@
                 if (patch.eraser) eraserMode = patch.eraser;
                 if (patch.finger !== undefined) fingerDraw = patch.finger;
               }}
+              lineStyle={selectedLine ?? (tool === "shape" && (shape === "line" || shape === "arrow") ? currentLineStyle : undefined)}
+              onLineStyle={styleSelection}
               textStyle={editingNode?.content.kind === "text" ? editingNode.content : tool === "text" ? textStyle : tool === "select" && selectedNodes.length > 0 && selectedNodes.every(n => n.content.kind === "text") && selectedNodes[0].content.kind === "text" ? selectedNodes[0].content : undefined}
               onTextStyle={styleSelection}
               onTextLeave={() => canvas?.finishText()}
@@ -671,7 +712,7 @@
               fill={styleFill}
               context={selectedRoots.length > 1 ? `${selectedRoots.length} selected` : styledNode ? nodeName(styledNode) : selectedRoots.length === 1 ? nodeName(selectedRoots[0]) : tool === "select" ? "Selection" : "Next object"}
               {disabled}
-              showFill={tool === "shape" ||
+              showFill={tool === "shape" && shape !== "line" && shape !== "arrow" ||
                 selectedNodes.some(
                   (n) =>
                     n.content.kind === "shape" && n.content.shape !== "line",
@@ -840,7 +881,7 @@
             >{editingNode
               ? "Type here · Esc to finish"
               : tool === "select"
-                ? scopeName ? "Esc exits group" : selectedRoots.length > 1 ? "Shift adds · ⌘G groups · Option-drag duplicates" : selectedRoots.length ? "Double-click to edit · Option-drag duplicates" : ""
+                ? scopeName ? "Esc exits group" : selectedRoots.length > 1 ? "Shift adds · ⌘G groups · Option-drag duplicates" : selectedLine ? "Drag endpoints · Shift snaps 45° · Drag the round handle to rotate" : selectedRoots.length ? "Drag the round handle to rotate · Shift snaps 15°" : ""
                 : tool === "hand"
                   ? "Drag to move · Space temporarily pans"
                   : tool === "ink"
@@ -860,17 +901,7 @@
           onchange={(e) => void importImage(e.currentTarget.files?.[0])}
         />
       </main>
-      {#if inspector}<CreateInspector
-          nodes={scene.nodes}
-          {selected}
-          {disabled}
-          onselect={(ids) => (selected = ids)}
-          oncommit={(label, ops) => void commit(label, ops)}
-          ontextstyle={styleSelection}
-            ontextleave={() => canvas?.finishText()}
-            editingTextStyle={editingNode?.content.kind === "text" ? editingNode.content : undefined}
-            onclose={() => (inspector = false)}
-        />{/if}
+
     </div>
   {:else}<div class="create-loading">
       {#if error}<p role="alert">{error}</p>

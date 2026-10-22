@@ -13,6 +13,7 @@ import {
   type DrawVector,
   type DrawSize,
 } from "$lib/draw/drawCamera";
+import { lineGeometry, lineOutline } from "./creativeLine";
 import { layoutText } from "./creativeText";
 import { randomUuid } from "$lib/utils/randomUuid";
 
@@ -85,12 +86,13 @@ export function nodeBounds(
 ): DrawRect {
   const m = worldMatrix(node, nodes),
     { width, height } = nodeDimensions(node);
-  const points = [
+  const connector = lineGeometry(node);
+  const points = (connector ? lineOutline(connector) : [
     { x: 0, y: 0 },
     { x: width, y: 0 },
     { x: 0, y: height },
     { x: width, y: height },
-  ].map((p) => mapPoint(m, p));
+  ]).map((p) => mapPoint(m, p));
   const x = Math.min(...points.map((p) => p.x)),
     y = Math.min(...points.map((p) => p.y));
   return {
@@ -115,6 +117,8 @@ export function sceneBounds(nodes: CreativeNode[]): DrawRect | null {
 export function nodeName(node: CreativeNode): string {
   if (node.name?.trim()) return node.name;
   const c = node.content;
+  const line = lineGeometry(node);
+  if (line) return line.end_arrow || line.start_arrow ? "Arrow" : "Line";
   return c.kind === "frame"
     ? c.name
     : c.kind === "text"
@@ -267,6 +271,10 @@ export function resizeNode(
         y: (p.y * height) / node.transform.height,
       })),
     };
+  if (content.kind === "shape" && content.line) {
+    const scale = (p: { x: number; y: number }) => ({ x: p.x * width / node.transform.width, y: p.y * height / node.transform.height });
+    content = { ...content, line: { ...content.line, start: scale(content.line.start), end: scale(content.line.end) } };
+  }
   const next = {
       ...node,
       content,

@@ -30,7 +30,9 @@ On phones, Create is available in the destinations menu.
   their ink and text. Arrow keys nudge; Shift-arrow moves ten units. Delete or
   Backspace removes the selected objects and their children. Command/Control-D
   duplicates the selection with its children. Option/Alt-drag makes a copy while
-  moving; Escape cancels the copy.
+  moving; Escape cancels the copy. Drag the round handle above a selection to
+  rotate it around its center; Shift snaps to 15° steps. Groups and multiple
+  objects rotate together, including their children. Escape cancels rotation.
 - **Move** (`H`): drag to move the view. Holding Space or using the middle mouse
   button also pans. Scroll pans; Control/Command-scroll zooms around the pointer.
   **Fit** returns the complete scene to view.
@@ -50,8 +52,10 @@ On phones, Create is available in the destinations menu.
   shrinks to fit its content, including manual line breaks. Corner handles scale
   its font proportionally.
 - **Shapes** (`R`): choose Rectangle, Ellipse, Line, or Arrow in the tool picker,
-  then drag to draw. Shapes return to Select after placement. Arrows reuse
-  editable ink, including its color and resize controls.
+  then drag to draw. Shapes return to Select after placement. Lines and arrows
+  have two endpoint handles: drag either tip to change their direction or length,
+  or drag the shaft to move the whole object. Shift snaps drawing and endpoint
+  movement to 45° directions. Arrowheads stay sharp at every zoom level.
 - **Frame** (`F`, or in Shapes): drag out another export area. New objects are placed in the
   selected frame or the frame underneath the pointer.
 - **Import image**: choose, drop, or paste a PNG, JPEG, or WebP image up to 25 MiB. Its bytes are
@@ -68,6 +72,11 @@ floating selection row provides Group/Ungroup, Align, Arrange, Duplicate, Delete
 and Details when applicable. Color and size controls appear only for tools or
 objects that use them.
 
+For lines and arrows, **Style** offers thickness, solid or dashed strokes, and
+an arrowhead at either or both ends. **Details** includes the same controls.
+Line and arrow defaults are remembered separately. Existing tool-created arrows
+get endpoint controls too; ordinary freehand strokes keep their drawing tools.
+
 For text, **Style** includes a font family, exact font size with smaller/larger
 buttons, **Bold**, and **Italic**. These controls also work while typing, keeping
 the draft and its styling in the same completed edit. The selection updates when
@@ -80,7 +89,11 @@ Double-click to work inside it; Escape returns to the containing group or canvas
 Use **Ungroup** (Shift-Command/Control-G) to release its children. Set a group's
 opacity to 100% before ungrouping so overlapping artwork keeps its appearance.
 
-**Details**, beside **Style** at the top right, shows **Layers** and the selected object's properties.
+**Details**, at the canvas's top left, opens a floating panel with **Layers** and
+the selected object's properties. **Style** floats on the right; both panels can
+stay open without shifting or resizing the canvas. On narrow canvases, opening
+one tucks the other away. Collapse **Properties** or **Layers** to keep the panel
+compact; those section choices are remembered on this device for each workshop.
 Adjust position, size, rotation, opacity, color, ordering, visibility, and locks.
 Image crops preserve the original bytes. Frames can have transparent backgrounds.
 A locked frame also prevents direct manipulation of its children.

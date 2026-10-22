@@ -21,6 +21,7 @@ import {
   worldMatrix,
 } from "./creativeScene";
 import { layerRows } from "./creativeSelection";
+import { lineGeometry } from "./creativeLine";
 import { hitCanvasNode } from "./creativeInteraction";
 import { randomUuid } from "$lib/utils/randomUuid";
 
@@ -100,7 +101,7 @@ export function eraseCreativeInk(
   let changed = false;
   const nodes = scene.nodes.flatMap((node) => {
     if (!editableNode(node, scene.nodes)) return [node];
-    const stroke = creativeStroke(node, scene.nodes);
+    const stroke = lineGeometry(node) ? null : creativeStroke(node, scene.nodes);
     if (!stroke) {
       if (
         mode === "stroke" &&
@@ -143,7 +144,7 @@ export function hitCreativeScene(
       n.content.kind === "group"
     )
       continue;
-    const stroke = creativeStroke(n, scene.nodes);
+    const stroke = lineGeometry(n) ? null : creativeStroke(n, scene.nodes);
     if (
       stroke
         ? hitTestDrawStroke(stroke, point, padding)
@@ -165,7 +166,7 @@ export function lassoCreativeScene(
       n.content.kind === "group"
     )
       return [];
-    const stroke = creativeStroke(n, scene.nodes);
+    const stroke = lineGeometry(n) ? null : creativeStroke(n, scene.nodes);
     if (stroke) return selectDrawStrokesInLasso([stroke], path);
     const b = nodeBounds(n, scene.nodes);
     const outline: DrawStroke = {

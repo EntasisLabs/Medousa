@@ -695,6 +695,14 @@ class CreativeInputKind(Enum):
     unknown = 'unknown'
 
 
+class CreativeLinePoint(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    x: float
+    y: float
+
+
 class CreativePoint(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5803,17 +5811,6 @@ class CreativeContent2(MedousaModel):
     text: str
 
 
-class CreativeContent3(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    fill: str
-    kind: Kind5
-    shape: CreativeShapeKind
-    stroke: str
-    stroke_width: float
-
-
 class CreativeContent4(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5823,122 +5820,15 @@ class CreativeContent4(MedousaModel):
     kind: Kind6
 
 
-class CreativeContent(
-    RootModel[
-        CreativeContent1
-        | CreativeContent2
-        | CreativeContent3
-        | CreativeContent4
-        | CreativeContent5
-        | CreativeContent6
-    ]
-):
-    root: CreativeContent1 | CreativeContent2 | CreativeContent3 | CreativeContent4 | CreativeContent5 | CreativeContent6
-
-
-class CreativeNode(MedousaModel):
+class CreativeLine(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    content: CreativeContent
-    id: str
-    locked: bool
-    name: str | None = Field(
-        None, description='Optional layer label; omitted in existing version-3 documents.'
-    )
-    opacity: float
-    parent_id: str | None = None
-    transform: CreativeTransform
-    visible: bool
-
-
-class CreativeScene(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    background: str
-    nodes: list[CreativeNode] = Field(
-        ..., description='Back-to-front paint order. Parent relationships define containment.'
-    )
-    schema_: str = Field(..., alias='schema')
-    version: int = Field(..., ge=0)
-
-
-class CreativeOperation1(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    node: CreativeNode
-    op: Op
-
-
-class CreativeOperation(
-    RootModel[
-        CreativeOperation1
-        | CreativeOperation2
-        | CreativeOperation3
-        | CreativeOperation4
-        | CreativeOperation5
-        | CreativeOperation6
-    ]
-):
-    root: CreativeOperation1 | CreativeOperation2 | CreativeOperation3 | CreativeOperation4 | CreativeOperation5 | CreativeOperation6
-
-
-class CreativeProposalRequest(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    expected_revision: int = Field(..., ge=0)
-    id: str
-    label: str
-    operations: list[CreativeOperation]
-    selected_ids: list[str]
-
-
-class CreativeSelectionContext(MedousaModel):
-    assets: list[CreativeAsset]
-    document_id: str
-    fingerprint: str
-    nodes: list[CreativeNode]
-    revision: int = Field(..., ge=0)
-    selected_ids: list[str]
-
-
-class CreativeJob(MedousaModel):
-    applied_revision: int | None = Field(None, ge=0)
-    assets: list[CreativeAsset]
-    context: CreativeSelectionContext
-    created_at: str
-    document_id: str
-    error: str | None = None
-    request: CreativeJobRequest
-    result: CreativeProposalRequest | None = None
-    session_id: str
-    status: CreativeJobStatus
-    turn_id: str
-    updated_at: str
-
-
-class CreativeDocument(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    assets: dict[str, CreativeAsset]
-    created_at: str
-    id: str
-    pinned: bool
-    revision: int = Field(..., ge=0)
-    scene: CreativeScene
-    title: str
-    updated_at: str
-
-
-class CreativeProposal(MedousaModel):
-    applied_revision: int | None = Field(None, ge=0)
-    created_at: str
-    request: CreativeProposalRequest
-    status: CreativeProposalStatus
+    dashed: bool | None = False
+    end: CreativeLinePoint
+    end_arrow: bool | None = False
+    start: CreativeLinePoint
+    start_arrow: bool | None = False
 
 
 class ContextManifest(MedousaModel):
@@ -6791,41 +6681,6 @@ class CreateTurnTicketRequest(MedousaModel):
     )
 
 
-class CreativeCreateRequest(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    id: str = Field(..., description='Client-generated stable id makes creation retries safe.')
-    scene: CreativeScene
-    title: str
-
-
-class CreativeJobListResponse(MedousaModel):
-    jobs: list[CreativeJob]
-
-
-class CreativeMutationResponse(MedousaModel):
-    applied_revision: int = Field(..., ge=0)
-    can_redo: bool
-    can_undo: bool
-    document: CreativeDocument
-    duplicate: bool
-
-
-class CreativeProposalListResponse(MedousaModel):
-    proposals: list[CreativeProposal]
-
-
-class CreativeTransaction(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    expected_revision: int = Field(..., ge=0)
-    id: str
-    label: str
-    operations: list[CreativeOperation]
-
-
 class DeriveSessionRequest(MedousaModel):
     intent: str = Field(
         ...,
@@ -7258,6 +7113,136 @@ class ExternalConversationView(MedousaModel):
     updated_at: AwareDatetime
 
 
+class CreativeContent3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    fill: str
+    kind: Kind5
+    line: CreativeLine | None = None
+    shape: CreativeShapeKind
+    stroke: str
+    stroke_width: float
+
+
+class CreativeContent(
+    RootModel[
+        CreativeContent1
+        | CreativeContent2
+        | CreativeContent3
+        | CreativeContent4
+        | CreativeContent5
+        | CreativeContent6
+    ]
+):
+    root: CreativeContent1 | CreativeContent2 | CreativeContent3 | CreativeContent4 | CreativeContent5 | CreativeContent6
+
+
+class CreativeNode(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    content: CreativeContent
+    id: str
+    locked: bool
+    name: str | None = Field(
+        None, description='Optional layer label; omitted in existing version-3 documents.'
+    )
+    opacity: float
+    parent_id: str | None = None
+    transform: CreativeTransform
+    visible: bool
+
+
+class CreativeScene(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    background: str
+    nodes: list[CreativeNode] = Field(
+        ..., description='Back-to-front paint order. Parent relationships define containment.'
+    )
+    schema_: str = Field(..., alias='schema')
+    version: int = Field(..., ge=0)
+
+
+class CreativeOperation1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    node: CreativeNode
+    op: Op
+
+
+class CreativeOperation(
+    RootModel[
+        CreativeOperation1
+        | CreativeOperation2
+        | CreativeOperation3
+        | CreativeOperation4
+        | CreativeOperation5
+        | CreativeOperation6
+    ]
+):
+    root: CreativeOperation1 | CreativeOperation2 | CreativeOperation3 | CreativeOperation4 | CreativeOperation5 | CreativeOperation6
+
+
+class CreativeProposalRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
+    id: str
+    label: str
+    operations: list[CreativeOperation]
+    selected_ids: list[str]
+
+
+class CreativeSelectionContext(MedousaModel):
+    assets: list[CreativeAsset]
+    document_id: str
+    fingerprint: str
+    nodes: list[CreativeNode]
+    revision: int = Field(..., ge=0)
+    selected_ids: list[str]
+
+
+class CreativeJob(MedousaModel):
+    applied_revision: int | None = Field(None, ge=0)
+    assets: list[CreativeAsset]
+    context: CreativeSelectionContext
+    created_at: str
+    document_id: str
+    error: str | None = None
+    request: CreativeJobRequest
+    result: CreativeProposalRequest | None = None
+    session_id: str
+    status: CreativeJobStatus
+    turn_id: str
+    updated_at: str
+
+
+class CreativeDocument(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    assets: dict[str, CreativeAsset]
+    created_at: str
+    id: str
+    pinned: bool
+    revision: int = Field(..., ge=0)
+    scene: CreativeScene
+    title: str
+    updated_at: str
+
+
+class CreativeProposal(MedousaModel):
+    applied_revision: int | None = Field(None, ge=0)
+    created_at: str
+    request: CreativeProposalRequest
+    status: CreativeProposalStatus
+
+
 class ShellChromeDef(MedousaModel):
     desktop: ShellChromeDesktop | None = None
     mobile: ShellChromeMobile | None = None
@@ -7363,6 +7348,41 @@ class BotOpenResponse(MedousaModel):
 class CreateExternalConversationResponse(MedousaModel):
     callback_key: str | None = None
     conversation: ExternalConversationView
+
+
+class CreativeCreateRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    id: str = Field(..., description='Client-generated stable id makes creation retries safe.')
+    scene: CreativeScene
+    title: str
+
+
+class CreativeJobListResponse(MedousaModel):
+    jobs: list[CreativeJob]
+
+
+class CreativeMutationResponse(MedousaModel):
+    applied_revision: int = Field(..., ge=0)
+    can_redo: bool
+    can_undo: bool
+    document: CreativeDocument
+    duplicate: bool
+
+
+class CreativeProposalListResponse(MedousaModel):
+    proposals: list[CreativeProposal]
+
+
+class CreativeTransaction(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expected_revision: int = Field(..., ge=0)
+    id: str
+    label: str
+    operations: list[CreativeOperation]
 
 
 class ExternalConversationListResponse(MedousaModel):

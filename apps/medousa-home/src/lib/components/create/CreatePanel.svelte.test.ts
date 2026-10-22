@@ -2,7 +2,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync, tick } from "svelte";
 import CreatePanel from "./CreatePanel.svelte";
-import { applySceneOperations } from "$lib/create/creativeScene";
+import { applySceneOperations, createNode } from "$lib/create/creativeScene";
+import { dragShape } from "$lib/create/creativeInteraction";
+import { lineGeometry } from "$lib/create/creativeLine";
 import type {
   CreativeDocument,
   CreativeOperation,
@@ -133,6 +135,28 @@ afterEach(async () => {
   request.mockClear();
   openCreative.mockClear();
 });
+it("persists line styles and rotation through the shared transaction session", async () => {
+  const seed = createNode({ kind: "shape", shape: "line", fill: "transparent", stroke: "#123456", stroke_width: 4 }, { x: 0, y: 0, width: 1, height: 1 }, "frame");
+  const arrow = dragShape(seed, "arrow", { x: 100, y: 200 }, { x: 400, y: 200 }, "#123456", 4, "none");
+  doc.scene.nodes.push(arrow);
+  const first = render(), second = render(); await settle(); await settle();
+  button("Toggle inspector", first).click(); flushSync();
+  button("Arrow", first).click(); flushSync();
+  const palette = first.querySelector('[aria-label="Style palette"]')!;
+  const pattern = palette.querySelector<HTMLSelectElement>('[aria-label="Line pattern"]')!;
+  pattern.value = "dashed"; pattern.dispatchEvent(new Event("change", { bubbles: true })); await settle();
+  expect(transactions).toHaveLength(1);
+  expect(lineGeometry(doc.scene.nodes.find(n => n.id === arrow.id)!)).toMatchObject({ color: "#123456", dashed: true, end_arrow: true });
+  expect(second.querySelector(`[data-node-id="${arrow.id}"] line`)!.getAttribute("stroke-dasharray")).toBe("12 8");
+  const rotation = first.querySelector<HTMLInputElement>('[aria-label="rotation"]')!;
+  rotation.value = "45"; rotation.dispatchEvent(new Event("change", { bubbles: true })); await settle();
+  expect(transactions).toHaveLength(2);
+  expect(doc.scene.nodes.find(n => n.id === arrow.id)!.transform.rotation).toBeCloseTo(45);
+  expect(first.querySelector(`[data-node-id="${arrow.id}"]`)!.getAttribute("transform")).toBe(second.querySelector(`[data-node-id="${arrow.id}"]`)!.getAttribute("transform"));
+  const color = first.querySelector<HTMLInputElement>('[aria-label="Selection and layers"] input[type="color"]')!;
+  color.value = "#ff0000"; color.dispatchEvent(new Event("input", { bubbles: true })); color.dispatchEvent(new Event("change", { bubbles: true })); await settle();
+  expect(lineGeometry(doc.scene.nodes.find(n => n.id === arrow.id)!)?.color).toBe("#ff0000");
+});
 it("shares edits across split views through one durable session", async () => {
   const first = render(),
     second = render();
@@ -159,6 +183,26 @@ it("shares edits across split views through one durable session", async () => {
   ).toContain("A shared headline");
   expect(button("Undo", first).disabled).toBe(false);
   expect(button("Undo", second).disabled).toBe(false);
+});
+it("floats Details inside the workarea and remembers collapsed sections when reopened", async () => {
+  const root = render(); await settle(); await settle();
+  const canvas = root.querySelector('svg[aria-label="Editable creative project"]')!, box = canvas.getAttribute("viewBox");
+  button("Toggle inspector", root).click(); flushSync();
+  expect(root.querySelector('.create-workarea > [aria-label="Selection and layers"]')).toBeTruthy();
+  expect(root.querySelector('[aria-label="Style palette"]')).toBeTruthy();
+  button("Properties", root).click(); button("Layers", root).click(); flushSync();
+  button("Close inspector", root).click(); flushSync();
+  button("Toggle inspector", root).click(); flushSync();
+  expect(button("Properties", root).getAttribute("aria-expanded")).toBe("false");
+  expect(button("Layers", root).getAttribute("aria-expanded")).toBe("false");
+  expect(root.querySelector('svg[aria-label="Editable creative project"]')).toBe(canvas);
+  expect(canvas.getAttribute("viewBox")).toBe(box);
+  expect(transactions).toEqual([]);
+  const old = mounted.pop()!; await unmount(old); root.remove();
+  const reopened = render(); await settle(); await settle();
+  button("Toggle inspector", reopened).click(); flushSync();
+  expect(button("Properties", reopened).getAttribute("aria-expanded")).toBe("false");
+  expect(button("Layers", reopened).getAttribute("aria-expanded")).toBe("false");
 });
 it("keeps a failed edit visible after tab remount and retries the exact request", async () => {
   const first = render();
@@ -378,7 +422,7 @@ it("keeps a finished gesture visible during delayed autosave without refreshing 
   expect(request.mock.calls.filter(c => c[0] === "create.projects.get")).toHaveLength(0);
   expect(root.textContent).toContain("Saved");
 });
-it("remembers tool settings and selection across tab remounts, with Details beside Style", async () => {
+it("remembers tool settings and selection across tab remounts, with Details up top", async () => {
   const first = render(); await settle(); await settle();
   expect(first.querySelector('.create-canvas-controls [aria-label="Toggle inspector"]')).toBeTruthy();
   expect(first.querySelector('footer [aria-label="Toggle inspector"]')).toBeNull();

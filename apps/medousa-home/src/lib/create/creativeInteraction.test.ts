@@ -1,3 +1,4 @@
+import { lineGeometry } from "./creativeLine";
 import { describe, expect, it } from "vitest";
 import {
   createNode,
@@ -45,37 +46,21 @@ describe("canvas interactions on durable scene nodes", () => {
       const start = { x: 10, y: 20 },
         node = dragShape(rect(), "line", start, end, "#123456", 4, "none");
       const m = worldMatrix(node, [node]),
-        a = mapPoint(m, { x: 0, y: 0 }),
-        b = mapPoint(m, { x: node.transform.width, y: node.transform.height });
-      // Minimum one-unit boxes keep perfectly horizontal/vertical lines valid.
+        a = mapPoint(m, lineGeometry(node)!.start),
+        b = mapPoint(m, lineGeometry(node)!.end);
+      // Endpoint geometry keeps every direction exact, including horizontal and vertical.
       expect(Math.hypot(a.x - start.x, a.y - start.y)).toBeLessThan(1);
       expect(Math.hypot(b.x - end.x, b.y - end.y)).toBeLessThan(1);
     }
   });
-  it("keeps arrows editable with existing ink and recolors without losing pressure metadata", () => {
-    const node = dragShape(
-      rect(),
-      "arrow",
-      { x: 50, y: 80 },
-      { x: -100, y: 10 },
-      "#123456",
-      4,
-      "none",
-    );
-    expect(node.content.kind).toBe("ink");
-    const styled = styleNode(node, { color: "#d76956", size: "l" });
-    expect(styled.content).toMatchObject({
-      kind: "ink",
-      color: "#d76956",
-      brush: { size: 7 },
-      points: expect.arrayContaining([
-        expect.objectContaining({ pressure: 0.5 }),
-      ]),
-    });
-    expect(node.content).toMatchObject({
-      color: "#123456",
-      brush: { size: 4 },
-    });
+  it("keeps real arrowheads and line styles through recoloring", () => {
+    const node = dragShape(rect(), "arrow", { x: 50, y: 80 }, { x: -100, y: 10 }, "#123456", 4, "none");
+    expect(node.content.kind).toBe("shape");
+    const styled = styleNode(node, { color: "#d76956", size: "l", dashed: true, start_arrow: true });
+    expect(styled.content).toMatchObject({ kind: "shape", shape: "line", stroke: "#d76956", stroke_width: 7, line: { dashed: true, start_arrow: true, end_arrow: true } });
+    expect(lineGeometry(styled)!.start).toEqual(lineGeometry(node)!.start);
+    expect(lineGeometry(styled)!.end).toEqual(lineGeometry(node)!.end);
+    expect(node.content).toMatchObject({ stroke: "#123456", stroke_width: 4 });
   });
   it("selects nested objects in world coordinates and respects inherited locks", () => {
     const frame = starterScene("screenshot").nodes[0];

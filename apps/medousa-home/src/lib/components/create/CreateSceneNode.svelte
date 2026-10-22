@@ -2,6 +2,7 @@
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type { CreativeNode } from "$lib/types/generated/daemon_api";
   import { inkPath, localMatrix, nodeName } from "$lib/create/creativeScene";
+  import { lineGeometry, linePaint } from "$lib/create/creativeLine";
   import { layoutText, textMetricsVersion } from "$lib/create/creativeText";
   let {
     node,
@@ -23,6 +24,8 @@
     editingId?: string;
   } = $props();
   const content = $derived(node.content);
+  const connector = $derived(lineGeometry(node));
+  const paint = $derived(connector ? linePaint(connector) : null);
   const textLayout = $derived.by(() => { void $textMetricsVersion; return content.kind === "text" ? layoutText(content) : null; });
   const w = $derived(textLayout?.width ?? node.transform.width),
     h = $derived(textLayout?.height ?? node.transform.height);
@@ -85,6 +88,11 @@
             y={textLayout!.baseline + i * textLayout!.lineHeight}>{line || " "}</tspan
           >{/each}</text
       >
+    {:else if connector && paint}
+      <g data-line opacity={connector.opacity}>
+        <line x1={paint.start.x} y1={paint.start.y} x2={paint.end.x} y2={paint.end.y} stroke={connector.color} stroke-width={connector.stroke_width} stroke-linecap="round" stroke-dasharray={connector.dashed ? `${connector.stroke_width * 3} ${connector.stroke_width * 2}` : undefined}/>
+        {#each paint.heads as triangle}<polygon data-arrowhead points={triangle.map(p => `${p.x},${p.y}`).join(" ")} fill={connector.color}/>{/each}
+      </g>
     {:else if content.kind === "shape"}
       <rect width={w} height={h} fill="transparent" />
       {#if content.shape === "ellipse"}<ellipse
@@ -93,14 +101,6 @@
           rx={w / 2}
           ry={h / 2}
           fill={content.fill}
-          stroke={content.stroke}
-          stroke-width={content.stroke_width}
-        />
-      {:else if content.shape === "line"}<line
-          x1="0"
-          y1="0"
-          x2={w}
-          y2={h}
           stroke={content.stroke}
           stroke-width={content.stroke_width}
         />

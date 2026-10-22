@@ -219,6 +219,11 @@ reuse the ordinary atomic transaction operations rather than a separate API.
 Text content supports optional `font_weight` (100–900) and `font_style`
 (`normal`/`italic`); omitted values mean 400/normal. These also require an updated
 daemon and are exposed by all generated models. Preserve them when updating text.
+Line shapes support optional `line` geometry with local `start`/`end` points,
+`start_arrow`, `end_arrow`, and `dashed` (booleans default false). Omission preserves
+legacy box-diagonal endpoints. These version-3 fields also require an updated
+daemon. Endpoint, style, and rotation edits use ordinary atomic transactions and
+undo; preserve the geometry when updating a line.
 
 Creative jobs use `creative().create_job`, `jobs`, `job` and `decide_job` in both
 Rust and Python. Preserve the request ID/body when retrying admission; use a new

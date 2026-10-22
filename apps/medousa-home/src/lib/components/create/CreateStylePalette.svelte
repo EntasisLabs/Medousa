@@ -1,4 +1,6 @@
 <script lang="ts">
+  import CreateLineControls from "./CreateLineControls.svelte";
+  import type { LineStyle, LineStylePatch } from "$lib/create/creativeLine";
   import CreateTextControls from "./CreateTextControls.svelte";
   import type { TextStylePatch } from "$lib/create/creativeText";
   import {
@@ -31,6 +33,8 @@
     showPaint = true,
     showSize = true,
     textStyle,
+    lineStyle,
+    onLineStyle = () => {},
     onTextStyle = () => {},
     onTextLeave = () => {},
     context,
@@ -59,6 +63,8 @@
     showPaint?: boolean;
     showSize?: boolean;
     textStyle?: TextStylePatch;
+    lineStyle?: LineStyle;
+    onLineStyle?: (patch: LineStylePatch) => void;
     onTextStyle?: (patch: TextStylePatch) => void;
     onTextLeave?: () => void;
     context: string;
@@ -137,7 +143,8 @@
   {#if textStyle}<div class="create-style-section">
     <CreateTextControls value={textStyle} {disabled} onchange={onTextStyle} onleave={onTextLeave}/>
   </div>{/if}
-  {#if showSize && !textStyle}<div class="create-style-section">
+  {#if lineStyle}<div class="create-style-section"><CreateLineControls value={lineStyle} {disabled} onchange={onLineStyle}/></div>{/if}
+  {#if showSize && !textStyle && !lineStyle}<div class="create-style-section">
     <span
       >{tool === "ink" || tool === "erase"
         ? `Size · ${drawSize}px`

@@ -7349,6 +7349,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -7474,6 +7484,52 @@
           "mouse",
           "unknown"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -7893,6 +7949,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -8018,6 +8084,52 @@
           "mouse",
           "unknown"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -8478,6 +8590,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -8647,6 +8769,52 @@
           "interrupted",
           "cancelled"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -9176,6 +9344,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -9415,6 +9593,52 @@
           "interrupted",
           "cancelled"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -10065,6 +10289,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -10235,6 +10469,52 @@
           "mouse",
           "unknown"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -10599,6 +10879,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -10724,6 +11014,52 @@
           "mouse",
           "unknown"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -11213,6 +11549,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -11338,6 +11684,52 @@
           "mouse",
           "unknown"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -11856,6 +12248,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -11981,6 +12383,52 @@
           "mouse",
           "unknown"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -12460,6 +12908,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -12585,6 +13043,52 @@
           "mouse",
           "unknown"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",
@@ -12903,6 +13407,16 @@
                   "shape"
                 ]
               },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "shape": {
                 "$ref": "#/definitions/CreativeShapeKind"
               },
@@ -13028,6 +13542,52 @@
           "mouse",
           "unknown"
         ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
       },
       "CreativeNode": {
         "type": "object",

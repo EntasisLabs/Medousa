@@ -30,6 +30,19 @@ export type CreativeFontStyle = "normal" | "italic";
 
 export type CreativeInputKind = "pen" | "touch" | "mouse" | "unknown";
 
+export interface CreativeLinePoint {
+  x: number;
+  y: number;
+}
+
+export interface CreativeLine {
+  dashed?: boolean;
+  end: CreativeLinePoint;
+  end_arrow?: boolean;
+  start: CreativeLinePoint;
+  start_arrow?: boolean;
+}
+
 export interface CreativePoint {
   elapsed_ms?: number | null;
   pressure?: number | null;
@@ -41,7 +54,7 @@ export interface CreativePoint {
 
 export type CreativeShapeKind = "rectangle" | "ellipse" | "line";
 
-export type CreativeContent = { brush: CreativeBrush; color: string; input: CreativeInputKind; kind: "ink"; points: CreativePoint[] } | { color: string; font_family: string; font_size: number; font_style?: CreativeFontStyle | null; font_weight?: number | null; kind: "text"; text: string } | { fill: string; kind: "shape"; shape: CreativeShapeKind; stroke: string; stroke_width: number } | { asset_id: string; crop?: CreativeCrop | null; kind: "image" } | { kind: "group" } | { background: string; kind: "frame"; name: string };
+export type CreativeContent = { brush: CreativeBrush; color: string; input: CreativeInputKind; kind: "ink"; points: CreativePoint[] } | { color: string; font_family: string; font_size: number; font_style?: CreativeFontStyle | null; font_weight?: number | null; kind: "text"; text: string } | { fill: string; kind: "shape"; line?: CreativeLine | null; shape: CreativeShapeKind; stroke: string; stroke_width: number } | { asset_id: string; crop?: CreativeCrop | null; kind: "image" } | { kind: "group" } | { background: string; kind: "frame"; name: string };
 
 export interface CreativeTransform {
   height: number;

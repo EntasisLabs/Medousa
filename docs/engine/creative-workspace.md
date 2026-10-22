@@ -13,7 +13,7 @@ metadata, a scene and an asset manifest. Supported scene nodes are ink, text,
 rectangle/ellipse/line shapes, images, groups and named frames. Coordinates are
 world coordinates, independent of camera position or export size. Node `x`/`y`
 translate from the parent coordinate space; `rotation` is clockwise degrees about
-the local origin. Width/height describe local geometry or layout bounds. Resizing
+the stored width/height box center. Width/height describe local geometry or layout bounds. Resizing
 ink or groups does not implicitly rescale stored points/children: the command
 adapter supplies those changes together in one transaction. Parent references
 must resolve to a group/frame and form an acyclic hierarchy. Payloads, object
@@ -35,6 +35,15 @@ daemon. Home measures text with its resolved font for rendering, editing,
 selection, and hit testing, including older nodes with estimated stored bounds.
 Text edits persist fitted width/height alongside the content in the same
 transaction; a font change preserves the local top-left anchor of rotated text.
+
+Line shapes additionally accept optional `line` geometry: local `start`/`end`
+points (`x`, `y`), `start_arrow`, `end_arrow`, and `dashed` booleans (default false).
+The field is valid only on `shape: "line"`; coordinates must be finite and within
+±1e9. Omitting it preserves legacy endpoints `(0, 0)` to `(width, height)`.
+Stroke color and thickness use the existing shape fields. Endpoint edits store
+the geometry and fitted transform in one transaction; rotation uses the existing
+node transform and ordinary undo history. These optional version-3 fields require
+an updated daemon. Older daemons reject them; legacy lines remain readable.
 
 Every human or accepted AI edit uses a `CreativeTransaction`: a stable request ID,
 `expected_revision`, label and ordered operations. The whole batch succeeds or

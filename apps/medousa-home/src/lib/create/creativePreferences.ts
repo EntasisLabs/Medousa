@@ -1,3 +1,4 @@
+import type { LineStyle } from "./creativeLine";
 import type { DrawBrushKind } from "$lib/draw/drawDocument";
 import { createDrawBrush, DRAW_BRUSHES } from "$lib/draw/drawDocument";
 import type { DrawEraserMode } from "$lib/draw/drawInteraction";
@@ -19,6 +20,8 @@ export type CreativePreferences = {
   shape: CanvasShape;
   fill: CanvasFill;
   textStyle: TextStylePatch;
+  lineStyles: { line: LineStyle; arrow: LineStyle };
+  detailsSections: { properties: boolean; layers: boolean };
 };
 const key = (scope: string) => workshopScopedStorageKey("medousa:create-tools:v1", scope);
 export function loadCreativePreferences(scope: string): CreativePreferences {
@@ -27,11 +30,16 @@ export function loadCreativePreferences(scope: string): CreativePreferences {
     brushSizes: Object.fromEntries(DRAW_BRUSHES.map(b => [b.kind, createDrawBrush(b.kind).size])) as Record<DrawBrushKind, number>,
     eraserSize: 12, eraserMode: "partial", fingerDraw: false,
     color: null, size: "m", shape: "rectangle", fill: "soft", textStyle: { ...defaultTextStyle },
+    lineStyles: { line: { stroke_width: 4, dashed: false, start_arrow: false, end_arrow: false }, arrow: { stroke_width: 4, dashed: false, start_arrow: false, end_arrow: true } },
+    detailsSections: { properties: true, layers: true },
   };
   try {
     const saved = JSON.parse(localStorage.getItem(key(scope)) ?? "null");
     if (!saved || typeof saved !== "object")
       return defaults;
+    for (const section of ["properties", "layers"] as const) {
+      if (typeof saved.detailsSections?.[section] === "boolean") defaults.detailsSections[section] = saved.detailsSections[section];
+    }
     const choices = {
       tool: ["select", "hand", "ink", "erase", "shape", "text", "frame"],
       selectionMode: ["box", "lasso"], brushKind: DRAW_BRUSHES.map(b => b.kind),
@@ -46,6 +54,12 @@ export function loadCreativePreferences(scope: string): CreativePreferences {
     for (const b of DRAW_BRUSHES) {
       if (validSize(saved.brushSizes?.[b.kind]))
         defaults.brushSizes[b.kind] = saved.brushSizes[b.kind];
+    }
+    for (const kind of ["line", "arrow"] as const) {
+      const line = saved.lineStyles?.[kind];
+      if (!line || typeof line !== "object") continue;
+      if (typeof line.stroke_width === "number" && Number.isFinite(line.stroke_width) && line.stroke_width >= .5 && line.stroke_width <= 100) defaults.lineStyles[kind].stroke_width = line.stroke_width;
+      for (const key of ["dashed", "start_arrow", "end_arrow"] as const) if (typeof line[key] === "boolean") defaults.lineStyles[kind][key] = line[key];
     }
     if (saved.textStyle && typeof saved.textStyle === "object") {
       const text = saved.textStyle;

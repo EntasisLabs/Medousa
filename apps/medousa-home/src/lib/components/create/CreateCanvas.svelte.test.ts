@@ -3,6 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync, tick } from "svelte";
 import CreateCanvas from "./CreateCanvas.svelte";
 import { layoutText } from "$lib/create/creativeText";
+import { dragShape } from "$lib/create/creativeInteraction";
+import { lineGeometry } from "$lib/create/creativeLine";
+import { selectionFrame } from "$lib/create/creativeSelection";
 import { createNode, nodeDimensions } from "$lib/create/creativeScene";
 import type {
   CreativeNode,
@@ -364,4 +367,75 @@ it("uses measured multiline text for rendering, selection, editing, and movement
   input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })); flushSync();
   pointer(svg, "pointerdown", 40, 50); pointer(svg, "pointermove", 80, 80); pointer(svg, "pointerup", 80, 80);
   expect(commit).toHaveBeenLastCalledWith("Move selection", [expect.objectContaining({ node: expect.objectContaining({ transform: expect.objectContaining({ x: 60, y: 60 }), content: node.content }) })]);
+});
+
+it("uses two endpoints for arrows, with one undoable endpoint gesture and cancellation", () => {
+  const node = dragShape(title(), "arrow", { x: 50, y: 80 }, { x: 250, y: 80 }, "#000", 4, "none");
+  const root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  expect(root.querySelectorAll("[data-endpoint]")).toHaveLength(2);
+  expect(root.querySelectorAll("[data-resize]")).toHaveLength(0);
+  expect(root.querySelectorAll("[data-arrowhead]")).toHaveLength(1);
+  pointer(root.querySelector('[data-endpoint="end"]')!, "pointerdown", 250, 80);
+  pointer(svg, "pointermove", 210, 150); pointer(svg, "pointerup", 210, 150);
+  expect(commit).toHaveBeenCalledTimes(1); expect(commit.mock.calls[0][0]).toBe("Move endpoint");
+  const next = commit.mock.calls[0][1][0].node as CreativeNode, line = lineGeometry(next)!;
+  expect(next.transform.x + line.start.x).toBeCloseTo(50); expect(next.transform.y + line.start.y).toBeCloseTo(80);
+  expect(next.transform.x + line.end.x).toBeCloseTo(210); expect(next.transform.y + line.end.y).toBeCloseTo(150);
+  pointer(root.querySelector('[data-endpoint="start"]')!, "pointerdown", 50, 80); pointer(svg, "pointermove", 10, 10);
+  root.querySelector('[aria-label="Creative canvas"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })); flushSync();
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(root.querySelectorAll("[data-endpoint]")).toHaveLength(2);
+});
+it("snaps new arrows to 45 degree directions and persists a real arrowhead", () => {
+  const root = render([], { tool: "shape", shape: "arrow" }), svg = root.querySelector("svg")!;
+  pointer(svg, "pointerdown", 30, 40); pointer(svg, "pointermove", 220, 100, true); pointer(svg, "pointerup", 220, 100, true);
+  expect(commit).toHaveBeenCalledTimes(1);
+  const node = commit.mock.calls[0][1][0].node as CreativeNode, line = lineGeometry(node)!;
+  expect(line.end.y).toBeCloseTo(line.start.y);
+  expect(node.content).toMatchObject({ kind: "shape", shape: "line", line: { end_arrow: true } });
+});
+it("rotates around the visible center with 15 degree Shift snapping and cancels a draft", () => {
+  const node = createNode({ kind: "shape", shape: "rectangle", fill: "#fff", stroke: "#000", stroke_width: 2 }, { x: 0, y: 0, width: 200, height: 100 });
+  const root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  pointer(root.querySelector('[data-rotate]')!, "pointerdown", 100, -28);
+  pointer(svg, "pointermove", 180, -10, true); pointer(svg, "pointerup", 180, -10, true);
+  expect(commit).toHaveBeenCalledTimes(1); expect(commit.mock.calls[0][0]).toBe("Rotate selection");
+  const next = commit.mock.calls[0][1][0].node as CreativeNode, frame = selectionFrame([node.id], [next])!;
+  expect(next.transform.rotation).toBeCloseTo(60);
+  expect(frame.center.x).toBeCloseTo(100); expect(frame.center.y).toBeCloseTo(50);
+  pointer(root.querySelector('[data-rotate]')!, "pointerdown", 100, -28); pointer(svg, "pointermove", 170, 50);
+  root.querySelector('[aria-label="Creative canvas"]')!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })); flushSync();
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(root.querySelector('[data-selection-box]')!.getAttribute("transform")).toBe("matrix(1 0 0 1 0 0)");
+});
+it("lets touch reshape an endpoint, but cancels the draft when a second finger starts navigation", () => {
+  const node = dragShape(title(), "arrow", { x: 50, y: 80 }, { x: 250, y: 80 }, "#123456", 4, "none");
+  const root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  const touch = (target: Element, type: string, id: number, x: number, y: number) => {
+    target.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "touch", pointerId: id, button: 0, clientX: x, clientY: y })); flushSync();
+  };
+  touch(root.querySelector('[data-endpoint="end"]')!, "pointerdown", 10, 250, 80);
+  touch(svg, "pointermove", 10, 300, 140);
+  expect(root.querySelector('[data-selection-box]')!.getAttribute("transform")).not.toBe("matrix(1 0 0 1 50 80)");
+  touch(svg, "pointerdown", 11, 400, 200);
+  touch(svg, "pointermove", 11, 420, 210);
+  touch(svg, "pointerup", 10, 300, 140); touch(svg, "pointerup", 11, 420, 210);
+  expect(commit).not.toHaveBeenCalled();
+  expect(root.querySelector('[data-selection-box]')!.getAttribute("transform")).toBe("matrix(1 0 0 1 50 80)");
+});
+it("keeps the multi-selection frame and angle attached while rotating its objects", () => {
+  const content = { kind: "shape", shape: "rectangle", fill: "#fff", stroke: "#000", stroke_width: 2 } as const;
+  const a = createNode(content, { x: 0, y: 0, width: 100, height: 100 }), b = createNode(content, { x: 200, y: 0, width: 100, height: 100 });
+  const root = render([a, b], { selected: [a.id, b.id] }), svg = root.querySelector("svg")!;
+  pointer(root.querySelector('[data-rotate]')!, "pointerdown", 150, -28);
+  pointer(svg, "pointermove", 228, 50, true);
+  const box = root.querySelector('[data-selection-box]')!;
+  expect(box.querySelector("text")!.textContent).toBe("90°");
+  expect(box.querySelector("rect")!.getAttribute("width")).toBe("300");
+  expect(box.querySelector("rect")!.getAttribute("height")).toBe("100");
+  pointer(svg, "pointerup", 228, 50, true);
+  expect(commit).toHaveBeenCalledTimes(1);
+  const operations = commit.mock.calls[0][1] as { node: CreativeNode }[];
+  expect(operations).toHaveLength(2);
+  expect(operations.every(op => Math.abs(op.node.transform.rotation - 90) < .001)).toBe(true);
 });

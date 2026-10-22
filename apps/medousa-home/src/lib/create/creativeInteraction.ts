@@ -1,6 +1,6 @@
 import type { CreativeNode } from "$lib/types/generated/daemon_api";
 import type { DrawRect, DrawVector } from "$lib/draw/drawCamera";
-import { createDrawBrush } from "$lib/draw/drawDocument";
+import { lineGeometry, hitLine, setLineEndpoints, type LineStylePatch } from "./creativeLine";
 import {
   createNode,
   editableNode,
@@ -59,6 +59,8 @@ export function shapeFill(color: string, fill: CanvasFill) {
 }
 export function nodeColor(node: CreativeNode): string | null {
   const c = node.content;
+  const line = lineGeometry(node);
+  if (line) return line.color;
   return c.kind === "ink" || c.kind === "text"
     ? c.color
     : c.kind === "shape"
@@ -71,6 +73,7 @@ export function nodeColor(node: CreativeNode): string | null {
 }
 export function nodeFill(node: CreativeNode): CanvasFill {
   const c = node.content;
+  if (lineGeometry(node)) return "none";
   return c.kind !== "shape" || c.fill === "transparent"
     ? "none"
     : /^#(?:[\da-f]{4}|[\da-f]{8})$/i.test(c.fill)
@@ -101,6 +104,8 @@ export function hitCanvasNode(
       : 0;
     return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
   };
+  const connector = lineGeometry(node);
+  if (connector) return hitLine(connector, p, tolerance);
   if (c.kind === "ink")
     return c.points.some(
       (a, i) =>
@@ -167,7 +172,7 @@ export function nodeSize(node: CreativeNode): CanvasSize {
       : best;
   }, "m");
 }
-export type CanvasStylePatch = { color?: string; size?: CanvasSize; fill?: CanvasFill } & TextStylePatch;
+export type CanvasStylePatch = { color?: string; size?: CanvasSize; fill?: CanvasFill } & TextStylePatch & LineStylePatch;
 export function updateTextNode(node: CreativeNode, patch: Partial<Omit<CreativeText, "kind">>): CreativeNode {
   if (node.content.kind !== "text") return node;
   const content = { ...node.content, ...patch };
@@ -180,6 +185,14 @@ export function styleNode(
 ): CreativeNode {
   const c = node.content,
     color = patch.color ?? nodeColor(node) ?? canvasColors[0].value;
+  const connector = lineGeometry(node);
+  if (connector) return {
+    ...node, opacity: node.opacity * connector.opacity,
+    content: { kind: "shape", shape: "line", fill: "transparent", stroke: color,
+      stroke_width: patch.stroke_width !== undefined && Number.isFinite(patch.stroke_width) ? Math.max(.5, Math.min(100, patch.stroke_width)) : patch.size ? canvasSizes[patch.size].stroke : connector.stroke_width,
+      line: { start: connector.start, end: connector.end, start_arrow: patch.start_arrow ?? connector.start_arrow, end_arrow: patch.end_arrow ?? connector.end_arrow, dashed: patch.dashed ?? connector.dashed },
+    },
+  };
   if (c.kind === "ink")
     return {
       ...node,
@@ -251,82 +264,15 @@ export function marqueeSelection(
     (n) => n.id,
   );
 }
-/** Arrows use the existing editable ink representation; no new daemon schema. */
-export function dragShape(
-  seed: CreativeNode,
-  shape: CanvasShape,
-  a: DrawVector,
-  b: DrawVector,
-  color: string,
-  size: number,
-  fill: CanvasFill,
-): CreativeNode {
-  const rect = dragRect(a, b),
-    width = Math.max(1, rect.width),
-    height = Math.max(1, rect.height);
-  if (shape === "arrow") {
-    const angle = Math.atan2(b.y - a.y, b.x - a.x),
-      head = Math.min(Math.hypot(b.x - a.x, b.y - a.y) * 0.35, 24 + size);
-    const pts = [
-      a,
-      b,
-      {
-        x: b.x - Math.cos(angle - 0.5) * head,
-        y: b.y - Math.sin(angle - 0.5) * head,
-      },
-      b,
-      {
-        x: b.x - Math.cos(angle + 0.5) * head,
-        y: b.y - Math.sin(angle + 0.5) * head,
-      },
-    ];
-    const bounds = dragRect(
-      {
-        x: Math.min(...pts.map((p) => p.x)),
-        y: Math.min(...pts.map((p) => p.y)),
-      },
-      {
-        x: Math.max(...pts.map((p) => p.x)),
-        y: Math.max(...pts.map((p) => p.y)),
-      },
-    );
-    return {
-      ...seed,
-      transform: {
-        ...bounds,
-        width: Math.max(1, bounds.width),
-        height: Math.max(1, bounds.height),
-        rotation: 0,
-      },
-      content: {
-        kind: "ink",
-        input: "mouse",
-        color,
-        brush: createDrawBrush("pen", size),
-        points: pts.map((p) => ({
-          x: p.x - bounds.x,
-          y: p.y - bounds.y,
-          pressure: 0.5,
-        })),
-      },
-    };
+/** Line and Arrow share exact endpoint geometry and the existing shape transaction. */
+export function dragShape(seed: CreativeNode, shape: CanvasShape, a: DrawVector, b: DrawVector, color: string, size: number, fill: CanvasFill, lineStyle: LineStylePatch = {}): CreativeNode {
+  if (shape === "line" || shape === "arrow") {
+    const base = { ...seed, content: { kind: "shape" as const, shape: "line" as const, fill: "transparent", stroke: color, stroke_width: size } };
+    return setLineEndpoints(base, a, b, { stroke_width: size, ...lineStyle, end_arrow: lineStyle.end_arrow ?? shape === "arrow" });
   }
-  const rotation =
-    shape === "line"
-      ? ((Math.atan2(b.y - a.y, b.x - a.x) - Math.atan2(height, width)) * 180) /
-        Math.PI
-      : 0;
-  return {
-    ...seed,
-    transform: { ...rect, width, height, rotation },
-    content: {
-      kind: "shape",
-      shape,
-      fill: shape === "line" ? "transparent" : shapeFill(color, fill),
-      stroke: color,
-      stroke_width: size,
-    },
-  };
+  const rect = dragRect(a, b);
+  return { ...seed, transform: { ...rect, width: Math.max(1, rect.width), height: Math.max(1, rect.height), rotation: 0 },
+    content: { kind: "shape", shape, fill: shapeFill(color, fill), stroke: color, stroke_width: size } };
 }
 /** Duplicate a selection with its descendants and remap their parent IDs atomically. */
 export function duplicateSelection(

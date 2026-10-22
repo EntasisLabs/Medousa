@@ -1534,3 +1534,78 @@ fn text_emphasis_roundtrips_with_undo_and_rejects_invalid_weights() {
         restored.document
     );
 }
+
+#[test]
+fn line_geometry_and_rotation_roundtrip_atomically_with_undo() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    create(&store);
+    let mut node = text("arrow");
+    node.content = CreativeContent::Shape {
+        shape: CreativeShapeKind::Line,
+        fill: "transparent".into(),
+        stroke: "#123456".into(),
+        stroke_width: 6.,
+        line: Some(CreativeLine {
+            start: CreativeLinePoint { x: 200., y: 0. },
+            end: CreativeLinePoint { x: 0., y: 100. },
+            start_arrow: false,
+            end_arrow: true,
+            dashed: true,
+        }),
+    };
+    node.transform.rotation = 45.;
+    store
+        .transact("project_one", edit("line", 0, node.clone()))
+        .unwrap();
+    let mut moved = node.clone();
+    moved.transform.rotation = 90.;
+    if let CreativeContent::Shape {
+        line: Some(line), ..
+    } = &mut moved.content
+    {
+        line.end.y = 200.;
+    }
+    let result = store
+        .transact("project_one", edit("move_endpoint", 1, moved.clone()))
+        .unwrap();
+    assert_eq!(result.document.scene.nodes[0], moved);
+    let restored = store
+        .history("project_one", history("undo_endpoint", 2, false))
+        .unwrap();
+    assert_eq!(restored.document.scene.nodes[0], node);
+    if let CreativeContent::Shape { shape, .. } = &mut moved.content {
+        *shape = CreativeShapeKind::Rectangle;
+    }
+    assert!(
+        store
+            .transact("project_one", edit("wrong_shape", 3, moved.clone()))
+            .is_err()
+    );
+    if let CreativeContent::Shape {
+        shape,
+        line: Some(line),
+        ..
+    } = &mut moved.content
+    {
+        *shape = CreativeShapeKind::Line;
+        line.end.x = f64::NAN;
+    }
+    assert!(
+        store
+            .transact("project_one", edit("bad_point", 3, moved))
+            .is_err()
+    );
+    assert_eq!(
+        store.get("project_one").unwrap().document,
+        restored.document
+    );
+    let mut legacy = serde_json::to_value(&node).unwrap();
+    legacy["content"].as_object_mut().unwrap().remove("line");
+    let parsed = serde_json::from_value::<CreativeNode>(legacy).unwrap();
+    assert!(
+        serde_json::to_value(parsed).unwrap()["content"]
+            .get("line")
+            .is_none()
+    );
+}

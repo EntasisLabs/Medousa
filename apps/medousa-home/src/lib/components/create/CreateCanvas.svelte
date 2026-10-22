@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack, tick } from "svelte";
+  import CreateTextEditor from "./CreateTextEditor.svelte";
   import CreateSelection from "./CreateSelection.svelte";
-  import { groupSelection, ungroupSelection, selectionTarget, selectionBounds, objectBounds, resizeSelectionFromHandle, alignSelection, arrangeSelection, descendants, type Alignment } from "$lib/create/creativeSelection";
+  import { groupSelection, ungroupSelection, selectionTarget, selectionBounds, objectBounds, resizeSelectionFromHandle, alignSelection, arrangeSelection, descendants, selectionFrame, rotateSelection, rotateSelectionFrame, moveLineEndpoint, type Alignment, type SelectionFrame } from "$lib/create/creativeSelection";
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type {
     CreativeNode,
@@ -58,7 +59,8 @@
     type CanvasFill,
     type CanvasSize,
   } from "$lib/create/creativeInteraction";
-  import { layoutText, textMetricsVersion, type TextStylePatch } from "$lib/create/creativeText";
+  import { type TextStylePatch } from "$lib/create/creativeText";
+  import { snapLinePoint, type LineStylePatch } from "$lib/create/creativeLine";
   import { randomUuid } from "$lib/utils/randomUuid";
   let {
     scene,
@@ -66,6 +68,7 @@
     selected = $bindable<string[]>([]),
     tool = $bindable<CreativeTool>("select"),
     shape = "rectangle",
+    lineStyle = {},
     fill = "soft",
     textSize = "m",
     textStyle = {},
@@ -91,6 +94,7 @@
     selected?: string[];
     tool?: CreativeTool;
     shape?: CanvasShape;
+    lineStyle?: LineStylePatch;
     fill?: CanvasFill;
     textSize?: CanvasSize;
     textStyle?: TextStylePatch;
@@ -118,7 +122,13 @@
     space = $state(false);
   type Gesture = {
     id: number;
-    kind: "resize" | "shape" | "frame" | "duplicate";
+    kind: "resize" | "shape" | "frame" | "duplicate" | "endpoint" | "rotate";
+    center?: DrawVector;
+    angle?: number;
+    rotationDelta?: number;
+    baseAngle?: number;
+    frame?: SelectionFrame;
+    rotation?: number;
     handle?: string;
     start: DrawVector;
     view: DrawVector;
@@ -146,7 +156,6 @@
         )
       : null,
   );
-  const editLayout = $derived.by(() => { void $textMetricsVersion; return editing?.node.content.kind === "text" ? layoutText({ ...editing.node.content, text: textDraft }) : null; });
   let groupScope = $state<string | null>(null);
   $effect(() => {
     if (groupScope && !scene.nodes.some(n => n.id === groupScope)) groupScope = null;
@@ -286,10 +295,11 @@
     groupScope = parent?.id ?? null;
     pick([id]);
   }
+  let controlTouch = false;
   const interaction = createDrawInteraction<CreativeScene>({
     editable: () => !disabled,
     tool: () =>
-      space || tool === "hand"
+      controlTouch ? null : space || tool === "hand"
         ? "hand"
         : tool === "erase"
           ? "eraser"
@@ -333,7 +343,7 @@
     size: () => brushSize,
     eraserMode: () => eraserMode,
     fingerDraw: () =>
-      tool === "text" || tool === "shape" || tool === "frame"
+      controlTouch || tool === "text" || tool === "shape" || tool === "frame"
         ? true
         : fingerDraw,
     capture,
@@ -378,9 +388,10 @@
       finishText();
       if (editing) return;
     }
-    const resizeHandle = (e.target as Element).closest<SVGElement>("[data-resize]");
+    const resizeHandle = (e.target as Element).closest<SVGElement>("[data-resize], [data-endpoint], [data-rotate]");
     const resize = resizeHandle?.dataset.resize;
-    if (!disabled && !space && !resize && tool === "select" && e.altKey && e.button === 0) {
+    const control = !space && e.button === 0 && tool === "select" ? resizeHandle : null;
+    if (!disabled && !space && !control && tool === "select" && e.altKey && e.button === 0) {
       const p = point(e), hit = hitSelection(scene, p, 8 / zoom);
       if (hit) {
         const initial = [...selected], ids = selected.includes(hit) ? selected : [hit];
@@ -391,25 +402,34 @@
         stage?.focus({ preventScroll: true }); capture(e.pointerId); e.preventDefault(); return;
       }
     }
-    if ((!resize || e.pointerType === "touch") && interaction.begin(e)) {
-      if (interaction.state.pinching) {
-        gesture = null;
-        draft = null;
+    if (!control || e.pointerType === "touch") {
+      controlTouch = Boolean(control);
+      const handled = interaction.begin(e);
+      controlTouch = false;
+      if (handled) {
+        if (interaction.state.pinching) { gesture = null; draft = null; }
+        return;
       }
-      return;
     }
     if (disabled) return;
     stage?.focus({ preventScroll: true });
     const p = point(e),
       v = view(e),
       hit = targetNode(e);
-    if (resize && tool === "select") {
+    if (control) {
       const nodes = selectionRoots(selected, scene.nodes);
-      if (!nodes.length) return;
+      const frame = selectionFrame(selected, scene.nodes);
+      if (!nodes.length || !frame) return;
       gesture = {
         id: e.pointerId,
-        kind: "resize",
-        handle: resizeHandle?.dataset.handle ?? "se",
+        kind: control.dataset.endpoint ? "endpoint" : control.dataset.rotate ? "rotate" : "resize",
+        handle: control.dataset.endpoint ?? control.dataset.handle ?? "se",
+        initial: [...selected],
+        center: frame.center,
+        frame,
+        baseAngle: frame.angle,
+        angle: Math.atan2(p.y - frame.center.y, p.x - frame.center.x),
+        rotationDelta: 0,
         start: p,
         view: v,
         nodes,
@@ -480,11 +500,23 @@
     const p = point(e);
     if (g.kind === "resize") {
       draft = resizeSelectionFromHandle(g.nodes.map(n => n.id), g.base, g.handle ?? "se", p, e.shiftKey);
+    } else if (g.kind === "endpoint") {
+      const next = moveLineEndpoint(g.nodes[0], g.base, g.handle as "start" | "end", p, e.shiftKey);
+      draft = g.base.map(n => n.id === next.id ? next : n);
+    } else if (g.kind === "rotate" && g.center) {
+      const angle = Math.atan2(p.y - g.center.y, p.x - g.center.x);
+      const change = Math.atan2(Math.sin(angle - g.angle!), Math.cos(angle - g.angle!));
+      g.rotationDelta = (g.rotationDelta ?? 0) + change * 180 / Math.PI; g.angle = angle;
+      const target = (g.baseAngle ?? 0) + g.rotationDelta;
+      const rotation = (e.shiftKey ? Math.round(target / 15) * 15 : target) - (g.baseAngle ?? 0);
+      gesture = { ...g, rotation };
+      draft = rotateSelection(g.nodes.map(n => n.id), g.base, g.center, rotation);
     } else if (g.kind === "duplicate") {
       draft = moveCreativeSelection({ ...scene, nodes: [...g.base, ...g.nodes] }, selected, { x: p.x - g.start.x, y: p.y - g.start.y }).nodes;
     } else {
-      const q = local(p, g.parent),
-        n = g.nodes[0];
+      const n = g.nodes[0];
+      const startWorld = g.parent ? mapPoint(worldMatrix(g.parent, g.base), g.start) : g.start;
+      const q = local(g.kind === "shape" && (shape === "line" || shape === "arrow") ? snapLinePoint(startWorld, p, e.shiftKey) : p, g.parent);
       const next =
         g.kind === "shape"
           ? dragShape(
@@ -493,8 +525,9 @@
               g.start,
               q,
               nodeColor(n) ?? color,
-              canvasShapeWidth(),
+              shape === "line" || shape === "arrow" ? lineStyle.stroke_width ?? canvasShapeWidth() : canvasShapeWidth(),
               fill,
+              lineStyle,
             )
           : {
               ...n,
@@ -528,7 +561,7 @@
       if (operations.length > 1000) onerror(new Error("This selection is too large to transform in one edit. Select fewer objects."));
       else if (operations.length)
         oncommit(
-          g.kind === "resize"
+          g.kind === "rotate" ? "Rotate selection" : g.kind === "endpoint" ? "Move endpoint" : g.kind === "resize"
             ? "Resize selection"
             : g.kind === "frame"
               ? "Add frame"
@@ -872,47 +905,13 @@
           pointer-events="none"
         />
       {/if}
-      {#if tool === "select" && !editing}<CreateSelection nodes={rendered} {selected} {zoom} {disabled} />{/if}
+      {#if tool === "select" && !editing}<CreateSelection nodes={rendered} {selected} {zoom} {disabled} showAngle={gesture?.kind === "rotate"} frameOverride={gesture?.kind === "rotate" && gesture.frame ? rotateSelectionFrame(gesture.frame, gesture.rotation ?? 0) : undefined} />{/if}
     </g>
   </svg>
-  {#if editing && editMatrix && editLayout && editing.node.content.kind === "text"}
-    <textarea
-      bind:this={textInput}
-      class="create-inline-text"
-      aria-label="Canvas text"
-      bind:value={textDraft}
-      maxlength="16000"
-      spellcheck="false"
-      wrap="off"
-      style:transform={`matrix(${editMatrix.join(",")})`}
-      style:width={`${editLayout.width}px`}
-      style:height={`${editLayout.height}px`}
-      style:padding={`${editLayout.padding}px ${editLayout.padding}px ${editLayout.padding}px ${editLayout.insetX}px`}
-      style:line-height={`${editLayout.lineHeight}px`}
-      style:font-weight={editing.node.content.font_weight ?? 400}
-      style:font-style={editing.node.content.font_style ?? "normal"}
-      style:font-size={`${editing.node.content.font_size}px`}
-      style:font-family={editing.node.content.font_family}
-      style:color={editing.node.content.color}
-      readonly={disabled}
-      oninput={(e) => {
-        textDraft = e.currentTarget.value;
-        if (editing) onediting(updateTextNode(editing.node, { text: textDraft }));
-      }}
-      onblur={(e) => {
-        if (!(e.relatedTarget instanceof Element && e.relatedTarget.closest("[data-create-text-controls]"))) finishText();
-      }}
-      onkeydown={(e) => {
-        e.stopPropagation();
-        if (
-          e.key === "Escape" ||
-          ((e.metaKey || e.ctrlKey) && e.key === "Enter")
-        ) {
-          e.preventDefault();
-          finishText();
-          stage?.focus();
-        }
-      }}></textarea>
+  {#if editing && editMatrix && editing.node.content.kind === "text"}
+    <CreateTextEditor node={editing.node as CreativeNode & { content: Extract<CreativeNode["content"], { kind: "text" }> }} matrix={editMatrix} bind:value={textDraft} bind:input={textInput} {disabled}
+      oninput={(value) => { textDraft = value; if (editing) onediting(updateTextNode(editing.node, { text: value })); }}
+      onfinish={(focus) => { finishText(); if (focus) stage?.focus(); }}/>
   {/if}
 </div>
 
@@ -949,31 +948,5 @@
   .create-stage[data-tool="text"] {
     cursor: text;
   }
-  .create-stage .create-inline-text {
-    position: absolute;
-    left: 0;
-    top: 0;
-    transform-origin: 0 0;
-    z-index: 1;
-    padding: 0;
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-    resize: none;
-    overflow: hidden;
-    background: transparent;
-    box-shadow: none;
-    appearance: none;
-    box-sizing: border-box;
-    min-width: 0;
-    min-height: 0;
-    letter-spacing: normal;
-    word-spacing: normal;
-    text-transform: none;
-    text-indent: 0;
-    tab-size: 8;
-    line-height: 1.2;
-    white-space: pre;
-    outline: 1px solid var(--create-selection);
-  }
+
 </style>
