@@ -4,6 +4,7 @@ import {
   mapPoint,
   worldMatrix,
   starterScene,
+  nodeDimensions,
 } from "./creativeScene";
 import {
   dragShape,
@@ -155,5 +156,6 @@ it("keeps rotated text anchored when changing its size", () => {
     after = mapPoint(worldMatrix(next, [next]), { x: 0, y: 0 });
   expect(after.x).toBeCloseTo(before.x);
   expect(after.y).toBeCloseTo(before.y);
-  expect(next.transform.width).toBe(225);
+  expect(next.transform.width).toBeCloseTo(nodeDimensions(next).width);
+  expect(next.transform.width).toBeGreaterThan(nodeDimensions(node).width);
 });

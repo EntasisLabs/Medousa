@@ -45,7 +45,10 @@ On phones, Create is available in the destinations menu.
 - **Text** (`T`): click to type directly on the canvas, or double-click existing
   text to edit it. Double-clicking empty space also starts text. Escape,
   Command/Control-Enter, or clicking outside finishes the edit. Empty new entries
-  do not add placeholder objects.
+  do not add placeholder objects. The editor is transparent and uses the same
+  font, line spacing, and measured bounds as the saved text. Text grows and
+  shrinks to fit its content, including manual line breaks. Corner handles scale
+  its font proportionally.
 - **Shapes** (`R`): choose Rectangle, Ellipse, Line, or Arrow in the tool picker,
   then drag to draw. Shapes return to Select after placement. Arrows reuse
   editable ink, including its color and resize controls.
@@ -64,6 +67,12 @@ objects, or set the style for the next object when nothing is selected. The
 floating selection row provides Group/Ungroup, Align, Arrange, Duplicate, Delete,
 and Details when applicable. Color and size controls appear only for tools or
 objects that use them.
+
+For text, **Style** includes a font family, exact font size with smaller/larger
+buttons, **Bold**, and **Italic**. These controls also work while typing, keeping
+the draft and its styling in the same completed edit. The selection updates when
+the font or content changes. **Details** offers the same text controls and a text
+field for longer edits. Text defaults are remembered for new labels on this device.
 
 Select objects in the same frame or group and use **Group** (Command/Control-G)
 to keep them together. A group moves, duplicates, and resizes as one object.

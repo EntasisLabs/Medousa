@@ -2,6 +2,7 @@
   import CreateSceneNode from "./CreateSceneNode.svelte";
   import type { CreativeNode } from "$lib/types/generated/daemon_api";
   import { inkPath, localMatrix, nodeName } from "$lib/create/creativeScene";
+  import { layoutText, textMetricsVersion } from "$lib/create/creativeText";
   let {
     node,
     nodes,
@@ -22,8 +23,9 @@
     editingId?: string;
   } = $props();
   const content = $derived(node.content);
-  const w = $derived(node.transform.width),
-    h = $derived(node.transform.height);
+  const textLayout = $derived.by(() => { void $textMetricsVersion; return content.kind === "text" ? layoutText(content) : null; });
+  const w = $derived(textLayout?.width ?? node.transform.width),
+    h = $derived(textLayout?.height ?? node.transform.height);
   const children = $derived(nodes.filter((n) => n.parent_id === node.id));
   const isLocked = $derived(locked || node.locked);
   const clip = $derived(`${prefix}-clip-${node.id}`);
@@ -77,13 +79,10 @@
       <text
         visibility={editingId === node.id ? "hidden" : "visible"}
         fill={content.color}
-        font-size={content.font_size}
-        font-family={content.font_family}
-        dominant-baseline="hanging"
-        style="white-space:pre"
-        >{#each content.text.split("\n") as line, i}<tspan
-            x="0"
-            dy={i ? content.font_size * 1.2 : 0}>{line || " "}</tspan
+        style={`font-family:${content.font_family};font-size:${content.font_size}px;font-weight:${content.font_weight ?? 400};font-style:${content.font_style ?? "normal"};white-space:pre;letter-spacing:normal;word-spacing:normal;text-transform:none;dominant-baseline:alphabetic;`}
+        >{#each textLayout!.lines as line, i}<tspan
+            x={textLayout!.insetX}
+            y={textLayout!.baseline + i * textLayout!.lineHeight}>{line || " "}</tspan
           >{/each}</text
       >
     {:else if content.kind === "shape"}

@@ -29,6 +29,8 @@ fn text(id: &str) -> CreativeNode {
             color: "#123456".into(),
             font_family: "Inter".into(),
             font_size: 32.,
+            font_weight: None,
+            font_style: None,
         },
     }
 }
@@ -1484,4 +1486,51 @@ fn optional_layer_labels_roundtrip_with_undo_and_legacy_nodes_remain_unchanged()
             .is_err()
     );
     assert_eq!(store.get("project_one").unwrap().document.revision, 3);
+}
+
+#[test]
+fn text_emphasis_roundtrips_with_undo_and_rejects_invalid_weights() {
+    let mut node = text("title");
+    let legacy = serde_json::to_value(&node).unwrap();
+    assert!(legacy["content"].get("font_style").is_none());
+    assert!(legacy["content"].get("font_weight").is_none());
+    assert_eq!(
+        serde_json::from_value::<CreativeNode>(legacy).unwrap(),
+        node
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    create(&store);
+    store
+        .transact("project_one", edit("original", 0, node.clone()))
+        .unwrap();
+    if let CreativeContent::Text {
+        font_weight,
+        font_style,
+        ..
+    } = &mut node.content
+    {
+        *font_weight = Some(700);
+        *font_style = Some(CreativeFontStyle::Italic);
+    }
+    let styled = store
+        .transact("project_one", edit("emphasis", 1, node.clone()))
+        .unwrap();
+    assert_eq!(styled.document.scene.nodes[0], node);
+    let restored = store
+        .history("project_one", history("undo_emphasis", 2, false))
+        .unwrap();
+    assert_eq!(restored.document.scene.nodes[0], text("title"));
+    if let CreativeContent::Text { font_weight, .. } = &mut node.content {
+        *font_weight = Some(999);
+    }
+    assert!(
+        store
+            .transact("project_one", edit("bad_weight", 3, node))
+            .is_err()
+    );
+    assert_eq!(
+        store.get("project_one").unwrap().document,
+        restored.document
+    );
 }

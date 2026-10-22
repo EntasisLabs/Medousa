@@ -133,6 +133,8 @@ pub fn validate_scene(
                 color,
                 font_family,
                 font_size,
+                font_weight,
+                ..
             } => {
                 bounded_text(text, 100_000, "text")?;
                 paint(color)?;
@@ -145,6 +147,9 @@ pub fn validate_scene(
                     return Err(invalid("invalid font family"));
                 }
                 number(*font_size, 1., 4096.)?;
+                if let Some(weight) = font_weight {
+                    number(f64::from(*weight), 100., 900.)?;
+                }
             }
             CreativeContent::Shape {
                 fill,

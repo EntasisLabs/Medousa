@@ -8,6 +8,7 @@ import {
   worldMatrix,
   selectionRoots,
   nodeBounds,
+  nodeDimensions,
   starterScene,
 } from "./creativeScene";
 describe("mixed canvas geometry", () => {
@@ -35,7 +36,7 @@ describe("mixed canvas geometry", () => {
     expect(local.y).toBeCloseTo(8);
     expect(parentPoint(child, nodes, world).x).toBeCloseTo(25);
     expect(selectionRoots([frame.id, child.id], nodes)).toEqual([frame]);
-    expect(nodeBounds(child, nodes).width).toBeCloseTo(30);
+    expect(nodeBounds(child, nodes).width).toBeCloseTo(nodeDimensions(child).height);
   });
   it("honors locks inherited from a frame", () => {
     const frame = starterScene("screenshot").nodes[0];

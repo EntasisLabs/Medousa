@@ -216,6 +216,9 @@ Version-3 nodes may include an optional `name` layer label (nonblank, at most
 256 UTF-8 bytes). Generated Rust, Python, and TypeScript models expose it; legacy
 unnamed nodes omit it. This field requires an updated daemon. Group/ungroup edits
 reuse the ordinary atomic transaction operations rather than a separate API.
+Text content supports optional `font_weight` (100–900) and `font_style`
+(`normal`/`italic`); omitted values mean 400/normal. These also require an updated
+daemon and are exposed by all generated models. Preserve them when updating text.
 
 Creative jobs use `creative().create_job`, `jobs`, `job` and `decide_job` in both
 Rust and Python. Preserve the request ID/body when retrying admission; use a new

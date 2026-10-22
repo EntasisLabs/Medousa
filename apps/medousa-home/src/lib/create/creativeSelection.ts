@@ -1,6 +1,7 @@
 import type { CreativeNode, CreativeOperation } from "$lib/types/generated/daemon_api";
+import { styleNode } from "./creativeInteraction";
 import type { DrawRect, DrawVector } from "$lib/draw/drawCamera";
-import { createNode, inverse, localMatrix, mapPoint, multiply, nodeBounds, parentPoint, resizeNode, selectionRoots, worldMatrix, type Matrix } from "./creativeScene";
+import { createNode, inverse, localMatrix, mapPoint, multiply, nodeBounds, nodeDimensions, parentPoint, resizeNode, selectionRoots, worldMatrix, type Matrix } from "./creativeScene";
 
 export type SelectionEdit = { operations: CreativeOperation[]; selected: string[] };
 export function descendants(ids: string[], nodes: CreativeNode[]): Set<string> {
@@ -41,7 +42,7 @@ export function groupSelection(ids: string[], nodes: CreativeNode[]): SelectionE
   if (!canGroup(ids, nodes)) throw new Error("Select at least two objects in the same frame or group to group them.");
   const roots = selectionRoots(ids, nodes), parent = roots[0].parent_id;
   const rects = roots.map(n => {
-    const m = localMatrix(n), w = n.transform.width, h = n.transform.height;
+    const m = localMatrix(n), { width: w, height: h } = nodeDimensions(n);
     const points = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }].map(p => mapPoint(m, p));
     const x = Math.min(...points.map(p => p.x)), y = Math.min(...points.map(p => p.y));
     return { x, y, width: Math.max(...points.map(p => p.x)) - x, height: Math.max(...points.map(p => p.y)) - y };
@@ -169,20 +170,26 @@ export function resizeSelectionFromHandle(ids: string[], nodes: CreativeNode[], 
     const factor = Math.abs(rx - 1) > Math.abs(ry - 1) ? rx : ry;
     return scaleSelection(ids, nodes, anchor, factor);
   }
-  const node = roots[0], { width: w, height: h } = node.transform;
+  const node = roots[0], { width: w, height: h } = nodeDimensions(node);
   const q = mapPoint(inverse(worldMatrix(node, nodes)), point);
   let x = handle.includes("w") ? Math.min(w - 4, q.x) : 0;
   let y = handle.includes("n") ? Math.min(h - 4, q.y) : 0;
   let width = handle.includes("w") ? w - x : handle.includes("e") ? Math.max(4, q.x) : w;
   let height = handle.includes("n") ? h - y : handle.includes("s") ? Math.max(4, q.y) : h;
-  if (preserveAspect) {
+  if (preserveAspect || node.content.kind === "text") {
     const rx = width / Math.max(1, w), ry = height / Math.max(1, h);
     const factor = Math.max(.01, Math.abs(rx - 1) > Math.abs(ry - 1) ? rx : ry);
     width = Math.max(4, w * factor); height = Math.max(4, h * factor);
     x = handle.includes("w") ? w - width : handle === "n" || handle === "s" ? (w - width) / 2 : 0;
     y = handle.includes("n") ? h - height : handle === "e" || handle === "w" ? (h - height) / 2 : 0;
   }
-  const next = resizeNode(node, width, height);
+  let next = resizeNode(node, width, height);
+  if (node.content.kind === "text") {
+    next = styleNode(node, { font_size: node.content.font_size * width / w });
+    const fitted = nodeDimensions(next);
+    x = handle.includes("w") ? w - fitted.width : 0;
+    y = handle.includes("n") ? h - fitted.height : 0;
+  }
   const target = mapPoint(localMatrix(node), { x, y }), origin = localMatrix(next);
   next.transform.x += target.x - origin[4]; next.transform.y += target.y - origin[5];
   return nodes.map(n => n.id === node.id ? next : n);

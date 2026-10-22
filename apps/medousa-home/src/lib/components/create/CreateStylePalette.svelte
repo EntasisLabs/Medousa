@@ -1,4 +1,6 @@
 <script lang="ts">
+  import CreateTextControls from "./CreateTextControls.svelte";
+  import type { TextStylePatch } from "$lib/create/creativeText";
   import {
     DRAW_BRUSHES,
     DRAW_BRUSH_SIZES,
@@ -28,6 +30,9 @@
     showFill,
     showPaint = true,
     showSize = true,
+    textStyle,
+    onTextStyle = () => {},
+    onTextLeave = () => {},
     context,
     disabled,
     onchange,
@@ -53,6 +58,9 @@
     showFill: boolean;
     showPaint?: boolean;
     showSize?: boolean;
+    textStyle?: TextStylePatch;
+    onTextStyle?: (patch: TextStylePatch) => void;
+    onTextLeave?: () => void;
     context: string;
     disabled: boolean;
     onchange: (patch: {
@@ -67,7 +75,7 @@
 <section
   class="create-style-palette"
   aria-label="Style palette"
-  onpointerdown={(e) => e.preventDefault()}
+  onpointerdown={(e) => { if (!(e.target instanceof Element && e.target.closest("input, select"))) e.preventDefault(); }}
 >
   <header>
     <span>{context}</span><button
@@ -126,7 +134,10 @@
     {/each}
   </div>
   {/if}
-  {#if showSize}<div class="create-style-section">
+  {#if textStyle}<div class="create-style-section">
+    <CreateTextControls value={textStyle} {disabled} onchange={onTextStyle} onleave={onTextLeave}/>
+  </div>{/if}
+  {#if showSize && !textStyle}<div class="create-style-section">
     <span
       >{tool === "ink" || tool === "erase"
         ? `Size · ${drawSize}px`

@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync, tick } from "svelte";
 import CreateCanvas from "./CreateCanvas.svelte";
-import { createNode } from "$lib/create/creativeScene";
+import { layoutText } from "$lib/create/creativeText";
+import { createNode, nodeDimensions } from "$lib/create/creativeScene";
 import type {
   CreativeNode,
   CreativeOperation,
@@ -208,10 +209,18 @@ it("keeps Create shape placement and resizing alongside the shared drawing contr
   ]);
 });
 
-it("keeps resizing available through Create's existing handles", () => {
-  const node=title(),root=render([node],{selected:[node.id]}),svg=root.querySelector("svg")!,handle=root.querySelector("[data-resize]")!;
-  pointer(handle,"pointerdown",220,90);pointer(svg,"pointermove",320,150);pointer(svg,"pointerup",320,150);
-  expect(commit).toHaveBeenCalledWith("Resize selection",[expect.objectContaining({op:"put_node",node:expect.objectContaining({id:node.id,transform:expect.objectContaining({width:300,height:120})})})]);
+it("resizes text and its measured bounds together through corner handles", () => {
+  const node = title(), before = nodeDimensions(node), root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  const corner = { x: node.transform.x + before.width, y: node.transform.y + before.height };
+  pointer(root.querySelector('[data-handle="se"]')!, "pointerdown", corner.x, corner.y);
+  pointer(svg, "pointermove", corner.x + before.width, corner.y + before.height);
+  pointer(svg, "pointerup", corner.x + before.width, corner.y + before.height);
+  expect(commit.mock.calls[0][0]).toBe("Resize selection");
+  const next = commit.mock.calls[0][1][0].node as CreativeNode;
+  expect(next.content).toMatchObject({ font_size: 64 });
+  expect(next.transform.width).toBeCloseTo(nodeDimensions(next).width);
+  expect(next.transform.height).toBeCloseTo(nodeDimensions(next).height);
+  expect(next.transform.x).toBeCloseTo(20); expect(next.transform.y).toBeCloseTo(30);
 });
 
 it("defaults to a box, adds with Shift, and keeps explicit lasso available", () => {
@@ -289,8 +298,9 @@ it("renders one proportional resize box for a group and scales its contents", ()
   const root = render([group, child], { selected: [group.id] }), svg = root.querySelector("svg")!;
   expect(root.querySelectorAll("[data-selection-box]")).toHaveLength(1);
   expect(root.querySelectorAll("[data-resize]")).toHaveLength(4);
-  pointer(root.querySelector('[data-handle="se"]')!, "pointerdown", 220, 90);
-  pointer(svg, "pointermove", 420, 150); pointer(svg, "pointerup", 420, 150);
+  const bounds = nodeDimensions(child), x = child.transform.x, y = child.transform.y;
+  pointer(root.querySelector('[data-handle="se"]')!, "pointerdown", x + bounds.width, y + bounds.height);
+  pointer(svg, "pointermove", x + bounds.width * 2, y + bounds.height * 2); pointer(svg, "pointerup", x + bounds.width * 2, y + bounds.height * 2);
   const operations = commit.mock.calls[0][1] as CreativeOperation[];
   expect(operations).toHaveLength(2);
   expect(operations.find(op => op.op === "put_node" && op.node.id === child.id)).toMatchObject({ node: { transform: { width: 400, height: 120 }, content: { font_size: 64 } } });
@@ -312,7 +322,8 @@ it("Option-drag duplicates a whole group and Escape cancels an unfinished duplic
   expect(root.querySelectorAll("[data-node-id]")).toHaveLength(2);
 });
 it("preserves a single object's aspect ratio with Shift-resize", () => {
-  const node = title(), root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  const node = title(); node.content = { kind: "shape", shape: "rectangle", fill: "#fff", stroke: "#000", stroke_width: 2 };
+  const root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
   pointer(root.querySelector('[data-handle="se"]')!, "pointerdown", 220, 90);
   pointer(svg, "pointermove", 320, 150, true); pointer(svg, "pointerup", 320, 150, true);
   expect(commit.mock.calls[0][1]).toMatchObject([{ node: { transform: { x: 20, y: 30, width: 400, height: 120 } } }]);
@@ -330,4 +341,27 @@ it("creates new text inside the entered group after selecting a child", async ()
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); flushSync();
   const operations = commit.mock.calls[0][1] as CreativeOperation[];
   expect(operations).toMatchObject([{ op: "put_node", node: { parent_id: group.id, content: { kind: "text", text: "New group caption" } } }]);
+});
+
+it("uses measured multiline text for rendering, selection, editing, and movement despite legacy dimensions", async () => {
+  const node = title();
+  node.content = { ...node.content, kind: "text", text: "Wide title\n\nSmall", color: "#123456", font_family: "sans-serif", font_size: 32 };
+  node.transform.width = 900; node.transform.height = 10;
+  const layout = layoutText(node.content), root = render([node], { selected: [node.id] }), svg = root.querySelector("svg")!;
+  const box = root.querySelector("[data-selection-box] > rect")!;
+  expect(Number(box.getAttribute("width"))).toBeCloseTo(layout.width);
+  expect(Number(box.getAttribute("height"))).toBeCloseTo(layout.height);
+  const lines = root.querySelectorAll(`[data-node-id="${node.id}"] tspan`);
+  expect(lines).toHaveLength(3);
+  expect(Number(lines[0].getAttribute("y"))).toBeCloseTo(layout.baseline);
+  expect(Number(lines[2].getAttribute("y"))).toBeLessThan(layout.height);
+  root.querySelector(`[data-node-id="${node.id}"] text`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 40, clientY: 50 }));
+  await tick(); flushSync();
+  const input = root.querySelector<HTMLTextAreaElement>('[aria-label="Canvas text"]')!;
+  expect(parseFloat(input.style.width)).toBeCloseTo(layout.width);
+  expect(parseFloat(input.style.height)).toBeCloseTo(layout.height);
+  expect(input.getAttribute("wrap")).toBe("off");
+  input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })); flushSync();
+  pointer(svg, "pointerdown", 40, 50); pointer(svg, "pointermove", 80, 80); pointer(svg, "pointerup", 80, 80);
+  expect(commit).toHaveBeenLastCalledWith("Move selection", [expect.objectContaining({ node: expect.objectContaining({ transform: expect.objectContaining({ x: 60, y: 60 }), content: node.content }) })]);
 });

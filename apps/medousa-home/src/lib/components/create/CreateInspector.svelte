@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { textMetricsVersion, type TextStylePatch } from "$lib/create/creativeText";
+  import CreateTextControls from "./CreateTextControls.svelte";
+  import { styleNode, updateTextNode } from "$lib/create/creativeInteraction";
+  import { nodeDimensions } from "$lib/create/creativeScene";
   import { tick, untrack } from "svelte";
   import { layerRows, arrangeSelection, scaleSelection, objectBounds } from "$lib/create/creativeSelection";
   import {
@@ -34,6 +38,9 @@
     onselect,
     oncommit,
     onclose,
+    ontextstyle,
+    ontextleave = () => {},
+    editingTextStyle,
   }: {
     nodes: CreativeNode[];
     selected: string[];
@@ -41,8 +48,12 @@
     onselect: (ids: string[]) => void;
     oncommit: (label: string, operations: CreativeOperation[]) => void;
     onclose: () => void;
+    ontextstyle?: (patch: TextStylePatch) => void;
+    ontextleave?: () => void;
+    editingTextStyle?: TextStylePatch;
   } = $props();
   const node = $derived(selected.length === 1 ? nodes.find((n) => n.id === selected[0]) : undefined);
+  const dimensions = $derived.by(() => { void $textMetricsVersion; return node ? nodeDimensions(node) : null; });
   let expandedGroups = $state<string[]>([]), collapsedFrames = $state<string[]>([]);
   let renaming = $state<string | null>(null), renameDraft = $state(""), renameError = $state("");
   let renameInput = $state<HTMLInputElement>(), asideElement = $state<HTMLElement>();
@@ -120,6 +131,10 @@
   function transform(key: keyof CreativeNode["transform"], event: Event) {
     if (!node) return;
     const value = Number((event.target as HTMLInputElement).value);
+    if (Number.isFinite(value) && node.content.kind === "text" && (key === "width" || key === "height")) {
+      update(styleNode(node, { font_size: node.content.font_size * Math.max(1, value) / nodeDimensions(node)[key] }), "Resize text");
+      return;
+    }
     if (Number.isFinite(value) && node.content.kind === "group" && (key === "width" || key === "height")) {
       const b = objectBounds(node, nodes), factor = Math.max(1, value) / Math.max(1, node.transform[key]);
       const scaled = scaleSelection([node.id], nodes, { x: b.x, y: b.y }, factor);
@@ -138,16 +153,7 @@
   }
   function text(event: Event) {
     if (node?.content.kind === "text")
-      update(
-        {
-          ...node,
-          content: {
-            ...node.content,
-            text: (event.target as HTMLTextAreaElement).value,
-          },
-        },
-        "Edit text",
-      );
+      update(updateTextNode(node, { text: (event.target as HTMLTextAreaElement).value }), "Edit text");
   }
   function color(value: string) {
     if (!node) return;
@@ -217,7 +223,7 @@
               type="number"
               step="1"
               value={Math.round(
-                node.transform[key as keyof CreativeNode["transform"]] * 100,
+                (key === "width" || key === "height" ? dimensions![key] : node.transform[key as keyof CreativeNode["transform"]]) * 100,
               ) / 100}
               disabled={!editable}
               onchange={(e) =>
@@ -262,29 +268,7 @@
             disabled={!editable}
             onchange={text}></textarea></label
         >
-        <label class="property-color"
-          >Font size<input
-            type="number"
-            aria-label="Font size"
-            min="4"
-            max="512"
-            value={node.content.font_size}
-            disabled={!editable}
-            onchange={(e) => {
-              if (node?.content.kind === "text")
-                update({
-                  ...node,
-                  content: {
-                    ...node.content,
-                    font_size: Math.max(
-                      4,
-                      Math.min(512, Number(e.currentTarget.value)),
-                    ),
-                  },
-                });
-            }}
-          /></label
-        >
+        <CreateTextControls value={editingTextStyle ?? node.content} disabled={!editable} onleave={ontextleave} onchange={(patch) => { if (ontextstyle) ontextstyle(patch); else if (node) update(styleNode(node, patch), "Style text"); }}/>
       {:else if node.content.kind === "frame"}<label class="property-stack"
           >Frame name<input
             aria-label="Frame name"

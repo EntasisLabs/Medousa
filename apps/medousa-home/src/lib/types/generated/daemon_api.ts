@@ -26,6 +26,8 @@ export interface CreativeCrop {
   y: number;
 }
 
+export type CreativeFontStyle = "normal" | "italic";
+
 export type CreativeInputKind = "pen" | "touch" | "mouse" | "unknown";
 
 export interface CreativePoint {
@@ -39,7 +41,7 @@ export interface CreativePoint {
 
 export type CreativeShapeKind = "rectangle" | "ellipse" | "line";
 
-export type CreativeContent = { brush: CreativeBrush; color: string; input: CreativeInputKind; kind: "ink"; points: CreativePoint[] } | { color: string; font_family: string; font_size: number; kind: "text"; text: string } | { fill: string; kind: "shape"; shape: CreativeShapeKind; stroke: string; stroke_width: number } | { asset_id: string; crop?: CreativeCrop | null; kind: "image" } | { kind: "group" } | { background: string; kind: "frame"; name: string };
+export type CreativeContent = { brush: CreativeBrush; color: string; input: CreativeInputKind; kind: "ink"; points: CreativePoint[] } | { color: string; font_family: string; font_size: number; font_style?: CreativeFontStyle | null; font_weight?: number | null; kind: "text"; text: string } | { fill: string; kind: "shape"; shape: CreativeShapeKind; stroke: string; stroke_width: number } | { asset_id: string; crop?: CreativeCrop | null; kind: "image" } | { kind: "group" } | { background: string; kind: "frame"; name: string };
 
 export interface CreativeTransform {
   height: number;

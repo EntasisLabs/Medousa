@@ -3,6 +3,7 @@ import { createDrawBrush, DRAW_BRUSHES } from "$lib/draw/drawDocument";
 import type { DrawEraserMode } from "$lib/draw/drawInteraction";
 import type { CreativeTool } from "./creativeScene";
 import type { CanvasFill, CanvasShape, CanvasSize } from "./creativeInteraction";
+import { canvasFonts, defaultTextStyle, type TextStylePatch } from "./creativeText";
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 
 export type CreativePreferences = {
@@ -17,6 +18,7 @@ export type CreativePreferences = {
   size: CanvasSize;
   shape: CanvasShape;
   fill: CanvasFill;
+  textStyle: TextStylePatch;
 };
 const key = (scope: string) => workshopScopedStorageKey("medousa:create-tools:v1", scope);
 export function loadCreativePreferences(scope: string): CreativePreferences {
@@ -24,7 +26,7 @@ export function loadCreativePreferences(scope: string): CreativePreferences {
     tool: "select", selectionMode: "box", brushKind: "pen",
     brushSizes: Object.fromEntries(DRAW_BRUSHES.map(b => [b.kind, createDrawBrush(b.kind).size])) as Record<DrawBrushKind, number>,
     eraserSize: 12, eraserMode: "partial", fingerDraw: false,
-    color: null, size: "m", shape: "rectangle", fill: "soft",
+    color: null, size: "m", shape: "rectangle", fill: "soft", textStyle: { ...defaultTextStyle },
   };
   try {
     const saved = JSON.parse(localStorage.getItem(key(scope)) ?? "null");
@@ -44,6 +46,13 @@ export function loadCreativePreferences(scope: string): CreativePreferences {
     for (const b of DRAW_BRUSHES) {
       if (validSize(saved.brushSizes?.[b.kind]))
         defaults.brushSizes[b.kind] = saved.brushSizes[b.kind];
+    }
+    if (saved.textStyle && typeof saved.textStyle === "object") {
+      const text = saved.textStyle;
+      if (canvasFonts.some(f => f.value === text.font_family)) defaults.textStyle.font_family = text.font_family;
+      if (typeof text.font_size === "number" && Number.isFinite(text.font_size) && text.font_size >= 4 && text.font_size <= 512) defaults.textStyle.font_size = text.font_size;
+      if (text.font_weight === 400 || text.font_weight === 700) defaults.textStyle.font_weight = text.font_weight;
+      if (text.font_style === "normal" || text.font_style === "italic") defaults.textStyle.font_style = text.font_style;
     }
     if (validSize(saved.eraserSize))
       defaults.eraserSize = saved.eraserSize;

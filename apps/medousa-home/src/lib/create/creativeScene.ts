@@ -13,6 +13,7 @@ import {
   type DrawVector,
   type DrawSize,
 } from "$lib/draw/drawCamera";
+import { layoutText } from "./creativeText";
 import { randomUuid } from "$lib/utils/randomUuid";
 
 export type CreativeTool =
@@ -75,12 +76,15 @@ export function parentPoint(
   const parent = nodes.find((n) => n.id === node.parent_id);
   return parent ? mapPoint(inverse(worldMatrix(parent, nodes)), point) : point;
 }
+export function nodeDimensions(node: CreativeNode): { width: number; height: number } {
+  return node.content.kind === "text" ? layoutText(node.content) : node.transform;
+}
 export function nodeBounds(
   node: CreativeNode,
   nodes: CreativeNode[],
 ): DrawRect {
   const m = worldMatrix(node, nodes),
-    { width, height } = node.transform;
+    { width, height } = nodeDimensions(node);
   const points = [
     { x: 0, y: 0 },
     { x: width, y: 0 },

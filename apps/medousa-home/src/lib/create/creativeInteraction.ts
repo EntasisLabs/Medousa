@@ -5,6 +5,7 @@ import {
   createNode,
   editableNode,
   nodeBounds,
+  nodeDimensions,
   selectionRoots,
   inverse,
   mapPoint,
@@ -12,6 +13,7 @@ import {
   parentPoint,
   resizeNode,
 } from "./creativeScene";
+import { layoutText, type CreativeText, type TextStylePatch } from "./creativeText";
 import { randomUuid } from "$lib/utils/randomUuid";
 
 export type CanvasShape = "rectangle" | "ellipse" | "line" | "arrow";
@@ -105,7 +107,7 @@ export function hitCanvasNode(
         segment(a, c.points[Math.min(i + 1, c.points.length - 1)]) <=
         tolerance + c.brush.size / 2,
     );
-  const { width: w, height: h } = node.transform;
+  const { width: w, height: h } = nodeDimensions(node);
   if (c.kind === "shape") {
     const pad = tolerance + c.stroke_width / 2;
     if (c.shape === "line")
@@ -165,9 +167,16 @@ export function nodeSize(node: CreativeNode): CanvasSize {
       : best;
   }, "m");
 }
+export type CanvasStylePatch = { color?: string; size?: CanvasSize; fill?: CanvasFill } & TextStylePatch;
+export function updateTextNode(node: CreativeNode, patch: Partial<Omit<CreativeText, "kind">>): CreativeNode {
+  if (node.content.kind !== "text") return node;
+  const content = { ...node.content, ...patch };
+  const bounds = layoutText(content);
+  return { ...resizeNode(node, bounds.width, bounds.height), content };
+}
 export function styleNode(
   node: CreativeNode,
-  patch: { color?: string; size?: CanvasSize; fill?: CanvasFill },
+  patch: CanvasStylePatch,
 ): CreativeNode {
   const c = node.content,
     color = patch.color ?? nodeColor(node) ?? canvasColors[0].value;
@@ -184,19 +193,14 @@ export function styleNode(
       },
     };
   if (c.kind === "text") {
-    const ratio = patch.size ? canvasSizes[patch.size].text / c.font_size : 1;
-    return {
-      ...resizeNode(
-        node,
-        node.transform.width * ratio,
-        node.transform.height * ratio,
-      ),
-      content: {
-        ...c,
-        color,
-        ...(patch.size ? { font_size: canvasSizes[patch.size].text } : {}),
-      },
-    };
+    return updateTextNode(node, {
+      color,
+      ...(patch.size ? { font_size: canvasSizes[patch.size].text } : {}),
+      ...(patch.font_size !== undefined && Number.isFinite(patch.font_size) ? { font_size: Math.max(4, Math.min(512, patch.font_size)) } : {}),
+      ...(patch.font_family ? { font_family: patch.font_family } : {}),
+      ...(patch.font_weight !== undefined ? { font_weight: patch.font_weight } : {}),
+      ...(patch.font_style !== undefined ? { font_style: patch.font_style } : {}),
+    });
   }
   if (c.kind === "frame" && patch.color)
     return { ...node, content: { ...c, background: color } };
@@ -363,16 +367,19 @@ export function newCanvasText(
   color: string,
   size: CanvasSize,
   parentId: string | null,
+  textStyle: TextStylePatch = {},
 ): CreativeNode {
-  return createNode(
+  const node = createNode(
     {
       kind: "text",
       text: "",
       color,
       font_family: "sans-serif",
       font_size: canvasSizes[size].text,
+      ...textStyle,
     },
     { ...point, width: 240, height: canvasSizes[size].text * 1.3 },
     parentId,
   );
+  return updateTextNode(node, {});
 }

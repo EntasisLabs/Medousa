@@ -7300,6 +7300,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -7440,6 +7458,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -7819,6 +7844,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -7959,6 +8002,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -8379,6 +8429,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -8519,6 +8587,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -9052,6 +9127,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -9192,6 +9285,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -9916,6 +10016,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -10101,6 +10219,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -10425,6 +10550,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -10565,6 +10708,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -11014,6 +11164,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -11154,6 +11322,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -11632,6 +11807,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -11772,6 +11965,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -12211,6 +12411,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -12351,6 +12569,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",
@@ -12629,6 +12854,24 @@
                 "type": "number",
                 "format": "double"
               },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -12769,6 +13012,13 @@
           }
         },
         "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
       },
       "CreativeInputKind": {
         "type": "string",

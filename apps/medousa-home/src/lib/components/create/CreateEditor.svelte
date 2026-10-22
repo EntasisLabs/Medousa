@@ -51,7 +51,9 @@
     type CanvasShape,
     type CanvasFill,
     type CanvasSize,
+    type CanvasStylePatch,
   } from "$lib/create/creativeInteraction";
+  import { defaultTextStyle } from "$lib/create/creativeText";
   import type { DrawBrushKind } from "$lib/draw/drawDocument";
   import type { DrawEraserMode } from "$lib/draw/drawInteraction";
   import { creativeAssets } from "$lib/create/creativeAssets";
@@ -78,6 +80,7 @@
     tool = $state<CreativeTool>(preferences.tool),
     color = $state(preferences.color ?? "#393e33"),
     size = $state<CanvasSize>(preferences.size),
+    textStyle = $state({ ...defaultTextStyle, ...preferences.textStyle }),
     brushKind = $state<DrawBrushKind>(preferences.brushKind),
     brushSizes = $state(preferences.brushSizes),
     eraserSize = $state(preferences.eraserSize),
@@ -101,7 +104,7 @@
   const drawSize = $derived(tool === "erase" ? eraserSize : brushSizes[brushKind]);
   $effect(() => saveCreativePreferences(lease.api.scope, {
     tool, selectionMode, brushKind, brushSizes: { ...brushSizes }, eraserSize,
-    eraserMode, fingerDraw, color: color === inkColor ? null : color, size, shape, fill,
+    textStyle: { ...textStyle }, eraserMode, fingerDraw, color: color === inkColor ? null : color, size, shape, fill,
   }));
   $effect(() => { lease.state.selected = [...selected]; });
   const session = $derived(lease.session),
@@ -180,15 +183,15 @@
     tool = next;
     shapePicker = false;
   }
-  function styleSelection(patch: {
-    color?: string;
-    size?: CanvasSize;
-    fill?: CanvasFill;
-  }) {
+  function styleSelection(patch: CanvasStylePatch) {
     if (disabled) return;
     if (patch.color) color = patch.color;
     if (patch.size) size = patch.size;
     if (patch.fill) fill = patch.fill;
+    if (patch.font_family) textStyle.font_family = patch.font_family;
+    if (patch.font_size !== undefined && Number.isFinite(patch.font_size)) textStyle.font_size = Math.max(4, Math.min(512, patch.font_size));
+    if (patch.font_weight !== undefined && patch.font_weight !== null) textStyle.font_weight = patch.font_weight;
+    if (patch.font_style) textStyle.font_style = patch.font_style;
     if (canvas?.styleText(patch)) return;
     const operations: CreativeOperation[] = (tool === "select" ? selectedNodes : [])
       .filter((n) => scene && editableNode(n, scene.nodes))
@@ -619,6 +622,7 @@
           {shape}
           {fill}
           textSize={size}
+          {textStyle}
           {brushKind}
           {eraserMode}
           {selectionMode}
@@ -656,6 +660,9 @@
                 if (patch.eraser) eraserMode = patch.eraser;
                 if (patch.finger !== undefined) fingerDraw = patch.finger;
               }}
+              textStyle={editingNode?.content.kind === "text" ? editingNode.content : tool === "text" ? textStyle : tool === "select" && selectedNodes.length > 0 && selectedNodes.every(n => n.content.kind === "text") && selectedNodes[0].content.kind === "text" ? selectedNodes[0].content : undefined}
+              onTextStyle={styleSelection}
+              onTextLeave={() => canvas?.finishText()}
               {inkColor}
               showPaint={tool !== "erase" && (tool !== "select" || Boolean(styledNode))}
               showSize={tool !== "select" || Boolean(styledNode && ["text", "ink", "shape"].includes(styledNode.content.kind))}
@@ -859,7 +866,10 @@
           {disabled}
           onselect={(ids) => (selected = ids)}
           oncommit={(label, ops) => void commit(label, ops)}
-          onclose={() => (inspector = false)}
+          ontextstyle={styleSelection}
+            ontextleave={() => canvas?.finishText()}
+            editingTextStyle={editingNode?.content.kind === "text" ? editingNode.content : undefined}
+            onclose={() => (inspector = false)}
         />{/if}
     </div>
   {:else}<div class="create-loading">

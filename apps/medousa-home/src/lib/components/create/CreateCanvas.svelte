@@ -39,7 +39,6 @@
     sceneBounds,
     selectionRoots,
     worldMatrix,
-    resizeNode,
     multiply,
     creativeFit,
     creativeZoom,
@@ -53,10 +52,13 @@
     newCanvasText,
     duplicateSelection,
     styleNode,
+    updateTextNode,
+    type CanvasStylePatch,
     type CanvasShape,
     type CanvasFill,
     type CanvasSize,
   } from "$lib/create/creativeInteraction";
+  import { layoutText, textMetricsVersion, type TextStylePatch } from "$lib/create/creativeText";
   import { randomUuid } from "$lib/utils/randomUuid";
   let {
     scene,
@@ -66,6 +68,7 @@
     shape = "rectangle",
     fill = "soft",
     textSize = "m",
+    textStyle = {},
     color = "#393e33",
     automaticInk = false,
     brushSize = 6,
@@ -90,6 +93,7 @@
     shape?: CanvasShape;
     fill?: CanvasFill;
     textSize?: CanvasSize;
+    textStyle?: TextStylePatch;
     color?: string;
     automaticInk?: boolean;
     brushSize?: number;
@@ -142,6 +146,7 @@
         )
       : null,
   );
+  const editLayout = $derived.by(() => { void $textMetricsVersion; return editing?.node.content.kind === "text" ? layoutText({ ...editing.node.content, text: textDraft }) : null; });
   let groupScope = $state<string | null>(null);
   $effect(() => {
     if (groupScope && !scene.nodes.some(n => n.id === groupScope)) groupScope = null;
@@ -554,7 +559,7 @@
           color,
         )
       : color;
-    const next = node ?? newCanvasText(p, paint, textSize, parent?.id ?? null);
+    const next = node ?? newCanvasText(p, paint, textSize, parent?.id ?? null, textStyle);
     if (next.content.kind !== "text") return;
     editing = { node: next, original: node };
     onediting(next);
@@ -567,13 +572,9 @@
     textInput?.focus();
     textInput?.select();
   }
-  export function styleText(patch: {
-    color?: string;
-    size?: CanvasSize;
-    fill?: CanvasFill;
-  }) {
+  export function styleText(patch: CanvasStylePatch) {
     if (!editing || disabled) return false;
-    const next = styleNode(editing.node, patch);
+    const next = styleNode(updateTextNode(editing.node, { text: textDraft }), patch);
     editing = { ...editing, node: next };
     onediting(next);
     return true;
@@ -613,20 +614,7 @@
       JSON.stringify(node) === JSON.stringify(original)
     )
       return;
-    const fontSize = node.content.font_size;
-    const next = {
-      ...resizeNode(
-        node,
-        Math.max(
-          node.transform.width,
-          Math.max(...text.split("\n").map((line) => line.length), 1) *
-            fontSize *
-            0.65,
-        ),
-        Math.max(fontSize * 1.3, text.split("\n").length * fontSize * 1.2),
-      ),
-      content: { ...node.content, text },
-    };
+    const next = updateTextNode(node, { text });
     oncommit(original ? "Edit text" : "Add text", [
       { op: "put_node", node: next },
     ]);
@@ -887,7 +875,7 @@
       {#if tool === "select" && !editing}<CreateSelection nodes={rendered} {selected} {zoom} {disabled} />{/if}
     </g>
   </svg>
-  {#if editing && editMatrix && editing.node.content.kind === "text"}
+  {#if editing && editMatrix && editLayout && editing.node.content.kind === "text"}
     <textarea
       bind:this={textInput}
       class="create-inline-text"
@@ -895,14 +883,25 @@
       bind:value={textDraft}
       maxlength="16000"
       spellcheck="false"
+      wrap="off"
       style:transform={`matrix(${editMatrix.join(",")})`}
-      style:width={`${Math.max(editing.node.transform.width, Math.max(...textDraft.split("\n").map((line) => line.length), 1) * editing.node.content.font_size * 0.65)}px`}
-      style:height={`${Math.max(editing.node.transform.height, textDraft.split("\n").length * editing.node.content.font_size * 1.2 + 6)}px`}
+      style:width={`${editLayout.width}px`}
+      style:height={`${editLayout.height}px`}
+      style:padding={`${editLayout.padding}px ${editLayout.padding}px ${editLayout.padding}px ${editLayout.insetX}px`}
+      style:line-height={`${editLayout.lineHeight}px`}
+      style:font-weight={editing.node.content.font_weight ?? 400}
+      style:font-style={editing.node.content.font_style ?? "normal"}
       style:font-size={`${editing.node.content.font_size}px`}
       style:font-family={editing.node.content.font_family}
       style:color={editing.node.content.color}
       readonly={disabled}
-      onblur={() => finishText()}
+      oninput={(e) => {
+        textDraft = e.currentTarget.value;
+        if (editing) onediting(updateTextNode(editing.node, { text: textDraft }));
+      }}
+      onblur={(e) => {
+        if (!(e.relatedTarget instanceof Element && e.relatedTarget.closest("[data-create-text-controls]"))) finishText();
+      }}
       onkeydown={(e) => {
         e.stopPropagation();
         if (
@@ -950,7 +949,7 @@
   .create-stage[data-tool="text"] {
     cursor: text;
   }
-  .create-inline-text {
+  .create-stage .create-inline-text {
     position: absolute;
     left: 0;
     top: 0;
@@ -962,7 +961,17 @@
     border-radius: 0;
     resize: none;
     overflow: hidden;
-    background: var(--create-raised);
+    background: transparent;
+    box-shadow: none;
+    appearance: none;
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 0;
+    letter-spacing: normal;
+    word-spacing: normal;
+    text-transform: none;
+    text-indent: 0;
+    tab-size: 8;
     line-height: 1.2;
     white-space: pre;
     outline: 1px solid var(--create-selection);

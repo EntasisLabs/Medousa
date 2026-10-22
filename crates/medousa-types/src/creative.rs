@@ -84,6 +84,14 @@ pub struct CreativeCrop {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CreativeFontStyle {
+    Normal,
+    Italic,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CreativeContent {
     Ink {
@@ -97,6 +105,10 @@ pub enum CreativeContent {
         color: String,
         font_family: String,
         font_size: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        font_weight: Option<u16>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        font_style: Option<CreativeFontStyle>,
     },
     Shape {
         shape: CreativeShapeKind,

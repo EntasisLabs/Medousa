@@ -6,6 +6,7 @@ it("retains separate brush sizes and eraser choices, isolated by workshop", () =
   const prefs = loadCreativePreferences("one");
   prefs.tool = "erase"; prefs.selectionMode = "lasso"; prefs.eraserMode = "stroke";
   prefs.brushKind = "pencil"; prefs.brushSizes.pencil = 12; prefs.eraserSize = 28;
+  prefs.textStyle = { font_family: "serif", font_size: 45, font_weight: 700, font_style: "italic" };
   saveCreativePreferences("one", prefs);
   expect(loadCreativePreferences("one")).toEqual(prefs);
   expect(loadCreativePreferences("two")).toMatchObject({ tool: "select", selectionMode: "box", eraserMode: "partial" });

@@ -28,6 +28,14 @@ reject unknown node fields. Grouping and ungrouping use existing ordered
 `put_node`, `remove_node`, and `reorder` operations in one atomic transaction,
 including explicit child coordinate updates before removing a group.
 
+Text content additionally accepts optional `font_weight` (100–900) and
+`font_style` (`normal` or `italic`). Legacy text omits both and renders with
+weight 400 and normal style. These optional version-3 fields require an updated
+daemon. Home measures text with its resolved font for rendering, editing,
+selection, and hit testing, including older nodes with estimated stored bounds.
+Text edits persist fitted width/height alongside the content in the same
+transaction; a font change preserves the local top-left anchor of rotated text.
+
 Every human or accepted AI edit uses a `CreativeTransaction`: a stable request ID,
 `expected_revision`, label and ordered operations. The whole batch succeeds or
 fails. HTTP 409 means the current revision differs; retain the local draft and

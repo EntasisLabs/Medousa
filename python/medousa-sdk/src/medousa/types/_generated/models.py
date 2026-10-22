@@ -641,17 +641,6 @@ class Kind4(Enum):
     text = 'text'
 
 
-class CreativeContent2(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    color: str
-    font_family: str
-    font_size: float
-    kind: Kind4
-    text: str
-
-
 class Kind5(Enum):
     shape = 'shape'
 
@@ -692,6 +681,11 @@ class CreativeCrop(MedousaModel):
     width: float
     x: float
     y: float
+
+
+class CreativeFontStyle(Enum):
+    normal = 'normal'
+    italic = 'italic'
 
 
 class CreativeInputKind(Enum):
@@ -5794,6 +5788,19 @@ class CreativeContent1(MedousaModel):
     input: CreativeInputKind
     kind: Kind3
     points: list[CreativePoint]
+
+
+class CreativeContent2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    color: str
+    font_family: str
+    font_size: float
+    font_style: CreativeFontStyle | None = None
+    font_weight: int | None = Field(None, ge=0)
+    kind: Kind4
+    text: str
 
 
 class CreativeContent3(MedousaModel):
