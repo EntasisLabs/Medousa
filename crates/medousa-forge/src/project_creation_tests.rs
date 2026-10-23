@@ -1,14 +1,38 @@
 use super::*;
 use crate::model::{ActorKind, ActorRef, WorkPolicy, WorkTarget, WorkspaceMode};
 
+fn git(repo: &Path, args: &[&str]) {
+    let mut command = std::process::Command::new("git");
+    crate::git::apply_fixture_git_identity(&mut command);
+    let out = command.args(args).current_dir(repo).output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 fn empty_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
-    let out = std::process::Command::new("git")
-        .args(["init", "-b", "main"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-    assert!(out.status.success());
+    git(dir.path(), &["init", "-b", "main"]);
+    git(
+        dir.path(),
+        &[
+            "config",
+            "--local",
+            "user.name",
+            crate::git::FIXTURE_GIT_NAME,
+        ],
+    );
+    git(
+        dir.path(),
+        &[
+            "config",
+            "--local",
+            "user.email",
+            crate::git::FIXTURE_GIT_EMAIL,
+        ],
+    );
     dir
 }
 fn actor() -> ActorRef {

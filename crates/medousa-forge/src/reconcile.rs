@@ -782,7 +782,7 @@ mod tests {
     fn fixture() -> Fx {
         let repo_tmp = TempDir::new().unwrap();
         let forge_tmp = TempDir::new().unwrap();
-        let git = GitEngine::detect().unwrap();
+        let git = crate::git::isolated_git();
         git.run(repo_tmp.path(), &["init", "-b", "main"]).unwrap();
         fs::write(repo_tmp.path().join("a.txt"), "a\n").unwrap();
         git.run(repo_tmp.path(), &["add", "-A"]).unwrap();

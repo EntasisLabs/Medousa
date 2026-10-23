@@ -1,5 +1,5 @@
 use super::*;
-use crate::git::{CheckpointAuthor, GitEngine};
+use crate::git::CheckpointAuthor;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -14,11 +14,9 @@ fn actor() -> ActorRef {
     }
 }
 fn git(repo: &std::path::Path, args: &[&str]) -> String {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(repo)
-        .output()
-        .unwrap();
+    let mut command = std::process::Command::new("git");
+    crate::git::apply_fixture_git_identity(&mut command);
+    let out = command.args(args).current_dir(repo).output().unwrap();
     assert!(
         out.status.success(),
         "{}",
@@ -33,8 +31,7 @@ fn fixture(mode: WorkspaceMode) -> Fixture {
     git(&repo, &["init", "-b", "main"]);
     std::fs::write(repo.join("hello.txt"), "before\n").unwrap();
     git(&repo, &["add", "."]);
-    GitEngine::detect()
-        .unwrap()
+    crate::git::isolated_git()
         .commit_checkpoint(&repo, "initial", &CheckpointAuthor::default())
         .unwrap();
     if mode == WorkspaceMode::AttachedCheckout {

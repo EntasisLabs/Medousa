@@ -1,0 +1,111 @@
+name: Desktop sidecar
+
+# Real Linux engine sidecar, native-binary integrity, and deb packaging.
+# The CI lint job uses a placeholder sidecar and does not validate this.
+# Path filters keep the release build off pull requests that do not touch the
+# daemon, the desktop app, or packaging. The weekly run covers everything else.
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "crates/**"
+      - "apps/medousa-home/**"
+      - "apps/medousa-installer/**"
+      - "scripts/release/**"
+      - "scripts/ci/check-native-binary.sh"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/desktop-sidecar.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "crates/**"
+      - "apps/medousa-home/**"
+      - "apps/medousa-installer/**"
+      - "scripts/release/**"
+      - "scripts/ci/check-native-binary.sh"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/desktop-sidecar.yml"
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-sidecar-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/cargo-target
+
+jobs:
+  linux-desktop-package:
+    name: Desktop packaging (Linux, real sidecar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: apps/medousa-home
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          prefix-key: desktop-sidecar-linux
+      - name: Install Tauri packaging dependencies
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            file \
+            libayatana-appindicator3-dev \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/medousa-home/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Build and package the desktop app with the real engine sidecar
+        env:
+          CI: true
+        run: npm run tauri:build -- --bundles deb
+      - name: Validate sidecar integrity and deb contents
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          # shellcheck source=scripts/release/common.sh
+          source scripts/release/common.sh
+          triple="$(rustc -vV | sed -n 's/^host: //p')"
+          sidecar="apps/medousa-home/src-tauri/binaries/medousa_daemon-${triple}"
+          medousa_validate_native_binary "${sidecar}" "${triple}"
+          mapfile -t debs < <(find "${CARGO_TARGET_DIR}/release/bundle/deb" -type f -name '*.deb' | sort)
+          if [[ ${#debs[@]} -eq 0 ]]; then
+            echo "error: tauri deb package was not produced under ${CARGO_TARGET_DIR}/release/bundle/deb" >&2
+            find "${CARGO_TARGET_DIR}" -type d -name bundle -o -type f -name '*.deb' | head -50 >&2 || true
+            exit 1
+          fi
+          echo "packaged ${debs[0]}"
+          if ! dpkg-deb -c "${debs[0]}" | grep -F "medousa_daemon-${triple}"; then
+            echo "error: deb does not contain the engine sidecar" >&2
+            dpkg-deb -c "${debs[0]}" >&2
+            exit 1
+          fi

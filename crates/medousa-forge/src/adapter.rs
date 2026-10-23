@@ -168,7 +168,7 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::{CheckpointAuthor, GitEngine};
+    use crate::git::CheckpointAuthor;
     use crate::model::{AttemptState, WorkState};
     use tempfile::TempDir;
 
@@ -182,7 +182,7 @@ mod tests {
     fn fixture() -> Fx {
         let repo_tmp = TempDir::new().unwrap();
         let forge_tmp = TempDir::new().unwrap();
-        let git = GitEngine::detect().unwrap();
+        let git = crate::git::isolated_git();
         git.run(repo_tmp.path(), &["init", "-b", "main"]).unwrap();
         std::fs::write(repo_tmp.path().join("a.txt"), "a\n").unwrap();
         git.run(repo_tmp.path(), &["add", "-A"]).unwrap();
