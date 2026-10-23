@@ -123,7 +123,7 @@ pub async fn transport_for_target_async(
 pub fn consumer_generation(window: &tauri::Webview) -> Option<u64> {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        return crate::desktop_windows::generation_for(window.app_handle(), window.label());
+        crate::desktop_windows::generation_for(window.app_handle(), window.label())
     }
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {

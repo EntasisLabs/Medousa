@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from medousa.sync.calendar import CalendarApiSync
     from medousa.sync.capabilities import CapabilitiesApiSync
     from medousa.sync.components import ComponentsApiSync
+    from medousa.sync.creative import CreativeApiSync
     from medousa.sync.environment import EnvironmentApiSync
     from medousa.sync.feeds import FeedsApiSync
     from medousa.sync.health import HealthApiSync
@@ -24,7 +25,6 @@ if TYPE_CHECKING:
     from medousa.sync.runtime import RuntimeApiSync
     from medousa.sync.sessions import SessionsApiSync
     from medousa.sync.vault import VaultApiSync
-    from medousa.sync.creative import CreativeApiSync
     from medousa.sync.workspace import WorkspaceApiSync
 
 

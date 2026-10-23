@@ -13,6 +13,7 @@ VERSION=""
 CHANNEL="${MEDOUSA_RELEASE_CHANNEL:-stable}"
 BASE_URL_OVERRIDE=""
 ALLOW_EMPTY=0
+REQUIRE_ARCHIVES=0
 
 usage() {
   cat <<'EOF'
@@ -24,6 +25,7 @@ Options:
   --channel <name>      Release channel (default: stable)
   --base-url <url>      Artifact base URL (or set MEDOUSA_RELEASE_BASE_URL)
   --allow-empty         Permit an empty delta for auxiliary-only merged publishes
+  --full-train          Fail if any archive a full train must publish is missing
   -h, --help            Show this help
 
 Writes dist/release-manifest.json indexing package id → url, sha256, size, depends.
@@ -38,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --channel) CHANNEL="$2"; shift 2 ;;
     --base-url) BASE_URL_OVERRIDE="$2"; shift 2 ;;
     --allow-empty) ALLOW_EMPTY=1; shift ;;
+    --full-train) REQUIRE_ARCHIVES=1; shift ;;
     -h | --help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -165,6 +168,7 @@ COMPONENT_DISPLAY_NAMES=(
   "adapter-discord:Discord adapter"
   "adapter-slack:Slack adapter"
   "adapter-whatsapp:WhatsApp adapter"
+  "review-github:GitHub reviews"
   "mcp-gateway:MCP gateway"
   "coding-engine:Coding engine"
   "shell-session:Shell session host"
@@ -185,6 +189,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo '  "packages": {'
 
   first=1
+  missing=0
   for target in "${TARGETS[@]}"; do
     for entry in "${COMPONENT_DISPLAY_NAMES[@]}"; do
       package_id="${entry%%:*}"
@@ -197,6 +202,9 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
         depends="$(medousa_component_depends "${package_id}")"
         category="$(medousa_component_category "${package_id}")"
         append_package_json "${package_id}" "${display_name}" "${target}" "${archive}" "${depends}" "" "${category}" "${pkg_version}"
+      elif [[ "${REQUIRE_ARCHIVES}" -eq 1 ]] && medousa_full_train_requires_component "${package_id}" "${target}"; then
+        echo "error: full-train release is missing ${archive}" >&2
+        missing=1
       fi
     done
 
@@ -207,6 +215,9 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
         [[ "${first}" -eq 1 ]] || echo ","
         first=0
         append_package_json "local-brain" "Offline brain (${backend})" "${target}" "${local_archive}" "engine" "${backend}" "core" "${brain_v}"
+      elif [[ "${REQUIRE_ARCHIVES}" -eq 1 ]] && medousa_full_train_requires_local_brain "${target}" "${backend}"; then
+        echo "error: full-train release is missing ${local_archive}" >&2
+        missing=1
       fi
     done
 
@@ -223,12 +234,19 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   desktop_v="$(medousa_package_version desktop)"
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     found="$(medousa_desktop_bundle_for_platform "${DIST_DIR}" "${name}" "${desktop_v}" || true)"
+    archive=""
+    file_v=""
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
-      file_v="$(medousa_bundle_semver_from_name "${archive}" || echo "${desktop_v}")"
+      file_v="$(medousa_bundle_semver_from_name "${archive}" || true)"
+    fi
+    if [[ -n "${found}" && ( "${REQUIRE_ARCHIVES}" -ne 1 || "${file_v}" == "${desktop_v}" ) ]]; then
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
       append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core" "${file_v}"
+    elif [[ "${REQUIRE_ARCHIVES}" -eq 1 ]]; then
+      echo "error: full-train release is missing desktop ${name} v${desktop_v}" >&2
+      missing=1
     else
       medousa_log "warning: no desktop ${name} bundle (wanted v${desktop_v})"
     fi
@@ -237,19 +255,49 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   installer_v="$(medousa_package_version installer)"
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     found="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${name}" "${installer_v}" || true)"
+    archive=""
+    file_v=""
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
-      file_v="$(medousa_bundle_semver_from_name "${archive}" || echo "${installer_v}")"
+      file_v="$(medousa_bundle_semver_from_name "${archive}" || true)"
+    fi
+    if [[ -n "${found}" && ( "${REQUIRE_ARCHIVES}" -ne 1 || "${file_v}" == "${installer_v}" ) ]]; then
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
       append_package_json "installer" "Medousa Installer (${name})" "${name}" "${archive}" "" "" "core" "${file_v}"
+    elif [[ "${REQUIRE_ARCHIVES}" -eq 1 ]]; then
+      echo "error: full-train release is missing installer ${name} v${installer_v}" >&2
+      missing=1
     fi
   done
+
+  if [[ "${REQUIRE_ARCHIVES}" -eq 1 ]]; then
+    vscode_v="$(medousa_integration_version vscode)"
+    neovim_v="$(medousa_integration_version neovim)"
+    browser_v="$(medousa_integration_version browser)"
+    obsidian_v="$(medousa_integration_version obsidian)"
+    for companion in \
+      "medousa-vscode-v${vscode_v}.vsix" \
+      "medousa-neovim-v${neovim_v}.tar.gz" \
+      "medousa-browser-v${browser_v}.zip" \
+      "medousa-obsidian-v${obsidian_v}.zip"; do
+      if [[ ! -f "${DIST_DIR}/${companion}" ]]; then
+        echo "error: full-train release is missing ${companion}" >&2
+        missing=1
+      fi
+    done
+  fi
 
   echo ""
   echo "  }"
   echo "}"
 } >"${OUT}"
+
+if [[ "${missing}" -ne 0 ]]; then
+  rm -f "${OUT}"
+  echo "error: full-train release refused to publish with missing archives" >&2
+  exit 1
+fi
 
 if [[ "${ALLOW_EMPTY}" -ne 1 ]]; then
   medousa_assert_release_manifest_nonempty "${OUT}"

@@ -269,7 +269,7 @@ pub async fn daemon_stream_start(
         )
         .await
         {
-            None => return,
+            None => (),
             Some(Ok(source)) => {
                 stream_sse_json_workshop::<Value>(&window, source, &event_name, &error_event, rx)
                     .await;

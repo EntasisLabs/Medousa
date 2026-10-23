@@ -1,5 +1,6 @@
 import pytest
 from mock_transport import MockTransport
+
 from medousa import MedousaClient, MedousaClientSync
 from medousa.types import CreativeHistoryRequest
 
@@ -7,7 +8,12 @@ from medousa.types import CreativeHistoryRequest
 def view():
     return {"document": {"id": "project_one", "revision": 4, "title": "Release", "pinned": False,
             "created_at": "now", "updated_at": "now", "assets": {},
-            "scene": {"schema": "medousa-create", "version": 3, "background": "transparent", "nodes": []}},
+            "scene": {
+                "schema": "medousa-create",
+                "version": 3,
+                "background": "transparent",
+                "nodes": [],
+            }},
             "applied_revision": 4, "duplicate": True, "can_undo": True, "can_redo": False}
 
 
@@ -37,10 +43,33 @@ def test_sync_creative_sdk_uses_its_bound_transport(monkeypatch):
 
 
 def creative_job():
-    return {"request": {"id": "retry_same", "expected_revision": 3, "selected_ids": ["frame"], "prompt": "Add a title", "refine_proposal": False},
-            "document_id": "doc", "context": {"document_id": "doc", "revision": 3, "selected_ids": ["frame"], "nodes": [], "assets": [], "fingerprint": "digest"},
-            "status": "interrupted", "session_id": "ses_create_test", "turn_id": "creative_job_test",
-            "created_at": "now", "updated_at": "now", "result": None, "assets": [], "error": "Interrupted", "applied_revision": None}
+    return {
+        "request": {
+            "id": "retry_same",
+            "expected_revision": 3,
+            "selected_ids": ["frame"],
+            "prompt": "Add a title",
+            "refine_proposal": False,
+        },
+        "document_id": "doc",
+        "context": {
+            "document_id": "doc",
+            "revision": 3,
+            "selected_ids": ["frame"],
+            "nodes": [],
+            "assets": [],
+            "fingerprint": "digest",
+        },
+        "status": "interrupted",
+        "session_id": "ses_create_test",
+        "turn_id": "creative_job_test",
+        "created_at": "now",
+        "updated_at": "now",
+        "result": None,
+        "assets": [],
+        "error": "Interrupted",
+        "applied_revision": None,
+    }
 
 
 @pytest.mark.asyncio
@@ -50,14 +79,19 @@ async def test_creative_jobs_preserve_admission_identity_and_explicit_decisions(
         ("POST", "/v1/create/projects/doc/jobs"): lambda *_: creative_job(),
         ("GET", "/v1/create/projects/doc/jobs"): lambda *_: {"jobs": [creative_job()]},
         ("GET", "/v1/create/projects/doc/jobs/retry_same"): lambda *_: creative_job(),
-        ("POST", "/v1/create/projects/doc/jobs/retry_same/decision"): lambda *_: {**creative_job(), "status": "cancelled"},
+        ("POST", "/v1/create/projects/doc/jobs/retry_same/decision"): lambda *_: {
+            **creative_job(),
+            "status": "cancelled",
+        },
     })
     client = MedousaClient("http://workshop", transport=transport)
     request = CreativeJobRequest(**creative_job()["request"])
     assert (await client.creative().create_job("doc", request)).status.value == "interrupted"
     assert len((await client.creative().jobs("doc")).jobs) == 1
     assert (await client.creative().job("doc", "retry_same")).context.revision == 3
-    assert (await client.creative().decide_job("doc", "retry_same", CreativeProposalDecision(accept=False, expected_revision=3))).status.value == "cancelled"
+    decision = CreativeProposalDecision(accept=False, expected_revision=3)
+    decided = await client.creative().decide_job("doc", "retry_same", decision)
+    assert decided.status.value == "cancelled"
     assert transport.calls[0][2] == creative_job()["request"]
     assert transport.calls[-1][2] == {"accept": False, "expected_revision": 3}
 
@@ -82,7 +116,12 @@ async def test_code_handoff_preserves_the_frame_visual_revision_and_session():
                         "nodes": [], "assets": [], "fingerprint": "frozen"}, "media_refs": []},
     })
     client = MedousaClient("http://workshop", transport=transport)
-    request = CreativeCodeContextRequest(expected_revision=7, frame_id="frame", visual_asset_id="visual", session_id="code_thread")
+    request = CreativeCodeContextRequest(
+        expected_revision=7,
+        frame_id="frame",
+        visual_asset_id="visual",
+        session_id="code_thread",
+    )
     result = await client.creative().code_context("doc", request)
     assert result.context.revision == 7
     assert transport.calls[0][2] == request.model_dump(mode="json")

@@ -719,6 +719,19 @@ impl WorkshopTargets {
     }
 }
 
+/// Review approval context lives on the full daemon. Embedded builds have no ledger.
+fn review_note_for_spawn(session_id: &str) -> Option<String> {
+    #[cfg(feature = "full-daemon")]
+    {
+        crate::wake_runtime::review_note(session_id)
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        let _ = session_id;
+        None
+    }
+}
+
 impl WorkshopSpawn {
     async fn execute(self, tool: &CognitionWorkshopMutateTool) -> stasis::prelude::Result<Value> {
         let blob = format!(
@@ -733,7 +746,7 @@ impl WorkshopSpawn {
         if mentions_review
             && let Some(turn) =
                 crate::agent_runtime::execution_context::active_turn_execution_context()
-            && let Some(note) = crate::wake_runtime::review_note(turn.session_id().as_str())
+            && let Some(note) = review_note_for_spawn(turn.session_id().as_str())
             && let Some(map) = value.as_object_mut()
         {
             map.insert("review_context".to_string(), Value::String(note));

@@ -115,7 +115,9 @@ impl CreativeStore {
                     .ok_or_else(conflict)?;
                     let next: CreativeNode = serde_json::from_value(next).map_err(storage)?;
                     if now != Some(&next) {
-                        operations.push(CreativeOperation::PutNode { node: next });
+                        operations.push(CreativeOperation::PutNode {
+                            node: Box::new(next),
+                        });
                     }
                 }
                 CreativeOperation::RemoveNode { id } => {

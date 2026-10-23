@@ -32,6 +32,8 @@ jobs:
         run: ./scripts/ci/check-runtime-context.sh
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
+      - name: cargo check (WhatsApp adapter)
+        run: cargo check --locked --manifest-path adapters/medousa-whatsapp/Cargo.toml
       - name: cargo test (lib, hermetic)
         timeout-minutes: 25
         run: ./scripts/ci/test-hermetic.sh
@@ -126,6 +128,8 @@ jobs:
         run: cargo clippy --manifest-path apps/medousa-home/src-tauri/Cargo.toml --all-targets -- -D warnings -A dead_code -A clippy::too_many_arguments -A clippy::large_enum_variant -A clippy::ptr_arg -A private_interfaces
       - name: cargo test (Home Tauri lib)
         run: cargo test --manifest-path apps/medousa-home/src-tauri/Cargo.toml --lib
+      - name: cargo check (Installer)
+        run: cargo check --locked --manifest-path apps/medousa-installer/src-tauri/Cargo.toml
 
   perf-micro:
     runs-on: ubuntu-latest

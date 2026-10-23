@@ -44,7 +44,7 @@ fn edit(id: &str, revision: u64, node: CreativeNode) -> CreativeTransaction {
         id: id.into(),
         expected_revision: revision,
         label: "Edit text".into(),
-        operations: vec![CreativeOperation::PutNode { node }],
+        operations: vec![CreativeOperation::PutNode { node: Box::new(node) }],
     }
 }
 fn history(id: &str, revision: u64, redo: bool) -> CreativeHistoryRequest {
@@ -239,9 +239,7 @@ fn stale_proposal_cannot_overwrite_a_human_edit() {
                 expected_revision: 1,
                 selected_ids: vec!["title".into()],
                 label: "AI edit".into(),
-                operations: vec![CreativeOperation::PutNode {
-                    node: text("title"),
-                }],
+                operations: vec![CreativeOperation::PutNode { node: Box::new(text("title")) }],
             },
         )
         .unwrap();
@@ -290,9 +288,7 @@ fn accepting_a_proposal_is_one_undoable_idempotent_transaction() {
                 expected_revision: 1,
                 selected_ids: vec!["title".into()],
                 label: "AI align".into(),
-                operations: vec![CreativeOperation::PutNode {
-                    node: replacement.clone(),
-                }],
+                operations: vec![CreativeOperation::PutNode { node: Box::new(replacement.clone()) }],
             },
         )
         .unwrap();
@@ -534,9 +530,9 @@ fn frame_context_captures_descendants_and_locked_work_cannot_be_changed_by_a_pro
                 expected_revision: 0,
                 label: "Scene".into(),
                 operations: vec![
-                    CreativeOperation::PutNode { node: frame },
+                    CreativeOperation::PutNode { node: Box::new(frame) },
                     CreativeOperation::PutNode {
-                        node: child.clone(),
+                        node: Box::new(child.clone()),
                     },
                 ],
             },
@@ -556,7 +552,7 @@ fn frame_context_captures_descendants_and_locked_work_cannot_be_changed_by_a_pro
         expected_revision: 1,
         selected_ids: context.selected_ids,
         label: "Change".into(),
-        operations: vec![CreativeOperation::PutNode { node: child }],
+        operations: vec![CreativeOperation::PutNode { node: Box::new(child) }],
     };
     assert!(store.propose("project_one", request).is_err());
 }
@@ -574,9 +570,7 @@ fn cancelled_proposal_retries_do_not_resurrect_after_terminal_eviction() {
         expected_revision: 1,
         selected_ids: vec!["title".into()],
         label: "Original".into(),
-        operations: vec![CreativeOperation::PutNode {
-            node: text("title"),
-        }],
+        operations: vec![CreativeOperation::PutNode { node: Box::new(text("title")) }],
     };
     store.propose("project_one", original.clone()).unwrap();
     store
@@ -644,7 +638,7 @@ fn job_result(id: &str) -> CreativeProposalRequest {
         expected_revision: 1,
         selected_ids: vec!["title".into()],
         label: "Clarify title".into(),
-        operations: vec![CreativeOperation::PutNode { node }],
+        operations: vec![CreativeOperation::PutNode { node: Box::new(node) }],
     }
 }
 fn job_store() -> (tempfile::TempDir, Arc<CreativeStore>) {
@@ -1153,7 +1147,7 @@ fn creative_job_rejects_oversized_result_without_losing_the_job() {
     if let CreativeContent::Text { text, .. } = &mut node.content {
         *text = "a".repeat(100_000);
     }
-    result.operations = vec![CreativeOperation::PutNode { node }; 6];
+    result.operations = vec![CreativeOperation::PutNode { node: Box::new(node) }; 6];
     assert!(
         store
             .complete_job("project_one", "first", &job.turn_id, result)
@@ -1177,7 +1171,7 @@ fn creative_job_snapshot_budget_does_not_corrupt_large_documents() {
         if let CreativeContent::Text { text, .. } = &mut node.content {
             *text = "a".repeat(100_000);
         }
-        operations.push(CreativeOperation::PutNode { node });
+        operations.push(CreativeOperation::PutNode { node: Box::new(node) });
     }
     store
         .transact(

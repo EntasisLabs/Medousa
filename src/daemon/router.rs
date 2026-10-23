@@ -1449,12 +1449,14 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 475);
-        assert_eq!(with_pairing.entries().len(), 494);
+        // Create document and job routes plus review providers landed after
+        // this count was last recorded at 475. Pairing still adds 19 routes.
+        assert_eq!(without_pairing.entries().len(), 499);
+        assert_eq!(with_pairing.entries().len(), 518);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 494);
+        assert_eq!(rows.len(), 518);
         assert_eq!(rows[0]["path"], "/health");
         for method in ["POST", "DELETE"] {
             assert!(rows.iter().any(|row| {
@@ -1489,6 +1491,23 @@ mod tests {
             row["method"] == "PUT"
                 && row["path"] == "/v1/runtime/inference-profiles"
                 && row["required_capability"] == "admin.runtime"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["method"] == "GET"
+                && row["path"] == "/v1/create/projects"
+                && row["required_capability"] == "content.read"
+                && row["browser_policy"] == "native_only"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["method"] == "GET"
+                && row["path"] == "/v1/create/projects/{id}/jobs"
+                && row["required_capability"] == "content.read"
+        }));
+        assert!(rows.iter().any(|row| {
+            row["method"] == "GET"
+                && row["path"] == "/v1/reviews/providers"
+                && row["required_capability"] == "content.read"
+                && row["browser_policy"] == "native_only"
         }));
     }
 
