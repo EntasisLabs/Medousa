@@ -23,7 +23,7 @@ pub(super) struct State {
 pub(super) async fn read(view: Webview, direction: Option<Action>) -> Result<State, String> {
     let (tx, rx) = oneshot::channel();
     view.with_webview(move |platform| {
-        let result = (|| -> Result<State, String> {
+        let result: Result<State, String> = {
             #[cfg(target_os = "macos")]
             unsafe {
                 let page = &*platform.inner().cast::<objc2_web_kit::WKWebView>();
@@ -97,7 +97,7 @@ pub(super) async fn read(view: Webview, direction: Option<Action>) -> Result<Sta
                     loading: Some(page.is_loading()),
                 })
             }
-        })();
+        };
         let _ = tx.send(result);
     })
     .map_err(|err| err.to_string())?;

@@ -407,7 +407,7 @@ pub async fn workspace_stream_start(
         )
         .await
         {
-            None => return,
+            None => (),
             Some(Ok(source)) => {
                 stream_sse_json_workshop::<WorkspaceStreamEvent>(
                     &app,
@@ -475,7 +475,7 @@ pub async fn environment_stream_start(
         )
         .await
         {
-            None => return,
+            None => (),
             Some(Ok(source)) => {
                 stream_sse_json_workshop::<EnvironmentStreamEvent>(
                     &app,
@@ -756,7 +756,7 @@ pub async fn interactive_stream_start(
         )
         .await
         {
-            None => return,
+            None => (),
             Some(Ok(source)) => {
                 if app.label().starts_with("desktop-work-") {
                     stream_sse_json_workshop::<TurnStreamEnvelopeV3>(
