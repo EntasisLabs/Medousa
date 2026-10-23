@@ -20,7 +20,7 @@ summary: **Allow** grants this request so the turn can continue. **Deny** refuse
 | **Allow** | Grant this request so the turn can continue |
 | **Deny** | Refuse; the turn proceeds without that capability (or stops, depending on the agent) |
 
-The bar may show which **Runtime** asked (Medousa, Cursor, Codex). Home does **not** expose a separate “always allow” toggle — treat each prompt as a decision for this request.
+The bar shows which **Runtime** asked. When an external agent supplies named choices, Home shows those exact choices, including any vendor-supported “always allow” choice. **Cancel** dismisses the pending request. Older workshops show **Allow** and **Deny**; Medousa does not invent a persistent permission policy.
 
 If you Deny by accident, send a clearer follow-up or start a new turn with a narrower ask.
 

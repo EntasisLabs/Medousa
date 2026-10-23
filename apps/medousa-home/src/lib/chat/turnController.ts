@@ -1,3 +1,4 @@
+import { isReusableAgentStream } from "$lib/utils/streamOwnership";
 /**
  * Turn command helpers — user/assistant bubble pair and ticket registration.
  * Stream attach/cancel still go through the chat façade until H10 transport.
@@ -18,6 +19,7 @@ export function turnStateFromTicket(
     phase: ticket.phase,
     messageId,
     streamAttached: true,
+    reusableStream: isReusableAgentStream(ticket.stream_url),
     terminal: false,
     workspaceCardId: ticket.workspace_card_id ?? null,
   };

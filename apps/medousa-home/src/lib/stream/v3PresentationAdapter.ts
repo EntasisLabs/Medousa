@@ -201,6 +201,7 @@ function project(
         phase: "awaiting_permission",
         message: event.message,
         permission_request_id: event.request_id,
+        permission_options: event.permission_options,
         agent_session_id: event.agent_session_id,
         agent_runtime: event.agent_runtime,
       };

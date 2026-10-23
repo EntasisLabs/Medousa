@@ -677,12 +677,12 @@ code/param, and request ID and never silently fall back to API-key billing.
 
 ## Agents (hot-swappable runtimes)
 
-External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` accessor — not raw ACP. Native Medousa turns remain on `/v1/turns` + interactive.
+External coding agents use the Medousa SDK `agents()` accessor. Runtime IDs are `cursor`, `codex`, `hermes`, `claude`, `devin`, `pi`, `muse_code`, and `hades`. ACP and Muse Code MSP transports stay inside the workshop daemon. Native Medousa turns remain on `/v1/turns` + interactive.
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/v1/agents/runtimes` | List runtimes + availability |
-| POST | `/v1/agents/sessions` | Create ACP session (bind Medousa `session_id`) |
+| POST | `/v1/agents/sessions` | Create external agent session (bind Medousa `session_id`) |
 | POST | `/v1/agents/sessions/{id}/prompt` | Send prompt |
 | GET | `/v1/agents/sessions/{id}/stream` | SSE (same event shape as interactive) |
 | POST | `/v1/agents/sessions/{id}/cancel` | Cancel session |
@@ -692,6 +692,20 @@ External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` acc
 | GET | `/v1/agents/secret-requests` | List credential-request metadata (never values) |
 | POST | `/v1/agents/secret-requests/{id}/fulfill` | Deliver a write-only value to the request's workshop backend |
 | POST | `/v1/agents/secret-requests/{id}/deny` | Deny secure credential handoff |
+
+Session creation returns negotiated, supported `capabilities` and `config_options`. Native
+resume support is independent of Medousa's saved transcript: an agent that cannot
+load sessions is restarted rather than given an invented resume guarantee.
+The prompt contract currently accepts text and code context; image/audio inputs
+are not transported through this endpoint, so its image/audio capability flags
+remain false even when the provider advertises support.
+
+Permission records include the provider's opaque `options` (`option_id`, `name`,
+`kind`). To select one, POST `{ "option_id": "<offered-id>" }` to the existing
+`approve` route. This also forwards an explicitly selected rejection choice.
+A generic cancellation uses `deny`. Legacy approval without an option ID remains
+valid for a single unambiguous allow choice; multi-choice questions require an
+explicit ID. SSE permission events include optional `permission_options`.
 
 Secret-request routes are native-only administration routes. The fulfill body
 is write-only: responses, list records, stream frames, and transcripts contain

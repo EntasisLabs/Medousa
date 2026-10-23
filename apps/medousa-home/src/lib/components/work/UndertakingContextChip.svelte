@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { EXTERNAL_AGENTS } from "$lib/utils/externalAgentCatalog";
+  import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
+
   import { tick } from "svelte";
   import {
     Bot,
@@ -246,7 +249,7 @@
     void undertakings.select(active.workId);
   });
 
-  async function withItem(action: "terminal" | "codex" | "cursor" | "hermes") {
+  async function withItem(action: "terminal" | ExternalAgentRuntime) {
     if (!active || busy) return;
     busy = true;
     error = null;
@@ -657,36 +660,9 @@
 
     {#if active.humanPhase === "work" || active.humanPhase === "prepare"}
       <div class="my-1 border-t border-surface-500/25" role="separator"></div>
-      <button
-        type="button"
-        role="menuitem"
-        class="context-action"
-        disabled={busy}
-        onclick={() => { chipMenuOpen = false; void withItem("codex"); }}
-      >
-        <Bot size={14} />
-        Ask Codex to continue
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        class="context-action"
-        disabled={busy}
-        onclick={() => { chipMenuOpen = false; void withItem("cursor"); }}
-      >
-        <Bot size={14} />
-        Ask Cursor to continue
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        class="context-action"
-        disabled={busy}
-        onclick={() => { chipMenuOpen = false; void withItem("hermes"); }}
-      >
-        <Bot size={14} />
-        Ask Hermes to continue
-      </button>
+      {#each EXTERNAL_AGENTS as agent (agent.id)}
+        <button type="button" role="menuitem" class="context-action" disabled={busy} onclick={() => { chipMenuOpen = false; void withItem(agent.id); }}><Bot size={14} />Ask {agent.label} to continue</button>
+      {/each}
     {/if}
 
     <div class="my-1 border-t border-surface-500/25" role="separator"></div>

@@ -404,6 +404,26 @@
       }
     },
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "AgentPermissionRequestRecord": {
         "type": "object",
         "required": [
@@ -424,6 +444,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentPermissionOption"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -442,6 +468,12 @@
           },
           "runtime": {
             "type": "string"
+          },
+          "selected_option_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session_id": {
             "type": "string"
@@ -491,6 +523,12 @@
         "type": "string",
         "format": "date-time"
       },
+      "options": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentPermissionOption"
+        }
+      },
       "request_id": {
         "type": "string"
       },
@@ -510,6 +548,12 @@
       "runtime": {
         "type": "string"
       },
+      "selected_option_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "session_id": {
         "type": "string"
       },
@@ -525,6 +569,26 @@
       }
     },
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "AgentPermissionRequestStatus": {
         "type": "string",
         "enum": [
@@ -541,6 +605,12 @@
     "title": "AgentPermissionResolveRequest",
     "type": "object",
     "properties": {
+      "option_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "resolved_by": {
         "type": [
           "string",
@@ -562,6 +632,26 @@
       }
     },
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "AgentPermissionRequestRecord": {
         "type": "object",
         "required": [
@@ -582,6 +672,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentPermissionOption"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -600,6 +696,12 @@
           },
           "runtime": {
             "type": "string"
+          },
+          "selected_option_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session_id": {
             "type": "string"
@@ -2402,7 +2504,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -2668,7 +2775,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -2882,7 +2994,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -6380,7 +6497,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -7134,7 +7256,7 @@
         ]
       },
       "runtime": {
-        "description": "External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).",
+        "description": "External coding runtime ID (not the native `medousa` runtime).",
         "type": "string"
       },
       "session_id": {
@@ -7345,6 +7467,20 @@
       "agent_session_id": {
         "type": "string"
       },
+      "capabilities": {
+        "default": {
+          "audio": false,
+          "fork": false,
+          "images": false,
+          "resume": false,
+          "terminal": false
+        },
+        "allOf": [
+          {
+            "$ref": "#/definitions/AgentRuntimeCapabilities"
+          }
+        ]
+      },
       "config_options": {
         "description": "Runtime-advertised ACP session controls. Clients must render these capability-first rather than assuming every agent supports model or reasoning selection.",
         "type": "array",
@@ -7382,6 +7518,32 @@
       }
     },
     "definitions": {
+      "AgentRuntimeCapabilities": {
+        "description": "Capabilities negotiated with a live external agent. Defaults never claim support.",
+        "type": "object",
+        "properties": {
+          "audio": {
+            "default": false,
+            "type": "boolean"
+          },
+          "fork": {
+            "default": false,
+            "type": "boolean"
+          },
+          "images": {
+            "default": false,
+            "type": "boolean"
+          },
+          "resume": {
+            "default": false,
+            "type": "boolean"
+          },
+          "terminal": {
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      },
       "AgentSessionConfigChoice": {
         "type": "object",
         "required": [
@@ -7603,7 +7765,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -28946,6 +29113,15 @@
           "null"
         ]
       },
+      "permission_options": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/AgentPermissionOption"
+        }
+      },
       "permission_request_id": {
         "description": "External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.",
         "type": [
@@ -29158,6 +29334,26 @@
       }
     },
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -32131,7 +32327,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "HandoffCompletion": {
@@ -32621,7 +32822,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "ExternalPeerTarget": {
@@ -33059,7 +33265,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "ExternalPeerTarget": {
@@ -33337,7 +33548,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "ExternalPeerTarget": {
@@ -38035,7 +38251,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -41441,6 +41662,26 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -42323,6 +42564,15 @@
               "message": {
                 "type": "string"
               },
+              "permission_options": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/definitions/AgentPermissionOption"
+                }
+              },
               "request_id": {
                 "type": "string"
               },
@@ -42429,6 +42679,26 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -43298,6 +43568,15 @@
               "message": {
                 "type": "string"
               },
+              "permission_options": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/definitions/AgentPermissionOption"
+                }
+              },
               "request_id": {
                 "type": "string"
               },
@@ -44084,6 +44363,15 @@
           "message": {
             "type": "string"
           },
+          "permission_options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/AgentPermissionOption"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -44144,6 +44432,26 @@
       }
     ],
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -44960,6 +45268,15 @@
           "message": {
             "type": "string"
           },
+          "permission_options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/AgentPermissionOption"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -45062,6 +45379,26 @@
       }
     ],
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -45666,7 +46003,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -46419,7 +46761,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "ExternalProvider": {

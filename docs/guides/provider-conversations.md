@@ -1,6 +1,6 @@
 # External agent conversations
 
-Medousa can show conversations with external agents through provider bridges. Muse uses a WhatsApp session, Dots uses Slack, and Grok Bot uses a webhook and callback. These are conversation connections; Codex, Cursor, and Hermes are executable agent runtimes. Configure a bridge in **Settings → External Agents**. Conversation transcripts belong to the connected workshop, so the same history appears when you reconnect from another Medousa device. If that workshop is offline, its bridge and transcript are unavailable until it reconnects.
+Medousa can show conversations with external agents through provider bridges. Muse uses a WhatsApp session, Dots uses Slack, and Grok Bot uses a webhook and callback. These are conversation connections; Codex, Cursor, Hermes, Claude Code, Devin, Pi, Muse Code, and Hades are executable agent runtimes. **Muse Code** is separate from the Muse WhatsApp connection; choose it in the Chat runtime picker after configuring its CLI on the workshop host. See [coding runtimes](coding-runtimes.md). Configure a bridge in **Settings → External Agents**. Conversation transcripts belong to the connected workshop, so the same history appears when you reconnect from another Medousa device. If that workshop is offline, its bridge and transcript are unavailable until it reconnects.
 
 For a WhatsApp phone-number agent that uses HTTPS API calls, see [Instinct Agent](instinct-agent.md). For a Slack-connected OpenAI dot, see [Dots](dots.md).
 

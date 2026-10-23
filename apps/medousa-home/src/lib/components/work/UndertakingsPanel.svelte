@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { EXTERNAL_AGENTS, isExternalRuntime, externalAgent } from "$lib/utils/externalAgentCatalog";
+  import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
+
   import { hostedReviews } from "$lib/code/hostedReviews.svelte";
   import { onMount, onDestroy, untrack } from "svelte";
   import { createReviewPage } from "$lib/code/reviewPage.svelte";
@@ -113,7 +116,7 @@
   let exportOpen = $state(false);
   let exportDestination = $state("");
   let exportedDestination = $state<string | null>(null);
-  let preferredCodeAgent = $state<"codex" | "cursor" | "hermes">("codex");
+  let preferredCodeAgent = $state<ExternalAgentRuntime>("codex");
   let providerHandoff = $state<ProviderHandoff | null>(null);
   let providerComments = $state<ProviderComment[]>([]);
   let providerLink = $state("");
@@ -181,7 +184,7 @@
       if (root?.path) repoPath = root.path;
     }
     const savedAgent = localStorage.getItem("medousa-code-agent-runtime");
-    if (savedAgent === "cursor" || savedAgent === "codex" || savedAgent === "hermes") {
+    if (isExternalRuntime(savedAgent)) {
       preferredCodeAgent = savedAgent;
     }
   });
@@ -248,7 +251,7 @@
     await lmeWorkspace.openCodeReview(detail.id, `Review · ${detail.title}`);
   }
 
-  async function startAgent(runtime: "codex" | "cursor" | "hermes") {
+  async function startAgent(runtime: ExternalAgentRuntime) {
     const d = detail;
     if (!d) return;
     preferredCodeAgent = runtime;
@@ -259,7 +262,7 @@
     });
   }
 
-  async function handoffToAgent(runtime: "codex" | "cursor" | "hermes", draft?: string) {
+  async function handoffToAgent(runtime: ExternalAgentRuntime, draft?: string) {
     const d = detail;
     if (!d) return;
     preferredCodeAgent = runtime;
@@ -341,11 +344,7 @@
     ),
   );
   const agentLabel = $derived(
-    undertakings.active?.executorKind === "cursor"
-      ? "Cursor"
-      : undertakings.active?.executorKind === "hermes"
-        ? "Hermes"
-        : "Codex",
+    isExternalRuntime(undertakings.active?.executorKind) ? externalAgent(undertakings.active!.executorKind as ExternalAgentRuntime).label : "Agent",
   );
   async function doSeal() {
     let leaseId = undertakings.active?.leaseId ?? null;
@@ -1129,28 +1128,9 @@
                 <div class="my-1 border-t border-surface-500/25" role="separator"></div>
               {/if}
               {#if actions?.start_agent.allowed}
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="secondary-action"
-                  disabled={busy}
-                  title={actions?.start_agent.reason ?? ""}
-                  onclick={() => void startAgent("codex")}
-                >Ask Codex to continue</button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="secondary-action"
-                  disabled={busy}
-                  onclick={() => void startAgent("cursor")}
-                >Ask Cursor to continue</button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="secondary-action"
-                  disabled={busy}
-                  onclick={() => void startAgent("hermes")}
-                >Ask Hermes to continue</button>
+                {#each EXTERNAL_AGENTS as agent (agent.id)}
+                  <button type="button" role="menuitem" class="secondary-action" disabled={busy} title={actions?.start_agent.reason ?? ""} onclick={() => void startAgent(agent.id)}>Ask {agent.label} to continue</button>
+                {/each}
               {/if}
               <button
                 type="button"
@@ -1251,28 +1231,9 @@
           >
             {#snippet projectMenu()}
               {#if actions?.start_agent.allowed}
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="code-chrome-menu-item"
-                  disabled={busy}
-                  title={actions?.start_agent.reason ?? ""}
-                  onclick={() => void startAgent("codex")}
-                >Ask Codex to continue</button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="code-chrome-menu-item"
-                  disabled={busy}
-                  onclick={() => void startAgent("cursor")}
-                >Ask Cursor to continue</button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="code-chrome-menu-item"
-                  disabled={busy}
-                  onclick={() => void startAgent("hermes")}
-                >Ask Hermes to continue</button>
+                {#each EXTERNAL_AGENTS as agent (agent.id)}
+                  <button type="button" role="menuitem" class="code-chrome-menu-item" disabled={busy} title={actions?.start_agent.reason ?? ""} onclick={() => void startAgent(agent.id)}>Ask {agent.label} to continue</button>
+                {/each}
               {/if}
               <button
                 type="button"

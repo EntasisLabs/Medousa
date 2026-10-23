@@ -1,3 +1,4 @@
+import { EXTERNAL_AGENTS } from "$lib/utils/externalAgentCatalog";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import type { InferenceProfiles } from "$lib/types/inferenceProfiles";
 import type { FavoriteModel } from "$lib/utils/modelCatalog";
@@ -72,9 +73,7 @@ export interface TuiDefaults {
 
 export const CODING_RUNTIMES = [
   { value: "medousa", label: "Medousa Coder" },
-  { value: "codex", label: "Codex" },
-  { value: "cursor", label: "Cursor" },
-  { value: "hermes", label: "Hermes" },
+  ...EXTERNAL_AGENTS.map(agent => ({ value: agent.id, label: agent.label })),
 ] as const;
 export type CodingRuntime = (typeof CODING_RUNTIMES)[number]["value"];
 export interface CodingRuntimePreferences {

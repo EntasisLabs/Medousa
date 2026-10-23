@@ -1,3 +1,4 @@
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 /** Shared transitions into an undertaking's permanent workspace surfaces. */
 
 import {
@@ -159,9 +160,13 @@ export async function openProjectTerminal(
 
 export async function startTrackedAgent(
   item: ItemProjection,
-  runtime: "codex" | "cursor" | "hermes",
+  runtime: ExternalAgentRuntime,
   options?: { draft?: string },
 ): Promise<string> {
+  const epoch = chat.workshopEpoch;
+  const assertCurrent = () => {
+    if (chat.workshopEpoch !== epoch) throw new Error("Workshop changed while starting the agent.");
+  };
   let readyItem = item;
   if (usesAttachedCheckout(item)) {
     const activeAttemptIds = new Set(item.active_attempts ?? []);
@@ -179,6 +184,7 @@ export async function startTrackedAgent(
         generation: humanAttempt.lease.generation,
         to_executor: runtime,
       });
+      assertCurrent();
       undertakings.setActiveFromItem(readyItem);
     }
   }
@@ -190,6 +196,7 @@ export async function startTrackedAgent(
     undertakings.active.boundChatSessionIds.includes(currentSession) &&
     !getSessionAgentSessionId(currentSession);
   if (!canReuseCurrentChat) await chat.newSession();
+  assertCurrent();
   const sessionId = chat.sessionId;
   if (!sessionId) throw new Error("Could not create a Chat workspace for this undertaking");
 
@@ -198,6 +205,7 @@ export async function startTrackedAgent(
     runtime,
     work_id: readyItem.id,
   });
+  assertCurrent();
   setSessionAgentRuntime(sessionId, runtime);
   setSessionAgentSessionId(sessionId, accepted.agent_session_id);
   setSessionAgentWorkId(sessionId, readyItem.id);
@@ -207,6 +215,7 @@ export async function startTrackedAgent(
     executionRuntimeId: undertakings.active?.executionRuntimeId ?? null,
     repoId: undertakings.active?.repoId ?? null,
   });
+  assertCurrent();
   shellTabs.openChat(sessionId, { activate: true });
   if (options?.draft?.trim()) {
     chat.prefillDraft(options.draft.trim());

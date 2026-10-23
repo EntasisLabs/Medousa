@@ -1,3 +1,5 @@
+import { EXTERNAL_AGENTS } from "$lib/utils/externalAgentCatalog";
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 import type { BotProfile } from "$lib/types/generated/daemon_api";
 import type { SessionSummary } from "$lib/types/session";
 import type { AgentRuntimeInfo } from "$lib/daemon/session";
@@ -10,7 +12,7 @@ export type ConversationTarget = {
   description: string;
   group: "Bots" | "Conversations" | "Start new";
   scope: string;
-} & ({ kind: "bot"; bot: BotProfile } | { kind: "session"; sessionId: string } | { kind: "new"; runtime: "medousa" | "cursor" | "codex" | "hermes" });
+} & ({ kind: "bot"; bot: BotProfile } | { kind: "session"; sessionId: string } | { kind: "new"; runtime: "medousa" | ExternalAgentRuntime });
 
 /** Stable addresses, not display names: two sessions may share a name. */
 export function conversationTargets(scope: string, bots: BotProfile[], sessions: SessionSummary[], runtimes: AgentRuntimeInfo[], query: string): ConversationTarget[] {
@@ -19,7 +21,7 @@ export function conversationTargets(scope: string, bots: BotProfile[], sessions:
     ...bots.filter(bot => !bot.archived).map(bot => ({ id: `bot:${bot.bot_id}`, label: bot.display_name, description: bot.role_description || "Continue with this bot", group: "Bots" as const, scope, kind: "bot" as const, bot })),
     ...sessions.filter(session => !botSessions.has(session.session_id) && !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id))).map(session => ({ id: `session:${session.session_id}`, label: formatSessionLabel(session), description: session.preview || "Continue this conversation", group: "Conversations" as const, scope, kind: "session" as const, sessionId: session.session_id })),
     { id: "new:medousa", label: "Medousa", description: "Start a new assistant conversation", group: "Start new", scope, kind: "new", runtime: "medousa" },
-    ...(["cursor", "codex", "hermes"] as const).filter(runtime => runtimes.some(item => item.runtime === runtime && item.available)).map(runtime => ({ id: `new:${runtime}`, label: runtime[0].toUpperCase() + runtime.slice(1), description: "Start a new agent session", group: "Start new" as const, scope, kind: "new" as const, runtime })),
+    ...EXTERNAL_AGENTS.filter(agent => runtimes.some(item => item.runtime === agent.id && item.available && item.auth_status !== "signed_out")).map(agent => ({ id: `new:${agent.id}`, label: agent.label, description: "Start a new agent session", group: "Start new" as const, scope, kind: "new" as const, runtime: agent.id })),
   ];
   const needle = query.trim().toLocaleLowerCase();
   const groups: ConversationTarget["group"][] = ["Bots", "Conversations", "Start new"];

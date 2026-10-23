@@ -20,3 +20,14 @@ it("surfaces the exact new Medousa address ahead of similarly named existing con
   const sessions = Array.from({ length: 30 }, (_, id) => ({ ...session(String(id)), display_name: "Medousa Coder" }));
   expect(conversationTargets("a", [], sessions, [], "medousa")[0]?.id).toBe("new:medousa");
 });
+
+it("offers available new agents without confusing Muse Code with Muse", () => {
+  const targets = conversationTargets("a", [], [], ["claude", "devin", "pi", "muse_code", "hades"].map(runtime => ({ runtime, available: true })), "");
+  expect(targets.map(target => target.id)).toEqual(["new:medousa", "new:claude", "new:devin", "new:pi", "new:muse_code", "new:hades"]);
+  expect(targets.find(target => target.id === "new:muse_code")?.label).toBe("Muse Code");
+});
+
+it("keeps unknown authentication usable and excludes known sign-out from direct-start destinations", () => {
+  const targets = conversationTargets("a", [], [], [{ runtime: "claude", available: true, auth_status: "unknown" }, { runtime: "codex", available: true, auth_status: "signed_out" }], "");
+  expect(targets.map(target => target.id)).toEqual(["new:medousa", "new:claude"]);
+});

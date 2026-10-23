@@ -1,3 +1,4 @@
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * Interactive/background turn start from ChatPanel.
  * Uses ChatStore.beginTurn + startTurnStream — no second stream apply path.
@@ -38,7 +39,7 @@ export async function submitChatTurn(input: {
   codeProjectSetupAuthorized?: boolean;
   synchronizeAgentSession: (
     sessionId: string,
-    runtime: "cursor" | "codex" | "hermes",
+    runtime: ExternalAgentRuntime,
     options?: { openChooserWhenMissing?: boolean },
   ) => Promise<PreparedAgentSession | null>;
   onAgentSessionLost: () => void;
@@ -71,6 +72,9 @@ export async function submitChatTurn(input: {
   }
   if (isProviderConversationRuntime(runtime)) {
     throw new Error("Provider conversations must use the selected session or bot.");
+  }
+  if (isExternalAgentRuntime(runtime) && !input.sessionId && chat.pendingMediaRefs.length > 0) {
+    throw new Error("External coding agents currently accept text only. Remove attachments before sending.");
   }
   if (isExternalAgentRuntime(runtime) && input.mode === "interactive" && !codeProjectSetupAuthorized) {
     const prepared = await input.synchronizeAgentSession(sessionId, runtime, {

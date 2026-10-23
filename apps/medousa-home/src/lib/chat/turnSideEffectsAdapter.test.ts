@@ -19,7 +19,8 @@ vi.mock("$lib/stores/humanBrowser.svelte", () => ({ humanBrowser: { loading: fal
 vi.mock("$lib/stores/governedBrowser.svelte", () => ({ governedBrowser: { chooseDevice: vi.fn() } }));
 vi.mock("$lib/stores/browser.svelte", () => ({ browser: { setControl: mocks.control } }));
 
-import { handleBrowserChallenge } from "./turnSideEffectsAdapter";
+import { v3PresentationEvent } from "$lib/stream/v3PresentationAdapter";
+import { handlePermissionRequest, handleBrowserChallenge } from "./turnSideEffectsAdapter";
 
 describe("client browser search", () => {
   beforeEach(() => {
@@ -71,5 +72,30 @@ describe("client browser search", () => {
     await vi.waitFor(() => expect(mocks.complete).toHaveBeenCalledWith("failure", {
       worldDriverId: "ios", error: "Browser unavailable",
     }));
+  });
+});
+
+describe("typed external-agent permissions", () => {
+  it("preserves exact provider options from the V3 stream into the permission bar state", () => {
+    const options = [
+      { option_id: "allow-all", name: "Always allow", kind: "allow_always" },
+      { option_id: "deny-once", name: "No thanks", kind: "reject_once" },
+    ];
+    const presentation = v3PresentationEvent({
+      schema_version: 3, turn_id: "turn", seq: 1, emitted_at_utc: "2026-10-23T00:00:00Z",
+      event: { type: "permission_request", request_id: "request", agent_runtime: "pi", agent_session_id: "agent", message: "Choose a permission", permission_options: options },
+    });
+    const host = { permissionAlert: null, messageIdForTurn: () => "message" } as unknown as ChatStoreHost;
+    handlePermissionRequest(host, presentation);
+    expect(host.permissionAlert).toMatchObject({ requestId: "request", agentRuntime: "pi", options });
+  });
+  it("keeps typed stream events from older workshops compatible with Allow/Deny", () => {
+    const presentation = v3PresentationEvent({
+      schema_version: 3, turn_id: "turn", seq: 1, emitted_at_utc: "2026-10-23T00:00:00Z",
+      event: { type: "permission_request", request_id: "old-request", message: "Allow this operation?" },
+    });
+    const host = { permissionAlert: null, messageIdForTurn: () => "message" } as unknown as ChatStoreHost;
+    handlePermissionRequest(host, presentation);
+    expect(host.permissionAlert?.options).toEqual([]);
   });
 });

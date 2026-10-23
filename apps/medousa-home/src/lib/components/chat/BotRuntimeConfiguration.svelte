@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EXTERNAL_AGENTS } from "$lib/utils/externalAgentCatalog";
   import { onMount } from "svelte";
   import { daemonUnary } from "$lib/daemon/contractClient";
   import { executionTargets } from "$lib/stores/executionTargets.svelte";
@@ -71,13 +72,13 @@
 </script>
 
 <div class="configuration">
-  <label>Runs with<select aria-label="Bot runtime" value={runtime} disabled={disabled} onchange={(event) => changeRuntime(event.currentTarget.value as typeof runtime)}><option value="medousa">Medousa</option><option value="codex">Codex</option><option value="cursor">Cursor</option><option value="hermes">Hermes</option></select></label>
+  <label>Runs with<select aria-label="Bot runtime" value={runtime} disabled={disabled} onchange={(event) => changeRuntime(event.currentTarget.value as typeof runtime)}><option value="medousa">Medousa</option>{#each EXTERNAL_AGENTS as agent (agent.id)}<option value={agent.id}>{agent.label}</option>{/each}</select></label>
   {#if runtime !== "medousa"}
     <p>This runtime stays with your Bot. Each request runs in its pinned project.</p>
     <label>Workshop<select aria-label="Bot workshop" value={workshopId} disabled={disabled} onchange={(event) => changeWorkshop(event.currentTarget.value)}><option value="">Choose workshop</option>{#each targets as target (target.runtime_id)}<option value={target.runtime_id}>{target.label}</option>{/each}{#if workshopId && !targets.some((target) => target.runtime_id === workshopId)}<option value={workshopId}>{workshopId}</option>{/if}</select></label>
     <label>Project<select aria-label="Bot project" value={executor?.forge_work_id ?? ""} disabled={disabled || loading} onchange={(event) => chooseProject(event.currentTarget.value)}><option value="">{loading ? "Loading projects…" : "Choose a provisioned project"}</option>{#each projects as project (project.id)}<option value={project.id}>{project.title}</option>{/each}{#if executor?.forge_work_id && !projects.some((project) => project.id === executor?.forge_work_id)}<option value={executor.forge_work_id}>Current project · {executor.forge_work_id}</option>{/if}</select></label>
     {#if !loading && !error && projects.length === 0}<p>Create and provision a project in Code on this workshop, then return here.</p>{/if}
-    {#if unavailable}<p class="error">{unavailable.detail || `${runtime} is unavailable on this workshop. Install it in Settings → Packages.`}</p>{/if}
+    {#if unavailable}<p class="error">{unavailable.detail || `${runtime} is unavailable on this workshop. Configure it on the workshop in Settings → External Agents.`}</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   {/if}
 </div>

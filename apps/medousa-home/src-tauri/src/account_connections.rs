@@ -1,4 +1,5 @@
-//! Settings → External Agents: Codex, Cursor, and Hermes account sign-in.
+//! Local vendor setup actions for the existing Codex, Cursor, and Hermes integrations.
+//! Runtime discovery for all external agents comes from the connected daemon.
 //!
 //! Medousa never holds vendor tokens — login orchestrates the official CLIs
 //! (`codex login`, `cursor agent login` / `agent login`, `hermes acp --setup`), which keep
@@ -11,15 +12,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use crate::daemon::window_request::WorkshopRequest;
 use medousa_types::AgentRuntimeInfo;
 use serde::Serialize;
-use tauri::State;
 use tauri_plugin_opener::open_url;
 
-use crate::daemon::{
-    DaemonState,
-    sdk::{client, sdk_error},
-};
+use crate::daemon::sdk::{client_for_request, sdk_error};
 
 fn codex_command() -> String {
     std::env::var("MEDOUSA_ACP_CODEX_COMMAND").unwrap_or_else(|_| "codex".into())
@@ -251,36 +249,11 @@ fn connection_from_runtime(
     label: &str,
     info: Option<&AgentRuntimeInfo>,
 ) -> AccountConnectionInfo {
-    let command = match id {
-        "chatgpt" => Some(codex_command()),
-        "cursor" => Some(cursor_command()),
-        "hermes" => Some(hermes_command()),
-        _ => None,
-    };
-    let binary_present = info
-        .map(|i| i.binary_present)
-        .unwrap_or_else(|| command.as_deref().map(command_on_path).unwrap_or(false));
-    // Prefer local discovery when the daemon hasn't picked up a just-installed CLI yet.
-    let binary_present = binary_present
-        || command.as_deref().map(command_on_path).unwrap_or(false)
-        || (id == "cursor" && (command_on_path("agent") || command_on_path("cursor-agent")))
-        || (id == "hermes" && (command_on_path("hermes") || command_on_path("hermes-acp")));
-
-    let mut auth_status = info
+    let binary_present = info.map(|i| i.binary_present).unwrap_or(false);
+    let auth_status = info
         .and_then(|i| i.auth_status.clone())
         .unwrap_or_else(|| "unknown".into());
-    let mut detail = info.and_then(|i| i.auth_detail.clone().or(i.detail.clone()));
-
-    // Cursor tokens live in the OS keychain — file probes on the daemon often
-    // lag. Ask the local CLI so External Agents flips to signed-in right after login.
-    if id == "cursor" && auth_status != "signed_in" {
-        if let Some((local_status, local_detail)) = local_cursor_auth_status() {
-            auth_status = local_status;
-            if let Some(local_detail) = local_detail {
-                detail = Some(local_detail);
-            }
-        }
-    }
+    let detail = info.and_then(|i| i.auth_detail.clone().or(i.detail.clone()));
 
     AccountConnectionInfo {
         id: id.to_string(),
@@ -291,61 +264,20 @@ fn connection_from_runtime(
             _ => "cursor".into(),
         },
         binary_present,
-        command: info.and_then(|i| i.command.clone()).or(command),
+        command: info.and_then(|i| i.command.clone()),
         auth_status,
         detail,
     }
 }
 
-/// Run `agent status --format json` locally (tokens are in keychain, not files).
-fn local_cursor_auth_status() -> Option<(String, Option<String>)> {
-    ensure_vendor_cli_path();
-    let program = if command_on_path("agent") {
-        resolve_command_abs("agent")
-    } else if command_on_path("cursor-agent") {
-        resolve_command_abs("cursor-agent")
-    } else {
-        return None;
-    };
-    let output = Command::new(&program)
-        .args(["status", "--format", "json"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    let value: serde_json::Value = serde_json::from_str(text.trim()).ok()?;
-    let authenticated = value
-        .get("isAuthenticated")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-        || value.get("status").and_then(|v| v.as_str()) == Some("authenticated");
-    let message = value
-        .get("message")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
-    if authenticated {
-        Some((
-            "signed_in".into(),
-            message.or_else(|| Some("Cursor CLI reports signed in".into())),
-        ))
-    } else {
-        Some((
-            "signed_out".into(),
-            message.or_else(|| Some("Cursor CLI reports signed out".into())),
-        ))
-    }
-}
-
-/// Probe both accounts (via the daemon agents surface when reachable; falls
-/// back to local binary presence when the engine is down).
+/// Legacy three-account projection of the invoking window's daemon runtime status.
 #[tauri::command]
 pub async fn account_connections_probe(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
 ) -> Result<AccountConnections, String> {
     ensure_vendor_cli_path();
-    let runtimes = client(&state)?
+    let runtimes = client_for_request(&state)
+        .await?
         .agents()
         .list_runtimes()
         .await
@@ -455,10 +387,31 @@ fn wait_with_timeout(
     }
 }
 
+async fn require_local_workshop(state: &WorkshopRequest) -> Result<(), String> {
+    let local = match state.target().await? {
+        crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal => true,
+        crate::active_workshop::ActiveWorkshopTarget::Transport { workshop, .. } => {
+            workshop.kind == "local"
+        }
+    };
+    if local {
+        Ok(())
+    } else {
+        Err(
+            "Configure this agent on the workshop host; local credentials belong to this device"
+                .into(),
+        )
+    }
+}
+
 /// Install the vendor CLI for an account using the official installer.
 /// ChatGPT → Codex; Cursor → Agent CLI; Hermes → Hermes Agent.
 #[tauri::command]
-pub async fn account_cli_install(account: String) -> Result<AccountCliInstallResult, String> {
+pub async fn account_cli_install(
+    state: WorkshopRequest,
+    account: String,
+) -> Result<AccountCliInstallResult, String> {
+    require_local_workshop(&state).await?;
     let (command, label) = match account.as_str() {
         "chatgpt" => (codex_command(), "Codex CLI"),
         "cursor" => (cursor_command(), "Cursor Agent CLI"),
@@ -717,7 +670,10 @@ fn ensure_codex_acp_adapter() -> Result<String, String> {
 /// user code from stdout, open the system browser, and let the process finish
 /// in the background (it polls until the user approves).
 #[tauri::command]
-pub async fn account_chatgpt_begin_device_login() -> Result<DeviceAuthStart, String> {
+pub async fn account_chatgpt_begin_device_login(
+    state: WorkshopRequest,
+) -> Result<DeviceAuthStart, String> {
+    require_local_workshop(&state).await?;
     let command = codex_command();
     if !command_on_path(&command) {
         return Err(format!(
@@ -883,7 +839,11 @@ fn open_terminal_with_login(command: &str, args: &[String]) -> Result<(), String
 /// Fallback / Cursor / Hermes login: run the vendor CLI's interactive login in a
 /// terminal window (browser callback flows need a TTY).
 #[tauri::command]
-pub async fn account_begin_terminal_login(account: String) -> Result<String, String> {
+pub async fn account_begin_terminal_login(
+    state: WorkshopRequest,
+    account: String,
+) -> Result<String, String> {
+    require_local_workshop(&state).await?;
     let (command, args, hint) = match account.as_str() {
         "chatgpt" => {
             let cmd = codex_command();
@@ -931,7 +891,8 @@ pub async fn account_begin_terminal_login(account: String) -> Result<String, Str
 }
 
 #[tauri::command]
-pub async fn account_sign_out(account: String) -> Result<String, String> {
+pub async fn account_sign_out(state: WorkshopRequest, account: String) -> Result<String, String> {
+    require_local_workshop(&state).await?;
     let (command, args) = match account.as_str() {
         "chatgpt" => {
             let cmd = codex_command();
@@ -973,4 +934,39 @@ pub async fn account_sign_out(account: String) -> Result<String, String> {
         .wait()
         .map_err(|err| err.to_string())?;
     Ok("Signed out — refresh status to confirm.".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connection_status_remains_owned_by_the_selected_workshop() {
+        let runtime = AgentRuntimeInfo {
+            runtime: "cursor".into(),
+            available: false,
+            command: Some("/remote/bin/agent".into()),
+            detail: None,
+            uses_native_turns: false,
+            auth_status: Some("signed_out".into()),
+            binary_present: false,
+            auth_detail: Some("Sign in on the workshop host".into()),
+        };
+        let connection = connection_from_runtime("cursor", "Cursor", Some(&runtime));
+        assert!(!connection.binary_present);
+        assert_eq!(connection.auth_status, "signed_out");
+        assert_eq!(connection.command.as_deref(), Some("/remote/bin/agent"));
+        assert_eq!(
+            connection.detail.as_deref(),
+            Some("Sign in on the workshop host")
+        );
+    }
+
+    #[test]
+    fn absent_workshop_status_never_claims_local_installation_or_authentication() {
+        let connection = connection_from_runtime("chatgpt", "ChatGPT", None);
+        assert!(!connection.binary_present);
+        assert_eq!(connection.auth_status, "unknown");
+        assert!(connection.command.is_none());
+    }
 }

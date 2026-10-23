@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { EXTERNAL_AGENTS } from "$lib/utils/externalAgentCatalog";
+  import { activeWorkshopId, isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   /**
    * Settings → External Agents — independent runtime and provider conversation setup.
    * Medousa-owned provider access lives with Models under Medousa Agent.
    */
-  import { onMount } from "svelte";
   import {
     ArrowUpRight,
     Check,
@@ -34,15 +36,16 @@
   let actionError = $state<string | null>(null);
   let waitingFor = $state<AccountId | null>(null);
 
-  onMount(() => {
-    if (isTauriDesktop()) void accountConnections.refresh(true);
+  $effect(() => {
+    activeWorkshopId();
+    untrack(() => { void accountConnections.refresh(); });
   });
 
   const USE_HINT =
     "In Chat, choose the external agent from the runtime control under the composer.";
 
   async function refreshAllConnections() {
-    if (isTauriDesktop()) await accountConnections.refresh(true);
+    await accountConnections.refresh(true);
   }
 
   async function withAction(key: string, fn: () => Promise<string | null>) {
@@ -128,12 +131,9 @@
     layout.navigateDesktop("chat");
   }
 
-  const desktopCli = isTauriDesktop();
-  const supported = $derived(desktopCli);
+  const localSetup = $derived(isTauriDesktop() && isCoLocatedWorkshop());
   const anySignedIn = $derived(
-    accountConnections.isSignedIn("chatgpt") ||
-      accountConnections.isSignedIn("cursor") ||
-      accountConnections.isSignedIn("hermes"),
+    EXTERNAL_AGENTS.some(agent => accountConnections.isSignedIn(agent.account)),
   );
 </script>
 
@@ -151,19 +151,13 @@
       class="workshop-rail-btn shrink-0"
       title="Refresh status"
       aria-label="Refresh status"
-      disabled={!supported || accountConnections.loading || actionBusy != null}
+      disabled={accountConnections.loading || actionBusy != null}
       onclick={() => void refreshAllConnections()}
     >
       <RefreshCw size={15} strokeWidth={1.85} />
     </button>
   </header>
 
-  {#if !supported}
-    <p class="workshop-faint mt-2 text-sm">
-      Codex, Cursor, and Hermes CLI adapters run on desktop workshop hosts.
-      Muse, Grok Bot, and Instinct Agent setup uses the connected workshop below.
-    </p>
-  {:else}
     {#if accountConnections.error}
       <p class="mt-2 flex items-center gap-1.5 text-sm text-content-warning">
         <CircleAlert size={14} strokeWidth={2} />
@@ -172,12 +166,7 @@
     {/if}
 
     <div class="connections-cards mt-3">
-      {#if desktopCli}
-        {#each [
-          { info: accountConnections.connections?.chatgpt, account: "chatgpt" as const, agent: "codex" as const, logoSize: 26, title: "Codex", sub: "Codex runtime · ChatGPT account", cli: "Codex CLI", runtimeLabel: "Codex" },
-          { info: accountConnections.connections?.cursor, account: "cursor" as const, agent: "cursor" as const, logoSize: 20, title: "Cursor", sub: "Cursor coding agent", cli: "Cursor Agent CLI", runtimeLabel: "Cursor" },
-          { info: accountConnections.connections?.hermes, account: "hermes" as const, agent: "hermes" as const, logoSize: 26, title: "Hermes", sub: "Hermes Agent · ACP", cli: "Hermes Agent CLI", runtimeLabel: "Hermes" },
-        ] as card (card.account)}
+        {#each EXTERNAL_AGENTS.map(agent => ({ ...agent, agent: agent.id, info: accountConnections.connection(agent.account), title: agent.label, sub: agent.hint, logoSize: agent.id === "cursor" ? 20 : 26, runtimeLabel: agent.label })) as card (card.account)}
         {@const info = card.info}
         <div class="connections-card" data-account={card.account}>
           <div class="connections-card-head">
@@ -207,15 +196,14 @@
 
           {#if info && !info.binaryPresent}
             <p class="connections-note workshop-faint">
-              {card.cli} isn’t installed yet — Medousa can install it for you with the vendor’s
-              official installer.
+              {card.cli} isn’t available on this workshop. {localSetup && card.setup === "install" ? "Install it with the vendor’s official installer below." : "Install and configure the official CLI on the workshop host, then refresh."}
             </p>
           {:else if waitingFor === card.account}
             <p class="connections-note workshop-faint">
               Finish sign-in in the browser or terminal. This card updates when
               the vendor CLI reports you’re signed in.
             </p>
-          {:else if info?.authStatus === "signed_in"}
+          {:else if info?.authStatus === "signed_in" && info.available !== false}
             <p class="connections-note workshop-faint">
               Ready. In Chat, pick {card.runtimeLabel} from the runtime control under the composer.
             </p>
@@ -226,7 +214,7 @@
           {/if}
 
           <div class="connections-card-actions">
-            {#if info && !info.binaryPresent}
+            {#if localSetup && card.setup === "install" && info && !info.binaryPresent}
               <button
                 type="button"
                 class="btn btn-sm variant-filled-primary"
@@ -236,7 +224,7 @@
                 <Download size={13} strokeWidth={2} />
                 {actionBusy === `${card.account}-install` ? "Installing…" : "Install"}
               </button>
-            {:else if info?.authStatus === "signed_in"}
+            {:else if info?.available && info.authStatus !== "signed_out"}
               <button
                 type="button"
                 class="btn btn-sm variant-filled-primary"
@@ -245,16 +233,16 @@
                 <MessageSquare size={13} strokeWidth={2} />
                 Open Chat
               </button>
-              <button
+              {#if localSetup && card.logout}<button
                 type="button"
                 class="btn btn-sm variant-soft-surface"
                 disabled={actionBusy != null}
                 onclick={() => void signOut(card.account)}
               >
                 <LogOut size={13} strokeWidth={2} />
-                {card.account === "hermes" ? "Reconfigure" : "Sign out"}
-              </button>
-            {:else}
+                {card.logout}
+              </button>{/if}
+            {:else if localSetup && card.login === "login"}
               <button
                 type="button"
                 class="btn btn-sm variant-filled-primary"
@@ -273,11 +261,12 @@
                     ? "Signing in…"
                     : "Sign in"}
               </button>
+            {:else}
+              <p class="workshop-faint text-xs">Configure {card.label} on the workshop host, then refresh. {info?.detail ?? ""}</p>
             {/if}
           </div>
         </div>
         {/each}
-      {/if}
     </div>
 
     {#if anySignedIn && !waitingFor && !actionNote}
@@ -299,7 +288,6 @@
         How coding agents work <ArrowUpRight size={11} strokeWidth={2} />
       </button>
     </p>
-  {/if}
   <div class="connections-cards mt-3">
     {#if !isBrowserWorkshop()}
       <ExternalConversationSettingsCard provider="muse" />

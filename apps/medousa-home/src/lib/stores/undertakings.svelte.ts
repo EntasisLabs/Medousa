@@ -1,3 +1,4 @@
+import { isExternalRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * ActiveUndertakingContext — per Shell tab-group undertaking binding.
  */
@@ -209,7 +210,7 @@ function createUndertakingsStore() {
       if (
         !next.executorKind &&
         next.leaseId &&
-        (prev.executorKind === "codex" || prev.executorKind === "cursor")
+        isExternalRuntime(prev.executorKind)
       ) {
         next.executorKind = prev.executorKind;
       }

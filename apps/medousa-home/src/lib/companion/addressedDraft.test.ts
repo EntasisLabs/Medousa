@@ -1,3 +1,4 @@
+import { EXTERNAL_AGENTS } from "$lib/utils/externalAgentCatalog";
 /** @vitest-environment happy-dom */
 import { beforeEach, expect, it, vi } from "vitest";
 import { loadAddressedDraft, saveAddressedDraft, savedAddress } from "./addressedDraft";
@@ -23,4 +24,9 @@ it("does not turn corrupt addresses into unaddressed messages", () => {
 it("storage failure does not throw through the composer", () => {
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Full"); });
   expect(() => saveAddressedDraft("a", { query: "Keep working", address: null })).not.toThrow();
+});
+
+it.each(EXTERNAL_AGENTS.map(agent => agent.id))("restores %s as a new companion destination", runtime => {
+  saveAddressedDraft("a", { query: "Continue", address: { kind: "new", runtime, sessionId: null, label: runtime } });
+  expect(loadAddressedDraft("a").address).toMatchObject({ runtime, kind: "new" });
 });
