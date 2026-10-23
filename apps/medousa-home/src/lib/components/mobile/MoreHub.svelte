@@ -1,4 +1,6 @@
 <script lang="ts">
+  import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
+  import {loadCreateMobile} from "$lib/runtime/viewLoaders";
   import MapPanel from "$lib/components/context/MapPanel.svelte";
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
@@ -95,6 +97,7 @@
         />
       {:else if layout.moreDestination === "automations"}
         <AutomationsPanel visible={true} embedded={true} mobile={true} {onOpenChat} />
+      {:else if layout.moreDestination === "create"}<LazyFeatureView loader={loadCreateMobile} {visible}/>
       {:else if layout.moreDestination === "code"}
         <MobileCodePanel />
       {:else if layout.moreDestination === "calendar"}

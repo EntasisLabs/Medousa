@@ -121,6 +121,7 @@ fn classify_category(raw: &str) -> TurnFailureCategory {
         || text.contains("incorrect api key")
         || text.contains("authentication")
         || text.contains("unauthorized")
+        || (text.contains("chatgpt") && text.contains("sign-in"))
     {
         return TurnFailureCategory::Auth;
     }
@@ -175,6 +176,10 @@ fn category_is_retryable(category: TurnFailureCategory) -> bool {
 fn operator_message_for(category: TurnFailureCategory, raw: &str) -> String {
     match category {
         TurnFailureCategory::Auth => {
+            if raw.to_ascii_lowercase().contains("chatgpt") {
+                return "Reconnect ChatGPT in Settings → Medousa Agent → Models, then submit a new request."
+                    .into();
+            }
             "The model provider rejected the API key. Check Settings → Models and try again."
                 .to_string()
         }
@@ -231,6 +236,16 @@ mod tests {
         assert!(!failure.retryable);
         assert!(failure.operator_message.contains("another executor"));
         assert!(!failure.operator_message.contains("Try again"));
+    }
+
+    #[test]
+    fn chatgpt_reauthentication_is_actionable_and_not_an_api_key_failure() {
+        let failure =
+            TurnFailure::from_debug("port failure: ChatGPT sign-in must be completed again");
+        assert_eq!(failure.category, TurnFailureCategory::Auth);
+        assert!(!failure.retryable);
+        assert!(failure.operator_message.contains("Reconnect ChatGPT"));
+        assert!(!failure.operator_message.contains("API key"));
     }
 
     #[test]

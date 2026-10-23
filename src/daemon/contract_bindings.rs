@@ -47,6 +47,77 @@ pub(crate) fn stream_spec(transport: StreamTransport, item_name: &str) -> Stream
 
 pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
     Some(match operation_id {
+        "browser.worlds.isolated.by_world_id.design_capture.page.post" => WireBinding { request: None, response: "BrowserDesignPageCapture" },
+        "browser.worlds.isolated.by_world_id.design_capture.post" => WireBinding { request: None, response: "BrowserDesignCapture" },
+        "create.projects.by_id.code_context.post" => WireBinding { request: Some("CreativeCodeContextRequest"), response: "CreativeCodeContext" },
+        "create.projects.by_id.jobs.get" => WireBinding {
+            request: None,
+            response: "CreativeJobListResponse",
+        },
+        "create.projects.by_id.jobs.post" => WireBinding {
+            request: Some("CreativeJobRequest"),
+            response: "CreativeJob",
+        },
+        "create.projects.by_id.jobs.by_job_id.get" => WireBinding {
+            request: None,
+            response: "CreativeJob",
+        },
+        "create.projects.by_id.jobs.by_job_id.decision.post" => WireBinding {
+            request: Some("CreativeProposalDecision"),
+            response: "CreativeJob",
+        },
+        "create.projects.by_id.context.post" => WireBinding {
+            request: Some("CreativeContextRequest"),
+            response: "CreativeSelectionContext",
+        },
+        "create.projects.get" => WireBinding {
+            request: None,
+            response: "CreativeListResponse",
+        },
+        "create.projects.post" => WireBinding {
+            request: Some("CreativeCreateRequest"),
+            response: "CreativeDocument",
+        },
+        "create.projects.by_id.get" => WireBinding {
+            request: None,
+            response: "CreativeMutationResponse",
+        },
+        "create.projects.by_id.transactions.post" => WireBinding {
+            request: Some("CreativeTransaction"),
+            response: "CreativeMutationResponse",
+        },
+        "create.projects.by_id.history.post" => WireBinding {
+            request: Some("CreativeHistoryRequest"),
+            response: "CreativeMutationResponse",
+        },
+        "create.projects.by_id.delete.post" => WireBinding {
+            request: Some("CreativeDeleteRequest"),
+            response: "CreativeDeleteResponse",
+        },
+        "create.projects.by_id.assets.post" => WireBinding {
+            request: Some("CreativeAssetImportRequest"),
+            response: "CreativeAsset",
+        },
+        "create.projects.by_id.assets.by_asset_id.get" => WireBinding {
+            request: None,
+            response: "CreativeAssetData",
+        },
+        "create.projects.by_id.promote_media.post" => WireBinding {
+            request: Some("CreativePromoteMediaRequest"),
+            response: "CreativeAsset",
+        },
+        "create.projects.by_id.proposals.get" => WireBinding {
+            request: None,
+            response: "CreativeProposalListResponse",
+        },
+        "create.projects.by_id.proposals.post" => WireBinding {
+            request: Some("CreativeProposalRequest"),
+            response: "CreativeProposal",
+        },
+        "create.projects.by_id.proposals.by_proposal_id.decision.post" => WireBinding {
+            request: Some("CreativeProposalDecision"),
+            response: "CreativeMutationResponse",
+        },
         "reviews.providers.get" => WireBinding {
             request: None,
             response: "ReviewProviderListResponse",

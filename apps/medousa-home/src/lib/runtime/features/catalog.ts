@@ -37,6 +37,7 @@ export const FEATURE_CATALOG: readonly FeatureDescriptor[] = [
     requiredCapabilities: [],
     preload: "intent",
   },
+  { id: "create", destinations: ["create"], clientPlatforms: ["desktop", "mobile"], requiredCapabilities: [], preload: "intent" },
   {
     id: "browser",
     destinations: ["web"],

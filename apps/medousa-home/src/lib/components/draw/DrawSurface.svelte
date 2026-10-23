@@ -7,15 +7,11 @@
     encodeDrawDocument,
     type DrawBrushKind,
     type DrawDocument,
-    type DrawPoint,
-    type DrawStroke,
   } from "$lib/draw/drawDocument";
   import {
     createDrawCamera,
     fitDrawCamera,
-    panDrawCamera,
     resizeDrawCamera,
-    viewToScene,
     zoomDrawCameraAt,
     type DrawCamera,
     type DrawVector,
@@ -26,16 +22,10 @@
     eraseDrawDocumentByPath,
     moveDrawStroke,
     selectDrawStrokesInLasso,
-    simplifyDrawPoints,
     topDrawStrokeAt,
   } from "$lib/draw/drawGeometry";
   import { applyDrawPatch, createDrawPatch, type DrawPatch } from "$lib/draw/drawHistory";
-  import {
-    coalescedPointerSamples,
-    drawInputKind,
-    drawPointFromPointer,
-    shouldDrawWithPointer,
-  } from "$lib/draw/drawInput";
+  import { createDrawInteraction, type DrawInteractionState, type DrawTool as Tool, type DrawEraserMode as EraserMode } from "$lib/draw/drawInteraction";
   import { randomUuid } from "$lib/utils/randomUuid";
   import { onDestroy, onMount, untrack } from "svelte";
 
@@ -57,51 +47,6 @@
     mobileToolbar = false,
   }: Props = $props();
 
-  type Tool = "ink" | "eraser" | "select" | "hand";
-  type EraserMode = "partial" | "stroke";
-
-  type InkGesture = {
-    kind: "ink";
-    pointerId: number;
-    pointerType: string;
-    startedAt: number;
-    stroke: DrawStroke;
-  };
-  type EraseGesture = {
-    kind: "erase";
-    pointerId: number;
-    pointerType: string;
-    base: DrawDocument;
-    path: DrawVector[];
-  };
-  type LassoGesture = {
-    kind: "lasso";
-    pointerId: number;
-    pointerType: string;
-    path: DrawVector[];
-  };
-  type MoveGesture = {
-    kind: "move";
-    pointerId: number;
-    pointerType: string;
-    base: DrawDocument;
-    start: DrawVector;
-  };
-  type PanGesture = {
-    kind: "pan";
-    pointerId: number;
-    pointerType: string;
-    lastView: DrawVector;
-  };
-  type DrawGesture = InkGesture | EraseGesture | LassoGesture | MoveGesture | PanGesture;
-
-  type PinchGesture = {
-    ids: [number, number];
-    startCamera: DrawCamera;
-    startCenter: DrawVector;
-    startDistance: number;
-  };
-
   const DRAW_CHANGE_SETTLE_MS = 650;
 
   let scene = $state.raw<DrawDocument>(untrack(() => cloneDrawDocument(document)));
@@ -116,29 +61,24 @@
   let optionsOpen = $state(false);
   let camera = $state.raw<DrawCamera>(createDrawCamera());
   let viewport = $state.raw({ width: 1200, height: 720 });
-  let gesture = $state.raw<DrawGesture | null>(null);
-  let pinch = $state.raw<PinchGesture | null>(null);
+  let interactionState = $state.raw<DrawInteractionState>({activeStroke:null, lassoPath:[], cursor:null, active:false, pinching:false});
   let selectedIds = $state.raw<string[]>([]);
-  let cursorScene = $state.raw<DrawVector | null>(null);
+  const cursorScene = $derived(interactionState.cursor);
   let undoStack = $state.raw<DrawPatch[]>([]);
   let redoStack = $state.raw<DrawPatch[]>([]);
   let svgEl = $state<SVGSVGElement | null>(null);
   let stageEl = $state<HTMLDivElement | null>(null);
   let toolbarEl = $state<ReturnType<typeof DrawToolbar> | null>(null);
 
-  const touchPointers = new Map<number, DrawVector>();
-  const penPointers = new Set<number>();
-  let pendingInkPoints: DrawPoint[] = [];
-  let inkFrame = 0;
-  let lastPenActivity = Number.NEGATIVE_INFINITY;
   let pendingScene: DrawDocument | null = null;
   let changeTimer: ReturnType<typeof setTimeout> | null = null;
   let persistenceHeld = false;
 
   const selectedStrokes = $derived(scene.strokes.filter((stroke) => selectedIds.includes(stroke.id)));
   const selectionBounds = $derived(combinedDrawBounds(selectedStrokes));
-  const activeStroke = $derived(gesture?.kind === "ink" ? gesture.stroke : null);
-  const lassoPath = $derived(gesture?.kind === "lasso" ? gesture.path : []);
+  const interacting = $derived(interactionState.active || interactionState.pinching);
+  const activeStroke = $derived(interactionState.activeStroke);
+  const lassoPath = $derived(interactionState.lassoPath);
   const zoomLabel = $derived(`${Math.round(camera.zoom * 100)}%`);
 
   $effect(() => {
@@ -148,7 +88,7 @@
       observedExternalFingerprint = fingerprint;
       return;
     }
-    if (gesture != null || pinch != null || pendingScene != null) return;
+    if (interacting || pendingScene != null) return;
     observedExternalFingerprint = fingerprint;
     scene = cloneDrawDocument(document);
     syncedFingerprint = fingerprint;
@@ -159,7 +99,7 @@
   });
 
   onDestroy(() => {
-    if (inkFrame) cancelAnimationFrame(inkFrame);
+    interaction.destroy();
     flushSceneEmission(true);
     setPersistenceHold(false);
   });
@@ -198,20 +138,9 @@
     return { x: point.x, y: point.y };
   }
 
-  function scenePointFromEvent(event: PointerEvent, startedAt: number): DrawPoint | null {
-    return drawPointFromPointer(
-      event,
-      (clientX, clientY) => {
-        const view = viewPointFromClient(clientX, clientY);
-        return view ? viewToScene(camera, view) : null;
-      },
-      startedAt,
-    );
-  }
-
-  function capturePointer(event: PointerEvent) {
+  function capturePointer(pointerId: number) {
     try {
-      stageEl?.setPointerCapture(event.pointerId);
+      stageEl?.setPointerCapture(pointerId);
     } catch {
       // Some mobile webviews reject capture while still delivering the gesture.
     }
@@ -240,7 +169,7 @@
   }
 
   function releasePersistenceIfIdle() {
-    if (gesture == null && pinch == null && pendingScene == null) setPersistenceHold(false);
+    if (!interaction.active && pendingScene == null) setPersistenceHold(false);
   }
 
   function flushSceneEmission(force = false) {
@@ -248,7 +177,7 @@
       clearTimeout(changeTimer);
       changeTimer = null;
     }
-    if (!force && (gesture != null || pinch != null)) {
+    if (!force && interacting) {
       changeTimer = setTimeout(() => {
         changeTimer = null;
         flushSceneEmission();
@@ -293,287 +222,20 @@
     tool = "ink";
   }
 
-  function appendInkPoints(points: DrawPoint[]) {
-    if (gesture?.kind !== "ink" || points.length === 0) return;
-    const current = gesture.stroke.points;
-    const next = [...current];
-    for (const point of points) {
-      const last = next[next.length - 1];
-      if (!last || Math.hypot(point.x - last.x, point.y - last.y) >= 0.35 / camera.zoom) {
-        next.push(point);
-      }
-    }
-    gesture = { ...gesture, stroke: { ...gesture.stroke, points: next } };
-  }
-
-  function flushInkPoints() {
-    if (inkFrame) cancelAnimationFrame(inkFrame);
-    inkFrame = 0;
-    const points = pendingInkPoints;
-    pendingInkPoints = [];
-    appendInkPoints(points);
-  }
-
-  function queueInkPoints(points: DrawPoint[]) {
-    pendingInkPoints.push(...points);
-    if (inkFrame) return;
-    inkFrame = requestAnimationFrame(() => {
-      inkFrame = 0;
-      const pending = pendingInkPoints;
-      pendingInkPoints = [];
-      appendInkPoints(pending);
-    });
-  }
-
-  function erasePreview(base: DrawDocument, path: DrawVector[]): DrawDocument {
-    const radius = Math.max(8, size * 1.1) / camera.zoom;
-    return eraseDrawDocumentByPath(base, path, radius, eraserMode);
-  }
-
-  function startPinch() {
-    const entries = [...touchPointers.entries()].slice(0, 2);
-    if (entries.length < 2) return;
-    if (gesture?.pointerType === "touch") {
-      if (gesture.kind === "erase" || gesture.kind === "move") scene = gesture.base;
-      gesture = null;
-      pendingInkPoints = [];
-    }
-    const [first, second] = entries;
-    pinch = {
-      ids: [first[0], second[0]],
-      startCamera: { ...camera },
-      startCenter: { x: (first[1].x + second[1].x) / 2, y: (first[1].y + second[1].y) / 2 },
-      startDistance: Math.max(1, Math.hypot(second[1].x - first[1].x, second[1].y - first[1].y)),
-    };
-  }
-
-  function updatePinch() {
-    if (!pinch) return;
-    const first = touchPointers.get(pinch.ids[0]);
-    const second = touchPointers.get(pinch.ids[1]);
-    if (!first || !second) return;
-    const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
-    const currentDistance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
-    const zoomed = zoomDrawCameraAt(
-      pinch.startCamera,
-      pinch.startCenter,
-      pinch.startCamera.zoom * (currentDistance / pinch.startDistance),
-    );
-    camera = panDrawCamera(zoomed, {
-      x: center.x - pinch.startCenter.x,
-      y: center.y - pinch.startCenter.y,
-    });
-  }
-
-  function beginGesture(event: PointerEvent) {
-    if (!editable || event.button !== 0) return;
-    const view = viewPointFromClient(event.clientX, event.clientY);
-    if (!view) return;
-    event.preventDefault();
-    event.stopPropagation();
-    focusStage();
-    capturePointer(event);
-    toolbarEl?.activateMobileControls();
-    setPersistenceHold(true);
-
-    if (event.pointerType === "pen") {
-      penPointers.add(event.pointerId);
-      lastPenActivity = event.timeStamp;
-    }
-    if (event.pointerType === "touch") {
-      if (penPointers.size > 0 || event.timeStamp - lastPenActivity < 650) {
-        releasePointer(event.pointerId);
-        releasePersistenceIfIdle();
-        return;
-      }
-      touchPointers.set(event.pointerId, view);
-      if (touchPointers.size >= 2) {
-        startPinch();
-        return;
-      }
-    }
-    if (pinch) return;
-
-    const scenePoint = viewToScene(camera, view);
-    if (tool === "hand" || (event.pointerType === "touch" && !fingerDraw)) {
-      gesture = { kind: "pan", pointerId: event.pointerId, pointerType: event.pointerType, lastView: view };
-      return;
-    }
-
-    if (tool === "select") {
-      const hit = topDrawStrokeAt(scene.strokes, scenePoint, 8 / camera.zoom);
-      if (hit) {
-        if (!selectedIds.includes(hit.id)) selectedIds = [hit.id];
-        gesture = {
-          kind: "move",
-          pointerId: event.pointerId,
-          pointerType: event.pointerType,
-          base: scene,
-          start: scenePoint,
-        };
-      } else {
-        selectedIds = [];
-        gesture = { kind: "lasso", pointerId: event.pointerId, pointerType: event.pointerType, path: [scenePoint] };
-      }
-      return;
-    }
-
-    if (tool === "eraser") {
-      const base = scene;
-      gesture = {
-        kind: "erase",
-        pointerId: event.pointerId,
-        pointerType: event.pointerType,
-        base,
-        path: [scenePoint],
-      };
-      scene = erasePreview(base, [scenePoint]);
-      return;
-    }
-
-    if (!shouldDrawWithPointer(event.pointerType, fingerDraw, penPointers.size > 0 && event.pointerType !== "pen")) {
-      releasePersistenceIfIdle();
-      return;
-    }
-    const point = scenePointFromEvent(event, event.timeStamp);
-    if (!point) {
-      releasePersistenceIfIdle();
-      return;
-    }
-    gesture = {
-      kind: "ink",
-      pointerId: event.pointerId,
-      pointerType: event.pointerType,
-      startedAt: event.timeStamp,
-      stroke: {
-        id: randomUuid(),
-        color,
-        input: drawInputKind(event.pointerType),
-        brush: createDrawBrush(brushKind, size / camera.zoom),
-        points: [point],
-      },
-    };
-  }
-
-  function continueGesture(event: PointerEvent) {
-    const view = viewPointFromClient(event.clientX, event.clientY);
-    if (!view) return;
-    cursorScene = viewToScene(camera, view);
-    if (event.pointerType === "pen") lastPenActivity = event.timeStamp;
-    if (event.pointerType === "touch") {
-      touchPointers.set(event.pointerId, view);
-      if (pinch) {
-        event.preventDefault();
-        event.stopPropagation();
-        updatePinch();
-        return;
-      }
-    }
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (gesture.kind === "pan") {
-      camera = panDrawCamera(camera, { x: view.x - gesture.lastView.x, y: view.y - gesture.lastView.y });
-      gesture = { ...gesture, lastView: view };
-      return;
-    }
-
-    if (gesture.kind === "ink") {
-      const points = coalescedPointerSamples(event)
-        .map((sample) => scenePointFromEvent(sample, gesture!.kind === "ink" ? gesture!.startedAt : event.timeStamp))
-        .filter((point): point is DrawPoint => point != null);
-      queueInkPoints(points);
-      return;
-    }
-
-    const scenePoint = viewToScene(camera, view);
-    if (gesture.kind === "erase") {
-      const previous = gesture.path[gesture.path.length - 1];
-      const points = coalescedPointerSamples(event).flatMap((sample) => {
-        const sampleView = viewPointFromClient(sample.clientX, sample.clientY);
-        return sampleView ? [viewToScene(camera, sampleView)] : [];
-      });
-      const segment = [previous, ...points];
-      gesture = { ...gesture, path: [...gesture.path, ...points] };
-      scene = erasePreview(scene, segment);
-      return;
-    }
-    if (gesture.kind === "lasso") {
-      const last = gesture.path[gesture.path.length - 1];
-      if (Math.hypot(scenePoint.x - last.x, scenePoint.y - last.y) >= 2 / camera.zoom) {
-        gesture = { ...gesture, path: [...gesture.path, scenePoint] };
-      }
-      return;
-    }
-    if (gesture.kind === "move") {
-      const delta = { x: scenePoint.x - gesture.start.x, y: scenePoint.y - gesture.start.y };
-      scene = {
-        ...gesture.base,
-        strokes: gesture.base.strokes.map((stroke) =>
-          selectedIds.includes(stroke.id) ? moveDrawStroke(stroke, delta) : stroke,
-        ),
-      };
-    }
-  }
-
-  function finishGesture(event: PointerEvent) {
-    if (event.pointerType === "touch") touchPointers.delete(event.pointerId);
-    if (event.pointerType === "pen") penPointers.delete(event.pointerId);
-    if (pinch) {
-      if (pinch.ids.includes(event.pointerId) && touchPointers.size === 0) pinch = null;
-      releasePointer(event.pointerId);
-      releasePersistenceIfIdle();
-      return;
-    }
-    if (!gesture || gesture.pointerId !== event.pointerId) {
-      releasePointer(event.pointerId);
-      releasePersistenceIfIdle();
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    const completed = gesture;
-
-    if (completed.kind === "ink") {
-      flushInkPoints();
-      const finalStroke = gesture?.kind === "ink" ? gesture.stroke : completed.stroke;
-      gesture = null;
-      const simplified = { ...finalStroke, points: simplifyDrawPoints(finalStroke.points) };
-      const base = scene;
-      commitScene(base, { ...base, strokes: [...base.strokes, simplified] }, "Draw stroke");
-      releasePointer(event.pointerId);
-      return;
-    }
-
-    gesture = null;
-    if (completed.kind === "erase") {
-      commitScene(completed.base, scene, eraserMode === "partial" ? "Erase ink" : "Erase strokes");
-    } else if (completed.kind === "move") {
-      commitScene(completed.base, scene, "Move selection");
-    } else if (completed.kind === "lasso") {
-      selectedIds = selectDrawStrokesInLasso(scene.strokes, completed.path);
-    }
-    releasePointer(event.pointerId);
-    releasePersistenceIfIdle();
-  }
-
-  function cancelGesture(event: PointerEvent) {
-    if (event.pointerType === "touch") touchPointers.delete(event.pointerId);
-    if (event.pointerType === "pen") penPointers.delete(event.pointerId);
-    if (pinch?.ids.includes(event.pointerId) && touchPointers.size === 0) pinch = null;
-    if (!gesture || gesture.pointerId !== event.pointerId) {
-      releasePersistenceIfIdle();
-      return;
-    }
-    if (gesture.kind === "erase" || gesture.kind === "move") scene = gesture.base;
-    gesture = null;
-    pendingInkPoints = [];
-    if (inkFrame) cancelAnimationFrame(inkFrame);
-    inkFrame = 0;
-    releasePersistenceIfIdle();
-  }
-
+  const interaction = createDrawInteraction<DrawDocument>({
+    editable:()=>editable, tool:()=>tool, camera:()=>camera, setCamera:next=>camera=next,
+    viewPoint:viewPointFromClient, scene:()=>scene, preview:next=>scene=next, commit:commitScene,
+    addStroke:(base,stroke)=>({...base,strokes:[...base.strokes,stroke]}),
+    erase:eraseDrawDocumentByPath,
+    move:(base,ids,delta)=>({...base,strokes:base.strokes.map(stroke=>ids.includes(stroke.id)?moveDrawStroke(stroke,delta):stroke)}),
+    hit:(base,point,padding)=>topDrawStrokeAt(base.strokes,point,padding)?.id??null,
+    lasso:(base,path)=>selectDrawStrokesInLasso(base.strokes,path),
+    selected:()=>selectedIds, select:ids=>selectedIds=ids,
+    brush:()=>({kind:brushKind,size,color}), size:()=>size, eraserMode:()=>eraserMode, fingerDraw:()=>fingerDraw,
+    capture:capturePointer, release:releasePointer, focus:focusStage,
+    update:next=>interactionState=next,
+    activate:()=>{toolbarEl?.activateMobileControls();setPersistenceHold(true)}, idle:releasePersistenceIfIdle,
+  });
   function undo() {
     if (!editable || undoStack.length === 0) return;
     const patch = undoStack[undoStack.length - 1];
@@ -646,25 +308,6 @@
     }
   }
 
-  function handleWheel(event: WheelEvent) {
-    if (!editable) return;
-    const anchor = viewPointFromClient(event.clientX, event.clientY);
-    if (!anchor) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.ctrlKey || event.metaKey) {
-      camera = zoomDrawCameraAt(camera, anchor, camera.zoom * Math.exp(-event.deltaY * 0.008));
-    } else {
-      const translated = viewPointFromClient(
-        event.clientX - event.deltaX,
-        event.clientY - event.deltaY,
-      );
-      camera = panDrawCamera(camera, translated
-        ? { x: translated.x - anchor.x, y: translated.y - anchor.y }
-        : { x: -event.deltaX, y: -event.deltaY });
-    }
-  }
-
   function handleKeydown(event: KeyboardEvent) {
     if (!editable) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
@@ -678,7 +321,7 @@
       deleteSelection();
     } else if (event.key === "Escape") {
       selectedIds = [];
-      gesture = null;
+      interaction.cancel();
     } else if (event.key === "+" || event.key === "=") {
       event.preventDefault();
       zoomBy(1.2);
@@ -690,7 +333,7 @@
 
   export function applyDocument(next: DrawDocument) {
     const fingerprint = encodeDrawDocument(next);
-    if (fingerprint === syncedFingerprint || gesture != null || pinch != null || pendingScene != null) return;
+    if (fingerprint === syncedFingerprint || interacting || pendingScene != null) return;
     scene = cloneDrawDocument(next);
     syncedFingerprint = fingerprint;
     observedExternalFingerprint = fingerprint;
@@ -739,13 +382,13 @@
     aria-label={editable ? "Editable drawing canvas" : "Drawing"}
     role={editable ? "application" : "img"}
     tabindex={editable ? 0 : -1}
-    onpointerdown={beginGesture}
-    onpointermove={continueGesture}
-    onpointerup={finishGesture}
-    onpointercancel={cancelGesture}
-    onlostpointercapture={cancelGesture}
-    onpointerleave={() => (cursorScene = null)}
-    onwheel={handleWheel}
+    onpointerdown={interaction.begin}
+    onpointermove={interaction.move}
+    onpointerup={interaction.finish}
+    onpointercancel={interaction.cancel}
+    onlostpointercapture={interaction.cancel}
+    onpointerleave={() => interaction.leave()}
+    onwheel={interaction.wheel}
     onkeydown={handleKeydown}
     oncontextmenu={suppressNativeGesture}
     onselectstart={suppressNativeGesture}

@@ -603,7 +603,13 @@ async fn handle_ws(
                     None => {}
                 }
             }
-            _ = exit_poll.tick(), if session.exited() => {
+            _ = exit_poll.tick() => {
+                // Always poll: exited is an atomic flag, not a wakeable future.
+                // Gating this timer on the flag can leave an idle socket asleep
+                // forever when a command exits without another output chunk.
+                if !session.exited() {
+                    continue;
+                }
                 // The child wait may win the race with the PTY reader. Replay
                 // the final retained chunks before publishing terminal state.
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -757,6 +763,80 @@ mod tests {
             forge_root: Some(root.join("forge")),
             ssh_root: Some(root.join("ssh")),
         })
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn silent_process_exit_reaches_attached_clients_without_more_output() {
+        use crate::session::SessionRootKind;
+        use futures_util::StreamExt;
+        use serde_json::Value;
+        use tokio_tungstenite::tungstenite::Message as ClientMessage;
+        let root = tempfile::tempdir().unwrap();
+        let scripts = root.path().join("scripts");
+        tokio::fs::create_dir_all(&scripts).await.unwrap();
+        let host = state(root.path());
+        let session = host
+            .manager
+            .create_command_with_size(
+                SessionRootKind::Scripts,
+                Some(scripts.clone()),
+                None,
+                vec![
+                    "/bin/sh".into(),
+                    "-c".into(),
+                    "while [ ! -f exit-gate ]; do sleep 0.01; done; exit 7".into(),
+                ],
+                80,
+                24,
+            )
+            .await
+            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = super::app(host.clone());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let (mut socket, _) = tokio_tungstenite::connect_async(format!(
+            "ws://{address}/v1/sessions/shell/{}",
+            session.meta.session_id
+        ))
+        .await
+        .unwrap();
+        let ready = socket.next().await.unwrap().unwrap();
+        let ClientMessage::Text(ready) = ready else {
+            panic!("expected attach ready");
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(&ready).unwrap()["type"],
+            "ready"
+        );
+        assert!(!session.exited());
+        // Let the socket enter its idle select before the child exits. No stdout,
+        // stdin, or socket disconnect is allowed to wake it up afterward.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::fs::write(scripts.join("exit-gate"), b"exit")
+            .await
+            .unwrap();
+        let exit = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let ClientMessage::Text(text) = socket.next().await.unwrap().unwrap() else {
+                    continue;
+                };
+                let frame: Value = serde_json::from_str(&text).unwrap();
+                if frame["type"] == "exit" {
+                    break frame;
+                }
+            }
+        })
+        .await;
+        host.manager.destroy(&session.meta.session_id).await;
+        server.abort();
+        assert_eq!(
+            exit.expect("silent child exit must reach the client")["exit_code"],
+            7
+        );
     }
 
     #[test]

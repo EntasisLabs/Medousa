@@ -173,6 +173,7 @@ describe("shellTabs store", () => {
     });
     layoutState.desktopSurface = "chat";
     layoutState.focusDesktopSurface.mockClear();
+    layoutState.openShellSidebarView.mockClear();
     lmeState.tabs = [];
     lmeState.activeTabId = null;
     lmeState.activateTab.mockClear();
@@ -890,6 +891,33 @@ describe("shellTabs store", () => {
     if (shellTabs.activeTab?.kind === "chat") {
       expect(shellTabs.activeTab.sessionId).toBe("session-b");
     }
+  });
+
+  it("keeps creative project identity scoped and the browser distinct from project tabs", async () => {
+    const {shellTabs} = await loadShellTabs();
+    const one = shellTabs.openCreative("same-doc", "one", {title:"One"});
+    const duplicate = shellTabs.openCreative("same-doc", "one", {title:"Renamed"});
+    expect(duplicate).toBe(one);
+    expect(shellTabs.tabs.find(tab => tab.id === one)?.title).toBe("Renamed");
+    const two = shellTabs.openCreative("same-doc", "two", {title:"Two"});
+    expect(two).not.toBe(one);
+    shellTabs.openSurface("create");
+    expect(shellTabs.activeTab).toMatchObject({kind:"surface",surfaceId:"create"});
+    expect(shellTabs.tabs.filter(tab => tab.kind === "create")).toHaveLength(2);
+    expect(layoutState.focusDesktopSurface).toHaveBeenCalledWith("create");
+    expect(layoutState.openShellSidebarView).not.toHaveBeenCalled();
+  });
+
+  it("does not reopen the Create project rail when opening, switching, or restoring canvas tabs", async () => {
+    const { shellTabs } = await loadShellTabs();
+    const canvas = shellTabs.openCreative("canvas", "workshop", { title: "Canvas" });
+    expect(canvas).toBeTruthy();
+    expect(layoutState.focusDesktopSurface).toHaveBeenLastCalledWith("create");
+    shellTabs.openChat("session-a");
+    await shellTabs.activate(canvas!);
+    await shellTabs.activate(canvas!, { rehydrate: true });
+    shellTabs.openCreative("canvas", "workshop");
+    expect(layoutState.openShellSidebarView).not.toHaveBeenCalled();
   });
 
   it("moves a tab between panes", async () => {

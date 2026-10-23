@@ -3,6 +3,7 @@ import { isBrowserWorkshop } from "$lib/platform";
 import { runBrowserGrapheme } from "$lib/wasm/browserDaemon";
 import { browserPortalActive, portalOperation } from "$lib/wasm/browserPortal";
 import { OPERATIONS, type OperationId } from "./generatedOps";
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
 
 export { OPERATIONS, type OperationId } from "./generatedOps";
 
@@ -12,7 +13,11 @@ export async function daemonUnary<T>(
   body?: unknown,
   executionRuntimeId?: string | null,
   query?: Record<string, string>,
+  workshopScopeId?: string,
 ): Promise<T> {
+  if (isBrowserWorkshop() && workshopScopeId && workshopScopeId !== activeWorkshopId()) {
+    throw new Error("The project's workshop is no longer active");
+  }
   const operation = OPERATIONS[id];
   if (operation.streaming) {
     throw new Error(`use daemonStreamStart for ${id}`);
@@ -36,6 +41,7 @@ export async function daemonUnary<T>(
     body,
     executionRuntimeId: executionRuntimeId?.trim() || null,
     query,
+    ...(workshopScopeId ? { workshopScopeId } : {}),
   });
 }
 

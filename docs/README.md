@@ -53,6 +53,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Web in Medousa](guides/web-in-medousa.md) | Choose a workshop or device browser, take control, and keep identities separate |
 | [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for addressed conversations, approvals, notes, Web, and views |
+| [Create](guides/create.md) | Editable creative projects, contextual AI proposals, and image exports |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
 | [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
 | [Coding runtimes](guides/coding-runtimes.md) | Choose a preferred coder, ordered fallbacks, and follow assigned work |
@@ -104,6 +105,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Calendar](engine/calendar.md) | Personal `.ics` API + cognition calendar tools |
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
 | [Review providers](engine/review-providers.md) | Optional repository-host packages and the unified hosted-review API |
+- [Creative document service](engine/creative-workspace.md) — project persistence, assets, transactions and proposal contracts (including the Create canvas UI).
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
 | [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
 | [Work scopes and relationships](engine/work-units.md) | Durable user-domain intent, resource links, actor-bound inboxes, and correlated provider evidence through existing runtime tools |

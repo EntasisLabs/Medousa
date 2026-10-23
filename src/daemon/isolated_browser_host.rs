@@ -5,6 +5,9 @@
 //! profile identity, process ownership, control state, and the concrete driver
 //! id remain explicit and durable until the owner cleans the world up.
 
+mod design_capture;
+mod recovery;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -114,6 +117,8 @@ pub struct CreateIsolatedBrowserWorldRequest {
     pub initial_url: Option<String>,
     #[serde(default = "default_headless")]
     pub headless: bool,
+    #[serde(default = "default_headless")]
+    pub view_attached: bool,
 }
 
 fn default_headless() -> bool {
@@ -415,6 +420,7 @@ impl IsolatedBrowserHost {
                     | IsolatedBrowserRunState::Paused
             ) {
                 world.run_state = IsolatedBrowserRunState::Stopped;
+                world.view_attached = false;
                 world.failure = Some(RESTART_RECOVERY_FAILURE.to_string());
                 world.tab_id = None;
                 world.updated_at_ms = now;
@@ -509,7 +515,7 @@ impl IsolatedBrowserHost {
             run_state: IsolatedBrowserRunState::Starting,
             control: BrowserControl::Agent,
             control_epoch: 1,
-            view_attached: true,
+            view_attached: request.view_attached,
             headless: request.headless,
             url: initial_url,
             title: String::new(),
@@ -544,17 +550,23 @@ impl IsolatedBrowserHost {
         self.refresh_exited_processes().await;
 
         match action {
-            IsolatedBrowserLifecycleAction::Resume => {
+            IsolatedBrowserLifecycleAction::Resume | IsolatedBrowserLifecycleAction::Takeover => {
                 let snapshot = self.get(owner_profile_id, world_id).await?;
                 ensure_authoritative_world(&snapshot)?;
-                self.return_authoritative_control(&snapshot)?;
+                let control = if matches!(action, IsolatedBrowserLifecycleAction::Takeover) {
+                    self.take_authoritative_control(&snapshot)?;
+                    BrowserControl::User
+                } else {
+                    self.return_authoritative_control(&snapshot)?;
+                    BrowserControl::Agent
+                };
                 let needs_launch = {
                     let mut state = self.state.lock().await;
                     let runtime_exists = state.runtimes.contains_key(world_id);
                     let world = owned_world_mut(&mut state, owner_profile_id, world_id)?;
                     match world.run_state {
                         IsolatedBrowserRunState::Running => {
-                            world.control = BrowserControl::Agent;
+                            world.control = control;
                             world.control_epoch = world.control_epoch.saturating_add(1);
                             world.failure = None;
                             world.updated_at_ms = now_ms();
@@ -562,19 +574,19 @@ impl IsolatedBrowserHost {
                         }
                         IsolatedBrowserRunState::Paused if runtime_exists => {
                             world.run_state = IsolatedBrowserRunState::Running;
-                            world.control = BrowserControl::Agent;
+                            world.control = control;
                             world.control_epoch = world.control_epoch.saturating_add(1);
                             world.failure = None;
                             world.updated_at_ms = now_ms();
                             TabGroupManager::set_control(
                                 &world.tab_group_id,
-                                BrowserControl::Agent,
+                                control,
                             );
                             false
                         }
                         _ => {
                             world.run_state = IsolatedBrowserRunState::Starting;
-                            world.control = BrowserControl::Agent;
+                            world.control = control;
                             world.control_epoch = world.control_epoch.saturating_add(1);
                             world.failure = None;
                             world.updated_at_ms = now_ms();
@@ -582,6 +594,7 @@ impl IsolatedBrowserHost {
                         }
                     }
                 };
+                TabGroupManager::set_control(&snapshot.tab_group_id, control);
                 self.persist().await?;
                 if needs_launch && let Err(error) = self.launch_world(world_id).await {
                     self.mark_failed(world_id, error.to_string()).await;
@@ -590,12 +603,10 @@ impl IsolatedBrowserHost {
                 }
             }
             IsolatedBrowserLifecycleAction::Pause
-            | IsolatedBrowserLifecycleAction::Takeover
             | IsolatedBrowserLifecycleAction::ReturnToAgent
             | IsolatedBrowserLifecycleAction::AttachView
             | IsolatedBrowserLifecycleAction::DetachView => {
                 let mut state = self.state.lock().await;
-                let runtime_exists = state.runtimes.contains_key(world_id);
                 let world = owned_world_mut(&mut state, owner_profile_id, world_id)?;
                 match action {
                     IsolatedBrowserLifecycleAction::Pause => {
@@ -609,16 +620,6 @@ impl IsolatedBrowserHost {
                         }
                         self.take_authoritative_control(world)?;
                         world.run_state = IsolatedBrowserRunState::Paused;
-                        world.control_epoch = world.control_epoch.saturating_add(1);
-                    }
-                    IsolatedBrowserLifecycleAction::Takeover => {
-                        if !runtime_exists {
-                            return Err(IsolatedBrowserError::Conflict(
-                                "isolated browser is not running".to_string(),
-                            ));
-                        }
-                        self.take_authoritative_control(world)?;
-                        world.control = BrowserControl::User;
                         world.control_epoch = world.control_epoch.saturating_add(1);
                     }
                     IsolatedBrowserLifecycleAction::ReturnToAgent => {
@@ -635,6 +636,7 @@ impl IsolatedBrowserHost {
                     IsolatedBrowserLifecycleAction::AttachView => world.view_attached = true,
                     IsolatedBrowserLifecycleAction::DetachView => world.view_attached = false,
                     IsolatedBrowserLifecycleAction::Resume
+                    | IsolatedBrowserLifecycleAction::Takeover
                     | IsolatedBrowserLifecycleAction::Stop => unreachable!(),
                 }
                 TabGroupManager::set_control(&world.tab_group_id, world.control);
@@ -1312,6 +1314,7 @@ impl IsolatedBrowserHost {
         tokio::fs::create_dir_all(&profile_dir)
             .await
             .map_err(|error| store_error("create isolated browser profile", error))?;
+        recovery::release_orphaned_profile(&profile_dir, &binary).await?;
         let active_port_path = profile_dir.join("DevToolsActivePort");
         match tokio::fs::remove_file(&active_port_path).await {
             Ok(()) => {}
@@ -1354,7 +1357,7 @@ impl IsolatedBrowserHost {
             }
         };
         TabGroupManager::ensure_group(&world.tab_group_id, world.driver.driver_id.as_str());
-        TabGroupManager::set_control(&world.tab_group_id, BrowserControl::Agent);
+        TabGroupManager::set_control(&world.tab_group_id, world.control);
         let target_id = match create_page_target(&websocket_url, &world.url).await {
             Ok(target_id) => target_id,
             Err(error) => {
@@ -1366,7 +1369,11 @@ impl IsolatedBrowserHost {
             &world.tab_group_id,
             &world.url,
             None,
-            TabOpenedBy::Agent,
+            if world.control == BrowserControl::User {
+                TabOpenedBy::User
+            } else {
+                TabOpenedBy::Agent
+            },
         )
         .ok_or_else(|| {
             IsolatedBrowserError::Store("isolated browser tab group disappeared".to_string())
@@ -1378,7 +1385,7 @@ impl IsolatedBrowserHost {
         })?;
         current.tab_id = Some(page.id);
         current.run_state = IsolatedBrowserRunState::Running;
-        current.control = BrowserControl::Agent;
+        current.control = world.control;
         current.failure = None;
         current.updated_at_ms = now_ms();
         state.runtimes.insert(
@@ -3104,6 +3111,7 @@ mod tests {
                     profile: Some(IsolatedBrowserProfile::Ephemeral),
                     initial_url: Some("about:blank".to_string()),
                     headless: true,
+                    view_attached: true,
                 },
             )
             .await
@@ -3319,6 +3327,39 @@ mod tests {
                     .as_deref()
                     .is_some_and(|value| value.contains(" Home"))
         }));
+        evaluate(&mut connection, &session_id, Some(context_id), r##"document.body.innerHTML = '<section style="background:#f1e6cf;border:2px solid #735b31;border-radius:12px;padding:24px"><h1 style="font:700 24px Arial;color:oklch(50% 0.15 150)">Hello design</h1><input type="password" value="never-copy-this"><svg width="32" height="32"><circle cx="16" cy="16" r="12" fill="red"/></svg></section>'; true"##.to_string()).await.unwrap();
+        let (design, _, pixels) = host.capture_design(&owner, &world.world_id).await.unwrap();
+        assert!(pixels.byte_size > 0);
+        let scene: medousa_types::CreativeScene = serde_json::from_value(design["scene"].clone()).unwrap();
+        assert!(scene.nodes.iter().any(|node| matches!(&node.content, medousa_types::CreativeContent::Text { text, .. } if text.contains("Hello design"))));
+        assert!(scene.nodes.iter().any(|node| matches!(&node.content, medousa_types::CreativeContent::Text { text, color, .. } if text.contains("Hello design") && color != "transparent")));
+        assert!(scene.nodes.iter().any(|node| node.appearance.as_ref().is_some_and(|a| a.corner_radius == 12.)));
+        assert!(!design["scene"].to_string().contains("never-copy-this"));
+        assert_eq!(design["raster_regions"].as_array().unwrap().len(), 1);
+        assert!(host.capture_design("another-owner", &world.world_id).await.is_err());
+        evaluate(&mut connection, &session_id, Some(context_id), r##"document.body.innerHTML = '<header style="position:fixed;top:0">Pinned nav</header><main style="height:1750px"><h1 style="font:500 40px Georgia;letter-spacing:-2px">Software that <i style="color:rgb(167,68,45)">keeps promises.</i></h1><p style="position:absolute;top:900px">Middle section</p><p style="position:absolute;top:1600px">Last section</p></main>'; window.scrollTo(0, 100); true"##.into()).await.unwrap();
+        let before_page = host.observe(&owner, &world.world_id, None, 1024).await.unwrap();
+        let slices = host.capture_page_design(&owner, &world.world_id).await.unwrap();
+        assert!(slices.len() >= 3);
+        let mut end = 0;
+        for (raw, observation, screenshot, clip_top, height, page_y) in slices {
+            assert_eq!(page_y, end); end += height;
+            assert!(clip_top + height <= observation.viewport.height);
+            let capture = crate::browser_handlers::design_capture_response(&world.world_id, raw, observation, screenshot).unwrap();
+            if page_y == 0 {
+                let text = capture.scene.nodes.iter().find(|n| matches!(&n.content, medousa_types::CreativeContent::Text{text,..} if text.contains("Software that"))).unwrap();
+                let layout = text.text_layout.as_ref().unwrap();
+                assert_eq!(layout.letter_spacing, Some(-2.));
+                assert!(layout.spans.iter().any(|s| s.font_style == Some(medousa_types::CreativeFontStyle::Italic)));
+            } else { assert!(!capture.scene.nodes.iter().any(|n| matches!(&n.content, medousa_types::CreativeContent::Text{text,..} if text.contains("Pinned nav")))); }
+        }
+        assert_eq!(host.observe(&owner, &world.world_id, None, 1024).await.unwrap().viewport.scroll_y, before_page.viewport.scroll_y);
+        if let Ok(url) = std::env::var("MEDOUSA_TEST_CREATE_URL") {
+            host.navigate(&owner, &world.world_id, &url).await.unwrap();
+            let slices = host.capture_page_design(&owner, &world.world_id).await.unwrap().into_iter().map(|(raw, observation, screenshot, clip_top, height, page_y)| medousa_types::BrowserDesignSlice { capture: crate::browser_handlers::design_capture_response(&world.world_id,raw,observation,screenshot).unwrap(), clip_top,height,page_y }).collect();
+            let result=medousa_types::BrowserDesignPageCapture{slices};
+            tokio::fs::write(std::env::temp_dir().join("medousa-create-page-trial.json"),serde_json::to_vec(&result).unwrap()).await.unwrap();
+        }
         let detached = host
             .lifecycle(
                 &owner,

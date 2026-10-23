@@ -16,6 +16,34 @@ OUT = ROOT / "apps" / "medousa-home" / "src" / "lib" / "types" / "generated" / "
 # Stream + session types TypeScript surfaces rely on for contract parity.
 # Nested $ref targets (MediaRef, ContextUsageReport, …) are resolved automatically.
 EXPORTED_TYPES = [
+    "BrowserDesignCapture",
+    "BrowserDesignPageCapture",
+    "CreativeCodeContext",
+    "CreativeCodeContextRequest",
+    "CreativeDocument",
+    "CreativeJob",
+    "CreativeJobRequest",
+    "CreativeJobListResponse",
+    "CreativeContextRequest",
+    "CreativeSelectionContext",
+    "CreativeCreateRequest",
+    "CreativeMutationResponse",
+    "CreativeTransaction",
+    "CreativeHistoryRequest",
+    "CreativeListQuery",
+    "CreativeListResponse",
+    "CreativeAsset",
+    "CreativeAssetImportRequest",
+    "CreativeAssetData",
+    "CreativePromoteMediaRequest",
+    "CreativeProposal",
+    "CreativeProposalRequest",
+    "CreativeProposalDecision",
+    "CreativeProposalListResponse",
+    "CreativeDocumentRef",
+    "CreativeDeleteRequest",
+    "CreativeDeleteResponse",
+
     "ReviewProviderListResponse",
     "ReviewProviderQuery",
     "ReviewProviderMutation",
@@ -183,7 +211,8 @@ def ts_type(schema: dict, defs: dict) -> str:
     if t == "object":
         props = schema.get("properties") or {}
         if not props:
-            return "Record<string, unknown>"
+            additional = schema.get("additionalProperties", True)
+            return f"Record<string, {ts_type(additional, defs)}>"
         required = set(schema.get("required", []))
         fields = []
         for prop, prop_schema in props.items():

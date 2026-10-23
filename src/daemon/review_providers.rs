@@ -446,120 +446,6 @@ pub(super) async fn dispatch(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn read_write_and_account_administration_are_distinct_routes() {
-        let surface = surface();
-        let capability = |path| {
-            surface
-                .inventory()
-                .entries()
-                .find(|entry| entry.path == path)
-                .unwrap()
-                .required_capability
-        };
-        assert_eq!(capability("/v1/reviews/query"), Some("content.read"));
-        assert_eq!(capability("/v1/reviews/mutate"), Some("content.write"));
-        assert_eq!(capability("/v1/reviews/auth"), Some("admin.runtime"));
-        let write = serde_json::json!({"provider_id":"example","host":"example.test","request":{"operation":"publish","repository":"group/repo","head":"feature","base":"main","title":"Title","body":"","draft":true,"update_existing":false}});
-        assert!(serde_json::from_value::<ReviewProviderQuery>(write.clone()).is_err());
-        assert!(serde_json::from_value::<ReviewProviderMutation>(write).is_ok());
-    }
-    #[test]
-    fn identity_validation_is_provider_neutral() {
-        let mut query = ReviewProviderQuery {
-            provider_id: "example_host".into(),
-            host: "git.example.test".into(),
-            connection_id: None,
-            request: ReviewProviderOperation::Get {
-                review: HostedReviewRef {
-                    provider_id: "example_host".into(),
-                    host: "git.example.test".into(),
-                    repository: "group/subgroup/repo".into(),
-                    native_id: "opaque-native-id".into(),
-                },
-            },
-        };
-        assert!(validate_query(&query).is_ok());
-        query.host = "different.example.test".into();
-        assert!(validate_query(&query).is_err());
-        query.host = "--hostname evil".into();
-        assert!(validate_query(&query).is_err());
-    }
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn discovers_and_invokes_an_independent_non_github_package() {
-        use std::os::unix::fs::PermissionsExt;
-        let temp = tempfile::tempdir().unwrap();
-        let binary = temp.path().join("medousa_review_example");
-        std::fs::write(&binary, r#"#!/bin/sh
-if [ "$1" = "--describe" ]; then
-  printf '%s' '{"protocol_version":1,"id":"example","label":"Example","hosts":["git.example.test"],"operations":["connection_status"]}'
-else
-  cat >/dev/null
-  printf '%s' '{"protocol_version":1,"outcome":{"status":"success","result":{"kind":"connection","authenticated":true,"account":"example-user","message":"Connected"}}}'
-fi
-"#).unwrap();
-        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let execution = ForgeExecutionService::new();
-        let found = binaries(&execution, vec![temp.path().into()])
-            .await
-            .unwrap();
-        assert_eq!(found, vec![binary.clone()]);
-        let output = package_call(
-            &execution,
-            binary.clone(),
-            "--describe",
-            vec![],
-            Duration::from_secs(2),
-            4096,
-        )
-        .await
-        .unwrap();
-        let descriptor: ReviewProviderDescriptor = serde_json::from_slice(&output).unwrap();
-        assert_eq!(descriptor.id, "example");
-        let output = package_call(
-            &execution,
-            binary.clone(),
-            "--invoke",
-            b"{}".to_vec(),
-            Duration::from_secs(2),
-            4096,
-        )
-        .await
-        .unwrap();
-        let response: ReviewProviderResponse = serde_json::from_slice(&output).unwrap();
-        assert!(matches!(
-            response.outcome,
-            ReviewProviderOutcome::Success { .. }
-        ));
-        // Two normal review reads must fit concurrently. An 8 MiB capture
-        // ceiling is not an 8 MiB queued payload for each tiny request.
-        let (first, second) = tokio::join!(
-            package_call(
-                &execution,
-                binary.clone(),
-                "--invoke",
-                b"{}".to_vec(),
-                Duration::from_secs(2),
-                MAX_OUTPUT
-            ),
-            package_call(
-                &execution,
-                binary,
-                "--invoke",
-                b"{}".to_vec(),
-                Duration::from_secs(2),
-                MAX_OUTPUT
-            ),
-        );
-        assert!(first.is_ok());
-        assert!(second.is_ok());
-    }
-}
-
 async fn installed(
     execution: &ForgeExecutionService,
     id: &str,
@@ -840,5 +726,119 @@ pub(super) async fn repository_target(
             ReviewProviderErrorCode::ProviderError,
             "The package returned an invalid repository identity.",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn read_write_and_account_administration_are_distinct_routes() {
+        let surface = surface();
+        let capability = |path| {
+            surface
+                .inventory()
+                .entries()
+                .find(|entry| entry.path == path)
+                .unwrap()
+                .required_capability
+        };
+        assert_eq!(capability("/v1/reviews/query"), Some("content.read"));
+        assert_eq!(capability("/v1/reviews/mutate"), Some("content.write"));
+        assert_eq!(capability("/v1/reviews/auth"), Some("admin.runtime"));
+        let write = serde_json::json!({"provider_id":"example","host":"example.test","request":{"operation":"publish","repository":"group/repo","head":"feature","base":"main","title":"Title","body":"","draft":true,"update_existing":false}});
+        assert!(serde_json::from_value::<ReviewProviderQuery>(write.clone()).is_err());
+        assert!(serde_json::from_value::<ReviewProviderMutation>(write).is_ok());
+    }
+    #[test]
+    fn identity_validation_is_provider_neutral() {
+        let mut query = ReviewProviderQuery {
+            provider_id: "example_host".into(),
+            host: "git.example.test".into(),
+            connection_id: None,
+            request: ReviewProviderOperation::Get {
+                review: HostedReviewRef {
+                    provider_id: "example_host".into(),
+                    host: "git.example.test".into(),
+                    repository: "group/subgroup/repo".into(),
+                    native_id: "opaque-native-id".into(),
+                },
+            },
+        };
+        assert!(validate_query(&query).is_ok());
+        query.host = "different.example.test".into();
+        assert!(validate_query(&query).is_err());
+        query.host = "--hostname evil".into();
+        assert!(validate_query(&query).is_err());
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discovers_and_invokes_an_independent_non_github_package() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let binary = temp.path().join("medousa_review_example");
+        std::fs::write(&binary, r#"#!/bin/sh
+if [ "$1" = "--describe" ]; then
+  printf '%s' '{"protocol_version":1,"id":"example","label":"Example","hosts":["git.example.test"],"operations":["connection_status"]}'
+else
+  cat >/dev/null
+  printf '%s' '{"protocol_version":1,"outcome":{"status":"success","result":{"kind":"connection","authenticated":true,"account":"example-user","message":"Connected"}}}'
+fi
+"#).unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let execution = ForgeExecutionService::new();
+        let found = binaries(&execution, vec![temp.path().into()])
+            .await
+            .unwrap();
+        assert_eq!(found, vec![binary.clone()]);
+        let output = package_call(
+            &execution,
+            binary.clone(),
+            "--describe",
+            vec![],
+            Duration::from_secs(2),
+            4096,
+        )
+        .await
+        .unwrap();
+        let descriptor: ReviewProviderDescriptor = serde_json::from_slice(&output).unwrap();
+        assert_eq!(descriptor.id, "example");
+        let output = package_call(
+            &execution,
+            binary.clone(),
+            "--invoke",
+            b"{}".to_vec(),
+            Duration::from_secs(2),
+            4096,
+        )
+        .await
+        .unwrap();
+        let response: ReviewProviderResponse = serde_json::from_slice(&output).unwrap();
+        assert!(matches!(
+            response.outcome,
+            ReviewProviderOutcome::Success { .. }
+        ));
+        // Two normal review reads must fit concurrently. An 8 MiB capture
+        // ceiling is not an 8 MiB queued payload for each tiny request.
+        let (first, second) = tokio::join!(
+            package_call(
+                &execution,
+                binary.clone(),
+                "--invoke",
+                b"{}".to_vec(),
+                Duration::from_secs(2),
+                MAX_OUTPUT
+            ),
+            package_call(
+                &execution,
+                binary,
+                "--invoke",
+                b"{}".to_vec(),
+                Duration::from_secs(2),
+                MAX_OUTPUT
+            ),
+        );
+        assert!(first.is_ok());
+        assert!(second.is_ok());
     }
 }

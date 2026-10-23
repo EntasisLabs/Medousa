@@ -335,3 +335,9 @@ export const loadAutomationsRunList = catalogLoader(
   "automations-run-list",
   () => import("$lib/components/automations/AutomationsRunList.svelte"),
 );
+
+export const loadCreatePanel = catalogLoader(
+  "create", "panel", () => import("$lib/components/create/CreatePanel.svelte"),
+);
+
+export const loadCreateMobile = catalogLoader("create", "mobile", () => import("$lib/components/create/CreateMobile.svelte"));

@@ -241,7 +241,7 @@
         <RefreshCw size={22} />
         <strong>Workshop browser stopped</strong>
         <span>{world.failure || "The browser process exited."}</span>
-        <button type="button" class="btn btn-sm variant-soft-primary" onclick={() => void governedBrowser.selectWorld(world.world_id)}>
+        <button type="button" class="btn btn-sm variant-soft-primary" onclick={() => void governedBrowser.takeControl()}>
           Start again
         </button>
       </div>
@@ -249,7 +249,7 @@
       <div class="isolated-browser-empty">
         <RefreshCw size={22} />
         <strong>Workshop browser is {world.run_state}</strong>
-        <button type="button" class="btn btn-sm variant-soft-primary" onclick={() => void governedBrowser.selectWorld(world.world_id)}>
+        <button type="button" class="btn btn-sm variant-soft-primary" onclick={() => void governedBrowser.takeControl()}>
           Resume
         </button>
       </div>

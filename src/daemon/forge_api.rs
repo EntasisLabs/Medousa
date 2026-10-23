@@ -4,6 +4,7 @@
 //! (material memory). Forge owns custody of intentional work episodes.
 
 mod chat_git;
+mod task_utf8;
 
 use std::ffi::OsStr;
 use std::io::Read as _;
@@ -7659,6 +7660,9 @@ fn parse_output_locations_with_matcher(
             .and_then(|idx| captures.get(usize::from(idx)))
             .map(|m| m.as_str().chars().take(300).collect())
             .unwrap_or_else(|| line_text.trim().chars().take(300).collect());
+        if raw.contains("://") {
+            continue;
+        }
         let path = std::path::Path::new(raw.trim());
         let Some(path) = normalize_output_path(repository_root, working_root, path) else {
             continue;
@@ -7780,8 +7784,12 @@ async fn publish_task_state(run_id: &str, state: &str, result: Option<ProjectTas
         return;
     };
     let mut store = handle.store.lock().await;
-    // Readiness must not clobber cancel/terminal states.
-    if state == "ready" && store.run.state != "running" {
+    // Completed evidence is final. A late cancel request or readiness update
+    // must never resurrect a run after its process has already exited.
+    if task_run_is_terminal(&store.run)
+        || (state == "ready" && store.run.state != "running")
+        || (state == "stopping" && store.run.state == "cancelled")
+    {
         return;
     }
     store.run.state = state.to_owned();
@@ -7831,31 +7839,35 @@ async fn pump_task_stream(
 ) {
     use tokio::io::AsyncReadExt;
     let mut buf = [0u8; 4096];
+    let mut decoder = task_utf8::TaskUtf8::default();
     loop {
         match reader.read(&mut buf).await {
             Ok(0) => break,
             Ok(n) => {
-                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let text = decoder.push(&buf[..n]);
                 publish_task_output(&run_id, stream_name, &text).await;
             }
             Err(_) => break,
         }
     }
+    publish_task_output(&run_id, stream_name, &decoder.finish()).await;
 }
 
 async fn pump_task_stderr(run_id: String, mut reader: tokio::process::ChildStderr) {
     use tokio::io::AsyncReadExt;
     let mut buf = [0u8; 4096];
+    let mut decoder = task_utf8::TaskUtf8::default();
     loop {
         match reader.read(&mut buf).await {
             Ok(0) => break,
             Ok(n) => {
-                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let text = decoder.push(&buf[..n]);
                 publish_task_output(&run_id, "stderr", &text).await;
             }
             Err(_) => break,
         }
     }
+    publish_task_output(&run_id, "stderr", &decoder.finish()).await;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7956,6 +7968,7 @@ async fn pump_project_task_session(
 
     let started = std::time::Instant::now();
     let mut after_sequence = 0_u64;
+    let mut decoder = task_utf8::TaskUtf8::default();
     loop {
         let host = state.shell_sessions.clone().unwrap_or_default();
         let info = crate::daemon::shell_session_host::ensure_shell_session_host(&host).await;
@@ -8002,7 +8015,7 @@ async fn pump_project_task_session(
                     if let Some(encoded) = frame.get("data").and_then(serde_json::Value::as_str)
                         && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded)
                     {
-                        publish_task_output(&run_id, "stdout", &String::from_utf8_lossy(&bytes))
+                        publish_task_output(&run_id, "stdout", &decoder.push(&bytes))
                             .await;
                     }
                 }
@@ -8014,16 +8027,14 @@ async fn pump_project_task_session(
                     }
                 }
                 Some("exit") => {
-                    exited = frame
-                        .get("exit_code")
-                        .and_then(serde_json::Value::as_i64)
-                        .and_then(|code| i32::try_from(code).ok());
+                    exited = project_task_session_exit(&frame);
                     break;
                 }
                 _ => {}
             }
         }
-        if exited.is_some() {
+        if let Some(exit_code) = exited {
+            publish_task_output(&run_id, "stdout", &decoder.finish()).await;
             finish_project_task_run(
                 state,
                 item,
@@ -8033,7 +8044,7 @@ async fn pump_project_task_session(
                 task,
                 run_id,
                 started,
-                exited,
+                exit_code,
             )
             .await;
             return;
@@ -8046,6 +8057,17 @@ async fn pump_project_task_session(
         }
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
+}
+
+/// An exit event is terminal even when the host could not obtain an exit code.
+/// Absence of a status must not be confused with a process that is still alive.
+fn project_task_session_exit(frame: &serde_json::Value) -> Option<Option<i32>> {
+    (frame.get("type").and_then(serde_json::Value::as_str) == Some("exit")).then(|| {
+        frame
+            .get("exit_code")
+            .and_then(serde_json::Value::as_i64)
+            .and_then(|code| i32::try_from(code).ok())
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -9213,6 +9235,9 @@ fn parse_output_locations(
                 token.trim_matches(|ch: char| matches!(ch, '(' | ')' | '[' | ']' | ',' | ':'))
             })
             .find(|token| {
+                if token.contains("://") {
+                    return false;
+                }
                 let mut parts = token.rsplitn(3, ':');
                 parts.next().is_some_and(|part| part.parse::<u32>().is_ok())
                     && parts
@@ -9777,14 +9802,12 @@ async fn cancel_project_task_run(
     Path((work_id, run_id)): Path<(String, String)>,
     Query(query): Query<CancelProjectTaskRunQuery>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
-    if project_task_run_snapshot(&run_id)
+    let snapshot = project_task_run_snapshot(&run_id)
         .await
-        .is_none_or(|run| run.work_id != work_id)
-    {
-        return Err(request_error(
-            StatusCode::NOT_FOUND,
-            "Project run was not found",
-        ));
+        .filter(|run| run.work_id == work_id)
+        .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
+    if task_run_is_terminal(&snapshot) {
+        return Ok(Json(snapshot));
     }
     let process = PROJECT_TASK_PROCESSES
         .read()
@@ -9792,7 +9815,15 @@ async fn cancel_project_task_run(
         .get(&run_id)
         .cloned()
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run is no longer active"))?;
-    match process.as_ref() {
+    // Record intent before signalling: a fast process can publish its exit
+    // while the signal HTTP request is still returning from the session host.
+    publish_task_state(
+        &run_id,
+        if query.force { "cancelled" } else { "stopping" },
+        None,
+    )
+    .await;
+    let signalled = match process.as_ref() {
         ProjectTaskProcess::Child(child) => {
             let mut child = child.lock().await;
             signal_project_child(&mut child, query.force).map_err(|err| {
@@ -9800,7 +9831,7 @@ async fn cancel_project_task_run(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Could not stop project run: {err}"),
                 )
-            })?;
+            })
         }
         ProjectTaskProcess::Session { session_id } => {
             crate::daemon::shell_session_host::signal_project_task_session(
@@ -9809,15 +9840,17 @@ async fn cancel_project_task_run(
                 if query.force { "kill" } else { "interrupt" },
             )
             .await
-            .map_err(|(status, message)| request_error(status, message))?;
+            .map_err(|(status, message)| request_error(status, message))
         }
+    };
+    if let Err(error) = signalled {
+        if let Some(run) = project_task_run_snapshot(&run_id).await
+            && task_run_is_terminal(&run)
+        {
+            return Ok(Json(run));
+        }
+        return Err(error);
     }
-    publish_task_state(
-        &run_id,
-        if query.force { "cancelled" } else { "stopping" },
-        None,
-    )
-    .await;
     let run = project_task_run_snapshot(&run_id)
         .await
         .filter(|run| run.work_id == work_id)
@@ -12304,6 +12337,44 @@ mod source_tests {
         assert!(PROJECT_TASK_EVICTED_COUNT.load(Ordering::Relaxed) > evicted_before);
     }
 
+    #[tokio::test]
+    async fn completed_task_cannot_return_to_stopping_after_cancel_acknowledgement() {
+        let id = format!("stop-race-{}", uuid::Uuid::new_v4());
+        let handle = test_project_task_handle(&id, None);
+        PROJECT_TASK_RUNS
+            .write()
+            .await
+            .insert(id.clone(), handle.clone());
+        publish_task_state(&id, "stopping", None).await;
+        let task = handle.store.lock().await.run.task.clone();
+        publish_task_state(
+            &id,
+            "cancelled",
+            Some(ProjectTaskResult {
+                task,
+                success: false,
+                exit_code: Some(130),
+                stdout: "stopped".into(),
+                stderr: String::new(),
+                truncated: false,
+                duration_ms: 100,
+                locations: Vec::new(),
+            }),
+        )
+        .await;
+        let completed = project_task_run_snapshot(&id).await.unwrap();
+        // Signal acknowledgements/readiness can race the final process result.
+        publish_task_state(&id, "stopping", None).await;
+        publish_task_state(&id, "ready", None).await;
+        publish_task_state(&id, "cancelled", None).await;
+        let retained = project_task_run_snapshot(&id).await.unwrap();
+        PROJECT_TASK_RUNS.write().await.remove(&id);
+        assert_eq!(retained.state, "cancelled");
+        assert!(task_run_is_terminal(&retained));
+        assert_eq!(retained.next_seq, completed.next_seq);
+        assert_eq!(retained.result.unwrap().stdout, "stopped");
+    }
+
     #[test]
     fn task_run_terminal_requires_final_result_after_cancel() {
         let task = ProjectTask {
@@ -12451,8 +12522,31 @@ mod source_tests {
     }
 
     #[test]
+    fn session_exit_does_not_require_a_numeric_status() {
+        assert_eq!(
+            project_task_session_exit(&serde_json::json!({ "type": "stdout" })),
+            None
+        );
+        assert_eq!(
+            project_task_session_exit(&serde_json::json!({ "type": "exit", "exit_code": null })),
+            Some(None)
+        );
+        assert_eq!(
+            project_task_session_exit(&serde_json::json!({ "type": "exit", "exit_code": 0 })),
+            Some(Some(0))
+        );
+        assert_eq!(
+            project_task_session_exit(&serde_json::json!({ "type": "exit", "exit_code": 130 })),
+            Some(Some(130))
+        );
+    }
+
+    #[test]
     fn readiness_and_matcher_patterns_parse_incremental_output() {
         let root = PathBuf::from("/work/project");
+        assert!(parse_output_locations(&root, &root,
+            "- Local: http://localhost:3000\n- Network: http://10.27.27.135:3000"
+        ).is_empty());
         let matcher = (
             regex::Regex::new(r"^(.*):(\d+):(\d+):\s+(.*)$").unwrap(),
             ProjectProblemPattern {

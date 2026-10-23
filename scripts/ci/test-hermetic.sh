@@ -3,6 +3,7 @@
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${repo_root}"
+bash scripts/ci/check-native-binary.sh
 
 export MEDOUSA_TEST_HERMETIC=1
 export CARGO_TERM_COLOR=never

@@ -144,6 +144,10 @@ pub async fn note_stream_event(
     }
     drop(guard);
     #[cfg(feature = "full-daemon")]
+    if terminal {
+        crate::creative_jobs::observe_phase(turn_id, next.as_str()).await;
+    }
+    #[cfg(feature = "full-daemon")]
     if terminal && turn_id.starts_with("agent_message_") {
         crate::agent_messaging::observe_delivery_phase(turn_id, next.as_str()).await;
     }
@@ -160,6 +164,9 @@ pub async fn mark_cancelled(registry: &TurnTicketRegistry, turn_id: &str) {
         let session_id = ticket.session_id.clone();
         guard.interactive_by_session.remove(&session_id);
     }
+    drop(guard);
+    #[cfg(feature = "full-daemon")]
+    crate::creative_jobs::observe_phase(turn_id, "cancelled").await;
 }
 
 pub async fn clear_turn(registry: &TurnTicketRegistry, turn_id: &str) {
@@ -173,6 +180,18 @@ pub async fn clear_turn(registry: &TurnTicketRegistry, turn_id: &str) {
         }
         phase
     };
+    #[cfg(feature = "full-daemon")]
+    if let Some(phase) = phase {
+        crate::creative_jobs::observe_phase(
+            turn_id,
+            if phase.terminal() {
+                phase.as_str()
+            } else {
+                "interrupted"
+            },
+        )
+        .await;
+    }
     #[cfg(feature = "full-daemon")]
     if let Some(phase) = phase
         && turn_id.starts_with("agent_message_")

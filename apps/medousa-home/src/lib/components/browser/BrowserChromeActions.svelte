@@ -8,9 +8,13 @@
     RefreshCw,
     RotateCcw,
     Search,
+    Scan,
     Star,
     Undo2,
   } from "@lucide/svelte";
+  import CreatePageImport from "$lib/components/create/CreatePageImport.svelte";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
+  import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import BrowserPopover from "$lib/components/browser/BrowserPopover.svelte";
   import BrowserSavedSheet from "$lib/components/browser/BrowserSavedSheet.svelte";
   import { browser } from "$lib/stores/browser.svelte";
@@ -42,6 +46,7 @@
 
   let { mobile = false, onMobileToast, onReload }: Props = $props();
 
+  let importOpen = $state(false);
   let saving = $state(false);
   let savedOpen = $state(false);
   let menuOpen = $state(false);
@@ -241,6 +246,9 @@
       <ExternalLink size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Open in browser</span>
     </button>
+    <button type="button" class="browser-popover-row" disabled={!canAct || !/^https?:/i.test(pageUrl)} onclick={() => { closeMenu(); importOpen = true; }}>
+      <Scan size={16} class="shrink-0 text-content-tertiary"/><span class="text-sm text-surface-50">Import into Create</span>
+    </button>
     <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
       <Search size={16} class="shrink-0 text-content-tertiary" />
       <span class="text-sm text-surface-50">Find in page</span>
@@ -368,6 +376,9 @@
         <ExternalLink size={16} class="shrink-0 text-content-tertiary" />
         <span class="text-sm text-surface-50">Open in default browser</span>
       </button>
+      <button type="button" class="browser-popover-row" disabled={!canAct || !/^https?:/i.test(pageUrl)} onclick={() => { closeMenu(); importOpen = true; }}>
+        <Scan size={16} class="shrink-0 text-content-tertiary"/><span class="text-sm text-surface-50">Import into Create</span>
+      </button>
       <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
         <Search size={16} class="shrink-0 text-content-tertiary" />
         <span class="text-sm text-surface-50">Find in page</span>
@@ -408,3 +419,4 @@
     />
   </div>
 {/if}
+{#if importOpen}<CreatePageImport scope={activeWorkshopId()} bind:open={importOpen} initialUrl={pageUrl} onimport={doc => shellTabs.openCreative(doc.id, activeWorkshopId(), { title: doc.title })}/>{/if}

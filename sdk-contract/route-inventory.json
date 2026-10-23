@@ -935,6 +935,38 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.design_capture.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/design-capture",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.design_capture.page.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/design-capture/page",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 49152,
       "bootstrap_public": false,
       "browser_policy": "exact_origin",
@@ -1813,6 +1845,294 @@
       "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "create.projects.get",
+      "path": "/v1/create/projects",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 8454144,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.post",
+      "path": "/v1/create/projects",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "create.projects.by_id.get",
+      "path": "/v1/create/projects/{id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 34953558,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.assets.post",
+      "path": "/v1/create/projects/{id}/assets",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "create.projects.by_id.assets.by_asset_id.get",
+      "path": "/v1/create/projects/{id}/assets/{asset_id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 4096,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.code_context.post",
+      "path": "/v1/create/projects/{id}/code-context",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 131072,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.context.post",
+      "path": "/v1/create/projects/{id}/context",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.delete.post",
+      "path": "/v1/create/projects/{id}/delete",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.history.post",
+      "path": "/v1/create/projects/{id}/history",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "create.projects.by_id.jobs.get",
+      "path": "/v1/create/projects/{id}/jobs",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.jobs.post",
+      "path": "/v1/create/projects/{id}/jobs",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "create.projects.by_id.jobs.by_job_id.get",
+      "path": "/v1/create/projects/{id}/jobs/{job_id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.jobs.by_job_id.decision.post",
+      "path": "/v1/create/projects/{id}/jobs/{job_id}/decision",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 4096,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.promote_media.post",
+      "path": "/v1/create/projects/{id}/promote-media",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "create.projects.by_id.proposals.get",
+      "path": "/v1/create/projects/{id}/proposals",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 2097152,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.proposals.post",
+      "path": "/v1/create/projects/{id}/proposals",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.proposals.by_proposal_id.decision.post",
+      "path": "/v1/create/projects/{id}/proposals/{proposal_id}/decision",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 8454144,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "create.projects.by_id.transactions.post",
+      "path": "/v1/create/projects/{id}/transactions",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
     },
     {
       "body_limit": 1048576,

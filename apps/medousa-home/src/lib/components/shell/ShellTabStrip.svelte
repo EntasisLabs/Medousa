@@ -1,5 +1,5 @@
 <script lang="ts">
-  import {
+  import { PenTool,
     Bot,
     CalendarClock,
     ChevronLeft,
@@ -43,6 +43,7 @@
   let canScrollRight = $state(false);
 
   function iconFor(tab: ShellTab) {
+    if (tab.kind === "create") return PenTool;
     if (tab.kind === "chat") return MessageSquare;
     if (tab.kind === "web") return Globe;
     if (tab.kind === "surface") return tab.surfaceId === "reviews" ? GitPullRequestArrow : LayoutGrid;

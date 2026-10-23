@@ -66,7 +66,7 @@ pub fn persist_user_media(
     mime: &str,
     label: Option<&str>,
 ) -> Result<MediaUploadResponse, String> {
-    persist_media(session_id, bytes, mime, label, "usr")
+    persist_media(session_id, bytes, mime, label, "usr", None)
 }
 
 pub fn persist_generated_media(
@@ -75,7 +75,29 @@ pub fn persist_generated_media(
     mime: &str,
     label: Option<&str>,
 ) -> Result<MediaUploadResponse, String> {
-    persist_media(session_id, bytes, mime, label, "gen")
+    persist_media(session_id, bytes, mime, label, "gen", None)
+}
+
+/// Stable job-scoped attachments reuse the existing store across dispatch retries.
+pub(crate) fn persist_context_media(
+    session_id: &str,
+    identity: &str,
+    bytes: &[u8],
+    mime: &str,
+    label: &str,
+) -> Result<MediaRef, String> {
+    let upload = persist_media(session_id, bytes, mime, Some(label), "ctx", Some(identity))?;
+    let record =
+        get_media_record(session_id, &upload.media_id).ok_or("context media was not persisted")?;
+    Ok(media_ref_from_record(&record))
+}
+pub(crate) fn context_media_id(session_id: &str, identity: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    digest.update(session_id.as_bytes());
+    digest.update(b":");
+    digest.update(identity.as_bytes());
+    format!("ctx:{}:{:x}", short_session(session_id), digest.finalize())
 }
 
 fn persist_media(
@@ -84,6 +106,7 @@ fn persist_media(
     mime: &str,
     label: Option<&str>,
     origin: &str,
+    identity: Option<&str>,
 ) -> Result<MediaUploadResponse, String> {
     let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
 
@@ -103,11 +126,29 @@ fn persist_media(
         return Err(format!("mime type not allowed: {mime}"));
     }
 
-    let media_id = format!(
-        "{origin}:{}:{}",
-        short_session(session_id.as_str()),
-        Uuid::new_v4().simple()
-    );
+    let media_id = if let Some(identity) = identity {
+        context_media_id(session_id.as_str(), identity)
+    } else {
+        format!(
+            "{origin}:{}:{}",
+            short_session(session_id.as_str()),
+            Uuid::new_v4().simple()
+        )
+    };
+    if identity.is_some()
+        && let Some(record) = get_media_record(session_id.as_str(), &media_id)
+    {
+        if open_media_payload(&record)? != bytes {
+            return Err("context media content mismatch".into());
+        }
+        return Ok(MediaUploadResponse {
+            media_id,
+            mime: record.mime,
+            byte_size: record.byte_size,
+            label: record.label,
+            text_extracted: record.extract_path.is_some(),
+        });
+    }
     let ext = extension_for_mime(&mime);
     let payload_path = media_payload_path(&media_id, ext);
     media_store()

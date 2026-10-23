@@ -359,6 +359,7 @@ export class GovernedBrowserStore {
     const world = this.selectedWorld;
     if (!world) return;
     try {
+      this.error = null;
       this.replaceWorld(
         await setIsolatedBrowserWorldLifecycle(
           world.world_id,

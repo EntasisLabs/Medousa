@@ -214,7 +214,7 @@ export class CodeTasksController {
   }
 
   applyRunEvent(event: ProjectTaskOutputEvent) {
-    if (!this.run || event.run_id !== this.run.run_id) return;
+    if (!this.run || event.run_id !== this.run.run_id || event.seq < (this.run.next_seq ?? 0)) return;
     if (event.kind === "output" && event.text) {
       if (event.stream === "stderr") {
         this.liveStderr += event.text;
@@ -303,6 +303,9 @@ export class CodeTasksController {
   }
 
   applyRunSnapshot(snapshot: ProjectTaskRun) {
+    // A poll that began before Stop must not overwrite the newer SSE/cancel
+    // response and make a stopped dev server appear to be running again.
+    if (snapshot.run_id === this.run?.run_id && (snapshot.next_seq ?? 0) < (this.run.next_seq ?? 0)) return;
     this.run = {
       ...snapshot,
       stdout: snapshot.stdout || this.liveStdout || snapshot.stdout,
@@ -664,6 +667,18 @@ export class CodeTasksController {
     }
   }
 
+  async openOutputUrl(url: string) {
+    const current = this.#captureScope(), run = this.run;
+    if (!current() || !run) return;
+    try {
+      const workId = this.#deps.getWorkId();
+      const resolved = await resolveTaskPreviewOpenUrl(workId, { ...run, ready_url: this.readyUrl ?? run.ready_url }, url);
+      if (current() && this.run?.run_id === run.run_id) await openInBrowser(resolved.url, { openedBy: "user", workCardId: workId, newTab: true });
+    } catch (error) {
+      if (current()) this.#deps.onError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async openRun(runId: string) {
     if (this.testQueueActive || this.preparing) return;
     if (!runId || this.running || this.run?.run_id === runId) return;
@@ -705,7 +720,7 @@ export class CodeTasksController {
         runId,
         force || this.run.state === "stopping",
       );
-      if (current() && this.run?.run_id === runId) this.run = stopped;
+      if (current() && this.run?.run_id === runId) this.applyRunSnapshot(stopped);
     } catch (err) {
       if (!current()) return;
       this.#deps.onError(err instanceof Error ? err.message : String(err));

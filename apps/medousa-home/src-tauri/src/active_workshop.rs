@@ -8,8 +8,7 @@
 use crate::daemon::types::DEFAULT_DAEMON_URL;
 use crate::pairing_client::WorkshopTransportConfig;
 use crate::workshop_registry::{
-    PERSONAL_WORKSHOP_ID, WorkshopRegistry, WorkshopServer, active_workshop, ensure_migrated,
-    is_peer_kind,
+    ensure_migrated, is_peer_kind, WorkshopRegistry, WorkshopServer, PERSONAL_WORKSHOP_ID,
 };
 use crate::workshop_runtime::{resolve_workshop_data_dir, resolve_workshop_url};
 
@@ -35,9 +34,20 @@ fn resolve_for_registry(
     registry: &WorkshopRegistry,
     embedded_personal: bool,
 ) -> Result<ActiveWorkshopTarget, String> {
-    let workshop = active_workshop(registry)
+    resolve_scope_for_registry(registry, &registry.active_workshop_id, embedded_personal)
+}
+
+fn resolve_scope_for_registry(
+    registry: &WorkshopRegistry,
+    workshop_id: &str,
+    embedded_personal: bool,
+) -> Result<ActiveWorkshopTarget, String> {
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|workshop| workshop.id == workshop_id)
         .cloned()
-        .ok_or_else(|| "No active workshop in registry".to_string())?;
+        .ok_or_else(|| "Workshop is no longer available on this device".to_string())?;
 
     if is_peer_kind(&workshop.kind) {
         return Err("Peer connections cannot be selected as Home's active workshop".to_string());
@@ -68,6 +78,16 @@ pub fn resolve() -> Result<ActiveWorkshopTarget, String> {
     let registry = ensure_migrated()?;
     resolve_for_registry(
         &registry,
+        cfg!(any(target_os = "ios", target_os = "android")),
+    )
+}
+
+/// Resolve a retained view's client workshop scope without changing the active
+/// selection. A registry id is not a daemon execution runtime id.
+pub fn resolve_scope(workshop_id: &str) -> Result<ActiveWorkshopTarget, String> {
+    resolve_scope_for_registry(
+        &ensure_migrated()?,
+        workshop_id.trim(),
         cfg!(any(target_os = "ios", target_os = "android")),
     )
 }
@@ -107,7 +127,13 @@ pub fn personal_transport_config() -> Result<WorkshopTransportConfig, String> {
 }
 
 pub fn transport_config() -> Result<WorkshopTransportConfig, String> {
-    match resolve()? {
+    transport_config_for_target(resolve()?)
+}
+
+pub fn transport_config_for_target(
+    target: ActiveWorkshopTarget,
+) -> Result<WorkshopTransportConfig, String> {
+    match target {
         ActiveWorkshopTarget::EmbeddedPersonal => Err(
             "Personal is routed through the embedded daemon; remote transport is unavailable"
                 .to_string(),
@@ -214,7 +240,7 @@ pub fn transport_base_url() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workshop_registry::{WorkshopPairingRef, default_registry, now_iso};
+    use crate::workshop_registry::{default_registry, now_iso, WorkshopPairingRef};
 
     fn remote_canary(id: &str, url: &str) -> WorkshopServer {
         let now = now_iso();
@@ -285,5 +311,44 @@ mod tests {
             ActiveWorkshopTarget::Transport { workshop, .. }
                 if workshop.id == PERSONAL_WORKSHOP_ID
         ));
+    }
+
+    #[test]
+    fn retained_scope_resolves_original_workshop_after_active_selection_changes() {
+        let mut registry = default_registry();
+        registry
+            .workshops
+            .push(remote_canary("paired-remote", "https://paired.invalid"));
+        registry.active_workshop_id = "paired-remote".into();
+        let target = resolve_scope_for_registry(&registry, PERSONAL_WORKSHOP_ID, false).unwrap();
+        assert!(
+            matches!(target, ActiveWorkshopTarget::Transport { workshop, .. }
+            if workshop.id == PERSONAL_WORKSHOP_ID && workshop.kind == "local")
+        );
+        assert_eq!(registry.active_workshop_id, "paired-remote");
+    }
+
+    #[test]
+    fn client_workshop_scope_is_distinct_from_daemon_runtime_identity() {
+        let mut registry = default_registry();
+        registry
+            .workshops
+            .push(remote_canary("paired-remote", "https://paired.invalid"));
+        assert!(resolve_scope_for_registry(&registry, "daemon-canary", false).is_err());
+        let target = resolve_scope_for_registry(&registry, "paired-remote", false).unwrap();
+        assert!(
+            matches!(target, ActiveWorkshopTarget::Transport { workshop, .. }
+            if workshop.id == "paired-remote")
+        );
+    }
+
+    #[test]
+    fn scoped_requests_cannot_fall_back_from_missing_workshops_or_use_peers() {
+        let mut registry = default_registry();
+        let mut peer = remote_canary("peer", "https://peer.invalid");
+        peer.kind = "peer".into();
+        registry.workshops.push(peer);
+        assert!(resolve_scope_for_registry(&registry, "missing", false).is_err());
+        assert!(resolve_scope_for_registry(&registry, "peer", false).is_err());
     }
 }

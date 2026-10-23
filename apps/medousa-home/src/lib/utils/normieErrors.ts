@@ -31,7 +31,7 @@ export function friendlyMediaUploadError(raw: string, fileName?: string): string
   ) {
     return `${prefix}That file is too large — max ${MAX_MEDIA_UPLOAD_MB} MB per attachment.`;
   }
-  if (lower.includes("mime type not allowed") || lower.includes("not allowed")) {
+  if (lower.includes("mime type not allowed") || (fileName && lower.includes("not allowed"))) {
     return `${prefix}That file type isn't supported. Try PDF, images, spreadsheets, or text files.`;
   }
   if (lower.includes("too many attachments")) {
@@ -47,9 +47,9 @@ export function friendlyMediaUploadError(raw: string, fileName?: string): string
     return "That presentation couldn't be loaded. Try asking Medousa to show it again.";
   }
   if (
-    lower.includes("failed to read") ||
+    (lower.includes("failed to read") && (fileName || lower.includes("file"))) ||
     lower.includes("no such file") ||
-    (lower.includes("not found") && !lower.includes("model"))
+    (fileName && lower.includes("not found") && !lower.includes("model"))
   ) {
     return `${prefix}Couldn't read that file. It may have moved — pick it again.`;
   }
@@ -73,6 +73,13 @@ export function friendlyTurnError(raw: string): string {
   const text = raw.trim();
   if (!text) return GENERIC_TURN;
   const lower = text.toLowerCase();
+
+  if (lower.includes("chatgpt") && lower.includes("sign-in")) {
+    return "Reconnect ChatGPT in Settings → Medousa Agent → Models, then submit a new request.";
+  }
+  if (lower.includes("session") && lower.includes("not found")) {
+    return "That conversation isn't available on this workshop. Open another conversation or start a new one.";
+  }
 
   if (lower.includes("cancelled") || lower.includes("canceled")) {
     return "Turn cancelled.";

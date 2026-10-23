@@ -82,6 +82,7 @@ const MORE_SURFACE_IDS: Partial<
   workshop: "workshop",
   automations: "automations",
   code: "code",
+  create: "create",
   calendar: "calendar",
   messaging: "messaging",
   peers: "peers",

@@ -38,3 +38,11 @@ describe("friendlyUserError", () => {
     expect(friendlyUserError("empty file", { fileName: "x.pdf" })).toContain("empty");
   });
 });
+
+it("does not turn missing models, sessions, or routes into missing files", () => {
+  expect(friendlyUserError("model not found")).toContain("model isn't available");
+  expect(friendlyUserError("session not found")).toContain("conversation isn't available");
+  expect(friendlyUserError("route not found")).not.toContain("file");
+  expect(friendlyUserError("attachment not found", { fileName: "photo.png" })).toContain("Couldn't read that file");
+  expect(friendlyUserError("port failure: ChatGPT sign-in must be completed again")).toContain("Reconnect ChatGPT");
+});

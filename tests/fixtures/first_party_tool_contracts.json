@@ -2014,6 +2014,9 @@
                 "code.read",
                 "code.search",
                 "code.write",
+                "creative.promote_media",
+                "creative.propose",
+                "creative.read",
                 "delivery.status",
                 "grapheme.find",
                 "grapheme.invoke",
@@ -2240,7 +2243,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_read",
-      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Read or search vault notes, creative selections, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -2251,6 +2254,7 @@
               "artifacts.search",
               "code.read",
               "code.search",
+              "creative.read",
               "scripts.list",
               "scripts.read",
               "scripts.search",
@@ -2281,7 +2285,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -2291,6 +2295,8 @@
               "artifacts.present",
               "artifacts.write",
               "code.write",
+              "creative.promote_media",
+              "creative.propose",
               "scripts.write",
               "vault.delete",
               "vault.move",
@@ -5910,6 +5916,9 @@
                 "code.read",
                 "code.search",
                 "code.write",
+                "creative.promote_media",
+                "creative.propose",
+                "creative.read",
                 "delivery.status",
                 "grapheme.find",
                 "grapheme.invoke",
@@ -6334,7 +6343,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_read",
-      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Read or search vault notes, creative selections, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -6345,6 +6354,7 @@
               "artifacts.search",
               "code.read",
               "code.search",
+              "creative.read",
               "scripts.list",
               "scripts.read",
               "scripts.search",
@@ -6387,7 +6397,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -6397,6 +6407,8 @@
               "artifacts.present",
               "artifacts.write",
               "code.write",
+              "creative.promote_media",
+              "creative.propose",
               "scripts.write",
               "vault.delete",
               "vault.move",

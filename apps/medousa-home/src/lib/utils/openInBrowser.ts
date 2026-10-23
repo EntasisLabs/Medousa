@@ -2,6 +2,7 @@
 
 import { browser } from "$lib/stores/browser.svelte";
 import { chat } from "$lib/stores/chat.svelte";
+import { governedBrowser } from "$lib/stores/governedBrowser.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { layout } from "$lib/runtime/layout.svelte";
 import { markAgentNavigation } from "$lib/utils/agentBrowserCoord";
@@ -49,6 +50,7 @@ export async function openInBrowser(
     await browser.handleAgentNavigation(normalized, options?.title);
   }
 
+  governedBrowser.chooseDevice();
   if (options?.newTab) {
     await humanBrowser.openTab(normalized);
   } else {

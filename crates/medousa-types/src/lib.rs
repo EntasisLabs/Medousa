@@ -12,6 +12,7 @@ pub mod capability;
 pub mod component_runtime;
 pub mod component_store;
 pub mod coordination;
+pub mod creative;
 pub mod daemon_api;
 pub mod environment;
 pub mod environment_default;
@@ -82,3 +83,5 @@ pub use turn_ticket::*;
 pub use wake::*;
 pub use world_recipe::*;
 pub use world_timeline::*;
+
+pub use creative::*;

@@ -366,6 +366,13 @@ impl InteractiveTurnStreamSink {
         mut operator_message: String,
         mut debug_message: Option<String>,
     ) {
+        #[cfg(feature = "full-daemon")]
+        if matches!(
+            &outcome,
+            TurnCompletionOutcomeV3::Failed | TurnCompletionOutcomeV3::Fatal
+        ) {
+            crate::creative_jobs::observe_failure(&self.turn_id, &operator_message).await;
+        }
         self.commit_active_segment(false).await;
         let turn = self.finalize_failed_activity(&operator_message);
         let tool_names = turn

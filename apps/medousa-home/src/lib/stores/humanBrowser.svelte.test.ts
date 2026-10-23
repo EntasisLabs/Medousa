@@ -14,6 +14,7 @@ vi.mock("$lib/humanBrowser", () => ({
 vi.mock("$lib/utils/resolveBrowserDestination", () => ({ resolveBrowserDestination: native.resolve }));
 vi.mock("$lib/browser/browserHistory.svelte", () => ({ browserHistory: { record: vi.fn() } }));
 vi.mock("$lib/stores/shellTabs.svelte", () => ({ shellTabs: { mirrorWebTab: native.mirror } }));
+import { setHumanBrowserSelectionPort } from "$lib/runtime/humanBrowserSelectionPort";
 import { HumanBrowserStore } from "./humanBrowser.svelte";
 
 function deferred<T>() {
@@ -192,4 +193,15 @@ describe("native browser navigation and tab ownership", () => {
     expect(restored.loading).toBe(false); expect(restored.canGoBack).toBe(false);
     expect(JSON.parse(localStorage.getItem("b")!).tabs.at(-1).url).toBe("https://b.test/");
   });
+});
+
+it("selects device presentation for new tabs and explicit activation of the current tab", async () => {
+  const select = vi.fn(); setHumanBrowserSelectionPort(select);
+  try {
+    const s = store();
+    await s.openTab("about:blank");
+    expect(select).toHaveBeenCalledOnce();
+    await s.activateTab(s.activeTab!.id);
+    expect(select).toHaveBeenCalledTimes(2);
+  } finally { setHumanBrowserSelectionPort(() => {}); }
 });

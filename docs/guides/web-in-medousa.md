@@ -30,6 +30,11 @@ Workshop browser frames are bounded and sensitive fields are redacted before
 they reach Home. On mobile, use **Type** over the page to open the software
 keyboard.
 
+After a workshop restart, its previous browsers appear stopped. **Take control**
+(or **Start again** after a failed launch) reopens that exact profile under your
+control. Medousa releases only its own orphaned Chromium process; a browser
+still owned by another live process is left alone. Saved profile data remains.
+
 ## Use the device browser
 
 1. Open **Web** and navigate to an `http://` or `https://` address.
@@ -47,6 +52,10 @@ On desktop, the embedded device page follows Medousa's interface zoom. Use
 **Ctrl/⌘ +**, **Ctrl/⌘ −**, or **Ctrl/⌘ 0** while the page has focus to zoom
 the page and shell together. Reset returns to the default **110%** size. Tabs
 keep the current zoom when you switch between them or open another page.
+
+Opening or selecting a regular device tab switches back to the device browser,
+even when a workshop browser was selected before restarting. Create’s offscreen
+page imports do not switch your browser into agent presentation.
 
 Desktop device tabs keep their own native page history. **Back** and **Forward**
 follow links, redirects, and same-page navigation without reloading a saved URL.

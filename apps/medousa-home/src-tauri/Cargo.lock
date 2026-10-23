@@ -5584,6 +5584,7 @@ dependencies = [
  "locus-core-rs",
  "medousa-browser-bridge",
  "medousa-browser-lite",
+ "medousa-create",
  "medousa-engine",
  "medousa-forge",
  "medousa-mcp-gateway",
@@ -5653,6 +5654,21 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tokio",
+]
+
+[[package]]
+name = "medousa-create"
+version = "0.11.1"
+dependencies = [
+ "chrono",
+ "fs2",
+ "medousa-store",
+ "medousa-types",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]

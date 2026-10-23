@@ -3,6 +3,7 @@ export type BuiltinSurface =
   | "chat"
   | "code"
   | "reviews"
+  | "create"
   | "library"
   | "notes"
   | "files"

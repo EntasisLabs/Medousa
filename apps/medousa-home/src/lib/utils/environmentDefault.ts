@@ -30,6 +30,7 @@ function defaultSurfaces() {
     { id: "chat", label: "Chat", icon: "message-circle", builtinId: "chat", mobileTab: "chat" },
     { id: "peers", label: "Peers", icon: "users", builtinId: "peers" },
     { id: "code", label: "Code", icon: "code-2", builtinId: "code" },
+    { id: "create", label: "Create", icon: "pen-tool", builtinId: "create" },
     { id: "reviews", label: "Reviews", icon: "checklist", builtinId: "reviews" },
     { id: "library", label: "Workspace", icon: "notebook-text", builtinId: "library" },
     { id: "notes", label: "Notes", icon: "notebook-text", builtinId: "notes", mobileTab: "notes" },
@@ -65,6 +66,15 @@ function defaultSurfaces() {
     slots: [],
     mobileTab: entry.mobileTab ?? null,
   }));
+}
+
+/** Introduce Create once; subsequent hidden-nav choices remain authoritative. */
+export function ensureCreateSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  if (spec.surfaces.some(surface => surface.id === "create")) return spec;
+  const insert = (ids: string[]) => { const next = [...ids]; if (!next.includes("create")) next.splice(Math.max(0, next.indexOf("reviews") + 1), 0, "create"); return next; };
+  const surfaces = [...spec.surfaces];
+  surfaces.splice(Math.max(0, surfaces.findIndex(surface => surface.id === "reviews") + 1), 0, defaultSurfaces().find(surface => surface.id === "create")!);
+  return {...spec, surfaces, layoutPresets: spec.layoutPresets?.map(preset => ({...preset, surfaces: insert(preset.surfaces)}))};
 }
 
 /** Add Reviews once, preserving later choices to hide it from a preset. */
@@ -493,6 +503,7 @@ export function defaultEnvironmentSpec(
           "peers",
           "code",
           "reviews",
+          "create",
           "notes",
           "web",
           "files",

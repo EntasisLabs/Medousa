@@ -11,10 +11,10 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
-use crate::daemon::DaemonState;
 use crate::daemon::generated_ops::DaemonOperation;
 use crate::daemon::sse::{open_unless_cancelled, stream_sse_json_workshop};
 use crate::daemon::workshop_http;
+use crate::daemon::DaemonState;
 use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
 
@@ -41,14 +41,31 @@ pub async fn daemon_unary(
     body: Option<Value>,
     execution_runtime_id: Option<String>,
     query: Option<HashMap<String, String>>,
+    workshop_scope_id: Option<String>,
 ) -> Result<Value, String> {
     ensure_webview_operation_allowed(operation)?;
     let execution_runtime_id = execution_runtime_id
         .as_deref()
         .map(str::trim)
         .filter(|runtime_id| !runtime_id.is_empty());
+    let workshop_scope_id = workshop_scope_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if execution_runtime_id.is_some() && workshop_scope_id.is_some() {
+        return Err("Choose a workshop scope or an execution runtime, not both".into());
+    }
+    let scoped_target = workshop_scope_id
+        .map(crate::active_workshop::resolve_scope)
+        .transpose()?;
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    if execution_runtime_id.is_none() {
+    if execution_runtime_id.is_none()
+        && (scoped_target.is_none()
+            || matches!(
+                scoped_target.as_ref(),
+                Some(crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal)
+            ))
+    {
         if let Some(client) = embedded_state.client_if_active().await? {
             if let Some(response) =
                 embedded_browser_session_unary(&client, operation, &path_params, body.as_ref())?
@@ -66,6 +83,11 @@ pub async fn daemon_unary(
         return Err("use daemon_stream_start for streaming operations".into());
     }
     let path = expand_operation_path(op.path, &path_params, query.as_ref())?;
+    if let Some(target) = scoped_target {
+        let config = crate::active_workshop::transport_config_for_target(target)?;
+        return workshop_transport::workshop_json_request(&config, op.method, &path, body.as_ref())
+            .await;
+    }
     if let Some(runtime_id) = execution_runtime_id {
         let config = crate::active_workshop::transport_config_for_runtime_id(runtime_id)?;
         return workshop_transport::workshop_json_request(&config, op.method, &path, body.as_ref())
@@ -302,8 +324,8 @@ pub(crate) fn expand_operation_path(
 #[cfg(test)]
 mod tests {
     use super::{
-        DaemonOperation, ensure_webview_operation_allowed, expand_operation_path,
-        validate_client_stream_handle,
+        ensure_webview_operation_allowed, expand_operation_path, validate_client_stream_handle,
+        DaemonOperation,
     };
     use std::collections::HashMap;
 

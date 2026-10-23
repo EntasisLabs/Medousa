@@ -81,3 +81,11 @@ describe("pointInCssViewport", () => {
     ).toBeNull();
   });
 });
+
+it("does not switch to offscreen imports or worlds stopped by a daemon restart", () => {
+  const preference = { source: { kind: "device" as const }, selectedAt: 10 };
+  expect(chooseBrowserSurfaceSource([
+    { ...world("capture", 50), view_attached: false },
+    { ...world("restarted", 60), run_state: "stopped" },
+  ], preference, "runtime")).toEqual({ kind: "device" });
+});

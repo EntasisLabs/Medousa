@@ -124,6 +124,9 @@ pub async fn spawn_turn_ticket(
         .profile_id()
         .map(str::to_string)
         .unwrap_or_else(|| state.workshop_identity_user_id());
+    if turn_id.starts_with(crate::creative_jobs::TURN_PREFIX) {
+        crate::creative_jobs::verify_admission(&principal, &turn_id, &interactive_request).await?;
+    }
     if turn_id.starts_with("agent_message_") {
         crate::agent_messaging::verify_admission(&principal, &turn_id, &interactive_request)
             .await
@@ -295,7 +298,9 @@ pub async fn spawn_turn_ticket(
             browser_host: continuation_scope.supports_browser_host,
         },
         tokio_util::sync::CancellationToken::new(),
-        None,
+        turn_id
+            .starts_with(crate::creative_jobs::TURN_PREFIX)
+            .then(|| std::time::Instant::now() + std::time::Duration::from_secs(30 * 60)),
         continuation_scope.clone(),
     );
     if let Some(bot_identity) = bot_identity {

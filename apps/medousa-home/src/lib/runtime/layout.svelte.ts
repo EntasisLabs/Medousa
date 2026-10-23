@@ -609,7 +609,7 @@ function loadMobileTab(): MobileTab {
 function loadMoreDestination(): MoreDestination {
   if (typeof localStorage === "undefined") return "hub";
   const stored = localStorage.getItem(MORE_DESTINATION_KEY);
-  const valid: MoreDestination[] = [
+  const valid: MoreDestination[] = ["create",
     "hub",
     "profiles",
     "map",

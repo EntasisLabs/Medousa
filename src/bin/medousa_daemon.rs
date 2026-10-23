@@ -521,6 +521,25 @@ async fn start_daemon() -> Result<()> {
     }
 
     let forge_execution = Arc::new(medousa_forge::execution::ForgeExecutionService::new());
+    // Install document authority before recovering any agent/worker jobs.
+    let creative_root = medousa::paths::medousa_data_dir().join("create");
+    let creative_store = forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::StoreIo,
+            1024,
+            move || {
+                medousa_create::CreativeStore::open(&creative_root)
+                    .map(Arc::new)
+                    .map_err(|error| medousa_forge::ForgeError::Store(error.to_string()))
+            },
+        )
+        .await
+        .context("open creative project store")?;
+    let creative_api = medousa::creative_handlers::CreativeApiState {
+        store: creative_store,
+        execution: forge_execution.clone(),
+    };
+    medousa::creative_handlers::install(creative_api.clone())?;
     let mut forge = medousa::daemon::forge_host::open_forge()?;
     forge.attach_execution(Arc::clone(&forge_execution));
     let forge_events = medousa::daemon::forge_events::ForgeEventBus::new();
@@ -1073,6 +1092,8 @@ async fn start_daemon() -> Result<()> {
         hub.refresh_now().await;
     }
     declared = declared
+        .merge(medousa::creative_handlers::surface().with_state(creative_api))
+        .merge(medousa::creative_jobs::surface().with_state(state.clone()))
         .merge(medousa::workspace_handlers::workspace_surface().with_state(
             medousa::workspace_handlers::WorkspaceHandlerState {
                 composition: std::sync::Arc::new(state.composition().clone()),
@@ -1171,6 +1192,7 @@ async fn start_daemon() -> Result<()> {
                 None
             }
         };
+    let _creative_jobs = medousa::creative_jobs::start(state.clone(), shutdown_rx.clone());
     medousa::process_supervisor::bind_daemon(state.clone());
     let scheduler_ctx = SchedulerHeartbeatContext {
         platform: state.platform.clone(),

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from medousa.sync.runtime import RuntimeApiSync
     from medousa.sync.sessions import SessionsApiSync
     from medousa.sync.vault import VaultApiSync
+    from medousa.sync.creative import CreativeApiSync
     from medousa.sync.workspace import WorkspaceApiSync
 
 
@@ -112,6 +113,11 @@ class MedousaClientSync:
         from medousa.sync.budget import BudgetApiSync
 
         return BudgetApiSync(self)
+
+    def creative(self) -> CreativeApiSync:
+        from medousa.sync.creative import CreativeApiSync
+
+        return CreativeApiSync(self)
 
     def vault(self) -> VaultApiSync:
         from medousa.sync.vault import VaultApiSync

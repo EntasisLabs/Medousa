@@ -200,3 +200,77 @@ Paginated `labels`, `reviewer_candidates`, and `reviewers` queries supply reposi
 catalogs and normalized review decisions. `merge_conflicts` remains separate from
 CI/approval state; check `kind`/`actions` keep native check IDs opaque. Providers advertise supported operation names;
 see [review providers](../engine/review-providers.md) for revision and retry rules.
+
+
+### Creative documents
+
+The workshop-owned Create backend supports versioned mixed scenes, atomic edits,
+undo/redo, project-owned bitmap assets and selection-bound proposals. See the
+[creative document service](../engine/creative-workspace.md) for DTOs, bounds,
+revision conflicts and retry rules. Rust and Python callers use `client.creative()`; operations use the generated
+`create.projects.*` family; the main Create canvas uses the same document API.
+Removing a frame or group removes its entire subtree in the same transaction;
+undo restores the descendants and their order. See the service contract for
+batch removal and admission retry semantics.
+Version-3 nodes may include an optional `name` layer label (nonblank, at most
+256 UTF-8 bytes). Generated Rust, Python, and TypeScript models expose it; legacy
+unnamed nodes omit it. This field requires an updated daemon. Group/ungroup edits
+reuse the ordinary atomic transaction operations rather than a separate API.
+Text content supports optional `font_weight` (100–900) and `font_style`
+(`normal`/`italic`); omitted values mean 400/normal. These also require an updated
+daemon and are exposed by all generated models. Preserve them when updating text.
+Line shapes support optional `line` geometry with local `start`/`end` points,
+`start_arrow`, `end_arrow`, and `dashed` (booleans default false). Omission preserves
+legacy box-diagonal endpoints. These version-3 fields also require an updated
+daemon. Endpoint, style, and rotation edits use ordinary atomic transactions and
+undo; preserve the geometry when updating a line.
+
+Creative nodes also accept optional `appearance` (rounded corners and shadows)
+and text-only `text_layout` (wrap width, alignment and line spacing). They use
+ordinary `put_node` transactions and history; omitted fields preserve legacy
+version-3 defaults. See the [creative document contract](../engine/creative-workspace.md)
+for bounds and supported node kinds. Update the daemon before sending these fields.
+
+Creative jobs use `creative().create_job`, `jobs`, `job` and `decide_job` in both
+Rust and Python. Preserve the request ID/body when retrying admission; use a new
+ID to retry an interrupted execution. Read the job result before explicitly
+accepting against its captured document revision. See the
+[creative service contract](../engine/creative-workspace.md#durable-creative-jobs)
+for recovery, cancellation and capacity behavior.
+
+For visual context, call `import_asset` with `CreativeAssetImportRequest.context`
+containing `expected_revision` and `selected_ids`, plus a bounded PNG in
+`data_base64`. This stages a snapshot without advancing the canvas revision.
+Pass the returned asset ID as `CreativeJobRequest.visual_asset_id`. The daemon
+also supplies original selected image assets as session media references.
+Continue a conversation with `parent_job_id`; set `refine_proposal` to refine a
+current unapplied preview with the same selection. Each result still requires
+explicit acceptance against the captured revision. Finished requests are archived
+without losing their admission identity; `jobs` returns recent work and `job`
+can read an archived request by ID. Generated models include the optional fields
+and the `superseded` job status; upgrade the daemon before sending them.
+
+Creative job reads include optional `base_nodes`, the original selected nodes
+before preview refinements. Ready/stale results can apply to the latest supplied
+revision when field changes reconcile safely. Conflicting edits preserve the
+result; they never trigger regeneration or overwrite current work. Updated app
+and daemon builds are required for this behavior.
+
+Creative Code handoffs use `client.creative().code_context(id, request)` in Rust
+and `client.creative().code_context(id, request)` in Python (async and sync). The
+request binds a saved frame revision and matching preview asset to a session;
+the response contains selection context and session media refs for the existing
+Code turn API. See [the creative service contract](../engine/creative-workspace.md#code-handoffs-and-browser-design-capture).
+
+
+Browser operation `browser.worlds.isolated.by_world_id.design_capture.page.post`
+returns `BrowserDesignPageCapture`: ordered slices with captured scene/pixels,
+`clip_top`, `height`, and `page_y`. Scene imports can retain original image assets
+in frame `design_source.original_asset_id`. Text layouts accept tracking,
+paragraph spacing, underline and bounded UTF-16 inline spans. See the
+[creative contract](../engine/creative-workspace.md) for validation and capture limits.
+
+Isolated browser creation accepts `view_attached: false` for offscreen capture
+(default `true`). After a daemon restart, `takeover` explicitly reopens a stopped
+world under user control; `resume` returns it to agent control. See
+[isolated browser lifecycle](../engine/http-api.md#isolated-browser-worlds).

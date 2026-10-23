@@ -84,6 +84,10 @@ pub enum DaemonOperation {
     BrowserSessionsBySessionIdResumePost,
     #[serde(rename = "browser.worlds.isolated.by_world_id.delete")]
     BrowserWorldsIsolatedByWorldIdDelete,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.design_capture.page.post")]
+    BrowserWorldsIsolatedByWorldIdDesignCapturePagePost,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.design_capture.post")]
+    BrowserWorldsIsolatedByWorldIdDesignCapturePost,
     #[serde(rename = "browser.worlds.isolated.by_world_id.get")]
     BrowserWorldsIsolatedByWorldIdGet,
     #[serde(rename = "browser.worlds.isolated.by_world_id.input.post")]
@@ -200,6 +204,42 @@ pub enum DaemonOperation {
     CoordinationChannelsByChannelIdProposalsByProposalIdDispatchPost,
     #[serde(rename = "coordination.proposals.get")]
     CoordinationProposalsGet,
+    #[serde(rename = "create.projects.by_id.assets.by_asset_id.get")]
+    CreateProjectsByIdAssetsByAssetIdGet,
+    #[serde(rename = "create.projects.by_id.assets.post")]
+    CreateProjectsByIdAssetsPost,
+    #[serde(rename = "create.projects.by_id.code_context.post")]
+    CreateProjectsByIdCodeContextPost,
+    #[serde(rename = "create.projects.by_id.context.post")]
+    CreateProjectsByIdContextPost,
+    #[serde(rename = "create.projects.by_id.delete.post")]
+    CreateProjectsByIdDeletePost,
+    #[serde(rename = "create.projects.by_id.get")]
+    CreateProjectsByIdGet,
+    #[serde(rename = "create.projects.by_id.history.post")]
+    CreateProjectsByIdHistoryPost,
+    #[serde(rename = "create.projects.by_id.jobs.by_job_id.decision.post")]
+    CreateProjectsByIdJobsByJobIdDecisionPost,
+    #[serde(rename = "create.projects.by_id.jobs.by_job_id.get")]
+    CreateProjectsByIdJobsByJobIdGet,
+    #[serde(rename = "create.projects.by_id.jobs.get")]
+    CreateProjectsByIdJobsGet,
+    #[serde(rename = "create.projects.by_id.jobs.post")]
+    CreateProjectsByIdJobsPost,
+    #[serde(rename = "create.projects.by_id.promote_media.post")]
+    CreateProjectsByIdPromoteMediaPost,
+    #[serde(rename = "create.projects.by_id.proposals.by_proposal_id.decision.post")]
+    CreateProjectsByIdProposalsByProposalIdDecisionPost,
+    #[serde(rename = "create.projects.by_id.proposals.get")]
+    CreateProjectsByIdProposalsGet,
+    #[serde(rename = "create.projects.by_id.proposals.post")]
+    CreateProjectsByIdProposalsPost,
+    #[serde(rename = "create.projects.by_id.transactions.post")]
+    CreateProjectsByIdTransactionsPost,
+    #[serde(rename = "create.projects.get")]
+    CreateProjectsGet,
+    #[serde(rename = "create.projects.post")]
+    CreateProjectsPost,
     #[serde(rename = "deliver.outbox.post")]
     DeliverOutboxPost,
     #[serde(rename = "deliver.poll.by_job_id.get")]
@@ -1045,6 +1085,8 @@ impl DaemonOperation {
             Self::BrowserSessionsBySessionIdGet => "browser.sessions.by_session_id.get",
             Self::BrowserSessionsBySessionIdResumePost => "browser.sessions.by_session_id.resume.post",
             Self::BrowserWorldsIsolatedByWorldIdDelete => "browser.worlds.isolated.by_world_id.delete",
+            Self::BrowserWorldsIsolatedByWorldIdDesignCapturePagePost => "browser.worlds.isolated.by_world_id.design_capture.page.post",
+            Self::BrowserWorldsIsolatedByWorldIdDesignCapturePost => "browser.worlds.isolated.by_world_id.design_capture.post",
             Self::BrowserWorldsIsolatedByWorldIdGet => "browser.worlds.isolated.by_world_id.get",
             Self::BrowserWorldsIsolatedByWorldIdInputPost => "browser.worlds.isolated.by_world_id.input.post",
             Self::BrowserWorldsIsolatedByWorldIdLifecyclePost => "browser.worlds.isolated.by_world_id.lifecycle.post",
@@ -1103,6 +1145,24 @@ impl DaemonOperation {
             Self::CoordinationChannelsByChannelIdProposalsByProposalIdDenyPost => "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
             Self::CoordinationChannelsByChannelIdProposalsByProposalIdDispatchPost => "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
             Self::CoordinationProposalsGet => "coordination.proposals.get",
+            Self::CreateProjectsByIdAssetsByAssetIdGet => "create.projects.by_id.assets.by_asset_id.get",
+            Self::CreateProjectsByIdAssetsPost => "create.projects.by_id.assets.post",
+            Self::CreateProjectsByIdCodeContextPost => "create.projects.by_id.code_context.post",
+            Self::CreateProjectsByIdContextPost => "create.projects.by_id.context.post",
+            Self::CreateProjectsByIdDeletePost => "create.projects.by_id.delete.post",
+            Self::CreateProjectsByIdGet => "create.projects.by_id.get",
+            Self::CreateProjectsByIdHistoryPost => "create.projects.by_id.history.post",
+            Self::CreateProjectsByIdJobsByJobIdDecisionPost => "create.projects.by_id.jobs.by_job_id.decision.post",
+            Self::CreateProjectsByIdJobsByJobIdGet => "create.projects.by_id.jobs.by_job_id.get",
+            Self::CreateProjectsByIdJobsGet => "create.projects.by_id.jobs.get",
+            Self::CreateProjectsByIdJobsPost => "create.projects.by_id.jobs.post",
+            Self::CreateProjectsByIdPromoteMediaPost => "create.projects.by_id.promote_media.post",
+            Self::CreateProjectsByIdProposalsByProposalIdDecisionPost => "create.projects.by_id.proposals.by_proposal_id.decision.post",
+            Self::CreateProjectsByIdProposalsGet => "create.projects.by_id.proposals.get",
+            Self::CreateProjectsByIdProposalsPost => "create.projects.by_id.proposals.post",
+            Self::CreateProjectsByIdTransactionsPost => "create.projects.by_id.transactions.post",
+            Self::CreateProjectsGet => "create.projects.get",
+            Self::CreateProjectsPost => "create.projects.post",
             Self::DeliverOutboxPost => "deliver.outbox.post",
             Self::DeliverPollByJobIdGet => "deliver.poll.by_job_id.get",
             Self::DeliveryStatusGet => "delivery.status.get",

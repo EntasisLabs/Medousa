@@ -1,0 +1,32 @@
+{
+  "schema": "medousa-draw",
+  "version": 2,
+  "width": 1200,
+  "height": 720,
+  "background": "transparent",
+  "strokes": [
+    {
+      "id": "stroke_one",
+      "color": "#123456",
+      "input": "pen",
+      "brush": {
+        "kind": "pencil",
+        "size": 5,
+        "thinning": 0.58,
+        "smoothing": 0.42,
+        "streamline": 0.38,
+        "opacity": 0.82
+      },
+      "points": [
+        {
+          "x": -25,
+          "y": 900,
+          "pressure": 0.3,
+          "elapsedMs": 23,
+          "tiltX": 4,
+          "tiltY": -5
+        }
+      ]
+    }
+  ]
+}

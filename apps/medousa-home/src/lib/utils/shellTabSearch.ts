@@ -45,6 +45,7 @@ export function filterTabSearchHits(
 }
 
 export function tabKindLabel(kind: ShellTabKind): string {
+  if (kind === "create") return "Create";
   if (kind === "chat") return "Chat";
   if (kind === "web") return "Web";
   if (kind === "lme") return "Doc";
@@ -63,6 +64,8 @@ export function surfaceTitle(surfaceId: string): string {
       return "Automations";
     case "code":
       return "Code";
+    case "create":
+      return "Create";
     case "reviews":
       return "Reviews";
     case "chat":

@@ -113,8 +113,28 @@
       "specifier": "$lib/styles/editor-host.postcss"
     },
     {
+      "from": "src/lib/components/code/CodeTaskTerminal.svelte",
+      "specifier": "@xterm/xterm/css/xterm.css"
+    },
+    {
       "from": "src/lib/components/context/MapPanel.svelte",
       "specifier": "$lib/styles/context.postcss"
+    },
+    {
+      "from": "src/lib/components/create/CreatePanel.svelte",
+      "specifier": "$lib/styles/create-workspace.postcss"
+    },
+    {
+      "from": "src/lib/components/create/CreateRail.svelte",
+      "specifier": "$lib/styles/create-rail.postcss"
+    },
+    {
+      "from": "src/lib/components/create/CreateRail.svelte",
+      "specifier": "$lib/styles/lme.postcss"
+    },
+    {
+      "from": "src/lib/components/create/CreateRail.svelte",
+      "specifier": "$lib/styles/vault-workshop.postcss"
     },
     {
       "from": "src/lib/components/cron/CronPanel.svelte",

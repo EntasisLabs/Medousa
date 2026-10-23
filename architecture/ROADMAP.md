@@ -1,6 +1,6 @@
 # Roadmap — active work
 
-> **Status:** Living document (updated 2026-10-01)
+> **Status:** Living document (updated 2026-10-21)
 > **Historical plans:** [archive/README.md](archive/README.md)
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
@@ -21,6 +21,7 @@ weaken or bypass hardening release gates.
 
 Full active plans: **[hardening/README.md](hardening/README.md)** ·
 **[expressive-chat-media-ink-liquid-epic.md](expressive-chat-media-ink-liquid-epic.md)** ·
+**[creative-workspace-epic.md](creative-workspace-epic.md)** ·
 **[coding-experience-epic.md](coding-experience-epic.md)** ·
 **[human-code-workbench-plan.md](human-code-workbench-plan.md)** ·
 **[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** ·
@@ -219,6 +220,31 @@ Living epic: [expressive-chat-media-ink-liquid-epic.md](expressive-chat-media-in
 | S4 — generated images + physical-device checkpoint B | 🔄 implementation complete; [validation pending](expressive-chat-checkpoint-b.md) |
 | S5 — Liquid activation and durable interaction loop | ✅ |
 | S6 — recipe/procedure and durable timers + physical-device checkpoint C | 🔄 implementation complete; [validation pending](expressive-chat-checkpoint-c.md) |
+
+---
+
+### Create creative workspace — planned
+
+**Goal:** Make Create its own main view for editable composition, expressive
+ink, image editing, and selection-directed AI assistance. Creative projects use
+shell tabs; Notes embed the same documents and Chat can contribute assets.
+
+Living epic: [creative-workspace-epic.md](creative-workspace-epic.md).
+The first release completes the import → compose → AI refine → export loop.
+Product direction and the Canvas first layout are agreed. The renderer-independent
+backend foundation now supplies project persistence, transactions, assets and
+proposals, with SDK/app contracts and durable native-runtime creative dispatch. S0 still needs the remaining task/device
+studies and engine spike; canvas and user-facing creative-job integration remain planned.
+
+| Slice | Status |
+|-------|--------|
+| S0 — experience mocks and scene-engine decision | ⬜ Planned |
+| S1 — mixed document, transactions and durable assets | 🔄 Backend foundation implemented; editor/adoption integration pending |
+| S2 — everyday composition and frame export | ⬜ Planned |
+| S3 — selection-directed AI and variants; first usable release | ⬜ Planned |
+| S4 — masks, image editing and expressive craft | ⬜ Planned |
+| S5 — project context and reusable design | ⬜ Planned |
+| S6 — portable handoff and production readiness | ⬜ Planned |
 
 ---
 

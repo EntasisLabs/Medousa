@@ -702,6 +702,116 @@
         ],
         "type": "string"
       },
+      "BrowserDesignCapture": {
+        "description": "A viewport import is data, never a live DOM binding or permission to edit code.",
+        "properties": {
+          "raster_regions": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserDesignRaster"
+            },
+            "type": "array"
+          },
+          "scene": {
+            "$ref": "#/components/schemas/CreativeScene"
+          },
+          "screenshot": {
+            "$ref": "#/components/schemas/BrowserPresentationScreenshot"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "raster_regions",
+          "scene",
+          "screenshot",
+          "warnings",
+          "world_id"
+        ],
+        "type": "object"
+      },
+      "BrowserDesignPageCapture": {
+        "description": "Viewport slices of one stable document, in page order. Final slice trims overlap.",
+        "properties": {
+          "slices": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserDesignSlice"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "slices"
+        ],
+        "title": "BrowserDesignPageCapture",
+        "type": "object"
+      },
+      "BrowserDesignRaster": {
+        "properties": {
+          "asset_id": {
+            "type": "string"
+          },
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "asset_id",
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "BrowserDesignSlice": {
+        "properties": {
+          "capture": {
+            "$ref": "#/components/schemas/BrowserDesignCapture"
+          },
+          "clip_top": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "height": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "page_y": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capture",
+          "clip_top",
+          "height",
+          "page_y"
+        ],
+        "type": "object"
+      },
       "BrowserPresentationFrame": {
         "description": "Atomic presentation update. Keeping the semantic fence and pixels in one event prevents Home from pairing an observation with a different frame.",
         "properties": {
@@ -2811,6 +2921,1602 @@
           "session_id"
         ],
         "title": "CreateTurnTicketRequest",
+        "type": "object"
+      },
+      "CreativeAppearance": {
+        "additionalProperties": false,
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "properties": {
+          "corner_radius": {
+            "format": "double",
+            "type": "number"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "corner_radius"
+        ],
+        "type": "object"
+      },
+      "CreativeAsset": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "byte_size",
+          "id",
+          "mime",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "CreativeAssetData": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/CreativeAsset"
+          },
+          "data_base64": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "data_base64"
+        ],
+        "title": "CreativeAssetData",
+        "type": "object"
+      },
+      "CreativeAssetImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeVisualContextRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stage a selection snapshot without editing the document or its history."
+          },
+          "data_base64": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data_base64"
+        ],
+        "title": "CreativeAssetImportRequest",
+        "type": "object"
+      },
+      "CreativeBrush": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/CreativeBrushKind"
+          },
+          "opacity": {
+            "format": "double",
+            "type": "number"
+          },
+          "size": {
+            "format": "double",
+            "type": "number"
+          },
+          "smoothing": {
+            "format": "double",
+            "type": "number"
+          },
+          "streamline": {
+            "format": "double",
+            "type": "number"
+          },
+          "thinning": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "type": "object"
+      },
+      "CreativeBrushKind": {
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ],
+        "type": "string"
+      },
+      "CreativeCodeContext": {
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/CreativeSelectionContext"
+          },
+          "media_refs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaRef"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "context",
+          "media_refs"
+        ],
+        "title": "CreativeCodeContext",
+        "type": "object"
+      },
+      "CreativeCodeContextRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "frame_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "visual_asset_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "frame_id",
+          "session_id",
+          "visual_asset_id"
+        ],
+        "title": "CreativeCodeContextRequest",
+        "type": "object"
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "brush": {
+                "$ref": "#/components/schemas/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/components/schemas/CreativeInputKind"
+              },
+              "kind": {
+                "enum": [
+                  "ink"
+                ],
+                "type": "string"
+              },
+              "points": {
+                "items": {
+                  "$ref": "#/components/schemas/CreativePoint"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "format": "double",
+                "type": "number"
+              },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "format": "uint16",
+                "minimum": 0.0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "text"
+                ],
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "shape"
+                ],
+                "type": "string"
+              },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shape": {
+                "$ref": "#/components/schemas/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "image"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "group"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "frame"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CreativeContextRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "selected_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "selected_ids"
+        ],
+        "title": "CreativeContextRequest",
+        "type": "object"
+      },
+      "CreativeCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Client-generated stable id makes creation retries safe.",
+            "type": "string"
+          },
+          "scene": {
+            "$ref": "#/components/schemas/CreativeScene"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scene",
+          "title"
+        ],
+        "title": "CreativeCreateRequest",
+        "type": "object"
+      },
+      "CreativeCrop": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "CreativeDeleteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "CreativeDeleteRequest",
+        "type": "object"
+      },
+      "CreativeDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "CreativeDeleteResponse",
+        "type": "object"
+      },
+      "CreativeDesignSource": {
+        "additionalProperties": false,
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "properties": {
+          "captured_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "page_index": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "scroll_y": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "viewport_width": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "type": "object"
+      },
+      "CreativeDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CreativeAsset"
+            },
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "scene": {
+            "$ref": "#/components/schemas/CreativeScene"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assets",
+          "created_at",
+          "id",
+          "pinned",
+          "revision",
+          "scene",
+          "title",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "CreativeFontStyle": {
+        "enum": [
+          "normal",
+          "italic"
+        ],
+        "type": "string"
+      },
+      "CreativeHistoryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "redo": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "id",
+          "redo"
+        ],
+        "title": "CreativeHistoryRequest",
+        "type": "object"
+      },
+      "CreativeInputKind": {
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "CreativeJob": {
+        "properties": {
+          "applied_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeAsset"
+            },
+            "type": "array"
+          },
+          "base_nodes": {
+            "description": "Original editable selection, before any unapplied refinement operations.",
+            "items": {
+              "$ref": "#/components/schemas/CreativeNode"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "context": {
+            "$ref": "#/components/schemas/CreativeSelectionContext"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request": {
+            "$ref": "#/components/schemas/CreativeJobRequest"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeProposalRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CreativeJobStatus"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "visual_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeAsset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "assets",
+          "context",
+          "created_at",
+          "document_id",
+          "request",
+          "session_id",
+          "status",
+          "turn_id",
+          "updated_at"
+        ],
+        "title": "CreativeJob",
+        "type": "object"
+      },
+      "CreativeJobListResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeJob"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "title": "CreativeJobListResponse",
+        "type": "object"
+      },
+      "CreativeJobRequest": {
+        "additionalProperties": false,
+        "description": "Stable admission identity. Retrying an ID must repeat the exact input.",
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "parent_job_id": {
+            "description": "Continue this project's owned conversation, never an arbitrary session.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "refine_proposal": {
+            "default": false,
+            "type": "boolean"
+          },
+          "selected_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "visual_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "expected_revision",
+          "id",
+          "prompt",
+          "selected_ids"
+        ],
+        "type": "object"
+      },
+      "CreativeJobStatus": {
+        "enum": [
+          "queued",
+          "dispatching",
+          "running",
+          "ready",
+          "stale",
+          "accepted",
+          "failed",
+          "interrupted",
+          "cancelled",
+          "superseded"
+        ],
+        "type": "string"
+      },
+      "CreativeLine": {
+        "additionalProperties": false,
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/components/schemas/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/components/schemas/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "end",
+          "start"
+        ],
+        "type": "object"
+      },
+      "CreativeLinePoint": {
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "CreativeListResponse": {
+        "properties": {
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeProjectSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "title": "CreativeListResponse",
+        "type": "object"
+      },
+      "CreativeMutationResponse": {
+        "properties": {
+          "applied_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "can_redo": {
+            "type": "boolean"
+          },
+          "can_undo": {
+            "type": "boolean"
+          },
+          "document": {
+            "$ref": "#/components/schemas/CreativeDocument"
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "applied_revision",
+          "can_redo",
+          "can_undo",
+          "document",
+          "duplicate"
+        ],
+        "title": "CreativeMutationResponse",
+        "type": "object"
+      },
+      "CreativeNode": {
+        "additionalProperties": false,
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "$ref": "#/components/schemas/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opacity": {
+            "format": "double",
+            "type": "number"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transform": {
+            "$ref": "#/components/schemas/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "type": "object"
+      },
+      "CreativeOperation": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "node": {
+                "$ref": "#/components/schemas/CreativeNode"
+              },
+              "op": {
+                "enum": [
+                  "put_node"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "op"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "op": {
+                "enum": [
+                  "remove_node"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "op"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Must be a permutation of all remaining node IDs.",
+            "properties": {
+              "ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "op": {
+                "enum": [
+                  "reorder"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "ids",
+              "op"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "op": {
+                "enum": [
+                  "set_background"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "color",
+              "op"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "enum": [
+                  "rename"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "title"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "enum": [
+                  "pin"
+                ],
+                "type": "string"
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "op",
+              "pinned"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CreativePoint": {
+        "additionalProperties": false,
+        "properties": {
+          "elapsed_ms": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "pressure": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tilt_x": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tilt_y": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "CreativeProjectSummary": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pinned",
+          "revision",
+          "title",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "CreativePromoteMediaRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "media_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_id",
+          "session_id"
+        ],
+        "title": "CreativePromoteMediaRequest",
+        "type": "object"
+      },
+      "CreativeProposal": {
+        "properties": {
+          "applied_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/CreativeProposalRequest"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CreativeProposalStatus"
+          }
+        },
+        "required": [
+          "created_at",
+          "request",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CreativeProposalDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "accept": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accept",
+          "expected_revision"
+        ],
+        "title": "CreativeProposalDecision",
+        "type": "object"
+      },
+      "CreativeProposalListResponse": {
+        "properties": {
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeProposal"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "proposals"
+        ],
+        "title": "CreativeProposalListResponse",
+        "type": "object"
+      },
+      "CreativeProposalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeOperation"
+            },
+            "type": "array"
+          },
+          "selected_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "id",
+          "label",
+          "operations",
+          "selected_ids"
+        ],
+        "type": "object"
+      },
+      "CreativeProposalStatus": {
+        "enum": [
+          "ready",
+          "accepted",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "CreativeScene": {
+        "additionalProperties": false,
+        "properties": {
+          "background": {
+            "type": "string"
+          },
+          "nodes": {
+            "description": "Back-to-front paint order. Parent relationships define containment.",
+            "items": {
+              "$ref": "#/components/schemas/CreativeNode"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "type": "string"
+          },
+          "version": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "background",
+          "nodes",
+          "schema",
+          "version"
+        ],
+        "type": "object"
+      },
+      "CreativeSelectionContext": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeAsset"
+            },
+            "type": "array"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeNode"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "selected_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assets",
+          "document_id",
+          "fingerprint",
+          "nodes",
+          "revision",
+          "selected_ids"
+        ],
+        "type": "object"
+      },
+      "CreativeShadow": {
+        "additionalProperties": false,
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "format": "double",
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "CreativeShapeKind": {
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ],
+        "type": "string"
+      },
+      "CreativeTextAlign": {
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ],
+        "type": "string"
+      },
+      "CreativeTextLayout": {
+        "additionalProperties": false,
+        "properties": {
+          "align": {
+            "$ref": "#/components/schemas/CreativeTextAlign"
+          },
+          "letter_spacing": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "format": "double",
+            "type": "number"
+          },
+          "paragraph_spacing": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeTextSpan"
+            },
+            "type": "array"
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "type": "object"
+      },
+      "CreativeTextSpan": {
+        "additionalProperties": false,
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "start": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "end",
+          "start"
+        ],
+        "type": "object"
+      },
+      "CreativeTransaction": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeOperation"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "id",
+          "label",
+          "operations"
+        ],
+        "title": "CreativeTransaction",
+        "type": "object"
+      },
+      "CreativeTransform": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "rotation": {
+            "format": "double",
+            "type": "number"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "CreativeVisualContextRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "selected_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "selected_ids"
+        ],
         "type": "object"
       },
       "CustomViewComponentStatus": {
@@ -18391,6 +20097,124 @@
         }
       }
     },
+    "/v1/browser/worlds/isolated/{world_id}/design-capture": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.design_capture.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserDesignCapture"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}/design-capture/page": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.design_capture.page.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserDesignPageCapture"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.page.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.page.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.page.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/browser/worlds/isolated/{world_id}/input": {
       "post": {
         "operationId": "browser.worlds.isolated.by_world_id.input.post",
@@ -21583,6 +23407,1393 @@
           "feature_profile": "core",
           "rate_limit_class": "administration",
           "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/create/projects": {
+      "get": {
+        "operationId": "create.projects.get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeListResponse"
+                }
+              }
+            },
+            "description": "create.projects.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.get"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "create.projects.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeDocument"
+                }
+              }
+            },
+            "description": "create.projects.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 8454144,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}": {
+      "get": {
+        "operationId": "create.projects.by_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeMutationResponse"
+                }
+              }
+            },
+            "description": "create.projects.by_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.get"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/assets": {
+      "post": {
+        "operationId": "create.projects.by_id.assets.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeAssetImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeAsset"
+                }
+              }
+            },
+            "description": "create.projects.by_id.assets.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.assets.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.assets.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.assets.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 34953558,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/assets/{asset_id}": {
+      "get": {
+        "operationId": "create.projects.by_id.assets.by_asset_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeAssetData"
+                }
+              }
+            },
+            "description": "create.projects.by_id.assets.by_asset_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.assets.by_asset_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.assets.by_asset_id.get"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.assets.by_asset_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/code-context": {
+      "post": {
+        "operationId": "create.projects.by_id.code_context.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeCodeContextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeCodeContext"
+                }
+              }
+            },
+            "description": "create.projects.by_id.code_context.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.code_context.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.code_context.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.code_context.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/context": {
+      "post": {
+        "operationId": "create.projects.by_id.context.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeContextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeSelectionContext"
+                }
+              }
+            },
+            "description": "create.projects.by_id.context.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.context.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.context.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.context.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 131072,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/delete": {
+      "post": {
+        "operationId": "create.projects.by_id.delete.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeDeleteResponse"
+                }
+              }
+            },
+            "description": "create.projects.by_id.delete.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.delete.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.delete.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.delete.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/history": {
+      "post": {
+        "operationId": "create.projects.by_id.history.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeHistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeMutationResponse"
+                }
+              }
+            },
+            "description": "create.projects.by_id.history.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.history.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.history.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.history.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/jobs": {
+      "get": {
+        "operationId": "create.projects.by_id.jobs.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeJobListResponse"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.get"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "create.projects.by_id.jobs.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeJob"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/jobs/{job_id}": {
+      "get": {
+        "operationId": "create.projects.by_id.jobs.by_job_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeJob"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.by_job_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.by_job_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.by_job_id.get"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.by_job_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/jobs/{job_id}/decision": {
+      "post": {
+        "operationId": "create.projects.by_id.jobs.by_job_id.decision.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeProposalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeJob"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.by_job_id.decision.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.by_job_id.decision.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.by_job_id.decision.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.jobs.by_job_id.decision.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/promote-media": {
+      "post": {
+        "operationId": "create.projects.by_id.promote_media.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativePromoteMediaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeAsset"
+                }
+              }
+            },
+            "description": "create.projects.by_id.promote_media.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.promote_media.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.promote_media.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.promote_media.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/proposals": {
+      "get": {
+        "operationId": "create.projects.by_id.proposals.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeProposalListResponse"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.get"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "create.projects.by_id.proposals.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeProposal"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 2097152,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/proposals/{proposal_id}/decision": {
+      "post": {
+        "operationId": "create.projects.by_id.proposals.by_proposal_id.decision.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeProposalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeMutationResponse"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.by_proposal_id.decision.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.by_proposal_id.decision.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.by_proposal_id.decision.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.proposals.by_proposal_id.decision.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/create/projects/{id}/transactions": {
+      "post": {
+        "operationId": "create.projects.by_id.transactions.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeTransaction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreativeMutationResponse"
+                }
+              }
+            },
+            "description": "create.projects.by_id.transactions.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.transactions.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.transactions.post"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "create.projects.by_id.transactions.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 8454144,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
         }
       }
     },

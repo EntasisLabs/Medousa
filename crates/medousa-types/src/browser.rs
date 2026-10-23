@@ -67,3 +67,40 @@ pub struct BrowserPresentationFrame {
     pub observation: BrowserPresentationObservation,
     pub screenshot: BrowserPresentationScreenshot,
 }
+
+/// A viewport import is data, never a live DOM binding or permission to edit code.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BrowserDesignCapture {
+    pub world_id: String,
+    pub scene: crate::creative::CreativeScene,
+    pub raster_regions: Vec<BrowserDesignRaster>,
+    pub screenshot: BrowserPresentationScreenshot,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BrowserDesignRaster {
+    pub asset_id: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Viewport slices of one stable document, in page order. Final slice trims overlap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BrowserDesignPageCapture {
+    pub slices: Vec<BrowserDesignSlice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BrowserDesignSlice {
+    pub capture: BrowserDesignCapture,
+    pub clip_top: u32,
+    pub height: u32,
+    pub page_y: u32,
+}
