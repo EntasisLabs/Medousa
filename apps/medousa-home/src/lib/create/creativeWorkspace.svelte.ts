@@ -1,6 +1,7 @@
 import type { DrawCamera } from "$lib/draw/drawCamera";
 import { creativeApi } from "./creativeApi";
 import { creativeSessionPool } from "./creativeSessionPool";
+import { onCreativeWindowChange } from "./creativeWindowSync";
 import { creativeJobs } from "./creativeJobs";
 
 const pool = creativeSessionPool(8);
@@ -60,6 +61,10 @@ export function acquireCreativeProject(scope: string, id: string) {
   }
   live.set(key, (live.get(key) ?? 0) + 1);
   const stop = entry.jobs.retain();
+  const refresh = () => { void lease.session.refreshIfClean().catch(() => undefined); };
+  const stopChanges = onCreativeWindowChange(change => { if (change.scope === scope && change.id === id) refresh(); });
+  // Focus is also a catch-up point after suspended/offline native windows.
+  if (typeof window !== "undefined") window.addEventListener("focus", refresh);
   let released = false;
   return {
     api,
@@ -69,6 +74,8 @@ export function acquireCreativeProject(scope: string, id: string) {
       if (released) return;
       released = true;
       stop();
+      stopChanges();
+      if (typeof window !== "undefined") window.removeEventListener("focus", refresh);
       lease.release();
       const n = (live.get(key) ?? 1) - 1;
       if (n) live.set(key, n);
@@ -83,4 +90,17 @@ export function pendingScene(lease: CreativeProjectLease) {
   return document
     ? lease.session.scene
     : null;
+}
+
+/** Close only after the current autosave receipt; failures leave the view alive. */
+export async function flushCreativeProject(scope: string, id: string) {
+  const session = entries.get(JSON.stringify([scope, id]))?.session;
+  if (!session) return;
+  if (session.busy && !session.pending) {
+    await new Promise<void>(resolve => {
+      const stop = session.subscribe(() => { if (!session.busy) { stop(); resolve(); } });
+    });
+  }
+  if (session.pendingHistory) { await session.history(session.pendingHistory.redo); return; }
+  if (session.dirty || session.busy) await session.save();
 }

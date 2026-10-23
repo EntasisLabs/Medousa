@@ -21,9 +21,23 @@ static NEXT_ATTACH_ID: AtomicU64 = AtomicU64::new(1);
 pub type CodeLspTransportRegistry = Arc<Mutex<HashMap<u64, CodeLspTransportHandle>>>;
 
 pub struct CodeLspTransportHandle {
+    window_label: String,
     outbound: mpsc::UnboundedSender<String>,
     ready: Arc<Notify>,
     cancel: CancellationToken,
+}
+
+pub(crate) fn detach_window(registry: &CodeLspTransportRegistry, label: &str) {
+    if let Ok(mut handles) = registry.lock() {
+        handles.retain(|_, handle| {
+            if handle.window_label == label {
+                handle.cancel.cancel();
+                false
+            } else {
+                true
+            }
+        });
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -56,16 +70,19 @@ fn validate_lsp_path(path: &str) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn code_lsp_attach(
+    window: tauri::WebviewWindow,
     app: AppHandle,
     _state: State<'_, DaemonState>,
     registry: State<'_, CodeLspTransportRegistry>,
     path: String,
     execution_runtime_id: Option<String>,
 ) -> Result<CodeLspAttachResponse, String> {
+    let window_generation = crate::active_workshop::consumer_generation(&window);
     validate_lsp_path(&path)?;
-    let websocket = crate::terminal::connect_authenticated_ws_for_runtime(
+    let websocket = crate::terminal::connect_authenticated_ws_with_config(
         &path,
-        execution_runtime_id.as_deref(),
+        crate::active_workshop::transport_for_window(&window, execution_runtime_id.as_deref())
+            .await?,
     )
     .await?;
 
@@ -73,17 +90,21 @@ pub async fn code_lsp_attach(
     let (outbound, outbound_rx) = mpsc::unbounded_channel();
     let ready = Arc::new(Notify::new());
     let cancel = CancellationToken::new();
-    registry
+    let mut handles = registry
         .lock()
-        .map_err(|_| "Code LSP transport registry lock")?
-        .insert(
-            attach_id,
-            CodeLspTransportHandle {
-                outbound,
-                ready: Arc::clone(&ready),
-                cancel: cancel.clone(),
-            },
-        );
+        .map_err(|_| "Code LSP transport registry lock")?;
+    crate::active_workshop::ensure_window_consumer(&window, window_generation)?;
+    handles.insert(
+        attach_id,
+        CodeLspTransportHandle {
+            window_label: window.label().to_string(),
+            outbound,
+            ready: Arc::clone(&ready),
+            cancel: cancel.clone(),
+        },
+    );
+    drop(handles);
+
     tauri::async_runtime::spawn(run_transport(
         attach_id,
         app,

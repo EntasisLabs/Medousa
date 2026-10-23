@@ -115,6 +115,15 @@ export function creativeDocumentSession(
     readRemote() {
       return api.get(id);
     },
+    /** Refresh a clean scene without locking gestures or replacing an edit made
+     * while the request was in flight. Concurrent drafts retain revision guards. */
+    async refreshIfClean() {
+      if (!document || deleted || busy || pending || pendingHistory || queue.length) return;
+      const base = document;
+      const response = await api.get(id);
+      if (document !== base || deleted || busy || pending || pendingHistory || queue.length) return;
+      if (response.document.revision > base.revision) { accept(response); notify(); }
+    },
     async load() {
       if (deleted) throw new Error("This project has been deleted");
       if (busy || pending || pendingHistory || queue.length)

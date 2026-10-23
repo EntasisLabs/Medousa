@@ -75,7 +75,11 @@ export function startShellRootResources(): () => void {
     vaultDirty: isVaultDirty,
     flushVaultBeforeLeave: async () => {
       const { vault } = await import("$lib/stores/vault.svelte");
-      return vault.flushBeforeLeave();
+      if (!(await vault.flushBeforeLeave())) return false;
+      const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+      const saved = await codeWorkspace.flushBeforeWorkshopSwitch();
+      if (!saved) toast.show("Your latest Code draft couldn’t be preserved. Keep this workshop open and resolve the file before switching.");
+      return saved;
     },
     prepareForWorkshopSwitch,
     activateWorkshopScope,

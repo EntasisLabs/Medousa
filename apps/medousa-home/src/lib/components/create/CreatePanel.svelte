@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onCreativeWindowChange } from "$lib/create/creativeWindowSync";
   import { onMount, untrack } from "svelte";
   import {
     Search,
@@ -71,6 +72,9 @@
     if (!documentId) untrack(() => void current.load());
   });
   onMount(() => {
+    const refresh = () => { if (!documentId) void browser.load(); };
+    const stopChanges = onCreativeWindowChange(change => { if (change.scope === scope) refresh(); });
+    window.addEventListener("focus", refresh);
     if (documentId) {
       try {
         lease = acquireCreativeProject(scope, documentId);
@@ -80,6 +84,7 @@
     }
 
     return () => {
+      stopChanges(); window.removeEventListener("focus", refresh);
       lease?.release();
     };
   });

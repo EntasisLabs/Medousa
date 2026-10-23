@@ -54,6 +54,7 @@ class CodeWorkspaceStore {
   private hydrated = new Set<string>();
   private hydrating = new Map<string, Promise<void>>();
   private opening = new Map<string, Promise<CodeDocumentTab | null>>();
+  private persisting = new Map<string, Promise<boolean>>();
   private persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private workspaceEpoch = 0;
 
@@ -79,6 +80,7 @@ class CodeWorkspaceStore {
     this.workspaceEpoch += 1;
     for (const timer of this.persistTimers.values()) clearTimeout(timer);
     this.persistTimers.clear();
+    this.persisting.clear();
     this.hydrated.clear();
     this.hydrating.clear();
     this.opening.clear();
@@ -536,12 +538,32 @@ class CodeWorkspaceStore {
     this.schedulePersist(workId, 400);
   }
 
-  async persist(workId: string) {
-    if (!this.hydrated.has(workId)) return;
+  /** Preserve the last keystrokes before the workshop boundary clears buffers. */
+  async flushBeforeWorkshopSwitch(): Promise<boolean> {
+    const dirty = this.tabs.filter(tab => this.isDirty(tab)).map(tab => ({ id: tab.tabId, workId: tab.work_id, draft: tab.draft }));
+    for (const workId of new Set(dirty.map(tab => tab.workId))) {
+      if (!(await this.persist(workId))) return false;
+    }
+    const current = this.tabs.filter(tab => this.isDirty(tab));
+    return current.length === dirty.length && dirty.every(tab => current.find(entry => entry.tabId === tab.id)?.draft === tab.draft);
+  }
+
+  persist(workId: string): Promise<boolean> {
+    const epoch = this.workspaceEpoch;
+    const previous = this.persisting.get(workId) ?? Promise.resolve(true);
+    const task = previous.then(() => epoch === this.workspaceEpoch ? this.persistSnapshot(workId) : false).finally(() => {
+      if (this.persisting.get(workId) === task) this.persisting.delete(workId);
+    });
+    this.persisting.set(workId, task);
+    return task;
+  }
+
+  private async persistSnapshot(workId: string): Promise<boolean> {
+    if (!this.hydrated.has(workId)) return false;
     const tabs = this.tabsFor(workId).filter((tab) => !tab.loading && tab.digest);
     const dirty = tabs.some((tab) => this.isDirty(tab));
     const lease = this.leaseByWorkId[workId] ?? null;
-    if (dirty && !lease) return;
+    if (dirty && !lease) return false;
     const layout = codeWorkbenchState.layoutFor(workId);
     try {
       await saveCodeWorkspaceState(
@@ -570,11 +592,13 @@ class CodeWorkspaceStore {
         },
         lease,
       );
+      return true;
     } catch (err) {
       const active = this.activeFor(workId);
       if (active) {
         this.setError(active.tabId, err instanceof Error ? err.message : String(err));
       }
+      return false;
     }
   }
 }

@@ -591,7 +591,7 @@ pub async fn workshops_set_active(
         }
     }
 
-    state.cancel_all_streams();
+    state.cancel_selected_streams();
     registry.active_workshop_id = trimmed.to_string();
     let now = now_iso();
     if let Some(workshop) = registry
@@ -673,7 +673,7 @@ pub fn workshops_remove(
 
     let switched_active = previous_active == trimmed;
     if switched_active {
-        state.cancel_all_streams();
+        state.cancel_selected_streams();
         registry.active_workshop_id = PERSONAL_WORKSHOP_ID.to_string();
     }
     save_registry(&registry)?;

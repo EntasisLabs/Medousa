@@ -240,6 +240,7 @@ function filterLayoutForLme(
 }
 
 function loadPersisted(scopeId: string): PersistedV4 | null {
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/desktop/")) return null;
   if (typeof localStorage === "undefined") return null;
   try {
     const rawV4 = localStorage.getItem(persistenceKey(scopeId));
@@ -450,6 +451,7 @@ export class ShellTabsStore {
 
   /** Persist v3 without mutating reactive `desktops` (active layout is live state). */
   private persist() {
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/desktop/")) return;
     if (!this.bootstrapped) return;
     if (typeof localStorage === "undefined") return;
     try {

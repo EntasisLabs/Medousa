@@ -135,3 +135,25 @@ it("keeps optimistic pixels and unchanged node identities stable through save re
   expect(session.scene).toBe(optimistic);
   expect(session.scene!.nodes[0]).toBe(optimistic.nodes[0]);
 });
+
+describe("cross-window scene refresh", () => {
+  it("refreshes clean scenes without locking gestures and ignores older receipts", async () => {
+    const port = api(), session = creativeDocumentSession(port, "doc"); await session.load();
+    let finish!: (value: CreativeMutationResponse) => void;
+    vi.mocked(port.get).mockImplementationOnce(() => new Promise(resolve => finish = resolve));
+    const refresh = session.refreshIfClean(); expect(session.busy).toBe(false); expect(session.canEdit).toBe(true);
+    finish(response(2)); await refresh; expect(session.document?.revision).toBe(2);
+    vi.mocked(port.get).mockResolvedValueOnce(response(1)); await session.refreshIfClean(); expect(session.document?.revision).toBe(2);
+  });
+  it("preserves an edit made while a peer refresh was in flight", async () => {
+    const port = api(), session = creativeDocumentSession(port, "doc"); await session.load();
+    let finish!: (value: CreativeMutationResponse) => void;
+    vi.mocked(port.get).mockImplementationOnce(() => new Promise(resolve => finish = resolve));
+    const refresh = session.refreshIfClean();
+    session.enqueue("Rename", [{ op: "rename", title: "My draft" }]);
+    finish(response(2)); await refresh;
+    expect(session.document?.revision).toBe(0); expect(session.pending?.expected_revision).toBe(0);
+    expect(session.dirty).toBe(true);
+    const calls = vi.mocked(port.get).mock.calls.length; await session.refreshIfClean(); expect(port.get).toHaveBeenCalledTimes(calls);
+  });
+});

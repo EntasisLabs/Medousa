@@ -27,6 +27,8 @@
 
   interface Props {
     open: boolean;
+    onOpenSession?: (sessionId: string, title?: string) => void | Promise<void>;
+    onNewSession?: () => void | Promise<void>;
     onClose?: () => void;
     /** Fired after a session is opened/created (e.g. close a rail popover). */
     onPick?: () => void;
@@ -35,7 +37,7 @@
     chrome?: "default" | "rail-list";
   }
 
-  let { open, onClose, onPick, variant = "drawer", chrome = "default" }: Props = $props();
+  let { open, onClose, onPick, onOpenSession, onNewSession, variant = "drawer", chrome = "default" }: Props = $props();
 
   const showBuiltInToolbar = $derived(chrome !== "rail-list");
 
@@ -188,6 +190,7 @@
   );
 
   async function selectSession(sessionId: string, title?: string) {
+    if (onOpenSession) { await onOpenSession(sessionId, title); onPick?.(); return; }
     // Shell tabs own visible chat selection. Activating through the shell also
     // switches/hydrates the chat store, without relying on its async mirror.
     const tabId = shellTabs.openChat(sessionId, { activate: true, title });
@@ -204,6 +207,7 @@
   });
 
   async function createSession() {
+    if (onNewSession) { await onNewSession(); onPick?.(); return; }
     await chat.newSession();
     onPick?.();
     if (variant === "drawer" || variant === "sheet") {

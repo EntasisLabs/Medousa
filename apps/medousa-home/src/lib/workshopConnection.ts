@@ -1,3 +1,4 @@
+import { publishChatWindowEvent } from "$lib/chat/chatWindowSync";
 import { contextThreads } from "$lib/context/contextThreads.svelte";
 import { contextNotes } from "$lib/context/contextNotes.svelte";
 import { contextShell } from "$lib/context/contextShell.svelte";
@@ -59,7 +60,7 @@ export type WorkshopConnection = {
   refreshHealth: () => Promise<DaemonHealth | null>;
 };
 
-export type WorkshopConnectMode = "full" | "observer";
+export type WorkshopConnectMode = "full" | "observer" | "window";
 
 async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
   if (!health.ok || isBrowserWorkshop()) return;
@@ -75,6 +76,7 @@ let workshopRecoveryGeneration = 0;
 let workshopTeardown = false;
 let workshopTransitioning = false;
 let workshopConnectMode: WorkshopConnectMode = "full";
+let onConnectionReady: (() => Promise<void>) | null = null;
 let connectionReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
 let environmentReconnect = new ReconnectScheduler({ policy: DEFAULT_WORKSPACE_BACKOFF });
 let workspaceReconnect = new ReconnectScheduler({
@@ -114,11 +116,11 @@ function scheduleWorkshopConnectionRecovery(
   connectionReconnect.schedule(async () => {
     if (!recoveryIsCurrent(generation) || document.visibilityState === "hidden") return;
     try {
-      const health = workshopConnectMode === "observer"
+      const health = workshopConnectMode !== "full"
         ? await checkDaemonHealth()
         : await refreshWorkshopConnection(onHealthChange);
       if (workshopTeardown || workshopTransitioning || workshops.activeWorkshop?.id !== workshopId) return;
-      if (workshopConnectMode === "observer") {
+      if (workshopConnectMode !== "full") {
         if (!recoveryIsCurrent(generation)) return;
         connection.setHealth(health);
         onHealthChange(health);
@@ -130,6 +132,7 @@ function scheduleWorkshopConnectionRecovery(
       }
       connectionReconnect.noteSuccess();
       await loadWorkshopDefaults(true);
+      await onConnectionReady?.();
     } catch (error) {
       if (recoveryIsCurrent(generation)) {
         chat.noteResumeFailure(error);
@@ -140,7 +143,7 @@ function scheduleWorkshopConnectionRecovery(
 }
 
 function scheduleEnvironmentStreamReconnect() {
-  if (workshopTeardown || workshopTransitioning || workshopConnectMode === "observer") return;
+  if (workshopTeardown || workshopTransitioning || workshopConnectMode !== "full") return;
   environmentReconnect.schedule(() => recoverEnvironmentStream());
 }
 
@@ -160,7 +163,7 @@ async function recoverEnvironmentStream(): Promise<void> {
 }
 
 function scheduleWorkspaceStreamReconnect() {
-  if (workshopTeardown || workshopTransitioning || workshopConnectMode === "observer") return;
+  if (workshopTeardown || workshopTransitioning || workshopConnectMode !== "full") return;
   workspaceReconnect.schedule(() => recoverWorkspaceStream());
 }
 
@@ -182,7 +185,7 @@ async function recoverWorkspaceStream(): Promise<void> {
 }
 
 function scheduleInteractiveStreamRecover() {
-  if (workshopTeardown || workshopTransitioning || workshopConnectMode === "observer") return;
+  if (workshopTeardown || workshopTransitioning || workshopConnectMode !== "full") return;
   const generation = workshopRecoveryGeneration;
   interactiveReconnect.schedule(async () => {
     if (!recoveryIsCurrent(generation)) return;
@@ -289,6 +292,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
       connection.noteTraffic();
       connectionReconnect.cancel();
       chat.applyStreamEvent(envelope);
+      publishChatWindowEvent(envelope);
       if (!isTauriMobilePlatform()) return;
 
       if (envelope.event.type === "budget_approval_required") {
@@ -315,7 +319,8 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   );
 }
 
-/** Stop the selected daemon's effects and remove its in-memory projections. */
+/** Detach this client’s subscriptions and clear its projections. Admitted
+ * daemon turns, jobs, and development servers continue on their workshop. */
 export async function prepareForWorkshopSwitch(): Promise<void> {
   workshopTransitioning = true;
   cancelScheduledStreamRecovery();
@@ -442,6 +447,7 @@ export async function resumeWorkshopObserver(
       chat.hydrateAskThreads(workspace.cards),
     ]);
     await workspace.recoverPendingWorkerResults();
+    await onConnectionReady?.();
   } catch (error) {
     if (recoveryIsCurrent(generation)) {
       chat.noteResumeFailure(error);
@@ -700,6 +706,10 @@ export async function reconnectWorkshop(
 export function connectWorkshop(options: {
   onHealthChange: (health: DaemonHealth | null) => void;
   mode?: WorkshopConnectMode;
+  /** Immutable resource ownership in a detached desktop window. */
+  workshopId?: string;
+  onReady?: () => void | Promise<void>;
+  isolated?: boolean;
 }): () => void {
   const mode = options.mode ?? "full";
   workshopConnectMode = mode;
@@ -717,7 +727,24 @@ export function connectWorkshop(options: {
   chat.setStreamRole(mode === "observer" ? "observer" : "owner");
   settings.applyTheme();
   const unlisteners: Promise<() => void>[] = [];
-  registerStreamListeners(unlisteners);
+  if (!options.isolated) registerStreamListeners(unlisteners);
+  let stopIsolated: (() => void) | undefined;
+  let readyTask: Promise<void> | null = null;
+  const readyCallback = (): Promise<void> => {
+    if (readyTask) return readyTask;
+    readyTask = Promise.resolve().then(async () => {
+      if (!recoveryIsCurrent(generation)) return;
+      if (options.isolated && mode === "window" && !stopIsolated) {
+        const { startDesktopStreams } = await import("$lib/desktop/streams");
+        const stop = await startDesktopStreams();
+        if (!recoveryIsCurrent(generation)) { stop(); return; }
+        stopIsolated = stop;
+      }
+      await options.onReady?.();
+    }).finally(() => { readyTask = null; });
+    return readyTask;
+  };
+  onConnectionReady = readyCallback;
 
   const detachForeground =
     mode === "full"
@@ -740,7 +767,7 @@ export function connectWorkshop(options: {
   void (async () => {
     let health: DaemonHealth;
     try {
-      await workshops.load();
+      await workshops.load({ workshopId: options.workshopId, restoreShell: !options.isolated && !options.workshopId });
       if (!recoveryIsCurrent(generation)) return;
       connection.setHealth(null);
       options.onHealthChange(null);
@@ -786,6 +813,7 @@ export function connectWorkshop(options: {
         }
       }
       workshops.applyThemeForActiveWorkshop();
+      if (health.ok) await readyCallback();
     } catch (err) {
       // Projection/bootstrap failures do not make a healthy daemon offline.
       // Keep the composer usable; existing stream errors own their recovery.
@@ -796,6 +824,8 @@ export function connectWorkshop(options: {
 
   return () => {
     workshopTeardown = true;
+    stopIsolated?.();
+    if (onConnectionReady === readyCallback) onConnectionReady = null;
     connectionReconnect.teardown();
     detachForeground();
     if (trustHeartbeatTimer !== null) {
@@ -805,6 +835,7 @@ export function connectWorkshop(options: {
       clearInterval(browserClientHeartbeatTimer);
     }
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
+    if (mode === "window") void chat.stopOwnedInteractiveStreams();
     if (mode === "full") {
       cancelScheduledStreamRecovery();
       environmentReconnect.teardown();

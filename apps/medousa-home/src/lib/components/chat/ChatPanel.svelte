@@ -103,6 +103,8 @@
 
   interface Props {
     visible: boolean;
+    onOpenSession?: (id: string) => Promise<void>;
+    onNewSession?: () => Promise<void>;
     sharedAgentSession?: ReturnType<typeof createAgentSessionController>;
     sharedExternalConversation?: ReturnType<typeof createExternalConversationController>;
     mobile?: boolean;
@@ -118,7 +120,7 @@
   }
 
   let {
-    visible,
+    visible, onOpenSession, onNewSession,
     sharedAgentSession,
     sharedExternalConversation,
     mobile = false,
@@ -672,12 +674,14 @@
   }
 
   async function resumeSession(sessionId: string) {
+    if (onOpenSession) return onOpenSession(sessionId);
     await chat.switchSession(sessionId);
   }
 
   async function openDerivationSource() {
     const sourceSessionId = derivationSource?.sessionId;
     if (!sourceSessionId) return;
+    if (onOpenSession) return onOpenSession(sourceSessionId);
     await chat.switchSession(sourceSessionId);
     const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
     shellTabs.openChat(sourceSessionId, { activate: true });
@@ -810,7 +814,7 @@
           type="button"
           class="chat-restore-toast-dismiss text-content-link"
           onclick={() => {
-            void chat.newSession();
+            void (onNewSession ? onNewSession() : chat.newSession());
             userProfiles.dismissSwitchNotice();
           }}
         >

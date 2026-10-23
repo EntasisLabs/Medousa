@@ -13,6 +13,7 @@ import {
 import { UserProfilesStore } from "$lib/stores/userProfiles.svelte";
 import { WorkshopsStore } from "$lib/stores/workshops.svelte";
 import { defaultWorkshopRegistry } from "$lib/types/workshopRegistry";
+import { setWorkshopSwitchPorts, workshopSwitchPorts } from "$lib/runtime/workshopSwitchPorts";
 import { setWorkshopRefreshPort } from "$lib/runtime/workshopReconnectPort";
 import {
   getSessionAgentRuntime,
@@ -39,8 +40,22 @@ describe("workshop client-state isolation", () => {
 
   afterEach(() => {
     setWorkshopRefreshPort(null);
+    setWorkshopSwitchPorts(null);
     setActiveWorkshopIdPort(null);
     vi.unstubAllGlobals();
+  });
+
+  it("switches immediately while work is running and only prompts for unsaved notes", () => {
+    const store = new WorkshopsStore();
+    const live = vi.fn(() => true), selected = vi.spyOn(store, "selectWorkshop").mockResolvedValue(undefined);
+    const ports = { ...workshopSwitchPorts(), vaultDirty: () => false, hasLiveInteractiveTurn: live };
+    setWorkshopSwitchPorts(ports);
+    store.requestSwitch("authority-remote");
+    expect(store.confirmSwitchId).toBeNull(); expect(selected).toHaveBeenCalledWith("authority-remote");
+    expect(live).not.toHaveBeenCalled();
+    setWorkshopSwitchPorts({ ...ports, vaultDirty: () => true });
+    store.requestSwitch("another-workshop");
+    expect(store.confirmSwitchId).toBe("another-workshop"); expect(selected).toHaveBeenCalledTimes(1);
   });
 
   it("does not alias drafts, sessions, promoted asks, or agent config", () => {

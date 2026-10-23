@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy, tick, untrack, type Snippet } from "svelte";
+  import { getContext, onDestroy, tick, untrack, type Snippet } from "svelte";
+  import { WINDOW_SAVE } from "$lib/desktop/windowSave";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import { buildTextDiff } from "$lib/diff/buildTextDiff";
   import CodeEditorContextMenu, {
@@ -94,6 +95,9 @@
   import { subscribeCodeDiagnostics } from "$lib/code/codeDiagnosticsEvents";
   import type { TerminalSessionSummary } from "$lib/terminal";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
+  const registerWindowSave = getContext<import("$lib/desktop/windowSave").WindowSaveRegistration | undefined>(WINDOW_SAVE);
+  $effect(() => registerWindowSave?.(async () => { editor?.flushChanges(); await tick(); return save.saveAll(); }));
+
   interface Props {
     fill?: boolean;
     workId?: string;

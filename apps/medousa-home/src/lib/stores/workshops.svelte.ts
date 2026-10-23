@@ -31,6 +31,13 @@ import { parsePairQrUrl } from "$lib/utils/pairingUrl";
 import { activateBrowserPortal, pairBrowserFromInvite } from "$lib/wasm/browserPortal";
 
 export class WorkshopsStore {
+  private retainedWorkshopId: string | null = null;
+  private projectRegistry(registry: WorkshopRegistry): WorkshopRegistry {
+    const id = this.retainedWorkshopId;
+    if (!id) return registry;
+    if (!findWorkshop(registry, id)) throw new Error("This window’s workshop is no longer available");
+    return { ...registry, activeWorkshopId: id };
+  }
   registry = $state<WorkshopRegistry>(defaultWorkshopRegistry());
   loading = $state(false);
   switching = $state(false);
@@ -65,7 +72,8 @@ export class WorkshopsStore {
     return findWorkshop(this.registry, id)?.label ?? "New workshop";
   });
 
-  async load() {
+  async load(options?: { workshopId?: string; restoreShell?: boolean }) {
+    if (options?.workshopId) this.retainedWorkshopId = options.workshopId;
     if (!isTauri() && !isBrowserWorkshop()) {
       this.registry = defaultWorkshopRegistry();
       return;
@@ -73,7 +81,7 @@ export class WorkshopsStore {
     this.loading = true;
     this.error = null;
     try {
-      this.registry = await loadWorkshopRegistry();
+      this.registry = this.projectRegistry(await loadWorkshopRegistry());
       void import("$lib/siriWorkshopSnapshot").then(({ syncSiriWorkshopSnapshot }) =>
         syncSiriWorkshopSnapshot(),
       );
@@ -87,7 +95,7 @@ export class WorkshopsStore {
         await activateBrowserPortal(this.activeWorkshopId).catch(() => undefined);
       }
       const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
-      await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
+      if (options?.restoreShell !== false) await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -96,12 +104,13 @@ export class WorkshopsStore {
   }
 
   needsSwitchConfirm(): boolean {
-    const ports = workshopSwitchPorts();
-    if (ports.vaultDirty()) return true;
-    return ports.hasLiveInteractiveTurn();
+    // Running work belongs to its daemon. Changing the client subscription
+    // does not cancel a turn; only unsaved local edits need confirmation.
+    return workshopSwitchPorts().vaultDirty();
   }
 
   requestSwitch(workshopId: string) {
+    if (this.retainedWorkshopId) { this.error = "Open Medousa to switch workshops. This window stays with its own workshop."; return; }
     if (this.refreshing) return;
     if (workshopId === this.activeWorkshopId) return;
     if (this.needsSwitchConfirm()) {
@@ -259,6 +268,7 @@ export class WorkshopsStore {
     },
   ) {
     if (!isTauri() && !isBrowserWorkshop()) return;
+    if (this.retainedWorkshopId) return;
     if (workshopId === this.activeWorkshopId) return;
     if (this.switching || this.refreshing) return;
     if (!options?.force && this.needsSwitchConfirm()) {
@@ -277,7 +287,7 @@ export class WorkshopsStore {
       if (!flushed) return;
       shellTabs.checkpoint();
       await ports.prepareForWorkshopSwitch();
-      this.registry = await setActiveWorkshop(workshopId);
+      this.registry = this.projectRegistry(await setActiveWorkshop(workshopId));
       void import("$lib/siriWorkshopSnapshot").then(({ syncSiriWorkshopSnapshot }) =>
         syncSiriWorkshopSnapshot(),
       );
@@ -313,10 +323,10 @@ export class WorkshopsStore {
     if (!isTauri() && !isBrowserWorkshop()) return;
     const trimmed = sessionId.trim();
     if (!trimmed || trimmed === this.activeWorkshop?.clientState?.lastSessionId) return;
+    const scope = this.activeWorkshopId;
     try {
-      this.registry = await updateWorkshopClientState(this.activeWorkshopId, {
-        lastSessionId: trimmed,
-      });
+      const registry = await updateWorkshopClientState(scope, { lastSessionId: trimmed });
+      if (scope === this.activeWorkshopId) this.registry = this.projectRegistry(registry);
     } catch {
       // Best-effort — session still works locally.
     }
@@ -355,10 +365,10 @@ export class WorkshopsStore {
 
   async saveColorTheme(themeId: ColorThemeId) {
     if (!isTauri() && !isBrowserWorkshop()) return;
+    const scope = this.activeWorkshopId;
     try {
-      this.registry = await updateWorkshopClientState(this.activeWorkshopId, {
-        colorThemeId: themeId,
-      });
+      const registry = await updateWorkshopClientState(scope, { colorThemeId: themeId });
+      if (scope === this.activeWorkshopId) this.registry = this.projectRegistry(registry);
     } catch {
       // Theme still applied locally.
     }
@@ -372,7 +382,7 @@ export class WorkshopsStore {
       tagline?: string | null;
     },
   ) {
-    this.registry = await updateWorkshopBranding(workshopId, patch);
+    this.registry = this.projectRegistry(await updateWorkshopBranding(workshopId, patch));
   }
 
   async restoreLastSession() {
@@ -387,7 +397,7 @@ export class WorkshopsStore {
   async addLocalEngine(label: string, dataDir: string) {
     this.error = null;
     try {
-      this.registry = await addLocalWorkshop(label, dataDir);
+      this.registry = this.projectRegistry(await addLocalWorkshop(label, dataDir));
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
       throw err;
@@ -397,7 +407,7 @@ export class WorkshopsStore {
   async renameWorkshop(workshopId: string, label: string) {
     this.error = null;
     try {
-      this.registry = await renameWorkshop(workshopId, label);
+      this.registry = this.projectRegistry(await renameWorkshop(workshopId, label));
       void import("$lib/siriWorkshopSnapshot").then(({ syncSiriWorkshopSnapshot }) =>
         syncSiriWorkshopSnapshot(),
       );
@@ -428,7 +438,7 @@ export class WorkshopsStore {
         shellTabs.checkpoint();
         await ports.prepareForWorkshopSwitch();
       }
-      this.registry = await removeWorkshop(workshopId);
+      this.registry = this.projectRegistry(await removeWorkshop(workshopId));
       void import("$lib/siriWorkshopSnapshot").then(({ syncSiriWorkshopSnapshot }) =>
         syncSiriWorkshopSnapshot(),
       );

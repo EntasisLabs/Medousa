@@ -417,6 +417,10 @@
       "specifier": "../app.postcss"
     },
     {
+      "from": "src/routes/desktop/work/+page.svelte",
+      "specifier": "$lib/styles/lme.postcss"
+    },
+    {
       "from": "src/routes/dev/liquid/+page.svelte",
       "specifier": "$lib/components/ui/bindMarkdownView"
     }
