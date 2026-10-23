@@ -104,8 +104,15 @@ jobs:
             exit 1
           fi
           echo "packaged ${debs[0]}"
-          if ! dpkg-deb -c "${debs[0]}" | grep -F "medousa_daemon-${triple}"; then
-            echo "error: deb does not contain the engine sidecar" >&2
+          # Tauri installs externalBin as usr/bin/medousa_daemon, without the
+          # target-triple suffix used in src-tauri/binaries/.
+          extract="$(mktemp -d)"
+          dpkg-deb -x "${debs[0]}" "${extract}"
+          packaged="${extract}/usr/bin/medousa_daemon"
+          if [[ ! -f "${packaged}" ]]; then
+            echo "error: deb does not contain usr/bin/medousa_daemon" >&2
             dpkg-deb -c "${debs[0]}" >&2
             exit 1
           fi
+          medousa_validate_native_binary "${packaged}" "${triple}"
+          echo "packaged sidecar $(wc -c < "${packaged}") bytes"
