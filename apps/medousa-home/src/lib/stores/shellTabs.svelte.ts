@@ -523,7 +523,7 @@ export class ShellTabsStore {
     const surface = focusSurfaceHint(tab, ports().lme.tabs());
     if (!surface) return;
     layout.focusDesktopSurface(surface);
-    if (surface === "reviews" || surface === "create") layout.openShellSidebarView(surface);
+    if (surface === "reviews") layout.openShellSidebarView(surface);
   }
 
   private patchGroup(groupId: string, patch: Partial<EditorGroup>) {
