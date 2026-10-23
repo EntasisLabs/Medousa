@@ -116,6 +116,15 @@
       "oldNew": "948->959 default; 1023->1034 iroh; duplicate-version names 92->93 default and 99->100 iroh",
       "evidence": "cargo tree --locked -p medousa -e normal on main 93c7e47 versus this branch; scripts/ci/check-dependency-budget.py",
       "revisit": "2026-11-01"
+    },
+    {
+      "date": "2026-10-23",
+      "workload": "P09 adapter-workspace after the tokio 1.54.1 advisory bump",
+      "owner": "release/deps",
+      "reason": "tokio 1.54.1 (RUSTSEC-2026-0386) pulls socket2 0.5.10 into the telegram, discord, and slack closure, which already contains socket2 0.6.3. That is one new unique pair and one new duplicate-version name. The default and iroh closures already contained both socket2 versions, so their ceilings stay put. socket2 is already on the default duplicate-name list.",
+      "oldNew": "255->256 adapter unique pairs; duplicate-version names 20->21 adapter; default and iroh unchanged",
+      "evidence": "cargo tree --locked -p medousa-telegram -p medousa-discord -p medousa-slack -e normal at a498934f (255/20) versus 87a2b26e (256/21)",
+      "revisit": "2026-11-01"
     }
   ],
   "profiles": {
@@ -153,8 +162,8 @@
         "medousa-slack"
       ],
       "forbidAdapterFrameworks": false,
-      "uniqueNameVersionPairs": 255,
-      "duplicateVersionNames": 20
+      "uniqueNameVersionPairs": 256,
+      "duplicateVersionNames": 21
     },
     "medousa-home-tauri": {
       "kind": "manifest",
