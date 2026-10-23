@@ -3672,9 +3672,23 @@ mod tests {
         let item = forge.provision(&item.id, &actor()).unwrap();
         let tree = fx.git.run(&fx.repo, &["write-tree"]).unwrap();
         let tree = tree.trim().to_owned();
+        // `commit-tree` refuses an empty author ident (git 2.55+). CI runners
+        // do not set user.name, unlike the Forge checkpoint helpers.
         let rewritten = fx
             .git
-            .run(&fx.repo, &["commit-tree", &tree, "-m", "rewritten root"])
+            .run(
+                &fx.repo,
+                &[
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@local",
+                    "commit-tree",
+                    &tree,
+                    "-m",
+                    "rewritten root",
+                ],
+            )
             .unwrap();
         let rewritten = rewritten.trim().to_owned();
         fx.git
