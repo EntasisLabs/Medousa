@@ -108,7 +108,12 @@ jobs:
       - name: Check browser wasm daemon
         run: ./scripts/ci/check-wasm-daemon.sh
 
+  # Lint and unit tests only. The placeholder sidecar satisfies tauri-build's
+  # externalBin file copy; it is not a daemon and does not validate packaging.
+  # Real sidecar build, native-binary integrity, and deb packaging live in
+  # .github/workflows/desktop-sidecar.yml.
   tauri-ubuntu:
+    name: Desktop lint and unit tests (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -120,10 +125,16 @@ jobs:
           cache-on-failure: true
       - name: Install Tauri build deps
         run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
-      - name: Prepare engine sidecar (required by tauri externalBin)
-        run: ./apps/medousa-home/scripts/prepare-engine-sidecar.sh
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/cargo-target
+      - name: Placeholder sidecar for lint and unit tests
+        run: |
+          set -euo pipefail
+          # tauri-build copies bundle.externalBin on every compile. An empty
+          # file satisfies that copy. This job does not execute it, and it does
+          # not validate the engine sidecar or the desktop package.
+          triple="$(rustc -vV | sed -n 's/^host: //p')"
+          dir="apps/medousa-home/src-tauri/binaries"
+          mkdir -p "${dir}"
+          : > "${dir}/medousa_daemon-${triple}"
       - name: cargo clippy (Home Tauri)
         run: cargo clippy --manifest-path apps/medousa-home/src-tauri/Cargo.toml --all-targets -- -D warnings -A dead_code -A clippy::too_many_arguments -A clippy::large_enum_variant -A clippy::ptr_arg -A private_interfaces
       - name: cargo test (Home Tauri lib)

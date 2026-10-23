@@ -79,15 +79,43 @@ impl Default for CheckpointAuthor {
     }
 }
 
+/// Identity stamped on fixture-only Git commands. Production checkpoints keep
+/// using [`FORGE_COMMITTER_NAME`] so tests never read or write the runner's
+/// global Git config.
+pub(crate) const FIXTURE_GIT_NAME: &str = "Medousa Fixture";
+pub(crate) const FIXTURE_GIT_EMAIL: &str = "fixture@medousa.local";
+
 #[derive(Debug, Clone)]
 pub struct GitEngine {
     git: PathBuf,
+    /// When set, every command from this engine uses an isolated `HOME` and
+    /// `GIT_CONFIG_GLOBAL` plus explicit author/committer env. Production
+    /// engines leave both empty.
+    fixture_home: Option<PathBuf>,
+    fixture_gitconfig: Option<PathBuf>,
+}
+
+fn apply_isolated_git_identity(command: &mut Command, home: &Path, config: &Path) {
+    command
+        .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("GIT_CONFIG_GLOBAL", config)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env_remove("GIT_CONFIG_COUNT")
+        .env_remove("GIT_CONFIG_PARAMETERS")
+        .env("GIT_AUTHOR_NAME", FIXTURE_GIT_NAME)
+        .env("GIT_AUTHOR_EMAIL", FIXTURE_GIT_EMAIL)
+        .env("GIT_COMMITTER_NAME", FIXTURE_GIT_NAME)
+        .env("GIT_COMMITTER_EMAIL", FIXTURE_GIT_EMAIL);
 }
 
 impl GitEngine {
     fn command(&self) -> Command {
         let mut command = Command::new(&self.git);
         medousa_host::hide_subprocess_window(&mut command);
+        if let (Some(home), Some(config)) = (&self.fixture_home, &self.fixture_gitconfig) {
+            apply_isolated_git_identity(&mut command, home, config);
+        }
         command
     }
 
@@ -96,12 +124,12 @@ impl GitEngine {
         if let Ok(explicit) = std::env::var("GIT_BIN") {
             let path = PathBuf::from(explicit.trim());
             if path.is_file() {
-                return Ok(Self { git: path });
+                return Ok(Self::bare(path));
             }
         }
         let name = if cfg!(windows) { "git.exe" } else { "git" };
         if let Some(path) = find_in_path(name) {
-            return Ok(Self { git: path });
+            return Ok(Self::bare(path));
         }
         Err(ForgeError::Git(
             "git binary not found (set GIT_BIN or put git on PATH)".into(),
@@ -109,7 +137,23 @@ impl GitEngine {
     }
 
     pub fn with_binary(git: PathBuf) -> Self {
-        Self { git }
+        Self::bare(git)
+    }
+
+    fn bare(git: PathBuf) -> Self {
+        Self {
+            git,
+            fixture_home: None,
+            fixture_gitconfig: None,
+        }
+    }
+
+    /// Use a fixture-owned Git config instead of the process user's global one.
+    #[cfg(test)]
+    pub(crate) fn with_isolated_identity(mut self, home: &Path, global_config: &Path) -> Self {
+        self.fixture_home = Some(home.to_path_buf());
+        self.fixture_gitconfig = Some(global_config.to_path_buf());
+        self
     }
 
     pub fn binary(&self) -> &Path {
@@ -2136,6 +2180,50 @@ fn sorted_nonempty_lines(output: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
+struct FixtureGitPaths {
+    home: PathBuf,
+    config: PathBuf,
+    _dir: tempfile::TempDir,
+}
+
+#[cfg(test)]
+fn fixture_git_paths() -> &'static FixtureGitPaths {
+    use std::sync::OnceLock;
+    static PATHS: OnceLock<FixtureGitPaths> = OnceLock::new();
+    PATHS.get_or_init(|| {
+        let dir = tempfile::tempdir().expect("fixture git home");
+        let config = dir.path().join("gitconfig");
+        std::fs::write(
+            &config,
+            format!("[user]\n\tname = {FIXTURE_GIT_NAME}\n\temail = {FIXTURE_GIT_EMAIL}\n"),
+        )
+        .expect("fixture gitconfig");
+        FixtureGitPaths {
+            home: dir.path().to_path_buf(),
+            config,
+            _dir: dir,
+        }
+    })
+}
+
+/// Git engine whose commands carry an isolated author identity and do not
+/// read the runner's global Git config.
+#[cfg(test)]
+pub(crate) fn isolated_git() -> GitEngine {
+    let paths = fixture_git_paths();
+    GitEngine::detect()
+        .expect("git")
+        .with_isolated_identity(&paths.home, &paths.config)
+}
+
+/// Apply the same isolated identity to a raw `git` command built by a fixture.
+#[cfg(test)]
+pub(crate) fn apply_fixture_git_identity(command: &mut Command) {
+    let paths = fixture_git_paths();
+    apply_isolated_git_identity(command, &paths.home, &paths.config);
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
@@ -2143,7 +2231,7 @@ mod tests {
 
     fn init_repo() -> (TempDir, GitEngine, GitOid) {
         let tmp = TempDir::new().unwrap();
-        let git = GitEngine::detect().unwrap();
+        let git = super::isolated_git();
         git.run(tmp.path(), &["init", "-b", "main"]).unwrap();
         fs::write(tmp.path().join("hello.txt"), "hello\n").unwrap();
         git.run(tmp.path(), &["add", "-A"]).unwrap();
@@ -2152,6 +2240,28 @@ mod tests {
             .unwrap();
         let head = git.head_oid(tmp.path()).unwrap();
         (tmp, git, head)
+    }
+
+    #[test]
+    fn commit_tree_uses_fixture_identity_without_runner_config() {
+        let (tmp, git, _) = init_repo();
+        let tree = git.run(tmp.path(), &["write-tree"]).unwrap();
+        let rewritten = git
+            .run(
+                tmp.path(),
+                &["commit-tree", tree.trim(), "-m", "rewritten root"],
+            )
+            .unwrap();
+        let ident = git
+            .run(
+                tmp.path(),
+                &["log", "-1", "--format=%an|%ae|%cn|%ce", rewritten.trim()],
+            )
+            .unwrap();
+        assert_eq!(
+            ident.trim(),
+            "Medousa Fixture|fixture@medousa.local|Medousa Fixture|fixture@medousa.local"
+        );
     }
 
     #[test]
@@ -2221,7 +2331,7 @@ mod tests {
     #[test]
     fn unborn_repository_has_no_base_commit() {
         let tmp = TempDir::new().unwrap();
-        let git = GitEngine::detect().unwrap();
+        let git = super::isolated_git();
         git.run(tmp.path(), &["init", "-b", "master"]).unwrap();
 
         assert_eq!(

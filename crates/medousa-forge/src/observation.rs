@@ -714,7 +714,7 @@ mod tests {
 
     fn init_repo() -> (TempDir, GitEngine) {
         let tmp = TempDir::new().unwrap();
-        let git = GitEngine::detect().unwrap();
+        let git = crate::git::isolated_git();
         git.run(tmp.path(), &["init", "-b", "main"]).unwrap();
         fs::write(tmp.path().join("tracked.txt"), "tracked\n").unwrap();
         git.run(tmp.path(), &["add", "-A"]).unwrap();

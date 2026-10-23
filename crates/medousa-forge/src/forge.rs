@@ -3366,7 +3366,7 @@ mod tests {
     fn fixture() -> Fixture {
         let repo_tmp = TempDir::new().unwrap();
         let forge_tmp = TempDir::new().unwrap();
-        let git = GitEngine::detect().unwrap();
+        let git = crate::git::isolated_git();
         git.run(repo_tmp.path(), &["init", "-b", "main", "--template="])
             .or_else(|_| git.run(repo_tmp.path(), &["init", "-b", "main"]))
             .unwrap();
