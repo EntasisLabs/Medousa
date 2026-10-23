@@ -58,20 +58,24 @@ pub async fn ask_bot(
             false,
         ));
     }
-    let runtime = match request.agent.as_deref() {
-        Some("codex") => Some(medousa_types::coordination::ExternalPeerRuntime::Codex),
-        Some("cursor") => Some(medousa_types::coordination::ExternalPeerRuntime::Cursor),
-        Some("hermes") => Some(medousa_types::coordination::ExternalPeerRuntime::Hermes),
-        Some(_) => {
-            return Err(ask_error(
-                StatusCode::BAD_REQUEST,
-                "unknown_agent",
-                "supported Bot runtimes are codex, cursor, and hermes",
-                false,
-            ));
-        }
-        None => None,
-    };
+    let runtime = request
+        .agent
+        .as_deref()
+        .map(|agent| {
+            medousa_types::coordination::ExternalPeerRuntime::parse(agent)
+                .filter(|runtime| {
+                    *runtime != medousa_types::coordination::ExternalPeerRuntime::Medousa
+                })
+                .ok_or_else(|| {
+                    ask_error(
+                        StatusCode::BAD_REQUEST,
+                        "unknown_agent",
+                        "choose a supported external coding runtime",
+                        false,
+                    )
+                })
+        })
+        .transpose()?;
     let fingerprint = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!({
         "prompt": request.prompt, "bot": request.bot, "agent": request.agent, "workshop": request.workshop, "session_id": request.session_id,
     })).map_err(|error| ask_error(StatusCode::INTERNAL_SERVER_ERROR, "encode_failure", error.to_string(), false))?));

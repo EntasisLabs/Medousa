@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PreparedAgentSession } from "./agentSessionController.svelte";
 
-const state = vi.hoisted(() => ({ sessionId: "chat-a", runtime: "codex", bot: false, external: false, seeded: false }));
+const state = vi.hoisted(() => ({ sessionId: "chat-a", runtime: "codex", bot: false, external: false, seeded: false, media: [] as unknown[] }));
 const api = vi.hoisted(() => ({ bot: vi.fn(), prompt: vi.fn(), ticket: vi.fn(), begin: vi.fn(), seed: vi.fn(), runtimeBot: vi.fn(), fields: vi.fn(), options: vi.fn(), clearMedia: vi.fn() }));
 vi.mock("./runtimeBotTurns.svelte", () => ({sendRuntimeBotTurn:api.runtimeBot}));
 vi.mock("$lib/daemon", () => ({ createTurnTicket: api.ticket, promptAgentSession: api.prompt }));
 vi.mock("$lib/daemon/bot", () => ({ getSessionBot: api.bot }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: {
   get sessionId() { return state.sessionId; }, get focusedSessionId() { return state.sessionId; },
-  workshopEpoch: 1, workshopScopeId: "workshop-a", pendingMediaRefs: [],
+  workshopEpoch: 1, workshopScopeId: "workshop-a", get pendingMediaRefs() { return state.media; },
   messagesFor: () => [{ id: "old", role: "user", content: "Use Svelte 5" }],
   withSessionFields: (id: string, run: () => void) => { api.fields(id); run(); }, beginTurn: api.begin, clearPendingMedia: api.clearMedia, startTurnStream: vi.fn(),
 } }));
@@ -33,7 +33,7 @@ function input(synchronize = vi.fn(async () => prepared)) {
     synchronizeAgentSession: synchronize, onAgentSessionLost: vi.fn(), scrollToLatest: vi.fn() };
 }
 beforeEach(() => {
-  vi.clearAllMocks(); state.sessionId = "chat-a"; state.runtime = "codex"; state.bot = false; state.external = false; state.seeded = false;
+  vi.clearAllMocks(); state.media = []; state.sessionId = "chat-a"; state.runtime = "codex"; state.bot = false; state.external = false; state.seeded = false;
   api.runtimeBot.mockResolvedValue({ticket:{jobId:"job",turnId:"turn"}});
   api.bot.mockResolvedValue({ binding: null }); api.prompt.mockResolvedValue({});
   api.ticket.mockResolvedValue({ turn_id: "native", session_id: "chat-a", stream_url: "/stream" });
@@ -89,4 +89,18 @@ it("keeps an explicit agent destination when the visible chat changes during pre
   await submitChatTurn({ ...input(synchronize), sessionId: "labbing" });
   expect(synchronize).toHaveBeenCalledWith("labbing", "codex", expect.anything());
   expect(api.fields).toHaveBeenCalledWith("labbing"); expect(api.prompt).toHaveBeenCalled();
+});
+
+it.each(["claude", "devin", "pi", "muse_code", "hades"])("sends %s through the existing agent session API", async runtime => {
+  state.runtime = runtime;
+  const request = input();
+  await submitChatTurn(request);
+  expect(request.synchronizeAgentSession).toHaveBeenCalledWith("chat-a", runtime, expect.anything());
+  expect(api.prompt).toHaveBeenCalled();
+  expect(api.ticket).not.toHaveBeenCalled();
+});
+it("does not silently discard an external agent attachment", async () => {
+  state.runtime = "pi"; state.media = [{ media_id: "image" }];
+  await expect(submitChatTurn(input())).rejects.toThrow("text only");
+  expect(api.prompt).not.toHaveBeenCalled(); expect(api.clearMedia).not.toHaveBeenCalled();
 });

@@ -1,0 +1,24 @@
+import { beforeEach, expect, it, vi } from "vitest";
+const api = vi.hoisted(() => ({ epoch: 1, create: vi.fn(), setRuntime: vi.fn(), setProviderSession: vi.fn(), activate: vi.fn(), bind: vi.fn(), open: vi.fn(), cancel: vi.fn() }));
+vi.mock("$lib/forge", () => ({ usesAttachedCheckout: () => false }));
+vi.mock("$lib/terminal", () => ({}));
+vi.mock("$lib/stores/undertakings.svelte", () => ({ undertakings: { active: { workId: "work", boundChatSessionIds: ["same-session"] }, setActiveFromItem: api.activate, bindChat: api.bind } }));
+vi.mock("$lib/stores/shellTabs.svelte", () => ({ shellTabs: { openChat: api.open } }));
+vi.mock("$lib/stores/chat.svelte", () => ({ chat: { get workshopEpoch() { return api.epoch; }, sessionId: "same-session" } }));
+vi.mock("$lib/daemon", () => ({ createAgentSession: api.create, cancelAgentSession: api.cancel }));
+vi.mock("$lib/utils/sessionAgentRuntime", () => ({ getSessionAgentSessionId: () => null, setSessionAgentRuntime: api.setRuntime, setSessionAgentSessionId: api.setProviderSession }));
+vi.mock("$lib/utils/codeWorkspaceController", () => ({ landCodeWorkingSet: vi.fn() }));
+import { startTrackedAgent } from "./undertakingWorkspace";
+import type { ItemProjection } from "$lib/forge";
+beforeEach(() => { vi.clearAllMocks(); api.epoch = 1; });
+it("detaches a late agent admission without changing the newly selected workshop or cancelling admitted work", async () => {
+  let resolve!: (value: unknown) => void;
+  api.create.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+  const pending = startTrackedAgent({ id: "work" } as ItemProjection, "hades");
+  await vi.waitFor(() => expect(api.create).toHaveBeenCalledOnce());
+  api.epoch = 2; resolve({ agent_session_id: "admitted-on-old-workshop" });
+  await expect(pending).rejects.toThrow("Workshop changed");
+  expect(api.setRuntime).not.toHaveBeenCalled(); expect(api.setProviderSession).not.toHaveBeenCalled();
+  expect(api.activate).not.toHaveBeenCalled(); expect(api.open).not.toHaveBeenCalled();
+  expect(api.cancel).not.toHaveBeenCalled();
+});

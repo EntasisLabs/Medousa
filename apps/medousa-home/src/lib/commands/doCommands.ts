@@ -1,3 +1,4 @@
+import { EXTERNAL_AGENTS } from "$lib/utils/externalAgentCatalog";
 import {
   CONTENT_ZOOM_DEFAULT,
   contentZoomPercent,
@@ -67,7 +68,7 @@ function buildCreateCommands(): WorkshopCommand[] {
   );
 
   return [
-    {id:"do-create-bot",section:"do",verb:"create",label:"New Bot",subtitle:"Create a companion with its own conversation and memory",keywords:"create new bot companion codex cursor hermes",aliases:["bot","+bot"],run:(ctx) => {ctx.callbacks.close();agentCreation.createBot();}},
+    {id:"do-create-bot",section:"do",verb:"create",label:"New Bot",subtitle:"Create a companion with its own conversation and memory",keywords:`create new bot companion ${EXTERNAL_AGENTS.map(agent => agent.label).join(" ")}`,aliases:["bot","+bot"],run:(ctx) => {ctx.callbacks.close();agentCreation.createBot();}},
     {id:"do-connect-agent",section:"do",verb:"create",label:"Connect agent",subtitle:"Connect Muse, Grok Bot, Instinct, or Dots",keywords:"create connect new agent muse grokbot instinct dots",aliases:["agent","+agent"],run:(ctx) => {ctx.callbacks.close();agentCreation.connectAgent();}},
     {
       id: "do-create-note",

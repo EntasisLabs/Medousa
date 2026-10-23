@@ -1,6 +1,8 @@
 pub mod acp_forge_adapter;
 pub mod acp_turn_persist;
 pub mod agents;
+pub(crate) mod agent_client_requests;
+pub(crate) mod agent_stream;
 pub mod blob_transfer_host;
 pub mod bounded_set;
 pub mod chatgpt_oauth;

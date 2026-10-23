@@ -10,6 +10,8 @@ import type {
 } from "$lib/types/session";
 import type {
   AgentModeListResponse,
+  AgentRuntimeCapabilities,
+  AgentRuntimeInfo as GeneratedAgentRuntimeInfo,
   AgentModeProposalListResponse,
   AgentModeProposalResponse,
   AgentModeTransitionPolicy,
@@ -418,13 +420,7 @@ export async function createTurnTicket(
   });
 }
 
-export type AgentRuntimeInfo = {
-  runtime: string;
-  available: boolean;
-  command?: string | null;
-  detail?: string | null;
-  uses_native_turns?: boolean;
-};
+export type AgentRuntimeInfo = GeneratedAgentRuntimeInfo;
 
 export type AgentRuntimeListResponse = {
   runtimes: AgentRuntimeInfo[];
@@ -469,6 +465,7 @@ export type CreateAgentSessionResponse = {
   work_id?: string | null;
   resumed?: boolean | null;
   config_options?: AgentSessionConfigOption[];
+  capabilities?: AgentRuntimeCapabilities;
 };
 
 export type AgentSessionConfigChoice = {
@@ -545,9 +542,11 @@ export async function listAgentPermissionRequests(options?: {
 export async function approveAgentPermission(
   requestId: string,
   resolvedBy?: string,
+  optionId?: string,
 ): Promise<unknown> {
   return invoke("agents_approve_permission", {
     requestId,
+    optionId: optionId ?? null,
     resolvedBy: resolvedBy ?? null,
   });
 }

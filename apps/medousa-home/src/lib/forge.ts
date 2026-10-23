@@ -1,3 +1,5 @@
+import { externalAgent, isExternalRuntime } from "$lib/utils/externalAgentCatalog";
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 /** Forge / Undertakings HTTP client for daemon forge and world operations. */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -1370,7 +1372,7 @@ export async function prepareExecutorHandoff(input: {
   work_id: string;
   lease_id: string;
   generation: number;
-  to_executor: "codex" | "cursor" | "hermes" | "human";
+  to_executor: ExternalAgentRuntime | "human";
 }): Promise<ItemProjection> {
   return forgeFetch(operationPath("forge.items.by_work_id.handoff.post", { work_id: input.work_id }), {
     method: "POST",
@@ -1836,8 +1838,7 @@ export function humanPhaseGuidance(phase: string): string {
 export function humanExecutorLabel(executor: string | null | undefined): string | null {
   if (!executor) return null;
   if (executor === "human") return "You";
-  if (executor === "codex") return "Codex";
-  if (executor === "cursor") return "Cursor";
+  if (isExternalRuntime(executor)) return externalAgent(executor).label;
   return "Agent";
 }
 

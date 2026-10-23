@@ -49,7 +49,7 @@ it("offers only swappable execution runtimes in an ordinary mobile chat", () => 
   click("Chat context");
   expect([...document.querySelectorAll(".context-row")].filter((row) => !row.closest("[hidden]")).map((row) => row.firstElementChild?.textContent)).toEqual(["Runtime", "Mode", "Project", "Workers"]);
   click("Runtime");
-  expect([...document.querySelectorAll(".chat-runtime-option-title")].map((item) => item.textContent?.trim())).toEqual(["Medousa", "Cursor", "ChatGPT / Codex", "Hermes"]);
+  expect([...document.querySelectorAll(".chat-runtime-option-title")].map((item) => item.textContent?.trim())).toEqual(["Medousa", "ChatGPT / Codex", "Cursor", "Hermes", "Claude Code", "Devin", "Pi", "Muse Code", "Hades"]);
   click("Hermes");
   expect(state.runtime).toBe("hermes");
   expect(change).toHaveBeenCalledWith("hermes");

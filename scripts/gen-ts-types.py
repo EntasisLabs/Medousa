@@ -60,6 +60,13 @@ EXPORTED_TYPES = [
     "DisconnectChatGptOAuthResponse",
     "ChatGptModelListResponse",
 
+    "AgentRuntimeCapabilities",
+    "AgentRuntimeInfo",
+    "AgentRuntimeListResponse",
+    "CreateAgentSessionRequest",
+    "CreateAgentSessionResponse",
+    "AgentPermissionRequestRecord",
+    "AgentPermissionResolveRequest",
     "CodingRuntimePreferences",
     "PeerHandoffIntent",
     "PeerHandoffReviewInput",

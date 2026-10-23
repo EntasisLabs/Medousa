@@ -18,15 +18,17 @@
 
   const pending = $derived(chat.permissionAlert);
 
-  async function approve() {
+  async function approve(optionId?: string) {
     if (!pending || busy) return;
+    const request = pending;
     busy = true;
     feedback = null;
     try {
-      await approveAgentPermission(pending.requestId, homeChannelSurface());
-      chat.notePermissionResolved(pending.requestId);
-      feedback = "Approved";
-      haptic("success");
+      await approveAgentPermission(request.requestId, homeChannelSurface(), optionId);
+      chat.notePermissionResolved(request.requestId);
+      const option = request.options?.find(choice => choice.option_id === optionId);
+      feedback = option ? `Selected ${option.name}` : "Approved";
+      haptic(option?.kind.startsWith("reject") ? "light" : "success");
     } catch (err) {
       feedback = err instanceof Error ? err.message : String(err);
     } finally {
@@ -36,11 +38,12 @@
 
   async function deny() {
     if (!pending || busy) return;
+    const request = pending;
     busy = true;
     feedback = null;
     try {
-      await denyAgentPermission(pending.requestId, homeChannelSurface());
-      chat.notePermissionResolved(pending.requestId);
+      await denyAgentPermission(request.requestId, homeChannelSurface());
+      chat.notePermissionResolved(request.requestId);
       feedback = "Denied";
       haptic("light");
     } catch (err) {
@@ -75,6 +78,11 @@
         {/if}
       </div>
       <div class="flex shrink-0 flex-wrap gap-1.5">
+        {#if pending.options?.length}
+          {#each pending.options as option (option.option_id)}
+            <button type="button" class="btn btn-sm variant-soft-surface" disabled={busy} onclick={() => void approve(option.option_id)}>{option.name}</button>
+          {/each}
+        {:else}
         <button
           type="button"
           class="btn btn-sm variant-filled-warning"
@@ -83,13 +91,14 @@
         >
           Allow
         </button>
+        {/if}
         <button
           type="button"
           class="btn btn-sm variant-ghost-surface"
           disabled={busy}
           onclick={() => void deny()}
         >
-          Deny
+          {pending.options?.length ? "Cancel" : "Deny"}
         </button>
       </div>
     </div>

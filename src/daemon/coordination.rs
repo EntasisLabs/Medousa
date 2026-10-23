@@ -36,8 +36,8 @@ mod handoff_wake;
 pub mod http;
 mod owner_intake;
 mod progress;
-mod proposals;
 mod project_lifecycle;
+mod proposals;
 pub use host::{local_coordination_host, start_local_coordination_host};
 pub use owner_intake::OwnerIntakeResult;
 
@@ -438,6 +438,11 @@ fn runtime_kind(runtime: ExternalPeerRuntime) -> AgentRuntimeKind {
         ExternalPeerRuntime::Codex => AgentRuntimeKind::Codex,
         ExternalPeerRuntime::Cursor => AgentRuntimeKind::Cursor,
         ExternalPeerRuntime::Hermes => AgentRuntimeKind::Hermes,
+        ExternalPeerRuntime::Claude => AgentRuntimeKind::Claude,
+        ExternalPeerRuntime::Devin => AgentRuntimeKind::Devin,
+        ExternalPeerRuntime::Pi => AgentRuntimeKind::Pi,
+        ExternalPeerRuntime::MuseCode => AgentRuntimeKind::MuseCode,
+        ExternalPeerRuntime::Hades => AgentRuntimeKind::Hades,
     }
 }
 
@@ -459,6 +464,11 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
                     ExternalPeerRuntime::Codex,
                     ExternalPeerRuntime::Cursor,
                     ExternalPeerRuntime::Hermes,
+                    ExternalPeerRuntime::Claude,
+                    ExternalPeerRuntime::Devin,
+                    ExternalPeerRuntime::Pi,
+                    ExternalPeerRuntime::MuseCode,
+                    ExternalPeerRuntime::Hades,
                 ]
                 .into_iter()
                 .map(|runtime| {
@@ -473,9 +483,9 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
                         }
                     } else if !installed {
                         PeerAvailability::Unavailable {
-                            reason: "install this agent from Settings → Packages".into(),
+                            reason: "configure this agent in Settings → External Agents".into(),
                         }
-                    } else if probe.status != RuntimeAuthStatus::SignedIn {
+                    } else if probe.status == RuntimeAuthStatus::SignedOut {
                         PeerAvailability::Unavailable {
                             reason: probe.detail.unwrap_or_else(|| {
                                 "agent authentication could not be verified".into()

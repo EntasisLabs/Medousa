@@ -1,11 +1,13 @@
 <script lang="ts">
+  import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
+
   /**
    * Vendor marks used only to identify their matching external runtime.
    * Codex: OpenAI 2025 Blossom kit; Cursor: official 2D Cube kit;
    * Hermes: caduceus used by the official Hermes Agent project.
    */
   interface Props {
-    agent: "codex" | "cursor" | "hermes";
+    agent: ExternalAgentRuntime;
     size?: number;
   }
 
@@ -41,8 +43,10 @@
       src="/brand/external-agents/cursor-cube-dark.svg"
       alt=""
     />
-  {:else}
+  {:else if agent === "hermes"}
     <span class="external-agent-logo__hermes">☤</span>
+  {:else}
+    <span class="text-[0.75em] font-semibold">{agent === "muse_code" ? "M" : agent === "claude" ? "C" : agent[0].toUpperCase()}</span>
   {/if}
 </span>
 

@@ -46,6 +46,12 @@ class AgentModeAutoAccept(Enum):
     all = 'all'
 
 
+class AgentPermissionOption(MedousaModel):
+    kind: str
+    name: str
+    option_id: str
+
+
 class AgentPermissionRequestStatus(Enum):
     pending = 'pending'
     approved = 'approved'
@@ -279,6 +285,11 @@ class ExternalPeerRuntime(Enum):
     codex = 'codex'
     cursor = 'cursor'
     hermes = 'hermes'
+    claude = 'claude'
+    devin = 'devin'
+    pi = 'pi'
+    muse_code = 'muse_code'
+    hades = 'hades'
 
 
 class BotSessionKind(Enum):
@@ -613,6 +624,14 @@ class SessionRef(MedousaModel):
 class TurnWorldSelection(MedousaModel):
     execution_runtime_id: str
     world_id: str
+
+
+class AgentRuntimeCapabilities(MedousaModel):
+    audio: bool | None = False
+    fork: bool | None = False
+    images: bool | None = False
+    resume: bool | None = False
+    terminal: bool | None = False
 
 
 class AgentSessionConfigOption(MedousaModel):
@@ -3001,6 +3020,7 @@ class TurnStreamEventV224(MedousaModel):
     agent_runtime: str | None = None
     agent_session_id: str | None = None
     message: str
+    permission_options: list[AgentPermissionOption] | None = None
     request_id: str
     type: Type28
 
@@ -3325,6 +3345,7 @@ class TurnStreamEventV321(MedousaModel):
     agent_runtime: str | None = None
     agent_session_id: str | None = None
     message: str
+    permission_options: list[AgentPermissionOption] | None = None
     request_id: str
     type: Type50
 
@@ -4201,6 +4222,7 @@ class AgentModeTransitionPolicy(MedousaModel):
 
 
 class AgentPermissionResolveRequest(MedousaModel):
+    option_id: str | None = None
     resolved_by: str | None = None
 
 
@@ -4527,6 +4549,10 @@ class ComponentStoreSetResponse(MedousaModel):
 class CreateAgentSessionResponse(MedousaModel):
     accepted_at_utc: AwareDatetime
     agent_session_id: str
+    capabilities: AgentRuntimeCapabilities | None = Field(
+        {'audio': False, 'fork': False, 'images': False, 'resume': False, 'terminal': False},
+        validate_default=True,
+    )
     config_options: list[AgentSessionConfigOption] | None = Field(
         None,
         description='Runtime-advertised ACP session controls. Clients must render these capability-first rather than assuming every agent supports model or reasoning selection.',
@@ -5710,10 +5736,12 @@ class AgentModeProposalResponse(MedousaModel):
 class AgentPermissionRequestRecord(MedousaModel):
     agent_session_id: str
     created_at_utc: AwareDatetime
+    options: list[AgentPermissionOption] | None = None
     request_id: str
     resolved_at_utc: AwareDatetime | None = None
     resolved_by: str | None = None
     runtime: str
+    selected_option_id: str | None = None
     session_id: str
     status: AgentPermissionRequestStatus
     summary: str
@@ -6713,7 +6741,7 @@ class CreateAgentSessionRequest(MedousaModel):
         description='Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.',
     )
     runtime: str = Field(
-        ..., description='External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).'
+        ..., description='External coding runtime ID (not the native `medousa` runtime).'
     )
     session_id: str
     surface: TurnSurfaceContext | None = None
@@ -6971,6 +6999,7 @@ class InteractiveTurnStreamEvent(MedousaModel):
     operator_message: str | None = Field(
         None, description='Human-facing status whisper for rich surfaces (Home default).'
     )
+    permission_options: list[AgentPermissionOption] | None = None
     permission_request_id: str | None = Field(
         None,
         description='External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.',

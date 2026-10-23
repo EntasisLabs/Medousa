@@ -33,6 +33,7 @@ export function handlePermissionRequest(host: ChatStoreHost, event: InteractiveT
     requestId,
     agentSessionId: event.agent_session_id?.trim() || null,
     agentRuntime: event.agent_runtime?.trim() || null,
+    options: event.permission_options ?? [],
     message:
       event.operator_message?.trim() ||
       event.message?.trim() ||

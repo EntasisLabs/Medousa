@@ -89,7 +89,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   {
     id: "connections",
     label: "External Agents",
-    hint: "Codex, Cursor & Hermes",
+    hint: "External coding agents & connected conversations",
     group: "app",
   },
   {

@@ -3,9 +3,9 @@
 use crate::active_workshop::ActiveWorkshopTarget;
 use crate::pairing_client::WorkshopTransportConfig;
 use std::future::Future;
-use tauri::ipc::{CommandArg, CommandItem, InvokeError};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::Manager;
+use tauri::ipc::{CommandArg, CommandItem, InvokeError};
 use tauri::{State, Wry};
 use tokio::sync::OnceCell;
 
@@ -96,6 +96,11 @@ pub fn supports_command(command: &str) -> bool {
             | "ssh_action"
             | "ssh_set_access"
             | "ssh_remove"
+            | "account_connections_probe"
+            | "account_chatgpt_begin_device_login"
+            | "account_begin_terminal_login"
+            | "account_sign_out"
+            | "account_cli_install"
             | "agents_list_runtimes"
             | "agents_create_session"
             | "agents_prompt"

@@ -32,7 +32,7 @@ use crate::agent_permission_request::{
 };
 use crate::agent_secret_request::agent_secret_request_store;
 use crate::daemon::acp_forge_adapter;
-use crate::daemon::ingest::{publish_interactive_turn_event, stream_events_from_registry};
+use crate::daemon::ingest::stream_events_from_registry;
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -52,6 +52,8 @@ struct LiveAgentSession {
     /// ACP wire `sessionId` (from session/new or session/resume) — stashed on
     /// interrupt as `ResumeSupported`. Distinct from the Medousa handle above.
     acp_wire_session_id: Option<String>,
+    capabilities: medousa_types::AgentRuntimeCapabilities,
+    cwd: String,
     cancelled: Arc<Mutex<bool>>,
     /// Forge undertaking this session is bound to (governed cwd + leases).
     forge_work_id: Option<WorkId>,
@@ -64,6 +66,36 @@ struct LiveAgentSession {
     /// publish the exact result instead of losing it or restarting work.
     peer_terminal: Arc<Mutex<Option<(medousa_types::coordination::PeerAssignmentOutcome, String)>>>,
     peer_prompt_started: Arc<std::sync::atomic::AtomicBool>,
+    prompt_in_flight: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Reserve before publishing or persisting a turn. A second client/window
+/// cannot fail an already-running provider prompt through the pump error path.
+#[derive(Debug)]
+struct PromptReservation(Arc<std::sync::atomic::AtomicBool>);
+
+impl PromptReservation {
+    fn acquire(flag: &Arc<std::sync::atomic::AtomicBool>) -> Result<Self, (StatusCode, String)> {
+        flag.compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .map_err(|_| {
+            (
+                StatusCode::CONFLICT,
+                "agent already has an active prompt".to_string(),
+            )
+        })?;
+        Ok(Self(flag.clone()))
+    }
+}
+
+impl Drop for PromptReservation {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
 }
 
 #[derive(Default)]
@@ -395,36 +427,47 @@ impl TryFrom<AgentSessionPromptRequest> for AgentSessionPromptCommand {
     }
 }
 
-pub async fn list_agent_runtimes() -> Json<AgentRuntimeListResponse> {
-    let kinds = [
-        AgentRuntimeKind::Medousa,
-        AgentRuntimeKind::Cursor,
-        AgentRuntimeKind::Codex,
-        AgentRuntimeKind::Hermes,
-    ];
-    let runtimes = kinds
-        .into_iter()
-        .map(|kind| {
-            let (available, command, detail) = runtime_availability(kind);
-            let probe = runtime_auth_probe(kind);
-            let auth_status = match probe.status {
-                RuntimeAuthStatus::SignedIn => Some("signed_in".to_string()),
-                RuntimeAuthStatus::SignedOut => Some("signed_out".to_string()),
-                RuntimeAuthStatus::Unknown => Some("unknown".to_string()),
-            };
-            AgentRuntimeInfo {
-                runtime: kind.as_str().to_string(),
-                available,
-                command,
-                detail,
-                uses_native_turns: matches!(kind, AgentRuntimeKind::Medousa),
-                auth_status,
-                binary_present: probe.binary_present,
-                auth_detail: probe.detail,
-            }
-        })
-        .collect();
-    Json(AgentRuntimeListResponse { runtimes })
+pub async fn list_agent_runtimes(
+    State(state): State<AppState>,
+) -> Result<Json<AgentRuntimeListResponse>, (StatusCode, String)> {
+    admit_agent_blocking(&state, || {
+        let kinds = [
+            AgentRuntimeKind::Medousa,
+            AgentRuntimeKind::Cursor,
+            AgentRuntimeKind::Codex,
+            AgentRuntimeKind::Hermes,
+            AgentRuntimeKind::Claude,
+            AgentRuntimeKind::Devin,
+            AgentRuntimeKind::Pi,
+            AgentRuntimeKind::MuseCode,
+            AgentRuntimeKind::Hades,
+        ];
+        let runtimes = kinds
+            .into_iter()
+            .map(|kind| {
+                let (available, command, detail) = runtime_availability(kind);
+                let probe = runtime_auth_probe(kind);
+                let auth_status = match probe.status {
+                    RuntimeAuthStatus::SignedIn => Some("signed_in".to_string()),
+                    RuntimeAuthStatus::SignedOut => Some("signed_out".to_string()),
+                    RuntimeAuthStatus::Unknown => Some("unknown".to_string()),
+                };
+                AgentRuntimeInfo {
+                    runtime: kind.as_str().to_string(),
+                    available,
+                    command,
+                    detail,
+                    uses_native_turns: matches!(kind, AgentRuntimeKind::Medousa),
+                    auth_status,
+                    binary_present: probe.binary_present,
+                    auth_detail: probe.detail,
+                }
+            })
+            .collect();
+        Json(AgentRuntimeListResponse { runtimes })
+    })
+    .await
+    .map_err(agent_admission_error)
 }
 
 pub async fn create_agent_session(
@@ -471,7 +514,8 @@ async fn create_agent_session_service_with_contract(
     if matches!(kind, AgentRuntimeKind::Medousa) {
         return Err((
             StatusCode::BAD_REQUEST,
-            "medousa runtime uses /v1/turns — pick cursor, codex, or hermes for /v1/agents".into(),
+            "medousa runtime uses /v1/turns — choose an external coding agent for /v1/agents"
+                .into(),
         ));
     }
 
@@ -693,12 +737,24 @@ async fn create_agent_session_service_with_contract(
         ));
     }
 
+    let mut capabilities = ACP_CLIENT.session_capabilities(&acp_session).await;
+    // The current request contract sends text only, even if a vendor's wire
+    // protocol advertises more content kinds.
+    capabilities.images = false;
+    capabilities.audio = false;
+    let prompt_in_flight = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let initial_reservation = initial_prompt
+        .as_ref()
+        .map(|_| PromptReservation::acquire(&prompt_in_flight))
+        .transpose()?;
     let live = LiveAgentSession {
         agent_session_id: agent_session_id.clone(),
         session_id: session_id.clone(),
         runtime: kind.as_str().to_string(),
         acp_session_id: acp_session.clone(),
         acp_wire_session_id: acp_wire_session_id.clone(),
+        capabilities: capabilities.clone(),
+        cwd: actual_workdir.clone().unwrap_or_else(|| ".".to_string()),
         cancelled: Arc::new(Mutex::new(false)),
         forge_work_id: forge_work_id.clone(),
         forge_lease,
@@ -706,6 +762,7 @@ async fn create_agent_session_service_with_contract(
         delegated_work_id: Arc::new(Mutex::new(None)),
         peer_terminal: Arc::new(Mutex::new(None)),
         peer_prompt_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        prompt_in_flight,
     };
 
     {
@@ -759,14 +816,19 @@ async fn create_agent_session_service_with_contract(
             false,
             None,
             None,
-        );
+        )
+        .await;
     }
 
-    if let Some(prompt) = initial_prompt.map(RequiredContent::into_string) {
+    if let (Some(prompt), Some(reservation)) = (
+        initial_prompt.map(RequiredContent::into_string),
+        initial_reservation,
+    ) {
         spawn_prompt_pump(
             state.clone(),
             live.clone(),
             prompt_with_code_context(prompt, code_context.as_ref()),
+            reservation,
         );
     }
 
@@ -782,6 +844,7 @@ async fn create_agent_session_service_with_contract(
             work_id: forge_work_id.map(|id| id.to_string()),
             resumed: Some(resumed),
             config_options,
+            capabilities,
         },
         actual_workdir,
     ))
@@ -863,6 +926,7 @@ pub(crate) async fn prompt_agent_session_service(
     if *live.cancelled.lock().await {
         return Err((StatusCode::CONFLICT, "agent session cancelled".into()));
     }
+    let reservation = PromptReservation::acquire(&live.prompt_in_flight)?;
     if (live.peer_receipt.lock().await.is_some() || live.delegated_work_id.lock().await.is_some())
         && live
             .peer_prompt_started
@@ -877,6 +941,7 @@ pub(crate) async fn prompt_agent_session_service(
         state,
         live.clone(),
         prompt_with_code_context(prompt, command.code_context.as_ref()),
+        reservation,
     );
     Ok(AgentSessionPromptResponse {
         accepted: true,
@@ -1009,21 +1074,24 @@ pub(crate) async fn cancel_live_agent_session(
         live
     };
     *live.cancelled.lock().await = true;
+    agent_permission_request_store().deny_for_session(&agent_session_id);
     let _ = ACP_CLIENT.cancel(&live.acp_session_id).await;
+    super::agent_client_requests::cleanup(state, &agent_session_id).await;
 
     // Interrupt the Forge attempt (if bound) — stash the ACP *wire* session id
     // so a future session/resume can reattach instead of restarting.
     if let Some(lease) = live.forge_lease.clone() {
         let forge = state.forge.clone();
         let wire = live
-            .acp_wire_session_id
-            .clone()
-            .unwrap_or_else(|| live.acp_session_id.0.clone());
+            .capabilities
+            .resume
+            .then(|| live.acp_wire_session_id.clone())
+            .flatten();
         let interrupted = admit_agent_blocking(state, move || {
             acp_forge_adapter::AcpForgeAdapter::new(&forge).interrupt_attempt(
                 &lease,
                 "agent session cancelled",
-                Some(&wire),
+                wire.as_deref(),
             )
         })
         .await
@@ -1055,9 +1123,12 @@ pub(crate) async fn cancel_live_agent_session(
             true,
             None,
             None,
-        );
+        )
+        .await;
         entry.channel.mark_closed();
     }
+
+    super::agent_stream::release(&agent_session_id).await;
 
     persist_peer_terminal(
         &live,
@@ -1166,9 +1237,15 @@ pub async fn approve_agent_permission_request(
     AxumPath(request_id): AxumPath<String>,
     Json(body): Json<AgentPermissionResolveRequest>,
 ) -> Result<Json<AgentPermissionResolveResponse>, (StatusCode, String)> {
-    let request = agent_permission_request_store()
-        .approve(request_id.trim(), body.resolved_by)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let request = match body.option_id {
+        Some(option_id) => agent_permission_request_store().select_option(
+            request_id.trim(),
+            option_id,
+            body.resolved_by,
+        ),
+        None => agent_permission_request_store().approve(request_id.trim(), body.resolved_by),
+    }
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     Ok(Json(AgentPermissionResolveResponse { request }))
 }
 
@@ -1220,11 +1297,27 @@ pub async fn deny_agent_secret_request(
     Ok(Json(AgentSecretResolveResponse { request }))
 }
 
-fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
+fn spawn_prompt_pump(
+    state: AppState,
+    live: LiveAgentSession,
+    prompt: String,
+    reservation: PromptReservation,
+) {
     tokio::spawn(async move {
+        let _reservation = reservation;
         let fail_lease = live.forge_lease.clone();
         if let Err(err) = run_prompt_pump(state.clone(), live.clone(), prompt).await {
+            // Explicit cancellation owns its interrupted/resumable lease and
+            // terminal publication. A waiter waking during cancellation must
+            // not race that path with a competing failed attempt.
+            if *live.cancelled.lock().await {
+                return;
+            }
             tracing::warn!(error = %err, "agent prompt pump failed");
+            *live.cancelled.lock().await = true;
+            agent_permission_request_store().deny_for_session(&live.agent_session_id);
+            let _ = ACP_CLIENT.cancel(&live.acp_session_id).await;
+            super::agent_client_requests::cleanup(&state, &live.agent_session_id).await;
             let fail_lease = AGENT_SESSIONS
                 .read()
                 .await
@@ -1398,7 +1491,8 @@ async fn publish_agent_pump_error(state: &AppState, live: &LiveAgentSession, mes
             true,
             None,
             None,
-        );
+        )
+        .await;
         entry.channel.mark_closed();
     }
     publish_acp_terminal(
@@ -1411,6 +1505,58 @@ async fn publish_agent_pump_error(state: &AppState, live: &LiveAgentSession, mes
         json!({ "error": message }),
     )
     .await;
+}
+
+/// Operator decisions and long terminal waits must not suspend Forge custody
+/// checks. The future is dropped as soon as cancellation or fencing wins.
+async fn await_with_agent_custody<F, T>(
+    state: &AppState,
+    live: &LiveAgentSession,
+    future: F,
+) -> anyhow::Result<T>
+where
+    F: std::future::Future<Output = T>,
+{
+    if *live.cancelled.lock().await {
+        anyhow::bail!("agent session cancelled");
+    }
+    if let Some(lease) = live.forge_lease.as_ref() {
+        admit_agent_lease(state, lease, |forge, lease| {
+            acp_forge_adapter::AcpForgeAdapter::new(forge).heartbeat(lease)
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("Forge workspace authority changed: {error}"))?;
+    }
+    tokio::pin!(future);
+    let period = std::time::Duration::from_secs(15);
+    let mut heartbeat = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut cancellation = tokio::time::interval(std::time::Duration::from_millis(100));
+    cancellation.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            result = &mut future => {
+                if *live.cancelled.lock().await {
+                    anyhow::bail!("agent session cancelled");
+                }
+                return Ok(result);
+            }
+            _ = cancellation.tick() => {
+                if *live.cancelled.lock().await {
+                    anyhow::bail!("agent session cancelled");
+                }
+            }
+            _ = heartbeat.tick() => {
+                if let Some(lease) = live.forge_lease.as_ref() {
+                    admit_agent_lease(state, lease, |forge, lease| {
+                        acp_forge_adapter::AcpForgeAdapter::new(forge).heartbeat(lease)
+                    })
+                    .await
+                    .map_err(|error| anyhow::anyhow!("Forge workspace authority changed: {error}"))?;
+                }
+            }
+        }
+    }
 }
 
 async fn run_prompt_pump(
@@ -1437,7 +1583,8 @@ async fn run_prompt_pump(
         false,
         None,
         None,
-    );
+    )
+    .await;
 
     // Forge lease begins on the first prompt of a bound session.
     let mut live = live;
@@ -1478,7 +1625,8 @@ async fn run_prompt_pump(
                     true,
                     None,
                     None,
-                );
+                )
+                .await;
                 entry.channel.mark_closed();
                 return Err(anyhow::anyhow!("forge begin_attempt: {err}"));
             }
@@ -1519,7 +1667,6 @@ async fn run_prompt_pump(
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
-    let mut idle_empty = 0u32;
     loop {
         if *live.cancelled.lock().await {
             break;
@@ -1538,52 +1685,13 @@ async fn run_prompt_pump(
             }
         }
         let event = ACP_CLIENT.next_event(&live.acp_session_id).await?;
+        if *live.cancelled.lock().await {
+            break;
+        }
         let Some(event) = event else {
-            idle_empty = idle_empty.saturating_add(1);
-            if idle_empty > 250 {
-                // ~10s of idle emptiness — treat as complete
-                crate::daemon::acp_turn_persist::persist_assistant_if_needed(
-                    &live.session_id,
-                    &mut persist,
-                    None,
-                )
-                .await?;
-                // Idle is not proof that a delegated prompt completed. Preserve
-                // the legacy stream behavior, but never tell the owner it succeeded.
-                persist_peer_terminal(
-                    &live,
-                    medousa_types::coordination::PeerAssignmentOutcome::Interrupted,
-                    persist.result_text(),
-                )
-                .await?;
-                publish_agent_event(
-                    &entry,
-                    &live.agent_session_id,
-                    &live.session_id,
-                    &live.runtime,
-                    "done",
-                    "completed",
-                    "agent prompt complete (idle)",
-                    true,
-                    None,
-                    None,
-                );
-                publish_acp_terminal(
-                    AcpTerminalKind::Completed,
-                    &live.session_id,
-                    Some(&live.agent_session_id),
-                    &live.agent_session_id,
-                    &live.runtime,
-                    "agent prompt complete (idle)",
-                    json!({ "reason": "idle" }),
-                )
-                .await;
-                break;
-            }
             tokio::time::sleep(std::time::Duration::from_millis(40)).await;
             continue;
         };
-        idle_empty = 0;
         persist.observe(&event);
         match event {
             AcpEvent::MessageDelta { text } => {
@@ -1598,10 +1706,12 @@ async fn run_prompt_pump(
                     false,
                     Some(text),
                     None,
-                );
+                )
+                .await;
             }
             AcpEvent::ReasoningDelta { text } => {
-                publish_agent_reasoning_event(&entry, &live.agent_session_id, &live.runtime, text);
+                publish_agent_reasoning_event(&entry, &live.agent_session_id, &live.runtime, text)
+                    .await;
             }
             AcpEvent::MessageDone { text } => {
                 publish_agent_event(
@@ -1615,7 +1725,8 @@ async fn run_prompt_pump(
                     false,
                     None,
                     Some(text.clone()),
-                );
+                )
+                .await;
             }
             AcpEvent::ToolCall { id, name, input } => {
                 if let Some(lease) = live.forge_lease.as_ref() {
@@ -1627,38 +1738,62 @@ async fn run_prompt_pump(
                     })
                     .await?;
                 }
-                publish_agent_event(
-                    &entry,
-                    &live.agent_session_id,
-                    &live.session_id,
-                    &live.runtime,
-                    "tool_started",
-                    "tool",
-                    &format!("{name} ({id})"),
-                    false,
-                    None,
-                    None,
-                );
-                let _ = input;
+                publish_agent_tool_event(&entry, &live, id, name, input).await;
             }
-            AcpEvent::PermissionRequest { id, summary } => {
+            AcpEvent::PermissionRequest {
+                id,
+                summary,
+                options,
+            } => {
                 let record =
                     agent_permission_request_store().create(CreateAgentPermissionRequest {
                         agent_session_id: live.agent_session_id.clone(),
                         session_id: live.session_id.clone(),
                         runtime: live.runtime.clone(),
                         summary: summary.clone(),
+                        options,
                     });
-                publish_permission_event(&entry, &live, &record.request_id, &summary);
-                let resolution = agent_permission_request_store()
-                    .wait_for_resolution(&record.request_id)
-                    .await
-                    .unwrap_or(PermissionResolution::Denied);
-                let approved = matches!(resolution, PermissionResolution::Approved);
-                if let Err(err) = ACP_CLIENT
-                    .respond_permission(&live.acp_session_id, &id, approved)
-                    .await
-                {
+                publish_permission_event(
+                    &entry,
+                    &live,
+                    &record.request_id,
+                    &summary,
+                    &record.options,
+                )
+                .await;
+                let resolution = await_with_agent_custody(
+                    &state,
+                    &live,
+                    agent_permission_request_store().wait_for_resolution(&record.request_id),
+                )
+                .await?
+                .unwrap_or(PermissionResolution::Denied);
+                let approved = match &resolution {
+                    PermissionResolution::Selected(id) => !record
+                        .options
+                        .iter()
+                        .any(|option| option.option_id == *id && option.kind.starts_with("reject")),
+                    PermissionResolution::Approved => true,
+                    PermissionResolution::Denied => false,
+                };
+                let response = match resolution {
+                    PermissionResolution::Selected(option_id) => {
+                        ACP_CLIENT
+                            .respond_permission_choice(&live.acp_session_id, &id, Some(&option_id))
+                            .await
+                    }
+                    PermissionResolution::Approved => {
+                        ACP_CLIENT
+                            .respond_permission(&live.acp_session_id, &id, true)
+                            .await
+                    }
+                    PermissionResolution::Denied => {
+                        ACP_CLIENT
+                            .respond_permission_choice(&live.acp_session_id, &id, None)
+                            .await
+                    }
+                };
+                if let Err(err) = response {
                     tracing::warn!(
                         error = %err,
                         acp_permission_id = %id,
@@ -1681,9 +1816,64 @@ async fn run_prompt_pump(
                     false,
                     None,
                     None,
-                );
+                )
+                .await;
+            }
+            AcpEvent::ClientRequest { id, method, params } => {
+                let needs_approval =
+                    matches!(method.as_str(), "terminal/create" | "fs/write_text_file");
+                let approved = if needs_approval {
+                    let summary = format!(
+                        "Allow agent {method}: {}?",
+                        bounded_trimmed(&params.to_string(), 1000)
+                    );
+                    let record =
+                        agent_permission_request_store().create(CreateAgentPermissionRequest {
+                            agent_session_id: live.agent_session_id.clone(),
+                            session_id: live.session_id.clone(),
+                            runtime: live.runtime.clone(),
+                            summary: summary.clone(),
+                            options: Vec::new(),
+                        });
+                    publish_permission_event(&entry, &live, &record.request_id, &summary, &[])
+                        .await;
+                    matches!(
+                        await_with_agent_custody(
+                            &state,
+                            &live,
+                            agent_permission_request_store()
+                                .wait_for_resolution(&record.request_id),
+                        )
+                        .await?,
+                        Ok(PermissionResolution::Approved)
+                    )
+                } else {
+                    true
+                };
+                let result = if approved {
+                    await_with_agent_custody(
+                        &state,
+                        &live,
+                        super::agent_client_requests::handle(
+                            &state,
+                            &live.agent_session_id,
+                            &live.cwd,
+                            &method,
+                            params,
+                            &live.cancelled,
+                        ),
+                    )
+                    .await?
+                } else {
+                    Err("operator declined the agent request".to_string())
+                };
+                ACP_CLIENT
+                    .respond_client_request(&live.acp_session_id, id, result)
+                    .await?;
             }
             AcpEvent::Error { message } => {
+                agent_permission_request_store().deny_for_session(&live.agent_session_id);
+                super::agent_client_requests::cleanup(&state, &live.agent_session_id).await;
                 crate::daemon::acp_turn_persist::persist_assistant_if_needed(
                     &live.session_id,
                     &mut persist,
@@ -1728,7 +1918,8 @@ async fn run_prompt_pump(
                     false,
                     None,
                     None,
-                );
+                )
+                .await;
                 publish_acp_terminal(
                     AcpTerminalKind::Failed,
                     &live.session_id,
@@ -1739,11 +1930,7 @@ async fn run_prompt_pump(
                     json!({ "error": message }),
                 )
                 .await;
-                if live.peer_receipt.lock().await.is_some()
-                    || live.delegated_work_id.lock().await.is_some()
-                {
-                    break;
-                }
+                break;
             }
             AcpEvent::Done => {
                 // Done is *not* a seal — lease stays live; heartbeat only.
@@ -1778,7 +1965,8 @@ async fn run_prompt_pump(
                     true,
                     None,
                     None,
-                );
+                )
+                .await;
                 publish_acp_terminal(
                     AcpTerminalKind::Completed,
                     &live.session_id,
@@ -1796,11 +1984,19 @@ async fn run_prompt_pump(
     Ok(())
 }
 
-fn publish_permission_event(
+async fn publish_external_event(entry: &TurnStreamEntry, event: InteractiveTurnStreamEvent) {
+    if let Err(error) = super::agent_stream::publish(entry, event).await {
+        tracing::error!(%error, "external agent stream publication failed");
+        entry.channel.mark_closed();
+    }
+}
+
+async fn publish_permission_event(
     entry: &TurnStreamEntry,
     live: &LiveAgentSession,
     permission_request_id: &str,
     summary: &str,
+    options: &[medousa_types::AgentPermissionOption],
 ) {
     let event = InteractiveTurnStreamEvent {
         turn_id: live.agent_session_id.clone(),
@@ -1838,6 +2034,7 @@ fn publish_permission_event(
         browser_challenge_url: None,
         context_usage: None,
         permission_request_id: Some(permission_request_id.to_string()),
+        permission_options: Some(options.to_vec()),
         agent_session_id: Some(live.agent_session_id.clone()),
         agent_runtime: Some(live.runtime.clone()),
         secret_request_id: None,
@@ -1847,11 +2044,11 @@ fn publish_permission_event(
         secret_backend: None,
         secret_allowed_hosts: None,
     };
-    publish_interactive_turn_event(entry, Ok(event));
+    publish_external_event(entry, event).await;
 }
 
 #[allow(clippy::too_many_arguments)]
-fn publish_agent_event(
+async fn publish_agent_event(
     entry: &TurnStreamEntry,
     agent_session_id: &str,
     _session_id: &str,
@@ -1863,7 +2060,31 @@ fn publish_agent_event(
     content_delta: Option<String>,
     final_text: Option<String>,
 ) {
-    let event = InteractiveTurnStreamEvent {
+    let event = agent_event(
+        agent_session_id,
+        runtime,
+        event_type,
+        phase,
+        message,
+        terminal,
+        content_delta,
+        final_text,
+    );
+    publish_external_event(entry, event).await;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn agent_event(
+    agent_session_id: &str,
+    runtime: &str,
+    event_type: &str,
+    phase: &str,
+    message: &str,
+    terminal: bool,
+    content_delta: Option<String>,
+    final_text: Option<String>,
+) -> InteractiveTurnStreamEvent {
+    InteractiveTurnStreamEvent {
         turn_id: agent_session_id.to_string(),
         seq: 0,
         event_type: event_type.to_string(),
@@ -1899,6 +2120,7 @@ fn publish_agent_event(
         browser_challenge_url: None,
         context_usage: None,
         permission_request_id: None,
+        permission_options: None,
         agent_session_id: Some(agent_session_id.to_string()),
         agent_runtime: Some(runtime.to_string()),
         secret_request_id: None,
@@ -1907,13 +2129,59 @@ fn publish_agent_event(
         secret_credential_key: None,
         secret_backend: None,
         secret_allowed_hosts: None,
-    };
-    publish_interactive_turn_event(entry, Ok(event));
+    }
+}
+
+async fn publish_agent_tool_event(
+    entry: &TurnStreamEntry,
+    live: &LiveAgentSession,
+    id: String,
+    name: String,
+    input: serde_json::Value,
+) {
+    let status = input
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("in_progress");
+    let terminal = matches!(status, "completed" | "failed" | "cancelled");
+    let summary = bounded_trimmed(&input.to_string(), 2000);
+    let mut event = agent_event(
+        &live.agent_session_id,
+        &live.runtime,
+        if terminal {
+            "tool_finished"
+        } else {
+            "tool_started"
+        },
+        "tool",
+        &name,
+        false,
+        None,
+        None,
+    );
+    event.tool_run_id = Some(id);
+    event.tool_name = Some(name);
+    event.tool_status = Some(
+        if status == "completed" {
+            "completed"
+        } else if terminal {
+            "failed"
+        } else {
+            "running"
+        }
+        .into(),
+    );
+    if terminal {
+        event.tool_output_summary = Some(summary);
+    } else {
+        event.tool_input_summary = Some(summary);
+    }
+    publish_external_event(entry, event).await;
 }
 
 /// Forward an ACP thinking/reasoning trace chunk into the chat stream's
 /// `reasoning_delta` channel so Home renders it in the collapsed thinking tray.
-fn publish_agent_reasoning_event(
+async fn publish_agent_reasoning_event(
     entry: &TurnStreamEntry,
     agent_session_id: &str,
     runtime: &str,
@@ -1955,6 +2223,7 @@ fn publish_agent_reasoning_event(
         browser_challenge_url: None,
         context_usage: None,
         permission_request_id: None,
+        permission_options: None,
         agent_session_id: Some(agent_session_id.to_string()),
         agent_runtime: Some(runtime.to_string()),
         secret_request_id: None,
@@ -1964,12 +2233,38 @@ fn publish_agent_reasoning_event(
         secret_backend: None,
         secret_allowed_hosts: None,
     };
-    publish_interactive_turn_event(entry, Ok(event));
+    publish_external_event(entry, event).await;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn concurrent_prompts_are_rejected_without_releasing_the_first_reservation() {
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let first = PromptReservation::acquire(&flag).unwrap();
+        let rejected = PromptReservation::acquire(&flag).unwrap_err();
+        assert_eq!(rejected.0, StatusCode::CONFLICT);
+        assert!(flag.load(std::sync::atomic::Ordering::Acquire));
+        drop(first);
+        let next = PromptReservation::acquire(&flag).unwrap();
+        drop(next);
+        assert!(!flag.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn aborting_a_pump_task_releases_its_prompt_reservation() {
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reservation = PromptReservation::acquire(&flag).unwrap();
+        let task = tokio::spawn(async move {
+            let _reservation = reservation;
+            std::future::pending::<()>().await;
+        });
+        task.abort();
+        let _ = task.await;
+        assert!(PromptReservation::acquire(&flag).is_ok());
+    }
 
     #[test]
     fn permission_inventory_requires_execution_administration() {

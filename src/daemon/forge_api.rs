@@ -8015,8 +8015,7 @@ async fn pump_project_task_session(
                     if let Some(encoded) = frame.get("data").and_then(serde_json::Value::as_str)
                         && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded)
                     {
-                        publish_task_output(&run_id, "stdout", &decoder.push(&bytes))
-                            .await;
+                        publish_task_output(&run_id, "stdout", &decoder.push(&bytes)).await;
                     }
                 }
                 Some("ready") => {
@@ -11107,10 +11106,14 @@ async fn prepare_handoff(
             move || {
                 let id = parse_work_id(&work_id)?;
                 let target = body.to_executor.trim().to_ascii_lowercase();
-                if !matches!(target.as_str(), "codex" | "cursor" | "hermes" | "human") {
+                if target != "human"
+                    && !medousa_types::coordination::ExternalPeerRuntime::EXTERNAL
+                        .iter()
+                        .any(|runtime| runtime.as_str() == target)
+                {
                     return Err(request_error(
                         StatusCode::BAD_REQUEST,
-                        "handoff target must be codex, cursor, hermes, or human",
+                        "handoff target must be an external coding runtime or human",
                     ));
                 }
                 let lease = resolve_lease(forge(&state).as_ref(), &body.lease_id, body.generation)?;
@@ -12544,9 +12547,14 @@ mod source_tests {
     #[test]
     fn readiness_and_matcher_patterns_parse_incremental_output() {
         let root = PathBuf::from("/work/project");
-        assert!(parse_output_locations(&root, &root,
-            "- Local: http://localhost:3000\n- Network: http://10.27.27.135:3000"
-        ).is_empty());
+        assert!(
+            parse_output_locations(
+                &root,
+                &root,
+                "- Local: http://localhost:3000\n- Network: http://10.27.27.135:3000"
+            )
+            .is_empty()
+        );
         let matcher = (
             regex::Regex::new(r"^(.*):(\d+):(\d+):\s+(.*)$").unwrap(),
             ProjectProblemPattern {

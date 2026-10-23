@@ -10,7 +10,13 @@
 //! Missing CLI → stub; spawn/handshake failures surface as errors (no silent stub).
 //! Force stub: `MEDOUSA_ACP_FORCE_STUB=1`.
 
+#[cfg(test)]
+mod acp_conformance;
 pub mod coordination;
+pub mod muse;
+pub use medousa_types::AgentPermissionOption as AcpPermissionOption;
+use medousa_types::AgentRuntimeCapabilities;
+pub mod providers;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -29,6 +35,11 @@ use tokio::sync::Mutex as AsyncMutex;
 pub const RUNTIME_CURSOR: &str = "cursor";
 pub const RUNTIME_CODEX: &str = "codex";
 pub const RUNTIME_HERMES: &str = "hermes";
+pub const RUNTIME_CLAUDE: &str = "claude";
+pub const RUNTIME_DEVIN: &str = "devin";
+pub const RUNTIME_PI: &str = "pi";
+pub const RUNTIME_MUSE_CODE: &str = "muse_code";
+pub const RUNTIME_HADES: &str = "hades";
 pub const RUNTIME_MEDOUSA: &str = "medousa";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +49,12 @@ pub enum AgentRuntimeKind {
     Cursor,
     Codex,
     Hermes,
+    Claude,
+    Devin,
+    Pi,
+    #[serde(rename = "muse_code")]
+    MuseCode,
+    Hades,
 }
 
 impl AgentRuntimeKind {
@@ -47,6 +64,11 @@ impl AgentRuntimeKind {
             Self::Cursor => RUNTIME_CURSOR,
             Self::Codex => RUNTIME_CODEX,
             Self::Hermes => RUNTIME_HERMES,
+            Self::Claude => RUNTIME_CLAUDE,
+            Self::Devin => RUNTIME_DEVIN,
+            Self::Pi => RUNTIME_PI,
+            Self::MuseCode => RUNTIME_MUSE_CODE,
+            Self::Hades => RUNTIME_HADES,
         }
     }
 
@@ -56,6 +78,11 @@ impl AgentRuntimeKind {
             "cursor" => Some(Self::Cursor),
             "codex" => Some(Self::Codex),
             "hermes" => Some(Self::Hermes),
+            "claude" => Some(Self::Claude),
+            "devin" => Some(Self::Devin),
+            "pi" => Some(Self::Pi),
+            "muse_code" => Some(Self::MuseCode),
+            "hades" => Some(Self::Hades),
             _ => None,
         }
     }
@@ -619,6 +646,11 @@ pub fn runtime_auth_probe(kind: AgentRuntimeKind) -> RuntimeAuthProbe {
                 || PathBuf::from(&cfg.command).is_file();
             hermes_auth_probe(present)
         }
+        AgentRuntimeKind::Claude
+        | AgentRuntimeKind::Devin
+        | AgentRuntimeKind::Pi
+        | AgentRuntimeKind::MuseCode
+        | AgentRuntimeKind::Hades => providers::auth_probe(kind),
     }
 }
 
@@ -644,6 +676,13 @@ pub enum AcpEvent {
     PermissionRequest {
         id: String,
         summary: String,
+        #[serde(default)]
+        options: Vec<AcpPermissionOption>,
+    },
+    ClientRequest {
+        id: Value,
+        method: String,
+        params: Value,
     },
     Error {
         message: String,
@@ -734,6 +773,7 @@ impl AcpClient for StubAcpClient {
             state.queue.push(AcpEvent::PermissionRequest {
                 id: format!("perm-{}", uuid_v4_lite()),
                 summary: "Stub ACP permission: allow demo tool call?".into(),
+                options: Vec::new(),
             });
         }
         state.queue.push(AcpEvent::Done);
@@ -790,6 +830,11 @@ pub fn external_runtime_config(kind: AgentRuntimeKind) -> Result<AcpAgentConfig>
         AgentRuntimeKind::Cursor => Ok(AcpAgentConfig::cursor_default()),
         AgentRuntimeKind::Codex => Ok(AcpAgentConfig::codex_default()),
         AgentRuntimeKind::Hermes => Ok(AcpAgentConfig::hermes_default()),
+        AgentRuntimeKind::Claude
+        | AgentRuntimeKind::Devin
+        | AgentRuntimeKind::Pi
+        | AgentRuntimeKind::MuseCode
+        | AgentRuntimeKind::Hades => providers::runtime_config(kind),
         AgentRuntimeKind::Medousa => {
             bail!("medousa runtime is not an ACP external agent")
         }
@@ -833,11 +878,15 @@ pub fn resolve_command_path(command: &str) -> Option<PathBuf> {
     None
 }
 
-/// Directories searched for vendor CLI binaries, PATH first then common installs.
+/// Bundled/package binaries precede PATH, matching optional package resolution.
 fn command_search_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
+    let mut dirs = managed_vendor_bin_dirs();
     if let Some(path_var) = std::env::var_os("PATH") {
-        dirs.extend(std::env::split_paths(&path_var));
+        for dir in std::env::split_paths(&path_var) {
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
     }
     for extra in common_vendor_bin_dirs() {
         if !dirs.iter().any(|dir| dir == &extra) {
@@ -847,9 +896,38 @@ fn command_search_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Locations preferred by Codex / Cursor official installers (and Homebrew / npm / nvm).
-pub fn common_vendor_bin_dirs() -> Vec<PathBuf> {
+fn managed_vendor_bin_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        dirs.push(parent.to_path_buf());
+    }
+    if let Ok(data_dir) = std::env::var("MEDOUSA_DATA_DIR")
+        && !data_dir.trim().is_empty()
+    {
+        dirs.push(PathBuf::from(data_dir.trim()).join("bin"));
+    } else if let Some(home) = home_dir() {
+        if cfg!(target_os = "macos") {
+            dirs.push(home.join("Library/Application Support/medousa/bin"));
+        } else if cfg!(target_os = "linux") {
+            let data_dir = std::env::var_os("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".local/share"));
+            dirs.push(data_dir.join("medousa/bin"));
+        } else if cfg!(windows) {
+            let data_dir = std::env::var_os("APPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join("AppData/Roaming"));
+            dirs.push(data_dir.join("medousa/bin"));
+        }
+    }
+    dirs
+}
+
+/// Native agent installers, package binaries, and Homebrew/npm/nvm locations.
+pub fn common_vendor_bin_dirs() -> Vec<PathBuf> {
+    let mut dirs = managed_vendor_bin_dirs();
     if let Some(home) = home_dir() {
         dirs.push(home.join(".local").join("bin"));
         dirs.push(home.join(".npm-global").join("bin"));
@@ -880,6 +958,9 @@ pub fn common_vendor_bin_dirs() -> Vec<PathBuf> {
         }
         #[cfg(windows)]
         {
+            if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                dirs.push(PathBuf::from(local).join("medousa").join("bin"));
+            }
             dirs.push(
                 home.join("AppData")
                     .join("Local")
@@ -969,6 +1050,11 @@ pub fn runtime_availability(kind: AgentRuntimeKind) -> (bool, Option<String>, Op
             };
             (available, Some(cfg.command), detail)
         }
+        AgentRuntimeKind::Claude
+        | AgentRuntimeKind::Devin
+        | AgentRuntimeKind::Pi
+        | AgentRuntimeKind::MuseCode
+        | AgentRuntimeKind::Hades => providers::availability(kind),
     }
 }
 
@@ -985,7 +1071,11 @@ struct ProcessSession {
     /// Outstanding `session/prompt` JSON-RPC id waiting for stopReason.
     pending_prompt_id: Option<u64>,
     /// Permission JSON-RPC id → allow option ids (first is preferred).
-    permission_allow_options: HashMap<String, Vec<String>>,
+    permission_options: HashMap<String, Vec<AcpPermissionOption>>,
+    permission_rpc_ids: HashMap<String, Value>,
+    capabilities: AgentRuntimeCapabilities,
+    agent_capabilities: Value,
+    stderr: std::sync::Arc<Mutex<String>>,
     /// Provider-advertised ACP session controls from `session/new`, resume, or
     /// `session/set_config_option`.
     config_options: Vec<Value>,
@@ -998,7 +1088,8 @@ struct ProcessSession {
 /// chat never shows fake stub output.
 pub struct ExternalAcpClient {
     stub: StubAcpClient,
-    processes: AsyncMutex<HashMap<String, ProcessSession>>,
+    processes: AsyncMutex<HashMap<String, std::sync::Arc<AsyncMutex<ProcessSession>>>>,
+    muse: muse::MuseClient,
 }
 
 impl Default for ExternalAcpClient {
@@ -1006,6 +1097,7 @@ impl Default for ExternalAcpClient {
         Self {
             stub: StubAcpClient::new(),
             processes: AsyncMutex::new(HashMap::new()),
+            muse: muse::MuseClient::new(),
         }
     }
 }
@@ -1021,29 +1113,41 @@ impl ExternalAcpClient {
             .unwrap_or(false)
     }
 
-    /// ACP wire `sessionId` for a live Medousa handle (from `session/new` or
-    /// `session/resume`). Used to stash `ResumeSupported` tokens on interrupt.
+    async fn process(
+        &self,
+        session: &AcpSessionId,
+    ) -> Option<std::sync::Arc<AsyncMutex<ProcessSession>>> {
+        self.processes.lock().await.get(&session.0).cloned()
+    }
+
     pub async fn wire_session_id(&self, session: &AcpSessionId) -> Option<String> {
-        let guard = self.processes.lock().await;
-        guard
-            .get(&session.0)
-            .and_then(|proc| proc.acp_session_id.clone())
-            .or_else(|| {
-                // Stub sessions use the Medousa handle as their wire id.
-                if session.0.starts_with("stub-") {
-                    Some(session.0.clone())
-                } else {
-                    None
-                }
-            })
+        if session.0.starts_with("muse-code-") {
+            return self.muse.wire_session_id(session).await;
+        }
+        if let Some(proc) = self.process(session).await {
+            return proc.lock().await.acp_session_id.clone();
+        }
+        session.0.starts_with("stub-").then(|| session.0.clone())
+    }
+
+    pub async fn session_capabilities(&self, session: &AcpSessionId) -> AgentRuntimeCapabilities {
+        if session.0.starts_with("muse-code-") {
+            return self.muse.session_capabilities(session).await;
+        }
+        match self.process(session).await {
+            Some(proc) => proc.lock().await.capabilities.clone(),
+            None => AgentRuntimeCapabilities::default(),
+        }
     }
 
     pub async fn session_config_options(&self, session: &AcpSessionId) -> Vec<Value> {
-        let guard = self.processes.lock().await;
-        guard
-            .get(&session.0)
-            .map(|proc| proc.config_options.clone())
-            .unwrap_or_default()
+        if session.0.starts_with("muse-code-") {
+            return self.muse.session_config_options(session).await;
+        }
+        match self.process(session).await {
+            Some(proc) => proc.lock().await.config_options.clone(),
+            None => Vec::new(),
+        }
     }
 
     pub async fn set_session_config_option(
@@ -1052,12 +1156,58 @@ impl ExternalAcpClient {
         config_id: &str,
         value: Value,
     ) -> Result<Vec<Value>> {
-        let mut guard = self.processes.lock().await;
-        let proc = guard
-            .get_mut(&session.0)
-            .ok_or_else(|| anyhow::anyhow!("unknown ACP session {}", session.0))?;
-        send_set_session_config_option(proc, config_id, value).await?;
+        if session.0.starts_with("muse-code-") {
+            return self
+                .muse
+                .set_session_config_option(session, config_id, value)
+                .await;
+        }
+        let proc = self
+            .process(session)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("unknown agent session"))?;
+        let mut proc = proc.lock().await;
+        send_set_session_config_option(&mut proc, config_id, value).await?;
         Ok(proc.config_options.clone())
+    }
+
+    pub async fn respond_permission_choice(
+        &self,
+        session: &AcpSessionId,
+        request_id: &str,
+        option_id: Option<&str>,
+    ) -> Result<()> {
+        if session.0.starts_with("muse-code-") {
+            return self
+                .muse
+                .respond_permission_choice(session, request_id, option_id)
+                .await;
+        }
+        if let Some(proc) = self.process(session).await {
+            return send_permission_choice(&mut *proc.lock().await, request_id, option_id).await;
+        }
+        self.stub
+            .respond_permission(session, request_id, option_id.is_some())
+            .await
+    }
+
+    pub async fn respond_client_request(
+        &self,
+        session: &AcpSessionId,
+        id: Value,
+        result: Result<Value, String>,
+    ) -> Result<()> {
+        let proc = self
+            .process(session)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("unknown agent session"))?;
+        let response = match result {
+            Ok(result) => json!({"jsonrpc":"2.0", "id":id, "result":result}),
+            Err(message) => {
+                json!({"jsonrpc":"2.0", "id":id, "error":{"code":-32603,"message":message}})
+            }
+        };
+        write_line(&mut *proc.lock().await, &response).await
     }
 
     /// Create a new ACP session, or resume a prior wire `sessionId` when the
@@ -1071,6 +1221,12 @@ impl ExternalAcpClient {
     ) -> Result<(AcpSessionId, Option<String>, bool)> {
         if matches!(config.kind, AgentRuntimeKind::Medousa) {
             bail!("use native Medousa turn path for medousa runtime");
+        }
+        if matches!(config.kind, AgentRuntimeKind::MuseCode) {
+            return self
+                .muse
+                .create_or_resume_session(config, resume_wire_id)
+                .await;
         }
         ensure_vendor_cli_path();
         if !Self::prefer_process() {
@@ -1114,7 +1270,10 @@ impl ExternalAcpClient {
             Ok(resumed) => {
                 let id = AcpSessionId(format!("acp-{}-{}", config.kind.as_str(), uuid_v4_lite()));
                 let wire = proc.acp_session_id.clone();
-                self.processes.lock().await.insert(id.0.clone(), proc);
+                self.processes
+                    .lock()
+                    .await
+                    .insert(id.0.clone(), std::sync::Arc::new(AsyncMutex::new(proc)));
                 Ok((id, wire, resumed))
             }
             Err(err) => {
@@ -1146,7 +1305,10 @@ impl ExternalAcpClient {
                     let id =
                         AcpSessionId(format!("acp-{}-{}", config.kind.as_str(), uuid_v4_lite()));
                     let wire = fresh.acp_session_id.clone();
-                    self.processes.lock().await.insert(id.0.clone(), fresh);
+                    self.processes
+                        .lock()
+                        .await
+                        .insert(id.0.clone(), std::sync::Arc::new(AsyncMutex::new(fresh)));
                     return Ok((id, wire, false));
                 }
                 bail!(
@@ -1163,101 +1325,59 @@ impl ExternalAcpClient {
 #[async_trait]
 impl AcpClient for ExternalAcpClient {
     async fn create_session(&self, config: &AcpAgentConfig) -> Result<AcpSessionId> {
-        if matches!(config.kind, AgentRuntimeKind::Medousa) {
-            bail!("use native Medousa turn path for medousa runtime");
-        }
-        ensure_vendor_cli_path();
-        if !Self::prefer_process() {
-            return self.stub.create_session(config).await;
-        }
-
-        let mut launch = config.clone();
-        if let Some(resolved) = resolve_command_path(&launch.command) {
-            launch.command = resolved.display().to_string();
-        } else if !PathBuf::from(&launch.command).is_file() {
-            // No silent stub: surface a clear setup error instead of fake output.
-            bail!(
-                "{} agent CLI not found (`{}`). Install/sign in from Settings → Connections, then try again.",
-                config.kind.as_str(),
-                launch.command
-            );
-        }
-
-        match spawn_acp_process(&launch).await {
-            Ok(mut proc) => {
-                let id = AcpSessionId(format!("acp-{}-{}", config.kind.as_str(), uuid_v4_lite()));
-                if let Err(err) = handshake_session(&mut proc).await {
-                    let _ = proc.child.kill().await;
-                    bail!(
-                        "ACP handshake failed for {} (`{} {}`): {err}",
-                        config.kind.as_str(),
-                        launch.command,
-                        launch.args.join(" ")
-                    );
-                }
-                self.processes.lock().await.insert(id.0.clone(), proc);
-                Ok(id)
-            }
-            Err(err) => bail!(
-                "ACP process spawn failed for {} (`{} {}`): {err}",
-                config.kind.as_str(),
-                launch.command,
-                launch.args.join(" ")
-            ),
-        }
+        self.create_or_resume_session(config, None)
+            .await
+            .map(|(session, _, _)| session)
     }
 
     async fn prompt(&self, session: &AcpSessionId, text: &str) -> Result<()> {
-        {
-            let mut guard = self.processes.lock().await;
-            if let Some(proc) = guard.get_mut(&session.0) {
-                if proc.cancelled {
-                    bail!("session cancelled");
-                }
-                if let Err(err) = send_prompt(proc, text).await {
-                    proc.queue.push(AcpEvent::Error {
-                        message: format!("ACP prompt failed: {err}"),
-                    });
-                    proc.queue.push(AcpEvent::Done);
-                }
-                return Ok(());
+        if session.0.starts_with("muse-code-") {
+            return self.muse.prompt(session, text).await;
+        }
+        if let Some(proc) = self.process(session).await {
+            let mut proc = proc.lock().await;
+            if proc.cancelled {
+                bail!("session cancelled");
             }
+            if proc.pending_prompt_id.is_some() {
+                bail!("agent already has an active prompt");
+            }
+            return send_prompt(&mut proc, text).await;
         }
         self.stub.prompt(session, text).await
     }
 
     async fn cancel(&self, session: &AcpSessionId) -> Result<()> {
-        {
-            let mut guard = self.processes.lock().await;
-            if let Some(mut proc) = guard.remove(&session.0) {
-                proc.cancelled = true;
-                if let Some(acp_id) = proc.acp_session_id.clone() {
-                    let _ = write_line(
-                        &mut proc,
-                        &json!({
-                            "jsonrpc": "2.0",
-                            "method": "session/cancel",
-                            "params": { "sessionId": acp_id }
-                        }),
-                    )
-                    .await;
-                }
-                let _ = proc.child.kill().await;
-                return Ok(());
+        if session.0.starts_with("muse-code-") {
+            return self.muse.cancel(session).await;
+        }
+        let proc = self.processes.lock().await.remove(&session.0);
+        if let Some(proc) = proc {
+            let mut proc = proc.lock().await;
+            proc.cancelled = true;
+            if let Some(id) = proc.acp_session_id.clone() {
+                let _ = write_line(
+                    &mut proc,
+                    &json!({"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":id}}),
+                )
+                .await;
             }
+            let _ = proc.child.kill().await;
+            return Ok(());
         }
         self.stub.cancel(session).await
     }
 
     async fn next_event(&self, session: &AcpSessionId) -> Result<Option<AcpEvent>> {
-        {
-            let mut guard = self.processes.lock().await;
-            if let Some(proc) = guard.get_mut(&session.0) {
-                if !proc.queue.is_empty() {
-                    return Ok(Some(proc.queue.remove(0)));
-                }
-                return drain_stdout(proc).await;
+        if session.0.starts_with("muse-code-") {
+            return self.muse.next_event(session).await;
+        }
+        if let Some(proc) = self.process(session).await {
+            let mut proc = proc.lock().await;
+            if !proc.queue.is_empty() {
+                return Ok(Some(proc.queue.remove(0)));
             }
+            return drain_stdout(&mut proc).await;
         }
         self.stub.next_event(session).await
     }
@@ -1268,11 +1388,14 @@ impl AcpClient for ExternalAcpClient {
         request_id: &str,
         approved: bool,
     ) -> Result<()> {
-        {
-            let mut guard = self.processes.lock().await;
-            if let Some(proc) = guard.get_mut(&session.0) {
-                return send_permission_response(proc, request_id, approved).await;
-            }
+        if session.0.starts_with("muse-code-") {
+            return self
+                .muse
+                .respond_permission(session, request_id, approved)
+                .await;
+        }
+        if let Some(proc) = self.process(session).await {
+            return send_permission_response(&mut *proc.lock().await, request_id, approved).await;
         }
         self.stub
             .respond_permission(session, request_id, approved)
@@ -1311,6 +1434,8 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
     if let Some(cwd) = &config.cwd {
         cmd.current_dir(cwd);
     }
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     let mut child = cmd.spawn().map_err(|err| {
         anyhow::anyhow!(
             "failed to spawn '{}' (args: {:?}): {err}",
@@ -1326,6 +1451,29 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
         .stdout
         .take()
         .ok_or_else(|| anyhow::anyhow!("no stdout"))?;
+    let stderr = std::sync::Arc::new(Mutex::new(String::new()));
+    if let Some(pipe) = child.stderr.take() {
+        let tail = stderr.clone();
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut pipe = pipe;
+            let mut bytes = [0u8; 4096];
+            while let Ok(n) = pipe.read(&mut bytes).await {
+                if n == 0 {
+                    break;
+                }
+                let mut tail = tail.lock().expect("stderr tail");
+                tail.push_str(&String::from_utf8_lossy(&bytes[..n]));
+                if tail.len() > 8192 {
+                    let mut cut = tail.len() - 8192;
+                    while !tail.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    tail.drain(..cut);
+                }
+            }
+        });
+    }
     Ok(ProcessSession {
         child,
         stdin,
@@ -1336,7 +1484,11 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
         acp_session_id: None,
         cwd: config.cwd.clone(),
         pending_prompt_id: None,
-        permission_allow_options: HashMap::new(),
+        permission_options: HashMap::new(),
+        permission_rpc_ids: HashMap::new(),
+        capabilities: AgentRuntimeCapabilities::default(),
+        agent_capabilities: Value::Null,
+        stderr,
         config_options: Vec::new(),
     })
 }
@@ -1367,15 +1519,21 @@ async fn handshake_session_resume(
     wire_session_id: &str,
 ) -> Result<bool> {
     send_initialize(proc).await?;
-    if send_session_resume(proc, wire_session_id, "session/resume")
-        .await
-        .is_ok()
+    if supports_session_capability(&proc.agent_capabilities, "resume")
+        && send_session_resume(proc, wire_session_id, "session/resume")
+            .await
+            .is_ok()
     {
         return Ok(true);
     }
-    if send_session_resume(proc, wire_session_id, "session/load")
-        .await
-        .is_ok()
+    if proc
+        .agent_capabilities
+        .get("loadSession")
+        .and_then(Value::as_bool)
+        == Some(true)
+        && send_session_resume(proc, wire_session_id, "session/load")
+            .await
+            .is_ok()
     {
         return Ok(true);
     }
@@ -1417,7 +1575,7 @@ async fn send_session_resume(
         let Ok(value) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        if value.get("id").and_then(|v| v.as_u64()) == Some(id) {
+        if value.get("method").is_none() && value.get("id").and_then(|v| v.as_u64()) == Some(id) {
             if let Some(err) = value.get("error") {
                 bail!("{method} rejected: {err}");
             }
@@ -1427,13 +1585,18 @@ async fn send_session_resume(
                 .map(str::to_string)
                 .or_else(|| Some(wire_session_id.to_string()));
             proc.acp_session_id = session_id;
-            proc.config_options = response_config_options(&value);
+            if let Some(options) = value
+                .pointer("/result/configOptions")
+                .and_then(Value::as_array)
+            {
+                proc.config_options = options.clone();
+            }
             if proc.acp_session_id.is_none() {
                 bail!("{method} response missing sessionId");
             }
             return Ok(());
         }
-        if let Some(ev) = map_inbound_line(proc, &value) {
+        if let Some(ev) = map_hydration_line(proc, &value) {
             proc.queue.push(ev);
         }
     }
@@ -1453,7 +1616,8 @@ async fn send_initialize(proc: &mut ProcessSession) -> Result<()> {
                 "version": env!("CARGO_PKG_VERSION")
             },
             "clientCapabilities": {
-                "fs": { "readTextFile": true },
+                "fs": { "readTextFile": true, "writeTextFile": true },
+                "terminal": !cfg!(windows),
                 "permission": true,
                 "_meta": {
                     "parameterizedModelPicker": true
@@ -1468,10 +1632,16 @@ async fn send_initialize(proc: &mut ProcessSession) -> Result<()> {
             break;
         };
         if let Ok(value) = serde_json::from_str::<Value>(&line) {
-            if value.get("id").and_then(|v| v.as_u64()) == Some(id) {
+            if value.get("method").is_none() && value.get("id").and_then(|v| v.as_u64()) == Some(id)
+            {
                 if value.get("error").is_some() {
                     bail!("initialize rejected: {line}");
                 }
+                proc.agent_capabilities = value
+                    .pointer("/result/agentCapabilities")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                proc.capabilities = negotiated_capabilities(&proc.agent_capabilities);
                 return Ok(());
             }
             // Buffer early notifications while waiting.
@@ -1511,7 +1681,7 @@ async fn send_session_new(proc: &mut ProcessSession) -> Result<()> {
         let Ok(value) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        if value.get("id").and_then(|v| v.as_u64()) == Some(id) {
+        if value.get("method").is_none() && value.get("id").and_then(|v| v.as_u64()) == Some(id) {
             if let Some(err) = value.get("error") {
                 bail!("session/new rejected: {err}");
             }
@@ -1568,7 +1738,9 @@ async fn send_set_session_config_option(
         let Ok(response) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        if response.get("id").and_then(Value::as_u64) == Some(id) {
+        if response.get("method").is_none()
+            && response.get("id").and_then(Value::as_u64) == Some(id)
+        {
             if let Some(err) = response.get("error") {
                 bail!("session/set_config_option rejected: {err}");
             }
@@ -1605,39 +1777,84 @@ async fn send_permission_response(
     request_id: &str,
     approved: bool,
 ) -> Result<()> {
-    let rpc_id: Value = if let Ok(n) = request_id.parse::<u64>() {
-        json!(n)
-    } else if let Ok(n) = request_id.parse::<i64>() {
-        json!(n)
+    let option = if approved {
+        Some(
+            proc.permission_options
+                .get(request_id)
+                .and_then(|options| {
+                    options
+                        .iter()
+                        .find(|option| option.kind == "allow_once")
+                        .or_else(|| {
+                            options
+                                .iter()
+                                .find(|option| option.kind.starts_with("allow"))
+                        })
+                })
+                .map(|option| option.option_id.clone())
+                .ok_or_else(|| anyhow::anyhow!("agent requires an explicit option selection"))?,
+        )
     } else {
-        json!(request_id)
+        None
     };
-    let result = if approved {
-        let option_id = proc
-            .permission_allow_options
-            .get(request_id)
-            .and_then(|opts| opts.first())
-            .cloned()
-            .unwrap_or_else(|| "allow-once".to_string());
-        json!({
-            "outcome": {
-                "outcome": "selected",
-                "optionId": option_id
-            }
-        })
-    } else {
-        json!({ "outcome": { "outcome": "cancelled" } })
+    send_permission_choice(proc, request_id, option.as_deref()).await
+}
+
+async fn send_permission_choice(
+    proc: &mut ProcessSession,
+    request_id: &str,
+    option_id: Option<&str>,
+) -> Result<()> {
+    let options = proc
+        .permission_options
+        .get(request_id)
+        .ok_or_else(|| anyhow::anyhow!("unknown permission request"))?;
+    if let Some(id) = option_id {
+        if !options.iter().any(|option| option.option_id == id) {
+            bail!("invalid agent permission option");
+        }
+    }
+    let rpc_id = proc
+        .permission_rpc_ids
+        .get(request_id)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("permission RPC id missing"))?;
+    let outcome = match option_id {
+        Some(option_id) => json!({"outcome":"selected","optionId":option_id}),
+        None => json!({"outcome":"cancelled"}),
     };
-    proc.permission_allow_options.remove(request_id);
     write_line(
         proc,
-        &json!({
-            "jsonrpc": "2.0",
-            "id": rpc_id,
-            "result": result
-        }),
+        &json!({"jsonrpc":"2.0","id":rpc_id,"result":{"outcome":outcome}}),
     )
-    .await
+    .await?;
+    proc.permission_options.remove(request_id);
+    proc.permission_rpc_ids.remove(request_id);
+    Ok(())
+}
+
+fn supports_session_capability(value: &Value, name: &str) -> bool {
+    value
+        .get("sessionCapabilities")
+        .and_then(|capabilities| capabilities.get(name))
+        .is_some_and(|value| value == &Value::Bool(true) || value.is_object())
+}
+
+fn negotiated_capabilities(value: &Value) -> AgentRuntimeCapabilities {
+    AgentRuntimeCapabilities {
+        resume: value.get("loadSession").and_then(Value::as_bool) == Some(true)
+            || supports_session_capability(value, "resume"),
+        fork: supports_session_capability(value, "fork"),
+        images: value
+            .pointer("/promptCapabilities/image")
+            .and_then(Value::as_bool)
+            == Some(true),
+        audio: value
+            .pointer("/promptCapabilities/audio")
+            .and_then(Value::as_bool)
+            == Some(true),
+        terminal: !cfg!(windows),
+    }
 }
 
 fn alloc_id(proc: &mut ProcessSession) -> u64 {
@@ -1667,19 +1884,32 @@ async fn read_line_timeout(proc: &mut ProcessSession, secs: u64) -> Result<Optio
 async fn drain_stdout(proc: &mut ProcessSession) -> Result<Option<AcpEvent>> {
     let result =
         tokio::time::timeout(std::time::Duration::from_millis(80), proc.lines.next_line()).await;
-    let Ok(Ok(Some(line))) = result else {
-        return Ok(None);
-    };
-    let value: Value = match serde_json::from_str(&line) {
-        Ok(v) => v,
+    let line = match result {
         Err(_) => return Ok(None),
+        Ok(Err(error)) => return Err(error.into()),
+        Ok(Ok(None)) => {
+            let status = proc.child.try_wait()?;
+            let _stderr = proc.stderr.lock().expect("stderr tail");
+            // Retain stderr for diagnostics, but don't echo credentials from vendor output.
+            return Ok(Some(AcpEvent::Error {
+                message: format!(
+                    "agent process closed its output{}",
+                    status.map(|s| format!(" ({s})")).unwrap_or_default()
+                ),
+            }));
+        }
+        Ok(Ok(Some(line))) => line,
     };
+    let value: Value = serde_json::from_str(&line)
+        .map_err(|_| anyhow::anyhow!("agent emitted invalid JSON protocol output"))?;
     Ok(map_inbound_line(proc, &value))
 }
 
 fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent> {
     // JSON-RPC response to session/prompt → turn complete.
-    if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
+    if value.get("method").is_none()
+        && let Some(id) = value.get("id").and_then(|v| v.as_u64())
+    {
         if proc.pending_prompt_id == Some(id) {
             proc.pending_prompt_id = None;
             if let Some(err) = value.get("error") {
@@ -1688,15 +1918,18 @@ fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent
                     .and_then(|v| v.as_str())
                     .unwrap_or("ACP prompt error")
                     .to_string();
-                // Emit Error first; Done follows on the next poll.
-                proc.queue.push(AcpEvent::Done);
                 return Some(AcpEvent::Error { message });
             }
             // Terminal: session/prompt completed (stopReason present or implied).
-            let _stop = value
+            let stop = value
                 .pointer("/result/stopReason")
                 .and_then(|v| v.as_str())
                 .unwrap_or("end_turn");
+            if stop != "end_turn" {
+                return Some(AcpEvent::Error {
+                    message: format!("agent stopped before completing the turn: {stop}"),
+                });
+            }
             return Some(AcpEvent::Done);
         }
         // Other RPC responses (initialize/session/new) — ignore here.
@@ -1713,23 +1946,31 @@ fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent
                 other => other.to_string(),
             })
             .unwrap_or_else(|| format!("perm-{}", uuid_v4_lite()));
-        let allow_ids: Vec<String> = value
+        let options: Vec<AcpPermissionOption> = value
             .pointer("/params/options")
-            .and_then(|v| v.as_array())
+            .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter_map(|opt| {
-                let kind = opt.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-                let id = opt.get("optionId").and_then(|v| v.as_str())?;
-                if kind.starts_with("allow") || id.contains("allow") {
-                    Some(id.to_string())
-                } else {
-                    None
-                }
+            .filter_map(|option| {
+                Some(AcpPermissionOption {
+                    option_id: option.get("optionId")?.as_str()?.to_string(),
+                    name: option
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Choose")
+                        .to_string(),
+                    kind: option
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .unwrap_or("other")
+                        .to_string(),
+                })
             })
             .collect();
-        proc.permission_allow_options
-            .insert(rpc_id.clone(), allow_ids);
+        proc.permission_options
+            .insert(rpc_id.clone(), options.clone());
+        proc.permission_rpc_ids
+            .insert(rpc_id.clone(), value.get("id")?.clone());
         let title = value
             .pointer("/params/toolCall/title")
             .or_else(|| value.pointer("/params/toolCall/toolCallId"))
@@ -1739,6 +1980,14 @@ fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent
         return Some(AcpEvent::PermissionRequest {
             id: rpc_id,
             summary,
+            options,
+        });
+    }
+    if value.get("id").is_some() && (method.starts_with("terminal/") || method.starts_with("fs/")) {
+        return Some(AcpEvent::ClientRequest {
+            id: value["id"].clone(),
+            method: method.to_string(),
+            params: value.get("params").cloned().unwrap_or(Value::Null),
         });
     }
 
@@ -1760,7 +2009,9 @@ fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent
                 }
                 return Some(AcpEvent::ReasoningDelta { text });
             }
-            "agent_message_chunk" | "user_message_chunk" => {
+            // User echoes are transcript input, never assistant output.
+            "user_message_chunk" => return None,
+            "agent_message_chunk" => {
                 let text = update
                     .pointer("/content/text")
                     .or_else(|| update.pointer("/content/content/text"))
@@ -1789,9 +2040,14 @@ fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent
                     input: update.clone(),
                 });
             }
+            "config_option_update" => {
+                if let Some(options) = update.get("configOptions").and_then(Value::as_array) {
+                    proc.config_options = options.clone();
+                }
+            }
             "state_update" => {
                 let state = update.get("state").and_then(|v| v.as_str()).unwrap_or("");
-                if state == "idle" {
+                if state == "idle" && proc.pending_prompt_id.is_none() {
                     return Some(AcpEvent::Done);
                 }
             }
@@ -1799,6 +2055,20 @@ fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent
         }
     }
     None
+}
+
+/// Resume/load replays the provider's transcript before its response. Medousa
+/// already owns that history; only live controls may cross the hydration fence.
+fn map_hydration_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent> {
+    match map_inbound_line(proc, value) {
+        Some(
+            event @ (AcpEvent::PermissionRequest { .. }
+            | AcpEvent::ClientRequest { .. }
+            | AcpEvent::Error { .. }),
+        ) => Some(event),
+        // Mapping config_option_update still updates the session's controls.
+        _ => None,
+    }
 }
 
 #[cfg(test)]

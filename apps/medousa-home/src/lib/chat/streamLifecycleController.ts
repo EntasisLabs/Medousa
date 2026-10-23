@@ -114,7 +114,7 @@ export async function startTurnStream(
   sessionId: string,
   streamUrl: string,
 ) {
-  await startInteractiveStream(streamUrl);
+  await startInteractiveStream(streamUrlWithSince(host, streamUrl, turnId));
   markStreamOwner(host, turnId, sessionId, streamUrl);
 }
 
@@ -457,7 +457,9 @@ export function settleTurn(host: ChatStoreHost, turnId: string) {
   const next = new Map(host.turns);
   next.delete(turnId);
   host.turns = next;
-  host.lastSeqByTurn.delete(turnId);
+  // Agent-session IDs and their sequence persist across prompts. Keep the
+  // cursor so the next subscription cannot replay the previous terminal event.
+  if (!turn.reusableStream) host.lastSeqByTurn.delete(turnId);
   markRecentlySettled(host, turnId);
   scheduleTerminalHistoryReconcile(host, turnId);
   void detachStreamOwner(host, turnId);

@@ -3,6 +3,7 @@ import {
   clearSessionAgentSessionId,
   getSessionAgentWorkId,
   getSessionAgentRuntime,
+  getSessionAgentSessionId,
   isExternalAgentRuntime,
   isProviderConversationRuntime,
   setSessionAgentRuntime,
@@ -11,6 +12,8 @@ import {
   agentConversationContextSeeded,
   markAgentConversationContextSeeded,
 } from "./sessionAgentRuntime";
+import { setActiveWorkshopIdPort } from "./workshopLocality";
+import { EXTERNAL_AGENTS } from "./externalAgentCatalog";
 import { externalConversationSessionId } from "./externalConversationSession";
 
 describe("session agent workspace metadata", () => {
@@ -23,7 +26,7 @@ describe("session agent workspace metadata", () => {
     });
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); setActiveWorkshopIdPort(null); });
 
   it("distinguishes a plain chat from legacy sessions with unknown workspace metadata", () => {
     expect(getSessionAgentWorkId("chat-1")).toBeUndefined();
@@ -61,4 +64,24 @@ describe("session agent workspace metadata", () => {
     expect(getSessionAgentRuntime("chat-1")).toBe("cursor");
     expect(agentConversationContextSeeded("chat-1", "agent-cursor")).toBe(false);
   });
+  it.each(EXTERNAL_AGENTS)("restores persisted $id sessions without changing their identity", agent => {
+    setSessionAgentRuntime("new-agent", agent.id);
+    setSessionAgentSessionId("new-agent", "provider-session");
+    expect(getSessionAgentRuntime("new-agent")).toBe(agent.id);
+    expect(isExternalAgentRuntime(getSessionAgentRuntime("new-agent"))).toBe(true);
+  });
+
+  it.each(EXTERNAL_AGENTS)("keeps $id preferences and provider sessions isolated between workshops", agent => {
+    let scope = "studio";
+    setActiveWorkshopIdPort(() => scope);
+    setSessionAgentRuntime("same-session", agent.id);
+    setSessionAgentSessionId("same-session", "provider-studio");
+    scope = "remote";
+    expect(getSessionAgentRuntime("same-session")).toBe("medousa");
+    expect(getSessionAgentSessionId("same-session")).toBeNull();
+    scope = "studio";
+    expect(getSessionAgentRuntime("same-session")).toBe(agent.id);
+    expect(getSessionAgentSessionId("same-session")).toBe("provider-studio");
+  });
+
 });

@@ -3,6 +3,16 @@ import type { TurnTicketPhase, TurnTicketRecord } from "$lib/types/session";
 
 const TERMINAL_PHASES = new Set<TurnTicketPhase>(["done", "error", "cancelled"]);
 
+/** Unlike native turn streams, this stream identity survives multiple prompts. */
+export function isReusableAgentStream(streamUrl: string): boolean {
+  try {
+    const path = new URL(streamUrl, "http://medousa.invalid").pathname;
+    return /^\/v1\/agents\/sessions\/[^/]+\/stream\/?$/.test(path);
+  } catch {
+    return false;
+  }
+}
+
 export interface StreamOwner {
   turnId: string;
   sessionId: string;

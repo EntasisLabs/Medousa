@@ -1,12 +1,12 @@
 # Choose a coding runtime
 
 Open **Settings → Medousa Agent → Coding runtime** on the connected workshop.
-Choose **Medousa Coder**, **Codex**, **Cursor**, or **Hermes** as your preferred
-runtime. Add optional fallbacks and move them into the order you want, then
+Choose **Medousa Coder**, **Codex**, **Cursor**, **Hermes**, **Claude Code**,
+**Devin**, **Pi**, **Muse Code**, or **Hades** as your preferred runtime. Add optional fallbacks and move them into the order you want, then
 save the runtime settings.
 
 Medousa Coder is the default until you choose. External runtimes need their
-package installed and account connected on the workshop that executes the work.
+official CLI installed and configured on the workshop that executes the work.
 Your coding runtime choice is separate from the model used by Medousa Coder.
 
 Future coding assignments use your saved preference. If it is unavailable,
@@ -19,6 +19,33 @@ You can ask from your current chat to work on an existing project. The runtime
 checks project ownership and uses a separate execution session; you do not need
 to open the project's chat just to assign a coder. Assignment approvals still
 apply. A saved runtime preference does not authorize additional work.
+
+## Connect an external runtime
+
+Open **Settings → External Agents** to inspect the connected workshop's runtime
+availability and authentication status. Codex, Cursor, and Hermes retain their
+existing local install and sign-in actions. For Claude Code, Devin, Pi, Muse Code,
+and Hades, install and configure the official CLI on the workshop host, then
+refresh. Medousa reuses that agent's own account and settings; it does not copy
+credentials from another device or replace them with a Medousa model key.
+
+Claude Code and Pi use pinned ACP bridges; their native CLIs and bridge prerequisites
+must be available on the executing workshop. Hades currently targets Linux
+workshops. Unsupported platforms or missing bridge dependencies appear as a
+runtime blocker. Authentication that cannot be verified is shown as **Unknown**,
+not as a successful sign-in.
+
+From an iPad or a remote connection, you can inspect and use the host's configured
+runtimes. Local installation and terminal login are available only when Medousa
+and the selected workshop share the same machine. Configure remote credentials
+on that workshop host. **Muse Code** is the executable coding agent; **Muse** in
+Connected agents remains the independent WhatsApp conversation connection.
+
+External coding-agent chat currently accepts text. Remove attachments before
+sending; Medousa reports unsupported attachments instead of silently dropping them.
+Permissions show the choices supplied by the agent. Choose **Cancel** to dismiss
+a pending request without selecting a provider option. Older workshops retain
+**Allow** and **Deny**.
 
 ## Follow assigned work
 

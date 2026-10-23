@@ -1,3 +1,5 @@
+import { isExternalRuntime } from "$lib/utils/externalAgentCatalog";
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 import type { ConversationTarget } from "$lib/spotlight/conversationTargets";
 import { loadCompanionDrafts } from "./companionDrafts";
@@ -5,7 +7,7 @@ import { loadCompanionDrafts } from "./companionDrafts";
 export type SavedAddress = { label: string } & (
   { kind: "bot"; botId: string } |
   { kind: "session"; sessionId: string } |
-  { kind: "new"; runtime: "medousa" | "cursor" | "codex" | "hermes"; sessionId: string | null }
+  { kind: "new"; runtime: "medousa" | ExternalAgentRuntime; sessionId: string | null }
 );
 export interface AddressedDraft { query: string; address: SavedAddress | null }
 const KEY = "medousa-companion-conversation";
@@ -15,8 +17,8 @@ function address(value: unknown): SavedAddress | null {
   if (typeof item.label !== "string" || !item.label.trim()) return null;
   if (item.kind === "bot" && typeof item.botId === "string" && item.botId) return { kind: "bot", botId: item.botId, label: item.label };
   if (item.kind === "session" && typeof item.sessionId === "string" && item.sessionId) return { kind: "session", sessionId: item.sessionId, label: item.label };
-  if (item.kind === "new" && ["medousa", "cursor", "codex", "hermes"].includes(String(item.runtime)) && (item.sessionId === null || typeof item.sessionId === "string")) {
-    return { kind: "new", label: item.label, runtime: item.runtime as "medousa" | "cursor" | "codex" | "hermes", sessionId: item.sessionId || null };
+  if (item.kind === "new" && (item.runtime === "medousa" || isExternalRuntime(item.runtime)) && (item.sessionId === null || typeof item.sessionId === "string")) {
+    return { kind: "new", label: item.label, runtime: item.runtime as "medousa" | ExternalAgentRuntime, sessionId: item.sessionId || null };
   }
   return null;
 }

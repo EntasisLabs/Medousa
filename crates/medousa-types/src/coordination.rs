@@ -34,15 +34,46 @@ pub enum ExternalPeerRuntime {
     Codex,
     Cursor,
     Hermes,
+    Claude,
+    Devin,
+    Pi,
+    MuseCode,
+    Hades,
 }
 
 impl ExternalPeerRuntime {
+    pub const EXTERNAL: [Self; 8] = [
+        Self::Codex,
+        Self::Cursor,
+        Self::Hermes,
+        Self::Claude,
+        Self::Devin,
+        Self::Pi,
+        Self::MuseCode,
+        Self::Hades,
+    ];
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        let raw = raw.trim().to_ascii_lowercase();
+        if raw == "medousa" || raw == "native" {
+            return Some(Self::Medousa);
+        }
+        Self::EXTERNAL
+            .into_iter()
+            .find(|runtime| runtime.as_str() == raw)
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Medousa => "medousa",
             Self::Codex => "codex",
             Self::Cursor => "cursor",
             Self::Hermes => "hermes",
+            Self::Claude => "claude",
+            Self::Devin => "devin",
+            Self::Pi => "pi",
+            Self::MuseCode => "muse_code",
+            Self::Hades => "hades",
         }
     }
 }
