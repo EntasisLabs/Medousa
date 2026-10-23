@@ -928,6 +928,7 @@ impl ArtifactsPresent {
 
 impl CodeWrite {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
         let expected_sha256 = self.expected_sha256.into_option().unwrap_or_default();
         #[cfg(feature = "full-daemon")]
         if let Some(invocation) =

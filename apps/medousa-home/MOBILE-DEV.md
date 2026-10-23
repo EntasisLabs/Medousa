@@ -174,7 +174,8 @@ When the app launches on device:
 ```bash
 npm run tauri:ios:dev -- --open          # open Xcode project
 npm run tauri:ios:dev -- "iPhone 16"     # specific simulator
-npm run tauri:ios:build                  # release IPA for TestFlight-style install
+npm run tauri:ios:build                  # release binary; defaults to development signing
+npm run tauri:ios:build:testflight       # App Store Connect export for TestFlight
 npm run tauri:ios:dev:carplay:sim        # CarPlay scene in iOS Simulator
 npm run tauri:ios:dev:carplay            # approved CarPlay profile + connected iPhone
 ```
@@ -437,7 +438,7 @@ For each TestFlight upload, pass a new build number (timestamp is fine):
 ```bash
 npm run tauri:ios:build:testflight
 # or explicitly (must fit in 0..4294967295 — unix seconds works):
-npm run tauri ios build -- --export-method release-testing --build-number $(date +%s) --ci
+npm run tauri ios build -- --export-method app-store-connect --build-number $(date +%s) --ci
 ```
 
 Or use the helper script (runs frontend build + iOS export):
@@ -450,16 +451,28 @@ Or use the helper script (runs frontend build + iOS export):
 **Output IPA:**
 
 ```text
-apps/medousa-home/src-tauri/gen/apple/build/Medousa Home.ipa
+apps/medousa-home/src-tauri/gen/apple/build/arm64/Medousa.ipa
 ```
 
 Export methods (Tauri `--export-method`):
 
 | Method | Purpose |
 |--------|---------|
-| `release-testing` | **TestFlight** beta (what you want) |
-| `app-store-connect` | App Store / Connect upload variant |
+| `app-store-connect` | **TestFlight and App Store** uploads |
+| `release-testing` | Ad Hoc install on registered devices (not TestFlight) |
 | `debugging` | Dev install on registered devices only (not TestFlight) |
+
+The TestFlight helper requires `app-store-connect` and rejects other
+`EXPORT_METHOD` overrides. Being signed into Xcode or Transporter does not turn a
+development-signed IPA into a distribution build. App Store Connect needs an
+[App Store distribution profile](https://developer.apple.com/help/account/provisioning-profiles/create-an-app-store-provisioning-profile)
+for the app and its widget extension. If signing reports a missing distribution
+identity, use Xcode → Settings → Accounts → your team → Manage Certificates to
+check **Apple Distribution** and its private key, or use Organizer's automatic
+distribution signing.
+
+An existing `src-tauri/gen/apple/build/medousa-home_iOS.xcarchive` can be opened in
+Xcode Organizer and distributed with **App Store Connect** without recompiling.
 
 ### Upload to App Store Connect
 
@@ -467,11 +480,11 @@ Export methods (Tauri `--export-method`):
 
 1. Install **Transporter** from the Mac App Store.
 2. Sign in with your Apple Developer Apple ID.
-3. Drag `Medousa Home.ipa` into Transporter → **Deliver**.
+3. Drag `Medousa.ipa` into Transporter → **Deliver**.
 4. Wait for processing (usually 5–20 minutes).
 
 ```bash
-open -a Transporter "src-tauri/gen/apple/build/Medousa Home.ipa"
+open -a Transporter "src-tauri/gen/apple/build/arm64/Medousa.ipa"
 ```
 
 **Option B — Xcode Organizer**
@@ -500,7 +513,7 @@ Same as dev: daemon on Mac with `medousa start daemon --public`, then **You → 
 | **Bundle ID not found in Connect** | Create the app in App Store Connect with exact bundle ID before uploading. |
 | **Duplicate build number** | Run `npm run tauri:ios:clean` then rebuild; confirm printed `CFBundleVersion` before upload. |
 | **Same version after bumping config** | Stale cache — `npm run tauri:ios:clean` (or `CLEAN=1 ./scripts/ios-testflight-build.sh`). If still stale: `rm -rf src-tauri/gen/apple && npm run tauri:ios:init`, then rebuild. |
-| **Upload stuck / invalid IPA** | Rebuild with `--export-method release-testing`, not `debugging`. |
+| **Invalid provisioning profile / missing code-signing certificate on upload** | Export with `--export-method app-store-connect`; both app and widget need distribution profiles. `debugging` and `release-testing` packages cannot be uploaded to TestFlight. |
 | **Processing forever** | Check email from Apple for compliance/metadata issues. |
 | **Old icon on home screen** | Delete app, reinstall from TestFlight after `npm run icons:generate` + rebuild. |
 

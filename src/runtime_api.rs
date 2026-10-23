@@ -412,7 +412,7 @@ impl JsonSchema for RuntimeQueryAction {
     }
 
     fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
-        let mut actions = vec![
+        let actions = vec![
             "job.list",
             "job.status",
             "recurring.list",
@@ -421,6 +421,8 @@ impl JsonSchema for RuntimeQueryAction {
             "workflow.status",
             "delivery.status",
         ];
+        #[cfg(feature = "full-daemon")]
+        let mut actions = actions;
         #[cfg(feature = "full-daemon")]
         actions
             .splice(
@@ -488,7 +490,7 @@ impl JsonSchema for RuntimeMutateAction {
 }
 
 pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
-    let mut schemas = vec![
+    let schemas = vec![
         typed_action_schema::<JobList>(QUERY_ID, "job.list", "List durable jobs"),
         typed_action_schema::<JobStatus>(QUERY_ID, "job.status", "Status for one job"),
         typed_action_schema::<RecurringList>(
@@ -558,6 +560,8 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
             "Draft a durable workflow from a natural-language goal",
         ),
     ];
+    #[cfg(feature = "full-daemon")]
+    let mut schemas = schemas;
     #[cfg(feature = "full-daemon")]
     {
         let mut assignment_schemas = vec![
