@@ -2,16 +2,16 @@ use crate::daemon::types::{ArchiveAskJobRequest, WorkCardDetail, WorkspaceCardAc
 use medousa_types::WorkspaceSnapshotQuery;
 use tauri::State;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 use crate::embedded_daemon::EmbeddedDaemonState;
 
 #[tauri::command]
 pub async fn workspace_get_card(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     card_id: String,
 ) -> Result<WorkCardDetail, String> {
-    client(&state)?
+    client(&state).await?
         .workspace()
         .get_card(card_id.trim())
         .await
@@ -20,10 +20,10 @@ pub async fn workspace_get_card(
 
 #[tauri::command]
 pub async fn workspace_cancel_card(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     card_id: String,
 ) -> Result<WorkspaceCardActionResponse, String> {
-    client(&state)?
+    client(&state).await?
         .workspace()
         .cancel_card(card_id.trim())
         .await
@@ -32,14 +32,14 @@ pub async fn workspace_cancel_card(
 
 #[tauri::command]
 pub async fn workspace_archive_card(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     card_id: String,
     purge_output: Option<bool>,
 ) -> Result<WorkspaceCardActionResponse, String> {
     let request = ArchiveAskJobRequest {
         purge_output: purge_output.unwrap_or(true),
     };
-    client(&state)?
+    client(&state).await?
         .workspace()
         .archive_card(card_id.trim(), &request)
         .await
@@ -48,10 +48,10 @@ pub async fn workspace_archive_card(
 
 #[tauri::command]
 pub async fn workspace_retry_card(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     card_id: String,
 ) -> Result<WorkspaceCardActionResponse, String> {
-    client(&state)?
+    client(&state).await?
         .workspace()
         .retry_card(card_id.trim())
         .await
@@ -60,7 +60,7 @@ pub async fn workspace_retry_card(
 
 #[tauri::command]
 pub async fn workspace_fetch_snapshot(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     since_revision: Option<u64>,
 ) -> Result<crate::daemon::types::WorkspaceSnapshot, String> {
@@ -74,7 +74,7 @@ pub async fn workspace_fetch_snapshot(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .workspace()
         .snapshot(&WorkspaceSnapshotQuery {
             since_revision,

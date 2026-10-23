@@ -1,10 +1,12 @@
-//! Resolve the one daemon Home is allowed to address.
+//! Resolve selected and retained workshop authority.
 //!
-//! The registry is a client-side list of known workshops. Only its explicit
-//! active selection is routing authority: mobile Personal is in-process, while a
-//! selected local desktop or paired portal is reached through its own exact
-//! transport credentials.
+//! The main shell follows the registry's selected workshop. Native work windows
+//! retain an explicit registry identity without changing that selection. Both
+//! resolve exact local/paired transport credentials; mobile Personal stays
+//! in-process. Client registry identities are never execution runtime IDs.
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use tauri::Manager;
 use crate::daemon::types::DEFAULT_DAEMON_URL;
 use crate::pairing_client::WorkshopTransportConfig;
 use crate::workshop_registry::{
@@ -92,8 +94,94 @@ pub fn resolve_scope(workshop_id: &str) -> Result<ActiveWorkshopTarget, String> 
     )
 }
 
+async fn metadata_read<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    use medousa_forge::execution::{ExecutionClass, ForgeExecutionService};
+    static EXECUTION: std::sync::OnceLock<ForgeExecutionService> = std::sync::OnceLock::new();
+    EXECUTION
+        .get_or_init(ForgeExecutionService::new)
+        .run(ExecutionClass::Observation, 64 * 1024, move || Ok(work()))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+pub async fn resolve_async() -> Result<ActiveWorkshopTarget, String> {
+    metadata_read(resolve).await
+}
+
+pub async fn resolve_scope_async(workshop_id: String) -> Result<ActiveWorkshopTarget, String> {
+    metadata_read(move || resolve_scope(&workshop_id)).await
+}
+
+pub async fn transport_for_target_async(
+    target: ActiveWorkshopTarget,
+) -> Result<WorkshopTransportConfig, String> {
+    metadata_read(move || transport_config_for_target(target)).await
+}
+
+pub fn consumer_generation(window: &tauri::Webview) -> Option<u64> {
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        return crate::desktop_windows::generation_for(window.app_handle(), window.label());
+    }
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        let _ = window;
+        None
+    }
+}
+
+/// Check under the consumer-registry lock. No native UI query is made while
+/// holding that lock; the destruction callback uses the same registry.
+pub fn ensure_window_consumer(
+    window: &tauri::Webview,
+    generation: Option<u64>,
+) -> Result<(), String> {
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if window.label().starts_with("desktop-work-")
+        && (generation.is_none() || generation != consumer_generation(window))
+    {
+        return Err("The work window was closed".into());
+    }
+    let _ = (window, generation);
+    Ok(())
+}
+
+/// Accept the invoking webview even when its native window hosts browser children.
+/// Retained desktop views have immutable workshop ownership. Other windows use
+/// the normal selected workshop; an explicit execution destination wins.
+pub async fn transport_for_webview(
+    window: &tauri::Webview,
+    execution_runtime_id: Option<&str>,
+) -> Result<WorkshopTransportConfig, String> {
+    if let Some(id) = execution_runtime_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
+        return transport_config_for_runtime_id(id);
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if window.label().starts_with("desktop-work-") {
+        let scope = crate::desktop_windows::scope_for(window.app_handle(), window.label())
+            .ok_or("The work window was closed")?;
+        return metadata_read(move || transport_config_for_target(resolve_scope(&scope)?)).await;
+    }
+    let _ = window;
+    transport_config()
+}
+
 pub fn display_url() -> Result<String, String> {
     Ok(resolve()?.display_url().to_string())
+}
+
+pub fn display_url_for_webview(window: &tauri::Webview) -> Result<String, String> {
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Some(scope) = crate::desktop_windows::scope_for(window.app_handle(), window.label()) {
+        return Ok(resolve_scope(&scope)?.display_url().to_string());
+    }
+    let _ = window;
+    display_url()
 }
 
 pub fn personal_transport_config() -> Result<WorkshopTransportConfig, String> {

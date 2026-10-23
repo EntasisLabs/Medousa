@@ -31,15 +31,22 @@ export async function getMedousaConfigPaths(): Promise<MedousaConfigPaths> {
   return invoke<MedousaConfigPaths>("medousa_config_paths");
 }
 
+function inWorkWindow(): boolean {
+  return typeof window !== "undefined" && window.location.pathname.startsWith("/desktop/work");
+}
+
 export async function loadTuiDefaultsSummary(): Promise<TuiDefaultsSummary> {
+  if (inWorkWindow()) return invoke<TuiDefaults>("runtime_get_tui_defaults");
   return invoke<TuiDefaultsSummary>("load_tui_defaults_summary");
 }
 
 export async function loadTuiDefaults(): Promise<TuiDefaults> {
+  if (inWorkWindow()) return invoke<TuiDefaults>("runtime_get_tui_defaults");
   return invoke<TuiDefaults>("load_tui_defaults");
 }
 
 export async function persistTuiDefaults(defaults: TuiDefaults): Promise<void> {
+  if (inWorkWindow()) return invoke("runtime_put_tui_defaults", { dto: defaults });
   return invoke("persist_tui_defaults", { dto: defaults });
 }
 
@@ -50,6 +57,13 @@ export async function persistTuiRuntimePrefs(
   reasoningEffort?: string,
   stageRouting?: StageRoutingMatrix,
 ): Promise<void> {
+  if (inWorkWindow()) {
+    return invoke("runtime_patch_tui_preferences", { patch: {
+      provider, model, response_depth_mode: responseDepthMode,
+      ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
+      ...(stageRouting !== undefined ? { stage_routing: stageRouting } : {}),
+    } });
+  }
   return invoke("persist_tui_runtime_prefs", {
     provider,
     model,
@@ -60,6 +74,7 @@ export async function persistTuiRuntimePrefs(
 }
 
 export async function persistTuiFavoriteModels(models: FavoriteModel[]): Promise<void> {
+  if (inWorkWindow()) return invoke("runtime_patch_tui_preferences", { patch: { favorite_models: models } });
   return invoke("persist_tui_favorite_models", { models });
 }
 
@@ -67,6 +82,12 @@ export async function persistTuiVoicePrefs(prefs: {
   activeVoiceId: string;
   customVoicePresets?: VoicePreset[];
 }): Promise<void> {
+  if (inWorkWindow()) {
+    return invoke("runtime_patch_tui_preferences", { patch: {
+      active_voice_id: prefs.activeVoiceId,
+      custom_voice_presets: prefs.customVoicePresets ?? null,
+    } });
+  }
   return invoke("persist_tui_voice_prefs", {
     activeVoiceId: prefs.activeVoiceId,
     customVoicePresets: prefs.customVoicePresets ?? null,

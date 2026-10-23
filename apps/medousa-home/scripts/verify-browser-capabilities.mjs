@@ -17,9 +17,9 @@ const cargoManifest = await readFile(join(tauriRoot, "Cargo.toml"), "utf8");
 const cargoLock = await readFile(join(tauriRoot, "Cargo.lock"), "utf8");
 const lib = await readFile(join(tauriRoot, "src", "lib.rs"), "utf8");
 const bridge = await readFile(join(tauriRoot, "src", "browser_report_bridge.rs"), "utf8");
-const handlerStart = lib.indexOf(".invoke_handler(tauri::generate_handler![");
+const handlerStart = lib.indexOf("tauri::generate_handler![");
 assert.notEqual(handlerStart, -1, "Tauri application invoke handler was not found");
-const handlerEnd = lib.indexOf("\n        ])", handlerStart);
+const handlerEnd = lib.indexOf("\n            ];", handlerStart);
 assert.notEqual(handlerEnd, -1, "Tauri application invoke handler end was not found");
 const handler = lib.slice(handlerStart, handlerEnd);
 const applicationCommands = sortedUnique(

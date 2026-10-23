@@ -1,3 +1,6 @@
+import { bindChatWindowSync } from "$lib/chat/chatWindowSync";
+import { bindChatDraftSync } from "$lib/chat/draftPersistence";
+
 /** Composition-root binders. Feature stores must not import this module. */
 
 import { fileDocuments } from "$lib/files/fileDocuments.svelte";
@@ -38,7 +41,11 @@ function warnUnsavedFiles(event: BeforeUnloadEvent) {
   if (fileDocuments.hasDirty()) { event.preventDefault(); event.returnValue = ""; }
 }
 
+let stopDraftSync: (() => void) | null = null;
+
 export function bindAllFeaturePorts(): void {
+  stopDraftSync?.();
+  if (typeof window !== "undefined") { const draft = bindChatDraftSync(chat), stream = bindChatWindowSync(chat); stopDraftSync = () => { draft(); stream(); }; }
   setHumanBrowserSelectionPort(() => governedBrowser.chooseDevice());
   if (typeof window !== "undefined") window.addEventListener("beforeunload", warnUnsavedFiles);
   setChatSettingsPort({
@@ -211,6 +218,7 @@ export function bindAllFeaturePorts(): void {
 }
 
 export function unbindAllFeaturePorts(): void {
+  stopDraftSync?.(); stopDraftSync = null;
   if (typeof window !== "undefined") window.removeEventListener("beforeunload", warnUnsavedFiles);
   setChatSettingsPort(null);
   setWorkshopDefaultsSyncPort(null);

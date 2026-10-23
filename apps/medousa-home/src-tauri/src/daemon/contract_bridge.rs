@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{Emitter, Manager, State};
 use tokio::sync::watch;
 
 use crate::daemon::generated_ops::DaemonOperation;
@@ -34,6 +34,7 @@ fn ensure_webview_operation_allowed(operation: DaemonOperation) -> Result<(), St
 
 #[tauri::command]
 pub async fn daemon_unary(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     embedded_state: State<'_, EmbeddedDaemonState>,
     operation: DaemonOperation,
@@ -55,9 +56,20 @@ pub async fn daemon_unary(
     if execution_runtime_id.is_some() && workshop_scope_id.is_some() {
         return Err("Choose a workshop scope or an execution runtime, not both".into());
     }
-    let scoped_target = workshop_scope_id
-        .map(crate::active_workshop::resolve_scope)
-        .transpose()?;
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    let window_scope = if execution_runtime_id.is_none() {
+        crate::desktop_windows::scope_for(window.app_handle(), window.label())
+    } else {
+        None
+    };
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let window_scope: Option<String> = None;
+    let _ = &window;
+    let workshop_scope_id = workshop_scope_id.or(window_scope.as_deref());
+    let scoped_target = match workshop_scope_id {
+        Some(id) => Some(crate::active_workshop::resolve_scope_async(id.to_string()).await?),
+        None => None,
+    };
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if execution_runtime_id.is_none()
         && (scoped_target.is_none()
@@ -84,7 +96,7 @@ pub async fn daemon_unary(
     }
     let path = expand_operation_path(op.path, &path_params, query.as_ref())?;
     if let Some(target) = scoped_target {
-        let config = crate::active_workshop::transport_config_for_target(target)?;
+        let config = crate::active_workshop::transport_for_target_async(target).await?;
         return workshop_transport::workshop_json_request(&config, op.method, &path, body.as_ref())
             .await;
     }
@@ -212,7 +224,7 @@ fn embedded_browser_session_unary(
 
 #[tauri::command]
 pub async fn daemon_stream_start(
-    app: AppHandle,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     operation: DaemonOperation,
     path_params: HashMap<String, String>,
@@ -220,6 +232,7 @@ pub async fn daemon_stream_start(
     client_handle: Option<String>,
     execution_runtime_id: Option<String>,
 ) -> Result<String, String> {
+    let window_generation = crate::active_workshop::consumer_generation(&window);
     let op = medousa_sdk::generated::ops::by_id(operation.id())
         .ok_or_else(|| format!("unknown operation {}", operation.id()))?;
     if !op.streaming {
@@ -234,22 +247,19 @@ pub async fn daemon_stream_start(
             STREAM_SEQ.fetch_add(1, Ordering::Relaxed)
         ),
     };
+    let config =
+        crate::active_workshop::transport_for_webview(&window, execution_runtime_id.as_deref())
+            .await?;
+    let registry_handle = format!("{}:{handle}", window.label());
     let (tx, mut rx) = watch::channel(false);
     let mut streams = state.contract_streams.lock().expect("contract stream lock");
-    if streams.contains_key(&handle) {
+    crate::active_workshop::ensure_window_consumer(&window, window_generation)?;
+    if streams.contains_key(&registry_handle) {
         return Err("daemon stream handle is already active".into());
     }
-    streams.insert(handle.clone(), tx);
+    streams.insert(registry_handle, tx);
     drop(streams);
 
-    let config = match execution_runtime_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|runtime_id| !runtime_id.is_empty())
-    {
-        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
-        None => crate::daemon::sdk::transport_config(&state)?,
-    };
     let event_name = format!("daemon-stream://{handle}/event");
     let error_event = format!("daemon-stream://{handle}/error");
     tokio::spawn(async move {
@@ -261,11 +271,11 @@ pub async fn daemon_stream_start(
         {
             None => return,
             Some(Ok(source)) => {
-                stream_sse_json_workshop::<Value>(&app, source, &event_name, &error_event, rx)
+                stream_sse_json_workshop::<Value>(&window, source, &event_name, &error_event, rx)
                     .await;
             }
             Some(Err(err)) => {
-                let _ = app.emit(&error_event, serde_json::json!({ "message": err }));
+                let _ = window.emit(&error_event, serde_json::json!({ "message": err }));
             }
         }
     });
@@ -285,12 +295,16 @@ fn validate_client_stream_handle(handle: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn daemon_stream_cancel(state: State<'_, DaemonState>, handle: String) -> Result<(), String> {
+pub fn daemon_stream_cancel(
+    window: tauri::Webview,
+    state: State<'_, DaemonState>,
+    handle: String,
+) -> Result<(), String> {
     if let Some(tx) = state
         .contract_streams
         .lock()
         .expect("contract stream lock")
-        .remove(&handle)
+        .remove(&format!("{}:{handle}", window.label()))
     {
         let _ = tx.send(true);
     }

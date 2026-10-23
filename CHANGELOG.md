@@ -7,19 +7,67 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-10-22
+
 ### Added
 
+- **Create** — a canvas workspace for sketches, image compositions, diagrams, and
+  wireframes, with durable workshop-owned documents, frames, layers, groups, and
+  reusable Notes brushes, erasers, and selection tools.
+- **Visual AI in Create** — canvas context, image references, continuing
+  conversations, durable generation jobs, and preview/apply with undo. Generated
+  results remain available when the canvas changes during a request.
+- **Create ↔ Code** — send a frame to Medousa to implement in a repository, or
+  capture a running site as editable canvas objects. Full-page imports create
+  stacked viewport frames and retain the original capture on demand. Updating
+  source code is an explicit action.
+- **Desktop Spotlight** — a global shortcut opens Chat, Create, and Code in
+  native windows. Opening the same resource focuses its existing window, and
+  each work window retains its workshop when the main shell switches.
+- **GitHub reviews** — repository-hosted pull requests alongside Forge reviews,
+  typed code/test/CI/docs change totals, labels, quick reviewer pickers, checks,
+  and merge controls. Provider-specific behavior stays in the optional package.
+- Workshop-owned Assistant terminals, saved SSH terminal actions, and Activity
+  previews for running work in Spotlight.
+- Durable messaging between native conversations and Bots across paired
+  workshops, with bounded handoff context and explicit wake authority.
 - Saved HTML artifacts can be found across chats on the active workshop and
-  presented again in chat without copying their HTML or creating a revision.
+  presented again without copying their HTML or creating a revision.
+
+### Changed
+
+- Create gains rich text controls, line and arrow endpoints, rotation, grids,
+  snapping, alignment, rounded shapes, shadows, and touch/stylus interaction.
+- Code uses a unified toolbar, a quieter Run picker, compact actions for long
+  breadcrumbs, and direct tab dragging to split the workspace.
+- Workshop switching detaches shell subscriptions while accepted work continues.
+  Unsaved notes and Code buffer drafts remain protected before switching.
+- Files, Context, Reviews, and Create use focused navigation and quieter rails;
+  selecting a destination no longer opens an unrelated previous tab.
+- ChatGPT sign-in uses registered OAuth and public Responses, with updated model
+  catalogs and connected-workshop model selection.
 
 ### Fixed
 
-- Chat follows actual content growth and preserves your reading position when
-  you scroll up, including delayed layout changes and turn completion.
-- Streaming chat retains completed Markdown blocks and code controls while
-  updating the unfinished response.
-- HTML artifacts created or revised through the public store tool now emit
-  their chat cards and retain attachment references in saved turns.
+- Create autosave no longer refreshes the whole canvas. Text editing, selection
+  bounds, frame duplication/deletion, and repainting over images stay aligned.
+- Browser ownership and startup recover after app/daemon restarts. Development
+  output renders terminal escape sequences and clickable URLs; Stop settles
+  after the server process exits.
+- Shell requests work while the native window hosts embedded browser webviews,
+  including hidden browser children. Detached actions, credentials, preferences,
+  and streams retain their workshop authority.
+- Chat follows content growth while preserving the reading position. Streaming
+  keeps completed Markdown blocks and code controls stable, and closed sessions
+  release retained transcript state.
+- HTML artifact cards and attachment references persist across saved turns;
+  authored page backgrounds and spacing are preserved.
+- macOS traffic-light positioning survives layout changes, and packaging rejects
+  invalid native sidecars before bundling them.
+
+This is a **0.12.0 full-train release**. Distribution package stamps, the app,
+installer, and first-party Rust packages are aligned; companion integrations keep
+their independent versions. See the [release notes](docs/releases/v0.12.0.md).
 
 ## [0.11.1] — 2026-10-06
 
@@ -552,7 +600,10 @@ This hotfix ships the engine, Medousa app, and shell-session packages at
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
-[Unreleased]: https://github.com/EntasisLabs/Medousa/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/EntasisLabs/Medousa/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/EntasisLabs/Medousa/compare/v0.11.1...v0.12.0
+[0.11.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.11.1
+[0.11.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.11.0
 [0.10.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.10.0
 [0.9.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.9.1
 [0.9.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.9.0

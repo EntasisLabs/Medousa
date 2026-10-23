@@ -6,16 +6,15 @@ use medousa_types::{
     CreateAgentSessionRequest, CreateAgentSessionResponse, SetAgentSessionConfigOptionRequest,
     SetAgentSessionConfigOptionResponse,
 };
-use tauri::State;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn agents_list_runtimes(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
 ) -> Result<AgentRuntimeListResponse, String> {
-    client(&state)?
+    client(&state).await?
         .agents()
         .list_runtimes()
         .await
@@ -24,10 +23,10 @@ pub async fn agents_list_runtimes(
 
 #[tauri::command]
 pub async fn agents_create_session(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request: CreateAgentSessionRequest,
 ) -> Result<CreateAgentSessionResponse, String> {
-    client(&state)?
+    client(&state).await?
         .agents()
         .create_session(&request)
         .await
@@ -36,11 +35,11 @@ pub async fn agents_create_session(
 
 #[tauri::command]
 pub async fn agents_prompt(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     agent_session_id: String,
     request: AgentSessionPromptRequest,
 ) -> Result<AgentSessionPromptResponse, String> {
-    client(&state)?
+    client(&state).await?
         .agents()
         .prompt(agent_session_id.trim(), &request)
         .await
@@ -49,11 +48,11 @@ pub async fn agents_prompt(
 
 #[tauri::command]
 pub async fn agents_set_config_option(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     agent_session_id: String,
     request: SetAgentSessionConfigOptionRequest,
 ) -> Result<SetAgentSessionConfigOptionResponse, String> {
-    client(&state)?
+    client(&state).await?
         .agents()
         .set_config_option(agent_session_id.trim(), &request)
         .await
@@ -62,10 +61,10 @@ pub async fn agents_set_config_option(
 
 #[tauri::command]
 pub async fn agents_cancel(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     agent_session_id: String,
 ) -> Result<CancelAgentSessionResponse, String> {
-    client(&state)?
+    client(&state).await?
         .agents()
         .cancel(agent_session_id.trim())
         .await
@@ -74,11 +73,11 @@ pub async fn agents_cancel(
 
 #[tauri::command]
 pub async fn agents_list_permission_requests(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     status: Option<String>,
     limit: Option<usize>,
 ) -> Result<AgentPermissionRequestListResponse, String> {
-    client(&state)?
+    client(&state).await?
         .agents()
         .list_permission_requests(status.as_deref(), limit)
         .await
@@ -87,12 +86,12 @@ pub async fn agents_list_permission_requests(
 
 #[tauri::command]
 pub async fn agents_approve_permission(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request_id: String,
     resolved_by: Option<String>,
 ) -> Result<AgentPermissionResolveResponse, String> {
     let request = AgentPermissionResolveRequest { resolved_by };
-    client(&state)?
+    client(&state).await?
         .agents()
         .approve_permission(request_id.trim(), &request)
         .await
@@ -101,12 +100,12 @@ pub async fn agents_approve_permission(
 
 #[tauri::command]
 pub async fn agents_deny_permission(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request_id: String,
     resolved_by: Option<String>,
 ) -> Result<AgentPermissionResolveResponse, String> {
     let request = AgentPermissionResolveRequest { resolved_by };
-    client(&state)?
+    client(&state).await?
         .agents()
         .deny_permission(request_id.trim(), &request)
         .await
@@ -115,11 +114,11 @@ pub async fn agents_deny_permission(
 
 #[tauri::command]
 pub async fn agents_list_secret_requests(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     status: Option<String>,
     limit: Option<usize>,
 ) -> Result<AgentSecretRequestListResponse, String> {
-    client(&state)?
+    client(&state).await?
         .agents()
         .list_secret_requests(status.as_deref(), limit)
         .await
@@ -128,13 +127,13 @@ pub async fn agents_list_secret_requests(
 
 #[tauri::command]
 pub async fn agents_fulfill_secret_request(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request_id: String,
     value: String,
     resolved_by: Option<String>,
 ) -> Result<AgentSecretResolveResponse, String> {
     let request = AgentSecretFulfillRequest { value, resolved_by };
-    client(&state)?
+    client(&state).await?
         .agents()
         .fulfill_secret_request(request_id.trim(), &request)
         .await
@@ -143,12 +142,12 @@ pub async fn agents_fulfill_secret_request(
 
 #[tauri::command]
 pub async fn agents_deny_secret_request(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request_id: String,
     resolved_by: Option<String>,
 ) -> Result<AgentSecretResolveResponse, String> {
     let request = AgentSecretDenyRequest { resolved_by };
-    client(&state)?
+    client(&state).await?
         .agents()
         .deny_secret_request(request_id.trim(), &request)
         .await

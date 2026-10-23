@@ -5,12 +5,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
+use super::window_request::WorkshopRequest;
 use super::workshop_http;
 
 #[tauri::command]
 pub async fn tool_history_list_slices(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
     session_limit: Option<usize>,
@@ -59,7 +59,7 @@ pub async fn tool_history_list_slices(
 
 #[tauri::command]
 pub async fn workflow_from_slice(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowFromSliceRequest,
 ) -> Result<WorkflowFromSliceResponse, String> {

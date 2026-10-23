@@ -55,6 +55,7 @@ export function persistDraftForSession(
   const trimmed = sessionId.trim();
   if (!trimmed) return;
   const store = loadDraftStore(workshopId);
+  if ((store[trimmed]?.text ?? "") === text) return;
   if (!text.trim()) {
     delete store[trimmed];
   } else {
@@ -65,4 +66,18 @@ export function persistDraftForSession(
 
 export function clearDraftForSession(sessionId: string, workshopId?: string): void {
   persistDraftForSession(sessionId, "", workshopId);
+}
+
+/** Adopt another window’s composer only when this window has not diverged. */
+export function bindChatDraftSync(host: { workshopScopeId: string | null; sessionId: string; draft: string }): () => void {
+  const changed = (event: StorageEvent) => {
+    if (event.key !== draftStorageKey(host.workshopScopeId ?? undefined)) return;
+    try {
+      const before = JSON.parse(event.oldValue ?? "{}")?.[host.sessionId]?.text ?? "";
+      const after = JSON.parse(event.newValue ?? "{}")?.[host.sessionId]?.text ?? "";
+      if (typeof after === "string" && host.draft === before) host.draft = after;
+    } catch { /* Ignore damaged storage; live drafts always win. */ }
+  };
+  window.addEventListener("storage", changed);
+  return () => window.removeEventListener("storage", changed);
 }

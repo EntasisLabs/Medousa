@@ -32,9 +32,23 @@ static NEXT_ATTACH_ID: AtomicU64 = AtomicU64::new(1);
 pub type TerminalRegistry = Arc<Mutex<HashMap<u64, TerminalHandle>>>;
 
 pub struct TerminalHandle {
+    window_label: String,
     outbound: mpsc::UnboundedSender<TerminalClientFrame>,
     ready: Arc<Notify>,
     cancel: CancellationToken,
+}
+
+pub(crate) fn detach_window(registry: &TerminalRegistry, label: &str) {
+    if let Ok(mut handles) = registry.lock() {
+        handles.retain(|_, handle| {
+            if handle.window_label == label {
+                handle.cancel.cancel();
+                false
+            } else {
+                true
+            }
+        });
+    }
 }
 
 enum TerminalClientFrame {
@@ -114,17 +128,10 @@ fn ws_url_for(daemon_url: &str, path: &str) -> String {
     format!("{base}{path}")
 }
 
-pub(crate) async fn connect_authenticated_ws_for_runtime(
+pub(crate) async fn connect_authenticated_ws_with_config(
     path: &str,
-    execution_runtime_id: Option<&str>,
+    base_config: crate::pairing_client::WorkshopTransportConfig,
 ) -> Result<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, String> {
-    let base_config = match execution_runtime_id
-        .map(str::trim)
-        .filter(|runtime_id| !runtime_id.is_empty())
-    {
-        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
-        None => crate::active_workshop::transport_config()?,
-    };
     let config = crate::pairing_client::ensure_fresh_session(&base_config)
         .await
         .unwrap_or(base_config);
@@ -172,21 +179,33 @@ fn ws_request_with_bearer(
 }
 
 async fn daemon_get<T: serde::de::DeserializeOwned>(
+    window: Option<&tauri::Webview>,
     state: &State<'_, DaemonState>,
     path: &str,
     execution_runtime_id: Option<&str>,
 ) -> Result<T, String> {
-    let config = terminal_transport_config(state, execution_runtime_id)?;
+    let config = match window {
+        Some(window) => {
+            crate::active_workshop::transport_for_webview(window, execution_runtime_id).await?
+        }
+        None => terminal_transport_config(state, execution_runtime_id)?,
+    };
     crate::workshop_transport::workshop_get_json(&config, path).await
 }
 
 async fn daemon_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(
+    window: Option<&tauri::Webview>,
     state: &State<'_, DaemonState>,
     path: &str,
     body: &B,
     execution_runtime_id: Option<&str>,
 ) -> Result<T, String> {
-    let config = terminal_transport_config(state, execution_runtime_id)?;
+    let config = match window {
+        Some(window) => {
+            crate::active_workshop::transport_for_webview(window, execution_runtime_id).await?
+        }
+        None => terminal_transport_config(state, execution_runtime_id)?,
+    };
     crate::workshop_transport::workshop_post_json(&config, path, body).await
 }
 
@@ -205,10 +224,12 @@ fn terminal_transport_config(
 
 #[tauri::command]
 pub async fn terminal_info(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     execution_runtime_id: Option<String>,
 ) -> Result<TerminalInfo, String> {
     daemon_get(
+        Some(&window),
         &state,
         "/v1/shell-sessions",
         execution_runtime_id.as_deref(),
@@ -218,10 +239,12 @@ pub async fn terminal_info(
 
 #[tauri::command]
 pub async fn terminal_sessions(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     execution_runtime_id: Option<String>,
 ) -> Result<Vec<TerminalSessionSummary>, String> {
     let value: serde_json::Value = daemon_get(
+        Some(&window),
         &state,
         "/v1/sessions/shell",
         execution_runtime_id.as_deref(),
@@ -235,11 +258,13 @@ pub async fn terminal_sessions(
 
 #[tauri::command]
 pub async fn terminal_interrupt(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     session_id: String,
     execution_runtime_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     daemon_post(
+        Some(&window),
         &state,
         &format!("/v1/sessions/shell/{session_id}/signal"),
         &serde_json::json!({ "signal": "interrupt" }),
@@ -250,6 +275,7 @@ pub async fn terminal_interrupt(
 
 #[tauri::command]
 pub async fn terminal_create(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     input: TerminalCreateInput,
     execution_runtime_id: Option<String>,
@@ -259,6 +285,7 @@ pub async fn terminal_create(
             return Err("Human workspace terminals do not accept a Forge lease".into());
         }
         return daemon_post(
+            Some(&window),
             &state,
             "/v1/sessions/workspace-shell",
             &serde_json::json!({
@@ -272,6 +299,7 @@ pub async fn terminal_create(
         .await;
     }
     daemon_post(
+        Some(&window),
         &state,
         "/v1/sessions/shell",
         &serde_json::json!({
@@ -288,6 +316,7 @@ pub async fn terminal_create(
 
 #[tauri::command]
 pub async fn terminal_attach(
+    window: tauri::Webview,
     app: AppHandle,
     _state: State<'_, DaemonState>,
     registry: State<'_, TerminalRegistry>,
@@ -296,26 +325,33 @@ pub async fn terminal_attach(
     rows: u16,
     execution_runtime_id: Option<String>,
 ) -> Result<TerminalAttachResponse, String> {
+    let window_generation = crate::active_workshop::consumer_generation(&window);
     let path = format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id));
-    let websocket =
-        connect_authenticated_ws_for_runtime(&path, execution_runtime_id.as_deref()).await?;
+    let websocket = connect_authenticated_ws_with_config(
+        &path,
+        crate::active_workshop::transport_for_webview(&window, execution_runtime_id.as_deref())
+            .await?,
+    )
+    .await?;
 
     let attach_id = NEXT_ATTACH_ID.fetch_add(1, Ordering::SeqCst);
     let (outbound, outbound_rx) = mpsc::unbounded_channel();
     let ready = Arc::new(Notify::new());
     let cancel = CancellationToken::new();
 
-    registry
-        .lock()
-        .map_err(|_| "terminal registry lock")?
-        .insert(
-            attach_id,
-            TerminalHandle {
-                outbound,
-                ready: Arc::clone(&ready),
-                cancel: cancel.clone(),
-            },
-        );
+    let mut handles = registry.lock().map_err(|_| "terminal registry lock")?;
+    crate::active_workshop::ensure_window_consumer(&window, window_generation)?;
+    handles.insert(
+        attach_id,
+        TerminalHandle {
+            window_label: window.label().to_string(),
+            outbound,
+            ready: Arc::clone(&ready),
+            cancel: cancel.clone(),
+        },
+    );
+
+    drop(handles);
 
     tauri::async_runtime::spawn(run_terminal_transport(
         attach_id,
@@ -610,11 +646,15 @@ mod tests {
 
 /// SSH setup follows the connected workshop, even when a Coder worker is selected.
 #[tauri::command]
-pub async fn ssh_targets(state: State<'_, DaemonState>) -> Result<serde_json::Value, String> {
-    daemon_get(&state, "/v1/ssh/targets", None).await
+pub async fn ssh_targets(
+    window: tauri::Webview,
+    state: State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    daemon_get(Some(&window), &state, "/v1/ssh/targets", None).await
 }
 #[tauri::command]
 pub async fn ssh_action(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     action: String,
     input: serde_json::Value,
@@ -626,15 +666,17 @@ pub async fn ssh_action(
         "terminal" => "/v1/ssh/terminal",
         _ => return Err("Unknown SSH setup action".into()),
     };
-    daemon_post(&state, path, &input, None).await
+    daemon_post(Some(&window), &state, path, &input, None).await
 }
 #[tauri::command]
 pub async fn ssh_set_access(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     target_id: String,
     enabled: bool,
 ) -> Result<serde_json::Value, String> {
     daemon_post(
+        Some(&window),
         &state,
         &format!("/v1/ssh/targets/{}/access", urlencoding::encode(&target_id)),
         &serde_json::json!({"enabled": enabled}),
@@ -643,8 +685,8 @@ pub async fn ssh_set_access(
     .await
 }
 #[tauri::command]
-pub async fn ssh_remove(state: State<'_, DaemonState>, target_id: String) -> Result<(), String> {
-    let config = terminal_transport_config(&state, None)?;
+pub async fn ssh_remove(window: tauri::Webview, target_id: String) -> Result<(), String> {
+    let config = crate::active_workshop::transport_for_webview(&window, None).await?;
     crate::workshop_transport::workshop_delete_json::<serde_json::Value>(
         &config,
         &format!("/v1/ssh/targets/{}", urlencoding::encode(&target_id)),

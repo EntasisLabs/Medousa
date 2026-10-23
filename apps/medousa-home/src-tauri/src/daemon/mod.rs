@@ -25,6 +25,7 @@ pub mod media;
 pub mod model_catalog;
 pub mod recurring;
 pub mod runtime;
+pub mod preferences;
 pub mod sdk;
 pub mod session;
 pub mod shared_mode;
@@ -35,6 +36,7 @@ pub mod turn_budget;
 pub mod types;
 pub mod vault;
 pub mod vault_git;
+pub mod window_request;
 pub mod workflow;
 pub mod workshop_http;
 pub mod workspace_card;
@@ -51,7 +53,7 @@ use medousa_types::turn_stream::{TURN_STREAM_V3_MEDIA_TYPE, TurnStreamEnvelopeV3
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::watch;
 
 pub struct DaemonState {
@@ -74,27 +76,42 @@ impl DaemonState {
         }
     }
 
-    pub(crate) fn cancel_all_streams(&self) {
+    pub(crate) fn cancel_window_streams(&self, label: &str) {
+        let prefix = format!("{label}:");
+        for registry in [&self.interactive_streams, &self.contract_streams] {
+            if let Ok(mut streams) = registry.lock() {
+                streams.retain(|key, cancel| {
+                    if key.starts_with(&prefix) {
+                        let _ = cancel.send(true);
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+        }
+    }
+
+    pub(crate) fn cancel_selected_streams(&self) {
         for slot in [&self.workspace_cancel, &self.environment_cancel] {
             if let Some(tx) = slot.lock().expect("daemon cancel lock").take() {
                 let _ = tx.send(true);
             }
         }
-        for (_, tx) in self
-            .interactive_streams
-            .lock()
-            .expect("interactive streams lock")
-            .drain()
-        {
-            let _ = tx.send(true);
-        }
-        for (_, tx) in self
-            .contract_streams
-            .lock()
-            .expect("contract stream lock")
-            .drain()
-        {
-            let _ = tx.send(true);
+        // Detached windows keep their immutable workshop subscriptions while
+        // the main window changes its selected workshop.
+        for registry in [&self.interactive_streams, &self.contract_streams] {
+            registry
+                .lock()
+                .expect("daemon streams lock")
+                .retain(|key, tx| {
+                    if key.starts_with("desktop-work-") {
+                        true
+                    } else {
+                        let _ = tx.send(true);
+                        false
+                    }
+                });
         }
     }
 }
@@ -189,19 +206,25 @@ fn extract_turn_id_from_stream_url(stream_url: &str) -> Option<String> {
 fn add_interactive_stream_slot(
     streams: &Mutex<HashMap<String, watch::Sender<bool>>>,
     turn_id: &str,
-) -> watch::Receiver<bool> {
+    window: &tauri::Webview,
+    generation: Option<u64>,
+) -> Result<watch::Receiver<bool>, String> {
     let (tx, rx) = watch::channel(false);
     let mut guard = streams.lock().expect("interactive streams lock");
+    crate::active_workshop::ensure_window_consumer(window, generation)?;
     if let Some(previous) = guard.remove(turn_id) {
         let _ = previous.send(true);
     }
     guard.insert(turn_id.to_string(), tx);
-    rx
+    Ok(rx)
 }
 
 #[tauri::command]
-pub fn daemon_url(_state: State<'_, DaemonState>) -> Result<String, String> {
-    crate::active_workshop::display_url()
+pub fn daemon_url(
+    window: tauri::Webview,
+    _state: State<'_, DaemonState>,
+) -> Result<String, String> {
+    crate::active_workshop::display_url_for_webview(&window)
 }
 
 #[tauri::command]
@@ -295,7 +318,8 @@ fn disconnected_health(message: String) -> DaemonHealth {
 
 #[tauri::command]
 pub async fn daemon_health(
-    state: State<'_, DaemonState>,
+    window: tauri::Webview,
+    _state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<DaemonHealth, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -306,9 +330,8 @@ pub async fn daemon_health(
         });
     }
 
-    let endpoint = crate::active_workshop::display_url()?;
-    // Bound the entire remote probe, including route selection and HTTP body.
-    let config = self::sdk::transport_config(&state)?;
+    let config = crate::active_workshop::transport_for_webview(&window, None).await?;
+    let endpoint = config.lan_base.clone();
     let probe = async {
         // Heartbeats no longer gate recovery. Renew only when credentials are due.
         let effective = crate::pairing_client::ensure_fresh_session(&config).await?;
@@ -513,7 +536,7 @@ async fn resolve_supports_browser_host() -> bool {
 
 #[tauri::command]
 pub async fn interactive_turn_send(
-    state: State<'_, DaemonState>,
+    state: window_request::WorkshopRequest,
     session_id: String,
     prompt: String,
     provider: Option<String>,
@@ -620,8 +643,8 @@ pub async fn interactive_turn_send(
         wake: None,
     };
 
-    let base = crate::active_workshop::transport_base_url()?;
-    let parsed = self::sdk::client(&state)?
+    let base = state.config().await?.lan_base;
+    let parsed = self::sdk::client_for_request(&state).await?
         .interactive()
         .start_turn(&request)
         .await
@@ -634,11 +657,12 @@ pub async fn interactive_turn_send(
 
 #[tauri::command]
 pub async fn interactive_stream_start(
-    app: AppHandle,
+    app: tauri::Webview,
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     stream_url: String,
 ) -> Result<(), String> {
+    let window_generation = crate::active_workshop::consumer_generation(&app);
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if stream_url.starts_with("medousa-embedded://") {
         let turn_id = extract_turn_id_from_stream_url(&stream_url)
@@ -646,7 +670,12 @@ pub async fn interactive_stream_start(
         let client = _embedded_state.client_if_active().await?.ok_or_else(|| {
             "embedded turn stream does not belong to the active workshop".to_string()
         })?;
-        let mut cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
+        let mut cancel_rx = add_interactive_stream_slot(
+            &state.interactive_streams,
+            &format!("{}:{turn_id}", app.label()),
+            &app,
+            window_generation,
+        )?;
         tokio::spawn(async move {
             let mut stream = match client.subscribe_turn_v3(&turn_id, 0).await {
                 Ok(stream) => stream,
@@ -692,12 +721,17 @@ pub async fn interactive_stream_start(
         return Ok(());
     }
 
-    let config = self::sdk::transport_config(&state)?;
+    let config = crate::active_workshop::transport_for_webview(&app, None).await?;
     let daemon_url = config.lan_base.clone();
     let stream_url = rewrite_stream_url_for_client(&stream_url, &daemon_url);
     let turn_id = extract_turn_id_from_stream_url(&stream_url)
         .ok_or_else(|| "stream URL missing turn id".to_string())?;
-    let mut cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
+    let mut cancel_rx = add_interactive_stream_slot(
+        &state.interactive_streams,
+        &format!("{}:{turn_id}", app.label()),
+        &app,
+        window_generation,
+    )?;
 
     let path = reqwest::Url::parse(&stream_url)
         .ok()
@@ -724,17 +758,34 @@ pub async fn interactive_stream_start(
         {
             None => return,
             Some(Ok(source)) => {
-                stream_sse_json_workshop::<TurnStreamEnvelopeV3>(
-                    &app,
-                    source,
-                    "interactive://event",
-                    "interactive://error",
-                    cancel_rx,
-                )
-                .await;
+                if app.label().starts_with("desktop-work-") {
+                    stream_sse_json_workshop::<TurnStreamEnvelopeV3>(
+                        &app,
+                        source,
+                        "desktop-interactive://event",
+                        "desktop-interactive://error",
+                        cancel_rx,
+                    )
+                    .await;
+                } else {
+                    // Existing observer popouts still consume the main broadcast.
+                    stream_sse_json_workshop::<TurnStreamEnvelopeV3>(
+                        app.app_handle(),
+                        source,
+                        "interactive://event",
+                        "interactive://error",
+                        cancel_rx,
+                    )
+                    .await;
+                }
             }
             Some(Err(err)) => {
-                let _ = app.emit("interactive://error", serde_json::json!({ "message": err }));
+                let event = if app.label().starts_with("desktop-work-") {
+                    "desktop-interactive://error"
+                } else {
+                    "interactive://error"
+                };
+                let _ = app.emit(event, serde_json::json!({ "message": err }));
             }
         }
     });
@@ -743,19 +794,29 @@ pub async fn interactive_stream_start(
 }
 
 #[tauri::command]
-pub fn interactive_stream_stop(state: State<'_, DaemonState>) -> Result<(), String> {
+pub fn interactive_stream_stop(
+    window: tauri::Webview,
+    state: State<'_, DaemonState>,
+) -> Result<(), String> {
     let mut guard = state
         .interactive_streams
         .lock()
         .expect("interactive streams lock");
-    for (_, tx) in guard.drain() {
-        let _ = tx.send(true);
-    }
+    let prefix = format!("{}:", window.label());
+    guard.retain(|key, tx| {
+        if key.starts_with(&prefix) {
+            let _ = tx.send(true);
+            false
+        } else {
+            true
+        }
+    });
     Ok(())
 }
 
 #[tauri::command]
 pub fn interactive_stream_stop_turn(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     turn_id: String,
 ) -> Result<(), String> {
@@ -767,7 +828,7 @@ pub fn interactive_stream_stop_turn(
         .interactive_streams
         .lock()
         .expect("interactive streams lock")
-        .remove(trimmed)
+        .remove(&format!("{}:{trimmed}", window.label()))
     {
         let _ = tx.send(true);
     }

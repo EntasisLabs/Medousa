@@ -26,6 +26,7 @@ fn set_webview_visibility(_webview: &tauri::Webview, _visible: bool) {}
 /// Show/focus a window and resume its WebView2 controller (Windows).
 pub fn show_and_resume(window: &WebviewWindow) -> Result<(), String> {
     set_webview_visibility(window.as_ref(), true);
+    window.unminimize().map_err(|err| err.to_string())?;
     window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
     Ok(())
@@ -159,15 +160,22 @@ pub async fn window_toggle_desktop_toolbar(app: AppHandle) -> Result<bool, Strin
 }
 
 fn prepare_desktop_toolbar(window: &WebviewWindow) -> Result<(), String> {
+    prepare_floating_window(window, false)
+}
+
+pub(crate) fn prepare_floating_window(window: &WebviewWindow, shadow: bool) -> Result<(), String> {
     window
         .set_always_on_top(true)
         .map_err(|err| err.to_string())?;
-    clear_desktop_toolbar_native_background(window)?;
+    clear_desktop_toolbar_native_background(window, shadow)?;
     Ok(())
 }
 
 /// Kill the default opaque WKWebView / NSWindow fill so CSS transparency can show through.
-fn clear_desktop_toolbar_native_background(window: &WebviewWindow) -> Result<(), String> {
+fn clear_desktop_toolbar_native_background(
+    window: &WebviewWindow,
+    shadow: bool,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         use objc2_app_kit::{NSColor, NSWindow};
@@ -181,13 +189,13 @@ fn clear_desktop_toolbar_native_background(window: &WebviewWindow) -> Result<(),
                     ns_window.setOpaque(false);
                     ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
                     // The cross-platform shadow setter excludes macOS.
-                    ns_window.setHasShadow(false);
+                    ns_window.setHasShadow(shadow);
                     ns_window.invalidateShadow();
                 }
             })
             .map_err(|err| err.to_string())?;
     }
-    let _ = window;
+    let _ = (window, shadow);
     Ok(())
 }
 
@@ -425,31 +433,34 @@ async fn ensure_guide(app: &AppHandle) -> Result<WebviewWindow, String> {
     .await
 }
 
-enum PopoutUrl {
-    App(&'static str),
-    External(&'static str),
+pub(crate) enum PopoutUrl<'a> {
+    App(&'a str),
+    External(&'a str),
 }
 
-struct PopoutSpec {
-    label: &'static str,
-    title: &'static str,
-    url: PopoutUrl,
-    width: f64,
-    height: f64,
-    min_width: f64,
-    min_height: f64,
-    resizable: bool,
-    decorations: bool,
-    transparent: bool,
-    always_on_top: bool,
-    skip_taskbar: bool,
-    shadow: bool,
+pub(crate) struct PopoutSpec<'a> {
+    pub label: &'a str,
+    pub title: &'a str,
+    pub url: PopoutUrl<'a>,
+    pub width: f64,
+    pub height: f64,
+    pub min_width: f64,
+    pub min_height: f64,
+    pub resizable: bool,
+    pub decorations: bool,
+    pub transparent: bool,
+    pub always_on_top: bool,
+    pub skip_taskbar: bool,
+    pub shadow: bool,
 }
 
 /// Build a popout on demand. On Windows this must run from an async command /
 /// async runtime task — WebView2 creation deadlocks inside sync commands and
 /// some event handlers.
-async fn create_popout_window(app: &AppHandle, spec: PopoutSpec) -> Result<WebviewWindow, String> {
+pub(crate) async fn create_popout_window(
+    app: &AppHandle,
+    spec: PopoutSpec<'_>,
+) -> Result<WebviewWindow, String> {
     // Yield so we are not on a sync WebView2 callback stack.
     tokio::task::yield_now().await;
 

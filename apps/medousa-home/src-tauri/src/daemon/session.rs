@@ -15,13 +15,13 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 use super::workshop_http;
 
 #[tauri::command]
 pub async fn session_create(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     catalog: Option<String>,
     member_profile_ids: Option<Vec<String>>,
@@ -41,7 +41,7 @@ pub async fn session_create(
             .map_err(|error| error.to_string());
     }
 
-    client(&state)?
+    client(&state).await?
         .sessions()
         .create(&CreateSessionRequest {
             session_id: None,
@@ -56,7 +56,7 @@ pub async fn session_create(
 
 #[tauri::command]
 pub async fn session_derive(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: DeriveSessionRequest,
     idempotency_key: String,
@@ -68,7 +68,7 @@ pub async fn session_derive(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .derive(&request, idempotency_key.trim())
         .await
@@ -77,7 +77,7 @@ pub async fn session_derive(
 
 #[tauri::command]
 pub async fn session_list(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
     include_verification: Option<bool>,
@@ -124,7 +124,7 @@ pub async fn session_list(
 
 #[tauri::command]
 pub async fn session_set_display_name(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     display_name: String,
@@ -145,7 +145,7 @@ pub async fn session_set_display_name(
             .map_err(|error| error.to_string());
     }
 
-    client(&state)?
+    client(&state).await?
         .sessions()
         .set_display_name(trimmed_id, trimmed_name)
         .await
@@ -154,14 +154,14 @@ pub async fn session_set_display_name(
 
 #[tauri::command]
 pub async fn agent_mode_list(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<AgentModeListResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client.list_agent_modes().map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .agent_modes()
         .await
@@ -170,7 +170,7 @@ pub async fn agent_mode_list(
 
 #[tauri::command]
 pub async fn agent_mode_transition_policy_get(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<AgentModeTransitionPolicy, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -179,7 +179,7 @@ pub async fn agent_mode_transition_policy_get(
             .agent_mode_transition_policy()
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .agent_mode_transition_policy()
         .await
@@ -188,7 +188,7 @@ pub async fn agent_mode_transition_policy_get(
 
 #[tauri::command]
 pub async fn agent_mode_transition_policy_set(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     policy: AgentModeTransitionPolicy,
 ) -> Result<AgentModeTransitionPolicy, String> {
@@ -198,7 +198,7 @@ pub async fn agent_mode_transition_policy_set(
             .set_agent_mode_transition_policy(policy)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .set_agent_mode_transition_policy(&policy)
         .await
@@ -207,7 +207,7 @@ pub async fn agent_mode_transition_policy_set(
 
 #[tauri::command]
 pub async fn session_get_agent_mode(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionAgentModeResponse, String> {
@@ -221,7 +221,7 @@ pub async fn session_get_agent_mode(
             .session_agent_mode(trimmed)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .agent_mode(trimmed)
         .await
@@ -230,7 +230,7 @@ pub async fn session_get_agent_mode(
 
 #[tauri::command]
 pub async fn session_set_agent_mode(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     mode: AgentModeId,
@@ -251,7 +251,7 @@ pub async fn session_set_agent_mode(
             .set_session_agent_mode(trimmed, request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .set_agent_mode(trimmed, &request)
         .await
@@ -260,7 +260,7 @@ pub async fn session_set_agent_mode(
 
 #[tauri::command]
 pub async fn session_list_agent_mode_proposals(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<AgentModeProposalListResponse, String> {
@@ -274,7 +274,7 @@ pub async fn session_list_agent_mode_proposals(
             .list_agent_mode_proposals(trimmed)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .agent_mode_proposals(trimmed)
         .await
@@ -283,7 +283,7 @@ pub async fn session_list_agent_mode_proposals(
 
 #[tauri::command]
 pub async fn session_decide_agent_mode_proposal(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     proposal_id: String,
@@ -295,7 +295,7 @@ pub async fn session_decide_agent_mode_proposal(
             .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
         .await
@@ -304,7 +304,7 @@ pub async fn session_decide_agent_mode_proposal(
 
 #[tauri::command]
 pub async fn session_get_code_binding(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
@@ -314,7 +314,7 @@ pub async fn session_get_code_binding(
             .session_code_binding(session_id.trim())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .code_binding(session_id.trim())
         .await
@@ -323,7 +323,7 @@ pub async fn session_get_code_binding(
 
 #[tauri::command]
 pub async fn session_set_code_binding(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     work_id: String,
@@ -341,7 +341,7 @@ pub async fn session_set_code_binding(
             )
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .set_code_binding_authority(
             session_id.trim(),
@@ -355,10 +355,10 @@ pub async fn session_set_code_binding(
 
 #[tauri::command]
 pub async fn session_clear_code_binding(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     session_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
-    client(&state)?
+    client(&state).await?
         .sessions()
         .clear_code_binding(session_id.trim())
         .await
@@ -367,11 +367,11 @@ pub async fn session_clear_code_binding(
 
 #[tauri::command]
 pub async fn session_start_code_project(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     session_id: String,
     request: StartSessionCodeProjectRequest,
 ) -> Result<SessionCodeProjectResponse, String> {
-    client(&state)?
+    client(&state).await?
         .sessions()
         .start_code_project(session_id.trim(), &request)
         .await
@@ -380,7 +380,7 @@ pub async fn session_start_code_project(
 
 #[tauri::command]
 pub async fn session_delete(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     purge_memory: Option<bool>,
@@ -399,7 +399,7 @@ pub async fn session_delete(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .delete(trimmed, &query)
         .await
@@ -408,7 +408,7 @@ pub async fn session_delete(
 
 #[tauri::command]
 pub async fn prompt_stash_list(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<PromptStashListResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -417,7 +417,7 @@ pub async fn prompt_stash_list(
             .list_prompt_stashes()
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .prompt_stashes()
         .list()
         .await
@@ -426,7 +426,7 @@ pub async fn prompt_stash_list(
 
 #[tauri::command]
 pub async fn prompt_stash_create(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: CreatePromptStashRequest,
 ) -> Result<PromptStash, String> {
@@ -436,7 +436,7 @@ pub async fn prompt_stash_create(
             .create_prompt_stash(request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .prompt_stashes()
         .create(&request)
         .await
@@ -445,7 +445,7 @@ pub async fn prompt_stash_create(
 
 #[tauri::command]
 pub async fn prompt_stash_delete(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     stash_id: String,
 ) -> Result<DeletePromptStashResponse, String> {
@@ -455,7 +455,7 @@ pub async fn prompt_stash_delete(
             .delete_prompt_stash(stash_id.trim())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .prompt_stashes()
         .delete(stash_id.trim())
         .await
@@ -464,7 +464,7 @@ pub async fn prompt_stash_delete(
 
 #[tauri::command]
 pub async fn session_get_history(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     limit: Option<usize>,
@@ -517,13 +517,13 @@ pub async fn session_get_history(
         });
     }
     if paged {
-        client(&state)?
+        client(&state).await?
             .sessions()
             .history_page(trimmed, page_limit, cursor)
             .await
             .map_err(sdk_error)
     } else {
-        client(&state)?
+        client(&state).await?
             .sessions()
             .history(trimmed)
             .await
@@ -533,7 +533,7 @@ pub async fn session_get_history(
 
 #[tauri::command]
 pub async fn session_get_active_turn(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<ActiveSessionTurnResponse, String> {
@@ -548,7 +548,7 @@ pub async fn session_get_active_turn(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .active_turn(trimmed)
         .await
@@ -557,7 +557,7 @@ pub async fn session_get_active_turn(
 
 #[tauri::command]
 pub async fn session_cancel_active_turn(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
@@ -580,7 +580,7 @@ pub async fn session_cancel_active_turn(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .sessions()
         .cancel_active_turn(trimmed)
         .await
@@ -604,7 +604,7 @@ pub struct WorkshopSteerResponse {
 
 #[tauri::command]
 pub async fn session_steer_bound_workshop(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     session_id: String,
     work_id: String,
     message: String,
@@ -728,7 +728,7 @@ fn default_response_depth_mode() -> String {
 
 #[tauri::command]
 pub async fn turn_create(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
@@ -938,7 +938,7 @@ pub async fn turn_create(
 
 #[tauri::command]
 pub async fn turn_list_session(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     session_id: String,
     active_only: Option<bool>,
 ) -> Result<SessionTurnsResponse, String> {

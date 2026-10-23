@@ -5,12 +5,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn feed_tail(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     feed_id: String,
     profile_id: Option<String>,
@@ -36,7 +36,7 @@ pub async fn feed_tail(
         profile_id: profile_id.filter(|id| !id.trim().is_empty()),
         limit: limit.map(|value| value.clamp(1, 100)),
     };
-    client(&state)?
+    client(&state).await?
         .feeds()
         .tail(feed_id, &query)
         .await
@@ -45,7 +45,7 @@ pub async fn feed_tail(
 
 #[tauri::command]
 pub async fn feed_latest_good(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     feed_id: String,
     profile_id: Option<String>,
@@ -69,7 +69,7 @@ pub async fn feed_latest_good(
     let query = FeedLatestGoodQuery {
         profile_id: profile_id.filter(|id| !id.trim().is_empty()),
     };
-    client(&state)?
+    client(&state).await?
         .feeds()
         .latest_good(feed_id, &query)
         .await

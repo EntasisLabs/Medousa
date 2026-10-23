@@ -331,7 +331,7 @@
         <div class="min-w-0">
           <h2 class="text-sm font-semibold text-surface-50">Switch workshop?</h2>
           <p class="workshop-faint mt-0.5 text-xs leading-relaxed">
-            Unsaved vault edits or a live turn may be interrupted if you switch now.
+            Your note has unsaved edits. Medousa will save them before switching. Running work continues on its workshop.
           </p>
         </div>
       </header>
@@ -342,7 +342,7 @@
           disabled={workshops.switching || workshops.refreshing}
           onclick={() => workshops.confirmSwitch()}
         >
-          {workshops.switching ? "Switching…" : "Switch anyway"}
+          {workshops.switching ? "Switching…" : "Save and switch"}
         </button>
         <button
           type="button"

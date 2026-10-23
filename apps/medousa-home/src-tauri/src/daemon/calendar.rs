@@ -10,12 +10,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn calendar_list_events(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     from: Option<String>,
     to: Option<String>,
@@ -32,7 +32,7 @@ pub async fn calendar_list_events(
             .list_calendar_events(query)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .calendar()
         .list_events(&query)
         .await
@@ -41,7 +41,7 @@ pub async fn calendar_list_events(
 
 #[tauri::command]
 pub async fn calendar_create_event(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: CalendarWriteRequest,
 ) -> Result<CalendarWriteResponse, String> {
@@ -51,7 +51,7 @@ pub async fn calendar_create_event(
             .create_calendar_event(&request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .calendar()
         .create_event(&request)
         .await
@@ -60,7 +60,7 @@ pub async fn calendar_create_event(
 
 #[tauri::command]
 pub async fn calendar_update_event(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     uid: String,
     request: CalendarWriteRequest,
@@ -71,7 +71,7 @@ pub async fn calendar_update_event(
             .update_calendar_event(uid.trim(), &request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .calendar()
         .update_event(uid.trim(), &request)
         .await
@@ -80,7 +80,7 @@ pub async fn calendar_update_event(
 
 #[tauri::command]
 pub async fn calendar_delete_event(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     uid: String,
     path: Option<String>,
@@ -93,7 +93,7 @@ pub async fn calendar_delete_event(
             .map_err(|error| error.to_string());
     }
     let query = CalendarExportQuery { path };
-    client(&state)?
+    client(&state).await?
         .calendar()
         .delete_event(uid.trim(), &query)
         .await
@@ -102,7 +102,7 @@ pub async fn calendar_delete_event(
 
 #[tauri::command]
 pub async fn calendar_import_ics(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     ics: String,
     path: Option<String>,
@@ -117,7 +117,7 @@ pub async fn calendar_import_ics(
             .import_calendar(&request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .calendar()
         .import_ics(&request)
         .await
@@ -126,7 +126,7 @@ pub async fn calendar_import_ics(
 
 #[tauri::command]
 pub async fn calendar_export(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: Option<String>,
 ) -> Result<CalendarExportResponse, String> {
@@ -138,7 +138,7 @@ pub async fn calendar_export(
             .map_err(|error| error.to_string());
     }
     let query = CalendarExportQuery { path };
-    client(&state)?
+    client(&state).await?
         .calendar()
         .export(&query)
         .await

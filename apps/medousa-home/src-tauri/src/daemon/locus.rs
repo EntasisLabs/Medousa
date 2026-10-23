@@ -4,11 +4,11 @@ use tauri::State;
 use crate::embedded_daemon::EmbeddedDaemonState;
 
 use super::workshop_http;
-use super::DaemonState;
+use super::window_request::WorkshopRequest;
 
 #[tauri::command]
 pub async fn locus_list_nodes(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: Option<String>,
     limit: Option<usize>,
@@ -51,7 +51,7 @@ pub async fn locus_list_nodes(
 
 #[tauri::command]
 pub async fn locus_list_tags(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: Option<String>,
     prefix: Option<String>,
@@ -84,7 +84,7 @@ pub async fn locus_list_tags(
 
 #[tauri::command]
 pub async fn locus_get_node(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     sync_key: String,
 ) -> Result<Value, String> {

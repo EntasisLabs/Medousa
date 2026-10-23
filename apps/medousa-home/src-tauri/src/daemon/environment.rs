@@ -6,12 +6,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn environment_get_status(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: Option<String>,
     surface_id: Option<String>,
@@ -27,7 +27,7 @@ pub async fn environment_get_status(
             .await
             .map_err(|error| format!("embedded environment status: {error:#}"));
     }
-    client(&state)?
+    client(&state).await?
         .environment()
         .get_status(
             profile_id.as_deref().filter(|id| !id.trim().is_empty()),
@@ -40,7 +40,7 @@ pub async fn environment_get_status(
 
 #[tauri::command]
 pub async fn environment_get_spec(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: Option<String>,
 ) -> Result<EnvironmentSpecResponse, String> {
@@ -51,7 +51,7 @@ pub async fn environment_get_spec(
             .await
             .map_err(|error| format!("embedded environment spec: {error:#}"));
     }
-    client(&state)?
+    client(&state).await?
         .environment()
         .get_spec(profile_id.as_deref().filter(|id| !id.trim().is_empty()))
         .await
@@ -60,7 +60,7 @@ pub async fn environment_get_spec(
 
 #[tauri::command]
 pub async fn environment_put_spec(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: EnvironmentSpecPutRequest,
 ) -> Result<EnvironmentSpecResponse, String> {
@@ -71,7 +71,7 @@ pub async fn environment_put_spec(
             .await
             .map_err(|error| format!("save embedded environment spec: {error:#}"));
     }
-    client(&state)?
+    client(&state).await?
         .environment()
         .put_spec(&request)
         .await
@@ -80,7 +80,7 @@ pub async fn environment_put_spec(
 
 #[tauri::command]
 pub async fn environment_get_pending(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: Option<String>,
 ) -> Result<EnvironmentPendingResponse, String> {
@@ -91,7 +91,7 @@ pub async fn environment_get_pending(
             .await
             .map_err(|error| format!("read embedded environment proposal: {error:#}"));
     }
-    client(&state)?
+    client(&state).await?
         .environment()
         .get_pending(profile_id.as_deref().filter(|id| !id.trim().is_empty()))
         .await
@@ -100,7 +100,7 @@ pub async fn environment_get_pending(
 
 #[tauri::command]
 pub async fn environment_apply_pending(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: Option<String>,
 ) -> Result<EnvironmentSpecResponse, String> {
@@ -111,7 +111,7 @@ pub async fn environment_apply_pending(
             .await
             .map_err(|error| format!("apply embedded environment proposal: {error:#}"));
     }
-    client(&state)?
+    client(&state).await?
         .environment()
         .apply_pending(profile_id.as_deref().filter(|id| !id.trim().is_empty()))
         .await
@@ -120,7 +120,7 @@ pub async fn environment_apply_pending(
 
 #[tauri::command]
 pub async fn environment_dismiss_pending(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: Option<String>,
 ) -> Result<(), String> {
@@ -131,7 +131,7 @@ pub async fn environment_dismiss_pending(
             .await
             .map_err(|error| format!("dismiss embedded environment proposal: {error:#}"));
     }
-    client(&state)?
+    client(&state).await?
         .environment()
         .dismiss_pending(profile_id.as_deref().filter(|id| !id.trim().is_empty()))
         .await

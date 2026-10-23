@@ -1,4 +1,5 @@
 import { daemonUnary as dispatch } from "$lib/daemon/contractClient";
+import { publishCreativeChange } from "./creativeWindowSync";
 import { creativeRequestError, isCreativeAdmissionBusy } from "./creativeErrors";
 import type {
   CreativeJob,
@@ -36,7 +37,10 @@ export function creativeApi(workshopId: string) {
     const delays = [150, 350, 700];
     for (let attempt = 0; ; attempt++) {
       try {
-        return await dispatch<T>(id, params, body, null, query, scope);
+        const result = await dispatch<T>(id, params, body, null, query, scope);
+        if (params.id && (id.endsWith(".post") || id.endsWith(".put"))) publishCreativeChange(scope, params.id);
+        if (id === "create.projects.post" && typeof (result as { id?: unknown })?.id === "string") publishCreativeChange(scope, (result as { id: string }).id);
+        return result;
       } catch (error) {
         // Startup restores several independent reads. Retain the loading view
         // during brief admission contention; writes keep their explicit retry.

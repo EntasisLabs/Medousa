@@ -239,7 +239,7 @@ struct StreamErrorEvent<'a> {
 }
 
 fn emit_stream_error(
-    app: &AppHandle,
+    app: &impl Emitter<tauri::Wry>,
     event_name: &str,
     message: &str,
     recoverable: bool,
@@ -295,7 +295,7 @@ pub async fn stream_sse_json<T>(
 }
 
 pub async fn stream_sse_json_workshop<T>(
-    app: &AppHandle,
+    app: &impl Emitter<tauri::Wry>,
     mut source: WorkshopByteStream,
     event_name: &str,
     error_event: &str,
@@ -408,7 +408,7 @@ async fn pump_sse_stream<S, T>(
     }
 }
 
-fn emit_decoded_frame<T>(app: &AppHandle, frame: SseFrame, event_name: &str, error_event: &str)
+fn emit_decoded_frame<T>(app: &impl Emitter<tauri::Wry>, frame: SseFrame, event_name: &str, error_event: &str)
 where
     T: serde::de::DeserializeOwned + serde::Serialize,
 {

@@ -8,7 +8,7 @@
 use serde_json::Value;
 use tauri::State;
 
-use super::{DaemonState, workshop_http};
+use super::DaemonState;
 
 fn allowed_path(path: &str) -> bool {
     let path_without_query = path.split('?').next().unwrap_or(path);
@@ -21,7 +21,8 @@ fn allowed_path(path: &str) -> bool {
 
 #[tauri::command]
 pub async fn forge_request(
-    state: State<'_, DaemonState>,
+    _state: State<'_, DaemonState>,
+    window: tauri::Webview,
     method: String,
     path: String,
     body: Option<Value>,
@@ -35,14 +36,9 @@ pub async fn forge_request(
     if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
         return Err("unsupported Forge API method".into());
     }
-    let config = match execution_runtime_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|runtime_id| !runtime_id.is_empty())
-    {
-        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
-        None => workshop_http::transport_config(&state)?,
-    };
+    let config =
+        crate::active_workshop::transport_for_webview(&window, execution_runtime_id.as_deref())
+            .await?;
     crate::workshop_transport::workshop_json_request(&config, &method, &path, body.as_ref()).await
 }
 

@@ -30,6 +30,10 @@ Click the pet to open a slim floating bar beside it. Drag the pet to move it. Th
 
 The companion is another client of the workshop daemon. Conversations, active turns, and approvals stay authoritative there rather than living only in the floating window.
 
+For a keyboard-first launcher, use [Desktop Spotlight](desktop-spotlight.md).
+Chat actions in the companion share its conversation-window identities: reopening
+the same conversation focuses its existing window.
+
 ## Choose your companion
 
 Go to **Settings → Preferences → Look → Desktop companion**. Choose Medousa, Seahorse, or Starfish to use one of the new pixel-art characters. Their expressions respond to activity, success, and attention. The colored Medousa mark choices remain available. An already-open companion updates immediately.

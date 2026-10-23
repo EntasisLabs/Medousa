@@ -1312,108 +1312,52 @@ pub async fn browser_host_restart() -> Result<BrowserHostStatusDto, String> {
 
 #[tauri::command]
 pub async fn browser_host_resume_session(
+    state: crate::daemon::window_request::WorkshopRequest,
     session_id: String,
     daemon_url: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    let _ = daemon_url; // Authority comes from the invoking window, never a URL.
     let session_id = session_id.trim().to_string();
-    let session = fetch_daemon_browser_session(&session_id, daemon_url.as_deref()).await?;
+    let path = format!("/v1/browser/sessions/{}", urlencoding::encode(&session_id));
+    let response: serde_json::Value = crate::daemon::workshop_http::get_json(&state, &path).await?;
+    let session = response
+        .get("session")
+        .ok_or("Browser session was not found")?;
     let query = session
         .get("query")
-        .and_then(|value| value.as_str())
+        .and_then(serde_json::Value::as_str)
         .unwrap_or("")
         .trim()
         .to_string();
     if query.is_empty() {
-        return Err("browser session missing query".to_string());
+        return Err("browser session missing query".into());
     }
     let max_results = session
         .get("max_results")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(8) as usize;
-
-    let search = tokio::task::spawn_blocking(move || {
-        medousa_browser_lite::search_ddg_html_cached(&query, max_results)
-    })
-    .await
-    .map_err(|err| err.to_string())??;
-
-    if let Some(base) = daemon_url {
-        complete_daemon_browser_session(&base, &session_id, &search).await?;
-    }
-
-    Ok(serde_json::json!({
-        "ok": true,
-        "session_id": session_id,
-        "search_response": search,
-    }))
-}
-
-async fn fetch_daemon_browser_session(
-    session_id: &str,
-    daemon_url: Option<&str>,
-) -> Result<serde_json::Value, String> {
-    let base = resolve_daemon_url(daemon_url)?;
-    let url = format!(
-        "{}/v1/browser/sessions/{}",
-        base.trim_end_matches('/'),
-        session_id
-    );
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|err| err.to_string())?;
-    let response = client
-        .get(&url)
-        .send()
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(8)
+        .clamp(1, 100) as usize;
+    use medousa_forge::execution::{ExecutionClass, ForgeExecutionService};
+    static EXECUTION: std::sync::OnceLock<ForgeExecutionService> = std::sync::OnceLock::new();
+    let search = EXECUTION
+        .get_or_init(ForgeExecutionService::new)
+        .run(ExecutionClass::Observation, 1024 * 1024, move || {
+            medousa_browser_lite::search_ddg_html_cached(&query, max_results)
+                .map_err(|error| std::io::Error::other(error).into())
+        })
         .await
-        .map_err(|err| err.to_string())?;
-    let body: serde_json::Value = response.json().await.map_err(|err| err.to_string())?;
-    body.get("session")
-        .cloned()
-        .ok_or_else(|| "daemon session response missing session".to_string())
-}
-
-async fn complete_daemon_browser_session(
-    daemon_base: &str,
-    session_id: &str,
-    search: &SearchResponse,
-) -> Result<(), String> {
-    let url = format!(
-        "{}/v1/browser/sessions/{}/complete",
-        daemon_base.trim_end_matches('/'),
-        session_id
-    );
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|err| err.to_string())?;
-    let response = client
-        .post(url)
-        .json(&serde_json::json!({
-            "search_response": search,
-            "error": null,
-        }))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("daemon complete failed: {}", response.status()));
-    }
-    Ok(())
-}
-
-fn resolve_daemon_url(daemon_url: Option<&str>) -> Result<String, String> {
-    if let Some(url) = daemon_url.map(str::trim).filter(|value| !value.is_empty()) {
-        return Ok(url.trim_end_matches('/').to_string());
-    }
-    std::env::var("MEDOUSA_DAEMON_URL")
-        .or_else(|_| std::env::var("STASIS_DAEMON_URL"))
-        .map(|value| value.trim().trim_end_matches('/').to_string())
-        .map_err(|_| "MEDOUSA_DAEMON_URL not set".to_string())
+        .map_err(|error| error.to_string())?;
+    let _: serde_json::Value = crate::daemon::workshop_http::post_json(
+        &state,
+        &format!("{path}/complete"),
+        &serde_json::json!({"search_response":search,"error":null}),
+    )
+    .await?;
+    Ok(serde_json::json!({"ok":true,"session_id":session_id,"search_response":search}))
 }
 
 pub async fn register_browser_client_with_workshop(
-    state: &tauri::State<'_, crate::daemon::DaemonState>,
+    state: &impl crate::daemon::window_request::WorkshopHttpSource,
     channel_surface: &str,
 ) -> Result<(), String> {
     let supports =
@@ -1449,7 +1393,7 @@ pub async fn register_browser_client_with_workshop(
 
 #[tauri::command]
 pub async fn browser_host_register_client(
-    state: tauri::State<'_, crate::daemon::DaemonState>,
+    state: crate::daemon::window_request::WorkshopRequest,
     daemon_url: String,
     channel_surface: String,
 ) -> Result<(), String> {

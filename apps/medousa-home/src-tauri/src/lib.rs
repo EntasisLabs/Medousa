@@ -6,6 +6,8 @@ mod account_connections;
 mod app_update;
 mod autostart;
 mod active_workshop;
+#[cfg(all(test, not(any(target_os = "ios", target_os = "android"))))]
+mod webview_ipc_tests;
 mod badge;
 mod browser_driver;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -65,6 +67,8 @@ mod terminal;
 mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod window;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod desktop_windows;
 mod wizard;
 mod workshop_registry;
 mod workshop_runtime;
@@ -188,7 +192,8 @@ fn run_home() {
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        builder = builder.manage(authorized_resource::AuthorizedResourceState::default());
+        builder = builder.manage(authorized_resource::AuthorizedResourceState::default())
+            .manage(desktop_windows::DesktopWindows::default());
     }
 
     // Desktop only: restore main window size / position / maximized across restarts.
@@ -243,7 +248,10 @@ fn run_home() {
         }
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        setup_desktop_tray(app)?;
+        {
+            setup_desktop_tray(app)?;
+            desktop_windows::install_shortcut(app.handle())?;
+        }
 
         // macOS Overlay/hiddenTitle and trafficLightPosition come from tauri.conf
         // and tauri.macos.conf. Reapplying the style here resets the native button
@@ -328,6 +336,21 @@ fn run_home() {
                 human_browser::on_browser_popout_destroyed();
                 let _ = window.app_handle().emit("browser-window-visibility", false);
             }
+            if window.label().starts_with("desktop-work-") {
+                if matches!(event, tauri::WindowEvent::Destroyed) {
+                    desktop_windows::forget(window.app_handle(), window.label());
+                }
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.emit("popout-close-requested", ());
+                }
+                return;
+            }
+            if window.label() == "desktop-spotlight" {
+                if matches!(event, tauri::WindowEvent::Focused(false)) { let _ = window.hide(); }
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); let _ = window.hide(); }
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 match window.label() {
                     "main" => {
@@ -385,7 +408,8 @@ fn run_home() {
     builder
         .manage(CodeLspTransportRegistry::default())
         .manage(TerminalRegistry::default())
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler({
+            let commands: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
             code_lsp_transport::code_lsp_attach,
             code_lsp_transport::code_lsp_ready,
             code_lsp_transport::code_lsp_send,
@@ -873,6 +897,7 @@ fn run_home() {
             daemon::runtime::runtime_put_worker_config,
             daemon::runtime::runtime_get_tui_defaults,
             daemon::runtime::runtime_put_tui_defaults,
+                daemon::preferences::runtime_patch_tui_preferences,
             daemon::runtime::migrate_global_tui_defaults_to_engine,
             daemon::runtime::runtime_get_delivery_status,
             daemon::runtime::runtime_get_continuation_status,
@@ -918,6 +943,14 @@ fn run_home() {
             daemon::artifact::artifact_write,
             daemon::artifact::artifact_delete,
             daemon::artifact::artifact_list_ui,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_open_window,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_window_context,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_toggle_spotlight,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_shortcut_error,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_chat_popout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -1036,7 +1069,19 @@ fn run_home() {
             daemon::model_catalog::model_catalog_refresh,
             daemon::stt::composer_stt_status,
             daemon::stt::composer_stt_transcribe,
-        ])
+            ];
+            move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    let webview = invoke.message.webview_ref();
+                    if let Err(error) = desktop_windows::check_command_scope(webview.app_handle(), webview.label(), invoke.message.command()) {
+                        invoke.resolver.reject(error);
+                        return true;
+                    }
+                }
+                commands(invoke)
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -1044,13 +1089,14 @@ fn run_home() {
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Medousa", true, None::<&str>)?;
+    let spotlight = MenuItem::with_id(app, "spotlight", "Spotlight (⌘/Ctrl ⇧ Space)", true, None::<&str>)?;
     let toolbar = MenuItem::with_id(app, "toolbar", "Companion", true, None::<&str>)?;
     let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
     let note = MenuItem::with_id(app, "note", "Open Note", true, None::<&str>)?;
     let web = MenuItem::with_id(app, "web", "Open Web", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &toolbar, &chat, &note, &web, &hide, &quit])?;
+    let menu = Menu::with_items(app, &[&spotlight, &show, &toolbar, &chat, &note, &web, &hide, &quit])?;
 
     if let Some(icon) = app.default_window_icon().cloned() {
         TrayIconBuilder::with_id("main-tray")
@@ -1059,6 +1105,10 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
             .tooltip("Medousa")
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "show" => show_main_window(app),
+                "spotlight" => {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move { let _ = desktop_windows::desktop_toggle_spotlight(app).await; });
+                }
                 "toolbar" => {
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
@@ -1067,9 +1117,14 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
                 }
                 "chat" => {
                     let app = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = window::window_show_chat_popout(app).await;
-                    });
+                    if let Ok(registry) = workshop_registry::ensure_migrated() {
+                        tauri::async_runtime::spawn(async move {
+                            let _ = desktop_windows::desktop_open_window(app, desktop_windows::DesktopTarget {
+                                kind: desktop_windows::DesktopKind::Chat, workshop_id: registry.active_workshop_id,
+                                resource_id: None, path: None, title: None,
+                            }).await;
+                        });
+                    }
                 }
                 "note" => {
                     let app = app.clone();

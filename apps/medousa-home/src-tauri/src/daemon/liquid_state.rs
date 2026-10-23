@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::{DaemonState, workshop_http};
+use super::{window_request::WorkshopRequest, workshop_http};
 
 fn path(session_id: &str, message_id: &str, node_id: &str, instance_id: &str) -> String {
     format!(
@@ -17,7 +17,7 @@ fn path(session_id: &str, message_id: &str, node_id: &str, instance_id: &str) ->
 
 #[tauri::command]
 pub async fn liquid_state_get(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     message_id: String,
@@ -34,7 +34,7 @@ pub async fn liquid_state_get(
 
 #[tauri::command]
 pub async fn liquid_state_put(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     message_id: String,

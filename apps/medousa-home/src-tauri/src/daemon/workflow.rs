@@ -7,12 +7,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
+use super::window_request::WorkshopRequest;
 use super::workshop_http;
 
 #[tauri::command]
 pub async fn workflow_list(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
 ) -> Result<WorkflowsListResponse, String> {
@@ -33,7 +33,7 @@ pub async fn workflow_list(
 
 #[tauri::command]
 pub async fn workflow_get(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     workflow_id: String,
 ) -> Result<WorkflowDetailResponse, String> {
@@ -50,7 +50,7 @@ pub async fn workflow_get(
 
 #[tauri::command]
 pub async fn workflow_run(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowRunRequest,
 ) -> Result<WorkflowRunResponse, String> {
@@ -66,7 +66,7 @@ pub async fn workflow_run(
 
 #[tauri::command]
 pub async fn workflow_plan(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowPlanRequest,
 ) -> Result<WorkflowPlanResponse, String> {
@@ -81,7 +81,7 @@ pub async fn workflow_plan(
 
 #[tauri::command]
 pub async fn workflow_schedule(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowScheduleRequest,
 ) -> Result<WorkflowScheduleResponse, String> {
@@ -97,7 +97,7 @@ pub async fn workflow_schedule(
 
 #[tauri::command]
 pub async fn workflow_list_runs(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     workflow_id: String,
     limit: Option<usize>,

@@ -53,6 +53,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Web in Medousa](guides/web-in-medousa.md) | Choose a workshop or device browser, take control, and keep identities separate |
 | [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for addressed conversations, approvals, notes, Web, and views |
+| [Desktop Spotlight](guides/desktop-spotlight.md) | Global launcher and reusable Chat, Create, and Code windows |
 | [Create](guides/create.md) | Editable creative projects, contextual AI proposals, and image exports |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
 | [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |

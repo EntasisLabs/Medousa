@@ -6,8 +6,8 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 fn required_id<'a>(value: &'a str, field: &str) -> Result<&'a str, String> {
     let value = value.trim();
@@ -20,19 +20,19 @@ fn required_id<'a>(value: &'a str, field: &str) -> Result<&'a str, String> {
 
 #[tauri::command]
 pub async fn bot_list(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<BotListResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client.list_bots().map_err(|error| error.to_string());
     }
-    client(&state)?.bots().list().await.map_err(sdk_error)
+    client(&state).await?.bots().list().await.map_err(sdk_error)
 }
 
 #[tauri::command]
 pub async fn bot_create(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: CreateBotRequest,
 ) -> Result<BotOpenResponse, String> {
@@ -42,7 +42,7 @@ pub async fn bot_create(
             .create_bot(request.clone())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .bots()
         .create(&request)
         .await
@@ -51,7 +51,7 @@ pub async fn bot_create(
 
 #[tauri::command]
 pub async fn bot_get(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     bot_id: String,
 ) -> Result<BotProfile, String> {
@@ -60,12 +60,12 @@ pub async fn bot_get(
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client.get_bot(bot_id).map_err(|error| error.to_string());
     }
-    client(&state)?.bots().get(bot_id).await.map_err(sdk_error)
+    client(&state).await?.bots().get(bot_id).await.map_err(sdk_error)
 }
 
 #[tauri::command]
 pub async fn bot_update(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     bot_id: String,
     request: UpdateBotRequest,
@@ -77,7 +77,7 @@ pub async fn bot_update(
             .update_bot(bot_id, request.clone())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .bots()
         .update(bot_id, &request)
         .await
@@ -86,7 +86,7 @@ pub async fn bot_update(
 
 #[tauri::command]
 pub async fn bot_set_archived(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     bot_id: String,
     request: SetBotArchivedRequest,
@@ -98,7 +98,7 @@ pub async fn bot_set_archived(
             .set_bot_archived(bot_id, request.clone())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .bots()
         .set_archived(bot_id, &request)
         .await
@@ -107,7 +107,7 @@ pub async fn bot_set_archived(
 
 #[tauri::command]
 pub async fn bot_duplicate(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     bot_id: String,
     request: DuplicateBotRequest,
@@ -119,7 +119,7 @@ pub async fn bot_duplicate(
             .duplicate_bot(bot_id, request.clone())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .bots()
         .duplicate(bot_id, &request)
         .await
@@ -128,7 +128,7 @@ pub async fn bot_duplicate(
 
 #[tauri::command]
 pub async fn bot_open(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     bot_id: String,
 ) -> Result<BotOpenResponse, String> {
@@ -137,12 +137,12 @@ pub async fn bot_open(
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client.open_bot(bot_id).map_err(|error| error.to_string());
     }
-    client(&state)?.bots().open(bot_id).await.map_err(sdk_error)
+    client(&state).await?.bots().open(bot_id).await.map_err(sdk_error)
 }
 
 #[tauri::command]
 pub async fn session_get_bot(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionBotResponse, String> {
@@ -153,7 +153,7 @@ pub async fn session_get_bot(
             .session_bot(session_id)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .bots()
         .session(session_id)
         .await
@@ -162,7 +162,7 @@ pub async fn session_get_bot(
 
 #[tauri::command]
 pub async fn session_set_bot(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     request: SetSessionBotRequest,
@@ -174,7 +174,7 @@ pub async fn session_set_bot(
             .bind_session_bot(session_id, request.clone())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .bots()
         .bind_session(session_id, &request)
         .await
@@ -183,7 +183,7 @@ pub async fn session_set_bot(
 
 #[tauri::command]
 pub async fn session_clear_bot(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionBotResponse, String> {
@@ -194,7 +194,7 @@ pub async fn session_clear_bot(
             .unbind_session_bot(session_id)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .bots()
         .unbind_session(session_id)
         .await

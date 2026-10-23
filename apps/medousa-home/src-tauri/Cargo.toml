@@ -2,7 +2,7 @@
 
 [package]
 name = "medousa-home"
-version = "0.11.1"
+version = "0.12.0"
 description = "Medousa desktop app (Tauri)"
 authors = ["Entasis Labs"]
 edition = "2021"
@@ -13,6 +13,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "unstable", "macos-private-api"] }
@@ -59,6 +62,7 @@ medousa-local-inference = { path = "../../../crates/medousa-local-inference", fe
 axum = "0.8"
 image = { version = "0.25.6", default-features = false, features = ["png"] }
 medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
+tauri-plugin-global-shortcut = "=2.3.1"
 tauri-plugin-window-state = "2"
 
 [target.'cfg(unix)'.dependencies]

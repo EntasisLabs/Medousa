@@ -1,5 +1,5 @@
 //! Native browser callback and authenticated workshop handoff. No OAuth codes or tokens enter JS.
-use super::{DaemonState, workshop_http};
+use super::{window_request::WorkshopRequest, workshop_http};
 use crate::daemon::types::{
     BeginChatGptOAuthRequest, BeginChatGptOAuthResponse, CompleteChatGptOAuthRequest,
     SelectChatGptAccountRequest,
@@ -23,7 +23,7 @@ pub enum ChatGptOperation {
 #[tauri::command]
 pub async fn chatgpt_oauth_request(
     app: AppHandle,
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     embedded_state: State<'_, EmbeddedDaemonState>,
     operation: ChatGptOperation,
     client_id: Option<String>,
@@ -81,7 +81,7 @@ pub async fn chatgpt_oauth_request(
 }
 
 async fn dispatch(
-    state: &State<'_, DaemonState>,
+    state: &WorkshopRequest,
     embedded_state: &EmbeddedDaemonState,
     action: &str,
     request: Option<Value>,

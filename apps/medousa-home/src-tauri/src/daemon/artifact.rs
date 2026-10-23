@@ -7,12 +7,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn artifact_command(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactCommandRequest,
 ) -> Result<ArtifactCommandResponse, String> {
@@ -22,7 +22,7 @@ pub async fn artifact_command(
             .artifact_command(request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .artifact_command(&request)
         .await
@@ -31,7 +31,7 @@ pub async fn artifact_command(
 
 #[tauri::command]
 pub async fn artifact_fetch(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactFetchRequest,
 ) -> Result<ArtifactFetchResponse, String> {
@@ -41,7 +41,7 @@ pub async fn artifact_fetch(
             .artifact_fetch(request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .artifact_fetch(&request)
         .await
@@ -50,7 +50,7 @@ pub async fn artifact_fetch(
 
 #[tauri::command]
 pub async fn artifact_list_ui(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactListUiRequest,
 ) -> Result<ArtifactListUiResponse, String> {
@@ -60,7 +60,7 @@ pub async fn artifact_list_ui(
             .artifact_list_ui(request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .artifact_list_ui(&request)
         .await
@@ -69,7 +69,7 @@ pub async fn artifact_list_ui(
 
 #[tauri::command]
 pub async fn artifact_write(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactWriteRequest,
 ) -> Result<ArtifactWriteResponse, String> {
@@ -79,7 +79,7 @@ pub async fn artifact_write(
             .artifact_write(request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .artifact_write(&request)
         .await
@@ -88,7 +88,7 @@ pub async fn artifact_write(
 
 #[tauri::command]
 pub async fn artifact_delete(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactDeleteRequest,
 ) -> Result<ArtifactDeleteResponse, String> {
@@ -98,7 +98,7 @@ pub async fn artifact_delete(
             .artifact_delete(request)
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .artifact_delete(&request)
         .await

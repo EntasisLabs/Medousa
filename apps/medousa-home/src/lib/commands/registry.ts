@@ -9,7 +9,7 @@ import {
   listTurnBudgetRequests,
 } from "$lib/daemon";
 import { CONTENT_ZOOM_DEFAULT, contentZoomPercent, resetContentZoom, stepContentZoom } from "$lib/config/contentZoom";
-import { homeChannelSurface, formatShortcut } from "$lib/platform";
+import { homeChannelSurface, formatShortcut, isTauriDesktop } from "$lib/platform";
 import { onThisHostPhrase } from "$lib/platformCopy";
 import { appUpdate } from "$lib/stores/appUpdate.svelte";
 import { openAppUpdateDownload } from "$lib/utils/appUpdate";
@@ -58,6 +58,15 @@ export function buildGoCommands(): WorkshopCommand[] {
   }));
   return [
     ...destinations,
+    ...(isTauriDesktop() ? [{
+      id: "go-desktop-spotlight", section: "go" as const, label: "Desktop Spotlight",
+      subtitle: "Global launcher · Chat, Create, and Code windows",
+      keywords: "desktop spotlight launcher raycast windows global shortcut",
+      run: async (ctx: WorkshopCommandContext) => {
+        const { toggleDesktopSpotlight } = await import("$lib/desktop/windows");
+        await toggleDesktopSpotlight(); ctx.callbacks.close();
+      },
+    }] : []),
     ...buildActivityCommands(),
     {
       id: "go-channels",
