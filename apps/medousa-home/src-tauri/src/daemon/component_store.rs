@@ -7,12 +7,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn component_store_get(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     key: Option<String>,
@@ -31,7 +31,7 @@ pub async fn component_store_get(
             .map_err(|error| error.to_string());
     }
 
-    client(&state)?
+    client(&state).await?
         .components()
         .store_get(
             component_id,
@@ -44,7 +44,7 @@ pub async fn component_store_get(
 
 #[tauri::command]
 pub async fn component_store_set(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     key: String,
@@ -72,7 +72,7 @@ pub async fn component_store_set(
         value,
         profile_id: profile_id.filter(|id| !id.trim().is_empty()),
     };
-    client(&state)?
+    client(&state).await?
         .components()
         .store_put_key(component_id, key, &request)
         .await
@@ -81,7 +81,7 @@ pub async fn component_store_set(
 
 #[tauri::command]
 pub async fn component_store_delete(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     key: String,
@@ -101,7 +101,7 @@ pub async fn component_store_delete(
             .map_err(|error| error.to_string());
     }
 
-    client(&state)?
+    client(&state).await?
         .components()
         .store_delete_key(
             component_id,
@@ -114,7 +114,7 @@ pub async fn component_store_delete(
 
 #[tauri::command]
 pub async fn component_store_list_keys(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     profile_id: Option<String>,
@@ -132,7 +132,7 @@ pub async fn component_store_list_keys(
             .map_err(|error| error.to_string());
     }
 
-    client(&state)?
+    client(&state).await?
         .components()
         .store_list_keys(
             component_id,

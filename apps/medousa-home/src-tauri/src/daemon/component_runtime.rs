@@ -6,8 +6,8 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ProbeCompleteOk {
@@ -16,7 +16,7 @@ pub struct ProbeCompleteOk {
 
 #[tauri::command]
 pub async fn component_runtime_append_events(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     request: ComponentRuntimeEventsRequest,
@@ -32,7 +32,7 @@ pub async fn component_runtime_append_events(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .components()
         .runtime_append_events(component_id, &request)
         .await
@@ -41,7 +41,7 @@ pub async fn component_runtime_append_events(
 
 #[tauri::command]
 pub async fn component_runtime_tail_events(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     profile_id: Option<String>,
@@ -60,7 +60,7 @@ pub async fn component_runtime_tail_events(
             .map_err(|error| error.to_string());
     }
 
-    client(&state)?
+    client(&state).await?
         .components()
         .runtime_tail_events(
             component_id,
@@ -73,7 +73,7 @@ pub async fn component_runtime_tail_events(
 
 #[tauri::command]
 pub async fn component_runtime_complete_probe(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     probe_id: String,
@@ -96,7 +96,7 @@ pub async fn component_runtime_complete_probe(
             .map(|ok| ProbeCompleteOk { ok })
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .components()
         .runtime_complete_probe(component_id, probe_id, &result)
         .await

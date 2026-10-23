@@ -34,7 +34,7 @@ fn ensure_webview_operation_allowed(operation: DaemonOperation) -> Result<(), St
 
 #[tauri::command]
 pub async fn daemon_unary(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     embedded_state: State<'_, EmbeddedDaemonState>,
     operation: DaemonOperation,
@@ -224,7 +224,7 @@ fn embedded_browser_session_unary(
 
 #[tauri::command]
 pub async fn daemon_stream_start(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     operation: DaemonOperation,
     path_params: HashMap<String, String>,
@@ -248,7 +248,7 @@ pub async fn daemon_stream_start(
         ),
     };
     let config =
-        crate::active_workshop::transport_for_window(&window, execution_runtime_id.as_deref())
+        crate::active_workshop::transport_for_webview(&window, execution_runtime_id.as_deref())
             .await?;
     let registry_handle = format!("{}:{handle}", window.label());
     let (tx, mut rx) = watch::channel(false);
@@ -296,7 +296,7 @@ fn validate_client_stream_handle(handle: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn daemon_stream_cancel(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     handle: String,
 ) -> Result<(), String> {

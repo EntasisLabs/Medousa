@@ -1,9 +1,8 @@
 //! Shared mode status / enable bridge.
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
 
-use super::DaemonState;
+use super::window_request::WorkshopRequest;
 use super::workshop_http;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,14 +21,14 @@ pub struct SetSharedModeRequest {
 
 #[tauri::command]
 pub async fn shared_mode_status(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
 ) -> Result<SharedModeStatusResponse, String> {
     workshop_http::get_json(&state, "/v1/shared-mode").await
 }
 
 #[tauri::command]
 pub async fn shared_mode_set(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     mode: String,
 ) -> Result<SharedModeStatusResponse, String> {
     let trimmed = mode.trim().to_ascii_lowercase();

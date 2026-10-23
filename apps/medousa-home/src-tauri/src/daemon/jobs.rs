@@ -2,17 +2,16 @@ use crate::daemon::types::{
     ArchiveAskJobRequest, ArchiveAskJobResponse, AskJobCompleteActionsRequest,
     AskJobCompleteActionsResponse, EnqueueAskRequest, EnqueueResponse, JobResultResponse,
 };
-use tauri::State;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn job_get_result(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     job_id: String,
 ) -> Result<JobResultResponse, String> {
-    client(&state)?
+    client(&state).await?
         .jobs()
         .result(job_id.trim())
         .await
@@ -21,7 +20,7 @@ pub async fn job_get_result(
 
 #[tauri::command]
 pub async fn job_enqueue_ask(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     prompt: String,
     model_hint: Option<String>,
     manuscript_id: Option<String>,
@@ -41,7 +40,7 @@ pub async fn job_enqueue_ask(
         additional_manuscript_ids,
         suggested_capability_ids,
     };
-    client(&state)?
+    client(&state).await?
         .jobs()
         .enqueue_ask(&request)
         .await
@@ -50,7 +49,7 @@ pub async fn job_enqueue_ask(
 
 #[tauri::command]
 pub async fn job_complete_actions(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     job_id: String,
     write_journal_path: Option<String>,
     notify_channel: Option<String>,
@@ -59,7 +58,7 @@ pub async fn job_complete_actions(
         write_journal_path,
         notify_channel,
     };
-    client(&state)?
+    client(&state).await?
         .jobs()
         .complete_actions(job_id.trim(), &request)
         .await
@@ -68,14 +67,14 @@ pub async fn job_complete_actions(
 
 #[tauri::command]
 pub async fn job_archive_ask(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     job_id: String,
     purge_output: Option<bool>,
 ) -> Result<ArchiveAskJobResponse, String> {
     let request = ArchiveAskJobRequest {
         purge_output: purge_output.unwrap_or(true),
     };
-    client(&state)?
+    client(&state).await?
         .jobs()
         .archive(job_id.trim(), &request)
         .await

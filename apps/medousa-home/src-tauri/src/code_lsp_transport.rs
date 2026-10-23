@@ -70,7 +70,7 @@ fn validate_lsp_path(path: &str) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn code_lsp_attach(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     app: AppHandle,
     _state: State<'_, DaemonState>,
     registry: State<'_, CodeLspTransportRegistry>,
@@ -81,7 +81,7 @@ pub async fn code_lsp_attach(
     validate_lsp_path(&path)?;
     let websocket = crate::terminal::connect_authenticated_ws_with_config(
         &path,
-        crate::active_workshop::transport_for_window(&window, execution_runtime_id.as_deref())
+        crate::active_workshop::transport_for_webview(&window, execution_runtime_id.as_deref())
             .await?,
     )
     .await?;

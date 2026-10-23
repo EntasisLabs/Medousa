@@ -44,9 +44,11 @@ Code checkpoints unsaved buffer drafts without writing them into source files. A
 you in the current workshop.
 
 A work window keeps addressing its original workshop when the main app switches
-workshops. Some auxiliary actions still use the main window’s selected workshop;
-those actions ask you to switch back rather than sending a request to the wrong
-workshop. Editing and scoped streams remain bound to the original workshop.
+workshops. Chat actions, agent approvals, attachments, artifacts, profiles, workshop
+preferences,
+and Code SSH setup use the workshop that owns their window. They continue to work
+when the main window selects another workshop. Sign-in stays bound to its original
+workshop for the whole flow. Device setup and maintenance remain in the main window.
 
 Desktop Spotlight is a desktop-only feature. The existing mobile and browser tab
 workflows are unchanged.

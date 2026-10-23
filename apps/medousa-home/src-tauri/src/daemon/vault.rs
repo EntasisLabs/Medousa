@@ -11,12 +11,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::sdk::{client, sdk_error};
-use super::DaemonState;
+use super::sdk::{client_for_request as client, sdk_error};
+use super::window_request::WorkshopRequest;
 
 #[tauri::command]
 pub async fn vault_list_notes(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     prefix: Option<String>,
     limit: Option<usize>,
@@ -40,7 +40,7 @@ pub async fn vault_list_notes(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .list_notes(&query)
         .await
@@ -49,7 +49,7 @@ pub async fn vault_list_notes(
 
 #[tauri::command]
 pub async fn vault_list_changes(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     since_generation: Option<u64>,
     cursor: Option<String>,
@@ -67,7 +67,7 @@ pub async fn vault_list_changes(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .list_changes(&query)
         .await
@@ -76,7 +76,7 @@ pub async fn vault_list_changes(
 
 #[tauri::command]
 pub async fn vault_list_tags(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     prefix: Option<String>,
     limit: Option<usize>,
@@ -92,7 +92,7 @@ pub async fn vault_list_tags(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .list_tags(&query)
         .await
@@ -101,7 +101,7 @@ pub async fn vault_list_tags(
 
 #[tauri::command]
 pub async fn vault_get_note(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<VaultNoteContentResponse, String> {
@@ -113,7 +113,7 @@ pub async fn vault_get_note(
             .map_err(|error| error.to_string());
     }
     // The SDK encodes path segments; pass the filesystem path unchanged.
-    client(&state)?
+    client(&state).await?
         .vault()
         .get_note(path.trim())
         .await
@@ -122,7 +122,7 @@ pub async fn vault_get_note(
 
 #[tauri::command]
 pub async fn vault_get_file(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<VaultFileContentResponse, String> {
@@ -133,7 +133,7 @@ pub async fn vault_get_file(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .get_file(path.trim())
         .await
@@ -142,7 +142,7 @@ pub async fn vault_get_file(
 
 #[tauri::command]
 pub async fn vault_save_note(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
     content: String,
@@ -172,7 +172,7 @@ pub async fn vault_save_note(
         session_id: session_id.filter(|value| !value.trim().is_empty()),
         auto_workshop_tags,
     };
-    client(&state)?
+    client(&state).await?
         .vault()
         .update_note(
             path.trim(),
@@ -188,7 +188,7 @@ pub async fn vault_save_note(
 
 #[tauri::command]
 pub async fn vault_create_note(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
     content: String,
@@ -210,7 +210,7 @@ pub async fn vault_create_note(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .create_note(&request)
         .await
@@ -219,7 +219,7 @@ pub async fn vault_create_note(
 
 #[tauri::command]
 pub async fn vault_delete_note(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<serde_json::Value, String> {
@@ -231,7 +231,7 @@ pub async fn vault_delete_note(
             .map(|response| serde_json::to_value(response).unwrap_or_default())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .delete_note(path.trim())
         .await
@@ -241,7 +241,7 @@ pub async fn vault_delete_note(
 
 #[tauri::command]
 pub async fn vault_search(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     query: String,
     limit: Option<usize>,
@@ -264,7 +264,7 @@ pub async fn vault_search(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .search(&search)
         .await
@@ -273,7 +273,7 @@ pub async fn vault_search(
 
 #[tauri::command]
 pub async fn vault_backlinks(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<VaultBacklinksResponse, String> {
@@ -287,7 +287,7 @@ pub async fn vault_backlinks(
     let query = VaultBacklinksQuery {
         path: Some(path.trim().to_string()),
     };
-    client(&state)?
+    client(&state).await?
         .vault()
         .backlinks(&query)
         .await
@@ -296,14 +296,14 @@ pub async fn vault_backlinks(
 
 #[tauri::command]
 pub async fn vault_list_roots(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<VaultRootsResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client.list_vault_roots().map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .list_roots()
         .await
@@ -312,7 +312,7 @@ pub async fn vault_list_roots(
 
 #[tauri::command]
 pub async fn vault_set_active_root(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     root_id: String,
 ) -> Result<VaultRootsResponse, String> {
@@ -325,7 +325,7 @@ pub async fn vault_set_active_root(
     let request = VaultSetActiveRootRequest {
         root_id: root_id.trim().to_string(),
     };
-    client(&state)?
+    client(&state).await?
         .vault()
         .set_active_root(&request)
         .await
@@ -334,7 +334,7 @@ pub async fn vault_set_active_root(
 
 #[tauri::command]
 pub async fn vault_add_root(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     label: String,
     path: String,
@@ -351,7 +351,7 @@ pub async fn vault_add_root(
         path: path.trim().to_string(),
         id: id.filter(|value| !value.trim().is_empty()),
     };
-    client(&state)?
+    client(&state).await?
         .vault()
         .add_root(&request)
         .await
@@ -360,7 +360,7 @@ pub async fn vault_add_root(
 
 #[tauri::command]
 pub async fn vault_list_trash(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
 ) -> Result<serde_json::Value, String> {
@@ -372,7 +372,7 @@ pub async fn vault_list_trash(
             .map(|response| serde_json::to_value(response).unwrap_or_default())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .list_trash(limit)
         .await
@@ -381,7 +381,7 @@ pub async fn vault_list_trash(
 
 #[tauri::command]
 pub async fn vault_restore_trash(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<serde_json::Value, String> {
@@ -393,7 +393,7 @@ pub async fn vault_restore_trash(
             .map(|response| serde_json::to_value(response).unwrap_or_default())
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .vault()
         .restore_trash(path.trim())
         .await

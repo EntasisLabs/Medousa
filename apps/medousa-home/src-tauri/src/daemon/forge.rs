@@ -22,7 +22,7 @@ fn allowed_path(path: &str) -> bool {
 #[tauri::command]
 pub async fn forge_request(
     _state: State<'_, DaemonState>,
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     method: String,
     path: String,
     body: Option<Value>,
@@ -37,7 +37,7 @@ pub async fn forge_request(
         return Err("unsupported Forge API method".into());
     }
     let config =
-        crate::active_workshop::transport_for_window(&window, execution_runtime_id.as_deref())
+        crate::active_workshop::transport_for_webview(&window, execution_runtime_id.as_deref())
             .await?;
     crate::workshop_transport::workshop_json_request(&config, &method, &path, body.as_ref()).await
 }

@@ -7,12 +7,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn catalog_list_manuscripts(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     prefix: Option<String>,
     limit: Option<usize>,
@@ -29,7 +29,7 @@ pub async fn catalog_list_manuscripts(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .manuscripts()
         .list(&ManuscriptCatalogQuery {
             prefix,
@@ -42,7 +42,7 @@ pub async fn catalog_list_manuscripts(
 
 #[tauri::command]
 pub async fn catalog_list_capabilities(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<CapabilityListResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -53,7 +53,7 @@ pub async fn catalog_list_capabilities(
             .map_err(|error| error.to_string());
         return serde_json::from_value(value?).map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .capabilities()
         .list()
         .await
@@ -62,7 +62,7 @@ pub async fn catalog_list_capabilities(
 
 #[tauri::command]
 pub async fn catalog_get_capability(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     capability_id: String,
 ) -> Result<CapabilityResolveResponse, String> {
@@ -74,7 +74,7 @@ pub async fn catalog_get_capability(
             .map_err(|error| error.to_string());
         return serde_json::from_value(value?).map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .capabilities()
         .get(capability_id.trim())
         .await
@@ -83,7 +83,7 @@ pub async fn catalog_get_capability(
 
 #[tauri::command]
 pub async fn catalog_reindex_capabilities(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<serde_json::Value, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -93,7 +93,7 @@ pub async fn catalog_reindex_capabilities(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .capabilities()
         .reindex()
         .await
@@ -102,7 +102,7 @@ pub async fn catalog_reindex_capabilities(
 
 #[tauri::command]
 pub async fn catalog_get_manuscript(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     manuscript_id: String,
 ) -> Result<ManuscriptDetailResponse, String> {
@@ -113,7 +113,7 @@ pub async fn catalog_get_manuscript(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .manuscripts()
         .get(manuscript_id.trim())
         .await
@@ -122,7 +122,7 @@ pub async fn catalog_get_manuscript(
 
 #[tauri::command]
 pub async fn catalog_create_manuscript(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: CreateManuscriptRequest,
 ) -> Result<ManuscriptDetailResponse, String> {
@@ -133,7 +133,7 @@ pub async fn catalog_create_manuscript(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .manuscripts()
         .create(&request)
         .await
@@ -142,7 +142,7 @@ pub async fn catalog_create_manuscript(
 
 #[tauri::command]
 pub async fn catalog_update_manuscript(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     manuscript_id: String,
     request: UpdateManuscriptRequest,
@@ -154,7 +154,7 @@ pub async fn catalog_update_manuscript(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .manuscripts()
         .update(manuscript_id.trim(), &request)
         .await
@@ -163,7 +163,7 @@ pub async fn catalog_update_manuscript(
 
 #[tauri::command]
 pub async fn catalog_import_manuscripts(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ManuscriptImportRequest,
 ) -> Result<ManuscriptImportResponse, String> {
@@ -174,7 +174,7 @@ pub async fn catalog_import_manuscripts(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .manuscripts()
         .import(&request)
         .await

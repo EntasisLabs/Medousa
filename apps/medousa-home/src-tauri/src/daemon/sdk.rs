@@ -40,3 +40,10 @@ pub fn client(state: &State<DaemonState>) -> Result<MedousaClient, String> {
 pub(super) fn client_from_config(config: &WorkshopTransportConfig) -> MedousaClient {
     MedousaClient::with_transport(build_sdk_transport(config), config.lan_base.clone())
 }
+
+/// Legacy native actions retain the workshop of their invoking work window.
+pub async fn client_for_request(
+    request: &super::window_request::WorkshopRequest,
+) -> Result<MedousaClient, String> {
+    Ok(client_from_config(&request.config().await?))
+}

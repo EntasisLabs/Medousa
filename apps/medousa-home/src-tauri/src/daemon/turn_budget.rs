@@ -2,10 +2,9 @@ use crate::daemon::types::{
     TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
     TurnBudgetRequestResponse,
 };
-use tauri::State;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 fn default_home_resolved_by() -> String {
     #[cfg(target_os = "ios")]
@@ -24,7 +23,7 @@ fn default_home_resolved_by() -> String {
 
 #[tauri::command]
 pub async fn turn_budget_approve(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request_id: String,
     extra_rounds: Option<usize>,
     resolved_by: Option<String>,
@@ -38,7 +37,7 @@ pub async fn turn_budget_approve(
                 .unwrap_or_else(default_home_resolved_by),
         ),
     };
-    client(&state)?
+    client(&state).await?
         .budget()
         .approve(request_id.trim(), &body)
         .await
@@ -47,7 +46,7 @@ pub async fn turn_budget_approve(
 
 #[tauri::command]
 pub async fn turn_budget_deny(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request_id: String,
     resolved_by: Option<String>,
 ) -> Result<TurnBudgetRequestResponse, String> {
@@ -59,7 +58,7 @@ pub async fn turn_budget_deny(
                 .unwrap_or_else(default_home_resolved_by),
         ),
     };
-    client(&state)?
+    client(&state).await?
         .budget()
         .deny(request_id.trim(), &body)
         .await
@@ -68,10 +67,10 @@ pub async fn turn_budget_deny(
 
 #[tauri::command]
 pub async fn turn_budget_list(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     pending_only: Option<bool>,
 ) -> Result<TurnBudgetRequestListResponse, String> {
-    client(&state)?
+    client(&state).await?
         .budget()
         .list(pending_only.unwrap_or(true))
         .await

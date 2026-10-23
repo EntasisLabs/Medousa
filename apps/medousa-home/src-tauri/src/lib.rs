@@ -6,6 +6,8 @@ mod account_connections;
 mod app_update;
 mod autostart;
 mod active_workshop;
+#[cfg(all(test, not(any(target_os = "ios", target_os = "android"))))]
+mod webview_ipc_tests;
 mod badge;
 mod browser_driver;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -895,6 +897,7 @@ fn run_home() {
             daemon::runtime::runtime_put_worker_config,
             daemon::runtime::runtime_get_tui_defaults,
             daemon::runtime::runtime_put_tui_defaults,
+                daemon::preferences::runtime_patch_tui_preferences,
             daemon::runtime::migrate_global_tui_defaults_to_engine,
             daemon::runtime::runtime_get_delivery_status,
             daemon::runtime::runtime_get_continuation_status,

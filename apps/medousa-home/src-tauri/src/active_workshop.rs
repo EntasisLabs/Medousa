@@ -106,6 +106,10 @@ async fn metadata_read<T: Send + 'static>(
         .map_err(|error| error.to_string())?
 }
 
+pub async fn resolve_async() -> Result<ActiveWorkshopTarget, String> {
+    metadata_read(resolve).await
+}
+
 pub async fn resolve_scope_async(workshop_id: String) -> Result<ActiveWorkshopTarget, String> {
     metadata_read(move || resolve_scope(&workshop_id)).await
 }
@@ -116,7 +120,7 @@ pub async fn transport_for_target_async(
     metadata_read(move || transport_config_for_target(target)).await
 }
 
-pub fn consumer_generation(window: &tauri::WebviewWindow) -> Option<u64> {
+pub fn consumer_generation(window: &tauri::Webview) -> Option<u64> {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         return crate::desktop_windows::generation_for(window.app_handle(), window.label());
@@ -131,7 +135,7 @@ pub fn consumer_generation(window: &tauri::WebviewWindow) -> Option<u64> {
 /// Check under the consumer-registry lock. No native UI query is made while
 /// holding that lock; the destruction callback uses the same registry.
 pub fn ensure_window_consumer(
-    window: &tauri::WebviewWindow,
+    window: &tauri::Webview,
     generation: Option<u64>,
 ) -> Result<(), String> {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -144,10 +148,11 @@ pub fn ensure_window_consumer(
     Ok(())
 }
 
+/// Accept the invoking webview even when its native window hosts browser children.
 /// Retained desktop views have immutable workshop ownership. Other windows use
 /// the normal selected workshop; an explicit execution destination wins.
-pub async fn transport_for_window(
-    window: &tauri::WebviewWindow,
+pub async fn transport_for_webview(
+    window: &tauri::Webview,
     execution_runtime_id: Option<&str>,
 ) -> Result<WorkshopTransportConfig, String> {
     if let Some(id) = execution_runtime_id
@@ -170,7 +175,7 @@ pub fn display_url() -> Result<String, String> {
     Ok(resolve()?.display_url().to_string())
 }
 
-pub fn display_url_for_window(window: &tauri::WebviewWindow) -> Result<String, String> {
+pub fn display_url_for_webview(window: &tauri::Webview) -> Result<String, String> {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if let Some(scope) = crate::desktop_windows::scope_for(window.app_handle(), window.label()) {
         return Ok(resolve_scope(&scope)?.display_url().to_string());

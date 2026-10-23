@@ -25,6 +25,7 @@ pub mod media;
 pub mod model_catalog;
 pub mod recurring;
 pub mod runtime;
+pub mod preferences;
 pub mod sdk;
 pub mod session;
 pub mod shared_mode;
@@ -35,6 +36,7 @@ pub mod turn_budget;
 pub mod types;
 pub mod vault;
 pub mod vault_git;
+pub mod window_request;
 pub mod workflow;
 pub mod workshop_http;
 pub mod workspace_card;
@@ -204,7 +206,7 @@ fn extract_turn_id_from_stream_url(stream_url: &str) -> Option<String> {
 fn add_interactive_stream_slot(
     streams: &Mutex<HashMap<String, watch::Sender<bool>>>,
     turn_id: &str,
-    window: &tauri::WebviewWindow,
+    window: &tauri::Webview,
     generation: Option<u64>,
 ) -> Result<watch::Receiver<bool>, String> {
     let (tx, rx) = watch::channel(false);
@@ -219,10 +221,10 @@ fn add_interactive_stream_slot(
 
 #[tauri::command]
 pub fn daemon_url(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     _state: State<'_, DaemonState>,
 ) -> Result<String, String> {
-    crate::active_workshop::display_url_for_window(&window)
+    crate::active_workshop::display_url_for_webview(&window)
 }
 
 #[tauri::command]
@@ -316,7 +318,7 @@ fn disconnected_health(message: String) -> DaemonHealth {
 
 #[tauri::command]
 pub async fn daemon_health(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     _state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<DaemonHealth, String> {
@@ -328,7 +330,7 @@ pub async fn daemon_health(
         });
     }
 
-    let config = crate::active_workshop::transport_for_window(&window, None).await?;
+    let config = crate::active_workshop::transport_for_webview(&window, None).await?;
     let endpoint = config.lan_base.clone();
     let probe = async {
         // Heartbeats no longer gate recovery. Renew only when credentials are due.
@@ -534,7 +536,7 @@ async fn resolve_supports_browser_host() -> bool {
 
 #[tauri::command]
 pub async fn interactive_turn_send(
-    state: State<'_, DaemonState>,
+    state: window_request::WorkshopRequest,
     session_id: String,
     prompt: String,
     provider: Option<String>,
@@ -641,8 +643,8 @@ pub async fn interactive_turn_send(
         wake: None,
     };
 
-    let base = crate::active_workshop::transport_base_url()?;
-    let parsed = self::sdk::client(&state)?
+    let base = state.config().await?.lan_base;
+    let parsed = self::sdk::client_for_request(&state).await?
         .interactive()
         .start_turn(&request)
         .await
@@ -655,7 +657,7 @@ pub async fn interactive_turn_send(
 
 #[tauri::command]
 pub async fn interactive_stream_start(
-    app: tauri::WebviewWindow,
+    app: tauri::Webview,
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     stream_url: String,
@@ -719,7 +721,7 @@ pub async fn interactive_stream_start(
         return Ok(());
     }
 
-    let config = crate::active_workshop::transport_for_window(&app, None).await?;
+    let config = crate::active_workshop::transport_for_webview(&app, None).await?;
     let daemon_url = config.lan_base.clone();
     let stream_url = rewrite_stream_url_for_client(&stream_url, &daemon_url);
     let turn_id = extract_turn_id_from_stream_url(&stream_url)
@@ -793,7 +795,7 @@ pub async fn interactive_stream_start(
 
 #[tauri::command]
 pub fn interactive_stream_stop(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
 ) -> Result<(), String> {
     let mut guard = state
@@ -814,7 +816,7 @@ pub fn interactive_stream_stop(
 
 #[tauri::command]
 pub fn interactive_stream_stop_turn(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     turn_id: String,
 ) -> Result<(), String> {

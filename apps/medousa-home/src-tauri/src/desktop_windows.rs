@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, Webview};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 pub const SHORTCUT: &str = "CommandOrControl+Shift+Space";
@@ -114,7 +114,8 @@ pub fn check_command_scope(app: &AppHandle, label: &str, command: &str) -> Resul
             Ok(())
         };
     };
-    if command.starts_with("desktop_")
+    if crate::daemon::window_request::supports_command(command)
+        || command.starts_with("desktop_")
         || command.starts_with("window_")
         || command.starts_with("code_lsp_")
         || command.starts_with("terminal_")
@@ -161,7 +162,7 @@ pub fn forget(app: &AppHandle, label: &str) {
 
 #[tauri::command]
 pub fn desktop_window_context(
-    window: WebviewWindow,
+    window: Webview,
     state: State<'_, DesktopWindows>,
 ) -> Result<DesktopTarget, String> {
     state

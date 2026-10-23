@@ -7,7 +7,7 @@ use tauri::State;
 use crate::embedded_daemon::EmbeddedDaemonState;
 
 use super::workshop_http;
-use super::DaemonState;
+use super::window_request::WorkshopRequest;
 
 const MAX_MEDIA_BYTES: usize = 25 * 1024 * 1024;
 const MAX_MEDIA_BASE64_BYTES: usize = MAX_MEDIA_BYTES.div_ceil(3) * 4;
@@ -27,7 +27,7 @@ pub struct MediaPathResponse {
 
 #[tauri::command]
 pub async fn media_upload(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     filename: String,
@@ -54,7 +54,7 @@ pub async fn media_upload(
 }
 
 async fn media_upload_bytes(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     filename: String,
@@ -131,7 +131,7 @@ async fn media_upload_bytes(
 
 #[tauri::command]
 pub async fn media_upload_path(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     path: String,
@@ -165,7 +165,7 @@ pub async fn media_upload_path(
 
 #[tauri::command]
 pub async fn media_read(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     media_id: String,

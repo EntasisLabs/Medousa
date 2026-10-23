@@ -169,6 +169,7 @@
     "daemon::model_catalog::model_catalog_list",
     "daemon::model_catalog::model_catalog_lookup",
     "daemon::model_catalog::model_catalog_refresh",
+    "daemon::preferences::runtime_patch_tui_preferences",
     "daemon::recurring::recurring_delete",
     "daemon::recurring::recurring_get_delivery",
     "daemon::recurring::recurring_list",

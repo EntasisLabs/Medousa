@@ -179,14 +179,14 @@ fn ws_request_with_bearer(
 }
 
 async fn daemon_get<T: serde::de::DeserializeOwned>(
-    window: Option<&tauri::WebviewWindow>,
+    window: Option<&tauri::Webview>,
     state: &State<'_, DaemonState>,
     path: &str,
     execution_runtime_id: Option<&str>,
 ) -> Result<T, String> {
     let config = match window {
         Some(window) => {
-            crate::active_workshop::transport_for_window(window, execution_runtime_id).await?
+            crate::active_workshop::transport_for_webview(window, execution_runtime_id).await?
         }
         None => terminal_transport_config(state, execution_runtime_id)?,
     };
@@ -194,7 +194,7 @@ async fn daemon_get<T: serde::de::DeserializeOwned>(
 }
 
 async fn daemon_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(
-    window: Option<&tauri::WebviewWindow>,
+    window: Option<&tauri::Webview>,
     state: &State<'_, DaemonState>,
     path: &str,
     body: &B,
@@ -202,7 +202,7 @@ async fn daemon_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(
 ) -> Result<T, String> {
     let config = match window {
         Some(window) => {
-            crate::active_workshop::transport_for_window(window, execution_runtime_id).await?
+            crate::active_workshop::transport_for_webview(window, execution_runtime_id).await?
         }
         None => terminal_transport_config(state, execution_runtime_id)?,
     };
@@ -224,7 +224,7 @@ fn terminal_transport_config(
 
 #[tauri::command]
 pub async fn terminal_info(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     execution_runtime_id: Option<String>,
 ) -> Result<TerminalInfo, String> {
@@ -239,7 +239,7 @@ pub async fn terminal_info(
 
 #[tauri::command]
 pub async fn terminal_sessions(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     execution_runtime_id: Option<String>,
 ) -> Result<Vec<TerminalSessionSummary>, String> {
@@ -258,7 +258,7 @@ pub async fn terminal_sessions(
 
 #[tauri::command]
 pub async fn terminal_interrupt(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     session_id: String,
     execution_runtime_id: Option<String>,
@@ -275,7 +275,7 @@ pub async fn terminal_interrupt(
 
 #[tauri::command]
 pub async fn terminal_create(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     input: TerminalCreateInput,
     execution_runtime_id: Option<String>,
@@ -316,7 +316,7 @@ pub async fn terminal_create(
 
 #[tauri::command]
 pub async fn terminal_attach(
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     app: AppHandle,
     _state: State<'_, DaemonState>,
     registry: State<'_, TerminalRegistry>,
@@ -329,7 +329,7 @@ pub async fn terminal_attach(
     let path = format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id));
     let websocket = connect_authenticated_ws_with_config(
         &path,
-        crate::active_workshop::transport_for_window(&window, execution_runtime_id.as_deref())
+        crate::active_workshop::transport_for_webview(&window, execution_runtime_id.as_deref())
             .await?,
     )
     .await?;
@@ -646,11 +646,15 @@ mod tests {
 
 /// SSH setup follows the connected workshop, even when a Coder worker is selected.
 #[tauri::command]
-pub async fn ssh_targets(state: State<'_, DaemonState>) -> Result<serde_json::Value, String> {
-    daemon_get(None, &state, "/v1/ssh/targets", None).await
+pub async fn ssh_targets(
+    window: tauri::Webview,
+    state: State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    daemon_get(Some(&window), &state, "/v1/ssh/targets", None).await
 }
 #[tauri::command]
 pub async fn ssh_action(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     action: String,
     input: serde_json::Value,
@@ -662,15 +666,17 @@ pub async fn ssh_action(
         "terminal" => "/v1/ssh/terminal",
         _ => return Err("Unknown SSH setup action".into()),
     };
-    daemon_post(None, &state, path, &input, None).await
+    daemon_post(Some(&window), &state, path, &input, None).await
 }
 #[tauri::command]
 pub async fn ssh_set_access(
+    window: tauri::Webview,
     state: State<'_, DaemonState>,
     target_id: String,
     enabled: bool,
 ) -> Result<serde_json::Value, String> {
-    daemon_post(None,
+    daemon_post(
+        Some(&window),
         &state,
         &format!("/v1/ssh/targets/{}/access", urlencoding::encode(&target_id)),
         &serde_json::json!({"enabled": enabled}),
@@ -679,8 +685,8 @@ pub async fn ssh_set_access(
     .await
 }
 #[tauri::command]
-pub async fn ssh_remove(state: State<'_, DaemonState>, target_id: String) -> Result<(), String> {
-    let config = terminal_transport_config(&state, None)?;
+pub async fn ssh_remove(window: tauri::Webview, target_id: String) -> Result<(), String> {
+    let config = crate::active_workshop::transport_for_webview(&window, None).await?;
     crate::workshop_transport::workshop_delete_json::<serde_json::Value>(
         &config,
         &format!("/v1/ssh/targets/{}", urlencoding::encode(&target_id)),

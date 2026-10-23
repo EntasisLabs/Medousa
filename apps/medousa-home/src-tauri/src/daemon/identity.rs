@@ -10,12 +10,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
+use super::window_request::WorkshopRequest;
 use super::workshop_http;
 
 #[tauri::command]
 pub async fn identity_get_context(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityContextRequest,
 ) -> Result<Value, String> {
@@ -31,7 +31,7 @@ pub async fn identity_get_context(
 
 #[tauri::command]
 pub async fn identity_list_profiles(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<ListUserProfilesResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -43,7 +43,7 @@ pub async fn identity_list_profiles(
 
 #[tauri::command]
 pub async fn identity_create_profile(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     slug: String,
     display_name: String,
@@ -65,7 +65,7 @@ pub async fn identity_create_profile(
 
 #[tauri::command]
 pub async fn identity_set_active_profile(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: String,
 ) -> Result<SetActiveUserProfileResponse, String> {
@@ -85,7 +85,7 @@ pub async fn identity_set_active_profile(
 
 #[tauri::command]
 pub async fn identity_remember(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityRememberRequest,
 ) -> Result<IdentityRememberResponse, String> {
@@ -101,7 +101,7 @@ pub async fn identity_remember(
 
 #[tauri::command]
 pub async fn identity_digest_preview(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityContextRequest,
 ) -> Result<IdentityDigestPreviewResponse, String> {
@@ -117,7 +117,7 @@ pub async fn identity_digest_preview(
 
 #[tauri::command]
 pub async fn identity_export_markdown(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityExportMarkdownRequest,
 ) -> Result<IdentityExportMarkdownResponse, String> {
@@ -133,7 +133,7 @@ pub async fn identity_export_markdown(
 
 #[tauri::command]
 pub async fn identity_export_profile(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: String,
     session_limit: Option<usize>,
@@ -156,7 +156,7 @@ pub async fn identity_export_profile(
 
 #[tauri::command]
 pub async fn identity_import_profile(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     bundle: Value,
     dry_run: Option<bool>,

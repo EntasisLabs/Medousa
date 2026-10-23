@@ -70,13 +70,13 @@ impl From<RuntimeWorkerConfigDto> for RuntimeWorkerConfigWire {
     }
 }
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 use super::workshop_http;
 
 #[tauri::command]
 pub async fn runtime_get_stats(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<DaemonStatsResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -91,7 +91,7 @@ pub async fn runtime_get_stats(
 
 #[tauri::command]
 pub async fn runtime_get_execution_targets(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<ExecutionTargetInventoryDto, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -110,7 +110,7 @@ pub async fn runtime_get_execution_targets(
 
 #[tauri::command]
 pub async fn runtime_list_workers(
-    _state: State<'_, DaemonState>,
+    _state: WorkshopRequest,
 ) -> Result<serde_json::Value, String> {
     crate::workshop_transport::workshop_get_json(
         &crate::active_workshop::personal_transport_config()?,
@@ -121,7 +121,7 @@ pub async fn runtime_list_workers(
 
 #[tauri::command]
 pub async fn runtime_pair_worker(
-    _state: State<'_, DaemonState>,
+    _state: WorkshopRequest,
     pairing_url: String,
     worker_url: Option<String>,
     label: Option<String>,
@@ -140,7 +140,7 @@ pub async fn runtime_pair_worker(
 
 #[tauri::command]
 pub async fn runtime_remove_worker(
-    _state: State<'_, DaemonState>,
+    _state: WorkshopRequest,
     worker_id: String,
 ) -> Result<(), String> {
     let _: serde_json::Value = crate::workshop_transport::workshop_delete_json(
@@ -153,7 +153,7 @@ pub async fn runtime_remove_worker(
 
 #[tauri::command]
 pub async fn runtime_rename_worker(
-    _state: State<'_, DaemonState>,
+    _state: WorkshopRequest,
     worker_id: String,
     label: String,
 ) -> Result<serde_json::Value, String> {
@@ -167,7 +167,7 @@ pub async fn runtime_rename_worker(
 
 #[tauri::command]
 pub async fn runtime_select_worker(
-    _state: State<'_, DaemonState>,
+    _state: WorkshopRequest,
     runtime_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     crate::workshop_transport::workshop_put_json(
@@ -180,11 +180,11 @@ pub async fn runtime_select_worker(
 
 #[tauri::command]
 pub async fn runtime_get_tui_defaults(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
 ) -> Result<TuiDefaultsDto, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if matches!(
-        crate::active_workshop::resolve()?,
+        state.target().await?,
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal
     ) {
         return crate::embedded_daemon::normalize_inference_defaults(
@@ -198,13 +198,13 @@ pub async fn runtime_get_tui_defaults(
 
 #[tauri::command]
 pub async fn runtime_put_tui_defaults(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     dto: TuiDefaultsDto,
 ) -> Result<(), String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if matches!(
-        crate::active_workshop::resolve()?,
+        state.target().await?,
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal
     ) {
         _embedded_state.validate_inference_defaults(&dto)?;
@@ -217,6 +217,8 @@ pub async fn runtime_put_tui_defaults(
         }
         return Ok(());
     }
+    state.config().await?;
+    let _write = super::preferences::WRITE_GATE.lock().await;
     let body = crate::medousa_paths::tui_defaults_value_from_dto(&dto);
     let _: serde_json::Value =
         workshop_http::put_json(&state, "/v1/runtime/tui-defaults", &body).await?;
@@ -225,9 +227,9 @@ pub async fn runtime_put_tui_defaults(
 
 #[tauri::command]
 pub async fn migrate_global_tui_defaults_to_engine(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
 ) -> Result<bool, String> {
-    let co_located = match crate::active_workshop::resolve()? {
+    let co_located = match state.target().await? {
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal => true,
         crate::active_workshop::ActiveWorkshopTarget::Transport { workshop, .. } => {
             workshop.kind == "local"
@@ -253,14 +255,14 @@ pub async fn migrate_global_tui_defaults_to_engine(
 
 #[tauri::command]
 pub async fn runtime_get_defaults(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
 ) -> Result<RuntimeDefaultsResponse, String> {
     workshop_http::get_json(&state, "/v1/runtime/defaults").await
 }
 
 #[tauri::command]
 pub async fn runtime_get_worker_config(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
 ) -> Result<RuntimeWorkerConfigDto, String> {
     let config: RuntimeWorkerConfigWire =
         workshop_http::get_json(&state, "/v1/runtime/workers").await?;
@@ -269,7 +271,7 @@ pub async fn runtime_get_worker_config(
 
 #[tauri::command]
 pub async fn runtime_put_worker_config(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     config: RuntimeWorkerConfigDto,
 ) -> Result<RuntimeWorkerConfigDto, String> {
     let body: RuntimeWorkerConfigWire = config.into();
@@ -280,7 +282,7 @@ pub async fn runtime_put_worker_config(
 
 #[tauri::command]
 pub async fn runtime_get_delivery_status(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<DeliveryHealthResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -295,7 +297,7 @@ pub async fn runtime_get_delivery_status(
 
 #[tauri::command]
 pub async fn runtime_get_continuation_status(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<ContinuationStatusResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -309,13 +311,13 @@ pub async fn runtime_get_continuation_status(
 
 #[tauri::command]
 pub async fn runtime_config_command(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: RuntimeConfigCommandRequest,
 ) -> Result<RuntimeConfigCommandResponse, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if matches!(
-        crate::active_workshop::resolve()?,
+        state.target().await?,
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal
     ) {
         let response =
@@ -329,7 +331,7 @@ pub async fn runtime_config_command(
         }
         return Ok(response);
     }
-    client(&state)?
+    client(&state).await?
         .runtime()
         .config_command(&request)
         .await
@@ -338,10 +340,10 @@ pub async fn runtime_config_command(
 
 #[tauri::command]
 pub async fn runtime_stage_route_command(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request: StageRouteCommandRequest,
 ) -> Result<StageRouteCommandResponse, String> {
-    client(&state)?
+    client(&state).await?
         .runtime()
         .stage_route_command(&request)
         .await

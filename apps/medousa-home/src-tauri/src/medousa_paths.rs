@@ -717,7 +717,7 @@ pub fn persist_tui_favorite_models(models: Vec<FavoriteModelDto>) -> Result<(), 
     write_tui_defaults_file(&file)
 }
 
-fn normalize_voice_presets(presets: Option<Vec<VoicePresetDto>>) -> Option<Vec<VoicePresetDto>> {
+pub(crate) fn normalize_voice_presets(presets: Option<Vec<VoicePresetDto>>) -> Option<Vec<VoicePresetDto>> {
     let presets = presets?;
     let filtered: Vec<VoicePresetDto> = presets
         .into_iter()

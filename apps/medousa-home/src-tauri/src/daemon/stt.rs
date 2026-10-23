@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
+use super::window_request::WorkshopRequest;
 use super::workshop_http;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ pub struct ComposerSttResult {
 
 #[tauri::command]
 pub async fn composer_stt_status(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<ComposerSttStatus, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -58,7 +58,7 @@ pub async fn composer_stt_status(
 
 #[tauri::command]
 pub async fn composer_stt_transcribe(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ComposerSttRequest,
 ) -> Result<ComposerSttResult, String> {

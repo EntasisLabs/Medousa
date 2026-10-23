@@ -1,6 +1,6 @@
 //! Provider-neutral device sign-in. The package owns OAuth and the workshop
 //! stores credentials; this bridge pins each flow to its originating workshop.
-use super::{DaemonState, workshop_http};
+use super::window_request::WorkshopRequest;
 use crate::{pairing_client::WorkshopTransportConfig, workshop_transport::workshop_post_json};
 use medousa_types::review_provider::{
     ReviewProviderAuthRequest as Request, ReviewProviderAuthResponse as Response,
@@ -13,7 +13,7 @@ use std::{
 };
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::Manager;
-use tauri::{AppHandle, State};
+use tauri::AppHandle;
 use tokio::sync::Mutex;
 
 #[derive(Deserialize)]
@@ -51,12 +51,12 @@ async fn cancel(session: Session, flow_id: String) {
 #[tauri::command]
 pub async fn review_provider_auth(
     app: AppHandle,
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     request: ReviewAuthAction,
 ) -> Result<Response, String> {
     match request {
         ReviewAuthAction::Begin { provider_id, host } => {
-            let transport = workshop_http::transport_config(&state)?;
+            let transport = state.config().await?;
             let challenge: Response = workshop_post_json(
                 &transport,
                 "/v1/reviews/auth",

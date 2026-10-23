@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
+use super::window_request::WorkshopRequest;
 use super::workshop_http;
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -22,7 +22,7 @@ pub struct ModelCatalogRefreshRequest {
 
 #[tauri::command]
 pub async fn model_catalog_list(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     provider: Option<String>,
     capability: Option<String>,
@@ -53,7 +53,7 @@ pub async fn model_catalog_list(
 
 #[tauri::command]
 pub async fn model_catalog_lookup(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     provider: String,
     model: String,
@@ -82,7 +82,7 @@ pub async fn model_catalog_lookup(
 
 #[tauri::command]
 pub async fn model_catalog_refresh(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     providers: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {

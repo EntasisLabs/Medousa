@@ -8,12 +8,12 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
-use super::sdk::{client, sdk_error};
+use super::window_request::WorkshopRequest;
+use super::sdk::{client_for_request as client, sdk_error};
 
 #[tauri::command]
 pub async fn recurring_list(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     enabled_only: Option<bool>,
 ) -> Result<RecurringListResponse, String> {
@@ -24,7 +24,7 @@ pub async fn recurring_list(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .recurring()
         .list(&RecurringListQuery { enabled_only })
         .await
@@ -33,7 +33,7 @@ pub async fn recurring_list(
 
 #[tauri::command]
 pub async fn recurring_register_prompt(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: RegisterRecurringPromptRequest,
 ) -> Result<RegisterRecurringResponse, String> {
@@ -44,7 +44,7 @@ pub async fn recurring_register_prompt(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .recurring()
         .register_prompt(&request)
         .await
@@ -53,7 +53,7 @@ pub async fn recurring_register_prompt(
 
 #[tauri::command]
 pub async fn recurring_update(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     recurring_id: String,
     request: UpdateRecurringRequest,
@@ -65,7 +65,7 @@ pub async fn recurring_update(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .recurring()
         .update(recurring_id.trim(), &request)
         .await
@@ -74,7 +74,7 @@ pub async fn recurring_update(
 
 #[tauri::command]
 pub async fn recurring_delete(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     recurring_id: String,
 ) -> Result<DeleteRecurringResponse, String> {
@@ -85,7 +85,7 @@ pub async fn recurring_delete(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .recurring()
         .delete(recurring_id.trim())
         .await
@@ -94,7 +94,7 @@ pub async fn recurring_delete(
 
 #[tauri::command]
 pub async fn recurring_list_runs(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     recurring_id: String,
     limit: Option<usize>,
@@ -106,7 +106,7 @@ pub async fn recurring_list_runs(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .recurring()
         .runs(recurring_id.trim(), &RecurringRunsQuery { limit })
         .await
@@ -115,7 +115,7 @@ pub async fn recurring_list_runs(
 
 #[tauri::command]
 pub async fn recurring_get_delivery(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     recurring_id: String,
 ) -> Result<RecurringDeliveryResponse, String> {
@@ -126,7 +126,7 @@ pub async fn recurring_get_delivery(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)?
+    client(&state).await?
         .recurring()
         .delivery_status(recurring_id.trim())
         .await
