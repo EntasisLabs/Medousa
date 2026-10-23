@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use medousa_runtime::{
     WorkEnvironmentBinding, WorkEnvironmentError, WorkEnvironmentNetworkPolicy, WorkEnvironmentSpec,
 };
-#[cfg(any(feature = "full-daemon", test))]
+#[cfg(feature = "full-daemon")]
 use medousa_types::forge::ChangeStatus;
 use medousa_types::forge::{ChangedFile, WorkPolicy};
 use serde::{Deserialize, Serialize};

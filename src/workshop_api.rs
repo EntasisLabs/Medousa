@@ -721,15 +721,20 @@ impl WorkshopTargets {
 
 impl WorkshopSpawn {
     async fn execute(self, tool: &CognitionWorkshopMutateTool) -> stasis::prelude::Result<Value> {
-        let blob = format!(
+        // The local wake ledger exists only in the full daemon; spawning is shared.
+        #[cfg(feature = "full-daemon")]
+        let mentions_review = format!(
             "{} {} {}",
             self.intent.as_deref().unwrap_or(""),
             self.task,
             self.user_ack
         )
-        .to_ascii_lowercase();
-        let mentions_review = blob.contains("review");
-        let mut value = tool.execution.spawn(self).await?;
+        .to_ascii_lowercase()
+        .contains("review");
+        let value = tool.execution.spawn(self).await?;
+        #[cfg(feature = "full-daemon")]
+        let mut value = value;
+        #[cfg(feature = "full-daemon")]
         if mentions_review
             && let Some(turn) =
                 crate::agent_runtime::execution_context::active_turn_execution_context()
@@ -939,6 +944,34 @@ mod tests {
             .expect_err("unavailable target");
         assert!(error.to_string().contains("execution_target_unavailable"));
         assert_eq!(spawn_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn review_spawn_routes_without_local_review_state() {
+        let spawn_count = Arc::new(AtomicUsize::new(0));
+        let tool = CognitionWorkshopMutateTool {
+            execution: Arc::new(WorkshopExecutionRouter::new(
+                "runtime-parent",
+                WorkshopIngressDefault::SameAsParent,
+                vec![Arc::new(FakeExecutionTarget {
+                    runtime_id: "runtime-remote".to_string(),
+                    spawn_count: spawn_count.clone(),
+                    user_selectable: true,
+                    agent_selectable: true,
+                })],
+            )),
+        };
+        let mut input = spawn_for(Some(ExecutionTargetSelection::Exact {
+            runtime_id: "runtime-remote".to_string(),
+        }));
+        input.intent = Some("review".to_string());
+        let output = input.execute(&tool).await.expect("review spawn");
+        assert_eq!(spawn_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            output["execution_placement"]["resolved_runtime_id"],
+            "runtime-remote"
+        );
+        assert!(output.get("review_context").is_none());
     }
 
     #[tokio::test]
