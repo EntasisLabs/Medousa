@@ -22,6 +22,14 @@ ignore = [
     { id = "RUSTSEC-2026-0234", reason = "bincode OOB hash tables; transitive unmaintained bincode" },
     { id = "RUSTSEC-2026-0235", reason = "bincode OOB Rc/Arc; transitive unmaintained bincode" },
     { id = "RUSTSEC-2026-0258", reason = "h2 0.3.27 only, via websearch 0.1.1 -> reqwest 0.11 -> hyper 0.14 (grapheme-stdlib). Workspace h2 0.4 is 0.4.19, which is the patched line." },
+    { id = "RUSTSEC-2026-0344", reason = "ruzstd 0.8.3 decompression bomb; patched only in >=0.9.1. Pinned by object 0.39.1 -> wasmer-compiler 7.2.0-alpha.3, which does not allow 0.9." },
+    { id = "RUSTSEC-2026-0346", reason = "rustls Debug session secrets; patched only in >=0.23.46. Workspace rustls 0.23 is 0.23.46. 0.21.12 (reqwest 0.11/websearch) and 0.22.4 have no backport." },
+    { id = "RUSTSEC-2026-0349", reason = "rustls ServerHello downgrade; patched only in >=0.23.46. Remaining 0.21.12 and 0.22.4 stacks have no backport." },
+    { id = "RUSTSEC-2026-0367", reason = "zip extract keeps SUID/SGID; patched only in >=9. Direct medousa zip is 9.0.5. zip 7.2.0 stays via candle-core 0.10.2 and zip 8.6.0 via calamine 0.36.1." },
+    { id = "RUSTSEC-2026-0368", reason = "zip extract follows symlinks outside the destination; same unfixed zip 7.2.0 (candle-core) and 8.6.0 (calamine) stacks as RUSTSEC-2026-0367." },
+    { id = "RUSTSEC-2026-0369", reason = "zip extract applies Unix permissions through symlinks; same unfixed zip 7.2.0 (candle-core) and 8.6.0 (calamine) stacks as RUSTSEC-2026-0367." },
+    { id = "RUSTSEC-2026-0381", reason = "webpki-roots emSign root; 1.x is 1.0.11. 0.25.4 remains via reqwest 0.11.27 -> websearch 0.1.1 with no patched 0.25 release. 0.26.11 re-exports the updated 1.x store." },
+    { id = "RUSTSEC-2026-0382", reason = "rustls-webpki distrusted intermediates; patched in >=0.103.16. Workspace 0.103 is 0.103.16. 0.101.7 (rustls 0.21) and 0.102.8 (rustls 0.22) have no backport." },
 ]
 
 [licenses]

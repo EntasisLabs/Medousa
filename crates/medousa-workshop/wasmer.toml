@@ -4,7 +4,7 @@
 
 [package]
 name = "medousa/workshop"
-version = "0.11.0"
+version = "0.12.0"
 description = "Medousa workshop guest for wasmer run"
 license = "MIT OR Apache-2.0"
 

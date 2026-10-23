@@ -699,7 +699,9 @@ fn proposal_delta(from: &CreativeDocument, to: &CreativeDocument) -> Vec<Creativ
             .nodes
             .iter()
             .filter(|n| old.get(&n.id).copied() != Some(*n))
-            .map(|n| CreativeOperation::PutNode { node: n.clone() }),
+            .map(|n| CreativeOperation::PutNode {
+                node: Box::new(n.clone()),
+            }),
     );
     operations
 }

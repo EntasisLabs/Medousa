@@ -59,7 +59,7 @@ wasmer run --net --no-tty --offline \
 A successful attach prints one line and keeps running:
 
 ```json
-{"event":"workshop.ready","package":"medousa-workshop","version":"0.11.0","sandboxId":"sbx-1","kind":"workshop","shape":{"vcpuMilli":1000,"memoryMib":512},"connect":{"mode":"http_health","ok":true,"url":"http://10.0.0.8:7419","httpStatus":200,"apiVersion":"v1","heartbeat":"skipped"},"mesh":{"inGuest":false,"owner":"host_daemon"}}
+{"event":"workshop.ready","package":"medousa-workshop","version":"0.12.0","sandboxId":"sbx-1","kind":"workshop","shape":{"vcpuMilli":1000,"memoryMib":512},"connect":{"mode":"http_health","ok":true,"url":"http://10.0.0.8:7419","httpStatus":200,"apiVersion":"v1","heartbeat":"skipped"},"mesh":{"inGuest":false,"owner":"host_daemon"}}
 ```
 
 `MEDOUSA_WORKSHOP_ONCE=1` prints that line and exits. Use it for smoke tests. Portal should leave it unset so acquire keeps a process that release can kill.

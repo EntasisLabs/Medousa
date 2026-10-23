@@ -318,7 +318,7 @@ pub struct CreativeCreateRequest {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CreativeOperation {
     PutNode {
-        node: CreativeNode,
+        node: Box<CreativeNode>,
     },
     RemoveNode {
         id: String,

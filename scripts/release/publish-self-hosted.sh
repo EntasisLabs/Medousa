@@ -114,7 +114,11 @@ fi
 GEN_ARGS=(--dist "${FINAL_DIR}" --version "${VERSION}" --channel "${CHANNEL}")
 [[ -n "${BASE_URL_OVERRIDE}" ]] && GEN_ARGS+=(--base-url "${BASE_URL_OVERRIDE}")
 MANIFEST_ARGS=("${GEN_ARGS[@]}")
-[[ "${FULL_TRAIN}" -eq 0 && -n "${MERGE_BASE_DIR}" ]] && MANIFEST_ARGS+=(--allow-empty)
+if [[ "${FULL_TRAIN}" -eq 1 ]]; then
+  MANIFEST_ARGS+=(--full-train)
+elif [[ -n "${MERGE_BASE_DIR}" ]]; then
+  MANIFEST_ARGS+=(--allow-empty)
+fi
 
 MEDOUSA_RELEASE_CHANNEL="${CHANNEL}"
 [[ -n "${BASE_URL_OVERRIDE}" ]] && MEDOUSA_RELEASE_BASE_URL="${BASE_URL_OVERRIDE}"

@@ -254,10 +254,12 @@ medousa_ship_flags_for_channel_head() {
   v="$(medousa_package_version engine)"
   echo "ship_engine=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
 
+  # ship_adapters covers telegram, discord, slack, whatsapp, and review-github.
   if [[ "$(medousa_package_version adapter-telegram)" == "${head}" ]] \
     || [[ "$(medousa_package_version adapter-discord)" == "${head}" ]] \
     || [[ "$(medousa_package_version adapter-slack)" == "${head}" ]] \
-    || [[ "$(medousa_package_version adapter-whatsapp)" == "${head}" ]]; then
+    || [[ "$(medousa_package_version adapter-whatsapp)" == "${head}" ]] \
+    || [[ "$(medousa_package_version review-github)" == "${head}" ]]; then
     echo "ship_adapters=true"
   else
     echo "ship_adapters=false"
@@ -365,7 +367,7 @@ medousa_component_category() {
     engine) echo "core" ;;
     adapter-*) echo "adapter" ;;
     mcp-gateway) echo "core" ;;
-    coding-engine | shell-session | computer-driver) echo "expansion" ;;
+    review-github | coding-engine | shell-session | computer-driver) echo "expansion" ;;
     local-brain) echo "core" ;;
     desktop | installer) echo "core" ;;
     model-*) echo "model" ;;
@@ -377,7 +379,7 @@ medousa_component_category() {
 medousa_component_depends() {
   case "$1" in
     engine | desktop | installer) echo "" ;;
-    adapter-* | mcp-gateway | local-brain | coding-engine | shell-session | computer-driver) echo "engine" ;;
+    review-github | adapter-* | mcp-gateway | local-brain | coding-engine | shell-session | computer-driver) echo "engine" ;;
     model-*) echo "local-brain" ;;
     *) echo "" ;;
   esac
@@ -392,6 +394,46 @@ medousa_component_basename() {
 
 medousa_component_archive_name() {
   echo "$(medousa_component_basename "$1" "$2" "$3").tar.gz"
+}
+
+# Full-train tarball matrix. computer-driver is macOS-only. Offline brain
+# publishes the auto backend on every host the release workflow builds; there
+# is no aarch64 Linux local-brain leg.
+medousa_full_train_requires_component() {
+  local package_id="$1"
+  local target="$2"
+  case "${package_id}" in
+    computer-driver)
+      [[ "${target}" == *-apple-darwin ]]
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+medousa_full_train_requires_local_brain() {
+  local target="$1"
+  local backend="$2"
+  [[ "${backend}" == "auto" ]] || return 1
+  [[ "${target}" != "aarch64-unknown-linux-gnu" ]]
+}
+
+medousa_integration_version() {
+  local id="$1"
+  local path line value
+  path="$(medousa_repo_root)/scripts/release/integration-versions.toml"
+  if [[ ! -f "${path}" ]]; then
+    echo "error: missing integration versions file: ${path}" >&2
+    return 1
+  fi
+  line="$(grep -E "^[[:space:]]*${id}[[:space:]]*=" "${path}" | head -1 || true)"
+  value="$(printf '%s' "${line}" | sed -n 's/.*=[[:space:]]*"\([^"]*\)".*/\1/p')"
+  if [[ -z "${value}" ]]; then
+    echo "error: integration version not found for '${id}' in ${path}" >&2
+    return 1
+  fi
+  echo "${value}"
 }
 
 # Archive name using package-versions.toml for the package id.

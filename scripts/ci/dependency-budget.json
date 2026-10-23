@@ -38,6 +38,18 @@
       "revisit": "2026-11-01"
     },
     {
+      "name": "hashlink",
+      "owner": "H11/daemon",
+      "reason": "two hashlink versions now both reachable in the default daemon tree",
+      "revisit": "2026-11-01"
+    },
+    {
+      "name": "nix",
+      "owner": "H11/daemon",
+      "reason": "nix 0.26, 0.28, and 0.31 are all reachable from the default daemon tree",
+      "revisit": "2026-11-01"
+    },
+    {
       "name": "schemars",
       "owner": "H10/contracts",
       "reason": "schema derive version split across types/engine",
@@ -95,6 +107,15 @@
       "oldNew": "946->948 default; 1021->1023 iroh; 251->255 adapter; duplicate-version counts unchanged",
       "evidence": "cargo tree -e normal compared with main 46fae42d; async-trait 0.1.92 release notes (dtolnay/async-trait#303)",
       "revisit": "2026-11-01"
+    },
+    {
+      "date": "2026-10-23",
+      "workload": "P09 medousa-default and medousa-iroh-transport for the 0.12.0 tag",
+      "owner": "release/deps",
+      "reason": "Stable cargo's normal tree of main 93c7e47 already counts 959 unique pairs and 93 duplicate-version names (hashlink and nix are both duplicated; genai collapsed to one version). The 2026-10-05 ceilings were 11 pairs and 1 duplicate name lower, and rust-deps never reached this check because cargo deny failed first. Advisory updates replace ammonia, rustls 0.23, rustls-webpki 0.103, webpki-roots 1.x, ctutils, and webpki-root-certs in place. Windows-only zip 9 is outside this Linux measurement.",
+      "oldNew": "948->959 default; 1023->1034 iroh; duplicate-version names 92->93 default and 99->100 iroh",
+      "evidence": "cargo tree --locked -p medousa -e normal on main 93c7e47 versus this branch; scripts/ci/check-dependency-budget.py",
+      "revisit": "2026-11-01"
     }
   ],
   "profiles": {
@@ -103,8 +124,8 @@
       "package": "medousa",
       "features": [],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 948,
-      "duplicateVersionNames": 92
+      "uniqueNameVersionPairs": 959,
+      "duplicateVersionNames": 93
     },
     "medousa-iroh-transport": {
       "kind": "package",
@@ -113,8 +134,8 @@
         "iroh-transport"
       ],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 1023,
-      "duplicateVersionNames": 99
+      "uniqueNameVersionPairs": 1034,
+      "duplicateVersionNames": 100
     },
     "medousa-runtime-portable": {
       "kind": "package",
@@ -167,11 +188,11 @@
     "fastrand",
     "foldhash",
     "futures-lite",
-    "genai",
     "getrandom",
     "gimli",
     "h2",
     "hashbrown",
+    "hashlink",
     "heapless",
     "heck",
     "html5ever",
@@ -189,6 +210,7 @@
     "memmap2",
     "memoffset",
     "mio",
+    "nix",
     "nom",
     "object",
     "phf",

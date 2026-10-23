@@ -341,10 +341,11 @@ pub fn apply_operations(
     for op in ops {
         match op {
             CreativeOperation::PutNode { node } => {
+                let node = (**node).clone();
                 if let Some(old) = next.scene.nodes.iter_mut().find(|n| n.id == node.id) {
                     *old = node.clone();
                 } else {
-                    next.scene.nodes.push(node.clone());
+                    next.scene.nodes.push(node);
                 }
             }
             CreativeOperation::RemoveNode { id } => {

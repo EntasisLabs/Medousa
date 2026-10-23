@@ -21,7 +21,7 @@ on:
         type: boolean
         default: false
       ship_adapters:
-        description: Ship channel adapters (telegram/discord/slack/whatsapp)
+        description: Ship channel adapters and GitHub reviews (telegram/discord/slack/whatsapp/review-github)
         required: true
         type: boolean
         default: false
@@ -526,18 +526,19 @@ jobs:
           ./scripts/release/build.sh \
             --target "${{ matrix.target }}" \
             --without-local-brain \
-            --components adapters
+            --components adapters,review-github
       - name: Package adapters
         run: |
           ./scripts/release/package-all-components.sh \
             --target "${{ matrix.target }}" \
-            --packages adapter-telegram,adapter-discord,adapter-slack,adapter-whatsapp
+            --packages adapter-telegram,adapter-discord,adapter-slack,adapter-whatsapp,review-github
       - name: Upload adapters artifact
         uses: actions/upload-artifact@v4
         with:
           name: medousa-adapters-${{ matrix.target }}
           path: |
             dist/adapter-*.tar.gz
+            dist/review-github-*.tar.gz
             dist/SHA256SUMS
           if-no-files-found: error
 
@@ -1363,6 +1364,7 @@ jobs:
           mkdir -p dist/final
           find dist/artifacts -name 'engine-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'adapter-*.tar.gz' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'review-github-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'mcp-gateway-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'coding-engine-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'shell-session-*.tar.gz' -exec cp {} dist/final/ \;
@@ -1378,7 +1380,6 @@ jobs:
             -name 'Medousa_*' -o \
             -name '*.dmg' -o \
             -name '*.msi' -o \
-            -name '*.exe' -o \
             -name '*.AppImage' -o \
             -name '*.deb' \
             \) -exec cp {} dist/final/ \;
@@ -1447,6 +1448,7 @@ jobs:
           files: |
             dist/final/engine-*.tar.gz
             dist/final/adapter-*.tar.gz
+            dist/final/review-github-*.tar.gz
             dist/final/mcp-gateway-*.tar.gz
             dist/final/coding-engine-*.tar.gz
             dist/final/shell-session-*.tar.gz
@@ -1462,7 +1464,9 @@ jobs:
             dist/final/Medousa Installer*
             dist/final/*.dmg
             dist/final/*.msi
-            dist/final/*.exe
+            dist/final/Medousa_*.exe
+            dist/final/MedousaInstaller*.exe
+            dist/final/Medousa Installer*.exe
             dist/final/*.AppImage
             dist/final/*.deb
             dist/final/SHA256SUMS

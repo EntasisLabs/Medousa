@@ -82,7 +82,7 @@ pub(super) async fn read(view: Webview, direction: Option<Action>) -> Result<Sta
                 target_os = "openbsd"
             ))]
             {
-                use webkit2gtk::prelude::WebViewExt;
+                use webkit2gtk::WebViewExt;
                 let page = platform.inner();
                 match direction {
                     Some(Action::Back) => page.go_back(),

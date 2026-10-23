@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from medousa.calendar import CalendarApi
     from medousa.capabilities import CapabilitiesApi
     from medousa.components import ComponentsApi
+    from medousa.creative import CreativeApi
     from medousa.environment import EnvironmentApi
     from medousa.feeds import FeedsApi
     from medousa.health import HealthApi
@@ -25,7 +26,6 @@ if TYPE_CHECKING:
     from medousa.runtime import RuntimeApi
     from medousa.sessions import SessionsApi
     from medousa.vault import VaultApi
-    from medousa.creative import CreativeApi
     from medousa.workspace import WorkspaceApi
 
 

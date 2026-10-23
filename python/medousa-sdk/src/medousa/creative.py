@@ -4,20 +4,20 @@ from medousa._decode import decode
 from medousa._ops import op_path, op_path_query
 from medousa.client import MedousaClient
 from medousa.types import (
-    CreativeJob,
-    CreativeJobRequest,
-    CreativeJobListResponse,
     CreativeAsset,
     CreativeAssetData,
     CreativeAssetImportRequest,
-    CreativeContextRequest,
     CreativeCodeContext,
     CreativeCodeContextRequest,
+    CreativeContextRequest,
     CreativeCreateRequest,
     CreativeDeleteRequest,
     CreativeDeleteResponse,
     CreativeDocument,
     CreativeHistoryRequest,
+    CreativeJob,
+    CreativeJobListResponse,
+    CreativeJobRequest,
     CreativeListResponse,
     CreativeMutationResponse,
     CreativePromoteMediaRequest,
@@ -68,7 +68,9 @@ class CreativeApi:
         )
         return decode(CreativeSelectionContext, value)
 
-    async def code_context(self, id: str, request: CreativeCodeContextRequest) -> CreativeCodeContext:
+    async def code_context(
+        self, id: str, request: CreativeCodeContextRequest
+    ) -> CreativeCodeContext:
         value = await self._client.transport.post_json(
             self._client.base_url,
             op_path("create.projects.by_id.code_context.post", id=id),
@@ -138,10 +140,16 @@ class CreativeApi:
         )
         return decode(CreativeProposal, value)
 
-    async def decide(self, id: str, proposal_id: str, request: CreativeProposalDecision) -> CreativeMutationResponse:
+    async def decide(
+        self, id: str, proposal_id: str, request: CreativeProposalDecision
+    ) -> CreativeMutationResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            op_path("create.projects.by_id.proposals.by_proposal_id.decision.post", id=id, proposal_id=proposal_id),
+            op_path(
+                "create.projects.by_id.proposals.by_proposal_id.decision.post",
+                id=id,
+                proposal_id=proposal_id,
+            ),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(CreativeMutationResponse, value)
@@ -162,13 +170,21 @@ class CreativeApi:
 
     async def job(self, id: str, job_id: str) -> CreativeJob:
         value = await self._client.transport.get_json(
-            self._client.base_url, op_path("create.projects.by_id.jobs.by_job_id.get", id=id, job_id=job_id),
+            self._client.base_url,
+            op_path("create.projects.by_id.jobs.by_job_id.get", id=id, job_id=job_id),
         )
         return decode(CreativeJob, value)
 
-    async def decide_job(self, id: str, job_id: str, request: CreativeProposalDecision) -> CreativeJob:
+    async def decide_job(
+        self, id: str, job_id: str, request: CreativeProposalDecision
+    ) -> CreativeJob:
         value = await self._client.transport.post_json(
-            self._client.base_url, op_path("create.projects.by_id.jobs.by_job_id.decision.post", id=id, job_id=job_id),
+            self._client.base_url,
+            op_path(
+                "create.projects.by_id.jobs.by_job_id.decision.post",
+                id=id,
+                job_id=job_id,
+            ),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(CreativeJob, value)
