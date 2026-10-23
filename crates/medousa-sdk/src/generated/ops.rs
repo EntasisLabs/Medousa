@@ -289,6 +289,13 @@ pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DELETE: Operation = Operation {
     streaming: false,
 };
 
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DESIGN_CAPTURE_PAGE_POST: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.design_capture.page.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated/{world_id}/design-capture/page",
+    streaming: false,
+};
+
 pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DESIGN_CAPTURE_POST: Operation = Operation {
     id: "browser.worlds.isolated.by_world_id.design_capture.post",
     method: "POST",
@@ -3669,6 +3676,7 @@ pub static ALL: &[Operation] = &[
     BROWSER_SESSIONS_BY_SESSION_ID_GET,
     BROWSER_SESSIONS_BY_SESSION_ID_RESUME_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DELETE,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DESIGN_CAPTURE_PAGE_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DESIGN_CAPTURE_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_GET,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_INPUT_POST,

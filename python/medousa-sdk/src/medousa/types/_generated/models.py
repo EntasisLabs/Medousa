@@ -364,6 +364,10 @@ class CreativeDesignSource(MedousaModel):
         extra='forbid',
     )
     captured_at_ms: int = Field(..., ge=0)
+    original_asset_id: str | None = None
+    page_count: int | None = Field(None, ge=0)
+    page_index: int | None = Field(None, ge=0)
+    scroll_y: float | None = None
     session_id: str | None = None
     url: str
     viewport_height: int = Field(..., ge=0)
@@ -426,15 +430,16 @@ class CreativeTextAlign(Enum):
     right = 'right'
 
 
-class CreativeTextLayout(MedousaModel):
+class CreativeTextSpan(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    align: CreativeTextAlign
-    line_height: float = Field(..., description='Multiplier of the font size.')
-    width: float | None = Field(
-        None, description='None keeps automatic width; a width wraps text and lets height grow.'
-    )
+    color: str | None = None
+    end: int = Field(..., ge=0)
+    font_style: CreativeFontStyle | None = None
+    font_weight: int | None = Field(None, ge=0)
+    start: int = Field(..., ge=0)
+    underline: bool | None = None
 
 
 class CreativeTransform(MedousaModel):
@@ -5842,6 +5847,21 @@ class CreativeLine(MedousaModel):
     start_arrow: bool | None = False
 
 
+class CreativeTextLayout(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    align: CreativeTextAlign
+    letter_spacing: float | None = None
+    line_height: float = Field(..., description='Multiplier of the font size.')
+    paragraph_spacing: float | None = None
+    spans: list[CreativeTextSpan] | None = None
+    underline: bool | None = None
+    width: float | None = Field(
+        None, description='None keeps automatic width; a width wraps text and lets height grow.'
+    )
+
+
 class ConversationRangeSelection(MedousaModel):
     after_entry_seq: int | None = Field(None, ge=0)
     session: SessionRef
@@ -7230,6 +7250,21 @@ class CreativeScene(MedousaModel):
     version: int = Field(..., ge=0)
 
 
+class BrowserDesignCapture(MedousaModel):
+    raster_regions: list[BrowserDesignRaster]
+    scene: CreativeScene
+    screenshot: BrowserPresentationScreenshot
+    warnings: list[str]
+    world_id: str
+
+
+class BrowserDesignSlice(MedousaModel):
+    capture: BrowserDesignCapture
+    clip_top: int = Field(..., ge=0)
+    height: int = Field(..., ge=0)
+    page_y: int = Field(..., ge=0)
+
+
 class ExternalConversationEvent(MedousaModel):
     created_at: AwareDatetime
     event_id: str
@@ -7435,12 +7470,8 @@ class BotOpenResponse(MedousaModel):
     bot: BotProfile
 
 
-class BrowserDesignCapture(MedousaModel):
-    raster_regions: list[BrowserDesignRaster]
-    scene: CreativeScene
-    screenshot: BrowserPresentationScreenshot
-    warnings: list[str]
-    world_id: str
+class BrowserDesignPageCapture(MedousaModel):
+    slices: list[BrowserDesignSlice]
 
 
 class CreateExternalConversationResponse(MedousaModel):

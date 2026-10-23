@@ -734,7 +734,22 @@
           "warnings",
           "world_id"
         ],
-        "title": "BrowserDesignCapture",
+        "type": "object"
+      },
+      "BrowserDesignPageCapture": {
+        "description": "Viewport slices of one stable document, in page order. Final slice trims overlap.",
+        "properties": {
+          "slices": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserDesignSlice"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "slices"
+        ],
+        "title": "BrowserDesignPageCapture",
         "type": "object"
       },
       "BrowserDesignRaster": {
@@ -765,6 +780,35 @@
           "width",
           "x",
           "y"
+        ],
+        "type": "object"
+      },
+      "BrowserDesignSlice": {
+        "properties": {
+          "capture": {
+            "$ref": "#/components/schemas/BrowserDesignCapture"
+          },
+          "clip_top": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "height": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "page_y": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capture",
+          "clip_top",
+          "height",
+          "page_y"
         ],
         "type": "object"
       },
@@ -3360,6 +3404,35 @@
             "minimum": 0.0,
             "type": "integer"
           },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "page_index": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "scroll_y": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "session_id": {
             "type": [
               "string",
@@ -4265,10 +4338,36 @@
           "align": {
             "$ref": "#/components/schemas/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "format": "double",
             "type": "number"
+          },
+          "paragraph_spacing": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/CreativeTextSpan"
+            },
+            "type": "array"
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -4282,6 +4381,57 @@
         "required": [
           "align",
           "line_height"
+        ],
+        "type": "object"
+      },
+      "CreativeTextSpan": {
+        "additionalProperties": false,
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "start": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "end",
+          "start"
         ],
         "type": "object"
       },
@@ -19990,6 +20140,65 @@
               }
             },
             "description": "browser.worlds.isolated.by_world_id.design_capture.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}/design-capture/page": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.design_capture.page.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserDesignPageCapture"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.page.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.page.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.design_capture.page.post"
           }
         },
         "x-medousa-policy": {

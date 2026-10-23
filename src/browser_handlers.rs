@@ -9,6 +9,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use futures_util::Stream;
 use medousa_browser_lite::SearchResponse;
+use medousa_browser_bridge::{BrowserObservation, BrowserScreenshotCapture};
 use medousa_types::{
     BROWSER_PRESENTATION_SCHEMA_VERSION, BrowserPresentationFrame,
     BrowserPresentationObservation, BrowserPresentationScreenshot, BrowserPresentationViewport,
@@ -452,6 +453,37 @@ pub async fn capture_isolated_browser_design(
         .capture_design(&principal_profile_id(&principal), &world_id)
         .await
         .map_err(isolated_browser_error)?;
+    design_capture_response(&world_id, raw, observation, screenshot).map(Json)
+}
+
+pub async fn capture_isolated_browser_page(
+    State(state): State<AppState>,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    Path(world_id): Path<String>,
+) -> Result<Json<medousa_types::BrowserDesignPageCapture>, (StatusCode, String)> {
+    let captures = state
+        .isolated_browser
+        .capture_page_design(&principal_profile_id(&principal), &world_id)
+        .await
+        .map_err(isolated_browser_error)?;
+    let mut slices = Vec::new();
+    for (raw, observation, screenshot, clip_top, height, page_y) in captures {
+        slices.push(medousa_types::BrowserDesignSlice {
+            capture: design_capture_response(&world_id, raw, observation, screenshot)?,
+            clip_top,
+            height,
+            page_y,
+        });
+    }
+    Ok(Json(medousa_types::BrowserDesignPageCapture { slices }))
+}
+
+pub(crate) fn design_capture_response(
+    world_id: &str,
+    raw: serde_json::Value,
+    observation: BrowserObservation,
+    screenshot: BrowserScreenshotCapture,
+) -> Result<medousa_types::BrowserDesignCapture, (StatusCode, String)> {
     let scene: medousa_types::CreativeScene = serde_json::from_value(raw["scene"].clone())
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     let regions: Vec<medousa_types::BrowserDesignRaster> =
@@ -497,13 +529,13 @@ pub async fn capture_isolated_browser_design(
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     let warnings: Vec<String> = serde_json::from_value(raw["warnings"].clone())
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
-    Ok(Json(medousa_types::BrowserDesignCapture {
-        world_id: world_id.clone(),
+    Ok(medousa_types::BrowserDesignCapture {
+        world_id: world_id.to_owned(),
         scene,
         raster_regions: regions,
-        screenshot: presentation_frame(&world_id, observation, screenshot).screenshot,
+        screenshot: presentation_frame(world_id, observation, screenshot).screenshot,
         warnings,
-    }))
+    })
 }
 
 pub async fn screenshot_isolated_browser_world(
@@ -1026,6 +1058,10 @@ pub fn browser_surface() -> DeclaredRouter<AppState> {
                 RateLimitClass::Read,
             ),
             post(capture_isolated_browser_design),
+        )
+        .route(
+            browser_policy(axum::http::Method::POST, "/v1/browser/worlds/isolated/{world_id}/design-capture/page", Capability::WorkshopRead, 1024, RateLimitClass::Read),
+            post(capture_isolated_browser_page),
         )
         .route(
             browser_policy(

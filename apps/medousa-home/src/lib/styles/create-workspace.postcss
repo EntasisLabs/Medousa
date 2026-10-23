@@ -726,3 +726,54 @@
 .create-editor .create-selection-menu > div button { display: flex; justify-content: flex-start; width: 100%; height: auto; padding: 8px; font-size: 11px; white-space: nowrap; }
 .create-editor .create-selection-actions { max-width: 100%; flex-wrap: wrap; justify-content: center; box-sizing: border-box; }
 .create-editor .create-selection-actions > span { min-width: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Create canvas interaction surface; SVG chrome stays under application control. */
+
+  .create-stage {
+    position: relative;
+    flex: 1;
+    min-height: 120px;
+    min-width: 0;
+    overflow: hidden;
+    outline: none;
+    background-color: var(--create-canvas);
+
+    touch-action: none;
+    user-select: none;
+  }
+  .create-stage svg {
+    display: block;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+  }
+  .create-stage svg * {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+  }
+  .create-stage.transforming svg * { cursor: inherit !important; }
+  .create-stage[data-tool="hand"] {
+    cursor: grab;
+  }
+  .create-stage[data-tool="erase"] {
+    cursor: none;
+  }
+
+  .create-stage[data-tool="ink"],
+  .create-stage[data-tool="shape"],
+  .create-stage[data-tool="frame"] {
+    cursor: crosshair;
+  }
+  .create-stage[data-tool="text"] {
+    cursor: text;
+  }
+
+
+@media (pointer: coarse) {
+  .create-editor .create-toolstrip button, .create-editor .create-selection-actions button, .create-editor .create-zoom button { min-width: 44px; min-height: 44px; }
+  .create-editor .create-toolstrip { overflow-x: auto; max-width: calc(100vw - 24px); }
+}

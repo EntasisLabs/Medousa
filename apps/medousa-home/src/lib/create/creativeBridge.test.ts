@@ -53,10 +53,32 @@ it("imports an original and editable frame atomically, links only the editable c
     expect(mutations).toHaveLength(1);
     expect(mutations[0][2]).toMatchObject({ id: "import_imported", expected_revision: 1, label: "Import editable page" });
     const nodes = mutations[0][2].operations.map((o: { node: unknown }) => o.node);
-    expect(nodes[0]).toMatchObject({ id: "original_frame", locked: true });
-    expect(nodes[1]).toMatchObject({ parent_id: "original_frame", locked: true, content: { kind: "image", asset_id: "baseline" } });
-    expect(nodes[2]).toMatchObject({ id: frame.id, transform: { x: 880 }, design_source: { work_id: "repo", url: "http://localhost:5173/" } });
-    expect(nodes[3]).toMatchObject({ id: text.id, parent_id: frame.id, content: { text: "Hello" } });
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]).toMatchObject({ id: `page1_${frame.id}`, transform: { x: 0, y: 0 }, design_source: { work_id: "repo", original_asset_id: "baseline", url: "http://localhost:5173/", page_index: 1, page_count: 1 } });
+    expect(nodes[1]).toMatchObject({ id: `page1_${text.id}`, parent_id: `page1_${frame.id}`, content: { text: "Hello" } });
     expect(frame.transform.x).toBe(0);
   } finally { vi.unstubAllGlobals(); }
+});
+it("stacks page slices, clips the final reference and retains viewport coordinates for raster crops", async () => {
+  const draws: unknown[][]=[];let revision=0;
+  vi.stubGlobal("Image",class{naturalWidth=800;naturalHeight=600;src="";decode=async()=>{};});
+  vi.stubGlobal("document",{createElement:()=>({width:0,height:0,getContext:()=>({drawImage:(...args:unknown[])=>draws.push(args)}),toDataURL:()=>"data:image/png;base64,crop"})});
+  const frame=createNode({kind:"frame",name:"Page",background:"#fff"},{x:0,y:0,width:800,height:600});
+  const capture={scene:{schema:"medousa-create",version:3,background:"transparent",nodes:[frame]},raster_regions:[],screenshot:{title:"Site",url:"http://localhost:3000",viewport:{width:800,height:600},image_base64:"png",captured_at_ms:1}} as unknown as BrowserDesignCapture;
+  dispatch.mockImplementation(async(op:string)=>{
+    if(op==="create.projects.post")return{scene:{nodes:[]}};
+    if(op==="create.projects.by_id.assets.post")return{id:`asset${++revision}`};
+    if(op==="create.projects.by_id.get")return{document:{revision}};
+    if(op==="create.projects.by_id.transactions.post")return{document:{id:"full"}};
+    throw new Error(op);
+  });
+  try{
+    await importBrowserDesign("remote","full",{slices:[{capture,clip_top:0,height:600,page_y:0},{capture,clip_top:0,height:600,page_y:600},{capture,clip_top:350,height:250,page_y:1200}]},"repo",()=>true);
+    const transaction=dispatch.mock.calls.find(c=>c[0]==="create.projects.by_id.transactions.post")![2];
+    expect(transaction.expected_revision).toBe(3);
+    const frames=transaction.operations.map((op:{node:unknown})=>op.node);
+    expect(frames.map((n:{transform:{y:number}})=>n.transform.y)).toEqual([0,680,1360]);
+    expect(frames[2]).toMatchObject({transform:{height:250},design_source:{original_asset_id:"asset3",scroll_y:1200,page_count:3,page_index:3}});
+    expect(draws[0].slice(1,5)).toEqual([0,350,800,250]);
+  }finally{vi.unstubAllGlobals();}
 });

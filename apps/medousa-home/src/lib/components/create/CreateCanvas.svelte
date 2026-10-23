@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack, tick } from "svelte";
+  import { selectEditableText } from "$lib/create/creativeRichText";
+  import { styleEditingText, textRangePresentation } from "$lib/create/creativeTextCommands";
+  import { creativePointerGuard, selectionPointerEvent, selectionControl } from "$lib/create/creativePointerGuard";
   import CreateTextEditor from "./CreateTextEditor.svelte";
   import CreateSelection from "./CreateSelection.svelte";
   import CreateRotationLabel from "./CreateRotationLabel.svelte";
@@ -83,7 +86,7 @@
     brushKind = "pen",
     eraserMode = "partial",
     fingerDraw = false,
-    selectionMode = "box",
+    additiveSelect = false, selectionMode = "box",
     layout = defaultLayout,
     initialView = null,
     onview = () => {},
@@ -110,6 +113,7 @@
     brushKind?: DrawBrushKind;
     eraserMode?: DrawEraserMode;
     fingerDraw?: boolean;
+    additiveSelect?: boolean;
     selectionMode?: "box" | "lasso";
     layout?: LayoutPreferences;
     initialView?: { camera: DrawCamera; viewport: { width: number; height: number } } | null;
@@ -155,7 +159,8 @@
       original: CreativeNode | null;
     } | null>(null),
     textDraft = $state(""),
-    textInput = $state<HTMLTextAreaElement>();
+    textInput = $state<HTMLElement>();
+  let editingRange: [number, number] = [0,0];
   const editMatrix = $derived(
     editing
       ? multiply(
@@ -193,6 +198,7 @@
   export function fit() {
     camera = creativeFit(sceneBounds(scene.nodes), viewport);
   }
+  export function focusFrame(id: string) { const frame = scene.nodes.find(n => n.id === id && n.content.kind === "frame"); if (frame) { pick([id]); camera = creativeFit(objectBounds(frame, scene.nodes), viewport); } }
   export function fitSelection() { const bounds = selectionBounds(selected, scene.nodes); if (bounds) camera = creativeFit(bounds, viewport); }
   export function zoomBy(factor: number) {
     camera = creativeZoom(
@@ -307,7 +313,8 @@
     groupScope = parent?.id ?? null;
     pick([id]);
   }
-  let controlTouch = false;
+  let controlTouch = false, customTouch: PointerEvent | null = null;
+  const pointerGuard = creativePointerGuard();
   const interaction = createDrawInteraction<CreativeScene>({
     editable: () => !disabled,
     tool: () =>
@@ -390,6 +397,8 @@
     },
   });
   function down(e: PointerEvent) {
+    if (!pointerGuard.begin(e)) { e.preventDefault(); return; }
+    if (customTouch && e.pointerType === "touch" && customTouch.pointerId !== e.pointerId) { const first=customTouch;customTouch=null;finish(first,true);interaction.begin(first);interaction.begin(selectionPointerEvent(e, additiveSelect && tool === "select"));return; }
     if (
       !svg ||
       (gesture && e.pointerType !== "touch") ||
@@ -400,7 +409,7 @@
       finishText();
       if (editing) return;
     }
-    const resizeHandle = (e.target as Element).closest<SVGElement>("[data-resize], [data-endpoint], [data-rotate], [data-radius]");
+    const resizeHandle = selectionControl(e, svg);
     const resize = resizeHandle?.dataset.resize;
     const control = !space && e.button === 0 && tool === "select" ? resizeHandle : null;
     if (!disabled && !space && !control && tool === "select" && e.altKey && e.button === 0) {
@@ -414,9 +423,9 @@
         stage?.focus({ preventScroll: true }); capture(e.pointerId); e.preventDefault(); return;
       }
     }
-    if (!control || e.pointerType === "touch") {
+    if (!control) {
       controlTouch = Boolean(control);
-      const handled = interaction.begin(e);
+      const handled = interaction.begin(selectionPointerEvent(e, additiveSelect && tool === "select"));
       controlTouch = false;
       if (handled) {
         if (interaction.state.pinching) { gesture = null; draft = null; }
@@ -429,6 +438,7 @@
       v = view(e),
       hit = targetNode(e);
     if (control) {
+      if (e.pointerType === "touch") customTouch=e;
       const nodes = selectionRoots(selected, scene.nodes);
       const frame = selectionFrame(selected, scene.nodes);
       if (!nodes.length || !frame) return;
@@ -562,9 +572,10 @@
     }
   }
   function finish(e: PointerEvent, cancel = false) {
+    pointerGuard.finish(e); if(customTouch?.pointerId===e.pointerId)customTouch=null;
     if (!gesture) {
       if (cancel) interaction.cancel(e);
-      else interaction.finish(e);
+      else interaction.finish(selectionPointerEvent(e, additiveSelect && tool === "select"));
       return;
     }
     const g = gesture;
@@ -594,7 +605,7 @@
     draft = null;
     release(e.pointerId);
     if (cancel) interaction.cancel(e);
-    else interaction.finish(e);
+    else interaction.finish(selectionPointerEvent(e, additiveSelect && tool === "select"));
     if (cancel || Math.hypot(view(e).x - g.view.x, view(e).y - g.view.y) < 3)
       pick(g.initial ?? selected.filter((id) => scene.nodes.some((n) => n.id === id)));
   }
@@ -623,13 +634,14 @@
     pick(node ? [node.id] : []);
     await tick();
     textInput?.focus();
-    textInput?.select();
+    if (textInput) selectEditableText(textInput);
+    editingRange = [0, textDraft.length];
   }
   export function styleText(patch: CanvasStylePatch) {
     if (!editing || disabled) return false;
-    const next = styleNode(updateTextNode(editing.node, { text: textDraft }), patch);
+    const next = styleEditingText(editing.node, textDraft, patch, editingRange);
     editing = { ...editing, node: next };
-    onediting(next);
+    onediting(textRangePresentation(next,editingRange));
     return true;
   }
   export function finishText(cancel = false) {
@@ -816,7 +828,7 @@
       };
       camera = initialized
         ? resizeDrawCamera(camera, viewport, next)
-        : creativeFit(sceneBounds(untrack(() => scene.nodes)), next);
+        : creativeFit(untrack(() => { const frame = scene.nodes.find(n => n.content.kind === "frame" && n.design_source); return frame ? objectBounds(frame, scene.nodes) : sceneBounds(scene.nodes); }), next);
       viewport = next;
       initialized = true;
     });
@@ -941,53 +953,8 @@
   {/if}
   {#if editing && editMatrix && editing.node.content.kind === "text"}
     <CreateTextEditor node={editing.node as CreativeNode & { content: Extract<CreativeNode["content"], { kind: "text" }> }} matrix={editMatrix} bind:value={textDraft} bind:input={textInput} {disabled}
-      oninput={(value) => { textDraft = value; if (editing) onediting(updateTextNode(editing.node, { text: value })); }}
+      onselection={range => { editingRange = range; if (editing) onediting(textRangePresentation(editing.node,range)); }} onformat={patch => styleText(patch)}
+      oninput={(value) => { textDraft = value; if (editing) { const node = updateTextNode(editing.node, { text: value }); editing = { ...editing, node }; onediting(textRangePresentation(node,editingRange)); } }}
       onfinish={(focus) => { finishText(); if (focus) stage?.focus(); }}/>
   {/if}
 </div>
-
-<style>
-  .create-stage {
-    position: relative;
-    flex: 1;
-    min-height: 120px;
-    min-width: 0;
-    overflow: hidden;
-    outline: none;
-    background-color: var(--create-canvas);
-
-    touch-action: none;
-    user-select: none;
-  }
-  .create-stage svg {
-    display: block;
-    overflow: hidden;
-    touch-action: none;
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-touch-callout: none;
-    -webkit-user-drag: none;
-  }
-  .create-stage :global(svg *) {
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-user-drag: none;
-  }
-  .create-stage.transforming :global(svg *) { cursor: inherit !important; }
-  .create-stage[data-tool="hand"] {
-    cursor: grab;
-  }
-  .create-stage[data-tool="erase"] {
-    cursor: none;
-  }
-
-  .create-stage[data-tool="ink"],
-  .create-stage[data-tool="shape"],
-  .create-stage[data-tool="frame"] {
-    cursor: crosshair;
-  }
-  .create-stage[data-tool="text"] {
-    cursor: text;
-  }
-
-</style>

@@ -951,6 +951,22 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.design_capture.page.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/design-capture/page",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 49152,
       "bootstrap_public": false,
       "browser_policy": "exact_origin",

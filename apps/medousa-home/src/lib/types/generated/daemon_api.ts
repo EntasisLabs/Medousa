@@ -100,6 +100,10 @@ export type CreativeContent = { brush: CreativeBrush; color: string; input: Crea
 
 export interface CreativeDesignSource {
   captured_at_ms: number;
+  original_asset_id?: string | null;
+  page_count?: number | null;
+  page_index?: number | null;
+  scroll_y?: number | null;
   session_id?: string | null;
   url: string;
   viewport_height: number;
@@ -109,9 +113,22 @@ export interface CreativeDesignSource {
 
 export type CreativeTextAlign = "left" | "center" | "right";
 
+export interface CreativeTextSpan {
+  color?: string | null;
+  end: number;
+  font_style?: CreativeFontStyle | null;
+  font_weight?: number | null;
+  start: number;
+  underline?: boolean | null;
+}
+
 export interface CreativeTextLayout {
   align: CreativeTextAlign;
+  letter_spacing?: number | null;
   line_height: number;
+  paragraph_spacing?: number | null;
+  spans?: CreativeTextSpan[];
+  underline?: boolean | null;
   width?: number | null;
 }
 
@@ -150,6 +167,17 @@ export interface BrowserDesignCapture {
   screenshot: BrowserPresentationScreenshot;
   warnings: string[];
   world_id: string;
+}
+
+export interface BrowserDesignSlice {
+  capture: BrowserDesignCapture;
+  clip_top: number;
+  height: number;
+  page_y: number;
+}
+
+export interface BrowserDesignPageCapture {
+  slices: BrowserDesignSlice[];
 }
 
 export interface CreativeAsset {

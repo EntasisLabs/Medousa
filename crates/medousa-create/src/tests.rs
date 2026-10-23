@@ -1630,6 +1630,7 @@ fn surface_and_text_layout_are_durable_undoable_and_legacy_optional() {
     assert!(legacy.get("appearance").is_none());
     assert!(legacy.get("text_layout").is_none());
     node.text_layout = Some(CreativeTextLayout {
+        letter_spacing: None, paragraph_spacing: None, underline: None, spans: vec![],
         width: Some(240.),
         align: CreativeTextAlign::Center,
         line_height: 1.5,
@@ -1687,6 +1688,7 @@ fn invalid_surface_and_text_layout_fail_atomically() {
     {
         let mut node = text("label");
         node.text_layout = Some(CreativeTextLayout {
+        letter_spacing: None, paragraph_spacing: None, underline: None, spans: vec![],
             width,
             align: CreativeTextAlign::Left,
             line_height: leading,
@@ -1850,6 +1852,7 @@ fn design_origin_is_advisory_frame_metadata_and_survives_storage() {
         background: "#fff".into(),
     };
     node.design_source = Some(CreativeDesignSource {
+        original_asset_id: None, scroll_y: None, page_index: None, page_count: None,
         work_id: Some("code_project".into()),
         session_id: Some("build_session".into()),
         url: "http://localhost:5173/".into(),
@@ -1870,4 +1873,25 @@ fn design_origin_is_advisory_frame_metadata_and_survives_storage() {
             .transact("project_one", edit("invalid_origin", 1, node))
             .is_err()
     );
+}
+
+#[test]
+fn rich_typography_is_durable_and_rejects_invalid_inline_ranges() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+    create(&store);
+    let mut node = text("rich_text");
+    node.content = CreativeContent::Text { text: "A🌟 title".into(), color: "#111111".into(), font_family: "Georgia".into(), font_size: 40., font_weight: Some(500), font_style: None };
+    node.text_layout = Some(serde_json::from_value(serde_json::json!({"width":300,"align":"left","line_height":1.2,"letter_spacing":-2.5,"paragraph_spacing":12,"underline":true,"spans":[{"start":1,"end":3,"font_weight":700,"font_style":"italic","color":"#a7442d","underline":false}]})).unwrap());
+    let saved = store.transact("project_one", edit("rich",0,node.clone())).unwrap();
+    assert_eq!(saved.document.scene.nodes[0].text_layout, node.text_layout);
+    let mut invalid = node.clone(); invalid.text_layout.as_mut().unwrap().spans[0].end = 2;
+    assert!(store.transact("project_one",edit("split_surrogate",1,invalid)).is_err());
+    let mut invalid = node.clone(); invalid.text_layout.as_mut().unwrap().spans[0].font_weight=Some(999);
+    assert!(store.transact("project_one",edit("bad_weight",1,invalid)).is_err());
+    let mut invalid = node.clone(); invalid.text_layout.as_mut().unwrap().letter_spacing=Some(f64::NAN);
+    assert!(store.transact("project_one",edit("bad_tracking",1,invalid)).is_err());
+    store.history("project_one",history("undo_rich",1,false)).unwrap();
+    let restored=store.history("project_one",history("redo_rich",2,true)).unwrap();
+    assert_eq!(restored.document.scene.nodes[0].text_layout,node.text_layout);
 }

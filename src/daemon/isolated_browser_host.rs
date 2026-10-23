@@ -3331,6 +3331,29 @@ mod tests {
         assert!(!design["scene"].to_string().contains("never-copy-this"));
         assert_eq!(design["raster_regions"].as_array().unwrap().len(), 1);
         assert!(host.capture_design("another-owner", &world.world_id).await.is_err());
+        evaluate(&mut connection, &session_id, Some(context_id), r##"document.body.innerHTML = '<header style="position:fixed;top:0">Pinned nav</header><main style="height:1750px"><h1 style="font:500 40px Georgia;letter-spacing:-2px">Software that <i style="color:rgb(167,68,45)">keeps promises.</i></h1><p style="position:absolute;top:900px">Middle section</p><p style="position:absolute;top:1600px">Last section</p></main>'; window.scrollTo(0, 100); true"##.into()).await.unwrap();
+        let before_page = host.observe(&owner, &world.world_id, None, 1024).await.unwrap();
+        let slices = host.capture_page_design(&owner, &world.world_id).await.unwrap();
+        assert!(slices.len() >= 3);
+        let mut end = 0;
+        for (raw, observation, screenshot, clip_top, height, page_y) in slices {
+            assert_eq!(page_y, end); end += height;
+            assert!(clip_top + height <= observation.viewport.height);
+            let capture = crate::browser_handlers::design_capture_response(&world.world_id, raw, observation, screenshot).unwrap();
+            if page_y == 0 {
+                let text = capture.scene.nodes.iter().find(|n| matches!(&n.content, medousa_types::CreativeContent::Text{text,..} if text.contains("Software that"))).unwrap();
+                let layout = text.text_layout.as_ref().unwrap();
+                assert_eq!(layout.letter_spacing, Some(-2.));
+                assert!(layout.spans.iter().any(|s| s.font_style == Some(medousa_types::CreativeFontStyle::Italic)));
+            } else { assert!(!capture.scene.nodes.iter().any(|n| matches!(&n.content, medousa_types::CreativeContent::Text{text,..} if text.contains("Pinned nav")))); }
+        }
+        assert_eq!(host.observe(&owner, &world.world_id, None, 1024).await.unwrap().viewport.scroll_y, before_page.viewport.scroll_y);
+        if let Ok(url) = std::env::var("MEDOUSA_TEST_CREATE_URL") {
+            host.navigate(&owner, &world.world_id, &url).await.unwrap();
+            let slices = host.capture_page_design(&owner, &world.world_id).await.unwrap().into_iter().map(|(raw, observation, screenshot, clip_top, height, page_y)| medousa_types::BrowserDesignSlice { capture: crate::browser_handlers::design_capture_response(&world.world_id,raw,observation,screenshot).unwrap(), clip_top,height,page_y }).collect();
+            let result=medousa_types::BrowserDesignPageCapture{slices};
+            tokio::fs::write(std::env::temp_dir().join("medousa-create-page-trial.json"),serde_json::to_vec(&result).unwrap()).await.unwrap();
+        }
         let detached = host
             .lifecycle(
                 &owner,

@@ -163,6 +163,14 @@ pub struct CreativeDesignSource {
     pub viewport_width: u32,
     pub viewport_height: u32,
     pub captured_at_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_asset_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scroll_y: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_count: Option<u32>,
 }
 
 /// Saved surface styling. Omitted by legacy version-3 documents.
@@ -204,6 +212,27 @@ pub struct CreativeTextLayout {
     pub align: CreativeTextAlign,
     /// Multiplier of the font size.
     pub line_height: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter_spacing: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paragraph_spacing: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub underline: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<CreativeTextSpan>,
+}
+
+/// Non-overlapping UTF-16 ranges, matching browser text selection offsets.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreativeTextSpan {
+    pub start: u32,
+    pub end: u32,
+    pub font_weight: Option<u16>,
+    pub font_style: Option<CreativeFontStyle>,
+    pub color: Option<String>,
+    pub underline: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

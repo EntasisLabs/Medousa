@@ -78,7 +78,12 @@ focused section. Rename and pin share the canvas's existing save and undo histor
 
 On touch screens, one finger moves the canvas by default and two fingers pan
 and pinch to zoom. Turn on **Finger draws** in Style to draw with one finger.
-Pen input takes priority over nearby palm touches, as it does in drawing notes.
+Pen input takes priority over nearby palm touches, including while moving endpoints,
+resizing, placing shapes, and rotating. Selection handles have larger invisible
+hit areas, with larger touch targets on touch-capable devices. A second finger
+cancels an in-progress touch transform and begins canvas navigation. **Multi** in
+the tool strip adds or removes objects from the selection without a keyboard;
+turn it off for ordinary selection. Finger drawing remains an explicit setting.
 
 **Style** opens a compact palette. Choose a color swatch, an S/M/L/XL size, or
 no fill, soft fill, or solid fill for shapes. These controls update selected
@@ -101,8 +106,13 @@ crops follow the rounded edge. These properties save with the document and share
 its undo history. Canvas exports and AI visual context use the same styling;
 exporting a frame keeps the exact artboard dimensions.
 
-For text, **Style** includes a font family, exact font size with smaller/larger
-buttons, **Bold**, **Italic**, left/center/right alignment, and line spacing.
+For text, **Style** includes font families with a sample preview and an unavailable-font
+notice, a custom family field, weights from 100 to 900, and exact font size with
+smaller/larger buttons. Use **Bold**, **Italic**, **Underline**, alignment, line
+spacing, letter spacing, and paragraph spacing. Select words while editing to
+change their emphasis, weight, underline, or color independently; size, family,
+and layout controls apply to the whole text box. Command/Control-B, I, and U
+apply emphasis while editing. Pasted text retains plain text, without importing HTML.
 Choose **Auto width** for labels or **Wrap to width** for paragraphs. Side handles
 change the wrap width; corner handles scale both font size and a fixed box.
 These controls also work while typing, keeping
@@ -235,7 +245,7 @@ first. Medousa receives a saved image of the frame and a compact editable bluepr
 then uses the existing Code conversation and repository tools to implement it.
 The conversation opens so you can follow the work and review the source changes.
 
-The frame remembers its project and conversation. **Update Code** sends a new
+The frame remembers its project and conversation. Frames imported from the same page reuse that conversation when sent to the same project. **Update Code** sends a new
 saved snapshot to that project; moving objects does not patch the running site.
 Changes to the repo refresh its existing dev server through the project's normal
 workflow. Canvas changes made after a handoff wait for the next Update Code.
@@ -248,12 +258,24 @@ or enter a dev-server URL to open it in a new managed workshop browser. A URL op
 on the workshop's machine; `localhost` refers to that machine. Opening a URL does
 not copy another browser's sign-in state, unsaved inputs, or scroll position.
 
-The import creates two frames side by side: a locked screenshot of the original
-viewport and an editable copy. Text and simple surfaces become editable objects;
+Choose **Full page · stacked frames** (the default) or **Current viewport**.
+Full-page capture scrolls the page into view, waits briefly for visible images and
+fonts, and restores the browser's position even if capture fails. It supports up
+to 12 screenfuls and trims the final slice so the bottom is not duplicated.
+Fixed/stuck navigation is included in the first editable slice; the captured
+originals preserve what was visible at each position.
+
+Editable frames stack vertically. The canvas opens focused on the first frame;
+use the page arrows or frame selector in the header to move between them, or
+**Fit canvas** to see the complete stack. **View original** opens the active frame's
+read-only screenshot in a dismissible preview, including when selecting a child
+inside that frame. Originals stay in workshop-owned assets and do not occupy
+canvas space. Older imports keep their saved originals and undo history; the
+editor presents their originals through the same preview. Text and simple surfaces become editable objects;
 images, icons, and complex graphics remain cropped image layers. Font availability,
 clipping, gradients, shadows, and complex CSS can require manual adjustment.
 Capture requires a stable page and reports limits before you open the design.
-It captures the viewport, not offscreen content or interactive behavior. Form
+Viewport mode captures one screenful; full-page mode captures the vertical page. Neither imports interactive behavior. Form
 values are excluded from editable text; screenshot redaction follows the existing
 browser rules. Normal save, undo, export, and Ask Medousa work on the imported copy.
 Select its frame and use **Update Code** when ready to implement your redesign.

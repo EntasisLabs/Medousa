@@ -102,8 +102,7 @@ companion can request the current site's optional permission if necessary.
 ### Bring a page into Create
 
 The page menu's **Import into Create** opens the visual import dialog. Choose a
-running managed workshop browser or open the page URL in a new one. The imported
-viewport includes a locked original screenshot and an editable approximation for
-redesigning. It does not copy the current Home browser's session or live state.
+running managed workshop browser or open the page URL in a new one. Choose a full page as stacked editable frames, or a single viewport.
+Use **View original** in Create to peek at a captured screenshot while redesigning. It does not copy the current Home browser's session or live state.
 See [Create and Code](create.md#move-between-create-and-code) for importing,
 refining, and explicitly sending a frame back to its Code project.

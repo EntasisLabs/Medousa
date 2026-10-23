@@ -49,6 +49,7 @@ export const OPERATIONS = {
   "browser.sessions.by_session_id.get": { id: "browser.sessions.by_session_id.get", method: "GET", path: "/v1/browser/sessions/{session_id}", streaming: false },
   "browser.sessions.by_session_id.resume.post": { id: "browser.sessions.by_session_id.resume.post", method: "POST", path: "/v1/browser/sessions/{session_id}/resume", streaming: false },
   "browser.worlds.isolated.by_world_id.delete": { id: "browser.worlds.isolated.by_world_id.delete", method: "DELETE", path: "/v1/browser/worlds/isolated/{world_id}", streaming: false },
+  "browser.worlds.isolated.by_world_id.design_capture.page.post": { id: "browser.worlds.isolated.by_world_id.design_capture.page.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/design-capture/page", streaming: false },
   "browser.worlds.isolated.by_world_id.design_capture.post": { id: "browser.worlds.isolated.by_world_id.design_capture.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/design-capture", streaming: false },
   "browser.worlds.isolated.by_world_id.get": { id: "browser.worlds.isolated.by_world_id.get", method: "GET", path: "/v1/browser/worlds/isolated/{world_id}", streaming: false },
   "browser.worlds.isolated.by_world_id.input.post": { id: "browser.worlds.isolated.by_world_id.input.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/input", streaming: false },

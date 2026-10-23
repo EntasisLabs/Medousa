@@ -261,3 +261,11 @@ and `client.creative().code_context(id, request)` in Python (async and sync). Th
 request binds a saved frame revision and matching preview asset to a session;
 the response contains selection context and session media refs for the existing
 Code turn API. See [the creative service contract](../engine/creative-workspace.md#code-handoffs-and-browser-design-capture).
+
+
+Browser operation `browser.worlds.isolated.by_world_id.design_capture.page.post`
+returns `BrowserDesignPageCapture`: ordered slices with captured scene/pixels,
+`clip_top`, `height`, and `page_y`. Scene imports can retain original image assets
+in frame `design_source.original_asset_id`. Text layouts accept tracking,
+paragraph spacing, underline and bounded UTF-16 inline spans. See the
+[creative contract](../engine/creative-workspace.md) for validation and capture limits.

@@ -3482,6 +3482,35 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "session_id": {
             "type": [
               "string",
@@ -3783,10 +3812,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -3795,6 +3850,1060 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTransform": {
+        "type": "object",
+        "required": [
+          "height",
+          "rotation",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "rotation": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "BrowserDesignPageCapture": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserDesignPageCapture",
+    "description": "Viewport slices of one stable document, in page order. Final slice trims overlap.",
+    "type": "object",
+    "required": [
+      "slices"
+    ],
+    "properties": {
+      "slices": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/BrowserDesignSlice"
+        }
+      }
+    },
+    "definitions": {
+      "BrowserDesignCapture": {
+        "description": "A viewport import is data, never a live DOM binding or permission to edit code.",
+        "type": "object",
+        "required": [
+          "raster_regions",
+          "scene",
+          "screenshot",
+          "warnings",
+          "world_id"
+        ],
+        "properties": {
+          "raster_regions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/BrowserDesignRaster"
+            }
+          },
+          "scene": {
+            "$ref": "#/definitions/CreativeScene"
+          },
+          "screenshot": {
+            "$ref": "#/definitions/BrowserPresentationScreenshot"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BrowserDesignRaster": {
+        "type": "object",
+        "required": [
+          "asset_id",
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string"
+          },
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "BrowserDesignSlice": {
+        "type": "object",
+        "required": [
+          "capture",
+          "clip_top",
+          "height",
+          "page_y"
+        ],
+        "properties": {
+          "capture": {
+            "$ref": "#/definitions/BrowserDesignCapture"
+          },
+          "clip_top": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_y": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "BrowserPresentationScreenshot": {
+        "description": "One redacted, size-capped viewport artifact paired to its observation.",
+        "type": "object",
+        "required": [
+          "byte_size",
+          "captured_at_ms",
+          "coordinate_frame",
+          "document_id",
+          "image_base64",
+          "image_height",
+          "image_width",
+          "mime",
+          "observation_revision",
+          "schema_version",
+          "sensitive_regions_redacted",
+          "sha256",
+          "tab_id",
+          "title",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "coordinate_frame": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "image_base64": {
+            "type": "string"
+          },
+          "image_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "image_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "mime": {
+            "type": "string"
+          },
+          "observation_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "sensitive_regions_redacted": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/definitions/BrowserPresentationViewport"
+          }
+        }
+      },
+      "BrowserPresentationViewport": {
+        "type": "object",
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "properties": {
+          "device_scale_factor": {
+            "type": "number",
+            "format": "double"
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_x": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scroll_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "CreativeAppearance": {
+        "description": "Saved surface styling. Omitted by legacy version-3 documents.",
+        "type": "object",
+        "required": [
+          "corner_radius"
+        ],
+        "properties": {
+          "corner_radius": {
+            "type": "number",
+            "format": "double"
+          },
+          "shadow": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeShadow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrush": {
+        "type": "object",
+        "required": [
+          "kind",
+          "opacity",
+          "size",
+          "smoothing",
+          "streamline",
+          "thinning"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/definitions/CreativeBrushKind"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "size": {
+            "type": "number",
+            "format": "double"
+          },
+          "smoothing": {
+            "type": "number",
+            "format": "double"
+          },
+          "streamline": {
+            "type": "number",
+            "format": "double"
+          },
+          "thinning": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeBrushKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "pencil",
+          "marker",
+          "highlighter"
+        ]
+      },
+      "CreativeContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "brush",
+              "color",
+              "input",
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "brush": {
+                "$ref": "#/definitions/CreativeBrush"
+              },
+              "color": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "#/definitions/CreativeInputKind"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ink"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/CreativePoint"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "color",
+              "font_family",
+              "font_size",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number",
+                "format": "double"
+              },
+              "font_style": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeFontStyle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "font_weight": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint16",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "fill",
+              "kind",
+              "shape",
+              "stroke",
+              "stroke_width"
+            ],
+            "properties": {
+              "fill": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shape"
+                ]
+              },
+              "line": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeLine"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shape": {
+                "$ref": "#/definitions/CreativeShapeKind"
+              },
+              "stroke": {
+                "type": "string"
+              },
+              "stroke_width": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "asset_id",
+              "kind"
+            ],
+            "properties": {
+              "asset_id": {
+                "type": "string"
+              },
+              "crop": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/CreativeCrop"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "background",
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "frame"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CreativeCrop": {
+        "type": "object",
+        "required": [
+          "height",
+          "width",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "height": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeDesignSource": {
+        "description": "Advisory origin of an editable design; never grants repository or browser authority.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "url",
+          "viewport_height",
+          "viewport_width"
+        ],
+        "properties": {
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "viewport_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeFontStyle": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "italic"
+        ]
+      },
+      "CreativeInputKind": {
+        "type": "string",
+        "enum": [
+          "pen",
+          "touch",
+          "mouse",
+          "unknown"
+        ]
+      },
+      "CreativeLine": {
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "dashed": {
+            "default": false,
+            "type": "boolean"
+          },
+          "end": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "end_arrow": {
+            "default": false,
+            "type": "boolean"
+          },
+          "start": {
+            "$ref": "#/definitions/CreativeLinePoint"
+          },
+          "start_arrow": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeLinePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeNode": {
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "locked",
+          "opacity",
+          "transform",
+          "visible"
+        ],
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "$ref": "#/definitions/CreativeContent"
+          },
+          "design_source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeDesignSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Optional layer label; omitted in existing version-3 documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text_layout": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeTextLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transform": {
+            "$ref": "#/definitions/CreativeTransform"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativePoint": {
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_x": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "tilt_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeScene": {
+        "type": "object",
+        "required": [
+          "background",
+          "nodes",
+          "schema",
+          "version"
+        ],
+        "properties": {
+          "background": {
+            "type": "string"
+          },
+          "nodes": {
+            "description": "Back-to-front paint order. Parent relationships define containment.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeNode"
+            }
+          },
+          "schema": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShadow": {
+        "type": "object",
+        "required": [
+          "blur",
+          "color",
+          "opacity",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "blur": {
+            "description": "Gaussian standard deviation in canvas pixels.",
+            "type": "number",
+            "format": "double"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "type": "number",
+            "format": "double"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeShapeKind": {
+        "type": "string",
+        "enum": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ]
+      },
+      "CreativeTextAlign": {
+        "type": "string",
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ]
+      },
+      "CreativeTextLayout": {
+        "type": "object",
+        "required": [
+          "align",
+          "line_height"
+        ],
+        "properties": {
+          "align": {
+            "$ref": "#/definitions/CreativeTextAlign"
+          },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "line_height": {
+            "description": "Multiplier of the font size.",
+            "type": "number",
+            "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "width": {
+            "description": "None keeps automatic width; a width wraps text and lets height grow.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -8401,6 +9510,35 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "session_id": {
             "type": [
               "string",
@@ -8714,10 +9852,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -8726,6 +9890,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -9189,6 +10404,35 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "session_id": {
             "type": [
               "string",
@@ -9490,10 +10734,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -9502,6 +10772,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -9953,6 +11274,35 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "session_id": {
             "type": [
               "string",
@@ -10254,10 +11604,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -10266,6 +11642,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -10777,6 +12204,35 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0.0
+          },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           },
           "session_id": {
             "type": [
@@ -11311,10 +12767,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -11323,6 +12805,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -11713,6 +13246,35 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0.0
+          },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           },
           "session_id": {
             "type": [
@@ -12337,10 +13899,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -12349,6 +13937,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -12878,6 +14517,35 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "session_id": {
             "type": [
               "string",
@@ -13224,10 +14892,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -13236,6 +14930,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -13631,6 +15376,35 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0.0
+          },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           },
           "session_id": {
             "type": [
@@ -14069,10 +15843,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -14081,6 +15881,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -14465,6 +16316,35 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0.0
+          },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           },
           "session_id": {
             "type": [
@@ -14930,10 +16810,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -14942,6 +16848,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -15328,6 +17285,35 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0.0
+          },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           },
           "session_id": {
             "type": [
@@ -15722,10 +17708,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -15734,6 +17746,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -16153,6 +18216,35 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "session_id": {
             "type": [
               "string",
@@ -16424,10 +18516,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -16436,6 +18554,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -16815,6 +18984,35 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0.0
+          },
+          "original_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "page_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_y": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           },
           "session_id": {
             "type": [
@@ -17209,10 +19407,36 @@
           "align": {
             "$ref": "#/definitions/CreativeTextAlign"
           },
+          "letter_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "line_height": {
             "description": "Multiplier of the font size.",
             "type": "number",
             "format": "double"
+          },
+          "paragraph_spacing": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreativeTextSpan"
+            }
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "width": {
             "description": "None keeps automatic width; a width wraps text and lets height grow.",
@@ -17221,6 +19445,57 @@
               "null"
             ],
             "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeTextSpan": {
+        "description": "Non-overlapping UTF-16 ranges, matching browser text selection offsets.",
+        "type": "object",
+        "required": [
+          "end",
+          "start"
+        ],
+        "properties": {
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/CreativeFontStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "font_weight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "start": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "underline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false

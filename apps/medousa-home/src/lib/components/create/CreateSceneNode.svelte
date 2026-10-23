@@ -4,6 +4,7 @@
   import type { CreativeNode } from "$lib/types/generated/daemon_api";
   import { inkPath, localMatrix, nodeName } from "$lib/create/creativeScene";
   import { lineGeometry, linePaint } from "$lib/create/creativeLine";
+  import { textSegments } from "$lib/create/creativeRichText";
   import { layoutText, textMetricsVersion } from "$lib/create/creativeText";
   let {
     node,
@@ -92,11 +93,11 @@
       <text
         visibility={editingId === node.id ? "hidden" : "visible"}
         fill={content.color}
-        style={`font-family:${content.font_family};font-size:${content.font_size}px;font-weight:${content.font_weight ?? 400};font-style:${content.font_style ?? "normal"};white-space:pre;letter-spacing:normal;word-spacing:normal;text-transform:none;dominant-baseline:alphabetic;`}
+        style={`font-family:${content.font_family};font-size:${content.font_size}px;font-weight:${content.font_weight ?? 400};font-style:${content.font_style ?? "normal"};white-space:pre;letter-spacing:${node.text_layout?.letter_spacing ?? 0}px;word-spacing:normal;text-transform:none;dominant-baseline:alphabetic;`}
         >{#each textLayout!.lines as line, i}<tspan
             x={textLayout!.align === "center" ? w / 2 : textLayout!.align === "right" ? w - textLayout!.padding : textLayout!.insetX}
             text-anchor={textLayout!.align === "center" ? "middle" : textLayout!.align === "right" ? "end" : "start"}
-            y={textLayout!.baseline + i * textLayout!.lineHeight}>{line || " "}</tspan
+            y={textLayout!.baseline + textLayout!.ys[i]}>{#each textSegments(content.text, node.text_layout, textLayout!.starts[i], textLayout!.starts[i] + line.length) as segment}<tspan fill={segment.style.color ?? content.color} font-weight={segment.style.font_weight ?? content.font_weight ?? 400} font-style={segment.style.font_style ?? content.font_style ?? "normal"} text-decoration={(segment.style.underline ?? node.text_layout?.underline) ? "underline" : "none"}>{segment.text}</tspan>{/each}{line ? "" : " "}</tspan
           >{/each}</text
       >
     {:else if connector && paint}

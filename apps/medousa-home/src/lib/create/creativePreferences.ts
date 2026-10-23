@@ -72,9 +72,11 @@ export function loadCreativePreferences(scope: string): CreativePreferences {
       if (text.text_width === null || typeof text.text_width === "number" && Number.isFinite(text.text_width) && text.text_width >= 4 && text.text_width <= 1e7) defaults.textStyle.text_width = text.text_width;
       if (["left", "center", "right"].includes(text.text_align)) defaults.textStyle.text_align = text.text_align;
       if (typeof text.line_height === "number" && Number.isFinite(text.line_height) && text.line_height >= .8 && text.line_height <= 4) defaults.textStyle.line_height = text.line_height;
-      if (canvasFonts.some(f => f.value === text.font_family)) defaults.textStyle.font_family = text.font_family;
+      if (typeof text.font_family === "string" && /^[\p{L}\p{N} _-]{1,128}$/u.test(text.font_family)) defaults.textStyle.font_family = text.font_family;
       if (typeof text.font_size === "number" && Number.isFinite(text.font_size) && text.font_size >= 4 && text.font_size <= 512) defaults.textStyle.font_size = text.font_size;
-      if (text.font_weight === 400 || text.font_weight === 700) defaults.textStyle.font_weight = text.font_weight;
+      if (Number.isInteger(text.font_weight) && text.font_weight >= 100 && text.font_weight <= 900) defaults.textStyle.font_weight = text.font_weight;
+      for (const [key,min,max] of [["letter_spacing",-100,100],["paragraph_spacing",0,512]] as const) if (typeof text[key] === "number" && Number.isFinite(text[key]) && text[key] >= min && text[key] <= max) defaults.textStyle[key] = text[key];
+      if (typeof text.underline === "boolean") defaults.textStyle.underline = text.underline;
       if (text.font_style === "normal" || text.font_style === "italic") defaults.textStyle.font_style = text.font_style;
     }
     if (validSize(saved.eraserSize))

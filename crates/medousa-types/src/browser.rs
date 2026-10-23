@@ -88,3 +88,19 @@ pub struct BrowserDesignRaster {
     pub width: f64,
     pub height: f64,
 }
+
+/// Viewport slices of one stable document, in page order. Final slice trims overlap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BrowserDesignPageCapture {
+    pub slices: Vec<BrowserDesignSlice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BrowserDesignSlice {
+    pub capture: BrowserDesignCapture,
+    pub clip_top: u32,
+    pub height: u32,
+    pub page_y: u32,
+}

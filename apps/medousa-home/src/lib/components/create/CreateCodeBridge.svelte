@@ -43,6 +43,7 @@
       if (!existing || existing.content.kind !== "frame") throw new Error("The selected frame was removed.");
       // The bound project remains authoritative. The stored design link is advisory.
       sessionId = existing.design_source?.work_id === workId ? existing.design_source?.session_id ?? "" : "";
+      if (!sessionId && existing.design_source?.page_count) sessionId = doc.scene.nodes.find(n => n.id !== frameId && n.design_source?.work_id === workId && n.design_source.url === existing.design_source?.url && n.design_source.session_id)?.design_source?.session_id ?? "";
       if (sessionId) {
         try { if ((await api.binding(sessionId)).work_id !== workId) sessionId = ""; }
         catch { sessionId = ""; } // A removed conversation does not strand the saved design.

@@ -84,6 +84,8 @@ pub enum DaemonOperation {
     BrowserSessionsBySessionIdResumePost,
     #[serde(rename = "browser.worlds.isolated.by_world_id.delete")]
     BrowserWorldsIsolatedByWorldIdDelete,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.design_capture.page.post")]
+    BrowserWorldsIsolatedByWorldIdDesignCapturePagePost,
     #[serde(rename = "browser.worlds.isolated.by_world_id.design_capture.post")]
     BrowserWorldsIsolatedByWorldIdDesignCapturePost,
     #[serde(rename = "browser.worlds.isolated.by_world_id.get")]
@@ -1083,6 +1085,7 @@ impl DaemonOperation {
             Self::BrowserSessionsBySessionIdGet => "browser.sessions.by_session_id.get",
             Self::BrowserSessionsBySessionIdResumePost => "browser.sessions.by_session_id.resume.post",
             Self::BrowserWorldsIsolatedByWorldIdDelete => "browser.worlds.isolated.by_world_id.delete",
+            Self::BrowserWorldsIsolatedByWorldIdDesignCapturePagePost => "browser.worlds.isolated.by_world_id.design_capture.page.post",
             Self::BrowserWorldsIsolatedByWorldIdDesignCapturePost => "browser.worlds.isolated.by_world_id.design_capture.post",
             Self::BrowserWorldsIsolatedByWorldIdGet => "browser.worlds.isolated.by_world_id.get",
             Self::BrowserWorldsIsolatedByWorldIdInputPost => "browser.worlds.isolated.by_world_id.input.post",

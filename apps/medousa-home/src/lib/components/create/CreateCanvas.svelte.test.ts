@@ -100,12 +100,12 @@ it("types directly without committing placeholder text, then saves one complete 
   pointer(svg, "pointerdown", 80, 90);
   await tick();
   flushSync();
-  const input = root.querySelector<HTMLTextAreaElement>(
+  const input = root.querySelector<HTMLDivElement>(
     '[aria-label="Canvas text"]',
   )!;
   expect(input).toBeTruthy();
   expect(commit).not.toHaveBeenCalled();
-  input.value = "Hello\nCanvas";
+  input.textContent = "Hello\nCanvas";
   input.dispatchEvent(new Event("input", { bubbles: true }));
   flushSync();
   input.dispatchEvent(
@@ -133,11 +133,11 @@ it("blocks native SVG drag and selection chrome while retaining normal text edit
   }
   text.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   await tick(); flushSync();
-  const input = root.querySelector<HTMLTextAreaElement>('[aria-label="Canvas text"]')!;
+  const input = root.querySelector<HTMLDivElement>('[aria-label="Canvas text"]')!;
   const event = new Event("selectstart", { bubbles: true, cancelable: true });
   input.dispatchEvent(event);
   expect(event.defaultPrevented).toBe(false);
-  input.value = "Editable label"; input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  input.textContent = "Editable label"; input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); flushSync();
   expect(commit).toHaveBeenCalledWith("Edit text", [expect.objectContaining({ node: expect.objectContaining({ content: expect.objectContaining({ text: "Editable label" }) }) })]);
 });
@@ -149,8 +149,8 @@ it("double-click edits existing text without opening an inspector or adding a se
     .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   await tick();
   flushSync();
-  const input = root.querySelector<HTMLTextAreaElement>("textarea")!;
-  input.value = "Edited";
+  const input = root.querySelector<HTMLDivElement>('[aria-label="Canvas text"]')!;
+  input.textContent = "Edited";
   input.dispatchEvent(new Event("input", { bubbles: true }));
   flushSync();
   input.dispatchEvent(new FocusEvent("blur"));
@@ -180,10 +180,10 @@ it("preserves the last saved text when an empty new text entry is abandoned", as
   pointer(root.querySelector("svg")!, "pointerdown", 10, 10);
   await tick();
   flushSync();
-  root.querySelector("textarea")!.dispatchEvent(new FocusEvent("blur"));
+  root.querySelector('[aria-label="Canvas text"]')!.dispatchEvent(new FocusEvent("blur"));
   flushSync();
   expect(commit).not.toHaveBeenCalled();
-  expect(root.querySelector("textarea")).toBeNull();
+  expect(root.querySelector('[aria-label="Canvas text"]')).toBeNull();
 });
 it("erases in one durable transaction per gesture and supports cancellation", () => {
   const node = title(),
@@ -209,7 +209,7 @@ it("recognizes double taps despite SVG pointer capture, without saving a no-op m
   pointer(svg, "pointerup", 30, 40);
   await tick();
   flushSync();
-  expect(root.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+  expect(root.querySelector<HTMLDivElement>('[aria-label="Canvas text"]')?.textContent).toBe(
     "Original",
   );
   expect(commit).not.toHaveBeenCalled();
@@ -362,8 +362,8 @@ it("creates new text inside the entered group after selecting a child", async ()
   await tick(); flushSync();
   svg.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 380, clientY: 260 }));
   await tick(); flushSync();
-  const input = root.querySelector<HTMLTextAreaElement>('[aria-label="Canvas text"]')!;
-  input.value = "New group caption"; input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  const input = root.querySelector<HTMLDivElement>('[aria-label="Canvas text"]')!;
+  input.textContent = "New group caption"; input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); flushSync();
   const operations = commit.mock.calls[0][1] as CreativeOperation[];
   expect(operations).toMatchObject([{ op: "put_node", node: { parent_id: group.id, content: { kind: "text", text: "New group caption" } } }]);
@@ -377,16 +377,16 @@ it("uses measured multiline text for rendering, selection, editing, and movement
   const box = root.querySelector("[data-selection-box] > rect")!;
   expect(Number(box.getAttribute("width"))).toBeCloseTo(layout.width);
   expect(Number(box.getAttribute("height"))).toBeCloseTo(layout.height);
-  const lines = root.querySelectorAll(`[data-node-id="${node.id}"] tspan`);
+  const lines = root.querySelectorAll(`[data-node-id="${node.id}"] > text > tspan`);
   expect(lines).toHaveLength(3);
   expect(Number(lines[0].getAttribute("y"))).toBeCloseTo(layout.baseline);
   expect(Number(lines[2].getAttribute("y"))).toBeLessThan(layout.height);
   root.querySelector(`[data-node-id="${node.id}"] text`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 40, clientY: 50 }));
   await tick(); flushSync();
-  const input = root.querySelector<HTMLTextAreaElement>('[aria-label="Canvas text"]')!;
+  const input = root.querySelector<HTMLDivElement>('[aria-label="Canvas text"]')!;
   expect(parseFloat(input.style.width)).toBeCloseTo(layout.width);
   expect(parseFloat(input.style.height)).toBeCloseTo(layout.height);
-  expect(input.getAttribute("wrap")).toBe("off");
+  expect(input.style.whiteSpace).toBe("pre");
   input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })); flushSync();
   pointer(svg, "pointerdown", 40, 50); pointer(svg, "pointermove", 80, 80); pointer(svg, "pointerup", 80, 80);
   expect(commit).toHaveBeenLastCalledWith("Move selection", [expect.objectContaining({ node: expect.objectContaining({ transform: expect.objectContaining({ x: 60, y: 60 }), content: node.content }) })]);
@@ -546,7 +546,7 @@ it("uses side handles to wrap text and keeps editing transparent with the same w
   pointer(hit, "pointerdown", 30, 40); pointer(editSvg, "pointerup", 30, 40);
   pointer(hit, "pointerdown", 30, 40); pointer(editSvg, "pointerup", 30, 40);
   await tick(); flushSync();
-  const textarea = edited.querySelector<HTMLTextAreaElement>("textarea")!;
+  const textarea = edited.querySelector<HTMLDivElement>('[aria-label="Canvas text"]')!;
   expect(textarea.style.width).toBe("80px");
-  expect(textarea.getAttribute("wrap")).toBe("soft");
+  expect(textarea.style.whiteSpace).toBe("pre-wrap");
 });

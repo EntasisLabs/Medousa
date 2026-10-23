@@ -9,6 +9,7 @@ type Session = ReturnType<
 >;
 class Entry {
   selected = $state<string[]>([]);
+  referenceViewReady = false;
   view: {
     camera: DrawCamera;
     viewport: { width: number; height: number };

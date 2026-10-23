@@ -32,6 +32,8 @@
   import CreateCanvas from "./CreateCanvas.svelte";
   import CreateStylePalette from "./CreateStylePalette.svelte";
   import CreateInspector from "./CreateInspector.svelte";
+  import CreateOriginalPreview from "./CreateOriginalPreview.svelte";
+  import { editableImportScene } from "$lib/create/creativeReferences";
   import CreateCodeBridge from "./CreateCodeBridge.svelte";
   import CreateAsk from "./CreateAsk.svelte";
   import CreateViewControls from "./CreateViewControls.svelte";
@@ -78,7 +80,7 @@
     onBrowse = () => shellTabs.openSurface("create"),
   }: { lease: CreativeProjectLease; onBrowse?: () => void } = $props();
   const preferences = untrack(() => loadCreativePreferences(lease.api.scope));
-  const retainedView = untrack(() => lease.state.view);
+  const retainedView = untrack(() => { const reset = !lease.state.referenceViewReady && lease.session.document?.scene.nodes.some(n => n.id === "original_frame"); lease.state.referenceViewReady = true; return reset ? null : lease.state.view; });
   let editorElement = $state<HTMLDivElement>(),
     workareaWidth = $state(0),
     inkColor = $state("#393e33");
@@ -101,7 +103,7 @@
     fingerDraw = $state(preferences.fingerDraw),
     shape = $state<CanvasShape>(preferences.shape),
     fill = $state<CanvasFill>(preferences.fill),
-    palette = $state(true),
+    additiveSelect = $state(false), palette = $state(true),
     viewOpen = $state(false),
     shapePicker = $state(false),
     askOpen = $state(false),
@@ -164,8 +166,8 @@
   );
   const scene = $derived(
     base && preview && job?.result
-      ? applySceneOperations(base, proposal.operations)
-      : base,
+      ? editableImportScene(applySceneOperations(base, proposal.operations))
+      : base ? editableImportScene(base) : base,
   );
   const deciding = $derived.by(() => {
     void version;
@@ -220,7 +222,7 @@
     if (patch.font_size !== undefined && Number.isFinite(patch.font_size)) textStyle.font_size = Math.max(4, Math.min(512, patch.font_size));
     if (patch.font_weight !== undefined && patch.font_weight !== null) textStyle.font_weight = patch.font_weight;
     if (patch.font_style) textStyle.font_style = patch.font_style;
-    for (const key of ["text_width", "text_align", "line_height"] as const) if (patch[key] !== undefined) textStyle = { ...textStyle, [key]: patch[key] };
+    for (const key of ["text_width", "text_align", "line_height", "letter_spacing", "paragraph_spacing", "underline"] as const) if (patch[key] !== undefined) textStyle = { ...textStyle, [key]: patch[key] };
     if (patch.stroke_width !== undefined || patch.dashed !== undefined || patch.start_arrow !== undefined || patch.end_arrow !== undefined) {
       const key = tool === "shape" ? shape === "arrow" ? "arrow" : "line" : selectedLine?.end_arrow || selectedLine?.start_arrow ? "arrow" : "line";
       const next = { ...lineStyles[key] };
@@ -408,7 +410,7 @@
       await loadImages();
       await exportCreativeScene(
         canvas.element()!,
-        document.scene.nodes,
+        scene?.nodes ?? document.scene.nodes,
         assetStore,
         document.title,
         format,
@@ -579,6 +581,7 @@
         disabled={disabled || busy || dirty || !session.canRedo}
         onclick={() => void history(true)}><Redo2 size={15} /></button
       >
+      <CreateOriginalPreview {lease} {document} {selected} onframe={id => { canvas?.finishText(); canvas?.focusFrame(id); }}/>
       <CreateCodeBridge {lease} {document} frame={selected.length === 1 ? scene?.nodes.find(n => n.id === selected[0] && n.content.kind === "frame") : undefined} disabled={disabled || busy || dirty || Boolean(editingNode)} capture={captureSelection}/>
       <details class="create-export">
         <summary><Download size={13} />Export<ChevronDown size={11} /></summary>
@@ -683,6 +686,7 @@
           {brushKind}
           {eraserMode}
           {selectionMode}
+          {additiveSelect}
           {layout}
           initialView={retainedView}
           onview={(view) => { lease.state.view = view; }}
@@ -863,6 +867,7 @@
                   } else chooseTool(item.id);
                 }}><item.icon size={16} /><span>{item.label}</span></button
               >{/each}
+            {#if tool === "select"}<button type="button" aria-label="Add to selection" aria-pressed={additiveSelect} title="Add or remove objects from selection" onclick={() => additiveSelect = !additiveSelect}><Plus size={16}/><span>Multi</span></button>{/if}
             <button
               type="button"
               aria-label="Import image"

@@ -1,5 +1,6 @@
 (() => {
   // Fixed, read-only capture code in the browser's isolated execution context.
+  const omitPinned = false;
   const width = Math.round(innerWidth), height = Math.round(innerHeight);
   const nodes = [], raster_regions = [], warnings = new Set();
   let visited = 0, characters = 0;
@@ -40,12 +41,48 @@
     add(element.getAttribute('aria-label') || element.tagName.toLowerCase() + ' image', region, { kind: 'image', asset_id: region.asset_id, crop: null }, 1);
     if (opacity < 1) warnings.add('Complex graphics retain the captured page background.');
   };
+  function paragraph(element, style, bounds, opacity, name) {
+    if (!['p','h1','h2','h3','h4','h5','h6','button','a','label','figcaption','pre'].includes(element.tagName.toLowerCase())) return false;
+    if (element.querySelector('img,svg,canvas,input,textarea,[contenteditable],p,h1,h2,h3,div')) return false;
+    let text = '', spans = [];
+    const pre = style.whiteSpace.startsWith('pre');
+    function collect(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const owner = node.parentElement, paint = getComputedStyle(owner);
+        if (paint.display === 'none' || paint.visibility === 'hidden') return;
+        let value = pre ? node.textContent : node.textContent.replace(/\s+/g, ' ');
+        if (!pre && (!text || text.endsWith(' '))) value = value.replace(/^ +/, '');
+        if (paint.textTransform === 'uppercase') value = value.toUpperCase();
+        if (paint.textTransform === 'lowercase') value = value.toLowerCase();
+        const start = text.length; text += value;
+        if (value) spans.push({ start, end: text.length, font_weight: Math.max(100, Math.min(900, parseInt(paint.fontWeight) || 400)), font_style: paint.fontStyle === 'italic' ? 'italic' : 'normal', color: color(paint.color), underline: paint.textDecorationLine.includes('underline') });
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.matches('[data-sensitive],[data-private],[contenteditable],input,textarea,script,style')) return;
+        if (node.tagName === 'BR') text += '\n';
+        else for (const child of node.childNodes) collect(child);
+      }
+    }
+    collect(element); text = text.trimEnd();
+    if (!text.trim()) return true;
+    if (characters + text.length > 16000) { warnings.add('Some text was omitted at the capture limit.'); return true; }
+    characters += text.length;
+    spans = spans.map(s => ({...s, end: Math.min(s.end, text.length)})).filter(s => s.start < s.end);
+    const size = Math.max(1, Math.min(512, parseFloat(style.fontSize) || 16));
+    const padding = size * .06;
+    let family = style.fontFamily.split(',')[0].replace(/["']/g, '').trim();
+    if (!/^[\p{L}\p{N} _-]{1,128}$/u.test(family)) family = 'sans-serif';
+    add(name + ' text', { x: bounds.x - padding, y: bounds.y - padding, width: bounds.width + padding * 2, height: bounds.height + padding * 2 },
+      { kind: 'text', text, color: color(style.color), font_family: family, font_size: size, font_weight: Math.max(100, Math.min(900, parseInt(style.fontWeight) || 400)), font_style: style.fontStyle === 'italic' ? 'italic' : 'normal' }, opacity, undefined,
+      { width: Math.max(4, bounds.width + padding * 2), align: ['left','center','right'].includes(style.textAlign) ? style.textAlign : 'left', line_height: Math.min(4, Math.max(.8, (parseFloat(style.lineHeight) || size * 1.3) / size)), letter_spacing: Math.max(-100, Math.min(100, parseFloat(style.letterSpacing) || 0)), paragraph_spacing: 0, underline: style.textDecorationLine.includes('underline'), spans });
+    return true;
+  }
   function visit(element, inheritedOpacity = 1) {
     if (++visited > 8000 || nodes.length >= 1200) { warnings.add('The page was imported with a bounded layer count.'); return; }
     const tag = element.tagName?.toLowerCase();
     if (!tag || ['script','style','link','meta','template','noscript','head'].includes(tag)) return;
     const style = getComputedStyle(element), bounds = element.getBoundingClientRect();
     const opacity = inheritedOpacity * Number(style.opacity);
+    if (omitPinned && (style.position === 'fixed' || style.position === 'sticky' && bounds.top <= (parseFloat(style.top) || 0) + 1)) return;
     if (style.display === 'none' || style.visibility === 'hidden' || opacity <= 0) return;
     const visible = bounds.right > 0 && bounds.bottom > 0 && bounds.x < width && bounds.y < height && bounds.width > 0 && bounds.height > 0;
     const name = element.getAttribute('aria-label') || element.id || tag;
@@ -58,6 +95,7 @@
       if (style.backgroundImage !== 'none' || style.boxShadow !== 'none') warnings.add('CSS gradients and shadows may need adjustment in the editable copy.');
     }
     if (sensitive) return; // Never copy typed form values or editable drafts.
+    if (visible && paragraph(element, style, bounds, opacity, name)) return;
     const children = [...element.children].sort((a, b) => (Number(getComputedStyle(a).zIndex) || 0) - (Number(getComputedStyle(b).zIndex) || 0));
     for (const child of element.childNodes) {
       if (child.nodeType !== Node.TEXT_NODE || !child.textContent?.trim() || !visible) continue;

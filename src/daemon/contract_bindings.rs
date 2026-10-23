@@ -47,6 +47,7 @@ pub(crate) fn stream_spec(transport: StreamTransport, item_name: &str) -> Stream
 
 pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
     Some(match operation_id {
+        "browser.worlds.isolated.by_world_id.design_capture.page.post" => WireBinding { request: None, response: "BrowserDesignPageCapture" },
         "browser.worlds.isolated.by_world_id.design_capture.post" => WireBinding { request: None, response: "BrowserDesignCapture" },
         "create.projects.by_id.code_context.post" => WireBinding { request: Some("CreativeCodeContextRequest"), response: "CreativeCodeContext" },
         "create.projects.by_id.jobs.get" => WireBinding {

@@ -5,13 +5,14 @@
   import { creativeBridgeApi, importBrowserDesign, newDesignImportId } from "$lib/create/creativeBridge";
   import { createBrowser } from "$lib/create/createBrowser.svelte";
   import { activeWorkshopId } from "$lib/utils/workshopLocality";
-  import type { BrowserDesignCapture, CreativeDocument } from "$lib/types/generated/daemon_api";
+  import type { BrowserDesignCapture, BrowserDesignPageCapture, CreativeDocument } from "$lib/types/generated/daemon_api";
   import type { ItemProjection } from "$lib/forge";
   let { scope, open = $bindable(false), initialUrl = "", onimport }: { scope: string; open?: boolean; initialUrl?: string; onimport: (document: CreativeDocument) => void } = $props();
   let loading = $state(false), busy = $state(false), error = $state(""), warnings = $state<string[]>([]);
   let projects = $state.raw<ItemProjection[]>([]), worlds = $state.raw<{ world_id: string; title: string; url: string; run_state: string }[]>([]);
   let worldId = $state(""), workId = $state(""), url = $state("");
-  let capture = $state.raw<BrowserDesignCapture | null>(null), importId = "", generation = 0;
+  let fullPage = $state(true);
+  let capture = $state.raw<BrowserDesignCapture | BrowserDesignPageCapture | null>(null), importId = "", generation = 0;
   let alive = true; onDestroy(() => alive = false);
   let wasOpen = false, lastInitialUrl = "";
   let stateScope = untrack(() => scope);
@@ -61,9 +62,9 @@
           if (!valid()) throw new Error("The workshop changed while opening the preview");
         }
         if (!worldId) throw new Error("Choose a browser page or enter a running dev-server URL.");
-        const captured = await api.capture(worldId);
+        const captured = fullPage ? await api.capturePage(worldId) : await api.capture(worldId);
         if (!valid()) throw new Error("The workshop changed during capture");
-        capture = captured; importId = newDesignImportId(); warnings = capture.warnings;
+        capture = captured; importId = newDesignImportId(); warnings = [...new Set("slices" in capture ? capture.slices.flatMap(s => s.capture.warnings) : capture.warnings)];
       }
       const document = await importBrowserDesign(owner, importId, capture, workId || null, valid);
       if (!valid()) throw new Error("The workshop changed during import");
@@ -81,12 +82,13 @@
   <TaskDialogFrame compact label="Import page into Create" onClose={() => { if (!busy) open = false; }}>
     <form class="create-page-import" onsubmit={e => { e.preventDefault(); void capturePage(); }}>
       <header><div><h2><Scan size={17}/>Import page</h2><p>Yoink a running preview into an editable canvas.</p></div><button type="button" aria-label="Close page import" disabled={busy} onclick={() => open = false}><X size={16}/></button></header>
-      {#if imported}<p>The original screenshot and editable copy are saved side by side.</p>{#if warnings.length}<ul>{#each warnings as warning}<li>{warning}</li>{/each}</ul>{/if}<footer><button type="button" class="primary" onclick={() => imported && finish(imported)}><ArrowUpRight size={14}/>Open design</button></footer>
+      {#if imported}<p>The editable frames are saved. Use View original to peek at their captured reference.</p>{#if warnings.length}<ul>{#each warnings as warning}<li>{warning}</li>{/each}</ul>{/if}<footer><button type="button" class="primary" onclick={() => imported && finish(imported)}><ArrowUpRight size={14}/>Open design</button></footer>
       {:else}
         <label>Code project (optional)<select aria-label="Import Code project" bind:value={workId} disabled={busy || loading} onchange={() => void projectPreview()}><option value="">Choose a project…</option>{#each projects as project}<option value={project.id}>{project.title}</option>{/each}</select></label>
         <label>Workshop browser<select aria-label="Browser page to import" bind:value={worldId} disabled={busy || loading} onchange={() => { url = ""; reset(); }}><option value="">Choose a running page…</option>{#each worlds as world}<option value={world.world_id}>{world.title || "Browser page"}</option>{/each}</select></label>
         <label>Or open a dev-server URL<input aria-label="Dev-server URL" bind:value={url} type="url" placeholder="http://localhost:5173" disabled={busy} oninput={reset}/></label>
-        <p>The preview runs on your workshop. Text and simple surfaces become editable; complex graphics stay as image regions. This captures the current viewport. Form values and interactive behavior aren’t turned into design controls.</p>
+        <label>Capture<select aria-label="Capture area" bind:value={fullPage} disabled={busy} onchange={reset}><option value={true}>Full page · stacked frames</option><option value={false}>Current viewport</option></select></label>
+        <p>The preview runs on your workshop. Text and simple surfaces become editable; complex graphics stay as image regions. Full page captures up to 12 screenfuls, restores the browser position, and keeps the original behind View original. Form values and interactive behavior aren’t turned into design controls.</p>
         {#if error}<p class="error" role="alert">{error}</p>{/if}
         <footer><button type="button" disabled={busy || loading} onclick={() => void load()}>Refresh pages</button><button class="primary" type="submit" disabled={busy || loading || !worldId && !url.trim()}>{busy ? "Importing page…" : error && capture ? "Retry import" : "Capture into Create"}</button></footer>
       {/if}

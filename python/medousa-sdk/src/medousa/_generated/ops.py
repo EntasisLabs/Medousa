@@ -52,6 +52,7 @@ OPERATIONS: dict[str, Operation] = {
     "browser.sessions.by_session_id.get": Operation("browser.sessions.by_session_id.get", "GET", "/v1/browser/sessions/{session_id}", False),
     "browser.sessions.by_session_id.resume.post": Operation("browser.sessions.by_session_id.resume.post", "POST", "/v1/browser/sessions/{session_id}/resume", False),
     "browser.worlds.isolated.by_world_id.delete": Operation("browser.worlds.isolated.by_world_id.delete", "DELETE", "/v1/browser/worlds/isolated/{world_id}", False),
+    "browser.worlds.isolated.by_world_id.design_capture.page.post": Operation("browser.worlds.isolated.by_world_id.design_capture.page.post", "POST", "/v1/browser/worlds/isolated/{world_id}/design-capture/page", False),
     "browser.worlds.isolated.by_world_id.design_capture.post": Operation("browser.worlds.isolated.by_world_id.design_capture.post", "POST", "/v1/browser/worlds/isolated/{world_id}/design-capture", False),
     "browser.worlds.isolated.by_world_id.get": Operation("browser.worlds.isolated.by_world_id.get", "GET", "/v1/browser/worlds/isolated/{world_id}", False),
     "browser.worlds.isolated.by_world_id.input.post": Operation("browser.worlds.isolated.by_world_id.input.post", "POST", "/v1/browser/worlds/isolated/{world_id}/input", False),

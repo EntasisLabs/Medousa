@@ -48,8 +48,14 @@ Optional node fields extend version 3 without migrating older documents:
   (`left`, `center`, `right`) and `line_height` (0.8–4 font-size multiplier).
   Omission means automatic width, left alignment and 1.3 leading. Home wraps text
   using the resolved font and persists fitted width/height with content changes.
+  Optional `letter_spacing` (−100–100 px), `paragraph_spacing` (0–512 px), and
+  `underline` default to zero/false. Optional `spans` contains at most 1,024 ordered,
+  non-overlapping UTF-16 ranges (`start`, `end`) with nullable `font_weight`,
+  `font_style`, `color`, and `underline` overrides. Ranges must end on Unicode
+  scalar boundaries; splitting a surrogate pair rejects the transaction. Text,
+  editing, measured bounds, picking, snapshots, and SVG export share these metrics.
 
-Both fields pass through existing transactions, AI proposals and undo/redo.
+These fields pass through existing transactions, AI proposals and undo/redo.
 Unknown fields, non-finite geometry, invalid paints and incompatible node kinds
 reject the entire transaction. Saving these optional fields requires updated app
 and daemon builds; old documents retain their existing rendering defaults.
@@ -293,7 +299,10 @@ the source note. Notes rendering and that adoption UI have not shipped yet.
 ## Code handoffs and browser design capture
 
 Frames may store optional `design_source` provenance: `work_id`, `session_id`,
-`url`, `viewport_width`, `viewport_height`, and `captured_at_ms`. IDs use the
+`url`, `viewport_width`, `viewport_height`, and `captured_at_ms`. Optional
+`original_asset_id` references an existing project image; `scroll_y` records the
+page position; `page_index` and `page_count` describe up to 12 viewport slices.
+Original references are immutable imported assets, outside editable canvas geometry. IDs use the
 existing identifier grammar, URLs are bounded to 2,048 bytes, and viewport sides
 are 1–8,192. Home strips URL credentials, query strings, fragments, and Forge
 preview capability paths before saving. This metadata is advisory; it grants no
@@ -326,3 +335,18 @@ Home imports assets into a new workshop-owned document and publishes the origina
 and editable frames in one transaction. Stable creation/import IDs permit retries;
 an acknowledged import is opened rather than replayed over subsequent edits.
 This is an approximate visual snapshot, not a DOM/CSS round-trip contract.
+
+
+`POST /v1/browser/worlds/isolated/{world_id}/design-capture/page` returns
+`BrowserDesignPageCapture.slices`. Each `BrowserDesignSlice` includes a validated
+`capture`, `clip_top`, `height`, and logical `page_y`. The clip trims bottom-page
+scroll clamping without duplicating content. The daemon scrolls its owned browser,
+waits briefly for fonts and visible image decoding, fences each slice, and restores
+the original scroll position on success, rejection, timeout, or client disconnect.
+Restoration never moves a newly navigated document. Only one full-page capture is
+admitted at a time; collection is bounded to 30 seconds, 12 slices, 24 MiB of PNG
+bytes, 20 raster regions, and 9,500 projected nodes. Nothing is imported if capture
+fails. The client imports assets and publishes all frames in one existing scene
+transaction. Paragraph-level capture retains inline emphasis, color, weight and
+tracking, while unsupported complex CSS remains approximate. Page slices may
+cut through a paragraph or card; this is a viewport capture, not semantic pagination.

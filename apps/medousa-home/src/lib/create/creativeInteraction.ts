@@ -13,6 +13,7 @@ import {
   parentPoint,
   resizeNode,
 } from "./creativeScene";
+import { remapTextSpans } from "./creativeRichText";
 import { layoutText, type CreativeText, type TextStylePatch } from "./creativeText";
 import { styleAppearance, roundedDistance, type AppearancePatch } from "./creativeAppearance";
 import { randomUuid } from "$lib/utils/randomUuid";
@@ -167,6 +168,7 @@ export type CanvasStylePatch = { color?: string; size?: CanvasSize; fill?: Canva
 export function updateTextNode(node: CreativeNode, patch: Partial<Omit<CreativeText, "kind">>): CreativeNode {
   if (node.content.kind !== "text") return node;
   const content = { ...node.content, ...patch };
+  if (patch.text !== undefined && patch.text !== node.content.text && node.text_layout?.spans?.length) node = { ...node, text_layout: { ...node.text_layout, spans: remapTextSpans(node.content.text, patch.text, node.text_layout.spans) } };
   const bounds = layoutText(content, undefined, node.text_layout);
   return { ...resizeNode(node, bounds.width, bounds.height), content };
 }
@@ -198,9 +200,11 @@ export function styleNode(
       },
     };
   if (c.kind === "text") {
-    const text_layout = { width: node.text_layout?.width ?? null, align: node.text_layout?.align ?? "left" as const, line_height: node.text_layout?.line_height ?? 1.3,
+    const text_layout = { ...node.text_layout, width: node.text_layout?.width ?? null, align: node.text_layout?.align ?? "left" as const, line_height: node.text_layout?.line_height ?? 1.3,
       ...(patch.text_width !== undefined ? { width: patch.text_width } : {}), ...(patch.text_align ? { align: patch.text_align } : {}), ...(patch.line_height !== undefined ? { line_height: patch.line_height } : {}) };
-    return updateTextNode({ ...node, ...(node.text_layout || patch.text_width !== undefined || patch.text_align || patch.line_height !== undefined ? { text_layout } : {}) }, {
+    for (const key of ["letter_spacing", "paragraph_spacing", "underline"] as const) if (patch[key] !== undefined) Object.assign(text_layout, { [key]: patch[key] });
+    if (text_layout.spans?.length) text_layout.spans = text_layout.spans.map(span => ({ ...span, ...(patch.font_weight !== undefined ? { font_weight: null } : {}), ...(patch.font_style !== undefined ? { font_style: null } : {}), ...(patch.color !== undefined ? { color: null } : {}), ...(patch.underline !== undefined ? { underline: null } : {}) }));
+    return updateTextNode({ ...node, ...(node.text_layout || patch.text_width !== undefined || patch.text_align || patch.line_height !== undefined || patch.letter_spacing !== undefined || patch.paragraph_spacing !== undefined || patch.underline !== undefined ? { text_layout } : {}) }, {
       color,
       ...(patch.size ? { font_size: canvasSizes[patch.size].text } : {}),
       ...(patch.font_size !== undefined && Number.isFinite(patch.font_size) ? { font_size: Math.max(4, Math.min(512, patch.font_size)) } : {}),

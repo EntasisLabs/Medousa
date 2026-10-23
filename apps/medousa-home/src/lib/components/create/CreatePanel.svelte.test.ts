@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync, tick } from "svelte";
+import { selectEditableText } from "$lib/create/creativeRichText";
 import CreatePanel from "./CreatePanel.svelte";
 import { applySceneOperations, createNode } from "$lib/create/creativeScene";
 import { reconcileCreativeProposal } from "$lib/create/creativeProposal";
@@ -363,12 +364,12 @@ it("shares direct text and swatch edits through the existing transaction session
     .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   await tick();
   flushSync();
-  const input = first.querySelector<HTMLTextAreaElement>(
+  const input = first.querySelector<HTMLDivElement>(
     '[aria-label="Canvas text"]',
   )!;
-  expect(input.value).toBe("Headline");
-  input.value = "A direct headline";
-  input.dispatchEvent(new Event("input", { bubbles: true }));
+  expect(input.textContent).toBe("Headline");
+  input.textContent = "A direct headline";
+  selectEditableText(input,(input.textContent??"").length); input.dispatchEvent(new Event("input", { bubbles: true }));
   flushSync();
   button("Blue", first).click();
   flushSync();
@@ -504,8 +505,8 @@ it("keeps a text draft and live font controls together in one durable edit", asy
   button("Toggle inspector", root).click(); flushSync();
   root.querySelector('[data-node-id="title"] text')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 40, clientY: 50 }));
   await tick(); flushSync();
-  const input = root.querySelector<HTMLTextAreaElement>('[aria-label="Canvas text"]')!;
-  input.value = "Graphic Design\nis my Passion"; input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
+  const input = root.querySelector<HTMLDivElement>('[aria-label="Canvas text"]')!;
+  input.textContent = "Graphic Design\nis my Passion"; selectEditableText(input,(input.textContent??"").length); input.dispatchEvent(new Event("input", { bubbles: true })); flushSync();
   const controls = root.querySelector('[aria-label="Style palette"]')!;
   const size = controls.querySelector<HTMLInputElement>('[aria-label="Font size"]')!;
   input.dispatchEvent(new FocusEvent("blur", { relatedTarget: size })); flushSync();
