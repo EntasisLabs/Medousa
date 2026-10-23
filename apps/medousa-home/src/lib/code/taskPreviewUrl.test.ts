@@ -70,3 +70,16 @@ describe("task preview url", () => {
     expect(preview.create).not.toHaveBeenCalled();
   });
 });
+
+const devRun = { run_id: "run-1", work_id: "work-1", state: "ready", task: { id: "dev", label: "Dev", kind: "run", provider: "npm", argv: ["npm", "run", "dev"] }, ready_url: "http://127.0.0.1:3000", preview_path: "/v1/forge/preview/retained/" };
+it("opens workshop output links through the authorized preview and keeps their path", async () => {
+  preview.local = false;
+  expect(await resolveTaskPreviewOpenUrl("work-1", devRun, "http://localhost:3000/about?q=hi#top")).toEqual({ url: "https://workshop.example/v1/forge/preview/retained/about?q=hi#top", via: "proxy" });
+  expect(await resolveTaskPreviewOpenUrl("work-1", devRun, "http://10.27.27.135:3000/")).toEqual({ url: "https://workshop.example/v1/forge/preview/retained/", via: "proxy" });
+});
+it("opens documentation links directly and rejects unsafe or unrelated remote loopback links", async () => {
+  preview.local = false;
+  expect((await resolveTaskPreviewOpenUrl("work-1", devRun, "https://nextjs.org/docs")).via).toBe("direct");
+  await expect(resolveTaskPreviewOpenUrl("work-1", devRun, "http://localhost:9999/")).rejects.toThrow("different workshop service");
+  await expect(resolveTaskPreviewOpenUrl("work-1", devRun, "javascript:alert(1)")).rejects.toThrow();
+});

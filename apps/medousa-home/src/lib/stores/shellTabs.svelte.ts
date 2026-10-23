@@ -1186,7 +1186,7 @@ export class ShellTabsStore {
         return;
       }
       if (tab.kind === "web") {
-        if (ports().browser.activeTab()?.id !== tab.browserTabId) {
+        if (!options?.rehydrate || ports().browser.activeTab()?.id !== tab.browserTabId) {
           await ports().browser.activateTab(tab.browserTabId);
         }
       }

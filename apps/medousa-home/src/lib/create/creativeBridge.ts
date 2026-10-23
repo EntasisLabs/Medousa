@@ -25,7 +25,8 @@ export function creativeBridgeApi(scope: string) {
     project: (id: string) => send<ItemProjection>("forge.items.by_work_id.get", { work_id: id }),
     runs: (id: string) => send<ProjectTaskRunList>("forge.items.by_work_id.task_runs.get", { work_id: id }),
     worlds: () => send<{ worlds: { world_id: string; title: string; url: string; run_state: string }[] }>("browser.worlds.isolated.get"),
-    openPreview: (url: string) => send<{ world: { world_id: string } }>("browser.worlds.isolated.post", {}, { initial_url: url, display_name: "Create preview", profile: { kind: "ephemeral" }, headless: true }),
+    // Capturing a page does not request presentation or switch the user's browser.
+    openPreview: (url: string) => send<{ world: { world_id: string } }>("browser.worlds.isolated.post", {}, { initial_url: url, display_name: "Create preview", profile: { kind: "ephemeral" }, headless: true, view_attached: false }),
     binding: (session: string) => send<{ work_id?: string | null }>("sessions.by_session_id.code_binding.get", { session_id: session }),
     capture: (worldId: string) => send<BrowserDesignCapture>("browser.worlds.isolated.by_world_id.design_capture.post", { world_id: worldId }),
     capturePage: (worldId: string) => send<BrowserDesignPageCapture>("browser.worlds.isolated.by_world_id.design_capture.page.post", { world_id: worldId }),

@@ -82,3 +82,8 @@ it("stacks page slices, clips the final reference and retains viewport coordinat
     expect(draws[0].slice(1,5)).toEqual([0,350,800,250]);
   }finally{vi.unstubAllGlobals();}
 });
+it("opens Create capture worlds without presenting them over regular browser tabs", async () => {
+  dispatch.mockResolvedValue({ world: { world_id: "capture" } });
+  await creativeBridgeApi("workshop").openPreview("http://localhost:3000");
+  expect(dispatch.mock.calls[0][2]).toMatchObject({ view_attached: false, headless: true });
+});

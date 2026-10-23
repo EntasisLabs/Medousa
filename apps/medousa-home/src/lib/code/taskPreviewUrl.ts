@@ -18,13 +18,26 @@ export function isHttpDaemonBase(base: string): boolean {
 export async function resolveTaskPreviewOpenUrl(
   workId: string,
   run: ProjectTaskRun,
+  outputUrl?: string,
 ): Promise<{ url: string; via: "direct" | "proxy" }> {
   const readyUrl = run.ready_url?.trim();
+  let target: URL | null = null;
+  if (outputUrl) {
+    target = new URL(outputUrl);
+    if (!["http:", "https:"].includes(target.protocol) || target.username || target.password) throw new Error("Use an HTTP or HTTPS output link.");
+    const ready = readyUrl ? new URL(readyUrl) : null;
+    const local = (host: string) => host === "localhost" || host === "[::1]" || host === "0.0.0.0" || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+    const sameService = ready && target.port === ready.port && target.protocol === ready.protocol && (target.hostname === ready.hostname || local(target.hostname) && local(ready.hostname));
+    if (!sameService) {
+      if (!isCoLocatedWorkshop() && local(target.hostname)) throw new Error("This output link is a different workshop service. Open it from that service’s ready preview.");
+      return { url: target.toString(), via: "direct" };
+    }
+  }
   if (!readyUrl) {
     throw new Error("This run is not ready for Browser preview yet");
   }
   if (isCoLocatedWorkshop()) {
-    return { url: readyUrl, via: "direct" };
+    return { url: target?.toString() ?? readyUrl, via: "direct" };
   }
   const retainedPath = run.preview_path?.trim();
   const preview = retainedPath
@@ -39,5 +52,10 @@ export async function resolveTaskPreviewOpenUrl(
   const path = preview.preview_path.startsWith("/")
     ? preview.preview_path
     : `/${preview.preview_path}`;
-  return { url: `${base}${path}`, via: "proxy" };
+  const url = new URL(`${base}${path}`);
+  if (target) {
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/${target.pathname.replace(/^\//, "")}`;
+    url.search = target.search; url.hash = target.hash;
+  }
+  return { url: url.toString(), via: "proxy" };
 }

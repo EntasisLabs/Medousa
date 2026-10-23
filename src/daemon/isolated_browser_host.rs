@@ -6,6 +6,7 @@
 //! id remain explicit and durable until the owner cleans the world up.
 
 mod design_capture;
+mod recovery;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -116,6 +117,8 @@ pub struct CreateIsolatedBrowserWorldRequest {
     pub initial_url: Option<String>,
     #[serde(default = "default_headless")]
     pub headless: bool,
+    #[serde(default = "default_headless")]
+    pub view_attached: bool,
 }
 
 fn default_headless() -> bool {
@@ -417,6 +420,7 @@ impl IsolatedBrowserHost {
                     | IsolatedBrowserRunState::Paused
             ) {
                 world.run_state = IsolatedBrowserRunState::Stopped;
+                world.view_attached = false;
                 world.failure = Some(RESTART_RECOVERY_FAILURE.to_string());
                 world.tab_id = None;
                 world.updated_at_ms = now;
@@ -511,7 +515,7 @@ impl IsolatedBrowserHost {
             run_state: IsolatedBrowserRunState::Starting,
             control: BrowserControl::Agent,
             control_epoch: 1,
-            view_attached: true,
+            view_attached: request.view_attached,
             headless: request.headless,
             url: initial_url,
             title: String::new(),
@@ -546,17 +550,23 @@ impl IsolatedBrowserHost {
         self.refresh_exited_processes().await;
 
         match action {
-            IsolatedBrowserLifecycleAction::Resume => {
+            IsolatedBrowserLifecycleAction::Resume | IsolatedBrowserLifecycleAction::Takeover => {
                 let snapshot = self.get(owner_profile_id, world_id).await?;
                 ensure_authoritative_world(&snapshot)?;
-                self.return_authoritative_control(&snapshot)?;
+                let control = if matches!(action, IsolatedBrowserLifecycleAction::Takeover) {
+                    self.take_authoritative_control(&snapshot)?;
+                    BrowserControl::User
+                } else {
+                    self.return_authoritative_control(&snapshot)?;
+                    BrowserControl::Agent
+                };
                 let needs_launch = {
                     let mut state = self.state.lock().await;
                     let runtime_exists = state.runtimes.contains_key(world_id);
                     let world = owned_world_mut(&mut state, owner_profile_id, world_id)?;
                     match world.run_state {
                         IsolatedBrowserRunState::Running => {
-                            world.control = BrowserControl::Agent;
+                            world.control = control;
                             world.control_epoch = world.control_epoch.saturating_add(1);
                             world.failure = None;
                             world.updated_at_ms = now_ms();
@@ -564,19 +574,19 @@ impl IsolatedBrowserHost {
                         }
                         IsolatedBrowserRunState::Paused if runtime_exists => {
                             world.run_state = IsolatedBrowserRunState::Running;
-                            world.control = BrowserControl::Agent;
+                            world.control = control;
                             world.control_epoch = world.control_epoch.saturating_add(1);
                             world.failure = None;
                             world.updated_at_ms = now_ms();
                             TabGroupManager::set_control(
                                 &world.tab_group_id,
-                                BrowserControl::Agent,
+                                control,
                             );
                             false
                         }
                         _ => {
                             world.run_state = IsolatedBrowserRunState::Starting;
-                            world.control = BrowserControl::Agent;
+                            world.control = control;
                             world.control_epoch = world.control_epoch.saturating_add(1);
                             world.failure = None;
                             world.updated_at_ms = now_ms();
@@ -584,6 +594,7 @@ impl IsolatedBrowserHost {
                         }
                     }
                 };
+                TabGroupManager::set_control(&snapshot.tab_group_id, control);
                 self.persist().await?;
                 if needs_launch && let Err(error) = self.launch_world(world_id).await {
                     self.mark_failed(world_id, error.to_string()).await;
@@ -592,12 +603,10 @@ impl IsolatedBrowserHost {
                 }
             }
             IsolatedBrowserLifecycleAction::Pause
-            | IsolatedBrowserLifecycleAction::Takeover
             | IsolatedBrowserLifecycleAction::ReturnToAgent
             | IsolatedBrowserLifecycleAction::AttachView
             | IsolatedBrowserLifecycleAction::DetachView => {
                 let mut state = self.state.lock().await;
-                let runtime_exists = state.runtimes.contains_key(world_id);
                 let world = owned_world_mut(&mut state, owner_profile_id, world_id)?;
                 match action {
                     IsolatedBrowserLifecycleAction::Pause => {
@@ -611,16 +620,6 @@ impl IsolatedBrowserHost {
                         }
                         self.take_authoritative_control(world)?;
                         world.run_state = IsolatedBrowserRunState::Paused;
-                        world.control_epoch = world.control_epoch.saturating_add(1);
-                    }
-                    IsolatedBrowserLifecycleAction::Takeover => {
-                        if !runtime_exists {
-                            return Err(IsolatedBrowserError::Conflict(
-                                "isolated browser is not running".to_string(),
-                            ));
-                        }
-                        self.take_authoritative_control(world)?;
-                        world.control = BrowserControl::User;
                         world.control_epoch = world.control_epoch.saturating_add(1);
                     }
                     IsolatedBrowserLifecycleAction::ReturnToAgent => {
@@ -637,6 +636,7 @@ impl IsolatedBrowserHost {
                     IsolatedBrowserLifecycleAction::AttachView => world.view_attached = true,
                     IsolatedBrowserLifecycleAction::DetachView => world.view_attached = false,
                     IsolatedBrowserLifecycleAction::Resume
+                    | IsolatedBrowserLifecycleAction::Takeover
                     | IsolatedBrowserLifecycleAction::Stop => unreachable!(),
                 }
                 TabGroupManager::set_control(&world.tab_group_id, world.control);
@@ -1314,6 +1314,7 @@ impl IsolatedBrowserHost {
         tokio::fs::create_dir_all(&profile_dir)
             .await
             .map_err(|error| store_error("create isolated browser profile", error))?;
+        recovery::release_orphaned_profile(&profile_dir, &binary).await?;
         let active_port_path = profile_dir.join("DevToolsActivePort");
         match tokio::fs::remove_file(&active_port_path).await {
             Ok(()) => {}
@@ -1356,7 +1357,7 @@ impl IsolatedBrowserHost {
             }
         };
         TabGroupManager::ensure_group(&world.tab_group_id, world.driver.driver_id.as_str());
-        TabGroupManager::set_control(&world.tab_group_id, BrowserControl::Agent);
+        TabGroupManager::set_control(&world.tab_group_id, world.control);
         let target_id = match create_page_target(&websocket_url, &world.url).await {
             Ok(target_id) => target_id,
             Err(error) => {
@@ -1368,7 +1369,11 @@ impl IsolatedBrowserHost {
             &world.tab_group_id,
             &world.url,
             None,
-            TabOpenedBy::Agent,
+            if world.control == BrowserControl::User {
+                TabOpenedBy::User
+            } else {
+                TabOpenedBy::Agent
+            },
         )
         .ok_or_else(|| {
             IsolatedBrowserError::Store("isolated browser tab group disappeared".to_string())
@@ -1380,7 +1385,7 @@ impl IsolatedBrowserHost {
         })?;
         current.tab_id = Some(page.id);
         current.run_state = IsolatedBrowserRunState::Running;
-        current.control = BrowserControl::Agent;
+        current.control = world.control;
         current.failure = None;
         current.updated_at_ms = now_ms();
         state.runtimes.insert(
@@ -3106,6 +3111,7 @@ mod tests {
                     profile: Some(IsolatedBrowserProfile::Ephemeral),
                     initial_url: Some("about:blank".to_string()),
                     headless: true,
+                    view_attached: true,
                 },
             )
             .await

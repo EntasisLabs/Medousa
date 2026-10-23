@@ -427,12 +427,17 @@ agent-driven operations.
 
 Create with `profile: { "kind": "ephemeral" }` or
 `profile: { "kind": "persistent", "profile_id": "work" }`. Persistent
-profile ids are explicit safe identifiers, not filesystem paths. The response's
+profile ids are explicit safe identifiers, not filesystem paths. Creation accepts
+`view_attached: false` for offscreen consumers such as Create imports (default
+`true`); capturing does not itself request presentation. The response's
 `world.driver.driver_id` selects this exact browser in a subsequent
 `InteractiveTurnRequest.surface.browser_driver_id`; the daemon does not fall
 back to a shared browser if that instance is unavailable. A detached view does
 not stop execution. After daemon restart, previously active worlds recover as
-`stopped`. Human views require an explicit `resume`; a Bot with an explicitly
+`stopped` with presentation detached. Human views require explicit `resume` or
+`takeover`; takeover can reopen a stopped/failed world directly under user
+control. Startup reclaims an orphaned Chromium process only for the exact owned
+profile and OS user, and refuses to terminate one with a live parent. A Bot with an explicitly
 saved persistent-world binding may rehydrate that exact world at its next
 authorized action boundary.
 

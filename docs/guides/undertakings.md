@@ -405,8 +405,12 @@ and check commands; an explicit selection remains the project default.
   moving, or popping out the pane only detaches and does not restart the task.
   Stop first sends an interrupt and changes to **Force stop** if the process
   remains alive. Ready applications offer **Open Preview** and **Open Beside
-  Code** through Medousa's Web surface. Full OSC shell integration remains
-  later work.
+  Code** through Medousa's Web surface. Output uses the same terminal renderer
+  as Terminal for ANSI colors, Unicode and cursor/line updates. Click HTTP(S)
+  addresses or terminal hyperlinks to open them in a new browser tab. Links to
+  the ready dev service use its workshop preview, including when the workshop
+  is remote; links to a different remote loopback service need that service's
+  own preview. Full OSC shell integration remains later work.
 
 ## What each surface does
 

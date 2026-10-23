@@ -269,3 +269,8 @@ returns `BrowserDesignPageCapture`: ordered slices with captured scene/pixels,
 in frame `design_source.original_asset_id`. Text layouts accept tracking,
 paragraph spacing, underline and bounded UTF-16 inline spans. See the
 [creative contract](../engine/creative-workspace.md) for validation and capture limits.
+
+Isolated browser creation accepts `view_attached: false` for offscreen capture
+(default `true`). After a daemon restart, `takeover` explicitly reopens a stopped
+world under user control; `resume` returns it to agent control. See
+[isolated browser lifecycle](../engine/http-api.md#isolated-browser-worlds).

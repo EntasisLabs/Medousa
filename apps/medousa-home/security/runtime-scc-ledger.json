@@ -113,6 +113,10 @@
       "specifier": "$lib/styles/editor-host.postcss"
     },
     {
+      "from": "src/lib/components/code/CodeTaskTerminal.svelte",
+      "specifier": "@xterm/xterm/css/xterm.css"
+    },
+    {
       "from": "src/lib/components/context/MapPanel.svelte",
       "specifier": "$lib/styles/context.postcss"
     },

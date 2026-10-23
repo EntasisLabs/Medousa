@@ -600,3 +600,15 @@ it("clears pending tests without dropping the invocation already submitted", asy
   expect(controller.testQueue?.phase).toBe("cancelled");
   controller.dispose();
 });
+
+it("does not let an older poll undo Stop or resurrect a cancelled run", () => {
+  const { controller } = createController();
+  const stopped = { run_id: "run-1", work_id: "work-1", task: checkTask, state: "stopping", next_seq: 12 };
+  controller.applyRunSnapshot(stopped);
+  controller.applyRunSnapshot({ ...stopped, state: "running", next_seq: 11 });
+  expect(controller.run?.state).toBe("stopping");
+  controller.applyRunEvent({ run_id: "run-1", kind: "state", state: "ready", seq: 10 });
+  expect(controller.run?.state).toBe("stopping");
+  controller.applyRunSnapshot({ ...stopped, state: "cancelled", next_seq: 13 });
+  expect(controller.run?.state).toBe("cancelled");
+});

@@ -12,6 +12,7 @@ import {
   humanBrowserStop,
   type HumanBrowserNavigatedPayload,
 } from "$lib/humanBrowser";
+import { selectDeviceBrowser } from "$lib/runtime/humanBrowserSelectionPort";
 import { browserHistory } from "$lib/browser/browserHistory.svelte";
 import { browserPageLabel } from "$lib/utils/browserUrl";
 import { resolveBrowserDestination } from "$lib/utils/resolveBrowserDestination";
@@ -273,6 +274,7 @@ export class HumanBrowserStore {
   }
 
   async openTab(url = "about:blank", saved?: SavedTab) {
+    selectDeviceBrowser();
     const tab = { ...newTab(url), title: saved?.title || browserPageLabel(url), favicon: saved?.favicon ?? null, loading: url !== "about:blank" };
     this.tabs = [...this.tabs.map((entry) => ({ ...entry, active: false })), tab];
     this.updateDraft();
@@ -283,6 +285,7 @@ export class HumanBrowserStore {
   }
 
   async activateTab(tabId: string) {
+    selectDeviceBrowser();
     const target = this.tabs.find((tab) => tab.id === tabId);
     if (!target || target.active) return;
     this.tabs = this.tabs.map((tab) => ({ ...tab, active: tab.id === tabId }));

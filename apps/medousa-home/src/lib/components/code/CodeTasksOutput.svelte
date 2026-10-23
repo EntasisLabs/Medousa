@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CodeTaskTerminal from "./CodeTaskTerminal.svelte";
   import CodeTestsExplorer from "./CodeTestsExplorer.svelte";
   /**
    * Task output dock, last-run banner, and discovered tests list.
@@ -70,7 +71,8 @@
     {#if !tasks.liveStdout && !tasks.liveStderr && !tasks.running && !tasks.run}
       <p class="px-2.5 py-2 text-chrome-sm text-content-quiet">Run a project check to stream output here.</p>
     {:else}
-      <pre class="min-h-0 flex-1 overflow-auto px-2.5 py-1.5 font-mono text-chrome-xs leading-relaxed text-content-tertiary whitespace-pre-wrap break-words" aria-label="Task output">{tasks.liveStdout}{#if tasks.liveStdout && tasks.liveStderr}{"\n\n"}{/if}{#if tasks.liveStderr}<span class="text-rose-200/90">{tasks.liveStderr}</span>{/if}{#if !tasks.liveStdout && !tasks.liveStderr && tasks.running}<span class="text-content-quiet">Waiting for output…</span>{/if}</pre>
+      <CodeTaskTerminal stdout={tasks.liveStdout} stderr={tasks.liveStderr} runId={tasks.run?.run_id ?? ""} onOpenUrl={url => void tasks.openOutputUrl(url)}/>
+
       {#if tasks.liveLocations.length}
         <div class="max-h-20 shrink-0 overflow-y-auto border-t border-surface-500/20">
           {#each tasks.liveLocations.slice(0, 8) as location (`${location.path}:${location.line}:${location.column}:${location.message}`)}

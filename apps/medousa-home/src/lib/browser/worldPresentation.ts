@@ -37,7 +37,7 @@ export function chooseBrowserSurfaceSource(
     .filter(
       (world) =>
         world.view_attached &&
-        world.run_state !== "failed" &&
+        world.run_state === "running" &&
         world.updated_at_ms > (preference?.selectedAt ?? 0),
     )
     .sort((left, right) => right.updated_at_ms - left.updated_at_ms)[0];

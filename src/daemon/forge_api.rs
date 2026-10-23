@@ -4,6 +4,7 @@
 //! (material memory). Forge owns custody of intentional work episodes.
 
 mod chat_git;
+mod task_utf8;
 
 use std::ffi::OsStr;
 use std::io::Read as _;
@@ -7659,6 +7660,9 @@ fn parse_output_locations_with_matcher(
             .and_then(|idx| captures.get(usize::from(idx)))
             .map(|m| m.as_str().chars().take(300).collect())
             .unwrap_or_else(|| line_text.trim().chars().take(300).collect());
+        if raw.contains("://") {
+            continue;
+        }
         let path = std::path::Path::new(raw.trim());
         let Some(path) = normalize_output_path(repository_root, working_root, path) else {
             continue;
@@ -7831,31 +7835,35 @@ async fn pump_task_stream(
 ) {
     use tokio::io::AsyncReadExt;
     let mut buf = [0u8; 4096];
+    let mut decoder = task_utf8::TaskUtf8::default();
     loop {
         match reader.read(&mut buf).await {
             Ok(0) => break,
             Ok(n) => {
-                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let text = decoder.push(&buf[..n]);
                 publish_task_output(&run_id, stream_name, &text).await;
             }
             Err(_) => break,
         }
     }
+    publish_task_output(&run_id, stream_name, &decoder.finish()).await;
 }
 
 async fn pump_task_stderr(run_id: String, mut reader: tokio::process::ChildStderr) {
     use tokio::io::AsyncReadExt;
     let mut buf = [0u8; 4096];
+    let mut decoder = task_utf8::TaskUtf8::default();
     loop {
         match reader.read(&mut buf).await {
             Ok(0) => break,
             Ok(n) => {
-                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let text = decoder.push(&buf[..n]);
                 publish_task_output(&run_id, "stderr", &text).await;
             }
             Err(_) => break,
         }
     }
+    publish_task_output(&run_id, "stderr", &decoder.finish()).await;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7956,6 +7964,7 @@ async fn pump_project_task_session(
 
     let started = std::time::Instant::now();
     let mut after_sequence = 0_u64;
+    let mut decoder = task_utf8::TaskUtf8::default();
     loop {
         let host = state.shell_sessions.clone().unwrap_or_default();
         let info = crate::daemon::shell_session_host::ensure_shell_session_host(&host).await;
@@ -8002,7 +8011,7 @@ async fn pump_project_task_session(
                     if let Some(encoded) = frame.get("data").and_then(serde_json::Value::as_str)
                         && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded)
                     {
-                        publish_task_output(&run_id, "stdout", &String::from_utf8_lossy(&bytes))
+                        publish_task_output(&run_id, "stdout", &decoder.push(&bytes))
                             .await;
                     }
                 }
@@ -8024,6 +8033,7 @@ async fn pump_project_task_session(
             }
         }
         if exited.is_some() {
+            publish_task_output(&run_id, "stdout", &decoder.finish()).await;
             finish_project_task_run(
                 state,
                 item,
@@ -9213,6 +9223,9 @@ fn parse_output_locations(
                 token.trim_matches(|ch: char| matches!(ch, '(' | ')' | '[' | ']' | ',' | ':'))
             })
             .find(|token| {
+                if token.contains("://") {
+                    return false;
+                }
                 let mut parts = token.rsplitn(3, ':');
                 parts.next().is_some_and(|part| part.parse::<u32>().is_ok())
                     && parts
@@ -12453,6 +12466,9 @@ mod source_tests {
     #[test]
     fn readiness_and_matcher_patterns_parse_incremental_output() {
         let root = PathBuf::from("/work/project");
+        assert!(parse_output_locations(&root, &root,
+            "- Local: http://localhost:3000\n- Network: http://10.27.27.135:3000"
+        ).is_empty());
         let matcher = (
             regex::Regex::new(r"^(.*):(\d+):(\d+):\s+(.*)$").unwrap(),
             ProjectProblemPattern {

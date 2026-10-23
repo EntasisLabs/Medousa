@@ -10,6 +10,7 @@ import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 import { externalDesk } from "$lib/stores/externalDesk.svelte";
 import { flows } from "$lib/stores/flows.svelte";
 import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
+import { governedBrowser } from "$lib/stores/governedBrowser.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { runtime } from "$lib/stores/runtime.svelte";
@@ -24,6 +25,7 @@ import { normalizeReasoningEffort } from "$lib/types/reasoningEffort";
 import { setActiveWorkshopIdPort } from "$lib/utils/workshopLocality";
 import { setChatSettingsPort } from "./chatSettingsPort";
 import { setLmeWorkspacePorts } from "./lmeWorkspacePorts";
+import { setHumanBrowserSelectionPort } from "./humanBrowserSelectionPort";
 import { setSharedModePort } from "./sharedModePorts";
 import { setShellTabPorts } from "./shellTabPorts";
 import {
@@ -37,6 +39,7 @@ function warnUnsavedFiles(event: BeforeUnloadEvent) {
 }
 
 export function bindAllFeaturePorts(): void {
+  setHumanBrowserSelectionPort(() => governedBrowser.chooseDevice());
   if (typeof window !== "undefined") window.addEventListener("beforeunload", warnUnsavedFiles);
   setChatSettingsPort({
     autoOpenWebOnAgentBrowse: () => settings.autoOpenWebOnAgentBrowse,
