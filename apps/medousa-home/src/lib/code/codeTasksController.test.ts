@@ -612,3 +612,19 @@ it("does not let an older poll undo Stop or resurrect a cancelled run", () => {
   controller.applyRunSnapshot({ ...stopped, state: "cancelled", next_seq: 13 });
   expect(controller.run?.state).toBe("cancelled");
 });
+
+it("keeps a completed Stop result when its HTTP acknowledgement arrives after the exit event", async () => {
+  const stopped = deferred<unknown>();
+  api.cancelProjectTaskRun.mockReturnValueOnce(stopped.promise);
+  const { controller } = createController();
+  controller.run = { run_id: "run-1", work_id: "work-1", state: "ready", task: checkTask, next_seq: 5 };
+  const pending = controller.stopDetected();
+  const result = { task: checkTask, success: false, exit_code: 130, stdout: "stopped", stderr: "", truncated: false, duration_ms: 100, locations: [] };
+  controller.applyRunEvent({ run_id: "run-1", seq: 6, kind: "state", state: "cancelled", result });
+  stopped.resolve({ run_id: "run-1", work_id: "work-1", state: "stopping", task: checkTask, next_seq: 6 });
+  await pending;
+  expect(controller.run?.state).toBe("cancelled");
+  expect(controller.run?.result).toEqual(result);
+  expect(controller.runStillActive(controller.run!)).toBe(false);
+  controller.dispose();
+});

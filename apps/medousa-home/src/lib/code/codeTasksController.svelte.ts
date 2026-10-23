@@ -720,7 +720,7 @@ export class CodeTasksController {
         runId,
         force || this.run.state === "stopping",
       );
-      if (current() && this.run?.run_id === runId) this.run = stopped;
+      if (current() && this.run?.run_id === runId) this.applyRunSnapshot(stopped);
     } catch (err) {
       if (!current()) return;
       this.#deps.onError(err instanceof Error ? err.message : String(err));
