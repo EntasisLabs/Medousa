@@ -11,6 +11,7 @@ vi.mock("$lib/create/creativeApi", () => ({ creativeApi: () => ({ list: async ()
 vi.mock("$lib/create/creativeBridge", () => ({ creativeBridgeApi: () => ({ projects: async () => [] }) }));
 vi.mock("$lib/stores/vault.svelte", () => ({ vault: { notes: [1], labelByPathMap: new Map() } }));
 vi.mock("$lib/stores/workshop.svelte", () => ({ workshop: { scripts: [1] } }));
+vi.mock("$lib/terminal", () => ({ terminalSessions: async () => [] }));
 import Launcher from "./+page.svelte";
 import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
 let component: ReturnType<typeof mount> | undefined;

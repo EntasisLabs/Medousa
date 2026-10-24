@@ -10,7 +10,8 @@ vi.mock("$lib/stores/workshop.svelte", () => ({ workshop: { scripts: [1], refres
 vi.mock("$lib/stores/shellTabs.svelte", () => ({ shellTabs: { desktops: [], activeDesktopId: "desk", activeGroupId: "pane", get activeTab() { return { id: state.tab }; } } }));
 vi.mock("$lib/stores/spotlightPins.svelte", () => ({ spotlightPins: { get: () => ({ kind: "chat", target: "pinned", label: "Pinned chat" }) } }));
 vi.mock("$lib/commands/context", () => ({ buildWorkshopCommandContext: () => ({ callbacks: {}, navigate: vi.fn() }) }));
-vi.mock("$lib/commands/collectCommands", () => ({ collectWorkshopCommands: state.collect, collectWorkshopLensCommands: state.lenses }));
+vi.mock("$lib/commands/collectCommands", () => ({ collectWorkshopCommands: state.collect, collectWorkshopLensCommands: state.lenses, parseSpotlightQuery: (query: string) => ({ mode: query.startsWith(">") ? "advanced" : "default", rawQuery: query.replace(/^>/, "") }) }));
+vi.mock("$lib/vault/vaultSearchCatalog.svelte", () => ({ vaultSearchCatalog: { search: vi.fn(), error: null } }));
 vi.mock("$lib/commands/pinCommands", () => ({ buildPinnedJumpCommands: () => [{ id: "pin-jump:0", label: "Pinned", run: state.command }] }));
 vi.mock("$lib/commands/runWorkshopCommand", () => ({ executeWorkshopCommand: async (ctx: unknown, command: { run: (ctx: unknown) => Promise<void> }) => command.run(ctx) }));
 vi.mock("$lib/runtime/shellUseCases", () => ({ focusChatComposer: vi.fn() }));
@@ -69,6 +70,13 @@ it("opens concrete conversations as native windows without mutating main-shell n
   await host.handle("a", { kind: "execute", token: command.token });
   expect(state.native).toHaveBeenCalledWith({ kind: "chat", workshopId: "a", resourceId: "saved", title: "Chat" });
   expect(state.command).not.toHaveBeenCalled(); expect(state.shell).not.toHaveBeenCalled();
+});
+it.each(["terminal-open", "terminal-ssh:nas"])("opens %s without focusing or navigating the main shell", async id => {
+  state.collect.mockReturnValue([{ section: "do", label: "Actions", commands: [{ id, label: "Terminal", run: state.command }] }]);
+  const host = createSpotlightShellHost(), command = await ticket(host);
+  await host.handle("a", { kind: "execute", token: command.token });
+  expect(state.native).toHaveBeenCalledWith({ kind: "terminal", workshopId: "a", ...(id === "terminal-open" ? {} : { sshTargetId: "nas" }) });
+  expect(state.shell).not.toHaveBeenCalled(); expect(state.command).not.toHaveBeenCalled();
 });
 it("propagates execution failures and never retries a consumed action", async () => {
   state.command.mockRejectedValueOnce(new Error("Could not save"));

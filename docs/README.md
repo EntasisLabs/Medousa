@@ -40,6 +40,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
 | [SSH targets](guides/ssh-targets.md) | Connect named servers and open workshop or SSH terminals from Spotlight |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
+| [Notes and vaults](guides/notes-and-vaults.md) | Switch linked vaults safely and search notes across them |
 | [Files](guides/files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
 | [Context](guides/context.md) | Browse saved session memory and its sources |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |

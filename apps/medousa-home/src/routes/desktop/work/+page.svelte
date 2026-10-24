@@ -8,6 +8,7 @@
   const loadChat = () => import("$lib/components/chat/ChatPanel.svelte");
   const loadCreate = () => import("$lib/components/create/CreatePanel.svelte");
   const loadCode = () => import("$lib/components/work/UndertakingsPanel.svelte");
+  const loadTerminal = () => import("$lib/components/terminal/DesktopTerminal.svelte");
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import { WINDOW_SAVE, type WindowSaveRegistration } from "$lib/desktop/windowSave";
   import LmeCodeExplorer from "$lib/components/lme/explorers/LmeCodeExplorer.svelte";
@@ -102,7 +103,7 @@
 <div class="desktop-work" class:desktop-work-closing={closing}>
   <header>
     <button type="button" title="Open Medousa" onclick={() => void showMainWindow()}><ArrowUpLeft size={14} />Medousa</button>
-    <span class="desktop-work-location">{workshops.activeLabel} <span>/</span> {target?.title || (target?.kind === "chat" ? "Chat" : target?.kind === "create" ? "Create" : "Code")}</span>
+    <span class="desktop-work-location">{workshops.activeLabel} <span>/</span> {target?.title || (target?.kind === "chat" ? "Chat" : target?.kind === "create" ? "Create" : target?.kind === "terminal" ? "Terminal" : "Code")}</span>
     <div class="desktop-work-actions">
       {#if target?.kind === "code" && target.resourceId}<button type="button" title="Toggle files" aria-pressed={rail} onclick={() => rail = !rail}><PanelLeft size={15}/></button>{/if}
       <button type="button" title="Desktop Spotlight" onclick={() => void toggleDesktopSpotlight()}><Search size={15} />Spotlight</button>
@@ -120,6 +121,8 @@
         {#if rail}<aside class="desktop-work-files"><CodeRepositoryTree workId={target.resourceId} prepared={Boolean(undertakings.active?.worktree)} fill /></aside>{/if}
         <LazyFeatureView loader={loadCode} workId={target.resourceId} showBrowser={false} />
       {:else}<aside class="desktop-work-files"><LmeCodeExplorer onOpenProject={openCode}/></aside><div class="desktop-work-empty"><h1>Code</h1><p>Open a project to edit files and run your app.</p></div>{/if}
+    {:else if target?.kind === "terminal" && target.resourceId}
+      <LazyFeatureView loader={loadTerminal} sessionId={target.resourceId} workshopId={target.workshopId} title={target.title ?? "Terminal"} onClose={() => void close()} />
     {/if}
   </div>
   <ToastHost />

@@ -13,6 +13,7 @@ export interface SpotlightQuery {
 }
 export type SpotlightCommandDescriptor = Omit<WorkshopCommand, "run"> & { token: string };
 export interface SpotlightSnapshot {
+  notice?: string | null;
   groups: Array<{ id: string; label: string; commands: SpotlightCommandDescriptor[] }>;
   scopes: Array<{ id: string; label: string }>;
   layout: ShellDesktopLayout | null;

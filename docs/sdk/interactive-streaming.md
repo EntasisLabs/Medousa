@@ -313,6 +313,10 @@ no command. An uncertain connection reports `status: "unknown"`; polling resumes
 observation without submitting the command again. See
 [agent shell output](../engine/coder-efficiency.md#agent-shell-output).
 
+`GET /v1/sessions/shell` entries include `exited` and nullable `exit_code`.
+An exited session can remain listed for scrollback retention; use `exited` when
+offering sessions to reconnect. Older hosts may omit these additive fields.
+
 When checking the opaque JSON readiness responses from `/v1/coding-engine` or
 `/v1/shell-sessions`, continue polling when `starting: true`. `available: false`
 alone does not imply that startup failed. These are additive response fields;

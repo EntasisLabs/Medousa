@@ -337,7 +337,8 @@ pub async fn search_vault_notes(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    if q.is_none()
+    if query.root_id.is_none()
+        && q.is_none()
         && query
             .tags
             .as_deref()
@@ -350,8 +351,17 @@ pub async fn search_vault_notes(
     let limit = query.limit.unwrap_or(20);
     let q = query.q;
     let tags = query.tags;
+    let root_id = query.root_id;
     vault_io()
         .run_anyhow(VaultIoClass::SearchRebuild, move || {
+            if let Some(root) = root_id {
+                return crate::vault::catalog::search_root(
+                    &root,
+                    q.as_deref().unwrap_or(""),
+                    limit,
+                    tags.as_deref(),
+                );
+            }
             VaultService::search(q.as_deref(), limit, tags.as_deref())
         })
         .await

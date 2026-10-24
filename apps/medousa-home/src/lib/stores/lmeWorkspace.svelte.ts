@@ -963,6 +963,14 @@ export class LmeWorkspaceStore {
     }
   }
 
+  /** Detach root-relative note tabs after their editing root changes. */
+  detachVaultNotes() {
+    // Root-relative paths are not identities across physical vaults. Notes have
+    // been flushed before switching; loose files and other feature tabs remain.
+    this.tabs = this.tabs.filter(tab => tab.kind !== "note" || /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(tab.path));
+    if (!this.tabs.some(tab => tab.tabId === this.activeTabId)) this.activeTabId = null;
+  }
+
   /** Refresh note tab titles when vault labels change. Idempotent. */
   refreshNoteTitles() {
     let changed = false;

@@ -2,6 +2,23 @@ import { describe, expect, it, vi } from "vitest";
 import { NoteSaveQueue, type NoteSaveJob, type NoteSaveResult } from "./noteSaveQueue";
 
 describe("NoteSaveQueue", () => {
+  it("drains coalesced writes without carrying a hash across vault contexts", async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    const hashes: Array<string | null> = [];
+    const queue = new NoteSaveQueue(async (_path, job) => {
+      hashes.push(job.contentHash);
+      if (job.contextEpoch === 1) await gate;
+      return { ok: true, contentHash: "old-vault-hash" };
+    });
+    const first = queue.enqueue("same.md", { contextEpoch: 1, content: "a", contentHash: "a", force: false, source: "autosave" });
+    const second = queue.enqueue("same.md", { contextEpoch: 2, content: "b", contentHash: "b", force: false, source: "manual" });
+    const drained = queue.drain();
+    expect(queue.hasPendingJobs).toBe(true);
+    finish(); await Promise.all([first, second, drained]);
+    expect(hashes).toEqual(["a", "b"]);
+    expect(queue.hasPendingJobs).toBe(false);
+  });
   it("serializes saves per path", async () => {
     const order: string[] = [];
     let releaseFirst!: () => void;

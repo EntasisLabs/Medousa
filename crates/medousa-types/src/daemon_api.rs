@@ -3138,6 +3138,9 @@ pub struct VaultSearchHit {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultSearchResponse {
+    /// Explicit catalog root; absent for the active-root full-text search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_id: Option<String>,
     pub query: String,
     pub hits: Vec<VaultSearchHit>,
     /// True when the search index is rebuilding / not yet warm.
@@ -3148,6 +3151,9 @@ pub struct VaultSearchResponse {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultSearchQuery {
+    /// Search a configured root without changing the active editing vault.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_id: Option<String>,
     pub q: Option<String>,
     pub limit: Option<usize>,
     /// Comma-separated semantic tags (match-all).

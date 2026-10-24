@@ -117,8 +117,11 @@ class VaultApi:
         q: str | None = None,
         limit: int | None = None,
         tags: str | None = None,
+        root_id: str | None = None,
     ) -> VaultSearchResponse:
         query: list[tuple[str, str]] = []
+        if root_id is not None:
+            query.append(("root_id", root_id))
         if q is not None:
             query.append(("q", q))
         if limit is not None:

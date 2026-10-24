@@ -46412,6 +46412,13 @@
       },
       "query": {
         "type": "string"
+      },
+      "root_id": {
+        "description": "Explicit catalog root; absent for the active-root full-text search.",
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "definitions": {

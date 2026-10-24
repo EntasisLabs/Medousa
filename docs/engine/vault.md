@@ -15,7 +15,7 @@ The vault is Medousa's markdown note store with wikilinks, backlinks, tags, and 
 | GET/POST | `/v1/vault/notes` | List (`VaultNoteSummary[]`) / create |
 | GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | CRUD single note (`VaultNote` + body) |
 | GET | `/v1/vault/tags` | Tag index |
-| GET | `/v1/vault/search` | Search (`q` query param) |
+| GET | `/v1/vault/search` | Active-root full-text search (`q`), or root-qualified title/path search (`root_id`) |
 | GET | `/v1/vault/changes` | Generation delta (`since_generation`) |
 | GET | `/v1/vault/backlinks` | Backlinks for path |
 
@@ -44,6 +44,22 @@ Multi-workshop / data dir: [upgrade-and-data-dir runbook](../runbooks/upgrade-an
 Add another markdown folder on the same Mac via **Add vault folder…** (Library sidebar). Roots with a `.obsidian` directory are labeled **Obsidian** in the picker. Medousa indexes `*.md` and other known text files, skips `.obsidian` / binary assets, and does not inject workshop semantic tags into Obsidian or other external roots on write — so YAML frontmatter stays yours.
 
 Same-PC co-located Obsidian vaults work as an additional root; switch with the vault folder picker. For a single `.md` without registering a root, use **Open markdown file…**.
+
+For cross-vault discovery, list `/v1/vault/roots`, then call
+`GET /v1/vault/search?root_id=<id>&q=<text>&limit=24` for each root. This performs
+read-only fuzzy title/path matching within that configured root without changing
+the daemon's active editing root. With an explicit `root_id`, `q` may be empty
+to return recent notes. `tags` remains a comma-separated match-all filter.
+Responses echo `root_id`; clients must check it before labeling a result, since
+older engines may ignore the query parameter. Without `root_id`, existing
+active-root full-text search behavior is unchanged.
+
+The root catalog skips hidden entries and symlinks, reads up to 8 KiB per file
+for metadata and a short preview, and caches results for three seconds. Each scan
+is bounded to 50,000 directory entries and 256 MiB of text prefixes; exceeding a
+bound or encountering an unreadable root returns an error. Callers can retain
+successful results from other roots. The default Medousa root also includes its
+existing project overlay, with user-root paths taking precedence.
 
 ---
 

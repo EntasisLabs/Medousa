@@ -25,6 +25,12 @@ scripts, browser history and saved SSH destinations. Use **Overview**, **Recent*
 its tabs and panes. `+` filters creation commands, `!` finds runnable actions,
 and `>` opens advanced commands. Pins and **Resume last Spotlight** work here too.
 
+Note search covers all linked vaults in the selected workshop, without opening
+Notes first. Each result shows its vault and path, including when two vaults have
+the same filename. Searching and previewing leave the editing vault unchanged.
+Opening a result saves pending note edits before switching to its vault. If a
+vault cannot be searched, Spotlight names it and keeps available results visible.
+
 Type `@` to [talk from Spotlight](spotlight-conversations.md) without opening a
 full chat. The short transcript and continuing conversation stay in the widget;
 **Open conversation** opens or focuses its native Chat window. Closing Spotlight
@@ -32,7 +38,9 @@ detaches the preview and leaves accepted work running.
 
 [Activity](spotlight-activity.md) shows running work, **Needs you**, finished tasks
 and execution previews inline. Opening a conversation or Code project uses its
-native window. Task details, reviews, notes, settings, Terminal/SSH and editor
+native window. **Open terminal**, `ssh <saved server>`, and SSH picker results open
+native Terminal windows without bringing the main window forward. Recent live
+terminal sessions are searchable too. Task details, reviews, notes, settings and editor
 actions bring the main window forward at their real destination. These commands
 use the main window's current document and workspace, rather than an invisible
 copy of its tabs inside the widget. If that context changes before execution,
@@ -42,6 +50,16 @@ submitted action is not automatically retried.
 Opening the same conversation, canvas, or Code project again focuses and restores
 its existing window. Files requested for an open Code project open inside that
 project’s existing window. Different workshops keep separate window identities.
+
+Terminal windows reuse the same terminal emulator and workshop-owned PTYs as the
+main app. Opening the same live session focuses its existing window. Repeating an
+SSH destination reuses its live session, including after closing and reopening
+its window. **New shell** creates a separate terminal; the sessions menu opens or
+focuses another session’s window. Closing a Terminal window only detaches the view.
+Use `exit` to end its shell. Session reuse lasts while Medousa is running; after a
+full app restart, surviving sessions remain available through recent terminal results.
+Launching an SSH session with an uncertain response retains the same request key
+on retry instead of automatically replaying the operation.
 
 These are the same editors and daemon-backed resources used in the main app.
 Main-window tabs and detached navigation remain independent. Saved Create edits

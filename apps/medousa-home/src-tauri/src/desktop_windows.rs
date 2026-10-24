@@ -15,6 +15,8 @@ pub struct DesktopTarget {
     pub kind: DesktopKind,
     pub workshop_id: String,
     pub resource_id: Option<String>,
+    /// Terminal launch intent. Resolved to a PTY resource before window creation.
+    pub ssh_target_id: Option<String>,
     pub path: Option<String>,
     pub title: Option<String>,
 }
@@ -25,6 +27,7 @@ pub enum DesktopKind {
     Chat,
     Create,
     Code,
+    Terminal,
 }
 
 impl DesktopTarget {
@@ -34,6 +37,16 @@ impl DesktopTarget {
             return Err("Choose a workshop for this window".into());
         }
         self.resource_id = self.resource_id.take().filter(|s| !s.is_empty());
+        if let Some(id) = &self.ssh_target_id {
+            if self.kind != DesktopKind::Terminal
+                || self.resource_id.is_some()
+                || id.trim().is_empty()
+                || id.len() > 1024
+                || id.chars().any(char::is_control)
+            {
+                return Err("Invalid SSH terminal destination".into());
+            }
+        }
         if self
             .resource_id
             .as_ref()
@@ -79,6 +92,7 @@ pub struct DesktopWindows {
     next_generation: AtomicU64,
     shortcut_error: std::sync::Mutex<Option<String>>,
     spotlight: std::sync::Mutex<Option<ResourceWindow>>,
+    terminals: crate::desktop_terminals::TerminalWindows,
     spotlight_requests: std::sync::Mutex<
         HashMap<u64, tokio::sync::oneshot::Sender<Result<serde_json::Value, String>>>,
     >,
@@ -226,8 +240,13 @@ pub async fn desktop_open_window(
     mut target: DesktopTarget,
 ) -> Result<String, String> {
     target.validate()?;
-    crate::active_workshop::resolve_scope_async(target.workshop_id.clone()).await?;
+    let workshop = crate::active_workshop::resolve_scope_async(target.workshop_id.clone()).await?;
     let state = app.state::<DesktopWindows>();
+    if target.kind == DesktopKind::Terminal {
+        let config = crate::active_workshop::transport_for_target_async(workshop).await?;
+        state.terminals.resolve(&config, &mut target).await?;
+        target.validate()?;
+    }
     let _gate = state.gate.lock().await;
     let label = target.label();
     if let Some(window) = app.get_webview_window(&label) {
@@ -263,6 +282,7 @@ pub async fn desktop_open_window(
             DesktopKind::Chat => "Chat",
             DesktopKind::Create => "Create",
             DesktopKind::Code => "Code",
+            DesktopKind::Terminal => "Terminal",
         });
     let result = create_popout_window(
         &app,
@@ -323,6 +343,7 @@ pub async fn desktop_toggle_spotlight(app: AppHandle) -> Result<(), String> {
                     kind: DesktopKind::Chat,
                     workshop_id: scope,
                     resource_id: None,
+                    ssh_target_id: None,
                     path: None,
                     title: None,
                 },
@@ -549,6 +570,7 @@ mod tests {
             kind: DesktopKind::Code,
             workshop_id: "personal".into(),
             resource_id: Some("project".into()),
+            ssh_target_id: None,
             path: None,
             title: None,
         }
@@ -580,6 +602,26 @@ mod tests {
         assert!(t.validate().is_err());
         t = target();
         t.resource_id = Some("bad\n".into());
+        assert!(t.validate().is_err());
+    }
+    #[test]
+    fn terminal_intents_resolve_to_a_single_session_identity() {
+        let mut t = target();
+        t.kind = DesktopKind::Terminal;
+        t.resource_id = None;
+        t.ssh_target_id = Some("nas".into());
+        assert!(t.validate().is_ok());
+        t.resource_id = Some("session".into());
+        assert!(t.validate().is_err());
+        t.ssh_target_id = None;
+        assert!(t.validate().is_ok());
+        let label = t.label();
+        t.title = Some("SSH · Renamed".into());
+        assert_eq!(t.label(), label);
+        t.workshop_id = "another-workshop".into();
+        assert_ne!(t.label(), label);
+        t.kind = DesktopKind::Chat;
+        t.ssh_target_id = Some("nas".into());
         assert!(t.validate().is_err());
     }
 }

@@ -1,6 +1,7 @@
 /** Per-path serialized vault saves — one in-flight PUT; coalesce superseding bodies. */
 
 export type NoteSaveJob = {
+  contextEpoch?: number;
   content: string;
   contentHash: string | null;
   force: boolean;
@@ -26,6 +27,7 @@ type Runner = (path: string, job: NoteSaveJob) => Promise<NoteSaveResult>;
  */
 export class NoteSaveQueue {
   private inflight = new Map<string, Promise<NoteSaveResult>>();
+  private inflightEpochs = new Map<string, number | undefined>();
   private pending = new Map<string, NoteSaveJob>();
 
   constructor(private readonly run: Runner) {}
@@ -33,6 +35,15 @@ export class NoteSaveQueue {
   /** True when a PUT is in flight or a coalesced job is waiting for that path. */
   isBusy(path: string): boolean {
     return this.inflight.has(path) || this.pending.has(path);
+  }
+  get hasPendingJobs(): boolean { return this.inflight.size > 0 || this.pending.size > 0; }
+
+  async drain(): Promise<void> {
+    while (this.inflight.size || this.pending.size) {
+      await Promise.all([...this.inflight.values()]);
+      // Coalesced jobs are enqueued by the completion callbacks.
+      await Promise.resolve();
+    }
   }
 
   enqueue(path: string, job: NoteSaveJob): Promise<NoteSaveResult> {
@@ -43,6 +54,7 @@ export class NoteSaveQueue {
 
     const existing = this.inflight.get(key);
     if (existing) {
+      const inflightEpoch = this.inflightEpochs.get(key);
       const prior = this.pending.get(key);
       this.pending.set(key, mergeJobs(prior, job));
       return existing.then(async (first) => {
@@ -51,7 +63,7 @@ export class NoteSaveQueue {
         this.pending.delete(key);
         // After a successful write, prefer the new hash for If-Match.
         const hash =
-          first.ok && first.contentHash != null && !next.force
+          first.ok && first.contentHash != null && !next.force && next.contextEpoch === inflightEpoch
             ? first.contentHash
             : next.contentHash;
         return this.enqueue(key, { ...next, contentHash: hash });
@@ -59,8 +71,12 @@ export class NoteSaveQueue {
     }
 
     const chain = this.run(key, job).finally(() => {
-      if (this.inflight.get(key) === chain) this.inflight.delete(key);
+      if (this.inflight.get(key) === chain) {
+        this.inflight.delete(key);
+        this.inflightEpochs.delete(key);
+      }
     });
+    this.inflightEpochs.set(key, job.contextEpoch);
     this.inflight.set(key, chain);
     return chain;
   }
@@ -68,7 +84,9 @@ export class NoteSaveQueue {
 
 function mergeJobs(prior: NoteSaveJob | undefined, next: NoteSaveJob): NoteSaveJob {
   if (!prior) return next;
+  if (prior.contextEpoch !== next.contextEpoch) return next;
   return {
+    contextEpoch: next.contextEpoch,
     content: next.content,
     contentHash: next.force ? null : (prior.contentHash ?? next.contentHash),
     force: prior.force || next.force,

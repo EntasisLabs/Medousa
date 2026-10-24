@@ -61,6 +61,9 @@ fn vault_changes_query_params(query: &VaultChangesQuery) -> Vec<(&str, String)> 
 #[cfg(feature = "async")]
 fn vault_search_query_params(query: &VaultSearchQuery) -> Vec<(&str, String)> {
     let mut params = Vec::new();
+    if let Some(root_id) = &query.root_id {
+        params.push(("root_id", root_id.clone()));
+    }
     if let Some(q) = &query.q {
         params.push(("q", q.clone()));
     }
@@ -469,5 +472,34 @@ impl VaultApi<'_> {
             .get_json(self.client.base_url(), ops::VAULT_GIT_WORKTREES_GET.path)
             .await?;
         decode(value).await
+    }
+}
+
+#[cfg(all(test, feature = "async"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_search_preserves_explicit_identity_and_encodes_query() {
+        let query = VaultSearchQuery {
+            root_id: Some("vault:work & ideas".into()),
+            q: Some("日記 & notes".into()),
+            limit: Some(24),
+            tags: None,
+        };
+        let route = op_path_query(
+            &ops::VAULT_SEARCH_GET,
+            &[],
+            &vault_search_query_params(&query),
+        )
+        .unwrap();
+        let url = reqwest::Url::parse(&format!("http://localhost{route}")).unwrap();
+        let pairs = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(pairs["root_id"], "vault:work & ideas");
+        assert_eq!(pairs["q"], "日記 & notes");
+        assert_eq!(pairs["limit"], "24");
+        assert!(!pairs.contains_key("tags"));
     }
 }

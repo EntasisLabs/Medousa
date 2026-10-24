@@ -22,6 +22,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
 | [SSH targets](ssh-targets.md) | Connect named servers and choose agent access |
 | [Memory & identity](memory-and-identity.md) | Teach who you are; profiles |
+| [Notes and vaults](notes-and-vaults.md) | Switch linked vaults safely and search notes across them |
 | [Files](files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
 | [Context](context.md) | Browse saved session memory and its sources |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |

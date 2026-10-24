@@ -594,7 +594,7 @@ impl VaultStore {
     }
 
     /// Prefer markdown and known text; skip binaries so Obsidian assets don't break scans.
-    fn is_indexable_vault_file(path: &Path) -> bool {
+    pub(super) fn is_indexable_vault_file(path: &Path) -> bool {
         let ext = path
             .extension()
             .and_then(|value| value.to_str())

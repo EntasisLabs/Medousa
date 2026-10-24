@@ -107,6 +107,7 @@ pub(crate) async fn refresh_notes_picker(state: &mut TuiState) {
         client
             .vault()
             .search(&VaultSearchQuery {
+                root_id: None,
                 q: Some(query.to_string()),
                 limit: Some(40),
                 tags: None,

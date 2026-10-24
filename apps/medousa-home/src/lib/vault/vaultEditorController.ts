@@ -68,6 +68,7 @@ export type VaultNotePlane = "live" | "build";
 export type VaultProposalSource = "agent" | "operator";
 
 export type VaultEditorHost = {
+  workshopEpoch: number;
   selectedPath: string | null;
   looseFilePath: string | null;
   content: string;
@@ -140,6 +141,19 @@ export class VaultEditorController {
   resetEditorBuffers() {
     this.buffers.clear();
     this.bufferWarmInFlight.clear();
+  }
+
+  async flushForVaultRootChange(): Promise<boolean> {
+    if (!(await this.flushBeforeLeave())) return false;
+    await this.#saveQueue.drain();
+    for (const [path, buffer] of this.buffers) {
+      if (buffer.dirty && !(await this.saveNoteAtPath(path, buffer.content))) return false;
+    }
+    await this.#saveQueue.drain();
+    return !this.#host.dirty && !this.#host.saving && ![...this.buffers.values()].some(buffer => buffer.dirty);
+  }
+  hasPendingVaultEdits(): boolean {
+    return this.#host.dirty || this.#host.saving || this.#saveQueue.hasPendingJobs || [...this.buffers.values()].some(buffer => buffer.dirty);
   }
 
   bufferKey(path: string): string {
@@ -313,6 +327,7 @@ export class VaultEditorController {
 
   async warmBuffer(path: string) {
     const host = this.#host;
+    const epoch = host.workshopEpoch;
     const raw = path.trim();
     if (!raw) return;
     if (isAbsoluteDiskPath(raw)) {
@@ -322,6 +337,7 @@ export class VaultEditorController {
       host.bumpNoteBuffers();
       try {
         const content = await readAbsoluteTextFile(raw);
+        if (epoch !== host.workshopEpoch) return;
         if (host.isFocusedPath(raw)) return;
         const name = fileNameFromAbsolutePath(raw);
         const title =
@@ -330,8 +346,7 @@ export class VaultEditorController {
       } catch {
         // Leave pane empty; focused openLooseFile will surface errors.
       } finally {
-        this.bufferWarmInFlight.delete(raw);
-        host.bumpNoteBuffers();
+        if (epoch === host.workshopEpoch) { this.bufferWarmInFlight.delete(raw); host.bumpNoteBuffers(); }
       }
       return;
     }
@@ -344,13 +359,13 @@ export class VaultEditorController {
     host.bumpNoteBuffers();
     try {
       const response = await getVaultNote(trimmed);
+      if (epoch !== host.workshopEpoch) return;
       if (host.isFocusedPath(trimmed)) return;
       this.writeBufferFromResponse(trimmed, response);
     } catch {
       // Leave pane empty; focused openNote will surface errors.
     } finally {
-      this.bufferWarmInFlight.delete(trimmed);
-      host.bumpNoteBuffers();
+      if (epoch === host.workshopEpoch) { this.bufferWarmInFlight.delete(trimmed); host.bumpNoteBuffers(); }
     }
   }
 
@@ -464,10 +479,12 @@ export class VaultEditorController {
     const path = vaultRefPath(event);
     if (!path || path !== host.selectedPath) return;
     if (host.noteLoading) return;
+    const epoch = host.workshopEpoch;
 
     this.clearAutosaveTimer();
     try {
       const response = await getVaultNote(path);
+      if (epoch !== host.workshopEpoch || path !== host.selectedPath) return;
       const serverContent = response.content;
       const isAgent = event.actor === "agent";
 
@@ -492,7 +509,9 @@ export class VaultEditorController {
 
       host.applyNote(response);
     } catch (err) {
-      host.error = err instanceof Error ? err.message : String(err);
+      if (epoch === host.workshopEpoch && path === host.selectedPath) {
+        host.error = err instanceof Error ? err.message : String(err);
+      }
     }
   }
 
@@ -689,6 +708,7 @@ export class VaultEditorController {
       ? this.#host.contentHash
       : (this.buffers.get(key)?.contentHash ?? null);
     const result = await this.#saveQueue.enqueue(key, {
+      contextEpoch: this.#host.workshopEpoch,
       content,
       contentHash: options?.force ? null : hash,
       force: Boolean(options?.force),
@@ -733,6 +753,8 @@ export class VaultEditorController {
 
   private async runSaveJob(path: string, job: NoteSaveJob): Promise<NoteSaveResult> {
     const host = this.#host;
+    const epoch = job.contextEpoch ?? host.workshopEpoch;
+    if (epoch !== host.workshopEpoch) return { ok: false, error: "The vault changed before this save could start." };
     try {
       const response = await saveVaultNote(path, job.content, {
         contentHash: job.force ? undefined : (job.contentHash ?? undefined),
@@ -740,6 +762,7 @@ export class VaultEditorController {
       });
       const written = response.content ?? job.content;
       const ifMatchToken = vaultIfMatchToken(response);
+      if (epoch !== host.workshopEpoch) return { ok: true, contentHash: ifMatchToken, writtenContent: written };
 
       if (host.isFocusedPath(path)) {
         host.contentHash = ifMatchToken;
@@ -773,6 +796,7 @@ export class VaultEditorController {
         writtenContent: written,
       };
     } catch (err) {
+      if (epoch !== host.workshopEpoch) return { ok: false, error: "The vault changed while saving." };
       if (isVaultConflictError(err)) {
         if (host.isFocusedPath(path)) {
           host.saveStatus = "conflict";
@@ -805,6 +829,7 @@ export class VaultEditorController {
     host.saveStatus = "saving";
     host.error = null;
 
+    const epoch = host.workshopEpoch;
     const pathSnapshot = host.selectedPath;
     const contentSnapshot = host.content;
     const loosePath = host.looseFilePath;
@@ -812,7 +837,7 @@ export class VaultEditorController {
     try {
       if (loosePath) {
         await writeAbsoluteTextFile(loosePath, contentSnapshot);
-        if (host.selectedPath !== pathSnapshot || host.looseFilePath !== loosePath) {
+        if (host.workshopEpoch !== epoch || host.selectedPath !== pathSnapshot || host.looseFilePath !== loosePath) {
           return true;
         }
         if (host.content !== contentSnapshot) {
@@ -830,13 +855,14 @@ export class VaultEditorController {
       }
 
       const result = await this.#saveQueue.enqueue(pathSnapshot, {
+        contextEpoch: host.workshopEpoch,
         content: contentSnapshot,
         contentHash: options?.force ? null : host.contentHash,
         force: Boolean(options?.force),
         source: options?.source ?? "manual",
       });
 
-      if (host.selectedPath !== pathSnapshot) return result.ok;
+      if (host.workshopEpoch !== epoch || host.selectedPath !== pathSnapshot) return result.ok;
 
       if (!result.ok) {
         if (!result.conflict) {
@@ -856,14 +882,15 @@ export class VaultEditorController {
       this.flashSavedWhisper();
       return true;
     } catch (err) {
+      if (host.workshopEpoch !== epoch) return false;
       host.saveStatus = "unsaved";
       host.error = err instanceof Error ? err.message : String(err);
       this.scheduleAutosave();
       return false;
     } finally {
-      host.saving = host.selectedPath
-        ? this.#saveQueue.isBusy(host.selectedPath)
-        : false;
+      if (host.workshopEpoch === epoch) {
+        host.saving = host.selectedPath ? this.#saveQueue.isBusy(host.selectedPath) : false;
+      }
     }
   }
 
@@ -875,11 +902,16 @@ export class VaultEditorController {
   async reloadFromServer() {
     const host = this.#host;
     if (!host.selectedPath) return;
-    if (host.looseFilePath) {
+    const epoch = host.workshopEpoch;
+    const path = host.selectedPath;
+    const loosePath = host.looseFilePath;
+    const current = () => epoch === host.workshopEpoch && path === host.selectedPath && loosePath === host.looseFilePath;
+    if (loosePath) {
       host.noteLoading = true;
       host.error = null;
       try {
-        const content = await readAbsoluteTextFile(host.looseFilePath);
+        const content = await readAbsoluteTextFile(loosePath);
+        if (!current()) return;
         host.content = content;
         host.baselineContent = content;
         host.dirty = false;
@@ -887,21 +919,22 @@ export class VaultEditorController {
         this.clearProposal();
         host.bumpContentSync();
       } catch (err) {
-        host.error = err instanceof Error ? err.message : String(err);
+        if (current()) host.error = err instanceof Error ? err.message : String(err);
       } finally {
-        host.noteLoading = false;
+        if (current()) host.noteLoading = false;
       }
       return;
     }
     host.noteLoading = true;
     host.error = null;
     try {
-      const response = await getVaultNote(host.selectedPath);
+      const response = await getVaultNote(path);
+      if (!current()) return;
       host.applyNote(response);
     } catch (err) {
-      host.error = err instanceof Error ? err.message : String(err);
+      if (current()) host.error = err instanceof Error ? err.message : String(err);
     } finally {
-      host.noteLoading = false;
+      if (current()) host.noteLoading = false;
     }
   }
 

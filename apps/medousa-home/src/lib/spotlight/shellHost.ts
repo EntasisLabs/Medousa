@@ -1,10 +1,10 @@
 import { activeWorkshopId } from "$lib/utils/workshopLocality";
 import { buildWorkshopCommandContext } from "$lib/commands/context";
-import { collectWorkshopCommands, collectWorkshopLensCommands } from "$lib/commands/collectCommands";
+import { collectWorkshopCommands, collectWorkshopLensCommands, parseSpotlightQuery } from "$lib/commands/collectCommands";
+import { vaultSearchCatalog } from "$lib/vault/vaultSearchCatalog.svelte";
 import { buildPinnedJumpCommands } from "$lib/commands/pinCommands";
 import { executeWorkshopCommand } from "$lib/commands/runWorkshopCommand";
 import { sshTargets } from "$lib/utils/sshApi";
-import { openSshTerminal } from "$lib/utils/terminalActions";
 import type { WorkshopCommand } from "$lib/commands/types";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { chat } from "$lib/stores/chat.svelte";
@@ -58,6 +58,9 @@ export function createSpotlightShellHost() {
   async function collect(scope: string, query: SpotlightQuery): Promise<SpotlightSnapshot> {
     requireScope(scope);
     if (query.query.length > 4096) throw new Error("Shorten this search before continuing.");
+    const parsed = parseSpotlightQuery(query.query);
+    if (query.mode !== "ssh" && (query.mode === "notes" || ["default", "advanced"].includes(parsed.mode))) await vaultSearchCatalog.search(parsed.rawQuery);
+    requireScope(scope);
     if (!sourceRefresh || sourceRefresh.scope !== scope || Date.now() - sourceRefresh.at > 15_000) {
       sourceRefresh = { scope, at: Date.now(), work: Promise.allSettled([
         vault.notes.length ? Promise.resolve() : vault.refreshNotes(),
@@ -79,6 +82,7 @@ export function createSpotlightShellHost() {
         ? collectWorkshopLensCommands(ctx(), query.lens).map(group => ({ id: `${query.lens}-${group.label}`, ...group }))
         : collectWorkshopCommands(ctx(), { query: query.query, notesMode: query.mode === "notes", sshTargets: sshCache?.targets, workshopScope: scope }).map(group => ({ id: `${group.section}-${group.label}`, ...group }));
     return {
+      notice: vaultSearchCatalog.error,
       groups: groups.map(group => ({ id: group.id, label: group.label, commands: group.commands.map(command => describe(command, scope)) })),
       scopes: [{ id: "home", label: "Home" }, ...shellTabs.desktops.map(desktop => ({ id: desktop.id, label: desktop.name }))],
       layout,
@@ -86,6 +90,10 @@ export function createSpotlightShellHost() {
   }
   async function run(scope: string, command: WorkshopCommand, expectedContext?: string) {
     requireScope(scope);
+    if (command.id === "terminal-open" || command.id.startsWith("terminal-ssh:")) {
+      await openDesktopWindow({ kind: "terminal", workshopId: scope,
+        ...(command.id.startsWith("terminal-ssh:") ? { sshTargetId: command.id.slice("terminal-ssh:".length) } : {}) }); return;
+    }
     if (["do-create-chat", "ask-new-session"].includes(command.id)) {
       const { creativeBridgeApi } = await import("$lib/create/creativeBridge");
       const session = await creativeBridgeApi(scope).newSession("New conversation");
@@ -132,8 +140,7 @@ export function createSpotlightShellHost() {
           const target = (await sshTargets()).find(target => target.target_id === request.targetId);
           requireScope(scope);
           if (!target) throw new Error("This SSH destination is no longer available. Refresh the picker.");
-          await focusShell(scope);
-          await openSshTerminal(target, scope); return null;
+          await openDesktopWindow({ kind: "terminal", workshopId: scope, sshTargetId: target.target_id }); return null;
         }
         case "create-flow": {
           if (!Array.isArray(request.refs) || !request.refs.length || request.refs.length > 100) throw new Error("Choose up to 100 tool runs for this flow.");

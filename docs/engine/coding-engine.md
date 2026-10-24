@@ -21,6 +21,10 @@ These sessions report `root_kind: "workspace"` and `workspace_context` with
 isolated projects). `GET /v1/sessions/shell` refreshes this context for workspace
 sessions; a failed refresh returns `workspace_context_error` without terminating
 an existing PTY. The response is folder context, not verification evidence.
+Shell-session list entries also report `exited` and `exit_code` (nullable until
+known). An exited PTY can remain in scrollback storage until retention reaps it;
+clients should not treat its presence in the list as proof that its shell is alive.
+
 Tracked task/agent sessions retain their existing `/v1/sessions/shell` path and
 attachment validation. The session sidecar API revision is 7; older daemons or
 sidecars do not downgrade this request into a tracked attempt.

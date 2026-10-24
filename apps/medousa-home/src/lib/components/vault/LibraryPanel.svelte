@@ -68,12 +68,13 @@
       if (cancelled) return;
       await vault.refreshNotes();
       if (cancelled) return;
-      if (vault.selectedPath) {
+      const lastPath = vault.selectedPath ?? vault.lastNotePath;
+      if (lastPath) {
         if (lmeHosted) {
           // Hydrate only — never force explorer mode (remount races yank Scripts → Notes).
-          await lmeWorkspace.openNote(vault.selectedPath, { activateMode: false });
+          await lmeWorkspace.openNote(lastPath, { activateMode: false });
         } else {
-          await vault.openNote(vault.selectedPath);
+          await vault.openNote(lastPath);
         }
       }
       if (cancelled) return;

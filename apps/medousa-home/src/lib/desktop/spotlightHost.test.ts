@@ -62,10 +62,19 @@ it("opens concrete Activity chats/projects as native windows and delegates task 
   await host.openActivity({ kind: "card", cardId: "task" }, "Build");
   expect(api.invoke).toHaveBeenLastCalledWith("desktop_spotlight_request", { workshopId: "a", request: { kind: "activity", target: { kind: "card", cardId: "task" }, title: "Build" } });
 });
-it("routes SSH and setup to the real shell rather than invisible widget tabs", async () => {
+it("opens SSH directly as a native terminal while setup retains its shell destination", async () => {
   const host = createDesktopSpotlightHost("a");
   await host.openSsh("nas");
-  expect(api.invoke).toHaveBeenLastCalledWith("desktop_spotlight_request", { workshopId: "a", request: { kind: "ssh", targetId: "nas" } });
+  expect(api.open).toHaveBeenLastCalledWith({ kind: "terminal", workshopId: "a", sshTargetId: "nas" });
+  expect(api.invoke).not.toHaveBeenCalled();
   await host.manageConnection();
   expect(api.invoke).toHaveBeenLastCalledWith("desktop_spotlight_request", { workshopId: "a", request: { kind: "connection" } });
+});
+it("routes both terminal commands directly without asking the main renderer to execute", async () => {
+  const host = createDesktopSpotlightHost("a");
+  await host.execute({ ...command, id: "terminal-open" });
+  expect(api.open).toHaveBeenLastCalledWith({ kind: "terminal", workshopId: "a" });
+  await host.execute({ ...command, id: "terminal-ssh:nas" });
+  expect(api.open).toHaveBeenLastCalledWith({ kind: "terminal", workshopId: "a", sshTargetId: "nas" });
+  expect(api.invoke).not.toHaveBeenCalled();
 });

@@ -5011,6 +5011,14 @@ impl EmbeddedDaemonClient {
         self.require(Capability::ContentRead)?;
         crate::vault::io::vault_io()
             .run_anyhow(crate::vault::io::VaultIoClass::SearchRebuild, move || {
+                if let Some(root) = query.root_id {
+                    return crate::vault::catalog::search_root(
+                        &root,
+                        query.q.as_deref().unwrap_or(""),
+                        query.limit.unwrap_or(20),
+                        query.tags.as_deref(),
+                    );
+                }
                 crate::vault::VaultService::search(
                     query.q.as_deref(),
                     query.limit.unwrap_or(20),

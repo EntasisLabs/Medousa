@@ -22,6 +22,12 @@ export function createDesktopSpotlightHost(scope: string, options: { isCurrent?:
   return {
     collect: query => request<SpotlightSnapshot>({ kind: "collect", query }),
     async execute(command, args) {
+      if (command.id === "terminal-open") {
+        await closeAfter(openDesktopWindow({ kind: "terminal", workshopId: scope })); return;
+      }
+      if (command.id.startsWith("terminal-ssh:")) {
+        await closeAfter(openDesktopWindow({ kind: "terminal", workshopId: scope, sshTargetId: command.id.slice("terminal-ssh:".length) })); return;
+      }
       switch (command.id) {
         case "workshop-activity": commandSpotlight.openActivity(); return;
         case "terminal-open-ssh": commandSpotlight.openSshTargets(); return;
@@ -43,6 +49,6 @@ export function createDesktopSpotlightHost(scope: string, options: { isCurrent?:
     newAsk: () => closeAfter(request({ kind: "new-ask" })),
     manageConnection: () => closeAfter(request({ kind: "connection" })),
     createFlow: (refs, name) => closeAfter(request({ kind: "create-flow", refs, name })),
-    openSsh: targetId => closeAfter(request({ kind: "ssh", targetId })),
+    openSsh: targetId => closeAfter(openDesktopWindow({ kind: "terminal", workshopId: scope, sshTargetId: targetId })),
   };
 }

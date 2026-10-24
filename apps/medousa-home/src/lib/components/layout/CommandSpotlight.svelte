@@ -5,6 +5,7 @@
   import SpotlightAddressInput from "./SpotlightAddressInput.svelte";
   import { guardTextNavigation } from "$lib/utils/guardTextNavigation";
   import { textNavigationKey } from "$lib/utils/composerKeyboard";
+  import { vaultSearchCatalog } from "$lib/vault/vaultSearchCatalog.svelte";
   import SpotlightTranscript from "./SpotlightTranscript.svelte";
   import BotAvatar from "$lib/components/chat/BotAvatar.svelte";
   import { bots } from "$lib/stores/bots.svelte";
@@ -355,6 +356,7 @@
       return () => { cancelled = true; clearTimeout(timer); };
     }
 
+    if (notesMode || ["default", "advanced"].includes(parseSpotlightQuery(query).mode)) void vaultSearchCatalog.search(parseSpotlightQuery(query).rawQuery);
     if (vault.notes.length === 0) {
       void vault.refreshNotes();
     }
@@ -825,7 +827,7 @@
       <div class="command-spotlight-body">
         <div class="command-spotlight-results" bind:this={resultsEl} aria-busy={collecting}>
           {#if collecting}<p class="command-spotlight-empty" role="status">Searching your workshop…</p>{/if}
-          <SpotlightTerminalStatus {sshMode} data={sshData} {query} {commandError} empty={!flatCommands.length} onManage={() => { if (host) void host.manageConnection().catch(reportHostError); else { ctx.openSettingsSection("basement"); ctx.callbacks.close(); } }} />
+          <SpotlightTerminalStatus {sshMode} data={sshData} {query} commandError={commandError ?? (host ? snapshot?.notice ?? null : vaultSearchCatalog.error)} empty={!flatCommands.length} onManage={() => { if (host) void host.manageConnection().catch(reportHostError); else { ctx.openSettingsSection("basement"); ctx.callbacks.close(); } }} />
           {#each groups as group, sectionIndex (group.id)}
             <div class="command-spotlight-section-label">{group.label}</div>
             <ul class="command-spotlight-list">

@@ -426,6 +426,7 @@ impl VaultService {
         {
             if required.is_empty() {
                 return Ok(crate::daemon_api::VaultSearchResponse {
+                    root_id: None,
                     query: String::new(),
                     hits: Vec::new(),
                     indexing: None,
@@ -449,6 +450,7 @@ impl VaultService {
                 })
                 .collect();
             return Ok(crate::daemon_api::VaultSearchResponse {
+                root_id: None,
                 query: required.join(", "),
                 hits,
                 indexing: None,

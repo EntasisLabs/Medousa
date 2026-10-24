@@ -246,9 +246,11 @@ pub async fn vault_search(
     query: String,
     limit: Option<usize>,
     tags: Option<String>,
+    root_id: Option<String>,
 ) -> Result<VaultSearchResponse, String> {
     let trimmed = query.trim();
     let search = VaultSearchQuery {
+        root_id,
         q: if trimmed.is_empty() {
             None
         } else {

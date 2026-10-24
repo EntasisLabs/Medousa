@@ -5516,6 +5516,9 @@ class VaultSearchResponse(MedousaModel):
         None, description='True when the search index is rebuilding / not yet warm.'
     )
     query: str
+    root_id: str | None = Field(
+        None, description='Explicit catalog root; absent for the active-root full-text search.'
+    )
 
 
 class VaultSetActiveRootRequest(MedousaModel):

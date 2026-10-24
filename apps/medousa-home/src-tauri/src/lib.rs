@@ -69,6 +69,8 @@ mod tray;
 mod window;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod desktop_windows;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod desktop_terminals;
 mod wizard;
 mod workshop_registry;
 mod workshop_runtime;
@@ -1129,7 +1131,7 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
                         tauri::async_runtime::spawn(async move {
                             let _ = desktop_windows::desktop_open_window(app, desktop_windows::DesktopTarget {
                                 kind: desktop_windows::DesktopKind::Chat, workshop_id: registry.active_workshop_id,
-                                resource_id: None, path: None, title: None,
+                                resource_id: None, ssh_target_id: None, path: None, title: None,
                             }).await;
                         });
                     }
