@@ -457,12 +457,18 @@ worktrees are reported, never auto-deleted.
 
 ## ACP binding (Cursor/Codex executors)
 
+This section retains its existing anchor and executor names for compatibility.
+Forge custody operates through the shared external-agent session interface;
+Codex uses native `codex app-server`, while ACP runtimes use their ACP wire
+protocol. The normalized `AcpEvent` names do not imply that every provider
+speaks ACP.
+
 An external agent chat session can opt in to Forge custody by setting
 `work_id` on `POST /v1/agents/sessions`:
 
 - The work item must exist, be `Ready`, have no active attempt, and have a
   provisioned environment with a live worktree. Violations return `409`.
-- The ACP session's `cwd` is forced to the attempt's private governed worktree,
+- The provider session's `cwd` is forced to the attempt's private governed worktree,
   overriding any client-supplied `cwd`.
 - The lease begins before provider session creation so the provider process can
   never start in the staging anchor. Provider creation and stream-registration
@@ -473,15 +479,18 @@ An external agent chat session can opt in to Forge custody by setting
   stages prompt/tool lines into `attempts/{seq}/evidence/commands.jsonl`
   via lease-fenced `append_command_log` (so seal digests real executor
   activity, not an empty log).
-- An ACP `Error` or pump failure calls `fail_attempt` — the work returns to
+- A provider `Error` or pump failure calls `fail_attempt` — the work returns to
   `Ready` with `RestartAllowed`. Cancelling the session calls
-  `interrupt_attempt` with `ResumeSupported { provider_token: <ACP wire
-  sessionId> }` (not the Medousa process handle).
+  `interrupt_attempt` with `ResumeSupported { provider_token: <vendor session
+  token> }` (not the Medousa process handle). Codex uses its native thread ID;
+  ACP runtimes use their wire session ID.
 - **Resume:** on the next `POST /v1/agents/sessions` for that work, pass
   `resume_provider_token` or omit it — the daemon looks up
-  `latest_resume_token` and tries ACP `session/resume` (then `session/load`),
-  falling back to `session/new` when the vendor rejects the token. The
-  response echoes `resumed: true|false`.
+  `latest_resume_token` and invokes the runtime's resume operation. For Codex,
+  this is native `thread/resume`; a rejected token is an explicit error rather
+  than silently starting a different thread. ACP runtimes try `session/resume`
+  (then `session/load`) and can fall back to `session/new`. The response echoes
+  `resumed: true|false`.
 - `AcpEvent::Done` is **not** a seal. Sealing stays explicit:
   `POST /v1/forge/leases/{id}/complete`. Chat SSE streaming is untouched —
   the adapter reports beside the stream, never instead of it.

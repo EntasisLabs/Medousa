@@ -29,6 +29,10 @@ and Hades, install and configure the official CLI on the workshop host, then
 refresh. Medousa reuses that agent's own account and settings; it does not copy
 credentials from another device or replace them with a Medousa model key.
 
+Codex uses the native `codex app-server` included with its official CLI. There is
+no separate Codex ACP adapter to install. Its models and reasoning choices come
+from the runtime; sign-in continues through the official Codex CLI.
+
 Claude Code and Pi use pinned ACP bridges; their native CLIs and bridge prerequisites
 must be available on the executing workshop. Hades currently targets Linux
 workshops. Unsupported platforms or missing bridge dependencies appear as a

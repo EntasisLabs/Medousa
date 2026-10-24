@@ -43,6 +43,8 @@ use crate::semantic_values::{RequiredContent, TrimmedText};
 use medousa_engine::TurnStreamRegistryPort;
 use serde_json::json;
 
+type AgentTerminalObservation = (medousa_types::coordination::PeerAssignmentOutcome, String);
+
 #[derive(Clone)]
 struct LiveAgentSession {
     agent_session_id: String,
@@ -64,7 +66,7 @@ struct LiveAgentSession {
     delegated_work_id: Arc<Mutex<Option<String>>>,
     /// Retain one terminal observation so adoption racing completion can
     /// publish the exact result instead of losing it or restarting work.
-    peer_terminal: Arc<Mutex<Option<(medousa_types::coordination::PeerAssignmentOutcome, String)>>>,
+    peer_terminal: Arc<Mutex<Option<AgentTerminalObservation>>>,
     peer_prompt_started: Arc<std::sync::atomic::AtomicBool>,
     prompt_in_flight: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -96,6 +98,43 @@ impl Drop for PromptReservation {
     fn drop(&mut self) {
         self.0.store(false, std::sync::atomic::Ordering::Release);
     }
+}
+
+async fn reserve_agent_prompt(
+    live: &LiveAgentSession,
+) -> Result<PromptReservation, (StatusCode, String)> {
+    let reservation = PromptReservation::acquire(&live.prompt_in_flight)?;
+    // Cancellation removes registry custody before stopping the provider. A
+    // request that already cloned the session must not clear its terminal.
+    let cancelled = live.cancelled.lock().await;
+    if *cancelled {
+        return Err((StatusCode::CONFLICT, "agent session cancelled".into()));
+    }
+    // Admission and custody attachment use the same lock order. Adoption
+    // either retains the preceding result or observes this newly admitted
+    // prompt; it cannot attach between the custody check and result reset.
+    let peer_receipt = live.peer_receipt.lock().await;
+    let delegated_work = live.delegated_work_id.lock().await;
+    let delegated = peer_receipt.is_some() || delegated_work.is_some();
+    if delegated
+        && live
+            .peer_prompt_started
+            .load(std::sync::atomic::Ordering::SeqCst)
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "delegated peer prompt has already started; reconcile before retry".into(),
+        ));
+    }
+    if !delegated {
+        // Ordinary chat reuses its provider session across prompts. The saved
+        // observation belongs to the preceding prompt, not the whole session.
+        *live.peer_terminal.lock().await = None;
+    }
+    // An ordinary prompt may subsequently be adopted into one-shot custody.
+    live.peer_prompt_started
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    Ok(reservation)
 }
 
 #[derive(Default)]
@@ -761,7 +800,7 @@ async fn create_agent_session_service_with_contract(
         peer_receipt: Arc::new(Mutex::new(None)),
         delegated_work_id: Arc::new(Mutex::new(None)),
         peer_terminal: Arc::new(Mutex::new(None)),
-        peer_prompt_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        peer_prompt_started: Arc::new(std::sync::atomic::AtomicBool::new(initial_prompt.is_some())),
         prompt_in_flight,
     };
 
@@ -926,17 +965,7 @@ pub(crate) async fn prompt_agent_session_service(
     if *live.cancelled.lock().await {
         return Err((StatusCode::CONFLICT, "agent session cancelled".into()));
     }
-    let reservation = PromptReservation::acquire(&live.prompt_in_flight)?;
-    if (live.peer_receipt.lock().await.is_some() || live.delegated_work_id.lock().await.is_some())
-        && live
-            .peer_prompt_started
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-    {
-        return Err((
-            StatusCode::CONFLICT,
-            "delegated peer prompt has already started; reconcile before retry".into(),
-        ));
-    }
+    let reservation = reserve_agent_prompt(&live).await?;
     spawn_prompt_pump(
         state,
         live.clone(),
@@ -986,8 +1015,9 @@ pub(crate) async fn attach_delegated_work(
         .get(agent_session_id)
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("delegated agent session disappeared"))?;
+    let peer_receipt = live.peer_receipt.lock().await;
     let mut slot = live.delegated_work_id.lock().await;
-    if slot.is_some() || live.peer_receipt.lock().await.is_some() {
+    if slot.is_some() || peer_receipt.is_some() {
         anyhow::bail!("agent session already has delegated custody");
     }
     *slot = Some(work_id.to_owned());
@@ -1000,7 +1030,40 @@ async fn persist_peer_terminal(
     result: String,
 ) -> anyhow::Result<()> {
     let terminal = (outcome, result);
-    if let Some(work_id) = live.delegated_work_id.lock().await.clone() {
+    {
+        let mut saved = live.peer_terminal.lock().await;
+        if let Some(existing) = saved.as_ref() {
+            if existing != &terminal {
+                anyhow::bail!("agent session produced conflicting terminal observations");
+            }
+        } else {
+            *saved = Some(terminal.clone());
+        }
+    }
+    persist_saved_peer_terminal(live, terminal).await
+}
+
+async fn terminal_for_session_close(live: &LiveAgentSession) -> AgentTerminalObservation {
+    let mut saved = live.peer_terminal.lock().await;
+    // Closing an idle provider is transport cleanup, not a new failed or
+    // cancelled prompt. If completion races cancellation, the first terminal
+    // observation wins and remains available for delegated receipt adoption.
+    saved
+        .get_or_insert_with(|| {
+            (
+                medousa_types::coordination::PeerAssignmentOutcome::Cancelled,
+                "agent session cancelled".into(),
+            )
+        })
+        .clone()
+}
+
+async fn persist_saved_peer_terminal(
+    live: &LiveAgentSession,
+    terminal: AgentTerminalObservation,
+) -> anyhow::Result<()> {
+    let delegated_work_id = live.delegated_work_id.lock().await.clone();
+    if let Some(work_id) = delegated_work_id {
         use crate::agent_runtime::turn_worker::{TurnWorkStatus, turn_worker_store};
         let (outcome, result) = terminal.clone();
         turn_worker_store().try_update(&work_id, |record| {
@@ -1030,21 +1093,44 @@ async fn persist_peer_terminal(
         })?;
         crate::workspace::flush_persist_writer().await?;
     }
-    let mut saved = live.peer_terminal.lock().await;
-    if let Some(existing) = saved.as_ref() {
-        if existing != &terminal {
-            anyhow::bail!("agent session produced conflicting terminal observations");
-        }
-    } else {
-        *saved = Some(terminal.clone());
-    }
-    drop(saved);
     if let Some(sink) = live.peer_receipt.lock().await.clone() {
         let (outcome, result) = terminal.clone();
         sink.terminal(outcome, result).await?;
     }
     Ok(())
 }
+
+async fn publish_session_close_terminal(
+    entry: &TurnStreamEntry,
+    live: &LiveAgentSession,
+    terminal: &AgentTerminalObservation,
+) {
+    use medousa_types::coordination::PeerAssignmentOutcome;
+    let (event_type, phase, message) = match terminal.0 {
+        PeerAssignmentOutcome::Completed => ("done", "completed", "agent prompt complete"),
+        PeerAssignmentOutcome::Cancelled => ("error", "cancelled", terminal.1.as_str()),
+        PeerAssignmentOutcome::Failed | PeerAssignmentOutcome::Interrupted => {
+            ("error", "error", terminal.1.as_str())
+        }
+    };
+    // The pump can save its result before publishing Done. Ensure its chosen
+    // terminal reaches the journal before closing; sealed streams deduplicate
+    // a terminal already published by the pump.
+    publish_agent_event(
+        entry,
+        &live.agent_session_id,
+        &live.session_id,
+        &live.runtime,
+        event_type,
+        phase,
+        message,
+        true,
+        None,
+        None,
+    )
+    .await;
+}
+
 pub async fn cancel_agent_session(
     State(state): State<AppState>,
     AxumPath(agent_session_id): AxumPath<String>,
@@ -1074,6 +1160,9 @@ pub(crate) async fn cancel_live_agent_session(
         live
     };
     *live.cancelled.lock().await = true;
+    let terminal = terminal_for_session_close(&live).await;
+    let prompt_cancelled =
+        terminal.0 == medousa_types::coordination::PeerAssignmentOutcome::Cancelled;
     agent_permission_request_store().deny_for_session(&agent_session_id);
     let _ = ACP_CLIENT.cancel(&live.acp_session_id).await;
     super::agent_client_requests::cleanup(state, &agent_session_id).await;
@@ -1112,41 +1201,27 @@ pub(crate) async fn cancel_live_agent_session(
         .await
         .get(&agent_session_id)
     {
-        publish_agent_event(
-            entry,
-            &agent_session_id,
-            &live.session_id,
-            &live.runtime,
-            "error",
-            "cancelled",
-            "agent session cancelled",
-            true,
-            None,
-            None,
-        )
-        .await;
+        publish_session_close_terminal(entry, &live, &terminal).await;
         entry.channel.mark_closed();
     }
 
     super::agent_stream::release(&agent_session_id).await;
 
-    persist_peer_terminal(
-        &live,
-        medousa_types::coordination::PeerAssignmentOutcome::Cancelled,
-        "agent session cancelled".into(),
-    )
-    .await
-    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
-    publish_acp_terminal(
-        AcpTerminalKind::Cancelled,
-        &live.session_id,
-        Some(&agent_session_id),
-        &agent_session_id,
-        &live.runtime,
-        "agent session cancelled",
-        json!({}),
-    )
-    .await;
+    persist_saved_peer_terminal(&live, terminal)
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    if prompt_cancelled {
+        publish_acp_terminal(
+            AcpTerminalKind::Cancelled,
+            &live.session_id,
+            Some(&agent_session_id),
+            &agent_session_id,
+            &live.runtime,
+            "agent session cancelled",
+            json!({}),
+        )
+        .await;
+    }
 
     Ok(CancelAgentSessionResponse {
         cancelled: true,
@@ -2239,6 +2314,310 @@ async fn publish_agent_reasoning_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unowned_test_session() -> LiveAgentSession {
+        LiveAgentSession {
+            agent_session_id: "agent-repeat-test".into(),
+            session_id: "chat-repeat-test".into(),
+            runtime: "codex".into(),
+            acp_session_id: medousa_acp_client::AcpSessionId("provider-repeat-test".into()),
+            acp_wire_session_id: None,
+            capabilities: medousa_types::AgentRuntimeCapabilities::default(),
+            cwd: ".".into(),
+            cancelled: Arc::new(Mutex::new(false)),
+            forge_work_id: None,
+            forge_lease: None,
+            peer_receipt: Arc::new(Mutex::new(None)),
+            delegated_work_id: Arc::new(Mutex::new(None)),
+            peer_terminal: Arc::new(Mutex::new(None)),
+            peer_prompt_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            prompt_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    #[tokio::test]
+    async fn reused_chat_session_retains_each_prompts_distinct_completed_result() {
+        use medousa_types::coordination::PeerAssignmentOutcome;
+        let live = unowned_test_session();
+        let first = reserve_agent_prompt(&live).await.unwrap();
+        persist_peer_terminal(
+            &live,
+            PeerAssignmentOutcome::Completed,
+            "first answer".into(),
+        )
+        .await
+        .unwrap();
+        drop(first);
+        // Completion remains adoptable until another prompt is admitted.
+        assert_eq!(
+            live.peer_terminal.lock().await.as_ref().unwrap().1,
+            "first answer"
+        );
+        let second = reserve_agent_prompt(&live).await.unwrap();
+        assert!(live.peer_terminal.lock().await.is_none());
+        persist_peer_terminal(
+            &live,
+            PeerAssignmentOutcome::Completed,
+            "second answer".into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            live.peer_terminal.lock().await.as_ref().unwrap().1,
+            "second answer"
+        );
+        assert!(!*live.cancelled.lock().await);
+        drop(second);
+    }
+
+    #[tokio::test]
+    async fn conflicting_terminals_within_one_prompt_are_still_rejected() {
+        use medousa_types::coordination::PeerAssignmentOutcome;
+        let live = unowned_test_session();
+        let _prompt = reserve_agent_prompt(&live).await.unwrap();
+        persist_peer_terminal(&live, PeerAssignmentOutcome::Completed, "answer".into())
+            .await
+            .unwrap();
+        let error = persist_peer_terminal(&live, PeerAssignmentOutcome::Failed, "failure".into())
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("conflicting terminal observations")
+        );
+        assert_eq!(
+            live.peer_terminal.lock().await.as_ref().unwrap().1,
+            "answer"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_concurrent_prompt_cannot_clear_the_current_terminal() {
+        use medousa_types::coordination::PeerAssignmentOutcome;
+        let live = unowned_test_session();
+        let _prompt = reserve_agent_prompt(&live).await.unwrap();
+        persist_peer_terminal(&live, PeerAssignmentOutcome::Completed, "answer".into())
+            .await
+            .unwrap();
+        assert_eq!(
+            reserve_agent_prompt(&live).await.unwrap_err().0,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            live.peer_terminal.lock().await.as_ref().unwrap().1,
+            "answer"
+        );
+    }
+
+    #[tokio::test]
+    async fn adopting_a_completed_ordinary_prompt_preserves_one_shot_custody() {
+        use medousa_types::coordination::PeerAssignmentOutcome;
+        let live = unowned_test_session();
+        let prompt = reserve_agent_prompt(&live).await.unwrap();
+        persist_peer_terminal(
+            &live,
+            PeerAssignmentOutcome::Completed,
+            "adopted answer".into(),
+        )
+        .await
+        .unwrap();
+        drop(prompt);
+        *live.delegated_work_id.lock().await = Some("delegated-work".into());
+        let rejected = reserve_agent_prompt(&live).await.unwrap_err();
+        assert_eq!(rejected.0, StatusCode::CONFLICT);
+        assert!(
+            rejected
+                .1
+                .contains("delegated peer prompt has already started")
+        );
+        assert_eq!(
+            live.peer_terminal.lock().await.as_ref().unwrap().1,
+            "adopted answer"
+        );
+        assert!(
+            !live
+                .prompt_in_flight
+                .load(std::sync::atomic::Ordering::Acquire)
+        );
+    }
+
+    #[tokio::test]
+    async fn closing_completed_session_preserves_its_prompt_receipt() {
+        use medousa_types::coordination::PeerAssignmentOutcome;
+        let live = unowned_test_session();
+        let prompt = reserve_agent_prompt(&live).await.unwrap();
+        persist_peer_terminal(
+            &live,
+            PeerAssignmentOutcome::Completed,
+            "finished answer".into(),
+        )
+        .await
+        .unwrap();
+        drop(prompt);
+        *live.cancelled.lock().await = true;
+        let terminal = terminal_for_session_close(&live).await;
+        assert_eq!(
+            terminal,
+            (PeerAssignmentOutcome::Completed, "finished answer".into())
+        );
+        persist_saved_peer_terminal(&live, terminal.clone())
+            .await
+            .unwrap();
+        assert_eq!(*live.peer_terminal.lock().await, Some(terminal));
+        assert_eq!(
+            reserve_agent_prompt(&live).await.unwrap_err().0,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            live.peer_terminal.lock().await.as_ref().unwrap().0,
+            PeerAssignmentOutcome::Completed
+        );
+    }
+
+    #[tokio::test]
+    async fn closing_active_session_records_cancelled_and_rejects_late_done() {
+        use medousa_types::coordination::PeerAssignmentOutcome;
+        let live = unowned_test_session();
+        let _prompt = reserve_agent_prompt(&live).await.unwrap();
+        *live.cancelled.lock().await = true;
+        let terminal = terminal_for_session_close(&live).await;
+        assert_eq!(terminal.0, PeerAssignmentOutcome::Cancelled);
+        persist_saved_peer_terminal(&live, terminal.clone())
+            .await
+            .unwrap();
+        assert!(
+            persist_peer_terminal(
+                &live,
+                PeerAssignmentOutcome::Completed,
+                "late answer".into()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(*live.peer_terminal.lock().await, Some(terminal));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_done_and_session_close_retain_exactly_the_first_terminal() {
+        use medousa_types::coordination::PeerAssignmentOutcome;
+        for _ in 0..32 {
+            let live = unowned_test_session();
+            let _prompt = reserve_agent_prompt(&live).await.unwrap();
+            let barrier = Arc::new(tokio::sync::Barrier::new(3));
+            let done_live = live.clone();
+            let done_barrier = barrier.clone();
+            let done = tokio::spawn(async move {
+                done_barrier.wait().await;
+                persist_peer_terminal(
+                    &done_live,
+                    PeerAssignmentOutcome::Completed,
+                    "racing answer".into(),
+                )
+                .await
+            });
+            let close_live = live.clone();
+            let close_barrier = barrier.clone();
+            let close = tokio::spawn(async move {
+                close_barrier.wait().await;
+                *close_live.cancelled.lock().await = true;
+                terminal_for_session_close(&close_live).await
+            });
+            barrier.wait().await;
+            let (done, close) = tokio::join!(done, close);
+            let done = done.unwrap();
+            let close = close.unwrap();
+            let saved = live.peer_terminal.lock().await.clone().unwrap();
+            assert_eq!(saved, close);
+            if done.is_ok() {
+                assert_eq!(
+                    saved,
+                    (PeerAssignmentOutcome::Completed, "racing answer".into())
+                );
+            } else {
+                assert_eq!(saved.0, PeerAssignmentOutcome::Cancelled);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn session_close_publishes_saved_completion_before_closing_the_stream() {
+        use medousa_engine::{Principal, TurnEnvelope, TurnEventLog};
+        use medousa_types::coordination::PeerAssignmentOutcome;
+        use medousa_types::{TurnCompletionOutcomeV3, TurnStreamEventV3};
+        let mut live = unowned_test_session();
+        live.agent_session_id = format!("agent-close-race-{}", Uuid::new_v4());
+        let root = tempfile::tempdir().unwrap();
+        let entry = TurnStreamEntry {
+            log: Arc::new(
+                TurnEventLog::open_in(
+                    root.path(),
+                    TurnEnvelope::new(&live.agent_session_id, Principal::operator()),
+                )
+                .unwrap(),
+            ),
+            channel: crate::turn_event_channel::TurnEventChannel::new(32),
+        };
+        publish_agent_event(
+            &entry,
+            &live.agent_session_id,
+            &live.session_id,
+            &live.runtime,
+            "status",
+            "running",
+            "working",
+            false,
+            None,
+            None,
+        )
+        .await;
+        publish_agent_event(
+            &entry,
+            &live.agent_session_id,
+            &live.session_id,
+            &live.runtime,
+            "content_delta",
+            "streaming",
+            "",
+            false,
+            Some("finished answer".into()),
+            None,
+        )
+        .await;
+        persist_peer_terminal(
+            &live,
+            PeerAssignmentOutcome::Completed,
+            "finished answer".into(),
+        )
+        .await
+        .unwrap();
+        // The provider has saved completion, but its Done callback has not yet
+        // reached the stream when the user closes this idle transport.
+        let terminal = terminal_for_session_close(&live).await;
+        publish_session_close_terminal(&entry, &live, &terminal).await;
+        let completed_fence = entry.log.replay_fence();
+        // Publishing the same terminal again is harmless if the pump won too.
+        publish_session_close_terminal(&entry, &live, &terminal).await;
+        assert_eq!(entry.log.replay_fence(), completed_fence);
+        entry.channel.mark_closed();
+        super::super::agent_stream::release(&live.agent_session_id).await;
+        let replay = entry.log.snapshot_since(0);
+        let completed = replay
+            .iter()
+            .filter_map(|record| match record.stream_event_v3.as_ref()? {
+                TurnStreamEventV3::TurnCompleted {
+                    outcome,
+                    aggregate_text,
+                    ..
+                } => Some((outcome, aggregate_text.as_str())),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            completed,
+            [(&TurnCompletionOutcomeV3::Completed, "finished answer")]
+        );
+    }
 
     #[test]
     fn concurrent_prompts_are_rejected_without_releasing_the_first_reservation() {

@@ -3,15 +3,16 @@
 //! The **daemon** owns this library and exposes `/v1/agents` via the Medousa SDK.
 //! Clients never speak ACP directly.
 //!
-//! Stub session + Cursor/Codex/Hermes process adapters (spawn when binary exists;
-//! real `session/new` → `session/prompt` → `session/update` pump).
-//! Cursor: `agent acp`. Codex: `codex-acp` or `npx -y @agentclientprotocol/codex-acp@1.1.14`
-//! (stock `codex` has no `acp` subcommand). Hermes: `hermes-acp` or `hermes acp`.
-//! Missing CLI → stub; spawn/handshake failures surface as errors (no silent stub).
+//! ACP providers use `session/new` → `session/prompt` → `session/update`.
+//! Codex uses its installed CLI’s native app-server protocol; Muse uses MSP.
+//! Missing CLIs and spawn/handshake failures surface as errors (no silent stub).
 //! Force stub: `MEDOUSA_ACP_FORCE_STUB=1`.
 
 #[cfg(test)]
 mod acp_conformance;
+pub mod codex;
+#[cfg(test)]
+mod codex_conformance;
 pub mod coordination;
 pub mod muse;
 pub use medousa_types::AgentPermissionOption as AcpPermissionOption;
@@ -118,24 +119,13 @@ impl AcpAgentConfig {
     }
 
     pub fn codex_default() -> Self {
-        // Stock `codex` has no `acp` subcommand — ACP goes through the
-        // `@agentclientprotocol/codex-acp` adapter (or a `codex-acp` binary).
-        if let Ok(command) = std::env::var("MEDOUSA_ACP_CODEX_COMMAND") {
-            let args = env_args("MEDOUSA_ACP_CODEX_ARGS", &[]);
-            return Self {
-                kind: AgentRuntimeKind::Codex,
-                command: resolve_command_path(&command)
-                    .map(|p| p.display().to_string())
-                    .unwrap_or(command),
-                args,
-                cwd: None,
-            };
-        }
-        let (command, args) = resolve_codex_acp_launch();
+        let command = codex_command();
         Self {
             kind: AgentRuntimeKind::Codex,
-            command,
-            args,
+            command: resolve_command_path(&command)
+                .map(|path| path.display().to_string())
+                .unwrap_or(command),
+            args: env_args("MEDOUSA_ACP_CODEX_ARGS", &["app-server", "--stdio"]),
             cwd: None,
         }
     }
@@ -162,23 +152,9 @@ impl AcpAgentConfig {
     }
 }
 
-/// Prefer an installed `codex-acp` binary; otherwise use the protocol-tested
-/// adapter version rather than floating on npm latest.
-fn resolve_codex_acp_launch() -> (String, Vec<String>) {
-    if let Some(path) = resolve_command_path("codex-acp") {
-        return (path.display().to_string(), Vec::new());
-    }
-    if let Some(npx) = resolve_command_path("npx") {
-        return (
-            npx.display().to_string(),
-            vec!["-y".into(), "@agentclientprotocol/codex-acp@1.1.14".into()],
-        );
-    }
-    // Last resort — will fail with a clear spawn/handshake error.
-    let codex = resolve_command_path("codex")
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "codex".into());
-    (codex, vec!["acp".into()])
+/// The launcher and authentication probe must inspect the same installed CLI.
+fn codex_command() -> String {
+    std::env::var("MEDOUSA_ACP_CODEX_COMMAND").unwrap_or_else(|_| "codex".into())
 }
 
 /// Prefer `hermes-acp` when present; otherwise `hermes acp` (official ACP mode).
@@ -322,7 +298,7 @@ fn codex_auth_probe(binary_present: bool) -> RuntimeAuthProbe {
 
 fn codex_auth_from_cli_status() -> Option<(RuntimeAuthStatus, String)> {
     ensure_vendor_cli_path();
-    let program = resolve_command_path("codex")?;
+    let program = resolve_command_path(&codex_command())?;
     let output = std::process::Command::new(program)
         .args(["login", "status"])
         .stdin(std::process::Stdio::null())
@@ -635,8 +611,8 @@ pub fn runtime_auth_probe(kind: AgentRuntimeKind) -> RuntimeAuthProbe {
             cursor_auth_probe(present)
         }
         AgentRuntimeKind::Codex => {
-            // Sign-in is via the Codex CLI; ACP itself may launch through `codex-acp` / npx.
-            codex_auth_probe(command_available("codex"))
+            // Authentication and app-server use the same installed Codex CLI.
+            codex_auth_probe(command_available(&codex_command()))
         }
         AgentRuntimeKind::Hermes => {
             let cfg = AcpAgentConfig::hermes_default();
@@ -943,7 +919,7 @@ pub fn common_vendor_bin_dirs() -> Vec<PathBuf> {
                 .join("bin"),
         );
         // nvm: pick every installed Node bin dir (newest first) so `npx` resolves
-        // for the Codex ACP adapter even when the daemon inherits a thin PATH.
+        // for Node-backed ACP bridges even when the daemon inherits a thin PATH.
         let nvm_node = home.join(".nvm").join("versions").join("node");
         if let Ok(entries) = std::fs::read_dir(&nvm_node) {
             let mut versions: Vec<PathBuf> = entries
@@ -1032,8 +1008,8 @@ pub fn runtime_availability(kind: AgentRuntimeKind) -> (bool, Option<String>, Op
                 ))
             } else if matches!(kind, AgentRuntimeKind::Codex) {
                 Some(
-                    "Codex ACP adapter not found — install Node.js (for npx) or `codex-acp`, \
-                     then retry. Stock `codex` has no `acp` subcommand."
+                    "Codex CLI not found — install Codex from Settings → External Agents. \
+                     Medousa uses the installed CLI’s native app-server."
                         .into(),
                 )
             } else if matches!(kind, AgentRuntimeKind::Hermes) {
@@ -1081,7 +1057,7 @@ struct ProcessSession {
     config_options: Vec<Value>,
 }
 
-/// Spawns Cursor/Codex/Hermes ACP stdio when the binary exists; otherwise errors loudly.
+/// Dispatches native Codex/Muse clients and ACP providers; missing CLIs fail loudly.
 ///
 /// The bundled [`StubAcpClient`] is only used when `MEDOUSA_ACP_FORCE_STUB` is
 /// set (dev/bones) — a missing CLI otherwise surfaces a clear setup error so the
@@ -1090,6 +1066,7 @@ pub struct ExternalAcpClient {
     stub: StubAcpClient,
     processes: AsyncMutex<HashMap<String, std::sync::Arc<AsyncMutex<ProcessSession>>>>,
     muse: muse::MuseClient,
+    codex: codex::CodexClient,
 }
 
 impl Default for ExternalAcpClient {
@@ -1098,6 +1075,7 @@ impl Default for ExternalAcpClient {
             stub: StubAcpClient::new(),
             processes: AsyncMutex::new(HashMap::new()),
             muse: muse::MuseClient::new(),
+            codex: codex::CodexClient::new(),
         }
     }
 }
@@ -1121,6 +1099,9 @@ impl ExternalAcpClient {
     }
 
     pub async fn wire_session_id(&self, session: &AcpSessionId) -> Option<String> {
+        if session.0.starts_with("codex-native-") {
+            return self.codex.wire_session_id(session).await;
+        }
         if session.0.starts_with("muse-code-") {
             return self.muse.wire_session_id(session).await;
         }
@@ -1131,6 +1112,9 @@ impl ExternalAcpClient {
     }
 
     pub async fn session_capabilities(&self, session: &AcpSessionId) -> AgentRuntimeCapabilities {
+        if session.0.starts_with("codex-native-") {
+            return self.codex.session_capabilities(session).await;
+        }
         if session.0.starts_with("muse-code-") {
             return self.muse.session_capabilities(session).await;
         }
@@ -1141,6 +1125,9 @@ impl ExternalAcpClient {
     }
 
     pub async fn session_config_options(&self, session: &AcpSessionId) -> Vec<Value> {
+        if session.0.starts_with("codex-native-") {
+            return self.codex.session_config_options(session).await;
+        }
         if session.0.starts_with("muse-code-") {
             return self.muse.session_config_options(session).await;
         }
@@ -1156,6 +1143,12 @@ impl ExternalAcpClient {
         config_id: &str,
         value: Value,
     ) -> Result<Vec<Value>> {
+        if session.0.starts_with("codex-native-") {
+            return self
+                .codex
+                .set_session_config_option(session, config_id, value)
+                .await;
+        }
         if session.0.starts_with("muse-code-") {
             return self
                 .muse
@@ -1177,6 +1170,12 @@ impl ExternalAcpClient {
         request_id: &str,
         option_id: Option<&str>,
     ) -> Result<()> {
+        if session.0.starts_with("codex-native-") {
+            return self
+                .codex
+                .respond_permission_choice(session, request_id, option_id)
+                .await;
+        }
         if session.0.starts_with("muse-code-") {
             return self
                 .muse
@@ -1234,6 +1233,13 @@ impl ExternalAcpClient {
             // Stub has no real persistence — treat resume token as advisory only.
             let resumed = resume_wire_id.is_some();
             return Ok((id.clone(), Some(id.0.clone()), resumed));
+        }
+
+        if matches!(config.kind, AgentRuntimeKind::Codex) {
+            return self
+                .codex
+                .create_or_resume_session(config, resume_wire_id)
+                .await;
         }
 
         let mut launch = config.clone();
@@ -1331,6 +1337,9 @@ impl AcpClient for ExternalAcpClient {
     }
 
     async fn prompt(&self, session: &AcpSessionId, text: &str) -> Result<()> {
+        if session.0.starts_with("codex-native-") {
+            return self.codex.prompt(session, text).await;
+        }
         if session.0.starts_with("muse-code-") {
             return self.muse.prompt(session, text).await;
         }
@@ -1348,6 +1357,9 @@ impl AcpClient for ExternalAcpClient {
     }
 
     async fn cancel(&self, session: &AcpSessionId) -> Result<()> {
+        if session.0.starts_with("codex-native-") {
+            return self.codex.cancel(session).await;
+        }
         if session.0.starts_with("muse-code-") {
             return self.muse.cancel(session).await;
         }
@@ -1369,6 +1381,9 @@ impl AcpClient for ExternalAcpClient {
     }
 
     async fn next_event(&self, session: &AcpSessionId) -> Result<Option<AcpEvent>> {
+        if session.0.starts_with("codex-native-") {
+            return self.codex.next_event(session).await;
+        }
         if session.0.starts_with("muse-code-") {
             return self.muse.next_event(session).await;
         }
@@ -1388,6 +1403,12 @@ impl AcpClient for ExternalAcpClient {
         request_id: &str,
         approved: bool,
     ) -> Result<()> {
+        if session.0.starts_with("codex-native-") {
+            return self
+                .codex
+                .respond_permission(session, request_id, approved)
+                .await;
+        }
         if session.0.starts_with("muse-code-") {
             return self
                 .muse
@@ -1416,15 +1437,6 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
     // Child inherits the enriched PATH so nested tools (npx → node, etc.) resolve.
     if let Ok(path) = std::env::var("PATH") {
         cmd.env("PATH", path);
-    }
-    if matches!(config.kind, AgentRuntimeKind::Codex) {
-        // "ChatGPT / Codex" is a subscription-backed runtime. Never allow a
-        // native Medousa OpenAI key to silently change its billing route.
-        cmd.env_remove("OPENAI_API_KEY")
-            .env_remove("CODEX_API_KEY")
-            .env_remove("MODEL_PROVIDER")
-            .env("DEFAULT_AUTH_REQUEST", r#"{"methodId":"chat-gpt"}"#)
-            .env("CODEX_CONFIG", codex_subscription_config());
     }
     if matches!(config.kind, AgentRuntimeKind::Hermes) {
         // Medousa owns MCP via session/new — skip Hermes' global config.yaml MCP
@@ -1491,19 +1503,6 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
         stderr,
         config_options: Vec::new(),
     })
-}
-
-fn codex_subscription_config() -> String {
-    codex_subscription_config_from(std::env::var("CODEX_CONFIG").ok().as_deref())
-}
-
-fn codex_subscription_config_from(existing: Option<&str>) -> String {
-    let mut config = existing
-        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-        .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default();
-    config.insert("forced_login_method".into(), json!("chatgpt"));
-    Value::Object(config).to_string()
 }
 
 async fn handshake_session(proc: &mut ProcessSession) -> Result<()> {
@@ -1809,10 +1808,10 @@ async fn send_permission_choice(
         .permission_options
         .get(request_id)
         .ok_or_else(|| anyhow::anyhow!("unknown permission request"))?;
-    if let Some(id) = option_id {
-        if !options.iter().any(|option| option.option_id == id) {
-            bail!("invalid agent permission option");
-        }
+    if let Some(id) = option_id
+        && !options.iter().any(|option| option.option_id == id)
+    {
+        bail!("invalid agent permission option");
     }
     let rpc_id = proc
         .permission_rpc_ids
@@ -2158,26 +2157,16 @@ mod tests {
     }
 
     #[test]
-    fn codex_default_avoids_stock_acp_subcommand() {
-        // Unless overridden, we must not rely on `codex acp` (it doesn't exist).
-        if std::env::var_os("MEDOUSA_ACP_CODEX_COMMAND").is_some() {
+    fn codex_default_uses_installed_native_app_server() {
+        if std::env::var_os("MEDOUSA_ACP_CODEX_COMMAND").is_some()
+            || std::env::var_os("MEDOUSA_ACP_CODEX_ARGS").is_some()
+        {
             return;
         }
-        let cfg = AcpAgentConfig::codex_default();
-        let joined = format!("{} {}", cfg.command, cfg.args.join(" "));
-        assert!(
-            !joined.trim_end().ends_with("codex acp")
-                || resolve_command_path("npx").is_none()
-                    && resolve_command_path("codex-acp").is_none(),
-            "unexpected launch: {joined}"
-        );
-        if resolve_command_path("codex-acp").is_some() {
-            assert!(cfg.command.contains("codex-acp"));
-            assert!(cfg.args.is_empty());
-        } else if resolve_command_path("npx").is_some() {
-            assert!(cfg.command.contains("npx"));
-            assert!(cfg.args.iter().any(|a| a.contains("codex-acp")));
-        }
+        let config = AcpAgentConfig::codex_default();
+        assert_eq!(config.args, ["app-server", "--stdio"]);
+        assert!(!config.command.contains("codex-acp"));
+        assert!(!config.command.contains("npx"));
     }
 
     #[test]
@@ -2189,16 +2178,6 @@ mod tests {
         let api = parse_codex_login_status(true, "Logged in using an API key");
         assert_eq!(api.0, RuntimeAuthStatus::SignedOut);
         assert!(api.1.contains("API key"));
-    }
-
-    #[test]
-    fn codex_subscription_config_preserves_settings_and_forces_chatgpt() {
-        let value: Value = serde_json::from_str(&codex_subscription_config_from(Some(
-            r#"{"model":"gpt-test","forced_login_method":"api"}"#,
-        )))
-        .expect("valid config");
-        assert_eq!(value.get("model"), Some(&json!("gpt-test")));
-        assert_eq!(value.get("forced_login_method"), Some(&json!("chatgpt")));
     }
 
     #[test]

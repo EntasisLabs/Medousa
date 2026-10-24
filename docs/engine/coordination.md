@@ -184,10 +184,11 @@ Native peer assignments currently execute in their admitted Coder turn; child
 worker spawning is denied until those workers can inherit the exact grant.
 Additional parallel work requires separate scoped assignments.
 Revocation cancels the native turn. Uncertain native claims are never relaunched
-from disk. Codex/Cursor/Hermes continue through ACP; Medousa is not sent to the
-ACP session endpoint or external-agent Bot adapter.
+from disk. External runtimes continue through the existing `/v1/agents` session
+interface: Codex uses its native app-server protocol, while Cursor and Hermes
+use ACP. Medousa is not sent to the external-agent session endpoint or Bot adapter.
 
-Discovery includes visible, unowned local ACP sessions bound to the same Forge
+Discovery includes visible, unowned local external-agent sessions bound to the same Forge
 work. Adopting one never sends another prompt or restarts its provider. Approval
 records coordination custody and attaches the durable terminal observer to the
 running session. Terminal state is shared across the prompt pump and registry,
