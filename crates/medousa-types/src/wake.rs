@@ -68,7 +68,7 @@ impl WakeSource {
                 "The handoff reached a terminal state. Nothing new was asked."
             }
             Self::PeerTerminal => "The peer finished; here is the result. Nothing new was asked.",
-            Self::AgentInbox => "A message arrived. Nothing new was asked.",
+            Self::AgentInbox => "A message arrived over an admitted agent communication channel.",
             Self::WorkerResult => "The worker finished; here is the result. Nothing new was asked.",
             Self::CheckpointResume => {
                 "This resumes saved work. The human sentence is not a new goal."
@@ -85,7 +85,6 @@ impl WakeSource {
         matches!(
             self,
             Self::PeerTerminal
-                | Self::AgentInbox
                 | Self::TerminalCallback
                 | Self::WorkerResult
                 | Self::ProcessCompleted
@@ -102,12 +101,14 @@ pub enum WakeAuthority {
     Report,
     ContinueBounded { rounds: u32 },
     Execute,
+    ContinueWork,
 }
 
 impl WakeAuthority {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Acknowledge => "acknowledge",
+            Self::ContinueWork => "continue_work",
             Self::Report => "report",
             Self::ContinueBounded { .. } => "continue_bounded",
             Self::Execute => "execute",
@@ -120,7 +121,7 @@ impl WakeAuthority {
             Self::Acknowledge => Some(2),
             Self::Report => Some(4),
             Self::ContinueBounded { rounds } => Some(rounds.max(1)),
-            Self::Execute => None,
+            Self::Execute | Self::ContinueWork => None,
         }
     }
 
@@ -128,6 +129,7 @@ impl WakeAuthority {
         match self {
             Self::Acknowledge => "acknowledge the message or reply, then finish",
             Self::Report => "report the outcome, then finish",
+            Self::ContinueWork => "continue authorized work; reply when useful, or finish silently",
             Self::ContinueBounded { .. } => {
                 "continue the saved work within the remaining rounds, then finish"
             }
@@ -161,7 +163,7 @@ impl WakeGrant {
             | WakeSource::SafetyReview
             | WakeSource::ProcessCompleted
             | WakeSource::ProcessTimedOut => WakeAuthority::Report,
-            WakeSource::AgentInbox => WakeAuthority::Acknowledge,
+            WakeSource::AgentInbox => WakeAuthority::ContinueWork,
             WakeSource::CheckpointResume => WakeAuthority::ContinueBounded { rounds: 1 },
         };
         let remaining_rounds = authority.round_cap();
@@ -238,13 +240,15 @@ fn tool_allowed(grant: &WakeGrant, tool: &str, input: &Value) -> bool {
             return false;
         }
         return match grant.authority {
-            WakeAuthority::Execute | WakeAuthority::ContinueBounded { .. } => true,
+            WakeAuthority::Execute
+            | WakeAuthority::ContinueWork
+            | WakeAuthority::ContinueBounded { .. } => true,
             WakeAuthority::Report => grant.source == WakeSource::SafetyReview,
             WakeAuthority::Acknowledge => false,
         };
     }
     match grant.authority {
-        WakeAuthority::Execute => true,
+        WakeAuthority::Execute | WakeAuthority::ContinueWork => true,
         WakeAuthority::ContinueBounded { .. } => true,
         WakeAuthority::Acknowledge => is_acknowledge_tool(tool, input),
         WakeAuthority::Report => is_acknowledge_tool(tool, input) || is_report_tool(tool),
@@ -550,13 +554,18 @@ mod tests {
     #[test]
     fn inbox_and_peer_wakes_describe_the_expected_response() {
         let inbox = WakeGrant::for_source(WakeSource::AgentInbox);
-        assert_eq!(inbox.authority, WakeAuthority::Acknowledge);
-        let shell =
-            beyond_expected_note(&inbox, "cognition_shell_run", &json!({"command": "ls"})).unwrap();
-        assert!(shell.contains("Expected response:"));
-        assert!(shell.contains("acknowledge"));
-        assert!(shell.contains("The call is allowed"));
-        assert!(shell.contains("Nothing new was asked"));
+        assert_eq!(inbox.authority, WakeAuthority::ContinueWork);
+        assert_eq!(inbox.remaining_rounds, None);
+        assert!(
+            inbox
+                .authority
+                .expected_response()
+                .contains("finish silently")
+        );
+        assert!(
+            beyond_expected_note(&inbox, "cognition_shell_run", &json!({"command": "ls"}))
+                .is_none()
+        );
 
         let peer = WakeGrant::for_source(WakeSource::PeerTerminal);
         assert_eq!(peer.authority, WakeAuthority::Report);

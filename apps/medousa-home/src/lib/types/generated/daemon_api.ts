@@ -1562,7 +1562,7 @@ export interface StageRoutingMatrix {
   verifier: StageRoute;
 }
 
-export type WakeAuthority = { kind: "acknowledge" } | { kind: "report" } | { kind: "continue_bounded"; rounds: number } | { kind: "execute" };
+export type WakeAuthority = { kind: "acknowledge" } | { kind: "report" } | { kind: "continue_bounded"; rounds: number } | { kind: "execute" } | { kind: "continue_work" };
 
 export type WakeSource = "human" | "native_callback" | "terminal_callback" | "peer_terminal" | "agent_inbox" | "worker_result" | "checkpoint_resume" | "safety_review" | "process_completed" | "timed_out";
 

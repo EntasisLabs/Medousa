@@ -156,7 +156,6 @@ impl WireMessage {
             || self.target_name.len() > 1024
             || self.body.trim().is_empty()
             || self.body.len() > 8000
-            || self.hop >= 16
             || (self.hop == 0 && self.root_id != self.id)
         {
             bail!("message exceeds the native exchange limits");
@@ -180,6 +179,7 @@ impl WireMessage {
             source_workshop: Some(self.source_workshop),
             target_workshop: Some(self.target_workshop),
             remote_inbound: true,
+            receipt_acknowledged: false,
             transport_route: self.mailbox_return.then_some(TransportRoute::Mailbox),
             status: MessageStatus::Queued,
             delivery_turn: None,
@@ -819,17 +819,19 @@ pub(super) async fn deliver(host: &Arc<MessageHost>, id: String) -> Result<()> {
         return Ok(());
     }; // Directional links return replies through polling.
     let wire = WireMessage::from_message(&message)?;
+    let previous = message.clone();
+    let receipt_messages = if message.status != MessageStatus::Queued {
+        host.stored(move |store| store.received_reply_outcomes(&previous))
+            .await?
+    } else {
+        Vec::new()
+    };
     let request_body = if message.status != MessageStatus::Queued {
-        let previous = message.clone();
-        let acknowledgments = host
-            .stored(move |store| {
-                Ok(store
-                    .received_reply_outcomes(&previous)?
-                    .into_iter()
-                    .map(Receipt::from)
-                    .collect())
-            })
-            .await?;
+        let acknowledgments = receipt_messages
+            .iter()
+            .cloned()
+            .map(Receipt::from)
+            .collect();
         Request::Status {
             message_id: id.clone(),
             source_session: message.source_session.clone(),
@@ -885,6 +887,7 @@ pub(super) async fn deliver(host: &Arc<MessageHost>, id: String) -> Result<()> {
                         }
                         status => status,
                     };
+                    store.acknowledge_reply_outcomes(&receipt_messages)?;
                     store.outcome(&id, status, receipt.error)?;
                     Ok(imported)
                 })
@@ -951,6 +954,7 @@ mod tests {
             target_workshop: Some(to.into()),
             hop: 0,
             remote_inbound: false,
+            receipt_acknowledged: false,
             transport_route: Some(TransportRoute::Connection("worker-b".into())),
             attempts: 0,
             next_attempt_at: None,
@@ -1101,6 +1105,7 @@ mod tests {
             "profile_id",
             "transport_route",
             "delivery_turn",
+            "receipt_acknowledged",
             "session_token",
         ] {
             assert!(payload.get(private).is_none());
@@ -1117,25 +1122,38 @@ mod tests {
             .enqueue(outgoing("a", "b", "t", "alice"), "send")
             .unwrap();
         let received = receive(&destination, &sent, "bob");
-        for n in 0..4 {
+        for n in 0..40 {
             let answer = reply(&destination, &received, &format!("r-{n}"));
             receive(&source, &answer, "alice");
         }
-        source.inbox("alice", "ses_coordinator", "active").unwrap();
-        let acknowledgments: Vec<_> = source
-            .received_reply_outcomes(&sent)
-            .unwrap()
-            .into_iter()
-            .map(Receipt::from)
-            .collect();
-        assert_eq!(acknowledgments.len(), 4);
+        for _ in 0..5 {
+            source.inbox("alice", "ses_coordinator", "active").unwrap();
+        }
+        let mut count = 0;
+        loop {
+            let receipts = source.received_reply_outcomes(&sent).unwrap();
+            if receipts.is_empty() {
+                break;
+            }
+            assert!(receipts.len() <= 16); // Wire page size, never an exchange allowance.
+            count += receipts.len();
+            let acknowledgments = receipts
+                .iter()
+                .cloned()
+                .map(Receipt::from)
+                .collect::<Vec<_>>();
+            let mut result = response();
+            append_mailbox(&destination, &received, &acknowledgments, &mut result).unwrap();
+            source.acknowledge_reply_outcomes(&receipts).unwrap();
+        }
+        assert_eq!(count, 40);
         let mut result = response();
-        append_mailbox(&destination, &received, &acknowledgments, &mut result).unwrap();
+        append_mailbox(&destination, &received, &[], &mut result).unwrap();
         assert!(result.replies.is_empty());
     }
 
     #[test]
-    fn distributed_reply_loop_preserves_hops_and_stops_at_sixteen() {
+    fn distributed_exchanges_continue_beyond_sixteen_messages() {
         let a = tempfile::tempdir().unwrap();
         let b = tempfile::tempdir().unwrap();
         let source = MessageStore::new(a.path().join("messages.sqlite3"));
@@ -1143,26 +1161,26 @@ mod tests {
         let mut sent = source
             .enqueue(outgoing("a", "b", "t", "alice"), "send")
             .unwrap();
-        for n in 1..16 {
+        for n in 1..=40 {
             let (store, owner) = if n % 2 == 1 {
                 (&destination, "bob")
             } else {
                 (&source, "alice")
             };
             let received = receive(store, &sent, owner);
+            store
+                .inbox(owner, &received.target_session, &format!("consume-{n}"))
+                .unwrap();
             sent = reply(store, &received, &format!("r-{n}"));
             assert_eq!(sent.hop, n);
+            WireMessage::from_message(&sent)
+                .unwrap()
+                .validate(
+                    sent.source_workshop.as_deref().unwrap(),
+                    sent.target_workshop.as_deref().unwrap(),
+                )
+                .unwrap();
         }
-        let received = receive(&source, &sent, "alice");
-        let mut extra = outgoing("a", "b", "stop", "alice");
-        extra.in_reply_to = Some(received.id);
-        assert!(
-            source
-                .enqueue(extra, "extra")
-                .unwrap_err()
-                .to_string()
-                .contains("sixteen-message")
-        );
     }
 
     #[test]

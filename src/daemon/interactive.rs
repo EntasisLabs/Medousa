@@ -302,6 +302,13 @@ pub async fn spawn_turn_ticket(
             .starts_with(crate::creative_jobs::TURN_PREFIX)
             .then(|| std::time::Instant::now() + std::time::Duration::from_secs(30 * 60)),
         continuation_scope.clone(),
+    )
+    .with_wake_source(
+        interactive_request
+            .wake
+            .as_ref()
+            .map(|wake| wake.source)
+            .unwrap_or(medousa_types::wake::WakeSource::Human),
     );
     if let Some(bot_identity) = bot_identity {
         execution_context = execution_context.with_bot_identity(bot_identity);

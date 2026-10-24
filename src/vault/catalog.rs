@@ -25,7 +25,8 @@ struct Catalog {
     at: Instant,
     notes: Arc<Vec<(VaultNoteSummary, String)>>,
 }
-static CATALOGS: Lazy<Mutex<HashMap<(PathBuf, Option<PathBuf>), Catalog>>> =
+type CatalogKey = (PathBuf, Option<PathBuf>);
+static CATALOGS: Lazy<Mutex<HashMap<CatalogKey, Catalog>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub fn search_root(
@@ -77,14 +78,13 @@ pub fn search_root(
             }
             let notes = Arc::new(notes);
             let mut cache = CATALOGS.lock().unwrap_or_else(|p| p.into_inner());
-            if cache.len() >= 16 {
-                if let Some(oldest) = cache
+            if cache.len() >= 16
+                && let Some(oldest) = cache
                     .iter()
                     .min_by_key(|(_, value)| value.at)
                     .map(|(key, _)| key.clone())
-                {
-                    cache.remove(&oldest);
-                }
+            {
+                cache.remove(&oldest);
             }
             cache.insert(
                 key,

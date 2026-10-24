@@ -13769,6 +13769,20 @@
               "kind"
             ],
             "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "continue_work"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
           }
         ]
       },

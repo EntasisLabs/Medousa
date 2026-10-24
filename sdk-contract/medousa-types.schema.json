@@ -28920,6 +28920,20 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "continue_work"
+                ]
+              }
+            }
           }
         ]
       },

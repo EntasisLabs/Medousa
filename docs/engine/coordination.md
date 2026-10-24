@@ -378,11 +378,27 @@ route. External-runtime Bots and internal coordination sessions are excluded.
 The workshop's `agent_messages.sqlite3` transactionally stores immutable sender,
 recipient, body, exchange root, retry key identity, and mutable delivery state.
 A message key is bound to owner, source chat, and exact source turn. Reusing a
-key with different content is rejected. The store caps pending messages at 64,
-sends per turn at eight, and messages per exchange on each workshop at sixteen. Native message
-wakes inherit the exchange budget even when forwarding rather than replying.
-Bodies are limited to 8000 UTF-8 bytes. Database I/O is admitted through
-`ForgeExecutionService`; pending and inbox reads are bounded.
+key with different content is rejected. Pending queue capacity is 64 and bodies
+are limited to 8000 UTF-8 bytes. There is no per-turn send quota, exchange count
+limit, or hop allowance. Hop metadata retains causal correlation and checked
+integer arithmetic; it is not permission to continue. Database I/O is admitted
+through `ForgeExecutionService`; pending and inbox reads are bounded.
+
+The same database retains owner- and workshop-qualified chat pairs. An admitted
+user turn can establish a pair while sending; subsequent peer/event turns can
+send through an existing pair in either direction without asking again. Their
+wake context cannot establish additional pairs. Previously admitted messages are
+migrated once to preserve their routes; process notifications do not establish
+communication permission. Remote initiation retains the existing destination
+pairing policy and exact signed return-route validation. Session visibility,
+archival, and transport policy are rechecked as before.
+
+Agent inbox wakes use `continue_work` with no suggested round allowance, retaining
+normal Assistant turn control and the recipient's existing tool permissions.
+Delivery context contains the sender, message ID, and body, rather than internal
+hop or transport bookkeeping. Useful replies are explicit; otherwise the agent
+can finish silently. Runtime process/result notifications keep their own wake
+semantics and do not become agent conversations.
 
 `inbox` consumes up to eight queued messages for the calling chat, avoiding a
 second delivery wake. The background dispatcher defers busy recipients and
@@ -445,7 +461,9 @@ Responses contain `schema_version`, `request_hash`, nullable `participants` and
 `target_session`, `status`, and nullable `error`. Sender journals record remote
 receipts; the destination journal owns the native wake claim and final outcome.
 Network retries import the same immutable ID and cannot replay an admitted turn.
-Exchange roots and the sixteen-hop limit survive cross-workshop forwarding.
+Exchange roots and exact reply provenance survive cross-workshop forwarding;
+there is no hop allowance. Older receiving engines must be updated to accept
+longer exchanges.
 
 Daemon-owned worker connections use their saved token, signing identity, pinned
 destination, and existing HTTP/Iroh transport. A saved connection cannot be
@@ -459,5 +477,9 @@ receipt acknowledges their native outcome. Lost responses, delayed replies
 after initial delivery, and daemon restarts retain that route. Each dispatcher
 cycle selects up to eight outbound routes in round-robin order with four
 concurrent exchanges. A response exports at most two replies and a status
-request acknowledges at most sixteen imported replies. Request bodies are
+request acknowledges at most sixteen terminal imported replies per batch. Only
+a successful authenticated exchange advances those receipt acknowledgments, so
+older receipts cannot starve later replies in a long conversation. Receipts do
+not generate conversational wakes. These are transport batch sizes, not exchange
+allowances. Request bodies are
 bounded at 64 KiB and responses at 256 KiB; transport timeouts are six seconds.
