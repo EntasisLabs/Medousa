@@ -18,6 +18,27 @@ Type to search recent conversations, Create canvases, and Code projects. Press
 **Create**, and **Code** open their respective browsers; **New chat** creates a
 conversation. **Open Medousa** returns to the full workspace and its tabs.
 
+Desktop Spotlight uses the same search, lenses, previews and command catalog as
+the in-app command center. Search notes, conversations, bots, connected agents,
+scripts, browser history and saved SSH destinations. Use **Overview**, **Recent**,
+**Activity**, **Create** and **Actions**, or choose a named workspace to inspect
+its tabs and panes. `+` filters creation commands, `!` finds runnable actions,
+and `>` opens advanced commands. Pins and **Resume last Spotlight** work here too.
+
+Type `@` to [talk from Spotlight](spotlight-conversations.md) without opening a
+full chat. The short transcript and continuing conversation stay in the widget;
+**Open conversation** opens or focuses its native Chat window. Closing Spotlight
+detaches the preview and leaves accepted work running.
+
+[Activity](spotlight-activity.md) shows running work, **Needs you**, finished tasks
+and execution previews inline. Opening a conversation or Code project uses its
+native window. Task details, reviews, notes, settings, Terminal/SSH and editor
+actions bring the main window forward at their real destination. These commands
+use the main window's current document and workspace, rather than an invisible
+copy of its tabs inside the widget. If that context changes before execution,
+search again to select the current command. Failures remain visible, and a
+submitted action is not automatically retried.
+
 Opening the same conversation, canvas, or Code project again focuses and restores
 its existing window. Files requested for an open Code project open inside that
 project’s existing window. Different workshops keep separate window identities.
@@ -49,6 +70,12 @@ preferences,
 and Code SSH setup use the workshop that owns their window. They continue to work
 when the main window selects another workshop. Sign-in stays bound to its original
 workshop for the whole flow. Device setup and maintenance remain in the main window.
+
+Each opening of Desktop Spotlight also retains its displayed workshop for inline
+conversations and Activity. A main-window workshop switch does not redirect those
+requests or cancel their work. Commands that require the main shell ask you to
+reopen Spotlight if its workshop no longer matches. Showing the launcher again
+adopts the main window's current workshop and refreshes recent resources.
 
 Desktop Spotlight is a desktop-only feature. The existing mobile and browser tab
 workflows are unchanged.

@@ -30,6 +30,7 @@ describe("root resource probe", () => {
       "peer-message-notifications",
       "remote-peer-completion-sync",
       "command-spotlight-hotkeys",
+      "desktop-spotlight-command-host",
     ]);
     const source = readFileSync(
       join(homeRoot, "src/lib/runtime/shellLifecycle.ts"),

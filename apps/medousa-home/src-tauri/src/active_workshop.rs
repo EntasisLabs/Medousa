@@ -139,7 +139,7 @@ pub fn ensure_window_consumer(
     generation: Option<u64>,
 ) -> Result<(), String> {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    if window.label().starts_with("desktop-work-")
+    if crate::desktop_windows::is_resource_window(window.label())
         && (generation.is_none() || generation != consumer_generation(window))
     {
         return Err("The work window was closed".into());
@@ -162,7 +162,7 @@ pub async fn transport_for_webview(
         return transport_config_for_runtime_id(id);
     }
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    if window.label().starts_with("desktop-work-") {
+    if crate::desktop_windows::is_resource_window(window.label()) {
         let scope = crate::desktop_windows::scope_for(window.app_handle(), window.label())
             .ok_or("The work window was closed")?;
         return metadata_read(move || transport_config_for_target(resolve_scope(&scope)?)).await;
@@ -439,4 +439,9 @@ mod tests {
         assert!(resolve_scope_for_registry(&registry, "missing", false).is_err());
         assert!(resolve_scope_for_registry(&registry, "peer", false).is_err());
     }
+}
+
+/// Retained renderers keep their own workshop subscriptions across shell switches.
+pub fn is_resource_window(label: &str) -> bool {
+    label == "desktop-spotlight" || label.starts_with("desktop-work-")
 }

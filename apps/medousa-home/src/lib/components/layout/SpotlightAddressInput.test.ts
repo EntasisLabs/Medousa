@@ -43,6 +43,12 @@ it("filters targets, preserves a typed message on selection, and ignores IME Ent
   const conversation = await setup("@labbing keep going"); key("Enter", { isComposing: true }); expect(conversation.target).toBeNull();
   key("Enter"); expect(conversation.sessionId).toBe("lab"); expect(input().value).toBe("keep going");
 });
+it("uses AppKit arrow keys to navigate @ destinations", async () => {
+  const conversation = await setup("@");
+  key("\uF701"); key("Enter");
+  expect(conversation.sessionId).toBe("lab");
+  expect(input().value).toBe("");
+});
 it("dismisses the picker before allowing Escape to close Spotlight", async () => {
   await setup("@"); const first = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }); input().dispatchEvent(first); flushSync();
   expect(first.defaultPrevented).toBe(true); expect(document.querySelector('[role="listbox"]')).toBeNull();

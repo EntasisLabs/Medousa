@@ -6,6 +6,8 @@
   import type { AddressedConversation } from "$lib/spotlight/addressedConversation.svelte";
   import { conversationTargets, mentionQuery, type ConversationTarget } from "$lib/spotlight/conversationTargets";
   import SpotlightTargetPicker from "./SpotlightTargetPicker.svelte";
+  import { guardTextNavigation } from "$lib/utils/guardTextNavigation";
+  import { textNavigationKey } from "$lib/utils/composerKeyboard";
   let { query = $bindable(""), inputEl = $bindable<HTMLInputElement | null>(null), conversation, placeholder, busy, enabled, onQueryChange, idPrefix = "spotlight", defaultTarget, trailing, inlinePicker = false, onPickingChange, resultsOpen = false, activeResultId, onActivate }: {
     query: string; inputEl: HTMLInputElement | null; conversation: AddressedConversation; placeholder: string; busy: boolean; enabled: boolean; onQueryChange: () => void;
     idPrefix?: string; defaultTarget?: () => ConversationTarget;
@@ -34,13 +36,14 @@
     focus();
   }
   export function handleKeydown(event: KeyboardEvent): boolean {
+    const key = textNavigationKey(event);
     if (event.isComposing || !enabled || (event.key === "Tab" && event.shiftKey)) return false;
     if (picking && event.key === "Escape") { event.preventDefault(); dismissed = true; return true; }
     if (event.target !== inputEl || (!mention && !conversation.target && !defaultTarget)) return false;
-    if (picking && ["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(event.key)) {
+    if (picking && ["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(key)) {
       event.preventDefault();
-      if (event.key === "Enter" || event.key === "Tab") { if (targets[index]) select(targets[index]); }
-      else if (targets.length) index = (index + (event.key === "ArrowDown" ? 1 : -1) + targets.length) % targets.length;
+      if (key === "Enter" || key === "Tab") { if (targets[index]) select(targets[index]); }
+      else if (targets.length) index = (index + (key === "ArrowDown" ? 1 : -1) + targets.length) % targets.length;
       return true;
     }
     if (conversation.target && event.key === "Backspace" && !query) { event.preventDefault(); remove(); return true; }
@@ -51,7 +54,7 @@
 
 <div class="command-spotlight-search-row">
   {#if conversation.target}<button type="button" class="command-spotlight-recipient" aria-label={`Remove destination ${conversation.target.label}`} onclick={remove}><span>@{conversation.target.label}</span><X size={12}/></button>{/if}
-  <input bind:this={inputEl} class="command-spotlight-input"
+  <input use:guardTextNavigation bind:this={inputEl} class="command-spotlight-input"
     placeholder={conversation.target ? `Message ${conversation.target.label}…` : placeholder}
     aria-label={conversation.target ? `Message ${conversation.target.label}` : "Search or address a conversation"}
     role="combobox" aria-expanded={picking || resultsOpen} aria-autocomplete="list"

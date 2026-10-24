@@ -18,8 +18,10 @@
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { openNewAsk } from "$lib/utils/workChromeEvents";
   import { openTaskDetails } from "$lib/runtime/shellUseCases";
+  import { openActivityTarget } from "$lib/spotlight/activityNavigation";
+  import type { SpotlightHost } from "$lib/spotlight/host";
 
-  let { query = "", ctx }: { query?: string; ctx: WorkshopCommandContext } = $props();
+  let { query = "", ctx, host }: { query?: string; ctx: WorkshopCommandContext; host?: SpotlightHost } = $props();
   import { flows } from "$lib/stores/flows.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   let flowSelection = $state<Set<string>>(new Set());
@@ -176,27 +178,9 @@
     openError = "";
     opening = true;
     try {
-      if (target?.kind === "chat" || (target?.kind === "card" && target.sessionId)) {
-        const id = target.kind === "chat" ? target.sessionId : target.sessionId!;
-        await ctx.chat.switchSession(id);
-        if (!current()) return;
-        ctx.navigate("chat"); ctx.callbacks.close();
-      } else if (target?.kind === "card" || target?.kind === "job") {
-        await openTaskDetails(target.kind === "card" ? target.cardId : target.jobId);
-      } else if (target?.kind === "project") {
-        const { setCoderExecutionTransport } = await import("$lib/executionAuthority");
-        if (!current()) return;
-        setCoderExecutionTransport(null);
-        const { lmeWorkspace } = await import("$lib/stores/lmeWorkspace.svelte");
-        if (!current()) return;
-        if (target.review) await lmeWorkspace.openCodeReview(target.workId, node.title);
-        else await lmeWorkspace.openCodeWorkspace(target.workId, node.title);
-        if (current()) ctx.callbacks.close();
-      } else if (target?.kind === "note") {
-        const { lmeWorkspace } = await import("$lib/stores/lmeWorkspace.svelte");
-        if (!current()) return;
-        await lmeWorkspace.openNote(target.path); if (current()) ctx.callbacks.close();
-      } else {
+      const navigable = target && ["chat", "card", "job", "project", "note"].includes(target.kind);
+      if (navigable && host) await host.openActivity(target, node.title);
+      else if (!target || !(await openActivityTarget(target, node.title, ctx, current))) {
         detailExpanded = true;
         if (node.children.length > 0 && !expanded.has(node.id)) toggle(node);
       }
@@ -232,6 +216,7 @@
     const workshopId = activeWorkshopId();
     creatingFlow = true; flowError = "";
     try {
+      if (host) { await host.createFlow(refs, flowName); return; }
       const response = await promoteWorkflowFromSlice({ refs, name: flowName.trim() || null, run: false });
       if (!alive || activeWorkshopId() !== workshopId) return;
       flows.openComposer({ name: response.draft.name || flowName, steps: response.draft.steps });
@@ -263,7 +248,7 @@
         <button class:active={filter === item.id} aria-pressed={filter === item.id} onclick={() => { commandSpotlight.activityFilter = null; filter = item.id; }}>{item.label}</button>
       {/each}
     </div>
-    <div class="flex items-center gap-2"><button class="activity-more" onclick={openNewAsk}>New ask</button>
+    <div class="flex items-center gap-2"><button class="activity-more" onclick={() => { if (host) void host.newAsk().catch(cause => { openError = formatDaemonErrorSummary(cause); }); else openNewAsk(); }}>New ask</button>
     <button class="activity-icon" aria-label="Refresh activity" disabled={data.loading || connection.offline} onclick={refresh}><RefreshCw size={14} class={data.loading ? 'animate-spin' : ''} /></button></div>
   </header>
   {#if flowSelection.size > 0}
@@ -319,7 +304,7 @@
           {#if openError}<p class="activity-error">{openError}</p>{/if}
           <button class="activity-open" disabled={opening} onclick={() => void open(selected!)}>{#if selected.target?.kind === 'project' || selected.target?.kind === 'chat' || selected.target?.kind === 'note' || selected.target?.kind === 'card' || selected.target?.kind === 'job'}<ArrowUpRight size={14} /> Open {selected.target.kind === 'project' ? (selected.target.review ? 'review' : 'project') : selected.target.kind === 'note' ? 'note' : selected.target.kind === 'job' || (selected.target.kind === 'card' && !selected.target.sessionId) ? 'task' : 'chat'}{:else}<Maximize2 size={14} /> Expand details{/if}</button>
           {#if selected.target?.kind === 'card' && selected.target.sessionId}
-            <button class="activity-more" onclick={() => { const target = selected?.target; if (target?.kind === 'card') void openTaskDetails(target.cardId); }}>Task details</button>
+            <button class="activity-more" onclick={() => { const target = selected?.target; if (target?.kind === 'card') { if (host) void host.openActivity({ kind: 'card', cardId: target.cardId }, selected!.title).catch(cause => { openError = formatDaemonErrorSummary(cause); }); else void openTaskDetails(target.cardId); } }}>Task details</button>
           {/if}
         </footer>
       {:else}<p class="activity-empty">Select an activity to preview its progress and results.</p>{/if}

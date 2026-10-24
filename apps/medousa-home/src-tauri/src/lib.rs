@@ -348,7 +348,7 @@ fn run_home() {
             }
             if window.label() == "desktop-spotlight" {
                 if matches!(event, tauri::WindowEvent::Focused(false)) { let _ = window.hide(); }
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); let _ = window.hide(); }
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); let _ = window.emit("desktop-spotlight-dismiss", ()); let _ = window.hide(); }
                 return;
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -951,6 +951,14 @@ fn run_home() {
             desktop_windows::desktop_toggle_spotlight,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             desktop_windows::desktop_shortcut_error,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_context,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_restore,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_request,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_reply,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_chat_popout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]

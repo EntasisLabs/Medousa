@@ -11,50 +11,82 @@
   import { creativeBridgeApi } from "$lib/create/creativeBridge";
   import { desktopWindowCommands } from "$lib/desktop/commands";
   import { connectDesktopWindow } from "$lib/desktop/connect";
+  import { createDesktopSpotlightHost } from "$lib/desktop/spotlightHost";
   import { openDesktopWindow } from "$lib/desktop/windows";
+  import { prepareForWorkshopSwitch } from "$lib/workshopConnection";
   import { showMainWindow } from "$lib/window";
+  import type { SpotlightHost } from "$lib/spotlight/host";
   import type { CreativeProjectSummary } from "$lib/types/generated/daemon_api";
   import type { ItemProjection } from "$lib/forge";
 
   let canvases = $state<CreativeProjectSummary[]>([]), projects = $state<ItemProjection[]>([]);
+  let host = $state<SpotlightHost>();
+  let spotlight = $state<{ dismiss: () => void }>();
   let ready = $state(false), error = $state<string | null>(null), shortcutError = $state<string | null>(null);
-  let generation = 0;
-  const commands = $derived(desktopWindowCommands(workshops.activeWorkshopId, chat.sessions, canvases, projects, openDesktopWindow, newChat, showMainWindow));
+  let pendingActions = $state(0);
+  let generation = 0, scope = "", disposed = false, visibleRequested = true;
+  let disconnect: (() => void) | undefined;
+  let opening = Promise.resolve();
+  const commands = $derived(desktopWindowCommands(workshops.activeWorkshopId, chat.sessions, canvases, projects, openDesktopWindow, newChat, showMainWindow)
+    .map(command => ({ ...command, id: command.id === "desktop-new-chat" ? "do-create-chat" : command.id === "desktop-chat" ? "go-chat" : command.id === "desktop-code" ? "go-code" : command.id === "desktop-create" ? "go-create" : command.id.startsWith("desktop-chat:") ? command.id.replace("desktop-chat:", "open-session:") : command.id })));
   async function newChat() {
-    const scope = workshops.activeWorkshopId;
-    const response = await creativeBridgeApi(scope).newSession("New conversation");
-    await openDesktopWindow({ kind: "chat", workshopId: scope, resourceId: response.session_id, title: "New conversation" });
+    const owner = scope;
+    const response = await creativeBridgeApi(owner).newSession("New conversation");
+    await openDesktopWindow({ kind: "chat", workshopId: owner, resourceId: response.session_id, title: "New conversation" });
   }
-  async function refresh() {
+  async function refresh(epoch: number, openPalette = false) {
+    if (disposed || epoch !== generation) return;
+    ready = true; error = null;
+    if (visibleRequested && openPalette) commandSpotlight.openSpotlight();
+    const owner = scope;
+    const results = await Promise.allSettled([chat.refreshSessions({ force: true }), creativeApi(owner).list(), creativeBridgeApi(owner).projects()]);
+    if (disposed || epoch !== generation) return;
+    if (results[1].status === "fulfilled") canvases = results[1].value.projects;
+    if (results[2].status === "fulfilled") projects = results[2].value;
+    if (results.some(result => result.status === "rejected")) error = "Some recent work couldn’t load. Search and available destinations remain usable.";
+  }
+  async function open() {
+    const owner = await invoke<string>("desktop_spotlight_context");
+    if (disposed) return;
+    if (owner === scope && ready) { commandSpotlight.openSpotlight(); void refresh(generation); return; }
     const epoch = ++generation;
-    try {
-      await workshops.load({ restoreShell: false });
-      if (epoch !== generation) return;
-      const scope = workshops.activeWorkshopId;
-      canvases = []; projects = [];
-      commandSpotlight.openSpotlight(); ready = true; error = null;
-      const results = await Promise.allSettled([chat.refreshSessions({ force: true }), creativeApi(scope).list(), creativeBridgeApi(scope).projects()]);
-      if (epoch !== generation || scope !== workshops.activeWorkshopId) return;
-      if (results[1].status === "fulfilled") canvases = results[1].value.projects;
-      if (results[2].status === "fulfilled") projects = results[2].value;
-      const failures = results.filter(r => r.status === "rejected");
-      if (failures.length) error = "Some recent work couldn’t load. You can still open Chat, Create, or Code.";
-    } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
+    ready = false; commandSpotlight.closeSpotlight();
+    disconnect?.(); disconnect = undefined;
+    if (scope) await prepareForWorkshopSwitch();
+    if (disposed) return;
+    scope = owner; canvases = []; projects = []; pendingActions = 0;
+    host = createDesktopSpotlightHost(owner, {
+      isCurrent: () => !disposed && epoch === generation,
+      pending: delta => { if (epoch === generation) pendingActions += delta; },
+      close: () => { if (spotlight) spotlight.dismiss(); else commandSpotlight.closeSpotlight(); },
+    });
+    disconnect = connectDesktopWindow(owner, () => refresh(epoch, true), health => {
+      if (!disposed && epoch === generation && health && !health.ok) { error = health.message; ready = true; if (visibleRequested) commandSpotlight.openSpotlight(); }
+    });
   }
-  function dismiss() { void getCurrentWindow().hide(); }
+  function requestOpen() {
+    visibleRequested = true;
+    opening = opening.then(open).catch(cause => { if (!disposed) error = cause instanceof Error ? cause.message : String(cause); });
+  }
+  function dismiss() { commandSpotlight.closeSpotlight(); void getCurrentWindow().hide(); }
   onMount(() => {
-    let disposed = false;
     const stops: (() => void)[] = [];
-    void listen("desktop-spotlight-open", () => { commandSpotlight.openSpotlight(); requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".command-spotlight-input")?.focus()); void refresh(); }).then(stop => disposed ? stop() : stops.push(stop));
+    const keep = (pending: Promise<() => void>) => { void pending.then(stop => disposed ? stop() : stops.push(stop)); };
+    keep(listen("desktop-spotlight-open", requestOpen));
+    keep(listen("desktop-spotlight-dismiss", () => { visibleRequested = false; if (spotlight) spotlight.dismiss(); else commandSpotlight.closeSpotlight(); }));
+    keep(getCurrentWindow().onFocusChanged(event => {
+      visibleRequested = event.payload;
+      if (!event.payload && !pendingActions) { if (spotlight) spotlight.dismiss(); else commandSpotlight.closeSpotlight(); }
+    }));
     void invoke<string | null>("desktop_shortcut_error").then(value => { shortcutError = value; });
-    const stop = connectDesktopWindow(undefined, refresh, health => { if (health && !health.ok) { error = health.message; ready = true; commandSpotlight.openSpotlight(); } }, "observer");
-    return () => { disposed = true; generation++; stops.forEach(stop => stop()); stop(); };
+    requestOpen();
+    return () => { disposed = true; generation++; stops.forEach(stop => stop()); disconnect?.(); };
   });
 </script>
 
 <main class="desktop-launcher">
   <header data-tauri-drag-region><span>Medousa <span class="text-content-quiet">/ {workshops.activeLabel}</span></span><span class="text-content-quiet">⌘ / Ctrl ⇧ Space</span></header>
-  {#if ready}<CommandSpotlight desktopCommands={commands} onDismiss={dismiss} />{:else}<p class="p-6 text-content-quiet" role="status">Connecting to your workshop…</p>{/if}
+  {#if ready}<CommandSpotlight bind:this={spotlight} {host} additionalCommands={commands} onDismiss={dismiss} />{:else}<p class="p-6 text-content-quiet" role="status">Connecting to your workshop…</p>{/if}
   {#if error || shortcutError}<p class="desktop-launcher-notice" role="status">{error ?? shortcutError}</p>{/if}
 </main>
 

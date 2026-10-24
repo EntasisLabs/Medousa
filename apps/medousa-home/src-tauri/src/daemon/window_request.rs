@@ -19,7 +19,7 @@ impl<'de> CommandArg<'de, Wry> for WorkshopRequest {
     fn from_command(command: CommandItem<'de, Wry>) -> Result<Self, InvokeError> {
         let webview = command.message.webview_ref();
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        let scope = if webview.label().starts_with("desktop-work-") {
+        let scope = if crate::desktop_windows::is_resource_window(webview.label()) {
             Some(
                 crate::desktop_windows::scope_for(webview.app_handle(), webview.label())
                     .ok_or_else(|| InvokeError::from("The work window was closed"))?,

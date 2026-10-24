@@ -75,4 +75,12 @@ fn main_shell_ipc_survives_embedded_browser_children() {
         Ok("desktop-work-test".into())
     );
     assert_eq!(invoke(&main, "invoking_webview"), Ok("main".into()));
+
+    let spotlight = tauri::WebviewWindowBuilder::new(&app, "desktop-spotlight", Default::default())
+        .build()
+        .unwrap();
+    assert_eq!(
+        invoke(&spotlight, "invoking_webview"),
+        Ok("desktop-spotlight".into())
+    );
 }
