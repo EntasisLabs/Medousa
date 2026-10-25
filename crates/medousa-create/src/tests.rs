@@ -415,10 +415,10 @@ fn proposals_can_change_the_project_and_wait_for_acceptance() {
         label: "Build editable design".into(),
         operations: vec![
             CreativeOperation::PutNode {
-                node: revised.clone(),
+                node: Box::new(revised.clone()),
             },
             CreativeOperation::PutNode {
-                node: text("new-root"),
+                node: Box::new(text("new-root")),
             },
             CreativeOperation::SetBackground {
                 color: "#202020".into(),

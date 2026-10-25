@@ -374,7 +374,7 @@ mod tests {
                     expected_revision: applied.document.revision,
                     label: "Edit heading".into(),
                     operations: vec![medousa_types::CreativeOperation::PutNode {
-                        node: heading.clone(),
+                        node: Box::new(heading.clone()),
                     }],
                 },
             )
