@@ -9,8 +9,6 @@ use std::path::PathBuf;
 
 pub(super) const TURN_PREFIX: &str = "agent_message_";
 const MAX_PENDING: usize = 64;
-const MAX_SENDS_PER_TURN: usize = 8;
-const MAX_THREAD_MESSAGES: usize = 16;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -71,6 +69,9 @@ pub(super) struct Message {
     pub hop: usize,
     #[serde(default)]
     pub remote_inbound: bool,
+    /// A terminal receipt confirmed by the remote mailbox. Not model-facing policy.
+    #[serde(default)]
+    pub receipt_acknowledged: bool,
     #[serde(default)]
     pub transport_route: Option<TransportRoute>,
     /// How many times delivery has been queued again after a missing turn.
@@ -82,7 +83,7 @@ pub(super) struct Message {
     /// Last turn-ticket phase observed before the in-memory ticket was cleared.
     #[serde(default)]
     pub observed_phase: Option<String>,
-    /// Wake to install on the recipient turn. Absent means an inbox acknowledgement.
+    /// Wake to install on the recipient turn. Absent means normal agent communication.
     #[serde(default)]
     pub wake_source: Option<String>,
 }
@@ -118,7 +119,7 @@ impl MessageStore {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let connection = Connection::open(&self.path)?;
+        let mut connection = Connection::open(&self.path)?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS agent_messages (
             id TEXT PRIMARY KEY, profile_id TEXT NOT NULL, source_session TEXT NOT NULL,
@@ -128,6 +129,7 @@ impl MessageStore {
             CREATE INDEX IF NOT EXISTS agent_messages_source ON agent_messages(profile_id, source_turn);
             CREATE INDEX IF NOT EXISTS agent_messages_root ON agent_messages(root_id);
             CREATE INDEX IF NOT EXISTS agent_messages_delivery ON agent_messages(delivery_turn);")?;
+        super::channels::initialize(&mut connection)?;
         Ok(connection)
     }
     fn find(connection: &Connection, id: &str) -> Result<Option<Message>> {
@@ -150,7 +152,30 @@ impl MessageStore {
             params![message.id,message.profile_id,message.source_session,message.source_turn,message.target_session,message.root_id,message.status.as_str(),message.delivery_turn,payload])?;
         Ok(())
     }
-    pub fn enqueue(&self, mut message: Message, request_key: &str) -> Result<Message> {
+    #[cfg(test)]
+    pub fn enqueue(&self, message: Message, request_key: &str) -> Result<Message> {
+        self.enqueue_agent(message, request_key, true)
+    }
+    pub fn enqueue_agent(
+        &self,
+        message: Message,
+        request_key: &str,
+        may_open_channel: bool,
+    ) -> Result<Message> {
+        self.enqueue_inner(message, request_key, Some(may_open_channel))
+    }
+    pub fn enqueue_event(&self, message: Message, request_key: &str) -> Result<Message> {
+        if message.wake_source.is_none() {
+            bail!("runtime event requires its wake source");
+        }
+        self.enqueue_inner(message, request_key, None)
+    }
+    fn enqueue_inner(
+        &self,
+        mut message: Message,
+        request_key: &str,
+        channel_admission: Option<bool>,
+    ) -> Result<Message> {
         let mut connection = self.connection()?;
         let transaction =
             connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -207,8 +232,7 @@ impl MessageStore {
             }
             Some(previous)
         } else {
-            // Native message wakes cannot escape their exchange's budget by
-            // omitting in_reply_to and pretending to start a new root.
+            // Retain causal correlation for forwards from an inbox turn.
             let raw: Option<String> = transaction
                 .query_row(
                     "SELECT payload FROM agent_messages WHERE delivery_turn=?1 LIMIT 1",
@@ -218,20 +242,29 @@ impl MessageStore {
                 .optional()?;
             raw.map(|raw| decode(&raw)).transpose()?
         };
-        message.hop = previous.as_ref().map_or(0, |previous| previous.hop + 1);
-        if message.hop >= MAX_THREAD_MESSAGES {
-            bail!("this exchange's sixteen-message hop budget is exhausted; return to the user");
-        }
+        message.hop = previous.as_ref().map_or(Ok(0), |previous| {
+            previous
+                .hop
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("invalid message hop value"))
+        })?;
         message.root_id = previous
             .map(|previous| previous.root_id)
             .unwrap_or_else(|| message.id.clone());
-        Self::check_budgets(&transaction, &message)?;
+        Self::check_capacity(&transaction)?;
+        if let Some(may_open) = channel_admission {
+            if may_open {
+                super::channels::remember(&transaction, &message)?;
+            } else {
+                super::channels::require(&transaction, &message)?;
+            }
+        }
         message.status = MessageStatus::Queued;
         Self::write(&transaction, &message)?;
         transaction.commit()?;
         Ok(message)
     }
-    fn check_budgets(transaction: &Transaction<'_>, message: &Message) -> Result<()> {
+    fn check_capacity(transaction: &Transaction<'_>) -> Result<()> {
         let pending: usize = transaction.query_row(
             "SELECT count(*) FROM agent_messages WHERE status IN ('queued','delivering')",
             [],
@@ -239,22 +272,6 @@ impl MessageStore {
         )?;
         if pending >= MAX_PENDING {
             bail!("agent message inbox capacity reached");
-        }
-        let sends: usize = transaction.query_row(
-            "SELECT count(*) FROM agent_messages WHERE profile_id=?1 AND source_turn=?2",
-            params![message.profile_id, message.source_turn],
-            |row| row.get(0),
-        )?;
-        if sends >= MAX_SENDS_PER_TURN {
-            bail!("this turn's eight-message budget is exhausted");
-        }
-        let exchange: usize = transaction.query_row(
-            "SELECT count(*) FROM agent_messages WHERE root_id=?1",
-            [&message.root_id],
-            |row| row.get(0),
-        )?;
-        if exchange >= MAX_THREAD_MESSAGES {
-            bail!("this exchange's sixteen-message budget is exhausted; return to the user");
         }
         Ok(())
     }
@@ -292,11 +309,12 @@ impl MessageStore {
             }
             return Ok(existing);
         }
-        Self::check_budgets(&transaction, &message)?;
+        Self::check_capacity(&transaction)?;
         message.status = MessageStatus::Queued;
         message.delivery_turn = None;
         message.error = None;
         message.remote_inbound = true;
+        super::channels::remember(&transaction, &message)?;
         Self::write(&transaction, &message)?;
         transaction.commit()?;
         Ok(message)
@@ -309,7 +327,7 @@ impl MessageStore {
             || previous.target_session != message.source_session
             || previous.source_session != message.target_session
             || previous.root_id != message.root_id
-            || previous.hop + 1 != message.hop
+            || previous.hop.checked_add(1) != Some(message.hop)
         {
             bail!("remote reply does not match the saved outbound return route");
         }
@@ -341,7 +359,7 @@ impl MessageStore {
     }
     pub fn received_reply_outcomes(&self, previous: &Message) -> Result<Vec<Message>> {
         let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT payload FROM agent_messages WHERE target_session=?1 AND root_id=?2 AND json_extract(payload,'$.source_workshop')=?3 AND coalesce(json_extract(payload,'$.remote_inbound'),0) ORDER BY rowid LIMIT 16")?;
+        let mut statement = connection.prepare("SELECT payload FROM agent_messages WHERE target_session=?1 AND root_id=?2 AND json_extract(payload,'$.source_workshop')=?3 AND coalesce(json_extract(payload,'$.remote_inbound'),0) AND status IN ('delivered','failed','uncertain') AND NOT coalesce(json_extract(payload,'$.receipt_acknowledged'),0) ORDER BY rowid LIMIT 16")?;
         statement
             .query_map(
                 params![
@@ -353,6 +371,22 @@ impl MessageStore {
             )?
             .map(|raw| decode(&raw?))
             .collect()
+    }
+    pub fn acknowledge_reply_outcomes(&self, sent: &[Message]) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction =
+            connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        for receipt in sent {
+            if let Some(mut current) = Self::find(&transaction, &receipt.id)?
+                && current.remote_inbound
+                && current.status == receipt.status
+            {
+                current.receipt_acknowledged = true;
+                Self::write(&transaction, &current)?;
+            }
+        }
+        transaction.commit()?;
+        Ok(())
     }
     pub fn get(&self, id: &str) -> Result<Option<Message>> {
         Self::find(&self.connection()?, id)
@@ -406,6 +440,9 @@ impl MessageStore {
             connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let mut message = Self::find(&transaction, id)?
             .ok_or_else(|| anyhow::anyhow!("message is unavailable"))?;
+        if message.status != status {
+            message.receipt_acknowledged = false;
+        }
         message.status = status;
         if message.status == MessageStatus::Queued {
             message.delivery_turn = None;
@@ -429,6 +466,7 @@ impl MessageStore {
             return Ok(());
         }
         message.observed_phase = Some(phase.to_string());
+        let prior_status = message.status.clone();
         match phase {
             "done" => {
                 message.status = MessageStatus::Delivered;
@@ -449,6 +487,9 @@ impl MessageStore {
                 );
             }
             _ => {}
+        }
+        if message.status != prior_status {
+            message.receipt_acknowledged = false;
         }
         Self::write(&transaction, &message)?;
         transaction.commit()?;
@@ -519,6 +560,7 @@ impl MessageStore {
         messages.retain(|message| allowed(message));
         for message in &mut messages {
             message.status = MessageStatus::Delivered;
+            message.receipt_acknowledged = false;
             message.delivery_turn = Some(turn.to_string());
             Self::write(&transaction, message)?;
         }
@@ -556,6 +598,7 @@ mod tests {
             target_workshop: None,
             hop: 0,
             remote_inbound: false,
+            receipt_acknowledged: false,
             transport_route: None,
             attempts: 0,
             next_attempt_at: None,
@@ -670,31 +713,97 @@ mod tests {
         assert_eq!(store.pending().unwrap().len(), 1);
     }
     #[test]
-    fn reply_loops_cannot_escape_the_exchange_budget() {
+    fn long_exchanges_keep_their_channel_and_return_route_across_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("messages.sqlite3");
+        let mut store = MessageStore::new(path.clone());
+        let mut previous = store.enqueue(message("a", "b", "t"), "one").unwrap();
+        for index in 1..=100 {
+            let turn = format!("turn-{index}");
+            store
+                .inbox("user:alice", &previous.target_session, &turn)
+                .unwrap();
+            let mut reply = message(&previous.target_session, &previous.source_session, &turn);
+            reply.in_reply_to = Some(previous.id.clone());
+            let next = store.enqueue_agent(reply, "reply", false).unwrap();
+            assert_eq!(next.root_id, previous.root_id);
+            assert_eq!(next.hop, index);
+            previous = next;
+            if index == 50 {
+                store = MessageStore::new(path.clone());
+            }
+        }
+    }
+    #[test]
+    fn one_turn_can_send_more_than_eight_messages() {
         let dir = tempfile::tempdir().unwrap();
         let store = MessageStore::new(dir.path().join("messages.sqlite3"));
-        let mut previous = store.enqueue(message("a", "b", "t"), "one").unwrap();
-        for index in 1..16 {
-            let mut reply = message(
-                &previous.target_session,
-                &previous.source_session,
-                &format!("turn-{index}"),
-            );
-            reply.in_reply_to = Some(previous.id.clone());
-            previous = store.enqueue(reply, "reply").unwrap();
+        for index in 0..12 {
+            store
+                .enqueue(message("a", "b", "same-turn"), &format!("key-{index}"))
+                .unwrap();
         }
-        let mut reply = message(
-            &previous.target_session,
-            &previous.source_session,
-            "turn-17",
-        );
-        reply.in_reply_to = Some(previous.id.clone());
+        assert_eq!(store.pending().unwrap().len(), 12);
+    }
+    #[test]
+    fn retained_permissions_are_bidirectional_and_do_not_expand_to_other_chats() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("messages.sqlite3");
+        let store = MessageStore::new(path.clone());
+        store
+            .enqueue_agent(message("a", "b", "human"), "one", true)
+            .unwrap();
+        let store = MessageStore::new(path);
+        store
+            .enqueue_agent(message("b", "a", "peer"), "two", false)
+            .unwrap();
         assert!(
             store
-                .enqueue(reply, "reply")
-                .unwrap_err()
-                .to_string()
-                .contains("sixteen-message")
+                .enqueue_agent(message("b", "c", "peer"), "three", false)
+                .is_err()
+        );
+        let mut other_owner = message("a", "b", "peer");
+        other_owner.profile_id = "user:bob".into();
+        assert!(store.enqueue_agent(other_owner, "other", false).is_err());
+        let mut other_workshop = message("a", "b", "peer");
+        other_workshop.target_workshop = Some("unapproved-workshop".into());
+        assert!(store.enqueue_agent(other_workshop, "other", false).is_err());
+    }
+    #[test]
+    fn process_notifications_do_not_authorize_chat_communication() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MessageStore::new(dir.path().join("messages.sqlite3"));
+        let mut event = message("a", "b", "process_supervisor");
+        event.wake_source = Some("process_completed".into());
+        store.enqueue_event(event, "event").unwrap();
+        assert!(
+            store
+                .enqueue_agent(message("b", "a", "peer"), "reply", false)
+                .is_err()
+        );
+    }
+    #[test]
+    fn legacy_admitted_routes_are_migrated_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("messages.sqlite3");
+        let store = MessageStore::new(path.clone());
+        store.enqueue(message("a", "b", "human"), "one").unwrap();
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch("DROP TABLE agent_message_channels; PRAGMA user_version=0;")
+            .unwrap();
+        let store = MessageStore::new(path);
+        store
+            .enqueue_agent(message("b", "a", "peer"), "two", false)
+            .unwrap();
+        // Removing a permission is not undone by opening another connection.
+        connection
+            .execute_batch("DELETE FROM agent_message_channels;")
+            .unwrap();
+        assert!(
+            store
+                .enqueue_agent(message("a", "b", "peer"), "three", false)
+                .is_err()
         );
     }
     #[test]

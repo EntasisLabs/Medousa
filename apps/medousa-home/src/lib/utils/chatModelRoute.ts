@@ -1,3 +1,5 @@
+import { isExternalRuntime, externalAgent } from "$lib/utils/externalAgentCatalog";
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 import type { AgentSessionConfigOption } from "$lib/daemon";
 import type { ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
 
@@ -6,7 +8,8 @@ export type ChatCredentialRoute =
   | "local"
   | "chatgpt-account"
   | "cursor-account"
-  | "hermes-account";
+  | "hermes-account"
+  | "external-agent-account";
 
 export interface ChatModelRouteRef {
   runtime: ChatAgentRuntime;
@@ -28,6 +31,7 @@ export function credentialRouteFor(
   if (runtime === "codex") return "chatgpt-account";
   if (runtime === "cursor") return "cursor-account";
   if (runtime === "hermes") return "hermes-account";
+  if (isExternalRuntime(runtime)) return "external-agent-account";
   const normalized = provider.trim().toLowerCase();
   if (normalized === "openai-codex") return "chatgpt-account";
   return normalized === "ollama" || normalized === "medousa-local"
@@ -48,7 +52,7 @@ export function agentModelConfigOption(
 }
 
 export function agentModelDisplayLabel(
-  runtime: "cursor" | "codex" | "hermes",
+  runtime: ExternalAgentRuntime,
   options: AgentSessionConfigOption[],
 ): string {
   const option = agentModelConfigOption(options);
@@ -61,17 +65,12 @@ export function agentModelDisplayLabel(
   }
   if (runtime === "codex") return "Choose ChatGPT model";
   if (runtime === "hermes") return "Choose Hermes model";
-  return "Choose Cursor model";
+  return `Choose ${externalAgent(runtime).label} model`;
 }
 
 export function modelSourceLabel(runtime: ChatAgentRuntime): string {
+  if (isExternalRuntime(runtime)) return runtime === "codex" ? "ChatGPT" : externalAgent(runtime).label;
   switch (runtime) {
-    case "codex":
-      return "ChatGPT";
-    case "cursor":
-      return "Cursor";
-    case "hermes":
-      return "Hermes";
     case "instinct":
       return "Instinct Agent";
     case "dots":
@@ -93,6 +92,7 @@ export function modelSourceDetail(
   if (runtime === "codex") return "OpenAI account · Codex runtime";
   if (runtime === "cursor") return "Cursor account · Cursor runtime";
   if (runtime === "hermes") return "Hermes providers · Hermes runtime";
+  if (isExternalRuntime(runtime)) return `${externalAgent(runtime).label} · Workshop agent`;
   const provider = nativeProviderId.trim().toLowerCase();
   const connection = credentialRouteFor(runtime, provider) === "local" ? "Local" : "API key";
   return `${nativeProviderLabel} · ${connection}`;

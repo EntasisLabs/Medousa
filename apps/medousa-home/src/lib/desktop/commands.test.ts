@@ -26,4 +26,12 @@ describe("desktop destinations", () => {
     await commands.find(c => c.id === "desktop-new-chat")!.run(ctx);
     expect(newChat).toHaveBeenCalledOnce();
   });
+  it("offers existing live PTYs as native destinations without reviving exited sessions", async () => {
+    const open = vi.fn();
+    const terminal = { session_id: "pty", cwd: "/repo", root_kind: "workspace", work_id: "work" };
+    const commands = desktopWindowCommands("personal", [], [], [], open, vi.fn(), vi.fn(), [terminal, { ...terminal, session_id: "dead", exited: true }]);
+    expect(commands.some(command => command.id === "desktop-terminal:dead")).toBe(false);
+    await commands.find(command => command.id === "desktop-terminal:pty")!.run({ callbacks: { close: vi.fn() } } as unknown as WorkshopCommandContext);
+    expect(open).toHaveBeenCalledWith({ kind: "terminal", workshopId: "personal", resourceId: "pty" });
+  });
 });

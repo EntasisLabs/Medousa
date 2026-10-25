@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handleComposerMessageNavigation, shouldSubmitComposerKey, stripComposerNavigationGlyphs } from "$lib/utils/composerKeyboard";
+import { handleComposerMessageNavigation, shouldSubmitComposerKey, stripComposerNavigationGlyphs, textNavigationKey } from "$lib/utils/composerKeyboard";
 
 function keyEvent(
   overrides: Partial<Pick<KeyboardEvent, "key" | "shiftKey" | "isComposing">> = {},
@@ -32,6 +32,15 @@ describe("shouldSubmitComposerKey", () => {
 });
 
 describe("composer navigation key decoding", () => {
+  it("normalizes AppKit controls and unidentified navigation keys, preserving printable remappings", () => {
+    for (const [key, expected] of [["\uF700", "ArrowUp"], ["\uF701", "ArrowDown"],
+      ["\uF702", "ArrowLeft"], ["\uF703", "ArrowRight"], ["\uF729", "Home"], ["\uF72B", "End"]]) {
+      expect(textNavigationKey({ key, code: "" })).toBe(expected);
+    }
+    expect(textNavigationKey({ key: "Unidentified", code: "ArrowDown" })).toBe("ArrowDown");
+    expect(textNavigationKey({ key: "h", code: "Home" })).toBe("h");
+    expect(textNavigationKey({ key: "→", code: "" })).toBe("→");
+  });
   it("recovers Home/End when WebKit reports an unidentified key with its physical code", () => {
     const element = { value: "message", setSelectionRange: () => {}, scrollHeight: 100, scrollTop: 0 } as unknown as HTMLTextAreaElement;
     const event = { key: "Unidentified", code: "End", shiftKey: false, ctrlKey: false,

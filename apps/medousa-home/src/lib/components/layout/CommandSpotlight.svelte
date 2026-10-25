@@ -3,6 +3,9 @@
   import { createSpotlightConversation, openAddressedConversation } from "$lib/spotlight/spotlightConversation.svelte";
   import { mentionQuery } from "$lib/spotlight/conversationTargets";
   import SpotlightAddressInput from "./SpotlightAddressInput.svelte";
+  import { guardTextNavigation } from "$lib/utils/guardTextNavigation";
+  import { textNavigationKey } from "$lib/utils/composerKeyboard";
+  import { vaultSearchCatalog } from "$lib/vault/vaultSearchCatalog.svelte";
   import SpotlightTranscript from "./SpotlightTranscript.svelte";
   import BotAvatar from "$lib/components/chat/BotAvatar.svelte";
   import { bots } from "$lib/stores/bots.svelte";
@@ -33,15 +36,16 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import type { CommandPreview, WorkshopCommand } from "$lib/commands/types";
-  import type { ShellDesktopLayout, ShellTab } from "$lib/types/shellTabs";
+  import type { WorkshopCommand } from "$lib/commands/types";
+  import type { ShellDesktopLayout } from "$lib/types/shellTabs";
   import {
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
   } from "$lib/utils/browserPopoverOverlay";
-  import { formatShortcut, isTauriDesktop } from "$lib/platform";
+  import { isTauriDesktop } from "$lib/platform";
   import { loadVaultExportPreviewModal } from "$lib/runtime/viewLoaders";
-  import { collectDesktopGroups } from "$lib/spotlight/desktopGroups";
+  import { collectDesktopGroups, spotlightTabKind as tabKindLabel, spotlightTabPreview as previewForTab } from "$lib/spotlight/desktopGroups";
+  import type { SpotlightHost, SpotlightSnapshot } from "$lib/spotlight/host";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import SpotlightWorkspacePreview from "./SpotlightWorkspacePreview.svelte";
   import SpotlightActivity from "./SpotlightActivity.svelte";
@@ -68,7 +72,7 @@
     Zap,
   } from "@lucide/svelte";
 
-  interface Props { onFocusChat?: () => void; desktopCommands?: WorkshopCommand[]; onDismiss?: () => void; }
+  interface Props { onFocusChat?: () => void; additionalCommands?: WorkshopCommand[]; host?: SpotlightHost; onDismiss?: () => void; }
 
   interface SpotlightGroup {
     id: string;
@@ -76,12 +80,19 @@
     commands: WorkshopCommand[];
   }
 
-  let { onFocusChat, desktopCommands, onDismiss }: Props = $props();
+  let { onFocusChat, additionalCommands = [], host, onDismiss }: Props = $props();
+  let snapshot = $state<SpotlightSnapshot | null>(null);
+  let snapshotScope = $state("home");
+  let refreshRevision = $state(0);
+  let collecting = $state(false);
+  let lastRequestKey = "";
+  let lastHost: SpotlightHost | undefined;
+  let mounted = false;
 
   let query = $state("");
-  const conversation = createSpotlightConversation(() => Boolean(mention), () => { query = ""; });
+  const conversation = createSpotlightConversation(() => Boolean(mention), () => { query = ""; }, () => Boolean(host));
   let addressInput = $state<{ handleKeydown: (event: KeyboardEvent) => boolean }>();
-  const mention = $derived(!desktopCommands && commandSpotlight.mode === "default" && !commandSpotlight.promptStep && !conversation.target ? mentionQuery(query) : null);
+  const mention = $derived(commandSpotlight.mode === "default" && !commandSpotlight.promptStep && !conversation.target ? mentionQuery(query) : null);
   const addressing = $derived(Boolean(conversation.target) || Boolean(mention));
   function removeTarget() { conversation.clear(); query = ""; }
   let highlightIndex = $state(0);
@@ -89,7 +100,7 @@
   let commandError = $state<string | null>(null);
   let sshData = $state<SpotlightSshTargets | null>(null);
   $effect(() => {
-    if (desktopCommands || !commandSpotlight.open || !isTauriDesktop()) return;
+    if (!commandSpotlight.open || !isTauriDesktop()) return;
     const scope = activeWorkshopId();
     const data = new SpotlightSshTargets(scope);
     untrack(() => { sshData = data; void data.refresh(); });
@@ -109,12 +120,14 @@
   let highlightNavigation = $state<"keyboard" | "pointer" | "data">("data");
   $effect(() => {
     const scope = chat.workshopScopeId;
-    if (!desktopCommands && commandSpotlight.open && scope && !connection.offline) untrack(() => {void bots.refresh().catch(() => undefined);void connectedAgents.refresh(scope);});
+    if (commandSpotlight.open && scope && !connection.offline) untrack(() => {void bots.refresh().catch(() => undefined);void connectedAgents.refresh(scope);});
   });
   onMount(() => {
+    mounted = true;
+    const timer = window.setInterval(() => { if (host && commandSpotlight.open && !busy && !promptStep && document.visibilityState === "visible") refreshRevision += 1; }, 5000);
     const changed = () => {if (chat.workshopScopeId) void connectedAgents.refresh(chat.workshopScopeId,true);};
     window.addEventListener("medousa-external-conversation-changed",changed);
-    return () => window.removeEventListener("medousa-external-conversation-changed",changed);
+    return () => { mounted = false; clearInterval(timer); window.removeEventListener("medousa-external-conversation-changed",changed); };
   });
   const notesMode = $derived(commandSpotlight.mode === "notes");
   const sshMode = $derived(commandSpotlight.mode === "ssh");
@@ -143,7 +156,7 @@
       : null,
   );
 
-  const scopeTabs = $derived([
+  const scopeTabs = $derived(host && snapshot ? snapshot.scopes : [
     { id: "home", label: "Home" },
     ...shellTabs.desktops.map((desktop) => ({ id: desktop.id, label: desktop.name })),
   ]);
@@ -164,6 +177,7 @@
 
   const selectedDesktopLayout = $derived.by((): ShellDesktopLayout | null => {
     const desktop = selectedDesktop;
+    if (host) return snapshotScope === selectedScopeId ? snapshot?.layout ?? null : null;
     if (!desktop) return null;
     if (desktop.id !== shellTabs.activeDesktopId) return desktop.layout;
     return {
@@ -199,17 +213,8 @@
         ? "Search activity…"
       : selectedScopeId === "home"
         ? "Search this workshop…"
-        : `Search ${selectedDesktop?.name ?? "workspace"}…`,
+        : `Search ${scopeTabs.find(scope => scope.id === selectedScopeId)?.label ?? "workspace"}…`,
   );
-
-  function tabKindLabel(tab: ShellTab): string {
-    if (tab.kind === "lme") {
-      const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
-      return lme?.kind === "note" ? "Note" : lme?.kind === "code" ? "Code" : "Document";
-    }
-    if (tab.kind === "surface") return tab.surfaceId;
-    return tab.kind === "chat" ? "Chat" : tab.kind[0]!.toUpperCase() + tab.kind.slice(1);
-  }
 
   function iconForCommand(command: WorkshopCommand): Component | null {
     const identity = `${command.id} ${command.label} ${command.keywords ?? ""}`.toLowerCase();
@@ -303,25 +308,9 @@
     return `${verb} ${command.label}`;
   }
 
-  function previewForTab(tab: ShellTab): CommandPreview | undefined {
-    if (tab.kind === "chat") {
-      const session = chat.sessions.find((entry) => entry.session_id === tab.sessionId);
-      return {
-        kind: "chat",
-        sessionId: tab.sessionId,
-        text: session?.preview?.trim() || `Open conversation “${tab.title}”.`,
-      };
-    }
-    if (tab.kind === "lme") {
-      const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
-      if (lme?.kind === "note") return { kind: "note", path: lme.path };
-    }
-    return undefined;
-  }
-
   /** Native browser embed draws over the DOM — hide it while spotlight is open. */
   $effect(() => {
-    if (desktopCommands || !commandSpotlight.open) return;
+    if (host || !commandSpotlight.open) return;
     void pushBrowserPopoverOverlay();
     return () => {
       void popBrowserPopoverOverlay();
@@ -335,11 +324,42 @@
       return;
     }
 
-    if (desktopCommands) {
-      groups = [{ id: "desktop-windows", label: "Open a window", commands: filterAndSortCommands(desktopCommands, query, 64) }];
-      return;
+    if (addressing) { groups = []; collecting = false; return; }
+    if (host && !sshMode) {
+      const owner = host;
+      const request = { query, mode: commandSpotlight.mode, lens: selectedLens, scopeId: selectedScopeId };
+      const extras = additionalCommands;
+      void refreshRevision;
+      let cancelled = false;
+      const key = JSON.stringify(request);
+      const changed = lastHost !== owner || lastRequestKey !== key;
+      lastHost = owner; lastRequestKey = key;
+      collecting = changed || untrack(() => groups.length === 0);
+      if (changed) groups = [];
+      const timer = window.setTimeout(() => {
+        void owner.collect(request).then(value => {
+          if (cancelled) return;
+          const selectedId = changed ? null : untrack(() => flatCommands[highlightIndex]?.id);
+          snapshot = value; snapshotScope = request.scopeId; commandError = null;
+          groups = value.groups.map(group => ({ ...group, commands: group.commands.map(command => ({ ...command, run: async (_ctx, args) => { await owner.execute(command, args); } })) }));
+          if (request.scopeId === "home" && parseSpotlightQuery(request.query).mode === "default" && request.lens !== "activity") {
+            const ids = new Set(groups.flatMap(group => group.commands.map(command => command.id)));
+            const sessions = new Set(groups.flatMap(group => group.commands.flatMap(command => command.preview?.kind === "chat" ? [command.preview.sessionId] : [])));
+            const extra = filterAndSortCommands(extras.filter(command => !ids.has(command.id) && !(command.preview?.kind === "chat" && sessions.has(command.preview.sessionId))), request.query, 32);
+            if (extra.length) groups.push({ id: "resources", label: "Open a window", commands: extra });
+          }
+          if (selectedId) { const index = groups.flatMap(group => group.commands).findIndex(command => command.id === selectedId); if (index >= 0) highlightIndex = index; }
+        }).catch(() => {
+          if (!cancelled) {
+            groups = [{ id: "resources", label: "Open a window", commands: filterAndSortCommands(extras, request.query, 32) }];
+            if (!groups[0].commands.length) commandError = "Couldn’t search this workshop. Try again.";
+          }
+        }).finally(() => { if (!cancelled) collecting = false; });
+      }, request.query ? 80 : 0);
+      return () => { cancelled = true; clearTimeout(timer); };
     }
 
+    if (notesMode || ["default", "advanced"].includes(parseSpotlightQuery(query).mode)) void vaultSearchCatalog.search(parseSpotlightQuery(query).rawQuery);
     if (vault.notes.length === 0) {
       void vault.refreshNotes();
     }
@@ -379,7 +399,8 @@
       if (addressing) {
         groups = [];
       } else if (sshMode) {
-        groups = [{ id: "ssh-servers", label: "Saved SSH servers", commands: filterAndSortCommands(buildSshTerminalCommands(sshData?.targets ?? [], sshData?.scope ?? ""), query, 64) }];
+        const commands = buildSshTerminalCommands(sshData?.targets ?? [], sshData?.scope ?? "");
+        groups = [{ id: "ssh-servers", label: "Saved SSH servers", commands: filterAndSortCommands(host ? commands.map(command => ({ ...command, run: async () => { await host!.openSsh(command.id.slice("terminal-ssh:".length)); } })) : commands, query, 64) }];
       } else if (selectedScopeId !== "home" && layout) {
         groups = collectDesktopGroups(selectedScopeId, layout, query, previewForTab, tabKindLabel);
       } else if (activityMode) {
@@ -441,7 +462,8 @@
 
   $effect(() => {
     if (selectedScopeId === "home") return;
-    if (shellTabs.desktops.some((desktop) => desktop.id === selectedScopeId)) return;
+    if (scopeTabs.some(scope => scope.id === selectedScopeId)) return;
+    if (host && !snapshot) return;
     selectedScopeId = "home";
     highlightIndex = 0;
   });
@@ -556,11 +578,13 @@
       return;
     }
     busy = true;
+    const executionHost = host;
     commandError = null;
     try {
-      commandSpotlight.rememberQuery(query, commandSpotlight.mode);
+      if (command.id !== "do-resume-spotlight") commandSpotlight.rememberQuery(query, commandSpotlight.mode);
       await executeWorkshopCommand(ctx, command, args);
     } catch (err) {
+      if (executionHost && (!mounted || executionHost !== host || !commandSpotlight.open)) return;
       commandError = err instanceof Error ? err.message : String(err);
       ctx.error(commandError);
     } finally {
@@ -597,7 +621,20 @@
     requestAnimationFrame(() => inputEl?.focus());
   }
 
+  export function dismiss() { commandSpotlight.rememberQuery(query, commandSpotlight.mode); commandSpotlight.closeSpotlight(); }
+
+  function reportHostError(cause: unknown) { if (mounted && commandSpotlight.open) commandError = cause instanceof Error ? cause.message : String(cause); }
+
   function createWorkspace() {
+    if (host) {
+      const owner = host;
+      void owner.collect({ query: "New workspace", mode: "default", lens: "actions", scopeId: "home" }).then(value => {
+        if (!mounted || !commandSpotlight.open || owner !== host) return;
+        const command = value.groups.flatMap(group => group.commands).find(command => command.id === "workspace-new");
+        if (command) void runCommand({ ...command, run: async (_ctx, args) => { await owner.execute(command, args); } });
+      }).catch(reportHostError);
+      return;
+    }
     const command = buildWorkspaceCommands().find((entry) => entry.id === "workspace-new");
     if (command) void runCommand(command);
   }
@@ -619,6 +656,14 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (!commandSpotlight.open || event.isComposing) return;
+    const navigationKey = textNavigationKey(event);
+
+    if (host && (event.metaKey || event.ctrlKey) && !event.altKey) {
+      const key = event.key.toLowerCase();
+      if (key === "k" && !event.shiftKey) { event.preventDefault(); dismiss(); return; }
+      if (key === "p" && event.shiftKey) { event.preventDefault(); commandSpotlight.openCommandPalette(); return; }
+      if (key === "o" && !event.shiftKey) { event.preventDefault(); commandSpotlight.openNotes(); return; }
+    }
 
     if (!notesMode && !sshMode && !promptStep && addressInput?.handleKeydown(event)) return;
 
@@ -643,12 +688,12 @@
       return;
     }
 
-    if (event.ctrlKey && !event.metaKey && !event.altKey && event.key === "ArrowLeft") {
+    if (event.ctrlKey && !event.metaKey && !event.altKey && navigationKey === "ArrowLeft") {
       event.preventDefault();
       moveScope(-1);
       return;
     }
-    if (event.ctrlKey && !event.metaKey && !event.altKey && event.key === "ArrowRight") {
+    if (event.ctrlKey && !event.metaKey && !event.altKey && navigationKey === "ArrowRight") {
       event.preventDefault();
       moveScope(1);
       return;
@@ -660,6 +705,7 @@
     // Digits typed in search are query text (including IP addresses). Pins use result focus.
     if (!sshMode && event.target !== inputEl && selectedScopeId === "home" && !query.trim() && /^[1-4]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
       const slot = Number(event.key) - 1;
+      if (host) { event.preventDefault(); void host.pin(slot).catch(reportHostError); return; }
       if (jumpPinSlot(ctx, slot)) {
         event.preventDefault();
         return;
@@ -668,13 +714,13 @@
 
     if (flatCommands.length === 0) return;
 
-    if (event.key === "ArrowDown") {
+    if (navigationKey === "ArrowDown") {
       event.preventDefault();
       highlightNavigation = "keyboard";
       highlightIndex = (highlightIndex + 1) % flatCommands.length;
       return;
     }
-    if (event.key === "ArrowUp") {
+    if (navigationKey === "ArrowUp") {
       event.preventDefault();
       highlightNavigation = "keyboard";
       highlightIndex = (highlightIndex - 1 + flatCommands.length) % flatCommands.length;
@@ -719,7 +765,7 @@
 {#if commandSpotlight.open}
   <div
     class="command-spotlight-backdrop"
-    class:command-spotlight-desktop={Boolean(desktopCommands)}
+    class:command-spotlight-desktop={Boolean(host)}
     role="presentation"
     onclick={(event) => {
       if (event.target === event.currentTarget) {
@@ -746,6 +792,7 @@
           <p class="command-spotlight-prompt-label">{promptStep.label}</p>
         </div>
         <input
+          use:guardTextNavigation
           bind:this={inputEl}
           class="command-spotlight-input"
           placeholder={promptStep.placeholder}
@@ -753,7 +800,7 @@
           disabled={busy}
         />
       {:else}
-        <SpotlightAddressInput bind:this={addressInput} bind:inputEl bind:query {conversation} {placeholder} {busy} enabled={!desktopCommands && !notesMode && !sshMode} onQueryChange={() => { highlightNavigation = "data"; highlightIndex = 0; }}/>
+        <SpotlightAddressInput bind:this={addressInput} bind:inputEl bind:query {conversation} {placeholder} {busy} enabled={!notesMode && !sshMode} onQueryChange={() => { highlightNavigation = "data"; highlightIndex = 0; }}/>
         {#if prefixHint !== "default" && !addressing && !activityMode && !sshMode}
           <p class="command-spotlight-mode-chip">
             {#if prefixHint === "create"}
@@ -767,22 +814,23 @@
         {/if}
       {/if}
 
-      {#if !desktopCommands && !promptStep && !sshMode}
+      {#if !promptStep && !sshMode}
         <SpotlightNavigation {scopeTabs} {selectedScopeId} {selectedLens} {lensTabs} {query} {notesMode} {activityMode} conversationLabel={addressing ? "Conversation" : null} selectScope={(id) => { if (addressing) removeTarget(); selectScope(id); }} {selectLens} {createWorkspace} />
       {/if}
 
       {#if conversation.target}
-        <SpotlightTranscript {conversation} onOpen={() => openAddressedConversation(conversation)}/>
+        <SpotlightTranscript {conversation} onOpen={() => { if (host && conversation.sessionId) return host.openConversation(conversation.sessionId); openAddressedConversation(conversation); }}/>
       {:else if mention}
         <div class="command-spotlight-conversation"><p class="command-spotlight-conversation-empty">Choose who to talk to. Continue a conversation or start something new.</p></div>
       {:else if activityMode}
         {#key chat.workshopScopeId}
-          <SpotlightActivity {query} {ctx} />
+          <SpotlightActivity {query} {ctx} {host} />
         {/key}
       {:else}
       <div class="command-spotlight-body">
-        <div class="command-spotlight-results" bind:this={resultsEl}>
-          <SpotlightTerminalStatus {sshMode} data={sshData} {query} {commandError} empty={!flatCommands.length} onManage={() => { ctx.openSettingsSection("basement"); ctx.callbacks.close(); }} />
+        <div class="command-spotlight-results" bind:this={resultsEl} aria-busy={collecting}>
+          {#if collecting}<p class="command-spotlight-empty" role="status">Searching your workshop…</p>{/if}
+          <SpotlightTerminalStatus {sshMode} data={sshData} {query} {commandError} empty={!flatCommands.length} onManage={() => { if (host) void host.manageConnection().catch(reportHostError); else { ctx.openSettingsSection("basement"); ctx.callbacks.close(); } }} />
           {#each groups as group, sectionIndex (group.id)}
             <div class="command-spotlight-section-label">{group.label}</div>
             <ul class="command-spotlight-list">
@@ -832,7 +880,7 @@
               {/each}
             </ul>
           {:else}
-            {#if !sshMode}<p class="command-spotlight-empty">No matching commands</p>{/if}
+            {#if !sshMode && !collecting}<p class="command-spotlight-empty">No matching commands</p>{/if}
           {/each}
         </div>
 
@@ -913,10 +961,6 @@
       </div>
       {/if}
 
-      <footer class="command-spotlight-footer">
-        <span>{mention ? "↑↓ Choose · ↵ Select · esc Dismiss" : conversation.target ? "↵ Send · ⌫ Remove empty target · esc Close" : activityMode ? "↑↓ Navigate · ←→ Expand · ↵ Open · esc Close" : sshMode ? "↑↓ Navigate · ↵ Open · esc Back" : "↑↓ Navigate · ↵ Run · esc Close"}</span>
-        <span class="command-spotlight-kbd">{desktopCommands ? "⌘/Ctrl ⇧ Space" : formatShortcut("K")}</span>
-      </footer>
     </div>
   </div>
 {/if}

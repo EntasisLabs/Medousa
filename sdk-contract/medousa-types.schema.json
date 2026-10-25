@@ -404,6 +404,26 @@
       }
     },
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "AgentPermissionRequestRecord": {
         "type": "object",
         "required": [
@@ -424,6 +444,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentPermissionOption"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -442,6 +468,12 @@
           },
           "runtime": {
             "type": "string"
+          },
+          "selected_option_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session_id": {
             "type": "string"
@@ -491,6 +523,12 @@
         "type": "string",
         "format": "date-time"
       },
+      "options": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentPermissionOption"
+        }
+      },
       "request_id": {
         "type": "string"
       },
@@ -510,6 +548,12 @@
       "runtime": {
         "type": "string"
       },
+      "selected_option_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "session_id": {
         "type": "string"
       },
@@ -525,6 +569,26 @@
       }
     },
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "AgentPermissionRequestStatus": {
         "type": "string",
         "enum": [
@@ -541,6 +605,12 @@
     "title": "AgentPermissionResolveRequest",
     "type": "object",
     "properties": {
+      "option_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "resolved_by": {
         "type": [
           "string",
@@ -562,6 +632,26 @@
       }
     },
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "AgentPermissionRequestRecord": {
         "type": "object",
         "required": [
@@ -582,6 +672,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentPermissionOption"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -600,6 +696,12 @@
           },
           "runtime": {
             "type": "string"
+          },
+          "selected_option_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "session_id": {
             "type": "string"
@@ -2402,7 +2504,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -2668,7 +2775,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -2882,7 +2994,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -6380,7 +6497,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -7134,7 +7256,7 @@
         ]
       },
       "runtime": {
-        "description": "External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).",
+        "description": "External coding runtime ID (not the native `medousa` runtime).",
         "type": "string"
       },
       "session_id": {
@@ -7345,6 +7467,20 @@
       "agent_session_id": {
         "type": "string"
       },
+      "capabilities": {
+        "default": {
+          "audio": false,
+          "fork": false,
+          "images": false,
+          "resume": false,
+          "terminal": false
+        },
+        "allOf": [
+          {
+            "$ref": "#/definitions/AgentRuntimeCapabilities"
+          }
+        ]
+      },
       "config_options": {
         "description": "Runtime-advertised ACP session controls. Clients must render these capability-first rather than assuming every agent supports model or reasoning selection.",
         "type": "array",
@@ -7382,6 +7518,32 @@
       }
     },
     "definitions": {
+      "AgentRuntimeCapabilities": {
+        "description": "Capabilities negotiated with a live external agent. Defaults never claim support.",
+        "type": "object",
+        "properties": {
+          "audio": {
+            "default": false,
+            "type": "boolean"
+          },
+          "fork": {
+            "default": false,
+            "type": "boolean"
+          },
+          "images": {
+            "default": false,
+            "type": "boolean"
+          },
+          "resume": {
+            "default": false,
+            "type": "boolean"
+          },
+          "terminal": {
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      },
       "AgentSessionConfigChoice": {
         "type": "object",
         "required": [
@@ -7603,7 +7765,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -8720,6 +8887,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -8945,6 +9118,104 @@
           }
         }
       },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "TurnSurfaceContext": {
         "type": "object",
         "properties": {
@@ -9160,7 +9431,8 @@
     "type": "object",
     "required": [
       "context",
-      "media_refs"
+      "media_refs",
+      "snapshot_id"
     ],
     "properties": {
       "context": {
@@ -9171,6 +9443,9 @@
         "items": {
           "$ref": "#/definitions/MediaRef"
         }
+      },
+      "snapshot_id": {
+        "type": "string"
       }
     },
     "definitions": {
@@ -20075,6 +20350,16 @@
           "type": "string"
         }
       },
+      "host_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HostTurnContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "idempotency_key": {
         "description": "Reuse this key when retrying the same admission after an uncertain response.",
         "default": null,
@@ -20142,6 +20427,291 @@
         "items": {
           "type": "string"
         }
+      }
+    },
+    "definitions": {
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
       }
     }
   },
@@ -28386,6 +28956,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -28611,6 +29187,104 @@
           }
         }
       },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "TurnSurfaceContext": {
         "type": "object",
         "properties": {
@@ -28750,6 +29424,20 @@
                 "type": "string",
                 "enum": [
                   "execute"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "continue_work"
                 ]
               }
             }
@@ -28945,6 +29633,15 @@
           "string",
           "null"
         ]
+      },
+      "permission_options": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/AgentPermissionOption"
+        }
       },
       "permission_request_id": {
         "description": "External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.",
@@ -29158,6 +29855,26 @@
       }
     },
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -32131,7 +32848,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "HandoffCompletion": {
@@ -32621,7 +33343,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "ExternalPeerTarget": {
@@ -33059,7 +33786,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "ExternalPeerTarget": {
@@ -33337,7 +34069,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "ExternalPeerTarget": {
@@ -37094,6 +37831,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -37665,6 +38408,104 @@
           }
         ]
       },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "TurnSliceSummary": {
         "type": "object",
         "required": [
@@ -38035,7 +38876,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -38692,6 +39538,12 @@
               "string",
               "null"
             ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
           },
           "related_resources": {
             "type": "array",
@@ -39403,6 +40255,104 @@
                 "enum": [
                   "unknown"
                 ]
+              }
+            }
+          }
+        ]
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
               }
             }
           }
@@ -40373,6 +41323,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -40987,6 +41943,104 @@
           }
         ]
       },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "TurnSliceSummary": {
         "type": "object",
         "required": [
@@ -41441,6 +42495,26 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -42323,6 +43397,15 @@
               "message": {
                 "type": "string"
               },
+              "permission_options": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/definitions/AgentPermissionOption"
+                }
+              },
               "request_id": {
                 "type": "string"
               },
@@ -42429,6 +43512,26 @@
     },
     "additionalProperties": false,
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -43298,6 +44401,15 @@
               "message": {
                 "type": "string"
               },
+              "permission_options": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/definitions/AgentPermissionOption"
+                }
+              },
               "request_id": {
                 "type": "string"
               },
@@ -44084,6 +45196,15 @@
           "message": {
             "type": "string"
           },
+          "permission_options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/AgentPermissionOption"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -44144,6 +45265,26 @@
       }
     ],
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -44960,6 +46101,15 @@
           "message": {
             "type": "string"
           },
+          "permission_options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/AgentPermissionOption"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -45062,6 +46212,26 @@
       }
     ],
     "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "type": "object",
@@ -45666,7 +46836,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       }
     }
@@ -46070,6 +47245,13 @@
       },
       "query": {
         "type": "string"
+      },
+      "root_id": {
+        "description": "Explicit catalog root; absent for the active-root full-text search.",
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "definitions": {
@@ -46419,7 +47601,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ]
       },
       "ExternalProvider": {

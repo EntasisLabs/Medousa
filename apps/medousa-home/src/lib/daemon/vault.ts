@@ -115,6 +115,7 @@ export async function searchVaultNotes(
   query: string,
   limit?: number,
   tags?: string[],
+  rootId?: string,
 ): Promise<VaultSearchResponse> {
   const tagFilter =
     tags?.map((tag) => tag.trim()).filter(Boolean).join(",") || undefined;
@@ -122,6 +123,7 @@ export async function searchVaultNotes(
     query,
     limit,
     tags: tagFilter,
+    rootId,
   });
 }
 

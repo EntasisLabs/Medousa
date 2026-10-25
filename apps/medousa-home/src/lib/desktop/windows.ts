@@ -2,9 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauriDesktop } from "$lib/platform";
 
 export type DesktopTarget = {
-  kind: "chat" | "create" | "code";
+  kind: "chat" | "create" | "code" | "terminal";
   workshopId: string;
   resourceId?: string | null;
+  sshTargetId?: string | null;
   path?: string | null;
   title?: string | null;
 };

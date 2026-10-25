@@ -1,7 +1,8 @@
+import { externalAgent, isExternalRuntime } from "$lib/utils/externalAgentCatalog";
 import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
 
 export function peerRuntimeLabel(runtime: string): string {
-  return ({ medousa: "Medousa Coder", codex: "Codex", cursor: "Cursor", hermes: "Hermes" } as Record<string, string>)[runtime] ?? runtime;
+  return runtime === "medousa" ? "Medousa Coder" : isExternalRuntime(runtime) ? externalAgent(runtime).label : runtime;
 }
 
 const stateLabels = {

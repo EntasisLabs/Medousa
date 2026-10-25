@@ -165,6 +165,8 @@ pub struct TurnExecutionContext {
     deadline: Option<Instant>,
     legacy_scope: Arc<TurnContinuationScope>,
     bot: Option<BotTurnIdentity>,
+    wake_source: Option<medousa_types::wake::WakeSource>,
+    resource_references: Vec<medousa_types::TurnResourceReference>,
     worker_execution_target: Option<crate::workshop_contract::ExecutionTargetSelection>,
     work_environment: Option<medousa_runtime::WorkEnvironmentBinding>,
     work_environment_operation_sequence: AtomicU64,
@@ -198,6 +200,8 @@ impl TurnExecutionContext {
             deadline: deadline.into(),
             legacy_scope: Arc::new(legacy_scope),
             bot: None,
+            wake_source: None,
+            resource_references: Vec::new(),
             worker_execution_target: None,
             work_environment: None,
             work_environment_operation_sequence: AtomicU64::new(0),
@@ -284,6 +288,30 @@ impl TurnExecutionContext {
 
     pub fn bot_identity(&self) -> Option<&BotTurnIdentity> {
         self.bot.as_ref()
+    }
+
+    /// Native admission captures origin once; later session wakes cannot
+    /// change the authority of an already running tool call.
+    pub fn with_wake_source(mut self, source: medousa_types::wake::WakeSource) -> Self {
+        self.wake_source = Some(source);
+        self
+    }
+
+    pub fn wake_source(&self) -> Option<medousa_types::wake::WakeSource> {
+        self.wake_source
+    }
+
+    /// Resource routing hints captured at admission; these grant no authority.
+    pub fn with_resource_references(
+        mut self,
+        references: Vec<medousa_types::TurnResourceReference>,
+    ) -> Self {
+        self.resource_references = references;
+        self
+    }
+
+    pub fn resource_references(&self) -> &[medousa_types::TurnResourceReference] {
+        &self.resource_references
     }
 
     pub fn with_worker_execution_target(
@@ -1073,5 +1101,15 @@ mod tests {
         assert_eq!(result, Err(TurnExecutionBoundaryError::MissingContext));
         assert!(!polled.load(Ordering::Relaxed));
         assert!(missing_turn_context_invocations() > before);
+    }
+    #[test]
+    fn native_wake_identity_is_retained_on_its_exact_turn() {
+        use medousa_types::wake::WakeSource;
+        let unclassified = context("unclassified", "test");
+        assert_eq!(unclassified.wake_source(), None);
+        let peer = context("same-session", "test").with_wake_source(WakeSource::AgentInbox);
+        let human = context("same-session", "test").with_wake_source(WakeSource::Human);
+        assert_eq!(peer.wake_source(), Some(WakeSource::AgentInbox));
+        assert_eq!(human.wake_source(), Some(WakeSource::Human));
     }
 }

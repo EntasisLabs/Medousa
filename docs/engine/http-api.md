@@ -677,12 +677,12 @@ code/param, and request ID and never silently fall back to API-key billing.
 
 ## Agents (hot-swappable runtimes)
 
-External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` accessor — not raw ACP. Native Medousa turns remain on `/v1/turns` + interactive.
+External coding agents use the Medousa SDK `agents()` accessor. Runtime IDs are `cursor`, `codex`, `hermes`, `claude`, `devin`, `pi`, `muse_code`, and `hades`. ACP and Muse Code MSP transports stay inside the workshop daemon. Native Medousa turns remain on `/v1/turns` + interactive.
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/v1/agents/runtimes` | List runtimes + availability |
-| POST | `/v1/agents/sessions` | Create ACP session (bind Medousa `session_id`) |
+| POST | `/v1/agents/sessions` | Create external agent session (bind Medousa `session_id`) |
 | POST | `/v1/agents/sessions/{id}/prompt` | Send prompt |
 | GET | `/v1/agents/sessions/{id}/stream` | SSE (same event shape as interactive) |
 | POST | `/v1/agents/sessions/{id}/cancel` | Cancel session |
@@ -692,6 +692,20 @@ External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` acc
 | GET | `/v1/agents/secret-requests` | List credential-request metadata (never values) |
 | POST | `/v1/agents/secret-requests/{id}/fulfill` | Deliver a write-only value to the request's workshop backend |
 | POST | `/v1/agents/secret-requests/{id}/deny` | Deny secure credential handoff |
+
+Session creation returns negotiated, supported `capabilities` and `config_options`. Native
+resume support is independent of Medousa's saved transcript: an agent that cannot
+load sessions is restarted rather than given an invented resume guarantee.
+The prompt contract currently accepts text and code context; image/audio inputs
+are not transported through this endpoint, so its image/audio capability flags
+remain false even when the provider advertises support.
+
+Permission records include the provider's opaque `options` (`option_id`, `name`,
+`kind`). To select one, POST `{ "option_id": "<offered-id>" }` to the existing
+`approve` route. This also forwards an explicitly selected rejection choice.
+A generic cancellation uses `deny`. Legacy approval without an option ID remains
+valid for a single unambiguous allow choice; multi-choice questions require an
+explicit ID. SSE permission events include optional `permission_options`.
 
 Secret-request routes are native-only administration routes. The fulfill body
 is write-only: responses, list records, stream frames, and transcripts contain
@@ -1213,3 +1227,30 @@ medousa-cli daemon-ask "Summarize open risks" --daemon-url http://127.0.0.1:7419
    unversioned media type for v1. All retain `?since=<seq>` replay semantics.
 
 More: [integrate-without-the-app.md](../cookbook/integrate-without-the-app.md)
+
+### Resource reference context
+
+`HostTurnContext.references` is an optional list of typed `TurnResourceReference`
+values: `vault_note` (exact `root_id`, `path`, title, optional captured selection),
+`code_project` (`work_id`, title), or `creative_selection` (document ID, title,
+selected IDs, optional immutable `snapshot_id`). References belong to the
+receiving workshop, remain advisory, and neither grant access nor establish a
+Code binding. Use the existing binding endpoint for an explicit binding action.
+The daemon bounds this context and preserves it as a separate turn part; the
+current runtime projects its guidance independently from the human prompt.
+
+`EnqueueAskRequest.host_context` carries the same metadata for background Work
+requests. `cognition_store_read` actions `vault.read` and `vault.search` accept
+`root_id` to read or search that configured vault without changing the active
+editing root. Qualified reads enforce vault-relative paths and no-follow file
+access; a stale or unknown root fails instead of falling back to another vault.
+The `vault.write`, `vault.move`, and `vault.delete` store actions accept the same
+`root_id`. When omitted, an exact note reference supplies its root; references to
+the same path in multiple vaults require an explicit root. Reads return
+`note_version` for write `if_match` checks. Mutations use the existing durable
+vault transaction service and never change the active editing root.
+
+Engines supporting these references advertise `turn.resource_references.v1` in
+the health runtime descriptor. Home checks this before submitting resource-bound
+turns or Work requests: older engines would otherwise ignore new fields and
+could read the active vault instead of the referenced one.

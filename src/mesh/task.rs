@@ -208,20 +208,13 @@ impl DaemonDelegatedTaskExecutor {
                     if !environment.worktree.is_dir() {
                         anyhow::bail!("pinned Forge workdir is unavailable");
                     }
-                    let kind = match pinned.runtime {
-                        medousa_types::coordination::ExternalPeerRuntime::Medousa => anyhow::bail!(
+                    if pinned.runtime == medousa_types::coordination::ExternalPeerRuntime::Medousa {
+                        anyhow::bail!(
                             "native Medousa Coder must use the native assignment adapter"
-                        ),
-                        medousa_types::coordination::ExternalPeerRuntime::Codex => {
-                            medousa_acp_client::AgentRuntimeKind::Codex
-                        }
-                        medousa_types::coordination::ExternalPeerRuntime::Cursor => {
-                            medousa_acp_client::AgentRuntimeKind::Cursor
-                        }
-                        medousa_types::coordination::ExternalPeerRuntime::Hermes => {
-                            medousa_acp_client::AgentRuntimeKind::Hermes
-                        }
-                    };
+                        );
+                    }
+                    let kind = medousa_acp_client::AgentRuntimeKind::parse(pinned.runtime.as_str())
+                        .ok_or_else(|| anyhow::anyhow!("unsupported external runtime"))?;
                     let (available, _, detail) = medousa_acp_client::runtime_availability(kind);
                     if !available {
                         anyhow::bail!(

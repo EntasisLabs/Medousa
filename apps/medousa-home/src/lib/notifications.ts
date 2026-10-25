@@ -4,8 +4,11 @@ import type { OpenWorkHandler } from "$lib/mobileNative";
 import { isTauriMobilePlatform } from "$lib/platform";
 import type { HomeNotificationIntent } from "$lib/types/workspace";
 import { shouldPresentHomeNotification } from "$lib/homeNotificationPolicy";
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
+import { rememberSpotlightTurn, spotlightTurnOrigin, SPOTLIGHT_REPLIES_KEY, type SpotlightTurnOrigin } from "$lib/spotlight/completionOrigins";
 
 let permissionReady: boolean | null = null;
+let permissionRequest: Promise<boolean> | null = null;
 
 /** macOS notification APIs are not safe under concurrent tokio worker calls — serialize. */
 const NOTIFICATION_MIN_GAP_MS = 300;
@@ -18,6 +21,12 @@ async function notificationApi() {
 
 export async function ensureNotificationPermission(): Promise<boolean> {
   if (permissionReady !== null) return permissionReady;
+  if (permissionRequest) return permissionRequest;
+  permissionRequest = resolveNotificationPermission().finally(() => { permissionRequest = null; });
+  return permissionRequest;
+}
+
+async function resolveNotificationPermission(): Promise<boolean> {
   try {
     const { isPermissionGranted, requestPermission } = await notificationApi();
     let granted = await isPermissionGranted();
@@ -35,6 +44,39 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 
 const NOTIFICATION_LEDGER_KEY = "medousa-home-notification-ledger-v1";
 const NOTIFICATION_LEDGER_LIMIT = 512;
+
+export function registerSpotlightTurn(origin: SpotlightTurnOrigin): void {
+  rememberSpotlightTurn(origin);
+  // Ask while the request is being submitted, rather than after the launcher hides.
+  if (localStorage.getItem(SPOTLIGHT_REPLIES_KEY) !== "0") void ensureNotificationPermission();
+}
+
+export function registerSpotlightWorker(workshopId: string, envelope: TurnStreamEnvelopeV3): void {
+  if (envelope.event.type !== "worker_ack" || !envelope.event.work_id) return;
+  const origin = spotlightTurnOrigin(workshopId, envelope.turn_id, envelope.emitted_at_utc);
+  if (origin) rememberSpotlightTurn({ ...origin, subjectIds: [...new Set([...(origin.subjectIds ?? []), envelope.event.work_id])] });
+}
+
+/** Terminal receipt fallback shares IDs/delivery with the workspace notification. */
+export async function notifySpotlightTurnCompletion(workshopId: string, sessionId: string, envelope: TurnStreamEnvelopeV3): Promise<void> {
+  const event = envelope.event;
+  if (event.type !== "turn_completed" && event.type !== "worker_synthesis") return;
+  if (event.type === "turn_completed" && (event.outcome === "cancelled" || event.outcome === "checkpointed")) return;
+  if (event.type === "worker_synthesis" && !event.work_id?.trim()) return;
+  const origin = spotlightTurnOrigin(workshopId, envelope.turn_id, envelope.emitted_at_utc);
+  if (!origin || origin.sessionId !== sessionId) return;
+  const outcome = event.type === "turn_completed" ? event.outcome : "completed";
+  const text = event.type === "turn_completed" ? event.operator_message || event.aggregate_text : event.text;
+  const failed = ["failed", "fatal", "fuse_exhausted"].includes(outcome);
+  const kind = outcome === "needs_input" ? "needs_input" : outcome === "fatal" ? "fatal_turn" : "turn_update";
+  const prefix = failed ? "failed-turn" : kind === "needs_input" ? "needs-input" : "turn-update";
+  await presentHomeNotification({
+    notification_id: `${prefix}:${envelope.turn_id}`, kind, subject_id: envelope.turn_id,
+    title: failed ? "Request stopped" : "Reply ready",
+    body: text.trim().replace(/\s+/g, " ").slice(0, 240) || (failed ? "Open the conversation for details." : "Your reply is ready."),
+    session_id: sessionId, emitted_at_utc: envelope.emitted_at_utc,
+  }, workshopId);
+}
 
 function categoryEnabled(intent: HomeNotificationIntent): boolean {
   return shouldPresentHomeNotification(intent.kind, {
@@ -71,9 +113,28 @@ function rememberNotificationId(notificationId: string): boolean {
   return true;
 }
 
+async function claimNotificationId(id: string): Promise<boolean> {
+  // Every desktop window sees the workspace feed. Share the claim across views.
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request("medousa-notification-ledger", () => rememberNotificationId(id)).catch(() => rememberNotificationId(id));
+  }
+  return rememberNotificationId(id);
+}
+
 /** Present a daemon-authored notification intent without reinterpreting cards or turns. */
-export async function presentHomeNotification(intent: HomeNotificationIntent): Promise<void> {
-  if (!intent.notification_id.trim() || !categoryEnabled(intent)) return;
+export async function presentHomeNotification(intent: HomeNotificationIntent, workshopId = activeWorkshopId()): Promise<void> {
+  const origin = spotlightTurnOrigin(workshopId, intent.subject_id, intent.emitted_at_utc);
+  const spotlightCompletion = origin && (intent.kind === "turn_update" || intent.kind === "fatal_turn" || intent.notification_id === `needs-input:${intent.subject_id}`);
+  if (!intent.notification_id.trim()) return;
+  if (spotlightCompletion ? localStorage.getItem(SPOTLIGHT_REPLIES_KEY) === "0" : !categoryEnabled(intent)) return;
+  if (spotlightCompletion) {
+    const failed = intent.kind === "fatal_turn" || intent.notification_id.startsWith("failed-turn:");
+    intent = { ...intent,
+      notification_id: `spotlight:${origin.workshopId}:${origin.sessionId}:${origin.turnId}:${origin.acceptedAt}`,
+      title: `${origin.label} — ${failed ? "request stopped" : intent.kind === "needs_input" ? "needs your input" : "reply ready"}`,
+      session_id: origin.sessionId,
+    };
+  }
   // On iOS, Remote push is the delivery route when enabled. Avoid presenting
   // the same daemon intent again from the live workspace stream.
   if (
@@ -82,7 +143,7 @@ export async function presentHomeNotification(intent: HomeNotificationIntent): P
     localStorage.getItem("medousa-home-remote-push") === "1"
   ) return;
   if (!(await ensureNotificationPermission())) return;
-  if (!rememberNotificationId(intent.notification_id)) return;
+  if (!(await claimNotificationId(intent.notification_id))) return;
 
   enqueueNotification(async () => {
     const { sendNotification } = await notificationApi();

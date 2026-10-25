@@ -1,3 +1,5 @@
+import { chat } from "$lib/stores/chat.svelte";
+import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { leafOrder } from "$lib/utils/shellSplitTree";
 import type { ShellDesktopLayout, ShellTab } from "$lib/types/shellTabs";
@@ -75,3 +77,28 @@ export function collectDesktopGroups(
   ];
 }
 
+
+export function spotlightTabKind(tab: ShellTab): string {
+  if (tab.kind === "lme") {
+    const lme = lmeWorkspace.tabs.find(entry => entry.tabId === tab.lmeTabId);
+    return lme?.kind === "note" ? "Note" : lme?.kind === "code" ? "Code" : "Document";
+  }
+  if (tab.kind === "surface") return tab.surfaceId;
+  return tab.kind === "chat" ? "Chat" : tab.kind[0]!.toUpperCase() + tab.kind.slice(1);
+}
+export function spotlightTabPreview(tab: ShellTab): CommandPreview | undefined {
+  if (tab.kind === "chat") return { kind: "chat", sessionId: tab.sessionId, text: chat.sessions.find(session => session.session_id === tab.sessionId)?.preview?.trim() || `Open conversation “${tab.title}”.` };
+  if (tab.kind === "lme") {
+    const lme = lmeWorkspace.tabs.find(entry => entry.tabId === tab.lmeTabId);
+    if (lme?.kind === "note") return { kind: "note", path: lme.path };
+  }
+  return undefined;
+}
+export function spotlightWorkspaceLayout(scopeId: string): ShellDesktopLayout | null {
+  const desktop = shellTabs.desktops.find(entry => entry.id === scopeId);
+  if (!desktop) return null;
+  return desktop.id !== shellTabs.activeDesktopId ? desktop.layout : {
+    tabs: shellTabs.tabs, groups: shellTabs.groups, splitRoot: shellTabs.splitRoot,
+    activeGroupId: shellTabs.activeGroupId, zoomedGroupId: shellTabs.zoomedGroupId,
+  };
+}

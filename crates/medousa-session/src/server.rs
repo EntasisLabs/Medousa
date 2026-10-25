@@ -250,6 +250,10 @@ async fn list_sessions(State(state): State<Arc<SessionHostState>>) -> Json<Value
     let mut sessions = Vec::new();
     for meta in state.manager.list().await {
         let mut value = meta_json(&meta);
+        if let Some(session) = state.manager.get(&meta.session_id).await {
+            value["exited"] = json!(session.exited());
+            value["exit_code"] = json!(session.exit_code());
+        }
         if meta.root_kind == SessionRootKind::Workspace
             && let Some(work_id) = meta.work_id.clone()
         {
@@ -831,6 +835,17 @@ mod tests {
             }
         })
         .await;
+        let listed = super::list_sessions(axum::extract::State(std::sync::Arc::new(host.clone())))
+            .await
+            .0;
+        let metadata = listed["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["session_id"] == session.meta.session_id.as_str())
+            .unwrap();
+        assert_eq!(metadata["exited"], true);
+        assert_eq!(metadata["exit_code"], 7);
         host.manager.destroy(&session.meta.session_id).await;
         server.abort();
         assert_eq!(

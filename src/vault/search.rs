@@ -70,6 +70,7 @@ pub fn search_vault(query: &str, limit: usize) -> anyhow::Result<VaultSearchResp
     let query = query.trim();
     if query.is_empty() {
         return Ok(VaultSearchResponse {
+            root_id: None,
             query: String::new(),
             hits: Vec::new(),
             indexing: None,
@@ -125,6 +126,7 @@ pub fn search_vault(query: &str, limit: usize) -> anyhow::Result<VaultSearchResp
             .collect();
 
     Ok(VaultSearchResponse {
+        root_id: None,
         query: query.to_string(),
         hits: response_hits,
         indexing: indexing.then_some(true),

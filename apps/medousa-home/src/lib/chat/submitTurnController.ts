@@ -1,3 +1,5 @@
+import { ensureReferenceSupport } from "$lib/context/referenceSupport";
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * Interactive/background turn start from ChatPanel.
  * Uses ChatStore.beginTurn + startTurnStream — no second stream apply path.
@@ -33,12 +35,14 @@ export async function submitChatTurn(input: {
   /** Explicit destination for surfaces such as Spotlight; never changes focused chat. */
   sessionId?: string;
   userContent: string;
+  hostContext?: import("$lib/types/generated/daemon_api").HostTurnContext | null;
+  mediaRefs?: import("$lib/types/media").MediaRef[];
   prompt: string;
   mode: "interactive" | "background";
   codeProjectSetupAuthorized?: boolean;
   synchronizeAgentSession: (
     sessionId: string,
-    runtime: "cursor" | "codex" | "hermes",
+    runtime: ExternalAgentRuntime,
     options?: { openChooserWhenMissing?: boolean },
   ) => Promise<PreparedAgentSession | null>;
   onAgentSessionLost: () => void;
@@ -54,6 +58,7 @@ export async function submitChatTurn(input: {
   }
   const identityUserId = userProfiles.turnIdentityUserId();
   const codeProjectSetupAuthorized = input.codeProjectSetupAuthorized ?? false;
+  const hasMedia = (input.mediaRefs ?? (input.sessionId ? [] : chat.pendingMediaRefs)).length > 0;
   let bot = bots.forSession(sessionId);
   let runtime = bot ? "medousa" : getSessionAgentRuntime(sessionId);
   if (!bot && !isProviderConversationRuntime(runtime)) {
@@ -61,8 +66,11 @@ export async function submitChatTurn(input: {
     if (!current()) throw new Error("Conversation changed while checking the session identity");
     if (result.binding) { runtime = "medousa"; bot = result.bot ?? null; }
   }
+  if (input.hostContext && (bot?.external_agent || isExternalAgentRuntime(runtime))) {
+    throw new Error("Resource references currently require Medousa. Select Medousa to use the attached note or project.");
+  }
   if (bot?.external_agent) {
-    if (!input.sessionId && chat.pendingMediaRefs.length > 0) throw new Error("Runtime Bots currently accept text only.");
+    if (hasMedia) throw new Error("Runtime Bots currently accept text only.");
     const admitted = await sendRuntimeBotTurn(bot, sessionId, input.prompt);
     if (!current() || !admitted) return;
     input.onAccepted?.({turn_id: admitted.ticket.turnId,session_id:sessionId,mode:input.mode,phase:"accepted",accepted_at_utc:new Date().toISOString(),stream_url:"",stream_ready:false});
@@ -71,6 +79,9 @@ export async function submitChatTurn(input: {
   }
   if (isProviderConversationRuntime(runtime)) {
     throw new Error("Provider conversations must use the selected session or bot.");
+  }
+  if (isExternalAgentRuntime(runtime) && hasMedia) {
+    throw new Error("External coding agents currently accept text only. Remove attachments before sending.");
   }
   if (isExternalAgentRuntime(runtime) && input.mode === "interactive" && !codeProjectSetupAuthorized) {
     const prepared = await input.synchronizeAgentSession(sessionId, runtime, {
@@ -117,15 +128,18 @@ export async function submitChatTurn(input: {
     return;
   }
 
+  if (input.hostContext?.references?.length) await ensureReferenceSupport(input.hostContext);
+  if (!current()) throw new Error("Workshop changed while checking resource context support");
   const opts = await prepareInteractiveTurnOptions(input.sessionId ? { sessionId, workshopScopeId: chat.workshopScopeId, messages: chat.messagesFor(sessionId) } : chat);
   if (!current()) throw new Error("Conversation changed while preparing the turn");
-  const mediaRefs = input.sessionId ? [] : [...chat.pendingMediaRefs];
+  const mediaRefs = input.mediaRefs ?? (input.sessionId ? [] : [...chat.pendingMediaRefs]);
   const voice = voicePresets.turnVoiceFields();
   const codeContext = activeCodeContext(sessionId);
   const liquidInteractions = chatInteractions.envelopes(sessionId);
   recordLiquidPresentationOpportunity(input.prompt);
   const accepted = await createTurnTicket({
     sessionId,
+    hostContext: input.hostContext,
     prompt: input.prompt,
     mode: input.mode,
     codeContext,
@@ -156,6 +170,10 @@ export async function submitChatTurn(input: {
     mediaRefs,
     opts.identityUserId ?? identityUserId,
   ));
+  if (input.hostContext) chat.withSessionFields(sessionId, () => {
+    const userMessage = chat.messagesFor(sessionId).findLast(message => message.role === "user");
+    if (userMessage) userMessage.hostContext = input.hostContext;
+  });
   if (!input.sessionId) chat.clearPendingMedia();
   input.scrollToLatest(true);
   input.onAccepted?.(accepted);

@@ -670,6 +670,7 @@ async fn mock_transport_routes_jobs_enqueue_ask() {
     let response = client
         .jobs()
         .enqueue_ask(&medousa_types::EnqueueAskRequest {
+            host_context: None,
             prompt: "hello".to_string(),
             idempotency_key: None,
             policy_profile: None,

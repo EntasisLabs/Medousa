@@ -165,6 +165,18 @@ fn stream_mirror_from_event(event: &InteractiveTurnStreamEvent) -> TurnEvent {
 
 /// Project a sequenced spine event back to the SSE wire shape for replay.
 pub fn sequenced_to_stream_event(sequenced: &SequencedTurnEvent) -> InteractiveTurnStreamEvent {
+    if let Some(event) = &sequenced.stream_event_v3 {
+        let envelope = TurnStreamEnvelopeV3::new(
+            &sequenced.envelope.turn_id,
+            sequenced.seq(),
+            sequenced.emitted_at_utc.unwrap_or_else(Utc::now),
+            event.clone(),
+        )
+        .expect("sequenced journal event has valid envelope");
+        if let Ok(Some(compatibility)) = v3_to_v2(&envelope) {
+            return v2_to_v1(&compatibility);
+        }
+    }
     if let Some(event) = &sequenced.stream_event_v2 {
         let envelope = TurnStreamEnvelopeV2::new(
             &sequenced.envelope.turn_id,
@@ -554,11 +566,13 @@ fn v3_event_to_v2(event: &TurnStreamEventV3) -> Option<TurnStreamEventV2> {
             message,
             agent_session_id,
             agent_runtime,
+            permission_options,
         } => TurnStreamEventV2::PermissionRequest {
             request_id: request_id.clone(),
             message: message.clone(),
             agent_session_id: agent_session_id.clone(),
             agent_runtime: agent_runtime.clone(),
+            permission_options: permission_options.clone(),
         },
         TurnStreamEventV3::SecretRequest {
             request_id,
@@ -910,6 +924,7 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
         browser_challenge_url: None,
         context_usage: None,
         permission_request_id: None,
+        permission_options: None,
         agent_session_id: None,
         agent_runtime: None,
         secret_request_id: None,
@@ -1175,6 +1190,7 @@ pub fn v2_to_v1(envelope: &TurnStreamEnvelopeV2) -> InteractiveTurnStreamEvent {
             message,
             agent_session_id,
             agent_runtime,
+            permission_options,
         } => {
             wire.event_type = "permission_request".to_string();
             wire.phase = "awaiting_permission".to_string();
@@ -1183,6 +1199,7 @@ pub fn v2_to_v1(envelope: &TurnStreamEnvelopeV2) -> InteractiveTurnStreamEvent {
             wire.permission_request_id = Some(request_id.clone());
             wire.agent_session_id = agent_session_id.clone();
             wire.agent_runtime = agent_runtime.clone();
+            wire.permission_options = permission_options.clone();
         }
         TurnStreamEventV2::SecretRequest {
             request_id,
@@ -1338,6 +1355,7 @@ pub fn v1_to_v2(event: &InteractiveTurnStreamEvent) -> Result<TurnStreamEnvelope
             message: event.message.clone(),
             agent_session_id: event.agent_session_id.clone(),
             agent_runtime: event.agent_runtime.clone(),
+            permission_options: event.permission_options.clone(),
         },
         "secret_request" => TurnStreamEventV2::SecretRequest {
             request_id: required_legacy(&event.secret_request_id, "secret_request_id")?,
@@ -1593,6 +1611,120 @@ mod tests {
     use super::*;
     use crate::daemon_api::StreamUiArtifact;
     use medousa_engine::{Principal, TurnEnvelope};
+
+    #[test]
+    fn permission_choices_survive_live_typed_projection_and_durable_replay() {
+        let options = vec![
+            medousa_types::AgentPermissionOption {
+                option_id: "allow-once".into(),
+                name: "Allow once".into(),
+                kind: "allow_once".into(),
+            },
+            medousa_types::AgentPermissionOption {
+                option_id: "allow-session".into(),
+                name: "Allow for session".into(),
+                kind: "allow_always".into(),
+            },
+            medousa_types::AgentPermissionOption {
+                option_id: "reject".into(),
+                name: "Reject".into(),
+                kind: "reject_once".into(),
+            },
+        ];
+        let mut legacy = empty_stream_event("agent-permissions");
+        legacy.seq = 7;
+        legacy.event_type = "permission_request".into();
+        legacy.phase = "permission".into();
+        legacy.message = "Run this command?".into();
+        legacy.permission_request_id = Some("request-7".into());
+        legacy.agent_session_id = Some("agent-7".into());
+        legacy.agent_runtime = Some("muse_code".into());
+        legacy.permission_options = Some(options.clone());
+
+        let typed = v1_to_v2(&legacy).unwrap();
+        assert_eq!(v2_to_v1(&typed).permission_options, Some(options.clone()));
+        // Permission payloads have the same meaning in both typed vocabularies;
+        // this is not reverse-inference of V3 assistant segment chronology.
+        let v3_event: TurnStreamEventV3 =
+            serde_json::from_value(serde_json::to_value(&typed.event).unwrap()).unwrap();
+        let native = TurnStreamEnvelopeV3::new(
+            legacy.turn_id.clone(),
+            legacy.seq,
+            legacy.emitted_at_utc,
+            v3_event.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            v2_to_v1(&v3_to_v2(&native).unwrap().unwrap()).permission_options,
+            Some(options.clone())
+        );
+
+        let legacy_record = SequencedTurnEvent {
+            envelope: TurnEnvelope::new(&legacy.turn_id, Principal::operator()).at_seq(legacy.seq),
+            event: journal_turn_event_for_stream(&legacy, None),
+            emitted_at_utc: Some(legacy.emitted_at_utc),
+            stream_event_v2: None,
+            stream_event_v3: None,
+        };
+        assert_eq!(
+            sequenced_to_stream_event(&legacy_record).permission_options,
+            Some(options.clone())
+        );
+        assert_eq!(
+            v2_to_v1(&sequenced_to_v2(&legacy_record).unwrap()).permission_options,
+            Some(options.clone())
+        );
+
+        let typed_record = SequencedTurnEvent {
+            envelope: legacy_record.envelope.clone(),
+            event: journal_turn_event_for_v2(&typed),
+            emitted_at_utc: Some(typed.emitted_at_utc),
+            stream_event_v2: frozen_v2_replay_event(&typed.event),
+            stream_event_v3: None,
+        };
+        assert_eq!(
+            sequenced_to_stream_event(&typed_record).permission_options,
+            Some(options.clone())
+        );
+
+        let native_record = SequencedTurnEvent {
+            envelope: legacy_record.envelope,
+            event: journal_turn_event_for_v3(&native),
+            emitted_at_utc: Some(native.emitted_at_utc),
+            stream_event_v2: None,
+            stream_event_v3: Some(v3_event),
+        };
+        assert_eq!(
+            sequenced_to_stream_event(&native_record).permission_options,
+            Some(options.clone())
+        );
+        let replayed_native = sequenced_to_v3(&native_record).unwrap();
+        assert_eq!(
+            v2_to_v1(&v3_to_v2(&replayed_native).unwrap().unwrap()).permission_options,
+            Some(options)
+        );
+    }
+
+    #[test]
+    fn historic_permission_events_without_choices_remain_readable() {
+        let historic = serde_json::json!({"type":"permission_request","request_id":"old-request","message":"Allow?","agent_runtime":"cursor"});
+        let event: TurnStreamEventV2 = serde_json::from_value(historic.clone()).unwrap();
+        let envelope = TurnStreamEnvelopeV2::new("old-agent", 1, Utc::now(), event).unwrap();
+        assert!(v2_to_v1(&envelope).permission_options.is_none());
+        assert!(
+            serde_json::to_value(&envelope.event)
+                .unwrap()
+                .get("permission_options")
+                .is_none()
+        );
+        let native: TurnStreamEventV3 = serde_json::from_value(historic).unwrap();
+        let native = TurnStreamEnvelopeV3::new("old-agent", 1, Utc::now(), native).unwrap();
+        assert!(
+            v2_to_v1(&v3_to_v2(&native).unwrap().unwrap())
+                .permission_options
+                .is_none()
+        );
+    }
 
     #[test]
     fn artifact_presented_roundtrips_through_spine_mirror() {

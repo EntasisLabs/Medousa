@@ -25,7 +25,7 @@ export function composerMessageBoundary(key: string | null): "start" | "end" | n
 }
 
 export function moveComposerToMessageBoundary(
-  element: HTMLTextAreaElement,
+  element: HTMLTextAreaElement | HTMLInputElement,
   boundary: "start" | "end",
 ): void {
   const position = boundary === "start" ? 0 : element.value.length;
@@ -41,7 +41,7 @@ export function moveComposerToMessageBoundary(
  */
 export function handleComposerMessageNavigation(
   event: ComposerNavigationKeyEvent,
-  element: HTMLTextAreaElement,
+  element: HTMLTextAreaElement | HTMLInputElement,
 ): boolean {
   if (event.defaultPrevented || event.isComposing || event.shiftKey ||
       event.ctrlKey || event.metaKey || event.altKey) return false;
@@ -51,6 +51,21 @@ export function handleComposerMessageNavigation(
   event.preventDefault();
   moveComposerToMessageBoundary(element, boundary);
   return true;
+}
+
+/** WebKit may expose AppKit's function-key character instead of a DOM key name. */
+export function textNavigationKey(event: Pick<KeyboardEvent, "key" | "code">): string {
+  const keys: Record<string, string> = {
+    "\uF700": "ArrowUp", "\uF701": "ArrowDown",
+    "\uF702": "ArrowLeft", "\uF703": "ArrowRight",
+    "\u001C": "ArrowLeft", "\u001D": "ArrowRight",
+    "\u001E": "ArrowUp", "\u001F": "ArrowDown",
+    "\uF729": "Home", "\uF72B": "End",
+    "\uF72C": "PageUp", "\uF72D": "PageDown",
+  };
+  if (event.key === "Unidentified" &&
+      /^(Arrow(Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/.test(event.code)) return event.code;
+  return keys[event.key] ?? event.key;
 }
 
 /** Only a standalone navigation control, never an ordinary text/IME fragment. */

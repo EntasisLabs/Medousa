@@ -175,3 +175,18 @@ it("allows retrying against the latest canvas after a definitive apply conflict"
   await jobs.decide(true, 2);
   expect(vi.mocked(port.decideJob).mock.calls[1][2].expected_revision).toBe(2);
 });
+
+it("previews a proposal made in Spotlight and applies it through the proposal transaction, preserving undo", async () => {
+  const port = api();
+  const request = { id: "chat_proposal", expected_revision: 0, selected_ids: ["frame"], label: "Refined wireframe", operations: [] };
+  port.proposals = vi.fn().mockResolvedValue({ proposals: [{ request, status: "ready", created_at: "2026-10-24" }] });
+  port.decide = vi.fn().mockResolvedValue({});
+  const accepted = vi.fn();
+  const jobs = creativeJobs(port, "doc", accepted);
+  await jobs.refresh();
+  expect(jobs.job?.result).toEqual(request);
+  expect(jobs.thread).toEqual([]); // A tool caption is not a fabricated user message.
+  await jobs.decide(true, 0);
+  expect(port.decide).toHaveBeenCalledWith("doc", "chat_proposal", { accept: true, expected_revision: 0 });
+  expect(port.decideJob).not.toHaveBeenCalled(); expect(accepted).toHaveBeenCalledTimes(1);
+});

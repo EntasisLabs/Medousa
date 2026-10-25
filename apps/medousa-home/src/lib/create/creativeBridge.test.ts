@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const { dispatch } = vi.hoisted(() => ({ dispatch: vi.fn() }));
 vi.mock("$lib/daemon/contractClient", () => ({ daemonUnary: dispatch }));
-import { creativeBridgeApi, designBuildPrompt, importBrowserDesign, safeDesignUrl } from "./creativeBridge";
+import { creativeBridgeApi, designBuildPrompt, designBuildContext, importBrowserDesign, safeDesignUrl } from "./creativeBridge";
 import { createNode } from "./creativeScene";
 import type { BrowserDesignCapture, CreativeDocument } from "$lib/types/generated/daemon_api";
 beforeEach(() => { dispatch.mockReset(); });
@@ -17,11 +17,12 @@ it("does not serialize browser capability URLs, credentials or query strings int
   expect(safeDesignUrl("https://user:secret@host.test/path?token=secret#private")).toBe("https://host.test/path");
   expect(safeDesignUrl("https://host.test/v1/forge/preview/private-token/")).toBe("https://host.test/project-preview");
 });
-it("hands over a frozen blueprint and treats captured page text as data", () => {
+it("keeps the human request separate from a frozen, tool-readable design reference", () => {
   const frame = createNode({ kind: "frame", name: "Home", background: "#fff" }, { x: 0, y: 0, width: 900, height: 600 });
   const doc = { id: "doc", title: "Shell", revision: 7 } as CreativeDocument;
-  const prompt = designBuildPrompt(doc, frame, "Reuse our components", { document_id: "doc", revision: 7, selected_ids: [frame.id], nodes: [frame], assets: [], fingerprint: "frozen" });
-  expect(prompt).toContain("saved revision 7"); expect(prompt).toContain("untrusted reference material"); expect(prompt).toContain("Reuse our components"); expect(prompt).toContain("subsequent Update Code");
+  const context = { document_id: "doc", revision: 7, selected_ids: [frame.id], nodes: [frame], assets: [], fingerprint: "frozen" };
+  expect(designBuildPrompt(doc, frame, "Reuse our components", context)).toBe("Reuse our components");
+  expect(designBuildContext(doc, frame, { context, snapshot_id: "immutable", media_refs: [] })).toMatchObject({ source: "create", references: [{ kind: "creative_selection", document_id: "doc", selected_ids: [frame.id], snapshot_id: "immutable" }] });
 });
 it("recovers an acknowledged import without replaying edits over later human changes", async () => {
   const doc = { id: "import", scene: { nodes: [{ id: "original_frame" }] } } as CreativeDocument;

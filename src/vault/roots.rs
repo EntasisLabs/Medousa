@@ -201,10 +201,12 @@ pub fn list_vault_root_views() -> crate::daemon_api::VaultRootsResponse {
                     path: absolute.display().to_string(),
                     is_default,
                     active: entry.id == config.active_root_id,
-                    is_obsidian: vault_capability_for_root(absolute.clone())
+                    is_obsidian: StoreRoot::open_nofollow(&absolute)
                         .and_then(|root| {
-                            root.is_dir(&VaultPath::internal(".obsidian")?)
-                                .map_err(Into::into)
+                            root.is_dir(
+                                &VaultPath::internal(".obsidian")
+                                    .expect("static vault metadata path"),
+                            )
                         })
                         .unwrap_or(false),
                 }

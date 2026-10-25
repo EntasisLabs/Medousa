@@ -866,8 +866,9 @@ fn collect_attribution(
         let kind = match executor.as_str() {
             "human" => "human",
             "terminal" => "terminal",
-            "codex" | "cursor" | "hermes" | "acp-codex" | "acp-cursor" | "acp-hermes" | "agent"
-            | "script" => "agent",
+            "codex" | "cursor" | "hermes" | "claude" | "devin" | "pi" | "muse_code" | "hades"
+            | "acp-codex" | "acp-cursor" | "acp-hermes" | "acp-claude" | "acp-devin" | "acp-pi"
+            | "acp-muse_code" | "acp-hades" | "agent" | "script" => "agent",
             _ => "agent",
         };
         let label = match executor.as_str() {

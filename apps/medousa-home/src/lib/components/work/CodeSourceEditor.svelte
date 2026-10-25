@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { externalAgent, isExternalRuntime } from "$lib/utils/externalAgentCatalog";
+  import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
+
   import { getContext, onDestroy, tick, untrack, type Snippet } from "svelte";
   import { WINDOW_SAVE } from "$lib/desktop/windowSave";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
@@ -117,8 +120,8 @@
     onStopAgent?: () => void;
     onResumeEditing?: () => void;
     onProvision?: () => Promise<void>;
-    preferredAgent?: "codex" | "cursor" | "hermes";
-    onHandoffToAgent?: (runtime: "codex" | "cursor" | "hermes", draft?: string) => Promise<void>;
+    preferredAgent?: ExternalAgentRuntime;
+    onHandoffToAgent?: (runtime: ExternalAgentRuntime, draft?: string) => Promise<void>;
     onReclaimHuman?: () => Promise<void>;
     /** Project kebab items (Ask Codex, Terminal, Discard, …). */
     projectMenu?: Snippet;
@@ -271,7 +274,7 @@
   const bufferInteractive = $derived((editable || canBeginEdit) && !previewOnly);
   const statusControlLabel = $derived.by(() => {
     if (agentHasControl) {
-      return context?.executorKind === "cursor" ? "Cursor working" : "Codex working";
+      return `${isExternalRuntime(context?.executorKind) ? externalAgent(context.executorKind).label : "Agent"} working`;
     }
     if (editable && context?.boundTerminalSessionIds.length) return "You + Terminal";
     if (editable) return "You editing";

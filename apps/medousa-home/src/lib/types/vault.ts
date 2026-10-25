@@ -71,6 +71,7 @@ export interface VaultSearchHit {
 }
 
 export interface VaultSearchResponse {
+  root_id?: string | null;
   query: string;
   hits: VaultSearchHit[];
 }

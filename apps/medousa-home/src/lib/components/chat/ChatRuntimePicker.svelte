@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { EXTERNAL_AGENTS, externalAgent } from "$lib/utils/externalAgentCatalog";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
+  import { tick, untrack } from "svelte";
   import { Check, ChevronDown, LogIn } from "@lucide/svelte";
   import ExternalAgentLogo from "$lib/components/brand/ExternalAgentLogo.svelte";
   import MedousaMark from "$lib/components/brand/MedousaMark.svelte";
@@ -32,13 +34,12 @@
     hint: string;
   }[] = [
     { id: "medousa", hint: "Native Medousa turns" },
-    { id: "cursor", hint: "External Cursor agent" },
-    { id: "codex", hint: "ChatGPT-backed agent + chat" },
-    { id: "hermes", hint: "External Hermes agent" },
+    ...EXTERNAL_AGENTS,
   ];
 
-  onMount(() => {
-    void accountConnections.refresh();
+  $effect(() => {
+    activeWorkshopId();
+    untrack(() => { void accountConnections.refresh(); });
   });
 
   /** Signed-out external runtimes stay visible but locked with a sign-in CTA. */
@@ -47,7 +48,7 @@
     const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (!info) return false;
-    if (!info.binaryPresent) return true;
+    if (!info.binaryPresent || info.available === false) return true;
     return info.authStatus === "signed_out";
   }
 
@@ -55,10 +56,9 @@
     if (runtime === "medousa" || isProviderConversationRuntime(runtime) || !lockedFor(runtime)) return null;
     const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
+    if (info?.available === false && info.binaryPresent) return info.detail ?? "Runtime unavailable on this workshop";
     if (info && !info.binaryPresent) {
-      if (runtime === "codex") return "Install Codex CLI — Settings → External Agents";
-      if (runtime === "hermes") return "Install Hermes — Settings → External Agents";
-      return "Install Cursor CLI — Settings → External Agents";
+      return `Install ${externalAgent(runtime).cli} on the workshop — Settings → External Agents`;
     }
     return "Sign in — Settings → External Agents";
   }

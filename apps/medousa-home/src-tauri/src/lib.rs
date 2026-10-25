@@ -69,6 +69,8 @@ mod tray;
 mod window;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod desktop_windows;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod desktop_terminals;
 mod wizard;
 mod workshop_registry;
 mod workshop_runtime;
@@ -347,8 +349,8 @@ fn run_home() {
                 return;
             }
             if window.label() == "desktop-spotlight" {
-                if matches!(event, tauri::WindowEvent::Focused(false)) { let _ = window.hide(); }
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); let _ = window.hide(); }
+                // The launcher owns dismissal: focus loss can be the start of an image drag.
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); let _ = window.emit("desktop-spotlight-dismiss", ()); let _ = window.hide(); }
                 return;
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -952,6 +954,16 @@ fn run_home() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             desktop_windows::desktop_shortcut_error,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_context,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_pointer,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_restore,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_request,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_reply,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_chat_popout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_hide_chat_popout,
@@ -1121,7 +1133,7 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
                         tauri::async_runtime::spawn(async move {
                             let _ = desktop_windows::desktop_open_window(app, desktop_windows::DesktopTarget {
                                 kind: desktop_windows::DesktopKind::Chat, workshop_id: registry.active_workshop_id,
-                                resource_id: None, path: None, title: None,
+                                resource_id: None, ssh_target_id: None, path: None, title: None,
                             }).await;
                         });
                     }

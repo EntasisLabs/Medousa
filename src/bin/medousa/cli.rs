@@ -117,7 +117,7 @@ pub enum BotCommand {
     List,
     Enroll {
         bot: String,
-        #[arg(long, default_value = "codex", value_parser = ["codex", "cursor", "hermes"])]
+        #[arg(long, default_value = "codex", value_parser = ["codex", "cursor", "hermes", "claude", "devin", "pi", "muse_code", "hades"])]
         runtime: String,
         #[arg(long = "workshop-id")]
         workshop_id: String,
@@ -1133,7 +1133,9 @@ mod tests {
 
     #[test]
     fn enroll_selects_each_supported_runtime_and_rejects_unknown_ones() {
-        for runtime in ["codex", "cursor", "hermes"] {
+        for runtime in medousa_types::coordination::ExternalPeerRuntime::EXTERNAL
+            .map(|runtime| runtime.as_str())
+        {
             let parsed = Cli::try_parse_from([
                 "medousa",
                 "bot",

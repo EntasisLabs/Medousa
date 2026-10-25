@@ -87,11 +87,14 @@ export interface HostContextSelection {
   text: string;
 }
 
+export type TurnResourceReference = { kind: "vault_note"; path: string; root_id: string; selection?: HostContextSelection | null; title: string } | { kind: "code_project"; title: string; work_id: string } | { document_id: string; kind: "creative_selection"; selected_ids?: string[]; snapshot_id?: string | null; title: string };
+
 export interface HostTurnContext {
   cursor?: HostContextPosition | null;
   diagnostics?: HostContextDiagnostic[];
   document_excerpt?: string | null;
   language?: string | null;
+  references?: TurnResourceReference[];
   related_resources?: string[];
   resource_kind?: string | null;
   resource_path?: string | null;

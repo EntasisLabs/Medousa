@@ -66,6 +66,10 @@
     /** Full-glass phone PTY: larger type and exported sendInput for the key row. */
     mobile?: boolean;
     onWorkspaceContext?: (context: TerminalSessionSummary["workspace_context"]) => void;
+    /** Detached hosts keep session navigation in native windows. */
+    onOpenSession?: (sessionId: string) => Promise<unknown>;
+    onClose?: () => void;
+    onManageHost?: () => void;
   }
 
   let {
@@ -80,6 +84,9 @@
     onOpenPath,
     mobile = false,
     onWorkspaceContext,
+    onOpenSession,
+    onClose,
+    onManageHost,
   }: Props = $props();
 
   let attachId = $state<number | null>(null);
@@ -525,6 +532,11 @@
       focusTerminal();
       return;
     }
+    if (onOpenSession) {
+      try { await onOpenSession(nextSessionId); }
+      catch (reason) { error = reason instanceof Error ? reason.message : String(reason); }
+      return;
+    }
     boundSessionId = nextSessionId;
     await connect();
   }
@@ -541,6 +553,7 @@
   }
 
   function closeShellTab() {
+    if (onClose) { onClose(); return; }
     const sid = (boundSessionId || sessionId).trim();
     if (!sid) return;
     const tab = shellTabs.tabs.find(
@@ -589,7 +602,10 @@
         rows: terminalRows || 24,
       }, executionRuntimeId);
       const sid = created.session_id?.trim() ?? "";
-      if (sid) shellTabs.openTerminal(sid, { activate: true, title: "Shell" });
+      if (sid) {
+        if (onOpenSession) await onOpenSession(sid);
+        else shellTabs.openTerminal(sid, { activate: true, title: "Shell" });
+      }
     } catch (reason) {
       error = reason instanceof Error ? reason.message : String(reason);
     }
@@ -741,7 +757,7 @@
             onclick={toggle}
           ><Layers size={13} strokeWidth={1.75} /></button>
         {/snippet}
-        {#each sessions as session (session.session_id)}
+        {#each sessions.filter(session => !session.exited) as session (session.session_id)}
           <button
             type="button"
             role="menuitem"
@@ -865,9 +881,9 @@
         <button
           type="button"
           class="mt-2 rounded bg-amber-500/30 px-2 py-1 text-[11px] hover:bg-amber-500/40"
-          onclick={openPackages}
+          onclick={onManageHost ?? openPackages}
         >
-          Open Settings → Packages
+          {onManageHost ? "Open Medousa" : "Open Settings → Packages"}
         </button>
       </div>
     {:else if error}

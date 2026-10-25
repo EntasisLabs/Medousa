@@ -1338,7 +1338,8 @@ async fn spawn_continuation_agent_turn(
         tokio_util::sync::CancellationToken::new(),
         std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
         continuation_scope.clone(),
-    );
+    )
+    .with_wake_source(medousa_types::wake::WakeSource::ProcessCompleted);
     let execution_lease = state
         .platform
         .agent_handle()

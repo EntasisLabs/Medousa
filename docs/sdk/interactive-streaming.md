@@ -313,6 +313,10 @@ no command. An uncertain connection reports `status: "unknown"`; polling resumes
 observation without submitting the command again. See
 [agent shell output](../engine/coder-efficiency.md#agent-shell-output).
 
+`GET /v1/sessions/shell` entries include `exited` and nullable `exit_code`.
+An exited session can remain listed for scrollback retention; use `exited` when
+offering sessions to reconnect. Older hosts may omit these additive fields.
+
 When checking the opaque JSON readiness responses from `/v1/coding-engine` or
 `/v1/shell-sessions`, continue polling when `starting: true`. `available: false`
 alone does not imply that startup failed. These are additive response fields;
@@ -326,3 +330,12 @@ Use the selected provider/model's `reasoning` capability from
 `GET /v1/models/capabilities` to determine supported choices and budget bounds.
 An absent capability on an older daemon is unknown, not support for every level.
 See the [model capability contract](../engine/http-api.md) for the response fields.
+
+Host integrations should send the user's wording in `prompt` and references in
+`host_context.references`, using the generated `TurnResourceReference` union.
+Pass uploaded screenshots in `media_refs` for that same session; do not put bytes,
+client filesystem paths, design JSON, or runtime instructions into the visible
+request. `EnqueueAskRequest` also accepts `host_context`. For Create → Code,
+retain the `snapshot_id` returned by `CreativeCodeContext` as the frozen design
+reference. References supply evidence; existing execution and binding APIs still
+control where work runs.

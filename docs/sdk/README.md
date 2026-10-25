@@ -120,6 +120,12 @@ reuse Medousa's private first-party local credentials.
 
 Full method table: [api-reference.md](api-reference.md) · contract: [`../../sdk-contract/openapi.json`](../../sdk-contract/openapi.json)
 
+Vault search accepts `VaultSearchQuery.root_id` in Rust and `root_id=` in the
+async and sync Python clients. An explicit root searches its titles/paths without
+changing the active editing vault; check `VaultSearchResponse.root_id` against
+the requested root before displaying results. See [vault search](../engine/vault.md#multi-root--obsidian)
+for matching behavior and scan limits.
+
 Provider-hosted Muse and Grok Bot conversations currently use the generic authenticated
 `http()` transport. See the [external conversation HTTP contract](../engine/external-conversations.md)
 for endpoints, event IDs, and callback authentication.

@@ -105,7 +105,7 @@ impl DaemonState {
                 .lock()
                 .expect("daemon streams lock")
                 .retain(|key, tx| {
-                    if key.starts_with("desktop-work-") {
+                    if crate::active_workshop::is_resource_window(key.split(':').next().unwrap_or(key)) {
                         true
                     } else {
                         let _ = tx.send(true);
@@ -113,6 +113,40 @@ impl DaemonState {
                     }
                 });
         }
+    }
+}
+
+#[cfg(test)]
+mod retained_window_stream_tests {
+    use super::*;
+
+    #[test]
+    fn switching_main_preserves_launcher_consumers_and_rebinding_detaches_only_the_launcher() {
+        let state = DaemonState {
+            daemon_url: Mutex::new(String::new()),
+            workspace_cancel: Mutex::new(None),
+            environment_cancel: Mutex::new(None),
+            interactive_streams: Mutex::new(HashMap::new()),
+            contract_streams: Mutex::new(HashMap::new()),
+        };
+        let mut receivers = Vec::new();
+        for registry in [&state.interactive_streams, &state.contract_streams] {
+            for label in ["main", "desktop-spotlight", "desktop-work-test", "desktop-spotlight-other"] {
+                let (send, receive) = watch::channel(false);
+                registry.lock().unwrap().insert(format!("{label}:consumer"), send);
+                receivers.push((label, receive));
+            }
+        }
+        state.cancel_selected_streams();
+        for (label, receive) in &receivers {
+            assert_eq!(*receive.borrow(), matches!(*label, "main" | "desktop-spotlight-other"));
+        }
+        state.cancel_window_streams("desktop-spotlight");
+        for (label, receive) in &receivers {
+            assert_eq!(*receive.borrow(), *label != "desktop-work-test");
+        }
+        assert_eq!(state.interactive_streams.lock().unwrap().len(), 1);
+        assert_eq!(state.contract_streams.lock().unwrap().len(), 1);
     }
 }
 
@@ -758,7 +792,7 @@ pub async fn interactive_stream_start(
         {
             None => (),
             Some(Ok(source)) => {
-                if app.label().starts_with("desktop-work-") {
+                if crate::active_workshop::is_resource_window(app.label()) {
                     stream_sse_json_workshop::<TurnStreamEnvelopeV3>(
                         &app,
                         source,
@@ -780,7 +814,7 @@ pub async fn interactive_stream_start(
                 }
             }
             Some(Err(err)) => {
-                let event = if app.label().starts_with("desktop-work-") {
+                let event = if crate::active_workshop::is_resource_window(app.label()) {
                     "desktop-interactive://error"
                 } else {
                     "interactive://error"

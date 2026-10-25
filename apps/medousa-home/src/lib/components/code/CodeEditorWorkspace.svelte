@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
+
   import type { TerminalSessionSummary } from "$lib/terminal";
   import { currentCommandRoot } from "$lib/code/codeCommandContext";
   import { LoaderCircle, Sparkles } from "@lucide/svelte";
@@ -65,7 +67,7 @@
     save: CodeSaveController;
     busy: boolean;
     agentHasControl: boolean;
-    onHandoffToAgent?: (runtime: "codex" | "cursor" | "hermes", draft?: string) => Promise<void>;
+    onHandoffToAgent?: (runtime: ExternalAgentRuntime, draft?: string) => Promise<void>;
     problems: CodeProblemsController;
     canReference: boolean;
     canRename: boolean;

@@ -112,10 +112,7 @@ export function buildCodeCommands(): WorkshopCommand[] {
         "Show All Commands",
         "Command Palette",
       ],
-      run: (ctx) => {
-        commandSpotlight.openCommandPalette();
-        ctx.callbacks.close();
-      },
+      run: () => commandSpotlight.openCommandPalette(),
     },
     {
       id: "workbench.action.quickOpen",

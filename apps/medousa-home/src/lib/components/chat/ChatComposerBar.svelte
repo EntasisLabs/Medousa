@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ResourceReferencePicker from "./ResourceReferencePicker.svelte";
+  import { setSessionCodeBinding } from "$lib/daemon";
   import { handleChatImagePaste } from "$lib/utils/chatImagePaste";
   import { composerModel } from "$lib/chat/composerModel";
   import "$lib/styles/composer.postcss";
@@ -412,6 +414,8 @@
 {/if}
 
 {#if !providerConversation || chat.pendingMediaRefs.length > 0}<ChatAttachmentChips disabled={disabled || offline} />{/if}
+
+<ResourceReferencePicker bind:value={chat.draft} bind:references={chat.pendingResourceRefs} {element} enabled={!blocked && !providerConversation} onBindProject={async workId => { await setSessionCodeBinding(chat.focusedSessionId || chat.sessionId, workId); }}/>
 
 {#if voiceError}
   <p class="composer-voice-status composer-voice-status-error" role="alert">{voiceError}</p>

@@ -3,9 +3,9 @@
 use crate::active_workshop::ActiveWorkshopTarget;
 use crate::pairing_client::WorkshopTransportConfig;
 use std::future::Future;
-use tauri::ipc::{CommandArg, CommandItem, InvokeError};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::Manager;
+use tauri::ipc::{CommandArg, CommandItem, InvokeError};
 use tauri::{State, Wry};
 use tokio::sync::OnceCell;
 
@@ -19,7 +19,7 @@ impl<'de> CommandArg<'de, Wry> for WorkshopRequest {
     fn from_command(command: CommandItem<'de, Wry>) -> Result<Self, InvokeError> {
         let webview = command.message.webview_ref();
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        let scope = if webview.label().starts_with("desktop-work-") {
+        let scope = if crate::desktop_windows::is_resource_window(webview.label()) {
             Some(
                 crate::desktop_windows::scope_for(webview.app_handle(), webview.label())
                     .ok_or_else(|| InvokeError::from("The work window was closed"))?,
@@ -96,6 +96,11 @@ pub fn supports_command(command: &str) -> bool {
             | "ssh_action"
             | "ssh_set_access"
             | "ssh_remove"
+            | "account_connections_probe"
+            | "account_chatgpt_begin_device_login"
+            | "account_begin_terminal_login"
+            | "account_sign_out"
+            | "account_cli_install"
             | "agents_list_runtimes"
             | "agents_create_session"
             | "agents_prompt"

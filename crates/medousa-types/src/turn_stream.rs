@@ -2,7 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::daemon_api::{
-    ContextUsageReport, StreamToolArtifactRef, StreamUiArtifact, StreamUiScene, ToolInputParam,
+    AgentPermissionOption, ContextUsageReport, StreamToolArtifactRef, StreamUiArtifact,
+    StreamUiScene, ToolInputParam,
 };
 use crate::message_effect::MessageReaction;
 
@@ -255,6 +256,8 @@ pub enum TurnStreamEventV2 {
         agent_session_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent_runtime: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        permission_options: Option<Vec<AgentPermissionOption>>,
     },
     /// Trusted UI prompt for credential material. This event carries request
     /// metadata only; the value travels over the dedicated fulfill endpoint.
@@ -474,6 +477,8 @@ pub enum TurnStreamEventV3 {
         agent_session_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent_runtime: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        permission_options: Option<Vec<AgentPermissionOption>>,
     },
     /// Trusted UI prompt for credential material. This event carries request
     /// metadata only; the value travels over the dedicated fulfill endpoint.
@@ -639,6 +644,7 @@ mod tests {
                 message: "Allow?".into(),
                 agent_session_id: Some("agent-1".into()),
                 agent_runtime: Some("codex".into()),
+                permission_options: None,
             },
             TurnStreamEventV2::SecretRequest {
                 request_id: "secret-1".into(),

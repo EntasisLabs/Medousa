@@ -323,7 +323,7 @@ browser snapshot support is currently shipped.
 
 ## `agents()`
 
-Hot-swappable external agent runtimes (Cursor / Codex via ACP). Native Medousa turns stay on `interactive()` / turn tickets. See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md).
+Hot-swappable external agent runtimes: Cursor, Codex, Hermes, Claude Code, Devin, Pi, Muse Code, and Hades. Native Medousa turns stay on `interactive()` / turn tickets. See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md).
 
 | Method | HTTP | Types |
 |--------|------|-------|
@@ -339,6 +339,14 @@ Hot-swappable external agent runtimes (Cursor / Codex via ACP). Native Medousa t
 | `list_secret_requests(status?, limit?)` | `GET /v1/agents/secret-requests` | `AgentSecretRequestListResponse` |
 | `fulfill_secret_request(id, request)` (Rust) / `fulfill_secret_request(id, value, resolved_by=…)` (Python) | `POST …/fulfill` | write-only value → `AgentSecretResolveResponse` |
 | `deny_secret_request(id, request)` (Rust) / `deny_secret_request(id, resolved_by=…)` (Python) | `POST …/deny` | `AgentSecretDenyRequest` → `AgentSecretResolveResponse` |
+
+Session responses expose negotiated, supported `capabilities` and runtime
+`config_options`. Image/audio flags remain false while prompts are text-only.
+For an agent's exact permission/selection choice, set `option_id` on
+`AgentPermissionResolveRequest` and use `approve_permission`; the ID is forwarded
+unchanged, including rejection options. Use `deny_permission` to cancel the
+request. Omit `option_id` only for legacy binary approval. Runtime availability
+and authentication refer to the connected workshop, not the SDK client's host.
 
 `AgentSecretFulfillRequest.value` is write-only credential material. Move it
 directly into the request and do not log, clone, cache, or add it to a chat

@@ -104,6 +104,7 @@ export interface SessionTurnsResponse {
 }
 
 export interface CreateTurnTicketRequest {
+  hostContext?: import("$lib/types/generated/daemon_api").HostTurnContext | null;
   sessionId: string;
   prompt: string;
   agentMode?: AgentModeId;

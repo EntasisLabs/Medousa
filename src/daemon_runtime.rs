@@ -33,6 +33,7 @@ const COMMON_CAPABILITIES: &[&str] = &[
     "sessions.coordinates",
     "stasis.control-plane",
     "turns.sequenced",
+    "turn.resource_references.v1",
 ];
 
 pub struct DaemonHealthSnapshot {

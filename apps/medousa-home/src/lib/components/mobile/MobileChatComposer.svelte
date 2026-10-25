@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { composerContext } from "$lib/utils/turnContext";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
+  import type { HostTurnContext } from "$lib/types/generated/daemon_api";
   import type { createAgentSessionController } from "$lib/chat/agentSessionController.svelte";
   import type { createExternalConversationController } from "$lib/chat/externalConversationController.svelte";
   let { agentSession, externalConversation }: {
@@ -40,7 +43,6 @@
     runSlashCommand,
   } from "$lib/utils/runSlashCommand";
   import { setMobileComposerFocus } from "$lib/utils/mobileKeyboardViewport";
-  import { ensureVaultSelectionInPrompt } from "$lib/utils/vaultNoteBridge";
   import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
 
   const providerRuntime = $derived(isProviderConversationRuntime(agentSession.sessionRuntime));
@@ -103,10 +105,12 @@
     prompt: string,
     mode: "interactive" | "background",
     codeProjectSetupAuthorized = false,
+    hostContext?: HostTurnContext | null,
   ) {
     await submitChatTurn({
       userContent,
       prompt,
+      hostContext,
       mode,
       codeProjectSetupAuthorized,
       synchronizeAgentSession: agentSession.synchronizeAgentSession,
@@ -133,10 +137,12 @@
       }
       return;
     }
-    const basePrompt = ensureVaultSelectionInPrompt(
-      chat.draft.trim(),
-      chat.vaultNoteContext,
-    );
+    const resourceDraft = [...chat.pendingResourceRefs];
+    let hostContext: HostTurnContext | null;
+    try { hostContext = composerContext("notes", chat.pendingResourceRefs, chat.vaultNoteContext, activeWorkshopId()); }
+    catch (error) { chat.setError(String(error)); return; }
+    const humanRequest = chat.draft.trim();
+    const basePrompt = humanRequest;
     const prompt = bots.forSession(chat.sessionId)
       ? basePrompt
       : applyActiveAgentPrompt(basePrompt);
@@ -168,7 +174,7 @@
     const askPrompt = parseDaemonAskPrompt(prompt);
     const slash = parseChatSlashInput(prompt);
     chat.clearComposerDraft();
-    chat.clearVaultNoteContext();
+    if (!chat.pinVaultNoteContext) chat.clearVaultNoteContext();
 
     try {
       if (slash && slash.kind !== "ask") {
@@ -177,7 +183,7 @@
       }
 
       if (askPrompt) {
-        await submitTurn(prompt || pendingMediaLabels(chat.pendingMediaRefs), askPrompt, "background");
+        await submitTurn(prompt || pendingMediaLabels(chat.pendingMediaRefs), askPrompt, "background", false, hostContext);
         return;
       }
 
@@ -197,9 +203,10 @@
 
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
       const display =
-        prompt ||
+        humanRequest ||
         (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
-      await submitTurn(display, prompt, mode, codeProjectSetupAuthorized);
+      await submitTurn(display, prompt, mode, codeProjectSetupAuthorized, hostContext);
+      chat.pendingResourceRefs = chat.pendingResourceRefs.filter(ref => !resourceDraft.includes(ref));
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }

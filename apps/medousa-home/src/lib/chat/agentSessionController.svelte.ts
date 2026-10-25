@@ -1,3 +1,4 @@
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * ACP / coding-agent session lifecycle for ChatPanel.
  * ChatStore still owns turn start (`beginTurn` / `startTurnStream`).
@@ -44,8 +45,12 @@ export function createAgentSessionController() {
   let agentLifecycleQueue: Promise<void> = Promise.resolve();
 
   function queueAgentLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+    const epoch = chat.workshopEpoch;
     agentLifecyclePending += 1;
-    const queued = agentLifecycleQueue.catch(() => undefined).then(operation);
+    const queued = agentLifecycleQueue.catch(() => undefined).then(() => {
+      if (chat.workshopEpoch !== epoch) throw new Error("Workshop changed while preparing the agent.");
+      return operation();
+    });
     agentLifecycleQueue = queued.then(
       () => undefined,
       () => undefined,
@@ -56,12 +61,14 @@ export function createAgentSessionController() {
   }
 
   async function cancelKnownAgent(sessionId: string, agentSessionId: string) {
+    const epoch = chat.workshopEpoch;
     try {
       await cancelAgentSession(agentSessionId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!/unknown agent session|not found|404/i.test(message)) throw err;
     }
+    if (chat.workshopEpoch !== epoch) throw new Error("Workshop changed while preparing the agent.");
     clearSessionAgentSessionId(sessionId);
     setSessionAgentConfigOptions(sessionId, []);
     if (chat.focusedSessionId === sessionId) agentConfigOptions = [];
@@ -69,12 +76,13 @@ export function createAgentSessionController() {
 
   function synchronizeAgentSession(
     sessionId: string,
-    runtimeChoice: "cursor" | "codex" | "hermes",
+    runtimeChoice: ExternalAgentRuntime,
     options?: { openChooserWhenMissing?: boolean; stopWhenUnbound?: boolean },
   ): Promise<PreparedAgentSession | null> {
+    const epoch = chat.workshopEpoch;
     return queueAgentLifecycle(async () => {
       const prepared = await prepareAgentSession(sessionId, runtimeChoice, options);
-      if (chat.focusedSessionId === sessionId) agentConfigOptions = getSessionAgentConfigOptions(sessionId) as AgentSessionConfigOption[];
+      if (chat.workshopEpoch === epoch && chat.focusedSessionId === sessionId) agentConfigOptions = getSessionAgentConfigOptions(sessionId) as AgentSessionConfigOption[];
       return prepared;
     });
   }
@@ -90,6 +98,7 @@ export function createAgentSessionController() {
   }
 
   function onRuntimeChange(value: ChatAgentRuntime) {
+    const epoch = chat.workshopEpoch;
     const sessionId = chat.focusedSessionId;
     if (bots.forSession(sessionId) || isProviderConversationRuntime(getSessionAgentRuntime(sessionId)) || isProviderConversationRuntime(value)) return;
     const previousRuntime = getSessionAgentRuntime(sessionId);
@@ -104,7 +113,7 @@ export function createAgentSessionController() {
         try {
           await queueAgentLifecycle(() => cancelKnownAgent(sessionId, previousId));
         } catch (err) {
-          if (getSessionAgentRuntime(sessionId) === value) {
+          if (chat.workshopEpoch === epoch && getSessionAgentRuntime(sessionId) === value) {
             setSessionAgentRuntime(sessionId, previousRuntime);
             setSessionAgentSessionId(sessionId, previousId);
             if (previousWorkId !== undefined) {
@@ -145,11 +154,14 @@ export function createAgentSessionController() {
   }
 
   async function updateAgentConfig(configId: string, value: unknown) {
-    const agentSessionId = getSessionAgentSessionId(chat.focusedSessionId);
+    const epoch = chat.workshopEpoch;
+    const sessionId = chat.focusedSessionId;
+    const agentSessionId = getSessionAgentSessionId(sessionId);
     if (!agentSessionId) return;
     const response = await setAgentSessionConfigOption(agentSessionId, configId, value);
-    agentConfigOptions = response.config_options;
-    setSessionAgentConfigOptions(chat.focusedSessionId, agentConfigOptions);
+    if (chat.workshopEpoch !== epoch) return;
+    setSessionAgentConfigOptions(sessionId, response.config_options);
+    if (chat.focusedSessionId === sessionId) agentConfigOptions = response.config_options;
   }
 
   $effect(() => {

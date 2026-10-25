@@ -65,6 +65,10 @@ pub struct TerminalSessionSummary {
     #[serde(default)]
     pub argv: Vec<String>,
     #[serde(default)]
+    pub exited: bool,
+    #[serde(default)]
+    pub exit_code: Option<i32>,
+    #[serde(default)]
     pub workspace_context: Option<serde_json::Value>,
     #[serde(default)]
     pub workspace_context_error: Option<String>,

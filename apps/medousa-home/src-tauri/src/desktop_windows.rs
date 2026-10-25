@@ -15,6 +15,8 @@ pub struct DesktopTarget {
     pub kind: DesktopKind,
     pub workshop_id: String,
     pub resource_id: Option<String>,
+    /// Terminal launch intent. Resolved to a PTY resource before window creation.
+    pub ssh_target_id: Option<String>,
     pub path: Option<String>,
     pub title: Option<String>,
 }
@@ -25,6 +27,7 @@ pub enum DesktopKind {
     Chat,
     Create,
     Code,
+    Terminal,
 }
 
 impl DesktopTarget {
@@ -34,6 +37,16 @@ impl DesktopTarget {
             return Err("Choose a workshop for this window".into());
         }
         self.resource_id = self.resource_id.take().filter(|s| !s.is_empty());
+        if let Some(id) = &self.ssh_target_id {
+            if self.kind != DesktopKind::Terminal
+                || self.resource_id.is_some()
+                || id.trim().is_empty()
+                || id.len() > 1024
+                || id.chars().any(char::is_control)
+            {
+                return Err("Invalid SSH terminal destination".into());
+            }
+        }
         if self
             .resource_id
             .as_ref()
@@ -78,9 +91,42 @@ pub struct DesktopWindows {
     targets: std::sync::Mutex<HashMap<String, ResourceWindow>>,
     next_generation: AtomicU64,
     shortcut_error: std::sync::Mutex<Option<String>>,
+    spotlight: std::sync::Mutex<Option<ResourceWindow>>,
+    terminals: crate::desktop_terminals::TerminalWindows,
+    spotlight_requests: std::sync::Mutex<
+        HashMap<u64, tokio::sync::oneshot::Sender<Result<serde_json::Value, String>>>,
+    >,
+}
+
+pub fn is_resource_window(label: &str) -> bool {
+    crate::active_workshop::is_resource_window(label)
+}
+
+fn validate_spotlight_request(
+    label: &str,
+    scope: Option<&str>,
+    requested: &str,
+    bytes: usize,
+) -> Result<(), String> {
+    if label != "desktop-spotlight" || scope != Some(requested) {
+        return Err("Spotlight workshop changed. Reopen it and try again.".into());
+    }
+    if bytes > 128 * 1024 {
+        return Err("Spotlight request is too large".into());
+    }
+    Ok(())
 }
 
 pub fn scope_for(app: &AppHandle, label: &str) -> Option<String> {
+    if label == "desktop-spotlight" {
+        return app
+            .state::<DesktopWindows>()
+            .spotlight
+            .lock()
+            .ok()?
+            .as_ref()
+            .map(|entry| entry.target.workshop_id.clone());
+    }
     if !label.starts_with("desktop-work-") {
         return None;
     }
@@ -93,6 +139,15 @@ pub fn scope_for(app: &AppHandle, label: &str) -> Option<String> {
 }
 
 pub fn generation_for(app: &AppHandle, label: &str) -> Option<u64> {
+    if label == "desktop-spotlight" {
+        return app
+            .state::<DesktopWindows>()
+            .spotlight
+            .lock()
+            .ok()?
+            .as_ref()
+            .map(|entry| entry.generation);
+    }
     if !label.starts_with("desktop-work-") {
         return None;
     }
@@ -108,7 +163,7 @@ pub fn generation_for(app: &AppHandle, label: &str) -> Option<u64> {
 /// after that selection changes. Scoped editing/streaming continues normally.
 pub fn check_command_scope(app: &AppHandle, label: &str, command: &str) -> Result<(), String> {
     let Some(scope) = scope_for(app, label) else {
-        return if label.starts_with("desktop-work-") {
+        return if is_resource_window(label) {
             Err("The work window was closed".into())
         } else {
             Ok(())
@@ -185,8 +240,13 @@ pub async fn desktop_open_window(
     mut target: DesktopTarget,
 ) -> Result<String, String> {
     target.validate()?;
-    crate::active_workshop::resolve_scope_async(target.workshop_id.clone()).await?;
+    let workshop = crate::active_workshop::resolve_scope_async(target.workshop_id.clone()).await?;
     let state = app.state::<DesktopWindows>();
+    if target.kind == DesktopKind::Terminal {
+        let config = crate::active_workshop::transport_for_target_async(workshop).await?;
+        state.terminals.resolve(&config, &mut target).await?;
+        target.validate()?;
+    }
     let _gate = state.gate.lock().await;
     let label = target.label();
     if let Some(window) = app.get_webview_window(&label) {
@@ -222,6 +282,7 @@ pub async fn desktop_open_window(
             DesktopKind::Chat => "Chat",
             DesktopKind::Create => "Create",
             DesktopKind::Code => "Code",
+            DesktopKind::Terminal => "Terminal",
         });
     let result = create_popout_window(
         &app,
@@ -259,9 +320,43 @@ pub async fn desktop_toggle_spotlight(app: AppHandle) -> Result<(), String> {
     let state = app.state::<DesktopWindows>();
     let _gate = state.gate.lock().await;
     if let Some(window) = app.get_webview_window("desktop-spotlight") {
-        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+        if window.is_visible().unwrap_or(false) {
+            window
+                .emit("desktop-spotlight-dismiss", ())
+                .map_err(|e| e.to_string())?;
             return window.hide().map_err(|e| e.to_string());
         }
+    }
+    let scope = tauri::async_runtime::spawn_blocking(|| {
+        crate::workshop_registry::ensure_migrated().map(|registry| registry.active_workshop_id)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let changed = {
+        let mut slot = state.spotlight.lock().map_err(|e| e.to_string())?;
+        let changed = slot
+            .as_ref()
+            .is_none_or(|entry| entry.target.workshop_id != scope);
+        if changed {
+            *slot = Some(ResourceWindow {
+                target: DesktopTarget {
+                    kind: DesktopKind::Chat,
+                    workshop_id: scope,
+                    resource_id: None,
+                    ssh_target_id: None,
+                    path: None,
+                    title: None,
+                },
+                generation: state.next_generation.fetch_add(1, Ordering::Relaxed) + 1,
+            });
+        }
+        changed
+    };
+    if changed {
+        app.state::<crate::daemon::DaemonState>()
+            .cancel_window_streams("desktop-spotlight");
+    }
+    if let Some(window) = app.get_webview_window("desktop-spotlight") {
         window
             .emit("desktop-spotlight-open", ())
             .map_err(|e| e.to_string())?;
@@ -293,6 +388,169 @@ pub async fn desktop_toggle_spotlight(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     window.center().map_err(|e| e.to_string())?;
     show_and_resume(&window)
+}
+
+/// A local UI snapshot, independent of the workshop daemon or file authority.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotlightPointer {
+    buttons_down: bool,
+    inside: bool,
+}
+
+#[tauri::command]
+pub async fn desktop_spotlight_pointer(
+    window: Webview,
+) -> Result<Option<SpotlightPointer>, String> {
+    if window.label() != "desktop-spotlight" {
+        return Err("Pointer checks are only available to Desktop Spotlight".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let native = window
+            .app_handle()
+            .get_webview_window("desktop-spotlight")
+            .ok_or_else(|| "Spotlight is closed".to_string())?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let target = native.clone();
+        native
+            .run_on_main_thread(move || {
+                let result = target
+                    .ns_window()
+                    .map(|pointer| {
+                        // AppKit coordinates are screen points for both mouseLocation and frame.
+                        let native = unsafe { &*(pointer as *const objc2_app_kit::NSWindow) };
+                        let frame = native.frame();
+                        let point = objc2_app_kit::NSEvent::mouseLocation();
+                        SpotlightPointer {
+                            buttons_down: objc2_app_kit::NSEvent::pressedMouseButtons() != 0,
+                            inside: point.x >= frame.origin.x
+                                && point.x < frame.origin.x + frame.size.width
+                                && point.y >= frame.origin.y
+                                && point.y < frame.origin.y + frame.size.height,
+                        }
+                    })
+                    .map_err(|error| error.to_string());
+                let _ = tx.send(result);
+            })
+            .map_err(|error| error.to_string())?;
+        rx.await.map_err(|error| error.to_string())?.map(Some)
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(None)
+}
+
+/// Pin legacy actions and stream consumers to the workshop shown by this opening.
+#[tauri::command]
+pub fn desktop_spotlight_context(app: AppHandle, window: Webview) -> Result<String, String> {
+    if window.label() != "desktop-spotlight" {
+        return Err("This command belongs to Desktop Spotlight".into());
+    }
+    scope_for(&app, window.label())
+        .ok_or("Open Desktop Spotlight again to choose a workshop".into())
+}
+
+/// Restore a failed handoff without changing the launcher's retained workshop.
+#[tauri::command]
+pub fn desktop_spotlight_restore(
+    app: AppHandle,
+    window: Webview,
+    workshop_id: String,
+) -> Result<(), String> {
+    validate_spotlight_request(
+        window.label(),
+        scope_for(&app, window.label()).as_deref(),
+        &workshop_id,
+        0,
+    )?;
+    show_and_resume(
+        &app.get_webview_window("desktop-spotlight")
+            .ok_or("Desktop Spotlight closed")?,
+    )
+}
+
+/// Route known UI commands to their actual shell owner. No code or functions cross IPC.
+#[tauri::command]
+pub async fn desktop_spotlight_request(
+    app: AppHandle,
+    window: Webview,
+    workshop_id: String,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    validate_spotlight_request(
+        window.label(),
+        scope_for(&app, window.label()).as_deref(),
+        &workshop_id,
+        serde_json::to_vec(&request)
+            .map_err(|e| e.to_string())?
+            .len(),
+    )?;
+    let generation = generation_for(&app, window.label());
+    let state = app.state::<DesktopWindows>();
+    let id = state.next_generation.fetch_add(1, Ordering::Relaxed) + 1;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    {
+        let mut requests = state.spotlight_requests.lock().map_err(|e| e.to_string())?;
+        if requests.len() >= 16 {
+            return Err("Wait for the current Spotlight action to finish".into());
+        }
+        requests.insert(id, tx);
+    }
+    let send = app.emit_to(
+        "main",
+        "desktop-spotlight-request",
+        serde_json::json!({"id":id,"workshopId":workshop_id,"request":request}),
+    );
+    if let Err(error) = send {
+        state
+            .spotlight_requests
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&id);
+        return Err(error.to_string());
+    }
+    let wait = if request.get("kind").and_then(serde_json::Value::as_str) == Some("collect") {
+        10
+    } else {
+        120
+    };
+    let result = tokio::time::timeout(std::time::Duration::from_secs(wait), rx).await;
+    state
+        .spotlight_requests
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&id);
+    if generation != generation_for(&app, window.label()) {
+        return Err("Spotlight changed workshops while this request was processing. Check Medousa before retrying an action.".into());
+    }
+    result.map_err(|_| "Medousa did not acknowledge this request. Check the main window before retrying an action.".to_string())?
+        .map_err(|_| "The Spotlight command owner closed".to_string())?
+}
+
+#[tauri::command]
+pub fn desktop_spotlight_reply(
+    app: AppHandle,
+    window: Webview,
+    id: u64,
+    result: Option<serde_json::Value>,
+    error: Option<String>,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("Only the main shell can acknowledge its commands".into());
+    }
+    if let Some(tx) = app
+        .state::<DesktopWindows>()
+        .spotlight_requests
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&id)
+    {
+        let _ = tx.send(match error {
+            Some(error) => Err(error),
+            None => Ok(result.unwrap_or(serde_json::Value::Null)),
+        });
+    }
+    Ok(())
 }
 
 pub fn install_shortcut(app: &AppHandle) -> tauri::Result<()> {
@@ -334,12 +592,35 @@ pub fn install_shortcut(app: &AppHandle) -> tauri::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn spotlight_requests_require_native_launcher_identity_and_pinned_scope() {
+        use super::validate_spotlight_request;
+        assert!(validate_spotlight_request("desktop-spotlight", Some("a"), "a", 1024).is_ok());
+        assert!(validate_spotlight_request("main", Some("a"), "a", 1024).is_err());
+        assert!(validate_spotlight_request("desktop-work-test", Some("a"), "a", 1024).is_err());
+        assert!(validate_spotlight_request("desktop-spotlight", Some("b"), "a", 1024).is_err());
+        assert!(validate_spotlight_request("desktop-spotlight", None, "a", 1024).is_err());
+        assert!(
+            validate_spotlight_request("desktop-spotlight", Some("a"), "a", 128 * 1024 + 1)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn launcher_and_work_window_consumers_survive_main_workshop_switches() {
+        use super::is_resource_window;
+        assert!(is_resource_window("desktop-spotlight"));
+        assert!(is_resource_window("desktop-work-test"));
+        assert!(!is_resource_window("main"));
+        assert!(!is_resource_window("desktop-spotlight-forged"));
+    }
     use super::*;
     fn target() -> DesktopTarget {
         DesktopTarget {
             kind: DesktopKind::Code,
             workshop_id: "personal".into(),
             resource_id: Some("project".into()),
+            ssh_target_id: None,
             path: None,
             title: None,
         }
@@ -371,6 +652,26 @@ mod tests {
         assert!(t.validate().is_err());
         t = target();
         t.resource_id = Some("bad\n".into());
+        assert!(t.validate().is_err());
+    }
+    #[test]
+    fn terminal_intents_resolve_to_a_single_session_identity() {
+        let mut t = target();
+        t.kind = DesktopKind::Terminal;
+        t.resource_id = None;
+        t.ssh_target_id = Some("nas".into());
+        assert!(t.validate().is_ok());
+        t.resource_id = Some("session".into());
+        assert!(t.validate().is_err());
+        t.ssh_target_id = None;
+        assert!(t.validate().is_ok());
+        let label = t.label();
+        t.title = Some("SSH · Renamed".into());
+        assert_eq!(t.label(), label);
+        t.workshop_id = "another-workshop".into();
+        assert_ne!(t.label(), label);
+        t.kind = DesktopKind::Chat;
+        t.ssh_target_id = Some("nas".into());
         assert!(t.validate().is_err());
     }
 }

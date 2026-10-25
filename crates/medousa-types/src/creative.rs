@@ -586,6 +586,7 @@ pub struct CreativeCodeContextRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreativeCodeContext {
+    pub snapshot_id: String,
     pub context: CreativeSelectionContext,
     pub media_refs: Vec<crate::MediaRef>,
 }

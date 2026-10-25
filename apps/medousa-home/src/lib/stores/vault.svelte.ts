@@ -105,14 +105,13 @@ import type { ChartFenceKv } from "$lib/utils/vaultChartFence";
 import type { LiquidFenceDraft, LiquidFenceLang } from "$lib/utils/vaultLiquidFence";
 import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 import type { WorkspaceEvent } from "$lib/types/workspace";
-import { loadVaultRecent, rememberVaultRecent } from "$lib/utils/vaultRecent";
+import { loadLastNote, rememberOpenedVaultNote, resetVaultRootContext, restoreVaultRootPreferences } from "$lib/vault/vaultRootContext";
 import {
   formatDiffChip,
   lineDiffStats,
   type LineDiffStats,
 } from "$lib/utils/vaultDiff";
 
-const LAST_NOTE_KEY = "medousa-home-last-note";
 const EDITOR_SURFACE_KEY = "medousa-home-vault-editor-surface";
 const NOTE_PLANE_KEY = "medousa-home-vault-note-plane";
 
@@ -126,7 +125,7 @@ export class VaultStore {
   workshopEpoch = 0;
   listingIncomplete = $state(false);
   tree = $state<VaultTreeNode[]>([]);
-  selectedPath = $state<string | null>(loadLastNote());
+  selectedPath = $state<string | null>(null);
   /** Multi-select in the vault rail (tree / browse lists). */
   selectedPaths = $state<Set<string>>(new Set());
   /** Anchor for shift-click range selection. */
@@ -214,7 +213,7 @@ export class VaultStore {
   /** Engine lacks GET /v1/vault/roots (older build). */
   vaultRootsUnavailable = $state(false);
   addVaultRootOpen = $state(false);
-  recentPaths = $state<string[]>(loadVaultRecent());
+  recentPaths = $state<string[]>([]);
   libraryBrowseMode = $state<LibraryBrowseMode>(loadLibraryBrowseMode());
   vaultTags = $state<VaultTagCount[]>([]);
   /** Bumps when note content is replaced externally (open note, reload) — not on typing. */
@@ -352,7 +351,8 @@ export class VaultStore {
   }
   addCustomGroup(label: string) { return this.#browse.addCustomGroup(label); }
   scheduleNotesRefresh() { this.#browse.scheduleNotesRefresh(); }
-  refreshNotes() { return this.#browse.refreshNotes(); }
+  refreshNotes() { return this.#roots.refreshNotes(); }
+  refreshNotesForCurrentRoot() { return this.#browse.refreshNotes(); }
   runSearch(query: string) { return this.#browse.runSearch(query); }
 
   clearAutosaveTimer() { this.#editor.clearAutosaveTimer(); }
@@ -425,6 +425,11 @@ export class VaultStore {
     this.#editor.restoreBufferIntoFocused(buffer);
   }
   resetEditorBuffers() { this.#editor.resetEditorBuffers(); }
+  flushForVaultRootChange() { return this.#editor.flushForVaultRootChange(); }
+  hasPendingVaultEdits() { return this.#editor.hasPendingVaultEdits(); }
+
+  resetForVaultRootChange() { return resetVaultRootContext(this, () => this.#browse.resetForWorkshopSwitch(), () => this.#roots.resetForWorkshopSwitch(true)); }
+  restoreVaultRootPreferences() { restoreVaultRootPreferences(this); }
 
   openViewBridgeInsert(insertAt: number) { this.#bridge.openViewBridgeInsert(insertAt); }
   openViewBridgeEdit(index: number) { this.#bridge.openViewBridgeEdit(index); }
@@ -508,7 +513,7 @@ export class VaultStore {
   }
 
   get lastNotePath(): string | null {
-    return loadLastNote();
+    return loadLastNote(this.activeVaultRootId);
   }
 
   get defaultCreateSpaceId(): string {
@@ -624,6 +629,7 @@ export class VaultStore {
       await this.openLooseFile(raw, { skipLeaveFlush: options?.skipLeaveFlush });
       return;
     }
+    await this.#roots.prepareForNoteAccess();
 
     const nextPath = this.normalizeNotePath(raw);
     if (!nextPath) return;
@@ -662,9 +668,7 @@ export class VaultStore {
       publishVaultLookupSnapshot(this.lookupSnapshot);
       this.#editor.restoreBufferIntoFocused(buffered);
       this.restoreEditorUi(nextPath);
-      localStorage.setItem(LAST_NOTE_KEY, nextPath);
-      rememberVaultRecent(nextPath);
-      this.recentPaths = loadVaultRecent();
+      rememberOpenedVaultNote(this, nextPath);
       await this.refreshBacklinks(nextPath);
       return;
     }
@@ -694,9 +698,7 @@ export class VaultStore {
       this.applyNote(response);
       this.#editor.writeBufferFromResponse(nextPath, response);
       this.restoreEditorUi(nextPath);
-      localStorage.setItem(LAST_NOTE_KEY, nextPath);
-      rememberVaultRecent(nextPath);
-      this.recentPaths = loadVaultRecent();
+      rememberOpenedVaultNote(this, nextPath);
       await this.refreshBacklinks(nextPath);
     } catch (err) {
       if (openGen === this.openGeneration && this.selectedPath === nextPath) {
@@ -859,9 +861,10 @@ export class VaultStore {
       this.backlinks = [];
       return;
     }
+    const epoch = this.workshopEpoch;
     try {
       const response = await getVaultBacklinks(path);
-      this.backlinks = response.backlinks;
+      if (epoch === this.workshopEpoch && this.selectedPath === path && !this.isLooseFile) this.backlinks = response.backlinks;
     } catch {
       // Non-fatal — note metadata may still have backlinks.
     }
@@ -892,6 +895,7 @@ export class VaultStore {
     /** When false, refresh the index but do not open the note (browser save). */
     open?: boolean;
   }) {
+    await this.#roots.prepareForNoteAccess();
     this.saving = true;
     this.error = null;
     try {
@@ -1357,10 +1361,6 @@ export class VaultStore {
   }
 }
 
-function loadLastNote(): string | null {
-  if (typeof localStorage === "undefined") return null;
-  return localStorage.getItem(LAST_NOTE_KEY);
-}
 
 function loadEditorSurface(): "write" | "source" {
   if (typeof localStorage === "undefined") return "write";

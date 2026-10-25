@@ -9,6 +9,7 @@ import type { VaultNoteKind } from "$lib/utils/vaultFrontmatter";
 import { noteEditorRuntimes } from "$lib/vault/noteEditorRuntimes.svelte";
 import { toast } from "$lib/runtime/toast.svelte";
 import { isAbsoluteDiskPath } from "$lib/utils/vaultNoteTitle";
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
 import {
   fileNameFromAbsolutePath,
   invalidateVaultRootCache,
@@ -43,6 +44,7 @@ export type VaultRootsHost = {
   selectedKind: VaultNoteKind;
   openGeneration: number;
   workshopEpoch: number;
+  saving: boolean;
   clearAutosaveTimer(): void;
   clearProposal(): void;
   clearRailSelection(): void;
@@ -57,13 +59,20 @@ export type VaultRootsHost = {
   syncLmeNoteTab(path: string): Promise<void>;
   bumpContentSync(): void;
   bumpNoteBuffers(): void;
-  refreshNotes(): Promise<void>;
+  refreshNotesForCurrentRoot(): Promise<void>;
+  flushForVaultRootChange(): Promise<boolean>;
+  hasPendingVaultEdits(): boolean;
+  resetForVaultRootChange(): Promise<void>;
+  restoreVaultRootPreferences(): void;
   resetEditorBuffers(): void;
 };
 
 export class VaultRootsController {
   #host: VaultRootsHost;
   #looseOpenInFlight = new Map<string, Promise<boolean>>();
+  #initializedEpoch = -1;
+  #refresh: { epoch: number; work: Promise<void> } | null = null;
+  #switching: Promise<void> | null = null;
 
   constructor(host: VaultRootsHost) {
     this.#host = host;
@@ -209,17 +218,56 @@ export class VaultRootsController {
     }
   }
 
+  async ensureVaultRoots() {
+    if (this.#switching) await this.#switching;
+    if (this.#initializedEpoch === this.#host.workshopEpoch) return;
+    await this.loadVaultRoots();
+    if (this.#initializedEpoch !== this.#host.workshopEpoch) throw new Error(this.#host.vaultRootsError ?? "Couldn’t determine the active vault. Try again.");
+  }
+  async refreshNotes() {
+    try { await this.refreshVaultRoots(); await this.ensureVaultRoots(); await this.#host.refreshNotesForCurrentRoot(); }
+    catch (cause) { this.#host.error = cause instanceof Error ? cause.message : String(cause); }
+  }
+  async prepareForNoteAccess() {
+    const selected = this.#host.activeVaultRootId;
+    await this.refreshVaultRoots(); await this.ensureVaultRoots();
+    if (selected && selected !== this.#host.activeVaultRootId) throw new Error("The active vault changed. Open the note again from its current vault.");
+  }
+
   async refreshVaultRoots() {
+    if (this.#switching) await this.#switching;
+    await this.loadVaultRoots();
+  }
+
+  private loadVaultRoots(): Promise<void> {
+    const epoch = this.#host.workshopEpoch;
+    if (this.#refresh?.epoch === epoch) return this.#refresh.work;
+    const work = this.performRefreshVaultRoots().finally(() => {
+      if (this.#refresh?.work === work) this.#refresh = null;
+    });
+    this.#refresh = { epoch, work };
+    return work;
+  }
+
+  private async performRefreshVaultRoots() {
     const host = this.#host;
-    const workshopEpoch = host.workshopEpoch;
+    let workshopEpoch = host.workshopEpoch;
     host.vaultRootsLoading = true;
     host.vaultRootsError = null;
     try {
       const response = await listVaultRoots();
       if (workshopEpoch !== host.workshopEpoch) return;
+      if (host.activeVaultRootId && host.activeVaultRootId !== response.activeRootId) {
+        if (host.hasPendingVaultEdits()) throw new Error("The active vault changed elsewhere. Switch back to save your pending note edits.");
+        await host.resetForVaultRootChange();
+        workshopEpoch += 1;
+        if (workshopEpoch !== host.workshopEpoch) return;
+      }
       host.vaultRootsUnavailable = false;
       host.vaultRoots = response.roots;
       host.activeVaultRootId = response.activeRootId;
+      host.restoreVaultRootPreferences();
+      this.#initializedEpoch = host.workshopEpoch;
     } catch (err) {
       if (workshopEpoch !== host.workshopEpoch) return;
       const message = err instanceof Error ? err.message : String(err);
@@ -237,7 +285,9 @@ export class VaultRootsController {
           },
         ];
         host.activeVaultRootId = "personal";
+        this.#initializedEpoch = host.workshopEpoch;
       } else {
+        this.#initializedEpoch = -1;
         host.vaultRootsError = message;
       }
     } finally {
@@ -247,36 +297,44 @@ export class VaultRootsController {
     }
   }
 
-  async switchVaultRoot(rootId: string) {
+  switchVaultRoot(rootId: string): Promise<void> {
+    const prior = this.#switching;
+    const scope = activeWorkshopId();
+    const work = (prior ? prior.catch(() => {}) : Promise.resolve()).then(() => this.performSwitchVaultRoot(rootId, scope));
+    this.#switching = work;
+    void work.finally(() => { if (this.#switching === work) this.#switching = null; }).catch(() => {});
+    return work;
+  }
+
+  private async performSwitchVaultRoot(rootId: string, scope: string) {
     const host = this.#host;
+    if (scope !== activeWorkshopId()) throw new Error("The workshop changed before switching vaults.");
     if (!rootId.trim() || rootId === host.activeVaultRootId) return;
+    const epoch = host.workshopEpoch;
+    if (!(await host.flushForVaultRootChange())) {
+      host.error ??= "Save your pending note edits before switching vaults.";
+      throw new Error(host.error);
+    }
+    if (epoch !== host.workshopEpoch || scope !== activeWorkshopId()) return;
+    if (host.saving) throw new Error("Wait for the current note operation before switching vaults.");
     host.clearAutosaveTimer();
-    host.clearProposal();
-    this.clearLooseFile();
-    host.selectedPath = null;
-    host.clearRailSelection();
-    host.content = "";
-    host.baselineContent = "";
-    host.contentHash = null;
-    host.noteTags = [];
-    host.wikilinksOut = [];
-    host.backlinks = [];
-    host.title = "";
-    host.dirty = false;
-    host.searchHits = [];
-    host.searchQuery = "";
-    host.notes = [];
-    host.tree = [];
-    host.error = null;
-    invalidateVaultRootCache();
+    host.openGeneration += 1;
+    host.noteLoading = true;
     try {
       const response = await setActiveVaultRoot(rootId);
+      if (epoch !== host.workshopEpoch || scope !== activeWorkshopId()) return;
+      await host.resetForVaultRootChange();
+      if (host.workshopEpoch !== epoch + 1 || scope !== activeWorkshopId()) return;
       host.vaultRoots = response.roots;
       host.activeVaultRootId = response.activeRootId;
-      await host.refreshNotes();
+      host.restoreVaultRootPreferences();
+      this.#initializedEpoch = host.workshopEpoch;
+      await host.refreshNotesForCurrentRoot();
     } catch (err) {
-      host.error = err instanceof Error ? err.message : String(err);
+      if (scope === activeWorkshopId() && (host.workshopEpoch === epoch || host.workshopEpoch === epoch + 1)) host.error = err instanceof Error ? err.message : String(err);
       throw err;
+    } finally {
+      if (scope === activeWorkshopId() && (host.workshopEpoch === epoch || host.workshopEpoch === epoch + 1)) host.noteLoading = false;
     }
   }
 
@@ -309,7 +367,9 @@ export class VaultRootsController {
     this.#host.addVaultRootOpen = false;
   }
 
-  resetForWorkshopSwitch() {
+  resetForWorkshopSwitch(preserveSwitch = false) {
+    this.#initializedEpoch = -1;
+    if (!preserveSwitch) { this.#switching = null; this.#refresh = null; }
     const host = this.#host;
     host.clearAutosaveTimer();
     host.resetEditorBuffers();

@@ -9,6 +9,7 @@ export const APP_SHELL_ROOT_RESOURCE_IDS = [
   "peer-message-notifications",
   "remote-peer-completion-sync",
   "command-spotlight-hotkeys",
+  "desktop-spotlight-command-host",
 ] as const;
 
 export type RootResourceId = (typeof APP_SHELL_ROOT_RESOURCE_IDS)[number];

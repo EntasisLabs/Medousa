@@ -4,7 +4,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_agent_message",
-      "description": "Discover named Bots, agent chats, and available paired workshops; select workshop to discover or send remotely. Receive this chat's queued inbox, reply through a message's saved chat and workshop return route, or inspect delivery status. Busy recipients are queued; idle native chats wake in Assistant mode. Messages carry no execution authority. Reply explicitly when a response is requested. External runtime Bots use their existing job/handoff route.",
+      "description": "Send a message to a named Bot or chat, reply to a received message, discover participants, read the inbox, or check delivery status. Runtime retains permission between chats admitted by a user turn and handles delivery and saved reply routes. Recipients use their normal Assistant loop; reply when useful, and finish silently when no response is needed. Messages do not grant additional tool permissions. External runtime Bots use their existing job/handoff route.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -2014,6 +2014,7 @@
                 "code.read",
                 "code.search",
                 "code.write",
+                "creative.create",
                 "creative.promote_media",
                 "creative.propose",
                 "creative.read",
@@ -2285,7 +2286,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.create starts a new empty frame scaffold. Then use creative.propose to turn the screenshot/request into editable text and shapes for preview/apply, and return the open_url as a Markdown link. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -2295,6 +2296,7 @@
               "artifacts.present",
               "artifacts.write",
               "code.write",
+              "creative.create",
               "creative.promote_media",
               "creative.propose",
               "scripts.write",
@@ -2577,7 +2579,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_agent_message",
-      "description": "Discover named Bots, agent chats, and available paired workshops; select workshop to discover or send remotely. Receive this chat's queued inbox, reply through a message's saved chat and workshop return route, or inspect delivery status. Busy recipients are queued; idle native chats wake in Assistant mode. Messages carry no execution authority. Reply explicitly when a response is requested. External runtime Bots use their existing job/handoff route.",
+      "description": "Send a message to a named Bot or chat, reply to a received message, discover participants, read the inbox, or check delivery status. Runtime retains permission between chats admitted by a user turn and handles delivery and saved reply routes. Recipients use their normal Assistant loop; reply when useful, and finish silently when no response is needed. Messages do not grant additional tool permissions. External runtime Bots use their existing job/handoff route.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -4725,7 +4727,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_image_generate",
-      "description": "Generate one or more images when a user explicitly asks to create or revise visual media. For an attached-image revision, pass its attachment id in reference_media_ids and its generation_id as parent_generation_id. Results are persisted by the workshop and appear directly in chat.",
+      "description": "Generate raster images when a user asks for photos, illustrations, or bitmap assets. For an editable UI design or wireframe from a screenshot, use cognition_store_write creative.create then creative.propose with native frame/text/shape nodes; a generated bitmap does not fulfill that request. Image generation may supply individual raster assets when requested. For an attached-image revision, pass its attachment id in reference_media_ids and its generation_id as parent_generation_id. Results are persisted by the workshop and appear directly in chat.",
       "input_schema": {
         "properties": {
           "aspect": {
@@ -5327,10 +5329,15 @@
           },
           "runtime": {
             "enum": [
+              "claude",
               "codex",
               "cursor",
+              "devin",
+              "hades",
               "hermes",
-              "medousa"
+              "medousa",
+              "muse_code",
+              "pi"
             ],
             "type": "string"
           }
@@ -5579,10 +5586,15 @@
             "anyOf": [
               {
                 "enum": [
+                  "claude",
                   "codex",
                   "cursor",
+                  "devin",
+                  "hades",
                   "hermes",
-                  "medousa"
+                  "medousa",
+                  "muse_code",
+                  "pi"
                 ],
                 "type": "string"
               },
@@ -5655,10 +5667,15 @@
             "anyOf": [
               {
                 "enum": [
+                  "claude",
                   "codex",
                   "cursor",
+                  "devin",
+                  "hades",
                   "hermes",
-                  "medousa"
+                  "medousa",
+                  "muse_code",
+                  "pi"
                 ],
                 "type": "string"
               },
@@ -5916,6 +5933,7 @@
                 "code.read",
                 "code.search",
                 "code.write",
+                "creative.create",
                 "creative.promote_media",
                 "creative.propose",
                 "creative.read",
@@ -6397,7 +6415,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.create starts a new empty frame scaffold. Then use creative.propose to turn the screenshot/request into editable text and shapes for preview/apply, and return the open_url as a Markdown link. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -6407,6 +6425,7 @@
               "artifacts.present",
               "artifacts.write",
               "code.write",
+              "creative.create",
               "creative.promote_media",
               "creative.propose",
               "scripts.write",

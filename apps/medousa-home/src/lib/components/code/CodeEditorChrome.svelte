@@ -400,6 +400,14 @@
             {@render projectMenu()}
           {/if}
         </OverflowMenu>
+      {:else if projectMenu}
+        <OverflowMenu
+          label="Project options"
+          title="Project options"
+          panelClass="w-[min(16rem,calc(100vw-2rem))] rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+        >
+          {@render projectMenu()}
+        </OverflowMenu>
       {/if}
     </div>
   </header>

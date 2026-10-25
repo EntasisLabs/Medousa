@@ -1,3 +1,5 @@
+import { EXTERNAL_AGENTS, isExternalRuntime, externalAgent } from "$lib/utils/externalAgentCatalog";
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * Per-session agent runtime preference (Medousa native vs ACP external).
  *
@@ -23,13 +25,13 @@ function scopedKey(key: string): string {
   return workshopScopedStorageKey(key);
 }
 
-export type ChatAgentRuntime = "medousa" | "cursor" | "codex" | "hermes" | "muse" | "grok_bot" | "instinct" | "dots";
+export type ChatAgentRuntime = "medousa" | ExternalAgentRuntime | "muse" | "grok_bot" | "instinct" | "dots";
 
-const VALID = new Set<ChatAgentRuntime>(["medousa", "cursor", "codex", "hermes", "muse", "grok_bot", "instinct", "dots"]);
+const VALID = new Set<ChatAgentRuntime>(["medousa", ...EXTERNAL_AGENTS.map(agent => agent.id), "muse", "grok_bot", "instinct", "dots"]);
 
 /** Cursor/Codex/Hermes — external ACP participants (waitable turns on the daemon). */
-export function isExternalAgentRuntime(runtime: ChatAgentRuntime): runtime is "cursor" | "codex" | "hermes" {
-  return runtime === "cursor" || runtime === "codex" || runtime === "hermes";
+export function isExternalAgentRuntime(runtime: ChatAgentRuntime): runtime is ExternalAgentRuntime {
+  return isExternalRuntime(runtime);
 }
 
 export function isProviderConversationRuntime(runtime: ChatAgentRuntime): runtime is "muse" | "grok_bot" | "instinct" | "dots" {
@@ -225,13 +227,8 @@ export function setSessionAgentRuntime(
 }
 
 export function agentRuntimeLabel(runtime: ChatAgentRuntime): string {
+  if (isExternalRuntime(runtime)) return runtime === "codex" ? "ChatGPT / Codex" : externalAgent(runtime).label;
   switch (runtime) {
-    case "cursor":
-      return "Cursor";
-    case "codex":
-      return "ChatGPT / Codex";
-    case "hermes":
-      return "Hermes";
     case "instinct":
       return "Instinct Agent";
     case "dots":

@@ -4,10 +4,10 @@ const RECENT_KEY = "medousa-home-vault-recent";
 const MAX_RECENT = 8;
 const DEFAULT_GROUP_LIMIT = 3;
 
-export function loadVaultRecent(): string[] {
+export function loadVaultRecent(scopeKey?: string): string[] {
   if (typeof localStorage === "undefined") return [];
   try {
-    const raw = localStorage.getItem(RECENT_KEY);
+    const raw = localStorage.getItem(scopeKey ? `${RECENT_KEY}:${scopeKey}` : RECENT_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
@@ -18,14 +18,14 @@ export function loadVaultRecent(): string[] {
   }
 }
 
-export function rememberVaultRecent(path: string) {
+export function rememberVaultRecent(path: string, scopeKey?: string) {
   const trimmed = path.trim();
   if (!trimmed || typeof localStorage === "undefined") return;
-  const next = [trimmed, ...loadVaultRecent().filter((entry) => entry !== trimmed)].slice(
+  const next = [trimmed, ...loadVaultRecent(scopeKey).filter((entry) => entry !== trimmed)].slice(
     0,
     MAX_RECENT,
   );
-  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  localStorage.setItem(scopeKey ? `${RECENT_KEY}:${scopeKey}` : RECENT_KEY, JSON.stringify(next));
 }
 
 function normalizeFolderPrefix(prefix: string): string {

@@ -30,6 +30,7 @@ export function hostContext(context: MedousaContext): HostTurnContext {
   const bounded = boundContext(context);
   return {
     source: bounded.surface,
+    references: bounded.references ?? [],
     workspace: bounded.workspace,
     resource_kind: bounded.url ? "page" : bounded.notePath ? "note" : bounded.file ? "file" : undefined,
     resource_path: bounded.notePath ?? bounded.file,

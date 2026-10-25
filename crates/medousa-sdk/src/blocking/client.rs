@@ -1104,6 +1104,9 @@ impl BlockingVaultApi<'_> {
 
     pub fn search(&self, query: &VaultSearchQuery) -> Result<VaultSearchResponse, SdkError> {
         let mut params = Vec::new();
+        if let Some(root_id) = &query.root_id {
+            params.push(("root_id", root_id.clone()));
+        }
         if let Some(q) = &query.q {
             params.push(("q", q.clone()));
         }

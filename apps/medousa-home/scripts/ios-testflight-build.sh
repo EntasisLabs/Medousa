@@ -6,7 +6,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%s)}"
-EXPORT_METHOD="${EXPORT_METHOD:-release-testing}"
+EXPORT_METHOD="${EXPORT_METHOD:-app-store-connect}"
+
+# Xcode's release-testing method is Ad Hoc, not TestFlight. Never label a
+# development or Ad Hoc package as ready to upload to App Store Connect.
+if [[ "$EXPORT_METHOD" != "app-store-connect" ]]; then
+  echo "[error] TestFlight requires EXPORT_METHOD=app-store-connect (got: $EXPORT_METHOD)" >&2
+  echo "        Use tauri:ios:build directly for device-only exports." >&2
+  exit 1
+fi
 
 echo "==> Medousa iOS release build"
 echo "    version:     $(node -p "require('./src-tauri/tauri.conf.json').version")"

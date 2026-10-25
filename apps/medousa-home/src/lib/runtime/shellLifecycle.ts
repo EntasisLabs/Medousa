@@ -28,6 +28,7 @@ import {
   applyNativeMobileShellLayout,
   isTauri,
   isTauriMobilePlatform,
+  isTauriDesktop,
   watchMobileViewport,
 } from "$lib/platform";
 import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
@@ -217,7 +218,15 @@ export function startShellRootResources(): () => void {
   });
 
 
+  let hostDisposed = false;
+  let stopHost: (() => void) | undefined;
+  if (isTauriDesktop()) void import("$lib/desktop/spotlightShellBridge").then(({ bindSpotlightShellHost }) => {
+    if (!hostDisposed) stopHost = bindSpotlightShellHost();
+  });
+  const stopSpotlightHost = bindRootResource("desktop-spotlight-command-host", () => { hostDisposed = true; stopHost?.(); });
+
   return () => {
+    stopSpotlightHost();
     stopWizard();
     stopNativeLayout();
     stopViewport();

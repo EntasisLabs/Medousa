@@ -249,7 +249,7 @@ function sanitizeHtml(html: string): string {
     ],
     // Keep Operator's Guide deep-links (`guide:chat`, `guide:chat#panes`).
     ALLOWED_URI_REGEXP:
-      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|guide):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+      /^(?:medousa:\/\/create\/[a-z0-9_-]{1,128}$|(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|guide):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }
 

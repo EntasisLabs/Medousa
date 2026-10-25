@@ -23,7 +23,7 @@ Builds:
   3. Medousa desktop app (tauri build)
 
 With --ios (Mac + Xcode + paid Apple Developer for TestFlight):
-  3. Medousa iOS IPA (release-testing export)
+  3. Medousa iOS IPA (app-store-connect export for TestFlight / App Store)
 
 Desktop artifacts:
   src-tauri/target/release/bundle/

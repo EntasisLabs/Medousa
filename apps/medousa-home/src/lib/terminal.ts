@@ -16,6 +16,8 @@ export type TerminalSessionSummary = {
   root_kind: string;
   work_id: string | null;
   argv?: string[];
+  exited?: boolean;
+  exit_code?: number | null;
   workspace_context?: {
     cwd: string;
     current_branch: string | null;

@@ -3,8 +3,8 @@ use crate::daemon::types::{
     AskJobCompleteActionsResponse, EnqueueAskRequest, EnqueueResponse, JobResultResponse,
 };
 
-use super::window_request::WorkshopRequest;
 use super::sdk::{client_for_request as client, sdk_error};
+use super::window_request::WorkshopRequest;
 
 #[tauri::command]
 pub async fn job_get_result(
@@ -26,8 +26,10 @@ pub async fn job_enqueue_ask(
     manuscript_id: Option<String>,
     additional_manuscript_ids: Option<Vec<String>>,
     suggested_capability_ids: Option<Vec<String>>,
+    host_context: Option<medousa_types::HostTurnContext>,
 ) -> Result<EnqueueResponse, String> {
     let request = EnqueueAskRequest {
+        host_context,
         prompt,
         idempotency_key: None,
         policy_profile: Some("interactive".to_string()),

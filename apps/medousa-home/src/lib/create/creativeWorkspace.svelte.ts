@@ -61,7 +61,7 @@ export function acquireCreativeProject(scope: string, id: string) {
   }
   live.set(key, (live.get(key) ?? 0) + 1);
   const stop = entry.jobs.retain();
-  const refresh = () => { void lease.session.refreshIfClean().catch(() => undefined); };
+  const refresh = () => { void lease.session.refreshIfClean().catch(() => undefined); void entry?.jobs.refresh(); };
   const stopChanges = onCreativeWindowChange(change => { if (change.scope === scope && change.id === id) refresh(); });
   // Focus is also a catch-up point after suspended/offline native windows.
   if (typeof window !== "undefined") window.addEventListener("focus", refresh);
@@ -103,4 +103,12 @@ export async function flushCreativeProject(scope: string, id: string) {
   }
   if (session.pendingHistory) { await session.history(session.pendingHistory.redo); return; }
   if (session.dirty || session.busy) await session.save();
+}
+
+/** A clicked conversation result may target a project that is already mounted. */
+export async function refreshCreativeProject(scope: string, id: string) {
+  const entry = entries.get(JSON.stringify([scope, id]));
+  if (!entry) return;
+  await entry.session.refreshIfClean();
+  await entry.jobs.refresh();
 }

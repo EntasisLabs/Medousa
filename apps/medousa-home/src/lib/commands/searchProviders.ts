@@ -13,6 +13,8 @@ import { fuzzyMatchVaultNotes } from "$lib/utils/vaultFuzzyMatch";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
 import { columnLabel } from "$lib/types/workspace";
+import { vaultSearchCatalog } from "$lib/vault/vaultSearchCatalog.svelte";
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
 
 function fuzzyScore(query: string, text: string): number {
   if (!query) return 1;
@@ -38,6 +40,22 @@ export function buildNoteOpenCommands(
   query: string,
   limit = 12,
 ): WorkshopCommand[] {
+  const catalog = vaultSearchCatalog.resultsFor(query).sort((a, b) => b.score - a.score || a.note.title.localeCompare(b.note.title)).slice(0, limit);
+  if (vaultSearchCatalog.scope === activeWorkshopId()) return catalog.map(hit => {
+    const scope = activeWorkshopId();
+    return {
+      id: `open-note:${encodeURIComponent(hit.rootId)}:${encodeURIComponent(hit.note.path)}`,
+      section: "open", label: `Open note: ${hit.note.title}`,
+      subtitle: `${hit.rootLabel} · ${hit.note.path}`, keywords: `note vault ${hit.rootLabel} ${hit.note.path} ${hit.note.title}`,
+      preview: { kind: "text", text: `${hit.rootLabel} · ${hit.note.path}\n\n${hit.snippet ?? ""}` },
+      run: async ctx => {
+        const requireScope = () => { if (scope !== activeWorkshopId()) throw new Error("The workshop changed. Search for this note again."); };
+        requireScope(); await vault.refreshVaultRoots(); requireScope();
+        await vault.switchVaultRoot(hit.rootId); requireScope();
+        await lmeWorkspace.openNote(hit.note.path); ctx.callbacks.close();
+      },
+    };
+  });
   const labelByPath = vault.labelByPathMap;
   const notes = fuzzyMatchVaultNotes(vault.notes, query, labelByPath, limit);
   return notes.map((note) => {

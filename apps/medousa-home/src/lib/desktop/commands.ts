@@ -3,6 +3,7 @@ import type { SessionSummary } from "$lib/types/session";
 import type { CreativeProjectSummary } from "$lib/types/generated/daemon_api";
 import type { ItemProjection } from "$lib/forge";
 import type { DesktopTarget } from "./windows";
+import type { TerminalSessionSummary } from "$lib/terminal";
 
 /** The same Spotlight command/search UI, with native resource destinations. */
 export function desktopWindowCommands(
@@ -13,6 +14,7 @@ export function desktopWindowCommands(
   open: (target: DesktopTarget) => Promise<unknown>,
   newChat: () => Promise<unknown>,
   main: () => Promise<unknown>,
+  terminals: TerminalSessionSummary[] = [],
 ): WorkshopCommand[] {
   const destination = (id: string, label: string, target: DesktopTarget, subtitle: string): WorkshopCommand => ({
     id, section: "open", label, subtitle, keywords: `${target.kind} ${label}`,
@@ -27,6 +29,7 @@ export function desktopWindowCommands(
     })),
     ...canvases.map(canvas => destination(`desktop-create:${canvas.id}`, canvas.title, { kind: "create", workshopId: scope, resourceId: canvas.id, title: canvas.title }, "Create · canvas")),
     ...projects.map(project => destination(`desktop-code:${project.id}`, project.title, { kind: "code", workshopId: scope, resourceId: project.id, title: project.title }, "Code · project")),
+    ...terminals.filter(session => !session.exited).map(session => destination(`desktop-terminal:${session.session_id}`, session.argv?.[0] === "ssh" ? "SSH terminal" : "Terminal", { kind: "terminal", workshopId: scope, resourceId: session.session_id }, session.cwd || "Workshop shell")),
     { id: "desktop-main", section: "go", label: "Open Medousa", subtitle: "Your full workspace and tabs", keywords: "main home settings workspace", run: async ctx => { await main(); ctx.callbacks.close(); } },
   ];
 }

@@ -2,6 +2,9 @@ import type { ChatMessage, PendingAgentSecret, TurnTicketState } from "$lib/type
 
 /** Per-session chat UI/stream state (kept when focus moves to another session). */
 export type ChatSessionRuntime = {
+  resourceRefs?: import("$lib/types/generated/daemon_api").TurnResourceReference[];
+  noteContext?: import("$lib/utils/vaultNoteBridge").VaultNoteContextScope | null;
+  pinNoteContext?: boolean;
   sessionId: string;
   messages: ChatMessage[];
   draft: string;

@@ -1,4 +1,5 @@
-//! Settings → External Agents: Codex, Cursor, and Hermes account sign-in.
+//! Local vendor setup actions for the existing Codex, Cursor, and Hermes integrations.
+//! Runtime discovery for all external agents comes from the connected daemon.
 //!
 //! Medousa never holds vendor tokens — login orchestrates the official CLIs
 //! (`codex login`, `cursor agent login` / `agent login`, `hermes acp --setup`), which keep
@@ -11,15 +12,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use crate::daemon::window_request::WorkshopRequest;
 use medousa_types::AgentRuntimeInfo;
 use serde::Serialize;
-use tauri::State;
 use tauri_plugin_opener::open_url;
 
-use crate::daemon::{
-    DaemonState,
-    sdk::{client, sdk_error},
-};
+use crate::daemon::sdk::{client_for_request, sdk_error};
 
 fn codex_command() -> String {
     std::env::var("MEDOUSA_ACP_CODEX_COMMAND").unwrap_or_else(|_| "codex".into())
@@ -251,36 +249,11 @@ fn connection_from_runtime(
     label: &str,
     info: Option<&AgentRuntimeInfo>,
 ) -> AccountConnectionInfo {
-    let command = match id {
-        "chatgpt" => Some(codex_command()),
-        "cursor" => Some(cursor_command()),
-        "hermes" => Some(hermes_command()),
-        _ => None,
-    };
-    let binary_present = info
-        .map(|i| i.binary_present)
-        .unwrap_or_else(|| command.as_deref().map(command_on_path).unwrap_or(false));
-    // Prefer local discovery when the daemon hasn't picked up a just-installed CLI yet.
-    let binary_present = binary_present
-        || command.as_deref().map(command_on_path).unwrap_or(false)
-        || (id == "cursor" && (command_on_path("agent") || command_on_path("cursor-agent")))
-        || (id == "hermes" && (command_on_path("hermes") || command_on_path("hermes-acp")));
-
-    let mut auth_status = info
+    let binary_present = info.map(|i| i.binary_present).unwrap_or(false);
+    let auth_status = info
         .and_then(|i| i.auth_status.clone())
         .unwrap_or_else(|| "unknown".into());
-    let mut detail = info.and_then(|i| i.auth_detail.clone().or(i.detail.clone()));
-
-    // Cursor tokens live in the OS keychain — file probes on the daemon often
-    // lag. Ask the local CLI so External Agents flips to signed-in right after login.
-    if id == "cursor" && auth_status != "signed_in" {
-        if let Some((local_status, local_detail)) = local_cursor_auth_status() {
-            auth_status = local_status;
-            if let Some(local_detail) = local_detail {
-                detail = Some(local_detail);
-            }
-        }
-    }
+    let detail = info.and_then(|i| i.auth_detail.clone().or(i.detail.clone()));
 
     AccountConnectionInfo {
         id: id.to_string(),
@@ -291,61 +264,20 @@ fn connection_from_runtime(
             _ => "cursor".into(),
         },
         binary_present,
-        command: info.and_then(|i| i.command.clone()).or(command),
+        command: info.and_then(|i| i.command.clone()),
         auth_status,
         detail,
     }
 }
 
-/// Run `agent status --format json` locally (tokens are in keychain, not files).
-fn local_cursor_auth_status() -> Option<(String, Option<String>)> {
-    ensure_vendor_cli_path();
-    let program = if command_on_path("agent") {
-        resolve_command_abs("agent")
-    } else if command_on_path("cursor-agent") {
-        resolve_command_abs("cursor-agent")
-    } else {
-        return None;
-    };
-    let output = Command::new(&program)
-        .args(["status", "--format", "json"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    let value: serde_json::Value = serde_json::from_str(text.trim()).ok()?;
-    let authenticated = value
-        .get("isAuthenticated")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-        || value.get("status").and_then(|v| v.as_str()) == Some("authenticated");
-    let message = value
-        .get("message")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
-    if authenticated {
-        Some((
-            "signed_in".into(),
-            message.or_else(|| Some("Cursor CLI reports signed in".into())),
-        ))
-    } else {
-        Some((
-            "signed_out".into(),
-            message.or_else(|| Some("Cursor CLI reports signed out".into())),
-        ))
-    }
-}
-
-/// Probe both accounts (via the daemon agents surface when reachable; falls
-/// back to local binary presence when the engine is down).
+/// Legacy three-account projection of the invoking window's daemon runtime status.
 #[tauri::command]
 pub async fn account_connections_probe(
-    state: State<'_, DaemonState>,
+    state: WorkshopRequest,
 ) -> Result<AccountConnections, String> {
     ensure_vendor_cli_path();
-    let runtimes = client(&state)?
+    let runtimes = client_for_request(&state)
+        .await?
         .agents()
         .list_runtimes()
         .await
@@ -455,10 +387,31 @@ fn wait_with_timeout(
     }
 }
 
+async fn require_local_workshop(state: &WorkshopRequest) -> Result<(), String> {
+    let local = match state.target().await? {
+        crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal => true,
+        crate::active_workshop::ActiveWorkshopTarget::Transport { workshop, .. } => {
+            workshop.kind == "local"
+        }
+    };
+    if local {
+        Ok(())
+    } else {
+        Err(
+            "Configure this agent on the workshop host; local credentials belong to this device"
+                .into(),
+        )
+    }
+}
+
 /// Install the vendor CLI for an account using the official installer.
 /// ChatGPT → Codex; Cursor → Agent CLI; Hermes → Hermes Agent.
 #[tauri::command]
-pub async fn account_cli_install(account: String) -> Result<AccountCliInstallResult, String> {
+pub async fn account_cli_install(
+    state: WorkshopRequest,
+    account: String,
+) -> Result<AccountCliInstallResult, String> {
+    require_local_workshop(&state).await?;
     let (command, label) = match account.as_str() {
         "chatgpt" => (codex_command(), "Codex CLI"),
         "cursor" => (cursor_command(), "Cursor Agent CLI"),
@@ -470,17 +423,6 @@ pub async fn account_cli_install(account: String) -> Result<AccountCliInstallRes
         || (account == "hermes" && (command_on_path("hermes") || command_on_path("hermes-acp")))
     {
         let mut detail = format!("{label} is already installed.");
-        if account == "chatgpt" {
-            match ensure_codex_acp_adapter() {
-                Ok(note) => detail = format!("{detail} {note}"),
-                Err(err) => {
-                    detail = format!(
-                        "{detail} (Codex ACP adapter not installed yet: {err}. \
-                         Medousa will try `npx -y @agentclientprotocol/codex-acp@1.1.14` at runtime.)"
-                    );
-                }
-            }
-        }
         if account == "hermes" {
             match ensure_hermes_acp_extra() {
                 Ok(note) => detail = format!("{detail} {note}"),
@@ -551,19 +493,7 @@ if (-not $bash) { throw "Cursor Agent CLI install needs bash (Git Bash or WSL) o
                  Quit and reopen Medousa, or add ~/.local/bin to your PATH."
             ));
         }
-        // Codex ACP needs the separate adapter (stock `codex` has no `acp` subcommand).
         let mut detail = format!("{label_owned} installed — you can sign in now.");
-        if account_owned == "chatgpt" {
-            match ensure_codex_acp_adapter() {
-                Ok(note) => detail = format!("{detail} {note}"),
-                Err(err) => {
-                    detail = format!(
-                        "{detail} (Codex ACP adapter not installed yet: {err}. \
-                         Medousa will try `npx -y @agentclientprotocol/codex-acp@1.1.14` at runtime.)"
-                    );
-                }
-            }
-        }
         if account_owned == "hermes" {
             match ensure_hermes_acp_extra() {
                 Ok(note) => detail = format!("{detail} {note}"),
@@ -670,80 +600,274 @@ fn hermes_acp_ready() -> bool {
     matches!(output, Ok(out) if out.status.success())
 }
 
-/// Install the protocol-tested Codex ACP adapter so ChatGPT runtime can speak ACP.
-fn ensure_codex_acp_adapter() -> Result<String, String> {
-    ensure_vendor_cli_path();
-    if command_on_path("codex-acp") {
-        return Ok("Codex ACP adapter already present.".into());
-    }
-    let npm = ["npm", "npm.cmd"]
-        .into_iter()
-        .find(|name| command_on_path(name))
-        .ok_or_else(|| "npm not found".to_string())?;
-    let mut command = Command::new(npm);
-    command
-        .args(["install", "-g", "@agentclientprotocol/codex-acp@1.1.14"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    detach_new_session(&mut command);
-    let output = command
-        .output()
-        .map_err(|err| format!("couldn't start npm: {err}"))?;
-    if !output.status.success() {
-        let combined = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        return Err(format!(
-            "npm install failed (exit {}): {}",
-            output.status.code().unwrap_or(-1),
-            combined.trim()
-        ));
-    }
-    ensure_vendor_cli_path();
-    if command_on_path("codex-acp") {
-        Ok("Codex ACP adapter installed.".into())
+#[derive(Debug, PartialEq)]
+enum CodexLoginStatus {
+    ChatGpt,
+    ApiKey,
+    Unknown,
+}
+
+fn codex_login_status(success: bool, stdout: &[u8], stderr: &[u8]) -> CodexLoginStatus {
+    let status = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(stdout),
+        String::from_utf8_lossy(stderr),
+    )
+    .to_lowercase();
+    if success && status.contains("logged in using chatgpt") {
+        CodexLoginStatus::ChatGpt
+    } else if status.contains("api key") || status.contains("apikey") {
+        CodexLoginStatus::ApiKey
     } else {
-        Ok(
-            "npm installed the adapter; restart Medousa if runtime still can't find `codex-acp`."
-                .into(),
-        )
+        CodexLoginStatus::Unknown
     }
 }
 
-/// ChatGPT login → `codex login --device-auth`, parse the verification URL +
-/// user code from stdout, open the system browser, and let the process finish
-/// in the background (it polls until the user approves).
-#[tauri::command]
-pub async fn account_chatgpt_begin_device_login() -> Result<DeviceAuthStart, String> {
-    let command = codex_command();
+#[derive(Default)]
+struct CodexDeviceInstructions {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    stdout_closed: bool,
+    stderr_closed: bool,
+}
+
+impl CodexDeviceInstructions {
+    fn push(&mut self, stderr: bool, chunk: &[u8]) -> Result<(), String> {
+        if chunk.is_empty() {
+            if stderr {
+                self.stderr_closed = true;
+            } else {
+                self.stdout_closed = true;
+            }
+        }
+        let buffer = if stderr {
+            &mut self.stderr
+        } else {
+            &mut self.stdout
+        };
+        if buffer.len() + chunk.len() > 32 * 1024 {
+            return Err("Codex login produced too much output before sign-in instructions.".into());
+        }
+        buffer.extend_from_slice(chunk);
+        Ok(())
+    }
+
+    fn instructions(&self) -> Option<(String, String)> {
+        let output = format!(
+            "{}\n{}",
+            complete_codex_output(&self.stdout, self.stdout_closed),
+            complete_codex_output(&self.stderr, self.stderr_closed),
+        );
+        let url = output
+            .split_whitespace()
+            .find_map(verified_codex_device_url)?;
+        let mut code_context = false;
+        for line in output.lines() {
+            let lower = line.to_ascii_lowercase();
+            let mentions_code = lower.contains("one-time code")
+                || lower.contains("one time code")
+                || lower.contains("your code")
+                || lower.trim_start().starts_with("code:")
+                || (lower.contains("enter")
+                    && lower.contains("code")
+                    && !lower.contains("https://"));
+            let standalone = line.split_whitespace().count() == 1;
+            if mentions_code || code_context || standalone {
+                if let Some(code) = line.split_whitespace().find_map(codex_device_code) {
+                    return Some((url, code));
+                }
+            }
+            if !line.trim().is_empty() {
+                code_context = mentions_code;
+            }
+        }
+        None
+    }
+}
+
+fn complete_codex_output(bytes: &[u8], closed: bool) -> String {
+    let end = if closed {
+        bytes.len()
+    } else {
+        bytes
+            .iter()
+            .rposition(|byte| *byte == b'\n' || *byte == b'\r')
+            .map_or(0, |index| index + 1)
+    };
+    strip_terminal_controls(&String::from_utf8_lossy(&bytes[..end]))
+}
+
+fn strip_terminal_controls(text: &str) -> String {
+    let mut chars = text.chars().peekable();
+    let mut clean = String::new();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            match chars.next() {
+                Some('[') => {
+                    for ch in chars.by_ref() {
+                        if ('@'..='~').contains(&ch) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    while let Some(ch) = chars.next() {
+                        if ch == '\u{7}' || (ch == '\u{1b}' && chars.peek() == Some(&'\\')) {
+                            if ch == '\u{1b}' {
+                                chars.next();
+                            }
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        } else if !ch.is_control() || ch == '\n' || ch == '\r' || ch == '\t' {
+            clean.push(ch);
+        }
+    }
+    clean
+}
+
+fn verified_codex_device_url(token: &str) -> Option<String> {
+    let token = token.trim_matches(|ch: char| {
+        matches!(
+            ch,
+            '<' | '>' | '(' | ')' | '[' | ']' | '\'' | '"' | ',' | '.'
+        )
+    });
+    let url = url::Url::parse(token).ok()?;
+    (url.scheme() == "https"
+        && url.host_str() == Some("auth.openai.com")
+        && url.path().trim_end_matches('/') == "/codex/device"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none())
+    .then(|| url.to_string())
+}
+
+fn codex_device_code(token: &str) -> Option<String> {
+    // Codex receives user_code as a server-provided string, not a typed format.
+    // Recognize familiar device codes conservatively; unknown formats fall back
+    // to the vendor terminal flow instead of opening a guessed handoff.
+    let code =
+        token.trim_matches(|ch: char| matches!(ch, '`' | '\'' | '"' | ',' | '.' | ':' | '(' | ')'));
+    let (left, right) = code.split_once('-')?;
+    let valid_group = |group: &str| {
+        (4..=6).contains(&group.len())
+            && group
+                .chars()
+                .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
+    };
+    (valid_group(left) && valid_group(right)).then(|| code.to_string())
+}
+
+fn drain_codex_login_output(
+    mut pipe: impl std::io::Read + Send + 'static,
+    stderr: bool,
+    sender: std::sync::mpsc::Sender<(bool, Vec<u8>)>,
+) {
+    std::thread::spawn(move || {
+        let mut chunk = [0u8; 4096];
+        loop {
+            match pipe.read(&mut chunk) {
+                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+                Ok(0) | Err(_) => {
+                    let _ = sender.send((stderr, Vec::new()));
+                    break;
+                }
+                Ok(count) => {
+                    // Keep draining after the handoff receiver closes so the CLI can
+                    // finish polling and save its credentials without a full pipe.
+                    let _ = sender.send((stderr, chunk[..count].to_vec()));
+                }
+            }
+        }
+    });
+}
+
+fn check_codex_login_status(command: &str) -> Result<CodexLoginStatus, String> {
+    let mut status_command = Command::new(command);
+    status_command
+        .args(["login", "status"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    detach_new_session(&mut status_command);
+    let mut child = status_command
+        .spawn()
+        .map_err(|_| "Couldn't start the Codex sign-in status check.".to_string())?;
+    let result: Result<CodexLoginStatus, String> = (|| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or("Codex status produced no stdout pipe")?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or("Codex status produced no stderr pipe")?;
+        drain_codex_login_output(stdout, false, sender.clone());
+        drain_codex_login_output(stderr, true, sender);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut output = CodexDeviceInstructions::default();
+        let mut exit = None;
+        loop {
+            if exit.is_none() {
+                exit = child
+                    .try_wait()
+                    .map_err(|_| "Couldn't check the Codex status process.".to_string())?;
+            }
+            if let Some(exit) = exit {
+                if output.stdout_closed && output.stderr_closed {
+                    return Ok(codex_login_status(
+                        exit.success(),
+                        &output.stdout,
+                        &output.stderr,
+                    ));
+                }
+            }
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(
+                    "Timed out checking Codex sign-in status. Try terminal sign-in.".into(),
+                );
+            }
+            let poll = remaining.min(Duration::from_millis(100));
+            match receiver.recv_timeout(poll) {
+                Ok((stderr, chunk)) => output.push(stderr, &chunk)?,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => std::thread::sleep(poll),
+            }
+        }
+    })();
+    if result.is_err() {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+    result
+}
+
+fn start_codex_device_login() -> Result<DeviceAuthStart, String> {
+    let command = resolve_command_abs(&codex_command());
     if !command_on_path(&command) {
         return Err(format!(
             "'{command}' not found — tap Install on the Codex card in Settings → External Agents"
         ));
     }
 
-    let output = Command::new(&command).args(["login", "status"]).output();
-    if let Ok(status) = output {
-        let text = String::from_utf8_lossy(&status.stdout);
-        let normalized = text.to_lowercase();
-        if normalized.contains("logged in using chatgpt") {
+    match check_codex_login_status(&command)? {
+        CodexLoginStatus::ChatGpt => {
             return Err("Already signed in to ChatGPT — refresh status instead".into());
         }
-        if normalized.contains("api key") || normalized.contains("apikey") {
-            let logout = Command::new(&command)
-                .arg("logout")
-                .output()
-                .map_err(|err| format!("couldn't replace Codex API-key login: {err}"))?;
-            if !logout.status.success() {
-                return Err(
-                    "Codex is using an API key and could not sign out — run `codex logout`, then connect ChatGPT again"
-                        .into(),
-                );
-            }
+        CodexLoginStatus::ApiKey => {
+            return Err(
+                "Codex is using an API key — run `codex logout` before connecting ChatGPT.".into(),
+            );
         }
+        CodexLoginStatus::Unknown => {}
     }
 
     let mut child_cmd = Command::new(&command);
@@ -757,80 +881,68 @@ pub async fn account_chatgpt_begin_device_login() -> Result<DeviceAuthStart, Str
         .spawn()
         .map_err(|err| format!("failed to start codex login: {err}"))?;
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "codex login produced no stdout".to_string())?;
-    let mut reader = std::io::BufReader::new(stdout);
-    let mut url: Option<String> = None;
-    let mut code: Option<String> = None;
-    let mut transcript = String::new();
-
-    use std::io::BufRead;
-    let started = std::time::Instant::now();
-    while started.elapsed() < std::time::Duration::from_secs(30) {
-        let mut line = String::new();
-        match reader.read_line(&mut line) {
-            Ok(0) => break,
-            Ok(_) => {
-                transcript.push_str(&line);
-                let trimmed = line.trim();
-                if url.is_none() && trimmed.starts_with("http") {
-                    url = Some(trimmed.to_string());
-                }
-                if let Some(idx) = trimmed.find("http") {
-                    if url.is_none() {
-                        url = Some(
-                            trimmed[idx..]
-                                .split_whitespace()
-                                .next()
-                                .unwrap_or("")
-                                .to_string(),
-                        );
-                    }
-                }
-                // Device codes look like XXXX-XXXX or 8+ alnum groups.
-                if code.is_none() {
-                    for token in trimmed.split_whitespace() {
-                        let clean = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
-                        if clean.len() >= 6
-                            && clean.chars().filter(|c| c.is_alphanumeric()).count() >= 6
-                            && !clean.starts_with("http")
-                        {
-                            code = Some(clean.to_string());
-                            break;
-                        }
-                    }
-                }
-                if url.is_some() {
-                    break;
-                }
+    let result: Result<DeviceAuthStart, String> = (|| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or("Codex login produced no stdout pipe")?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or("Codex login produced no stderr pipe")?;
+        drain_codex_login_output(stdout, false, sender.clone());
+        drain_codex_login_output(stderr, true, sender);
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let mut instructions = CodexDeviceInstructions::default();
+        let (url, code) = loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err("Timed out waiting for Codex device sign-in instructions. Try terminal sign-in.".into());
             }
-            Err(_) => break,
-        }
-    }
+            let (stderr, chunk) = receiver.recv_timeout(remaining).map_err(|_| {
+                "Couldn't read verified device sign-in instructions from Codex. Try terminal sign-in."
+                    .to_string()
+            })?;
+            instructions.push(stderr, &chunk)?;
+            if let Some(instructions) = instructions.instructions() {
+                break instructions;
+            }
+        };
+        open_url(&url, None::<&str>).map_err(|_| {
+            "Couldn't open the Codex sign-in page. Try terminal sign-in.".to_string()
+        })?;
+        Ok(DeviceAuthStart {
+            url,
+            code: Some(code),
+            detail: Some(
+                "Approve in the browser that just opened — codex finishes sign-in on its own."
+                    .into(),
+            ),
+        })
+    })();
 
-    let url = url.ok_or_else(|| {
+    if result.is_ok() {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    } else {
         let _ = child.kill();
-        format!(
-            "couldn't read a sign-in link from codex login (output so far: {})",
-            transcript.trim().chars().take(300).collect::<String>()
-        )
-    })?;
-
-    // Let the child keep polling for approval in the background.
-    std::thread::spawn(move || {
         let _ = child.wait();
-    });
+    }
+    result
+}
 
-    open_url(&url, None::<&str>).map_err(|err| err.to_string())?;
-    Ok(DeviceAuthStart {
-        url,
-        code,
-        detail: Some(
-            "Approve in the browser that just opened — codex finishes sign-in on its own.".into(),
-        ),
-    })
+/// Start the vendor's device-code login without blocking the async command thread.
+/// Instructions may arrive on either pipe; only a verified device URL opens.
+#[tauri::command]
+pub async fn account_chatgpt_begin_device_login(
+    state: WorkshopRequest,
+) -> Result<DeviceAuthStart, String> {
+    require_local_workshop(&state).await?;
+    tauri::async_runtime::spawn_blocking(start_codex_device_login)
+        .await
+        .map_err(|_| "Codex sign-in task failed.".to_string())?
 }
 
 fn open_terminal_with_login(command: &str, args: &[String]) -> Result<(), String> {
@@ -883,7 +995,11 @@ fn open_terminal_with_login(command: &str, args: &[String]) -> Result<(), String
 /// Fallback / Cursor / Hermes login: run the vendor CLI's interactive login in a
 /// terminal window (browser callback flows need a TTY).
 #[tauri::command]
-pub async fn account_begin_terminal_login(account: String) -> Result<String, String> {
+pub async fn account_begin_terminal_login(
+    state: WorkshopRequest,
+    account: String,
+) -> Result<String, String> {
+    require_local_workshop(&state).await?;
     let (command, args, hint) = match account.as_str() {
         "chatgpt" => {
             let cmd = codex_command();
@@ -931,7 +1047,8 @@ pub async fn account_begin_terminal_login(account: String) -> Result<String, Str
 }
 
 #[tauri::command]
-pub async fn account_sign_out(account: String) -> Result<String, String> {
+pub async fn account_sign_out(state: WorkshopRequest, account: String) -> Result<String, String> {
+    require_local_workshop(&state).await?;
     let (command, args) = match account.as_str() {
         "chatgpt" => {
             let cmd = codex_command();
@@ -973,4 +1090,184 @@ pub async fn account_sign_out(account: String) -> Result<String, String> {
         .wait()
         .map_err(|err| err.to_string())?;
     Ok("Signed out — refresh status to confirm.".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codex_login_status_accepts_either_output_stream() {
+        for (stdout, stderr) in [
+            (b"Logged in using ChatGPT".as_slice(), b"".as_slice()),
+            (b"".as_slice(), b"Logged in using ChatGPT".as_slice()),
+        ] {
+            assert_eq!(
+                codex_login_status(true, stdout, stderr),
+                CodexLoginStatus::ChatGpt
+            );
+        }
+        assert_eq!(
+            codex_login_status(true, b"", b"Logged in using an API key"),
+            CodexLoginStatus::ApiKey,
+        );
+        assert_eq!(
+            codex_login_status(false, b"", b"Not logged in"),
+            CodexLoginStatus::Unknown,
+        );
+        assert_eq!(
+            codex_login_status(false, b"", b"Logged in using ChatGPT"),
+            CodexLoginStatus::Unknown,
+        );
+    }
+
+    #[test]
+    fn codex_device_instructions_match_the_installed_0145_prompt() {
+        // openai/codex rust-v0.145.0, login/src/device_code_auth.rs:136–148.
+        let prompt = "Welcome to Codex\nSign in using device code authorization:\n\n1. Open this link in your browser and sign in to your account\n   https://auth.openai.com/codex/device\n\n2. Enter this one-time code (expires in 15 minutes)\n   ABCD-EFGHI\n\nContinue only if you started this login in Codex. If a website or another person gave you this code, cancel.\n";
+        for stderr in [false, true] {
+            let mut parser = CodexDeviceInstructions::default();
+            parser.push(stderr, prompt.as_bytes()).unwrap();
+            assert_eq!(
+                parser.instructions(),
+                Some((
+                    "https://auth.openai.com/codex/device".into(),
+                    "ABCD-EFGHI".into()
+                ))
+            );
+        }
+        let mut unknown = CodexDeviceInstructions::default();
+        unknown
+            .push(
+                false,
+                prompt
+                    .replace("ABCD-EFGHI", "server-defined-future-format")
+                    .as_bytes(),
+            )
+            .unwrap();
+        assert!(
+            unknown.instructions().is_none(),
+            "unknown formats must fall back without guessing a code"
+        );
+    }
+
+    #[test]
+    fn codex_device_instructions_wait_for_the_real_code_after_the_url() {
+        let mut parser = CodexDeviceInstructions::default();
+        parser
+            .push(
+                false,
+                b"Welcome to Codex!\nDocs: https://developers.openai.com/codex/auth\n",
+            )
+            .unwrap();
+        parser
+            .push(false, b"1. Open https://auth.openai.com/codex/device\n")
+            .unwrap();
+        assert!(parser.instructions().is_none());
+        parser
+            .push(false, b"2. Enter this one-time code:\n\x1b[1mABCD-EFGH")
+            .unwrap();
+        assert!(
+            parser.instructions().is_none(),
+            "an unfinished chunk must not truncate the code"
+        );
+        parser.push(false, b"I\x1b[0m\n").unwrap();
+        assert_eq!(
+            parser.instructions(),
+            Some((
+                "https://auth.openai.com/codex/device".into(),
+                "ABCD-EFGHI".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn codex_device_instructions_accept_stderr_and_split_streams() {
+        let mut parser = CodexDeviceInstructions::default();
+        parser
+            .push(false, b"For help: https://chatgpt.com/\n")
+            .unwrap();
+        parser
+            .push(true, b"https://auth.openai.com/codex/de")
+            .unwrap();
+        assert!(parser.instructions().is_none());
+        parser
+            .push(true, b"vice\nEnter this code:\nWXYZ-1234\n")
+            .unwrap();
+        assert_eq!(
+            parser.instructions(),
+            Some((
+                "https://auth.openai.com/codex/device".into(),
+                "WXYZ-1234".into()
+            ))
+        );
+        let mut split = CodexDeviceInstructions::default();
+        split
+            .push(true, b"https://auth.openai.com/codex/device\n")
+            .unwrap();
+        split.push(false, b"Your code:\nABCD-1234").unwrap();
+        assert!(split.instructions().is_none());
+        split.push(false, b"").unwrap();
+        assert_eq!(
+            split.instructions().map(|(_, code)| code),
+            Some("ABCD-1234".into())
+        );
+    }
+
+    #[test]
+    fn codex_device_handoff_rejects_other_links_and_introductory_words() {
+        for url in [
+            "https://chatgpt.com/",
+            "https://developers.openai.com/codex/auth",
+            "https://auth.openai.com.evil.test/codex/device",
+            "http://auth.openai.com/codex/device",
+            "https://auth.openai.com/codex/device/elsewhere",
+            "https://auth.openai.com/codex/device?redirect_uri=https://example.com",
+            "https://user@auth.openai.com/codex/device",
+        ] {
+            assert!(verified_codex_device_url(url).is_none());
+        }
+        for word in [
+            "Welcome",
+            "Instructions",
+            "one-time",
+            "CODE-EXAMPLE",
+            "https://openai.com",
+        ] {
+            assert!(codex_device_code(word).is_none());
+        }
+        let mut parser = CodexDeviceInstructions::default();
+        parser.push(true, b"https://auth.openai.com/codex/device\nWelcome to Codex. Please enter your code.\n").unwrap();
+        assert!(parser.instructions().is_none());
+    }
+
+    #[test]
+    fn connection_status_remains_owned_by_the_selected_workshop() {
+        let runtime = AgentRuntimeInfo {
+            runtime: "cursor".into(),
+            available: false,
+            command: Some("/remote/bin/agent".into()),
+            detail: None,
+            uses_native_turns: false,
+            auth_status: Some("signed_out".into()),
+            binary_present: false,
+            auth_detail: Some("Sign in on the workshop host".into()),
+        };
+        let connection = connection_from_runtime("cursor", "Cursor", Some(&runtime));
+        assert!(!connection.binary_present);
+        assert_eq!(connection.auth_status, "signed_out");
+        assert_eq!(connection.command.as_deref(), Some("/remote/bin/agent"));
+        assert_eq!(
+            connection.detail.as_deref(),
+            Some("Sign in on the workshop host")
+        );
+    }
+
+    #[test]
+    fn absent_workshop_status_never_claims_local_installation_or_authentication() {
+        let connection = connection_from_runtime("chatgpt", "ChatGPT", None);
+        assert!(!connection.binary_present);
+        assert_eq!(connection.auth_status, "unknown");
+        assert!(connection.command.is_none());
+    }
 }

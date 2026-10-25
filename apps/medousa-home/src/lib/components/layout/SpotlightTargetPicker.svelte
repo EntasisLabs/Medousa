@@ -29,5 +29,5 @@
   {:else}
     <p class="command-spotlight-empty">{loading ? "Loading destinations…" : "No matching destinations"}</p>
   {/each}
-  {#if error}<p class="command-spotlight-target-notice" role="status">{error}</p>{/if}
+  {#if error && !targets.length && !loading}<details class="command-spotlight-target-notice"><summary>Couldn’t load destinations</summary><p>{error}</p></details>{/if}
 </div>

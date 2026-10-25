@@ -101,9 +101,21 @@ reports an uncertain delivery instead of silently running it again.
 
 A message is another agent's communication, not a human instruction or an
 execution approval. Sending one does not create a Forge assignment or grant new
-permissions. Message wakes use Assistant mode; continuing Coder work still needs
-its normal scoped admission. Exchanges have bounded message budgets to prevent
-unattended reply loops.
+permissions. Message wakes use the normal Assistant loop to continue authorized
+work; continuing Coder work still needs its normal scoped admission.
+
+When your assistant first sends a message during a user turn, the runtime
+retains permission for those two chats to communicate in either direction.
+That permission survives daemon restarts, and existing admitted exchanges remain
+usable after updating. A peer message cannot authorize contact with an unrelated
+chat. Visibility, Bot archival, and workshop pairing rules still apply.
+
+There is no per-turn send allowance or lifetime exchange limit. Recipients reply
+when they have a useful answer, question, result, or update, and finish silently
+when there is nothing to add. A requested confirmation is still a useful reply;
+ordinary delivery receipts do not require another conversational acknowledgment.
+Payload and queue capacity protections still apply. For cross-workshop
+conversations, update both engines to remove the older hop limit.
 
 For example, ask “Message Taco on Studio and ask how the review is going.” The
 assistant can discover connected workshops, then find native Bots and chats on

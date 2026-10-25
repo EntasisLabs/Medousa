@@ -1,3 +1,4 @@
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 import { cancelAgentSession, createAgentSession, getSessionAgentMode, getSessionCodeBinding } from "$lib/daemon";
 import { getSessionBot } from "$lib/daemon/bot";
 import { chat } from "$lib/stores/chat.svelte";
@@ -8,14 +9,16 @@ import type { PreparedAgentSession } from "./agentSessionController.svelte";
 const pending = new Map<string, Promise<PreparedAgentSession | null>>();
 
 async function cancelPreparedAgent(sessionId: string, id: string) {
+  const epoch = chat.workshopEpoch;
   try { await cancelAgentSession(id); }
   catch (cause) { if (!/unknown agent session|not found|404/i.test(String(cause))) throw cause; }
+  if (chat.workshopEpoch !== epoch) throw new Error("Workshop changed while preparing the agent.");
   clearSessionAgentSessionId(sessionId);
   setSessionAgentConfigOptions(sessionId, []);
 }
 
 /** Same lifecycle for Chat and addressed surfaces, serialized per workshop/session. */
-export function prepareAgentSession(sessionId: string, runtimeChoice: "cursor" | "codex" | "hermes", options?: { openChooserWhenMissing?: boolean; stopWhenUnbound?: boolean }): Promise<PreparedAgentSession | null> {
+export function prepareAgentSession(sessionId: string, runtimeChoice: ExternalAgentRuntime, options?: { openChooserWhenMissing?: boolean; stopWhenUnbound?: boolean }): Promise<PreparedAgentSession | null> {
   const epoch = chat.workshopEpoch;
   const key = `${epoch}:${sessionId}`;
   const previous = pending.get(key) ?? Promise.resolve();

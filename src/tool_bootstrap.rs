@@ -209,7 +209,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write|artifacts.present",
+                summary: if cfg!(feature = "full-daemon") { "Editable Create canvases/UI wireframes from screenshots: cognition_store_read/write creative.create|creative.read|creative.propose. Liquid chat embeds for chat; HTML artifacts via artifacts.read|artifacts.write|artifacts.present" } else { "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write|artifacts.present" },
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
@@ -220,7 +220,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "media",
-                summary: "Generate daemon-owned images for explicit visual creation requests",
+                summary: if cfg!(feature = "full-daemon") { "Generate raster photos, illustrations, and bitmap assets. Editable UI wireframes/designs use Create via cognition_store_write creative.create|creative.propose" } else { "Generate raster photos, illustrations, and bitmap assets; editable wireframes require a Create-enabled workshop" },
                 tools: &["cognition_image_generate"],
             },
             ToolDomainCatalogEntry {

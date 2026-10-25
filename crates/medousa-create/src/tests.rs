@@ -397,27 +397,66 @@ fn selection_context_is_bounded_and_does_not_mutate_revision() {
     );
 }
 #[test]
-fn proposals_cannot_change_objects_outside_their_selection() {
+fn proposals_can_change_the_project_and_wait_for_acceptance() {
     let dir = tempfile::tempdir().unwrap();
     let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
     create(&store);
+    let mut original = text("title");
+    original.locked = true;
     store
-        .transact("project_one", edit("put", 0, text("title")))
+        .transact("project_one", edit("put", 0, original.clone()))
         .unwrap();
+    let mut revised = original.clone();
+    revised.transform.width = 500.;
     let request = CreativeProposalRequest {
         id: "outside".into(),
         expected_revision: 1,
-        selected_ids: vec!["title".into()],
-        label: "Outside".into(),
-        operations: vec![CreativeOperation::Rename {
-            title: "Changed".into(),
-        }],
+        selected_ids: vec![],
+        label: "Build editable design".into(),
+        operations: vec![
+            CreativeOperation::PutNode {
+                node: Box::new(revised.clone()),
+            },
+            CreativeOperation::PutNode {
+                node: Box::new(text("new-root")),
+            },
+            CreativeOperation::SetBackground {
+                color: "#202020".into(),
+            },
+            CreativeOperation::Rename {
+                title: "Changed".into(),
+            },
+            CreativeOperation::Pin { pinned: true },
+            CreativeOperation::Reorder {
+                ids: vec!["new-root".into(), "title".into()],
+            },
+        ],
     };
-    assert!(store.propose("project_one", request).is_err());
-    assert_eq!(
-        store.get("project_one").unwrap().document.title,
-        "Release graphic"
-    );
+    store.propose("project_one", request).unwrap();
+    let before = store.get("project_one").unwrap().document;
+    assert_eq!(before.title, "Release graphic");
+    assert_eq!(before.scene.nodes, vec![original]);
+    let applied = store
+        .decide(
+            "project_one",
+            "outside",
+            CreativeProposalDecision {
+                expected_revision: 1,
+                accept: true,
+            },
+        )
+        .unwrap();
+    assert_eq!(applied.document.title, "Changed");
+    assert_eq!(applied.document.scene.background, "#202020");
+    assert!(applied.document.pinned);
+    assert_eq!(applied.document.scene.nodes[0].id, "new-root");
+    assert_eq!(applied.document.scene.nodes[1], revised);
+    let undone = store
+        .history("project_one", history("undo-proposal", 2, false))
+        .unwrap();
+    assert_eq!(undone.document.scene, before.scene);
+    assert_eq!(undone.document.title, before.title);
+    assert_eq!(undone.document.pinned, before.pinned);
 }
 #[test]
 fn asset_publication_can_resume_after_manifest_failure() {
@@ -510,7 +549,7 @@ fn delete_retries_preserve_the_tombstone_and_assets() {
     ));
 }
 #[test]
-fn frame_context_captures_descendants_and_locked_work_cannot_be_changed_by_a_proposal() {
+fn frame_context_captures_descendants_and_locks_do_not_block_proposals() {
     let dir = tempfile::tempdir().unwrap();
     let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
     create(&store);
@@ -554,7 +593,27 @@ fn frame_context_captures_descendants_and_locked_work_cannot_be_changed_by_a_pro
         label: "Change".into(),
         operations: vec![CreativeOperation::PutNode { node: Box::new(child) }],
     };
-    assert!(store.propose("project_one", request).is_err());
+    store.propose("project_one", request).unwrap();
+    let applied = store
+        .decide(
+            "project_one",
+            "locked",
+            CreativeProposalDecision {
+                expected_revision: 1,
+                accept: true,
+            },
+        )
+        .unwrap();
+    assert!(
+        applied
+            .document
+            .scene
+            .nodes
+            .iter()
+            .find(|n| n.id == "frame")
+            .unwrap()
+            .locked
+    );
 }
 
 #[test]
@@ -943,8 +1002,8 @@ fn creative_job_outputs_are_bound_to_execution_and_captured_selection() {
             "revision" => result.expected_revision = 2,
             "selection" => result.selected_ids = vec!["other".into()],
             _ => {
-                result.operations = vec![CreativeOperation::Rename {
-                    title: "escape".into(),
+                result.operations = vec![CreativeOperation::Reorder {
+                    ids: vec!["missing_node".into()],
                 }]
             }
         }
@@ -1237,7 +1296,7 @@ fn creative_job_outbox_cleans_orphans_and_does_not_scan_idle_or_damaged_projects
 }
 
 #[test]
-fn creative_job_cannot_reparent_a_selected_node_into_an_unselected_or_locked_container() {
+fn creative_job_can_propose_reparenting_into_another_container() {
     let (_dir, store) = job_store();
     let mut outside = text("outside");
     outside.content = CreativeContent::Frame {
@@ -1256,11 +1315,9 @@ fn creative_job_cannot_reparent_a_selected_node_into_an_unselected_or_locked_con
     if let CreativeOperation::PutNode { node } = &mut result.operations[0] {
         node.parent_id = Some("outside".into());
     }
-    assert!(
-        store
-            .complete_job("project_one", "first", &job.turn_id, result)
-            .is_err()
-    );
+    store
+        .complete_job("project_one", "first", &job.turn_id, result)
+        .unwrap();
     outside.locked = true;
     store
         .transact("project_one", edit("lock_outside", 2, outside))
@@ -1278,14 +1335,29 @@ fn creative_job_cannot_reparent_a_selected_node_into_an_unselected_or_locked_con
     if let CreativeOperation::PutNode { node } = &mut result.operations[0] {
         node.parent_id = Some("outside".into());
     }
-    assert!(
-        store
-            .complete_job("project_one", "locked", &job.turn_id, result)
-            .is_err()
-    );
+    store
+        .complete_job("project_one", "locked", &job.turn_id, result)
+        .unwrap();
     assert_eq!(
         store.get("project_one").unwrap().document.scene.nodes[0].parent_id,
         None
+    );
+    store
+        .decide_job(
+            "project_one",
+            "locked",
+            "owner",
+            CreativeProposalDecision {
+                expected_revision: 3,
+                accept: true,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        store.get("project_one").unwrap().document.scene.nodes[0]
+            .parent_id
+            .as_deref(),
+        Some("outside")
     );
 }
 
@@ -1797,6 +1869,25 @@ fn code_handoff_context_requires_the_exact_frame_revision_and_visual() {
     };
     let (context, _) = store.code_context("shell", &request).unwrap();
     assert_eq!(context.revision, 0);
+    let snapshot = store
+        .save_context_snapshot(context.clone(), "build_session")
+        .unwrap();
+    assert_eq!(
+        snapshot,
+        store
+            .save_context_snapshot(context.clone(), "build_session")
+            .unwrap()
+    );
+    assert!(
+        store
+            .read_context_snapshot(&snapshot, "shell", "unrelated_session")
+            .is_err()
+    );
+    assert!(
+        store
+            .read_context_snapshot(&snapshot, "other", "build_session")
+            .is_err()
+    );
     assert!(context.nodes.len() > 20);
     assert_eq!(store.get("shell").unwrap().document.revision, 0);
     request.frame_id = "composer".into();
@@ -1829,6 +1920,16 @@ fn code_handoff_context_requires_the_exact_frame_revision_and_visual() {
             b"\x89PNG\r\n\x1a\nframe",
         )
         .unwrap();
+    // Editing the canvas cannot change a previously admitted Code reference.
+    assert_eq!(
+        serde_json::to_value(
+            store
+                .read_context_snapshot(&snapshot, "shell", "build_session")
+                .unwrap()
+        )
+        .unwrap(),
+        serde_json::to_value(context).unwrap()
+    );
     request.visual_asset_id = fresh.id;
     assert_eq!(store.code_context("shell", &request).unwrap().0.revision, 1);
     request.session_id = "../escape".into();
@@ -1875,7 +1976,14 @@ fn rich_typography_is_durable_and_rejects_invalid_inline_ranges() {
     let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
     create(&store);
     let mut node = text("rich_text");
-    node.content = CreativeContent::Text { text: "A🌟 title".into(), color: "#111111".into(), font_family: "Georgia".into(), font_size: 40., font_weight: Some(500), font_style: None };
+    node.content = CreativeContent::Text {
+        text: "A🌟 title".into(),
+        color: "#111111".into(),
+        font_family: "Georgia".into(),
+        font_size: 40.,
+        font_weight: Some(500),
+        font_style: None,
+    };
     node.text_layout = Some(serde_json::from_value(serde_json::json!({"width":300,"align":"left","line_height":1.2,"letter_spacing":-2.5,"paragraph_spacing":12,"underline":true,"spans":[{"start":1,"end":3,"font_weight":700,"font_style":"italic","color":"#a7442d","underline":false}]})).unwrap());
     let saved = store.transact("project_one", edit("rich",0,node.clone())).unwrap();
     assert_eq!(saved.document.scene.nodes[0].text_layout, node.text_layout);

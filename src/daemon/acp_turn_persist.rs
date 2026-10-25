@@ -1,4 +1,4 @@
-//! Persist ACP (Cursor/Codex) prompt turns into Medousa session history.
+//! Persist external-agent prompt turns into Medousa session history.
 //!
 //! Live SSE is unchanged; this closes the reopen/restart gap so Home can reload
 //! via `GET /v1/sessions/{id}/history`. Forge resume tokens remain wire-reattach
@@ -47,8 +47,17 @@ impl AcpPromptPersistState {
                 let summary = input_summary(input);
                 self.tool_round = self.tool_round.saturating_add(1);
                 self.parts.tool_started(id, name, &summary, self.tool_round);
+                if let Some(status @ ("completed" | "failed" | "cancelled")) =
+                    input.get("status").and_then(Value::as_str)
+                {
+                    self.parts
+                        .tool_finished(id, status, Some(summary), Vec::new());
+                }
             }
-            AcpEvent::PermissionRequest { .. } | AcpEvent::Error { .. } | AcpEvent::Done => {}
+            AcpEvent::PermissionRequest { .. }
+            | AcpEvent::ClientRequest { .. }
+            | AcpEvent::Error { .. }
+            | AcpEvent::Done => {}
         }
     }
 
@@ -84,24 +93,14 @@ impl AcpPromptPersistState {
 }
 
 fn input_summary(input: &Value) -> String {
-    match input {
-        Value::Null => String::new(),
-        Value::String(s) => {
-            let t = s.trim();
-            if t.len() > 240 {
-                format!("{}…", &t[..240])
-            } else {
-                t.to_owned()
-            }
-        }
-        other => {
-            let s = other.to_string();
-            if s.len() > 240 {
-                format!("{}…", &s[..240])
-            } else {
-                s
-            }
-        }
+    let text = match input {
+        Value::Null => return String::new(),
+        Value::String(text) => text.trim().to_string(),
+        other => other.to_string(),
+    };
+    match text.char_indices().nth(240) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text,
     }
 }
 
@@ -232,6 +231,31 @@ mod tests {
                 TurnPart::ToolRun { tool_name, .. } if tool_name == "Read"
             )),
             "expected tool run: {parts:?}"
+        );
+    }
+
+    #[test]
+    fn unicode_tool_updates_are_bounded_and_finish_the_saved_tool() {
+        let mut state = AcpPromptPersistState::new();
+        state.observe(&AcpEvent::ToolCall {
+            id: "read-1".into(),
+            name: "Read".into(),
+            input: json!({"status": "in_progress", "title": "🌈".repeat(300)}),
+        });
+        state.observe(&AcpEvent::ToolCall {
+            id: "read-1".into(),
+            name: "Read".into(),
+            input: json!({"status": "completed", "rawOutput": "🌈".repeat(300)}),
+        });
+        let turn = state.take_assistant_turn(None).unwrap();
+        let parts = turn.parts.unwrap();
+        let tools: Vec<_> = parts
+            .iter()
+            .filter(|part| matches!(part, TurnPart::ToolRun { .. }))
+            .collect();
+        assert_eq!(tools.len(), 1);
+        assert!(
+            matches!(tools[0], TurnPart::ToolRun { status, output_summary: Some(summary), .. } if status == "completed" && summary.chars().count() <= 241)
         );
     }
 

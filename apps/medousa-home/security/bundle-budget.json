@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "notes": "FRONT-001 regression ceilings for kit.output.bundleStrategy=single (one packaged client JS/CSS payload). Platform shell isolation is enforced by source-level H09 tests, not chunk walks. 2026-10-05: 0.11.0 undertakings, companions, and SSH-target UI landed in that single packaged payload (local JS 13094840). GitHub Actions run 37322929441 measured desktop.jsBytes 13094845, five bytes above that local build. 2026-10-23: Create landed in that same single payload (local JS 14225579). GitHub Actions run 39938196699 measured desktop.jsBytes 14225511. Ceilings sit 256 bytes above the higher measurement so runner drift does not fail the ratchet.",
+  "notes": "FRONT-001 regression ceilings for kit.output.bundleStrategy=single (one packaged client JS/CSS payload). Platform shell isolation is enforced by source-level H09 tests, not chunk walks. 2026-10-05: 0.11.0 undertakings, companions, and SSH-target UI landed in that single packaged payload (local JS 13094840). GitHub Actions run 37322929441 measured desktop.jsBytes 13094845, five bytes above that local build. 2026-10-23: Create landed in that same single payload (local JS 14225579). GitHub Actions run 39938196699 measured desktop.jsBytes 14225511. Ceilings sit 256 bytes above the higher measurement so runner drift does not fail the ratchet. 2026-10-25: External-agent controls, shared desktop Spotlight commands, terminal windows, resource references, multi-vault search, and completion notifications add 51,662 bytes of packaged JS (0.36%) and 2,561 bytes of CSS versus the Create baseline. PR #166 local build measured JS 14277241; CI run 40173923725 measured JS 14277236. Reset the measured baseline with the existing 256-byte runner allowance; retain the single-payload and source-isolation gates.",
   "manifest": ".svelte-kit/output/client/.vite/manifest.json",
   "bundleStrategy": "single",
   "ceilings": {
@@ -8,21 +8,21 @@
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 14225835,
-      "jsGzipBytes": 4122113,
-      "cssBytes": 1592351,
-      "cssGzipBytes": 221543,
-      "largestJsChunkBytes": 14225835
+      "jsBytes": 14277497,
+      "jsGzipBytes": 4138516,
+      "cssBytes": 1594912,
+      "cssGzipBytes": 222075,
+      "largestJsChunkBytes": 14277497
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 14225835,
-      "jsGzipBytes": 4122113,
-      "cssBytes": 1592351,
-      "cssGzipBytes": 221543,
-      "largestJsChunkBytes": 14225835
+      "jsBytes": 14277497,
+      "jsGzipBytes": 4138516,
+      "cssBytes": 1594912,
+      "cssGzipBytes": 222075,
+      "largestJsChunkBytes": 14277497
     }
   },
   "measured": {
@@ -34,21 +34,21 @@
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 14225579,
-      "jsGzipBytes": 4121857,
-      "cssBytes": 1592095,
-      "cssGzipBytes": 221287,
-      "largestJsChunkBytes": 14225579
+      "jsBytes": 14277241,
+      "jsGzipBytes": 4138260,
+      "cssBytes": 1594656,
+      "cssGzipBytes": 221819,
+      "largestJsChunkBytes": 14277241
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 1,
       "cssFiles": 1,
-      "jsBytes": 14225579,
-      "jsGzipBytes": 4121857,
-      "cssBytes": 1592095,
-      "cssGzipBytes": 221287,
-      "largestJsChunkBytes": 14225579
+      "jsBytes": 14277241,
+      "jsGzipBytes": 4138260,
+      "cssBytes": 1594656,
+      "cssGzipBytes": 221819,
+      "largestJsChunkBytes": 14277241
     }
   }
 }

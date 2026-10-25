@@ -1,3 +1,4 @@
+import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * Human edit / save / agent handoff for the Code editor.
  * CodeSourceEditor wires the chrome; this owns busy flags and save actions.
@@ -54,8 +55,8 @@ export type CodeSaveControllerDeps = {
   ensureLease: () => Promise<CodeSaveLease>;
   onError: (message: string | null) => void;
   captureEditorContext: () => void;
-  preferredAgent: () => "codex" | "cursor" | "hermes";
-  onHandoffToAgent?: (runtime: "codex" | "cursor" | "hermes", draft?: string) => Promise<void>;
+  preferredAgent: () => ExternalAgentRuntime;
+  onHandoffToAgent?: (runtime: ExternalAgentRuntime, draft?: string) => Promise<void>;
   onReclaimHuman?: () => Promise<void>;
   updateDraft: (tabId: string, value: string) => void;
   isDirty: (tab: CodeSaveTab) => boolean;

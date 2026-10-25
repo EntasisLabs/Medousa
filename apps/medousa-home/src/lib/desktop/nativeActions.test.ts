@@ -7,7 +7,7 @@ const native = fileURLToPath(new URL("../../../src-tauri/src/", import.meta.url)
 const request = readFileSync(join(native, "daemon/window_request.rs"), "utf8");
 const allowlist = request.slice(request.indexOf("pub fn supports_command"));
 const commands = [...allowlist.matchAll(/"([a-z_]+)"/g)].map(match => match[1]);
-const sources = ["terminal.rs", "browser_host.rs", ...readdirSync(join(native, "daemon")).filter(name => name.endsWith(".rs")).map(name => `daemon/${name}`)]
+const sources = ["terminal.rs", "browser_host.rs", "account_connections.rs", ...readdirSync(join(native, "daemon")).filter(name => name.endsWith(".rs")).map(name => `daemon/${name}`)]
   .map(path => readFileSync(join(native, path), "utf8"));
 const handler = readFileSync(join(native, "lib.rs"), "utf8");
 

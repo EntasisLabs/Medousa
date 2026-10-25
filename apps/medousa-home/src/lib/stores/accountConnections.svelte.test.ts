@@ -1,0 +1,20 @@
+import { beforeEach, expect, it, vi } from "vitest";
+const api = vi.hoisted(() => ({ probe: vi.fn(), scope: "a" }));
+vi.mock("$lib/utils/accountConnections", () => ({ probeAccountConnections: api.probe, accountConnectionsSupported: () => true }));
+vi.mock("$lib/utils/workshopLocality", () => ({ activeWorkshopId: () => api.scope }));
+import { accountConnections } from "./accountConnections.svelte";
+beforeEach(() => { vi.clearAllMocks(); api.scope = "a"; });
+it("ignores a late probe after changing workshops", async () => {
+  let resolve!: (value: unknown) => void;
+  api.probe.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+  const first = accountConnections.refresh(true);
+  api.scope = "b";
+  api.probe.mockResolvedValueOnce({ pi: { id: "pi", authStatus: "signed_out" } });
+  await accountConnections.refresh(true);
+  resolve({ pi: { id: "pi", authStatus: "signed_in" } });
+  await first;
+  expect(accountConnections.connection("pi")?.authStatus).toBe("signed_out");
+  api.scope = "c";
+  expect(accountConnections.connection("pi")).toBeNull();
+  expect(accountConnections.connections).toBeNull();
+});

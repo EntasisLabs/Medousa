@@ -299,6 +299,7 @@ export function hostContextFromParts(parts?: TurnPart[] | null): HostTurnContext
 
 export function hostContextLabel(context?: HostTurnContext | null): string | null {
   if (!context) return null;
+  if (context.references?.length) return context.references.map(ref => ref.kind === "vault_note" ? `${ref.title || ref.path} · ${ref.root_id}` : ref.title).join(" · ");
   const source = ({
     vscode: "VS Code",
     neovim: "Neovim",

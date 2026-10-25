@@ -77,6 +77,9 @@ pub enum StoreReadAction {
 #[serde(tag = "action")]
 pub enum StoreWriteAction {
     #[cfg(feature = "full-daemon")]
+    #[serde(rename = "creative.create")]
+    CreativeCreate(crate::creative_tools::CreativeCreate),
+    #[cfg(feature = "full-daemon")]
     #[serde(rename = "creative.propose")]
     CreativePropose(crate::creative_tools::CreativePropose),
     #[cfg(feature = "full-daemon")]
@@ -121,6 +124,9 @@ pub struct VaultList {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VaultRead {
+    /// Exact linked vault root from a context reference. Omit only for the active vault.
+    #[serde(default)]
+    root_id: Option<String>,
     /// Note path
     path: String,
     /// Truncate body
@@ -136,6 +142,9 @@ pub struct VaultRead {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VaultSearch {
+    /// Exact linked vault root from a context reference.
+    #[serde(default)]
+    root_id: Option<String>,
     /// Search text or grep pattern
     #[serde(default)]
     query: Option<String>,
@@ -263,6 +272,9 @@ pub struct ScriptsSearch {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VaultWrite {
+    /// Configured vault root. Defaults to the matching note reference, otherwise the active vault.
+    #[serde(default)]
+    root_id: Option<String>,
     /// Note path
     path: String,
     /// Markdown body
@@ -280,12 +292,18 @@ pub struct VaultWrite {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VaultDelete {
+    /// Configured vault root. Defaults to the matching note reference, otherwise the active vault.
+    #[serde(default)]
+    root_id: Option<String>,
     /// Note path
     path: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VaultMove {
+    /// Configured vault root. Defaults to the matching note reference, otherwise the active vault.
+    #[serde(default)]
+    root_id: Option<String>,
     /// From path
     path: String,
     /// To path
@@ -416,6 +434,8 @@ impl JsonSchema for StoreWriteAction {
             "action",
             string_enum_schema(&[
                 #[cfg(feature = "full-daemon")]
+                "creative.create",
+                #[cfg(feature = "full-daemon")]
                 "creative.propose",
                 #[cfg(feature = "full-daemon")]
                 "creative.promote_media",
@@ -442,10 +462,16 @@ pub fn store_type_schemas() -> Vec<TypedActionSchema> {
             "Read a bounded creative selection and its revision",
         ),
         #[cfg(feature = "full-daemon")]
+        typed_action_schema::<crate::creative_tools::CreativeCreate>(
+            STORE_WRITE_ID,
+            "creative.create",
+            "Start an editable Create project or screenshot-to-wireframe with an empty frame. Fill the returned proposal_template with native text/shapes using creative.propose for preview/apply, not image generation. Exact retries are safe",
+        ),
+        #[cfg(feature = "full-daemon")]
         typed_action_schema::<crate::creative_tools::CreativePropose>(
             STORE_WRITE_ID,
             "creative.propose",
-            "Save a selection-bound creative edit proposal for explicit acceptance",
+            "Propose editable Create document changes for preview/apply, including top-level objects, background, and ordering. selected_ids is context, not an edit boundary. Rebuild UI as native frame/text/shape nodes",
         ),
         #[cfg(feature = "full-daemon")]
         typed_action_schema::<crate::creative_tools::CreativePromoteMedia>(
@@ -565,8 +591,12 @@ impl CognitionStoreReadTool {
     /// Read or search vault notes, creative selections, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, action: StoreReadAction) -> stasis::prelude::Result<ExternalJson> {
         #[cfg(feature = "full-daemon")]
-        if crate::creative_jobs::in_creative_turn() && !matches!(&action, StoreReadAction::CreativeRead(_)) {
-            return Err(stasis::prelude::StasisError::PortFailure("creative jobs can only read their admitted selection".into()));
+        if crate::creative_jobs::in_creative_turn()
+            && !matches!(&action, StoreReadAction::CreativeRead(_))
+        {
+            return Err(stasis::prelude::StasisError::PortFailure(
+                "creative jobs can only read their admitted selection".into(),
+            ));
         }
         Ok(ExternalJson::new(dispatch_read(self, action).await?))
     }
@@ -574,14 +604,21 @@ impl CognitionStoreReadTool {
 
 #[medousa_tool(id = STORE_WRITE_ID)]
 impl CognitionStoreWriteTool {
-    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].
+    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. creative.create starts a new empty frame scaffold. Then use creative.propose to turn the screenshot/request into editable text and shapes for preview/apply, and return the open_url as a Markdown link. creative.propose saves a selection-bound suggestion for explicit acceptance. artifacts.present shows saved HTML in chat without rewriting it; find it with artifacts.list (scope=workshop searches all chats). code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: StoreWriteAction,
     ) -> stasis::prelude::Result<ExternalJson> {
         #[cfg(feature = "full-daemon")]
-        if crate::creative_jobs::in_creative_turn() && !matches!(&action, StoreWriteAction::CreativePropose(_) | StoreWriteAction::CreativePromoteMedia(_)) {
-            return Err(stasis::prelude::StasisError::PortFailure("creative jobs can only propose changes or promote their own media".into()));
+        if crate::creative_jobs::in_creative_turn()
+            && !matches!(
+                &action,
+                StoreWriteAction::CreativePropose(_) | StoreWriteAction::CreativePromoteMedia(_)
+            )
+        {
+            return Err(stasis::prelude::StasisError::PortFailure(
+                "creative jobs can only propose changes or promote their own media".into(),
+            ));
         }
         Ok(ExternalJson::new(dispatch_write(self, action).await?))
     }
@@ -614,6 +651,8 @@ async fn dispatch_write(
 ) -> stasis::prelude::Result<Value> {
     match action {
         #[cfg(feature = "full-daemon")]
+        StoreWriteAction::CreativeCreate(params) => params.execute().await,
+        #[cfg(feature = "full-daemon")]
         StoreWriteAction::CreativePropose(params) => params.execute().await,
         #[cfg(feature = "full-daemon")]
         StoreWriteAction::CreativePromoteMedia(params) => {
@@ -621,7 +660,8 @@ async fn dispatch_write(
                 &tool.turn_scope,
                 &tool.fallback_chat_session_id,
                 "creative.promote_media",
-            ).await?;
+            )
+            .await?;
             params.execute(session_id).await
         }
         StoreWriteAction::VaultWrite(params) => params.execute(tool).await,
@@ -664,6 +704,25 @@ impl VaultList {
 
 impl VaultRead {
     async fn execute(self, tool: &CognitionStoreReadTool) -> stasis::prelude::Result<Value> {
+        if let Some(root) = referenced_vault_root(self.root_id, &self.path)? {
+            let path = self.path;
+            let read_root = root.clone();
+            let note = crate::vault::io::vault_io()
+                .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                    crate::vault::VaultService::get_note_in_root(&read_root, &path)
+                })
+                .await
+                .map_err(|e| stasis::prelude::StasisError::PortFailure(e.to_string()))?;
+            let excerpt = crate::line_grep::excerpt_lines(
+                &note.content,
+                self.line_start,
+                self.line_end,
+                self.max_chars.unwrap_or(12000).clamp(256, 20000),
+            );
+            return Ok(
+                serde_json::json!({ "root_id": root, "note_version": note.note_version, "vault_generation": note.vault_generation, "note": note.note, "content": excerpt.content, "truncated": excerpt.truncated, "total_lines": excerpt.total_lines, "raw_wikilinks": crate::vault::links::parse_raw_wikilinks(&note.content) }),
+            );
+        }
         let output = CognitionVaultReadTool::new(tool.event_tx.clone())
             .invoke_typed(VaultReadInput {
                 path: Some(self.path),
@@ -678,6 +737,24 @@ impl VaultRead {
 
 impl VaultSearch {
     async fn execute(self, tool: &CognitionStoreReadTool) -> stasis::prelude::Result<Value> {
+        if let Some(root) = self.root_id {
+            if self.path.is_some() {
+                return Err(stasis::prelude::StasisError::PortFailure("For a root-qualified passage, use vault.read with root_id and line_start/line_end.".into()));
+            }
+            let output = crate::vault::io::vault_io()
+                .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                    crate::vault::catalog::search_root(
+                        &root,
+                        self.query.as_deref().unwrap_or(""),
+                        self.limit.unwrap_or(25).clamp(1, 100),
+                        self.semantic_tags.map(|tags| tags.join(",")).as_deref(),
+                    )
+                })
+                .await
+                .map_err(|e| stasis::prelude::StasisError::PortFailure(e.to_string()))?;
+            return serde_json::to_value(output)
+                .map_err(|e| stasis::prelude::StasisError::PortFailure(e.to_string()));
+        }
         if present(self.path.as_deref()) {
             let output = CognitionVaultGrepTool::new(tool.event_tx.clone())
                 .invoke_typed(VaultGrepInput {
@@ -841,8 +918,88 @@ impl ScriptsSearch {
     }
 }
 
+fn referenced_vault_root(
+    explicit: Option<String>,
+    path: &str,
+) -> stasis::prelude::Result<Option<String>> {
+    let context = crate::agent_runtime::execution_context::active_turn_execution_context();
+    resolve_vault_reference(
+        explicit,
+        path,
+        context
+            .as_ref()
+            .map(|c| c.resource_references())
+            .unwrap_or_default(),
+    )
+}
+
+fn resolve_vault_reference(
+    explicit: Option<String>,
+    path: &str,
+    references: &[medousa_types::TurnResourceReference],
+) -> stasis::prelude::Result<Option<String>> {
+    if let Some(root) = explicit {
+        if root.trim().is_empty() {
+            return Err(stasis::prelude::StasisError::PortFailure(
+                "root_id must not be empty".into(),
+            ));
+        }
+        return Ok(Some(root));
+    }
+    let roots: std::collections::BTreeSet<_> = references
+        .iter()
+        .filter_map(|reference| match reference {
+            medousa_types::TurnResourceReference::VaultNote {
+                root_id,
+                path: note,
+                ..
+            } if note == path => Some(root_id),
+            _ => None,
+        })
+        .collect();
+    if roots.len() > 1 {
+        return Err(stasis::prelude::StasisError::PortFailure(
+            "This note path is referenced in multiple vaults; specify root_id".into(),
+        ));
+    }
+    Ok(roots.first().map(|root| (*root).clone()))
+}
+
 impl VaultWrite {
     async fn execute(self, tool: &CognitionStoreWriteTool) -> stasis::prelude::Result<Value> {
+        if let Some(root) = referenced_vault_root(self.root_id, &self.path)? {
+            let session = crate::runtime_session::resolve_active_chat_session_id_async(
+                &tool.turn_scope,
+                &tool.fallback_chat_session_id,
+            )
+            .await?;
+            let content = crate::semantic_values::RequiredContent::new(self.content)
+                .map_err(|_| {
+                    stasis::prelude::StasisError::PortFailure("content is required".into())
+                })?
+                .into_string();
+            let request = crate::daemon_api::VaultWriteRequest {
+                path: Some(self.path.clone()),
+                content,
+                session_id: Some(crate::locus_memory::resolve_workshop_locus_session(
+                    &session,
+                )),
+                semantic_tags: self.semantic_tags,
+                auto_workshop_tags: self.auto_workshop_tags.unwrap_or(true),
+            };
+            let output = crate::vault::io::vault_io()
+                .run_anyhow(crate::vault::io::VaultIoClass::Mutation, move || {
+                    crate::vault::VaultService::write_note_in_root(
+                        &root,
+                        &self.path,
+                        &request,
+                        self.if_match.as_deref(),
+                    )
+                })
+                .await
+                .map_err(|e| stasis::prelude::StasisError::PortFailure(e.to_string()))?;
+            return serialize_output(CognitionVaultWriteTool::tool_id(), output);
+        }
         let output = CognitionVaultWriteTool::new(
             tool.event_tx.clone(),
             tool.turn_scope.clone(),
@@ -864,6 +1021,15 @@ impl VaultWrite {
 
 impl VaultDelete {
     async fn execute(self, tool: &CognitionStoreWriteTool) -> stasis::prelude::Result<Value> {
+        if let Some(root) = referenced_vault_root(self.root_id, &self.path)? {
+            let output = crate::vault::io::vault_io()
+                .run_anyhow(crate::vault::io::VaultIoClass::Mutation, move || {
+                    crate::vault::VaultService::delete_note_in_root(&root, &self.path)
+                })
+                .await
+                .map_err(|e| stasis::prelude::StasisError::PortFailure(e.to_string()))?;
+            return serialize_output(CognitionVaultDeleteTool::tool_id(), output);
+        }
         let output = CognitionVaultDeleteTool::new(tool.event_tx.clone())
             .invoke_typed(VaultDeleteInput {
                 path: Some(self.path),
@@ -875,6 +1041,15 @@ impl VaultDelete {
 
 impl VaultMove {
     async fn execute(self, tool: &CognitionStoreWriteTool) -> stasis::prelude::Result<Value> {
+        if let Some(root) = referenced_vault_root(self.root_id, &self.path)? {
+            let output = crate::vault::io::vault_io()
+                .run_anyhow(crate::vault::io::VaultIoClass::Mutation, move || {
+                    crate::vault::VaultService::move_note_in_root(&root, &self.path, &self.to_path)
+                })
+                .await
+                .map_err(|e| stasis::prelude::StasisError::PortFailure(e.to_string()))?;
+            return serialize_output(CognitionVaultMoveTool::tool_id(), output);
+        }
         let output = CognitionVaultMoveTool::new(tool.event_tx.clone())
             .invoke_typed(VaultMoveInput {
                 from_path: Some(self.path),
@@ -928,6 +1103,7 @@ impl ArtifactsPresent {
 
 impl CodeWrite {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
         let expected_sha256 = self.expected_sha256.into_option().unwrap_or_default();
         #[cfg(feature = "full-daemon")]
         if let Some(invocation) =
@@ -990,6 +1166,41 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn note_reference_routing_is_exact_and_rejects_ambiguous_paths() {
+        let note = |root: &str| medousa_types::TurnResourceReference::VaultNote {
+            root_id: root.into(),
+            path: "spec.md".into(),
+            title: "Spec".into(),
+            selection: None,
+        };
+        assert_eq!(
+            resolve_vault_reference(None, "spec.md", &[note("first")])
+                .unwrap()
+                .as_deref(),
+            Some("first")
+        );
+        assert!(
+            resolve_vault_reference(None, "spec.md", &[note("first"), note("second")]).is_err()
+        );
+        assert_eq!(
+            resolve_vault_reference(
+                Some("second".into()),
+                "spec.md",
+                &[note("first"), note("second")]
+            )
+            .unwrap()
+            .as_deref(),
+            Some("second")
+        );
+        assert!(
+            resolve_vault_reference(None, "unrelated.md", &[note("first")])
+                .unwrap()
+                .is_none()
+        );
+        assert!(resolve_vault_reference(Some("".into()), "spec.md", &[]).is_err());
+    }
+
     fn artifact_tools_for_session(
         session_id: &str,
         supported: bool,
@@ -1035,11 +1246,15 @@ mod tests {
             turn_scope: Default::default(),
             fallback_chat_session_id: crate::runtime_session::runtime_bootstrap_session_id().into(),
         };
-        let error = dispatch_write(&tool, StoreWriteAction::CreativePromoteMedia(
-            crate::creative_tools::CreativePromoteMedia {
-                document_id: "test".into(), media_id: "test".into(),
-            },
-        )).await.unwrap_err();
+        let error = dispatch_write(
+            &tool,
+            StoreWriteAction::CreativePromoteMedia(crate::creative_tools::CreativePromoteMedia {
+                document_id: "test".into(),
+                media_id: "test".into(),
+            }),
+        )
+        .await
+        .unwrap_err();
         assert!(error.to_string().contains("execution context required"));
     }
 

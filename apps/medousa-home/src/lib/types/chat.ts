@@ -164,7 +164,10 @@ export interface PendingBudgetApproval {
   message: string;
 }
 
+export type AgentPermissionOption = import("$lib/types/generated/daemon_api").AgentPermissionOption;
+
 export interface PendingAgentPermission {
+  options?: AgentPermissionOption[];
   turnId: string;
   messageId: string | null;
   /** Daemon ACP permission request id (approve/deny API). */
@@ -193,6 +196,8 @@ export interface TurnTicketState {
   phase: string;
   messageId: string | null;
   streamAttached: boolean;
+  /** External agent-session streams reuse their sequence across prompts. */
+  reusableStream?: boolean;
   terminal: boolean;
   workspaceCardId?: string | null;
   budgetRequestId?: string | null;

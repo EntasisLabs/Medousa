@@ -280,3 +280,18 @@ values are excluded from editable text; screenshot redaction follows the existin
 browser rules. Normal save, undo, export, and Ask Medousa work on the imported copy.
 Select its frame and use **Update Code** when ready to implement your redesign.
 Both directions require updated app and daemon builds.
+
+## Start from a conversation
+
+Paste a screenshot into Chat or Spotlight and ask Medousa for a wireframe.
+Medousa creates a frame scaffold and proposes editable text and shapes. Open the
+returned Create link to preview the proposal and choose **Use this**; applying is
+one undoable transaction. Proposals made from a conversation appear in the same
+canvas controls as Create's own requests. Apply a chat proposal before refining
+its preview from the canvas.
+
+Create requests keep your wording as the user message. Selection IDs, captured
+images, revision information, and job instructions travel separately through the
+runtime. **Build in Code** and **Update Code** likewise pass an immutable design
+reference that Medousa reads with tools, so later canvas changes cannot silently
+alter an already submitted handoff.

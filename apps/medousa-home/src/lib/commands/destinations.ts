@@ -2,6 +2,7 @@ import type { Surface } from "$lib/types/ui";
 
 export const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keywords: string }[] = [
   { surface: "chat", label: "Chat", subtitle: "Talk with Medousa", keywords: "message compose conversation" },
+  { surface: "create", label: "Create", subtitle: "Canvases and visual work", keywords: "create canvas design drawing" },
   { surface: "notes", label: "Notes", subtitle: "Vault notes and markdown", keywords: "vault notes documents library" },
   { surface: "files", label: "Files", subtitle: "Pinned folders on this machine", keywords: "files folders pin local" },
   { surface: "artifacts", label: "Artifacts", subtitle: "HTML decks and agent widgets", keywords: "artifacts presentations decks widgets" },

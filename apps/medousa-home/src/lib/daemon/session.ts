@@ -10,6 +10,8 @@ import type {
 } from "$lib/types/session";
 import type {
   AgentModeListResponse,
+  AgentRuntimeCapabilities,
+  AgentRuntimeInfo as GeneratedAgentRuntimeInfo,
   AgentModeProposalListResponse,
   AgentModeProposalResponse,
   AgentModeTransitionPolicy,
@@ -387,6 +389,7 @@ export async function createTurnTicket(
         browser_driver_id: request.browserDriverId ?? null,
         selected_worlds: request.selectedWorlds ?? [],
       },
+      host_context: request.hostContext ?? null,
       media_refs: request.mediaRefs ?? [],
       liquid_interactions: request.liquidInteractions ?? [],
       voice_preset_id: request.voicePresetId ?? null,
@@ -410,6 +413,7 @@ export async function createTurnTicket(
     channelSurface: request.channelSurface ?? null,
     browserDriverId: request.browserDriverId ?? null,
     selectedWorlds: invokePlain(request.selectedWorlds ?? null),
+    hostContext: invokePlain(request.hostContext ?? null),
     mediaRefs: invokePlain(request.mediaRefs ?? null),
     liquidInteractions: invokePlain(request.liquidInteractions ?? null),
     voicePresetId: request.voicePresetId ?? null,
@@ -418,13 +422,7 @@ export async function createTurnTicket(
   });
 }
 
-export type AgentRuntimeInfo = {
-  runtime: string;
-  available: boolean;
-  command?: string | null;
-  detail?: string | null;
-  uses_native_turns?: boolean;
-};
+export type AgentRuntimeInfo = GeneratedAgentRuntimeInfo;
 
 export type AgentRuntimeListResponse = {
   runtimes: AgentRuntimeInfo[];
@@ -469,6 +467,7 @@ export type CreateAgentSessionResponse = {
   work_id?: string | null;
   resumed?: boolean | null;
   config_options?: AgentSessionConfigOption[];
+  capabilities?: AgentRuntimeCapabilities;
 };
 
 export type AgentSessionConfigChoice = {
@@ -545,9 +544,11 @@ export async function listAgentPermissionRequests(options?: {
 export async function approveAgentPermission(
   requestId: string,
   resolvedBy?: string,
+  optionId?: string,
 ): Promise<unknown> {
   return invoke("agents_approve_permission", {
     requestId,
+    optionId: optionId ?? null,
     resolvedBy: resolvedBy ?? null,
   });
 }

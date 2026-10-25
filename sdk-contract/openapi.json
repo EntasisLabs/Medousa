@@ -68,6 +68,52 @@
         ],
         "type": "string"
       },
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "type": "object"
+      },
+      "AgentRuntimeCapabilities": {
+        "description": "Capabilities negotiated with a live external agent. Defaults never claim support.",
+        "properties": {
+          "audio": {
+            "default": false,
+            "type": "boolean"
+          },
+          "fork": {
+            "default": false,
+            "type": "boolean"
+          },
+          "images": {
+            "default": false,
+            "type": "boolean"
+          },
+          "resume": {
+            "default": false,
+            "type": "boolean"
+          },
+          "terminal": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "AgentRuntimeInfo": {
         "properties": {
           "auth_detail": {
@@ -2363,7 +2409,7 @@
             ]
           },
           "runtime": {
-            "description": "External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).",
+            "description": "External coding runtime ID (not the native `medousa` runtime).",
             "type": "string"
           },
           "session_id": {
@@ -2402,6 +2448,20 @@
           },
           "agent_session_id": {
             "type": "string"
+          },
+          "capabilities": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgentRuntimeCapabilities"
+              }
+            ],
+            "default": {
+              "audio": false,
+              "fork": false,
+              "images": false,
+              "resume": false,
+              "terminal": false
+            }
           },
           "config_options": {
             "description": "Runtime-advertised ACP session controls. Clients must render these capability-first rather than assuming every agent supports model or reasoning selection.",
@@ -3069,11 +3129,15 @@
               "$ref": "#/components/schemas/MediaRef"
             },
             "type": "array"
+          },
+          "snapshot_id": {
+            "type": "string"
           }
         },
         "required": [
           "context",
-          "media_refs"
+          "media_refs",
+          "snapshot_id"
         ],
         "title": "CreativeCodeContext",
         "type": "object"
@@ -4911,6 +4975,16 @@
               "null"
             ]
           },
+          "host_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HostTurnContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "idempotency_key": {
             "default": null,
             "description": "Reuse this key when retrying the same admission after an uncertain response.",
@@ -5924,7 +5998,12 @@
           "medousa",
           "codex",
           "cursor",
-          "hermes"
+          "hermes",
+          "claude",
+          "devin",
+          "pi",
+          "muse_code",
+          "hades"
         ],
         "type": "string"
       },
@@ -6692,6 +6771,12 @@
               "string",
               "null"
             ]
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/TurnResourceReference"
+            },
+            "type": "array"
           },
           "related_resources": {
             "items": {
@@ -12105,6 +12190,104 @@
           }
         ]
       },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "vault_note"
+                ],
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "code_project"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "creative_selection"
+                ],
+                "type": "string"
+              },
+              "selected_ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "TurnSliceSummary": {
         "properties": {
           "delegate_intent": {
@@ -12882,6 +13065,15 @@
               "message": {
                 "type": "string"
               },
+              "permission_options": {
+                "items": {
+                  "$ref": "#/components/schemas/AgentPermissionOption"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
               "request_id": {
                 "type": "string"
               },
@@ -13497,6 +13689,13 @@
           },
           "query": {
             "type": "string"
+          },
+          "root_id": {
+            "description": "Explicit catalog root; absent for the active-root full-text search.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -13680,6 +13879,20 @@
               "kind": {
                 "enum": [
                   "execute"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "continue_work"
                 ],
                 "type": "string"
               }

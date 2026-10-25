@@ -135,6 +135,8 @@ fn default_agent_runtime_version() -> String {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct EnqueueAskRequest {
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_context: Option<HostTurnContext>,
     /// Reuse this key when retrying the same admission after an uncertain response.
     #[serde(default)]
     pub idempotency_key: Option<String>,
@@ -2081,6 +2083,8 @@ pub struct InteractiveTurnStreamEvent {
     /// External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_options: Option<Vec<AgentPermissionOption>>,
     /// Bound Medousa chat session for agent-runtime streams (`turn_id` holds agent_session_id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
@@ -3136,6 +3140,9 @@ pub struct VaultSearchHit {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultSearchResponse {
+    /// Explicit catalog root; absent for the active-root full-text search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_id: Option<String>,
     pub query: String,
     pub hits: Vec<VaultSearchHit>,
     /// True when the search index is rebuilding / not yet warm.
@@ -3146,6 +3153,9 @@ pub struct VaultSearchResponse {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultSearchQuery {
+    /// Search a configured root without changing the active editing vault.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_id: Option<String>,
     pub q: Option<String>,
     pub limit: Option<usize>,
     /// Comma-separated semantic tags (match-all).
@@ -3646,6 +3656,12 @@ pub enum AgentRuntimeId {
     Cursor,
     Codex,
     Hermes,
+    Claude,
+    Devin,
+    Pi,
+    #[serde(rename = "muse_code")]
+    MuseCode,
+    Hades,
 }
 
 impl AgentRuntimeId {
@@ -3655,6 +3671,11 @@ impl AgentRuntimeId {
             Self::Cursor => "cursor",
             Self::Codex => "codex",
             Self::Hermes => "hermes",
+            Self::Claude => "claude",
+            Self::Devin => "devin",
+            Self::Pi => "pi",
+            Self::MuseCode => "muse_code",
+            Self::Hades => "hades",
         }
     }
 
@@ -3664,9 +3685,26 @@ impl AgentRuntimeId {
             "cursor" => Some(Self::Cursor),
             "codex" => Some(Self::Codex),
             "hermes" => Some(Self::Hermes),
+            "claude" => Some(Self::Claude),
+            "devin" => Some(Self::Devin),
+            "pi" => Some(Self::Pi),
+            "muse_code" => Some(Self::MuseCode),
+            "hades" => Some(Self::Hades),
             _ => None,
         }
     }
+}
+
+/// Capabilities negotiated with a live external agent. Defaults never claim support.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(default)]
+pub struct AgentRuntimeCapabilities {
+    pub resume: bool,
+    pub fork: bool,
+    pub images: bool,
+    pub audio: bool,
+    pub terminal: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3836,7 +3874,7 @@ pub struct CodeIntentContext {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateAgentSessionRequest {
     pub session_id: String,
-    /// External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).
+    /// External coding runtime ID (not the native `medousa` runtime).
     pub runtime: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
@@ -3881,6 +3919,8 @@ pub struct CreateAgentSessionResponse {
     /// reasoning selection.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config_options: Vec<AgentSessionConfigOption>,
+    #[serde(default)]
+    pub capabilities: AgentRuntimeCapabilities,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3956,6 +3996,15 @@ pub enum AgentPermissionRequestStatus {
     Expired,
 }
 
+/// An agent's exact permission or selection option; IDs are opaque to clients.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentPermissionOption {
+    pub option_id: String,
+    pub name: String,
+    pub kind: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AgentPermissionRequestRecord {
@@ -3964,6 +4013,10 @@ pub struct AgentPermissionRequestRecord {
     pub session_id: String,
     pub runtime: String,
     pub summary: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<AgentPermissionOption>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_option_id: Option<String>,
     pub status: AgentPermissionRequestStatus,
     pub created_at_utc: DateTime<Utc>,
     pub updated_at_utc: DateTime<Utc>,
@@ -3991,6 +4044,8 @@ pub struct AgentPermissionRequestListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AgentPermissionResolveRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_by: Option<String>,
 }
