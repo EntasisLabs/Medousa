@@ -113,7 +113,7 @@ async def test_code_handoff_preserves_the_frame_visual_revision_and_session():
     transport = MockTransport({
         ("POST", "/v1/create/projects/doc/code-context"): lambda *_: {
             "context": {"document_id": "doc", "revision": 7, "selected_ids": ["frame"],
-                        "nodes": [], "assets": [], "fingerprint": "frozen"}, "media_refs": []},
+                        "nodes": [], "assets": [], "fingerprint": "frozen"}, "snapshot_id": "frozen_context", "media_refs": []},
     })
     client = MedousaClient("http://workshop", transport=transport)
     request = CreativeCodeContextRequest(
@@ -124,4 +124,5 @@ async def test_code_handoff_preserves_the_frame_visual_revision_and_session():
     )
     result = await client.creative().code_context("doc", request)
     assert result.context.revision == 7
+    assert result.snapshot_id == "frozen_context"
     assert transport.calls[0][2] == request.model_dump(mode="json")

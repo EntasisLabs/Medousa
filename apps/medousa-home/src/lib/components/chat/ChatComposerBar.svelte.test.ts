@@ -6,7 +6,7 @@ import ChatComposerBar from "./ChatComposerBar.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 
 const actions = vi.hoisted(() => ({ attach: vi.fn(), cancel: vi.fn(), modelPicker: vi.fn() }));
-vi.mock("$lib/stores/chat.svelte", () => { const state = $state({ draft: "Unsent draft", focusedSessionId: "session", pendingMediaRefs: [], pendingMediaUploading: false, liveStreamActive: false, hasWorkshopHandoff: () => false, attachDroppedFiles: actions.attach, cancelActiveTurn: actions.cancel }); return { chat: state }; });
+vi.mock("$lib/stores/chat.svelte", () => { const state = $state({ draft: "Unsent draft", focusedSessionId: "session", pendingMediaRefs: [], pendingResourceRefs: [], pendingMediaUploading: false, liveStreamActive: false, hasWorkshopHandoff: () => false, attachDroppedFiles: actions.attach, cancelActiveTurn: actions.cancel }); return { chat: state }; });
 vi.mock("$lib/stores/runtime.svelte", () => ({ runtime: { savingControls: false } }));
 vi.mock("$lib/stores/settings.svelte", () => ({ settings: { showChatModelPicker: false } }));
 vi.mock("$lib/stores/bots.svelte", () => ({ bots: { forSession: () => null } }));

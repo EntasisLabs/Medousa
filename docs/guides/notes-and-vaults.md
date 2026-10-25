@@ -22,3 +22,14 @@ Search includes a short text preview and can take a few seconds to reflect an
 external edit. If Spotlight asks you to update the workshop engine, rebuild or
 update the daemon as well as the app so it can identify each search result's
 vault safely.
+
+## Talk about a note or passage
+
+**Talk about this note**, **Add selection to chat**, and **Send note to Work**
+attach a reference to the exact workshop and vault. The composer shows the note
+or passage as context; its body and integration instructions are not inserted
+into your message. Medousa reads the note as needed, while a selected passage
+retains its captured text. Pinned context remains with its conversation across
+follow-ups and chat switching. Switching the editing vault does not retarget an
+already attached note with the same relative filename. Remove the context chip
+to detach it.

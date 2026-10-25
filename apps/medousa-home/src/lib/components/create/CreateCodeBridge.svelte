@@ -2,7 +2,7 @@
   import { onDestroy, untrack } from "svelte";
   import { Code2, X, ArrowUpRight } from "@lucide/svelte";
   import TaskDialogFrame from "$lib/components/tasks/TaskDialogFrame.svelte";
-  import { creativeBridgeApi, designBuildPrompt } from "$lib/create/creativeBridge";
+  import { creativeBridgeApi, designBuildPrompt, designBuildContext } from "$lib/create/creativeBridge";
   import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
@@ -66,7 +66,7 @@
       const prompt = designBuildPrompt(saved, saved.scene.nodes.find(n => n.id === frameId)!, direction, context.context);
       // Never silently resubmit a timed-out runtime admission: the session can recover it.
       uncertain = true;
-      await api.start(sessionId, workId, prompt, context.media_refs);
+      await api.start(sessionId, workId, prompt, context.media_refs, designBuildContext(saved, saved.scene.nodes.find(n => n.id === frameId)!, context));
       uncertain = false; openConversation();
     } catch (e) { error = (e instanceof Error ? e.message : String(e)) + (uncertain ? " Open the conversation to check whether the request started before sending another." : ""); }
     finally { busy = false; }

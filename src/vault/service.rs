@@ -197,6 +197,172 @@ impl VaultService {
         }
     }
 
+    /// Read exactly one configured root without changing the active editing vault.
+    pub fn get_note_in_root(root_id: &str, path: &str) -> Result<VaultNoteContentResponse> {
+        Self::read_note_from_root(&Self::configured_root(root_id)?, path)
+    }
+    fn configured_root(root_id: &str) -> Result<crate::daemon_api::VaultRootView> {
+        crate::vault::roots::list_vault_root_views()
+            .roots
+            .into_iter()
+            .find(|root| root.id == root_id)
+            .ok_or_else(|| anyhow::anyhow!("Unknown vault root: {root_id}"))
+    }
+
+    /// The root stays fixed for the complete transaction, independent of UI vault switching.
+    pub fn write_note_in_root(
+        root_id: &str,
+        path: &str,
+        request: &VaultWriteRequest,
+        if_match: Option<&str>,
+    ) -> Result<VaultWriteResponse> {
+        Self::write_note_to_root(&Self::configured_root(root_id)?, path, request, if_match)
+    }
+
+    fn write_note_to_root(
+        root: &crate::daemon_api::VaultRootView,
+        path: &str,
+        request: &VaultWriteRequest,
+        if_match: Option<&str>,
+    ) -> Result<VaultWriteResponse> {
+        use crate::vault::contracts::{MutationPrecondition, NoteVersion};
+        let path = VaultPath::parse(path)?;
+        let owner =
+            crate::vault::owner::ensure_owner_for_root(std::path::PathBuf::from(&root.path))?;
+        let existed = owner.files.is_file(&path)?;
+        let content = apply_semantic_tags_on_write(
+            &request.content,
+            request.session_id.as_deref(),
+            request.semantic_tags.as_deref(),
+            !root.is_obsidian && request.auto_workshop_tags,
+        );
+        let expected = if_match.map(str::trim).filter(|s| !s.is_empty());
+        let outcome = crate::vault::mutation::commit_write(
+            &owner,
+            crate::vault::mutation::WriteMutation {
+                path: path.to_string(),
+                content: content.clone(),
+                precondition: if expected.is_some() {
+                    MutationPrecondition::Match
+                } else if existed {
+                    MutationPrecondition::Unconditional
+                } else {
+                    MutationPrecondition::CreateOnly
+                },
+                expected_version: expected.map(NoteVersion::parse),
+            },
+        )?;
+        Self::refresh_qualified_root(root);
+        let metadata = owner.files.metadata(&path)?;
+        let entry = crate::vault::note::build_index_entry(
+            path.as_str(),
+            &content,
+            metadata.created.unwrap_or(std::time::UNIX_EPOCH).into(),
+            metadata.modified.unwrap_or(std::time::UNIX_EPOCH).into(),
+            crate::vault::note::VaultNoteSource::User,
+            &Default::default(),
+            &[],
+        );
+        Ok(VaultWriteResponse {
+            note: entry.to_vault_note(vec![]),
+            created: !existed,
+            content: Some(content),
+            vault_generation: Some(outcome.vault_generation),
+            note_version: Some(outcome.note_version.as_str().to_string()),
+        })
+    }
+
+    pub fn delete_note_in_root(root_id: &str, path: &str) -> Result<VaultDeleteResponse> {
+        let root = Self::configured_root(root_id)?;
+        let owner =
+            crate::vault::owner::ensure_owner_for_root(std::path::PathBuf::from(&root.path))?;
+        crate::vault::relocate::relocate_delete(&owner, path)?;
+        Self::refresh_qualified_root(&root);
+        Ok(VaultDeleteResponse {
+            path: path.to_string(),
+            deleted: true,
+        })
+    }
+
+    pub fn move_note_in_root(root_id: &str, from: &str, to: &str) -> Result<VaultWriteResponse> {
+        let root = Self::configured_root(root_id)?;
+        let owner =
+            crate::vault::owner::ensure_owner_for_root(std::path::PathBuf::from(&root.path))?;
+        let outcome = crate::vault::relocate::relocate_move(&owner, from, to)?;
+        Self::refresh_qualified_root(&root);
+        let note = Self::read_note_from_root(&root, to)?;
+        Ok(VaultWriteResponse {
+            note: note.note,
+            created: false,
+            content: Some(note.content),
+            vault_generation: Some(outcome.vault_generation),
+            note_version: note.note_version,
+        })
+    }
+
+    fn refresh_qualified_root(root: &crate::daemon_api::VaultRootView) {
+        // Only the active root owns the singleton UI projection. Other roots keep their owner journal.
+        if std::path::Path::new(&root.path) == crate::vault::roots::active_vault_root()
+            && let Err(error) = vault_store().refresh_from_disk()
+        {
+            tracing::warn!(%error, "vault mutation committed; projection refresh failed");
+        }
+    }
+
+    fn read_note_from_root(
+        root: &crate::daemon_api::VaultRootView,
+        path: &str,
+    ) -> Result<VaultNoteContentResponse> {
+        let path = VaultPath::parse(path)?;
+        let owner =
+            crate::vault::owner::ensure_owner_for_root(std::path::PathBuf::from(&root.path))?;
+        let files = &owner.files;
+        let read = |files: &crate::store_root::StoreRoot| -> Result<_> {
+            let bytes = files.read_limited(&path, 8 * 1024 * 1024)?;
+            let metadata = files.metadata(&path)?;
+            Ok((String::from_utf8(bytes)?, metadata))
+        };
+        let generation = owner.current_generation();
+        let (content, metadata, source) = match read(files) {
+            Ok((content, metadata)) => {
+                (content, metadata, crate::vault::note::VaultNoteSource::User)
+            }
+            Err(error) if root.is_default && !files.is_file(&path)? => {
+                let Some(overlay) = crate::vault::path::project_vault_overlay_capability()? else {
+                    return Err(error);
+                };
+                let (content, metadata) = read(&overlay)?;
+                (
+                    content,
+                    metadata,
+                    crate::vault::note::VaultNoteSource::ProjectOverlay,
+                )
+            }
+            Err(error) => return Err(error),
+        };
+        let version = crate::vault::contracts::NoteVersion::encode(
+            owner.root_id.as_str(),
+            &source,
+            generation,
+            &crate::vault::note::content_hash(&content),
+        );
+        let entry = crate::vault::note::build_index_entry(
+            path.as_str(),
+            &content,
+            metadata.created.unwrap_or(std::time::UNIX_EPOCH).into(),
+            metadata.modified.unwrap_or(std::time::UNIX_EPOCH).into(),
+            source,
+            &Default::default(),
+            &[],
+        );
+        Ok(VaultNoteContentResponse {
+            note: entry.to_vault_note(vec![]),
+            content,
+            vault_generation: Some(generation),
+            note_version: Some(version.as_str().to_string()),
+        })
+    }
+
     pub fn get_note(path: &str) -> Result<VaultNoteContentResponse> {
         const MAX_ATTEMPTS: usize = 4;
         let mut last_err = None;
@@ -661,6 +827,104 @@ fn append_vault_feed_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_reads_are_root_qualified_and_never_escape_through_links() {
+        let _lock = vault_integration_test_lock();
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        std::fs::write(first.path().join("same.md"), "# First vault").unwrap();
+        std::fs::write(second.path().join("same.md"), "# Second vault").unwrap();
+        let view = |dir: &std::path::Path| crate::daemon_api::VaultRootView {
+            id: "configured".into(),
+            label: "Test".into(),
+            path: dir.canonicalize().unwrap().display().to_string(),
+            is_default: false,
+            active: false,
+            is_obsidian: false,
+        };
+        assert_eq!(
+            VaultService::read_note_from_root(&view(first.path()), "same.md")
+                .unwrap()
+                .content,
+            "# First vault"
+        );
+        assert_eq!(
+            VaultService::read_note_from_root(&view(second.path()), "same.md")
+                .unwrap()
+                .content,
+            "# Second vault"
+        );
+        assert!(VaultService::read_note_from_root(&view(first.path()), "../same.md").is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                second.path().join("same.md"),
+                first.path().join("linked.md"),
+            )
+            .unwrap();
+            assert!(VaultService::read_note_from_root(&view(first.path()), "linked.md").is_err());
+        }
+    }
+    #[test]
+    fn reference_writes_target_the_original_root_and_reject_stale_versions() {
+        let _lock = vault_integration_test_lock();
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        std::fs::write(first.path().join("spec.md"), "# First").unwrap();
+        std::fs::write(second.path().join("spec.md"), "# Second").unwrap();
+        let root = crate::daemon_api::VaultRootView {
+            id: "first".into(),
+            label: "First".into(),
+            path: first.path().canonicalize().unwrap().display().to_string(),
+            is_default: false,
+            active: false,
+            is_obsidian: true,
+        };
+        let before = VaultService::read_note_from_root(&root, "spec.md").unwrap();
+        let request = VaultWriteRequest {
+            content: "# Updated".into(),
+            ..Default::default()
+        };
+        let written = VaultService::write_note_to_root(
+            &root,
+            "spec.md",
+            &request,
+            before.note_version.as_deref(),
+        )
+        .unwrap();
+        assert_eq!(written.content.as_deref(), Some("# Updated"));
+        assert_ne!(written.note_version, before.note_version);
+        assert_eq!(
+            std::fs::read_to_string(first.path().join("spec.md")).unwrap(),
+            "# Updated"
+        );
+        assert_eq!(
+            std::fs::read_to_string(second.path().join("spec.md")).unwrap(),
+            "# Second"
+        );
+        assert!(
+            VaultService::write_note_to_root(
+                &root,
+                "spec.md",
+                &request,
+                before.note_version.as_deref()
+            )
+            .is_err()
+        );
+        assert!(VaultService::write_note_to_root(&root, "../escape.md", &request, None).is_err());
+        let owner =
+            crate::vault::owner::ensure_owner_for_root(first.path().canonicalize().unwrap())
+                .unwrap();
+        crate::vault::relocate::relocate_move(&owner, "spec.md", "moved.md").unwrap();
+        assert!(first.path().join("moved.md").exists());
+        crate::vault::relocate::relocate_delete(&owner, "moved.md").unwrap();
+        assert!(!first.path().join("moved.md").exists());
+        assert_eq!(
+            std::fs::read_to_string(second.path().join("spec.md")).unwrap(),
+            "# Second"
+        );
+    }
 
     #[test]
     fn wikilink_resolves_and_backlinks() {

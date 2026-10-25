@@ -109,6 +109,10 @@ pub async fn spawn_turn_ticket(
     workspace_card_id: Option<String>,
     request_fingerprint: Option<String>,
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
+    if let Some(context) = interactive_request.host_context.as_ref() {
+        crate::agent_runtime::host_context::validate_references(context)
+            .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    }
     // Every admission path, including background jobs, must carry the bound
     // profile into runtime identity and durable continuations.
     apply_principal_identity(&principal, &mut interactive_request.identity_user_id);
@@ -309,6 +313,13 @@ pub async fn spawn_turn_ticket(
             .as_ref()
             .map(|wake| wake.source)
             .unwrap_or(medousa_types::wake::WakeSource::Human),
+    );
+    execution_context = execution_context.with_resource_references(
+        interactive_request
+            .host_context
+            .as_ref()
+            .map(|context| context.references.clone())
+            .unwrap_or_default(),
     );
     if let Some(bot_identity) = bot_identity {
         execution_context = execution_context.with_bot_identity(bot_identity);

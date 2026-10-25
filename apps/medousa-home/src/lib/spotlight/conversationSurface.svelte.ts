@@ -7,6 +7,7 @@ import { AddressedConversation } from "./addressedConversation.svelte";
 export function createConversationSurface(visible: () => boolean, picking: () => boolean, onWorkshopChange: () => void) {
   const conversation = new AddressedConversation();
   const wantsTargets = $derived(picking());
+  let epoch = chat.workshopEpoch;
   $effect(() => {
     if (!visible() || !wantsTargets) return;
     void activeWorkshopId();
@@ -16,7 +17,8 @@ export function createConversationSurface(visible: () => boolean, picking: () =>
     void activeWorkshopId();
     void chat.sessionId;
     const scope = chat.workshopScopeId;
-    if (conversation.target && conversation.target.scope !== scope) {
+    if (epoch !== chat.workshopEpoch || (conversation.target && conversation.target.scope !== scope)) {
+      epoch = chat.workshopEpoch;
       untrack(() => { conversation.clear(); onWorkshopChange(); });
     }
   });

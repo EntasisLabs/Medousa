@@ -27,7 +27,7 @@ beforeEach(() => {
     if (op === "forge.items.get") return [{ id: "repo", title: "Medousa" }];
     if (op === "forge.items.by_work_id.get") return { id: "repo", workspace_present: true };
     if (op === "sessions.by_session_id.code_binding.get") return { work_id: "repo" };
-    if (op === "create.projects.by_id.code_context.post") return { context: { revision: 7, nodes: doc.scene.nodes }, media_refs: [{ id: "snapshot", kind: "image" }] };
+    if (op === "create.projects.by_id.code_context.post") return { snapshot_id: "frozen_design", context: { revision: 7, nodes: doc.scene.nodes }, media_refs: [{ id: "snapshot", kind: "image" }] };
     return {};
   });
   vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
@@ -39,7 +39,7 @@ it("uses the linked conversation, exact saved visual and existing Code runtime o
   button("Update Code").click(); await settle();
   expect(f.capture).toHaveBeenCalledWith(7, ["frame"]);
   expect(f.request).toHaveBeenCalledWith("create.projects.by_id.code_context.post", { id: "design" }, { frame_id: "frame", expected_revision: 7, visual_asset_id: "visual", session_id: "thread" }, null, undefined, "one");
-  expect(f.request.mock.calls.find(c => c[0] === "turns.post")?.[2]).toMatchObject({ session_id: "thread", agent_mode: "coder", code_context: { work_id: "repo" }, media_refs: [{ id: "snapshot", kind: "image" }] });
+  expect(f.request.mock.calls.find(c => c[0] === "turns.post")?.[2]).toMatchObject({ session_id: "thread", agent_mode: "coder", code_context: { work_id: "repo" }, host_context: { references: [{ document_id: "design", selected_ids: ["frame"], snapshot_id: "frozen_design" }] }, media_refs: [{ id: "snapshot", kind: "image" }] });
   expect(f.chat).toHaveBeenCalledWith("thread", { activate: true });
 });
 it("blocks dirty Code files before capturing or starting a turn", async () => {

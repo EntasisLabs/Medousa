@@ -15,6 +15,8 @@ export interface VaultNoteSelection {
 }
 
 export interface VaultNoteContextScope {
+  rootId?: string;
+  workshopId?: string;
   path: string;
   title: string;
   linkCount: number;
@@ -106,53 +108,20 @@ export function noteExcerpt(content: string, maxChars = 1200): string {
 }
 
 export function buildAskAboutNoteDraft(
-  path: string,
-  title: string,
-  content: string,
-  linkCount = 0,
+  _path: string,
+  _title: string,
+  _content: string,
+  _linkCount = 0,
 ): string {
-  const label = vaultDisplayTitle(title, path);
-  const excerpt = noteExcerpt(content);
-  const linkHint =
-    linkCount > 0
-      ? `\n\nAlso consider the ${linkCount} linked note${linkCount === 1 ? "" : "s"} from this page.`
-      : "";
-  return `I'm reading my vault note "${label}" (\`${path}\`).\n\n${excerpt}${linkHint}\n\nHelp me think through this note.`;
+  return "Help me think through this note.";
 }
 
 export function buildAskAboutSelectionDraft(
-  path: string,
-  title: string,
-  selectedText: string,
-): string {
-  const label = vaultDisplayTitle(title, path);
-  const excerpt = noteExcerpt(selectedText, 2000);
-  return `Looking at this passage in "${label}" (\`${path}\`):\n\n${excerpt}\n\nHelp me with this — edit, clarify, or suggest next.`;
-}
+  _path: string, _title: string, _selectedText: string,
+): string { return "Help me with this passage — edit, clarify, or suggest next."; }
 
-/** Keep the passage visible to Medousa even if the composer draft drifted. */
-export function ensureVaultSelectionInPrompt(
-  prompt: string,
-  scope: VaultNoteContextScope | null | undefined,
-): string {
-  if (!vaultContextHasSelection(scope)) return prompt;
-  const text = scope!.selection!.text.trim();
-  if (!text) return prompt;
-  if (prompt.includes(text)) return prompt;
-  const block = buildAskAboutSelectionDraft(scope!.path, scope!.title, text);
-  const trimmed = prompt.trim();
-  if (!trimmed) return block;
-  return `${block}\n\n---\n\n${trimmed}`;
-}
-
-export function buildWorkAskFromNote(
-  path: string,
-  title: string,
-  content: string,
-): string {
-  const label = vaultDisplayTitle(title, path);
-  const excerpt = noteExcerpt(content, 2000);
-  return `Work from my vault note "${label}" (\`${path}\`).\n\n${excerpt}\n\nUse this note as primary context and report back with concrete next steps.`;
+export function buildWorkAskFromNote(_path: string, _title: string, _content: string): string {
+  return "Use this note as primary context and report back with concrete next steps.";
 }
 
 /** Hero target: today's daily, else most recent dated journal note. */

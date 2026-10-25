@@ -8,7 +8,54 @@ pub(super) struct VisualRecord {
     pub selected_ids: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct ContextSnapshot {
+    session_id: String,
+    context: CreativeSelectionContext,
+}
 impl CreativeStore {
+    pub fn save_context_snapshot(
+        &self,
+        context: CreativeSelectionContext,
+        session_id: &str,
+    ) -> Result<String> {
+        validate_id(session_id)?;
+        let snapshot = ContextSnapshot {
+            session_id: session_id.into(),
+            context,
+        };
+        let id = hash(&snapshot)?;
+        self.root
+            .create_dir_all(&path("contexts")?)
+            .map_err(storage)?;
+        self.root
+            .atomic_write(
+                &path(&format!("contexts/{id}.json"))?,
+                &serde_json::to_vec(&snapshot).map_err(storage)?,
+            )
+            .map_err(storage)?;
+        Ok(id)
+    }
+    pub fn read_context_snapshot(
+        &self,
+        id: &str,
+        document_id: &str,
+        session_id: &str,
+    ) -> Result<CreativeSelectionContext> {
+        validate_id(id)?;
+        let bytes = self
+            .root
+            .read_limited(&path(&format!("contexts/{id}.json"))?, 600 * 1024)
+            .map_err(storage)?;
+        let snapshot: ContextSnapshot = serde_json::from_slice(&bytes).map_err(storage)?;
+        if snapshot.session_id != session_id || snapshot.context.document_id != document_id {
+            return Err(invalid(
+                "design snapshot belongs to a different conversation or document",
+            ));
+        }
+        Ok(snapshot.context)
+    }
+
     /// Freeze a selected frame and its matching visual for the existing Code turn path.
     pub fn code_context(
         &self,

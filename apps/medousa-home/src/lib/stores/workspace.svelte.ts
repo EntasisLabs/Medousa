@@ -1,3 +1,4 @@
+import { ensureReferenceSupport } from "$lib/context/referenceSupport";
 import {
   archiveAskJob,
   archiveWorkspaceCard,
@@ -377,8 +378,11 @@ export class WorkspaceStore {
     this.askMessage = null;
 
     try {
+      if (request.hostContext?.references?.length) await ensureReferenceSupport(request.hostContext);
+      if (epoch !== this.workshopEpoch) throw new Error("Workshop changed before sending the request");
       const accepted = await enqueueDaemonAsk({
         prompt: request.prompt,
+        hostContext: request.hostContext,
         modelHint: request.modelHint,
         manuscriptId: request.manuscriptId,
         additionalManuscriptIds: request.additionalManuscriptIds,

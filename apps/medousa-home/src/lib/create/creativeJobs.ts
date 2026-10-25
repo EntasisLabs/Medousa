@@ -3,13 +3,14 @@ import type {
   CreativeJob,
   CreativeJobRequest,
   CreativeProposalDecision,
+  CreativeProposal,
 } from "$lib/types/generated/daemon_api";
 import { randomUuid } from "$lib/utils/randomUuid";
 import { CreativeRequestError } from "./creativeErrors";
-export type CreativeJobView = Omit<CreativeJob, "context">;
+export type CreativeJobView = Omit<CreativeJob, "context"> & { source?: "proposal" };
 const active = new Set(["queued", "dispatching", "running"]);
 export function creativeJobs(
-  api: Pick<CreativeApi, "createJob" | "jobs" | "job" | "decideJob">,
+  api: Pick<CreativeApi, "createJob" | "jobs" | "job" | "decideJob"> & Partial<Pick<CreativeApi, "proposals" | "decide">>,
   id: string,
   onAccepted: () => Promise<void>,
 ) {
@@ -26,11 +27,15 @@ export function creativeJobs(
   let history: CreativeJobView[] = [];
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((fn) => fn());
-  const setJob = (value: CreativeJob) => {
-    const { context: _, ...view } = value;
+  const setJob = (value: CreativeJob | CreativeJobView) => {
+    const { context: _, ...view } = value as CreativeJob & { source?: "proposal" };
     job = view;
     history = [...history.filter(j => j.request.id !== view.request.id), view].slice(-32);
   };
+  function proposalView(proposal: CreativeProposal): CreativeJobView {
+    return { source: "proposal", document_id: id, request: { id: proposal.request.id, expected_revision: proposal.request.expected_revision, selected_ids: proposal.request.selected_ids, prompt: "Proposal from conversation" },
+      session_id: "", turn_id: "", status: proposal.status, created_at: proposal.created_at, updated_at: proposal.created_at, result: proposal.request, assets: [], applied_revision: proposal.applied_revision };
+  }
   function schedule() {
     if (timer) clearTimeout(timer);
     timer =
@@ -47,12 +52,13 @@ export function creativeJobs(
     const generation = epoch;
     refreshing = true;
     try {
-      let value: CreativeJob | undefined;
+      let value: CreativeJob | CreativeJobView | undefined;
       if (job && active.has(job.status)) value = await api.job(id, job.request.id);
       else {
         const values = (await api.jobs(id)).jobs.sort((a, b) => a.created_at.localeCompare(b.created_at));
         if (generation === epoch) history = values.map(({ context: _, ...view }) => view);
-        value = values.at(-1);
+        const proposals = api.proposals ? (await api.proposals(id)).proposals.filter(p => p.status === "ready").map(proposalView) : [];
+        value = [...values, ...proposals].sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1);
       }
       if (generation === epoch && value) {
         setJob(value);
@@ -92,7 +98,7 @@ export function creativeJobs(
   }
   return {
     get preparing() { return preparing; },
-    get thread() { return job ? history.filter(j => j.session_id === job!.session_id) : []; },
+    get thread() { return job && job.source !== "proposal" ? history.filter(j => j.session_id === job!.session_id) : []; },
     newConversation() {
       if (busy || pending || decision || (job && active.has(job.status))) throw new Error("Finish the current request first");
       epoch++; fresh = true; job = null; error = null; notify();
@@ -149,7 +155,8 @@ export function creativeJobs(
       if (selectedIds.length > 1000)
         throw new Error("Select fewer than 1,001 objects for this request");
       epoch++;
-      const parentId = fresh ? undefined : job?.request.id;
+      if (refineProposal && job?.source === "proposal") throw new Error("Apply this chat proposal before refining it on the canvas.");
+      const parentId = fresh || job?.source === "proposal" ? undefined : job?.request.id;
       const capturedIds = [...selectedIds];
       let visualAssetId: string | undefined;
       if (capture) {
@@ -182,7 +189,11 @@ export function creativeJobs(
       error = null;
       notify();
       try {
-        setJob(await api.decideJob(id, job.request.id, { ...decision }));
+        if (job.source === "proposal") {
+          if (!api.decide) throw new Error("Proposal decisions are unavailable");
+          await api.decide(id, job.request.id, { ...decision });
+          job = { ...job, status: accept ? "accepted" : "cancelled" };
+        } else setJob(await api.decideJob(id, job.request.id, { ...decision }));
         decision = null;
         if (job?.status === "accepted") await onAccepted();
       } catch (e) {

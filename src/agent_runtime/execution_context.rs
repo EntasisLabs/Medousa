@@ -166,6 +166,7 @@ pub struct TurnExecutionContext {
     legacy_scope: Arc<TurnContinuationScope>,
     bot: Option<BotTurnIdentity>,
     wake_source: Option<medousa_types::wake::WakeSource>,
+    resource_references: Vec<medousa_types::TurnResourceReference>,
     worker_execution_target: Option<crate::workshop_contract::ExecutionTargetSelection>,
     work_environment: Option<medousa_runtime::WorkEnvironmentBinding>,
     work_environment_operation_sequence: AtomicU64,
@@ -200,6 +201,7 @@ impl TurnExecutionContext {
             legacy_scope: Arc::new(legacy_scope),
             bot: None,
             wake_source: None,
+            resource_references: Vec::new(),
             worker_execution_target: None,
             work_environment: None,
             work_environment_operation_sequence: AtomicU64::new(0),
@@ -297,6 +299,19 @@ impl TurnExecutionContext {
 
     pub fn wake_source(&self) -> Option<medousa_types::wake::WakeSource> {
         self.wake_source
+    }
+
+    /// Resource routing hints captured at admission; these grant no authority.
+    pub fn with_resource_references(
+        mut self,
+        references: Vec<medousa_types::TurnResourceReference>,
+    ) -> Self {
+        self.resource_references = references;
+        self
+    }
+
+    pub fn resource_references(&self) -> &[medousa_types::TurnResourceReference] {
+        &self.resource_references
     }
 
     pub fn with_worker_execution_target(

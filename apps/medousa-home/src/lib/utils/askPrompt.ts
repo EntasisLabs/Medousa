@@ -1,4 +1,5 @@
 export interface EnqueueAskJobRequest {
+  hostContext?: import("$lib/types/generated/daemon_api").HostTurnContext | null;
   prompt: string;
   modelHint?: string;
   manuscriptId?: string;

@@ -126,7 +126,7 @@
     }
   }
   async function openConversation() {
-    if (!job || activeWorkshopId() !== lease.api.scope) return;
+    if (!job?.session_id || activeWorkshopId() !== lease.api.scope) return;
     const { layout } = await import("$lib/runtime/layout.svelte");
     if (!layout.isMobile) {
       shellTabs.openChat(job.session_id, { title: "Creative session" });
@@ -283,7 +283,7 @@
               onclick={() => (draftState.preview = true)}>Preview</button
             ><button
               type="button"
-              disabled={Boolean(previewError)}
+              disabled={Boolean(previewError) || job.source === "proposal"}
               onclick={() => { draftState.preview = true; askInput?.focus(); }}
               >Refine preview</button
             ><button
@@ -318,7 +318,7 @@
       {#if job}<button
           type="button"
           class="create-conversation"
-          disabled={activeWorkshopId() !== lease.api.scope}
+          disabled={!job.session_id || activeWorkshopId() !== lease.api.scope}
           onclick={() => void openConversation().catch(onerror)}
           >Open conversation<ArrowUpRight size={11} /></button
         ><button type="button" class="create-conversation" disabled={busy || executing || pending || Boolean(pendingDecision)}

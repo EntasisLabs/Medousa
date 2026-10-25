@@ -1,4 +1,7 @@
 <script lang="ts">
+  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import ChatMediaParts from "$lib/components/chat/ChatMediaParts.svelte";
+  import { hostContextLabel } from "$lib/types/turnParts";
   import { ArrowUpRight } from "@lucide/svelte";
   import type { AddressedConversation } from "$lib/spotlight/addressedConversation.svelte";
   let { conversation, onOpen }: { conversation: AddressedConversation; onOpen: () => void } = $props();
@@ -13,9 +16,11 @@
   <div class="command-spotlight-transcript" role="log" aria-label="Recent conversation" bind:this={transcript}>
     {#each conversation.messages as message (message.id)}
       <div class="command-spotlight-transcript-entry">
-        {#if message.content}
+        {#if message.content || message.mediaAttachments?.length}
           <span class="command-spotlight-transcript-speaker">{message.role === "user" ? "You" : conversation.assistantLabel}</span>
-          <p>{message.content}</p>
+          {#if message.role === "assistant"}<MarkdownContent content={message.content} streaming={Boolean(message.streaming)}/>{:else}<p>{message.content}</p>{/if}
+          {#if message.hostContext}<small>{hostContextLabel(message.hostContext)}</small>{/if}
+          {#if conversation.sessionId && message.mediaAttachments?.length}<ChatMediaParts sessionId={conversation.sessionId} attachments={message.mediaAttachments} compact/>{/if}
           {#if message.streaming && message.statusLine}<span class="command-spotlight-transcript-status">{message.statusLine}</span>{/if}
         {:else}
           <span class="command-spotlight-transcript-status" role="status">{message.statusLine || "Working…"}</span>

@@ -350,3 +350,26 @@ fails. The client imports assets and publishes all frames in one existing scene
 transaction. Paragraph-level capture retains inline emphasis, color, weight and
 tracking, while unsupported complex CSS remains approximate. Page slices may
 cut through a paragraph or card; this is a viewport capture, not semantic pagination.
+
+### Conversation-originated designs and context pointers
+
+`cognition_store_write` action `creative.create` creates a new empty frame
+scaffold with a stable project ID, title, and optional width/height (defaults
+1280 × 800). It returns revision, selected frame IDs, and an `open_url`.
+It requires an active execution and is unavailable inside a selection-bound job.
+Generate the design using `creative.propose`; acceptance still uses the existing
+proposal transaction, preview/apply controls, and undo history. Initial creation
+cannot overwrite an existing project; identical retries return the same result.
+
+`CreativeCodeContext` now returns `snapshot_id` alongside media and selection
+context. The workshop stores the immutable selection separately and binds it to
+the requesting conversation. `creative.read` accepts that pointer with its
+`document_id`; another session or document cannot use it. Without a snapshot,
+omitting `selected_ids` reads the visible top-level objects and their descendants
+within the existing context size limit.
+
+Creative jobs persist only `CreativeJobRequest.prompt` as the human message.
+The runtime derives execution guidance from the verified durable job and supplies
+its resource references as `HostTurnContext`. The captured scene is fetched
+through `creative.read`; it is not serialized into the human request. Code
+handoffs use the same separate context path and immutable snapshot pointer.

@@ -3,6 +3,7 @@ import type { PreparedAgentSession } from "./agentSessionController.svelte";
 
 const state = vi.hoisted(() => ({ sessionId: "chat-a", runtime: "codex", bot: false, external: false, seeded: false, media: [] as unknown[] }));
 const api = vi.hoisted(() => ({ bot: vi.fn(), prompt: vi.fn(), ticket: vi.fn(), begin: vi.fn(), seed: vi.fn(), runtimeBot: vi.fn(), fields: vi.fn(), options: vi.fn(), clearMedia: vi.fn() }));
+vi.mock("$lib/context/referenceSupport", () => ({ ensureReferenceSupport: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("./runtimeBotTurns.svelte", () => ({sendRuntimeBotTurn:api.runtimeBot}));
 vi.mock("$lib/daemon", () => ({ createTurnTicket: api.ticket, promptAgentSession: api.prompt }));
 vi.mock("$lib/daemon/bot", () => ({ getSessionBot: api.bot }));
@@ -103,4 +104,14 @@ it("does not silently discard an external agent attachment", async () => {
   state.runtime = "pi"; state.media = [{ media_id: "image" }];
   await expect(submitChatTurn(input())).rejects.toThrow("text only");
   expect(api.prompt).not.toHaveBeenCalled(); expect(api.clearMedia).not.toHaveBeenCalled();
+});
+
+it("passes explicit Spotlight media and context without consuming the focused chat's attachments", async () => {
+  state.runtime = "medousa";
+  state.media = [{ media_id: "focused_image" }];
+  const media = [{ media_id: "spotlight_image", kind: "image", mime: "image/png" }];
+  const hostContext = { source: "spotlight", references: [{ kind: "vault_note" as const, root_id: "obsidian", path: "same.md", title: "Spec" }] };
+  await submitChatTurn({ ...input(), sessionId: "spotlight", mediaRefs: media, hostContext });
+  expect(api.ticket).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "spotlight", prompt: "Continue", mediaRefs: media, hostContext }));
+  expect(api.clearMedia).not.toHaveBeenCalled(); expect(state.media).toEqual([{ media_id: "focused_image" }]);
 });

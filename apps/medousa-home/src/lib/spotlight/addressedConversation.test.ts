@@ -1,7 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ConversationTarget } from "./conversationTargets";
 const state = vi.hoisted(() => ({ scope: "workshop-a", epoch: 1 }));
-const api = vi.hoisted(() => ({ create: vi.fn(), history: vi.fn(), active: vi.fn(), submit: vi.fn(), open: vi.fn(), warm: vi.fn(), release: vi.fn(), messages: vi.fn(() => []) }));
+const api = vi.hoisted(() => ({ upload: vi.fn(), create: vi.fn(), history: vi.fn(), active: vi.fn(), submit: vi.fn(), open: vi.fn(), warm: vi.fn(), release: vi.fn(), messages: vi.fn(() => []) }));
+vi.mock("$lib/utils/chatMediaUpload", () => ({ uploadChatFiles: api.upload }));
 vi.mock("$lib/daemon", () => ({ createSession: api.create, getSessionHistory: api.history, getActiveSessionTurn: api.active, listAgentRuntimes: async () => ({ runtimes: [] }) }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: {
   get workshopScopeId() { return state.scope; }, get workshopEpoch() { return state.epoch; }, sessionId: "unrelated-chat",
@@ -91,4 +92,27 @@ it("keeps startup chatter out of Spotlight excerpts and preserves actual user te
   const messages = transcriptExcerpt([{ id: "user", role: "user", content: noise }, { id: "pending", role: "assistant", content: "", streaming: true, statusLine: noise }, { id: "old", role: "assistant", content: noise }]);
   expect(messages).toHaveLength(2); expect(messages[0].content).toBe(noise);
   expect(messages[1]).toMatchObject({ content: "", streaming: true, statusLine: null });
+});
+
+it("keeps screenshot bytes local until the addressed session exists, and reuses uploaded media on retry", async () => {
+  const controller = new AddressedConversation();
+  const file = new File(["pixels"], "Screenshot.png", { type: "image/png" });
+  controller.addFiles([file]); controller.select(fresh);
+  const media = [{ media_id: "image_1", kind: "image", mime: "image/png" }];
+  api.upload.mockResolvedValue(media); api.submit.mockRejectedValueOnce(new Error("temporary failure"));
+  controller.references = [{ kind: "vault_note", root_id: "obsidian", path: "spec.md", title: "Spec" }];
+  expect(api.upload).not.toHaveBeenCalled();
+  await expect(controller.send("Make a wireframe")).rejects.toThrow("temporary failure");
+  expect(controller.files).toHaveLength(1);
+  await controller.send("Make a wireframe");
+  expect(api.create).toHaveBeenCalledTimes(1); expect(api.upload).toHaveBeenCalledTimes(1);
+  expect(api.submit).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: "created", prompt: "Make a wireframe", userContent: "Make a wireframe", mediaRefs: media,
+    hostContext: expect.objectContaining({ references: [expect.objectContaining({ root_id: "obsidian" })] }) }));
+});
+it("does not upload or admit into a new workshop after the upload workshop changes", async () => {
+  const controller = new AddressedConversation(); controller.select(fresh);
+  controller.addFiles([new File(["pixels"], "Screenshot.png", { type: "image/png" })]);
+  api.upload.mockImplementationOnce(async () => { state.epoch++; state.scope = "workshop-b"; return []; });
+  await expect(controller.send("Wireframe this")).rejects.toThrow("conversation changed");
+  expect(api.submit).not.toHaveBeenCalled();
 });

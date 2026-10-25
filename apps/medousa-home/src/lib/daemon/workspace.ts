@@ -243,6 +243,7 @@ export async function archiveAskJob(
 }
 
 export interface EnqueueDaemonAskRequest {
+  hostContext?: import("$lib/types/generated/daemon_api").HostTurnContext | null;
   prompt: string;
   modelHint?: string;
   manuscriptId?: string;
@@ -266,6 +267,7 @@ export async function enqueueDaemonAsk(
 
   return invoke<EnqueueResponse>("job_enqueue_ask", {
     prompt: request.prompt,
+    hostContext: invokePlain(request.hostContext ?? null),
     modelHint: request.modelHint ?? null,
     manuscriptId: request.manuscriptId ?? null,
     additionalManuscriptIds: invokePlain(request.additionalManuscriptIds ?? null),

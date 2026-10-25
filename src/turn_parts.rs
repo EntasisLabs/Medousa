@@ -1106,6 +1106,7 @@ mod tests {
     #[test]
     fn host_context_is_structured_without_changing_user_content() {
         let context = medousa_types::HostTurnContext {
+            references: Vec::new(),
             source: "vscode".to_string(),
             workspace: Some("Medousa".to_string()),
             resource_kind: Some("file".to_string()),

@@ -135,6 +135,8 @@ fn default_agent_runtime_version() -> String {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct EnqueueAskRequest {
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_context: Option<HostTurnContext>,
     /// Reuse this key when retrying the same admission after an uncertain response.
     #[serde(default)]
     pub idempotency_key: Option<String>,

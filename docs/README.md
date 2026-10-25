@@ -28,7 +28,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |
 | [Spotlight Activity](guides/spotlight-activity.md) | Follow workshop tasks, agents, code commands, and scheduled runs |
-| [Spotlight conversations](guides/spotlight-conversations.md) | Address a Bot or conversation and send messages without leaving Spotlight |
+| [Spotlight conversations](guides/spotlight-conversations.md) | Address conversations, attach screenshots and resources, and make wireframes without leaving Spotlight |
 | [Reviews](guides/reviews.md) | Review Forge changes and PRs with typed file groups, labels, reviewers, and CI |
 | [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands and understand local credential storage |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
@@ -40,7 +40,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
 | [SSH targets](guides/ssh-targets.md) | Connect named servers and open workshop or SSH terminals from Spotlight |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
-| [Notes and vaults](guides/notes-and-vaults.md) | Switch linked vaults safely and search notes across them |
+| [Notes and vaults](guides/notes-and-vaults.md) | Switch linked vaults, search across them, and discuss notes with separate context |
 | [Files](guides/files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
 | [Context](guides/context.md) | Browse saved session memory and its sources |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |

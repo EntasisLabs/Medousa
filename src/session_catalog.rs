@@ -1545,6 +1545,7 @@ mod tests {
             answer_state: None,
             parts: Some(vec![TurnPart::HostContext {
                 context: HostTurnContext {
+                    references: Vec::new(),
                     source: "home".into(),
                     workspace: None,
                     resource_kind: None,
@@ -1574,6 +1575,7 @@ mod tests {
             answer_state: None,
             parts: Some(vec![TurnPart::HostContext {
                 context: HostTurnContext {
+                    references: Vec::new(),
                     source: "vscode".into(),
                     workspace: None,
                     resource_kind: Some("file".into()),
@@ -1606,6 +1608,7 @@ mod tests {
             answer_state: None,
             parts: Some(vec![TurnPart::HostContext {
                 context: HostTurnContext {
+                    references: Vec::new(),
                     source: "browser".into(),
                     workspace: None,
                     resource_kind: None,

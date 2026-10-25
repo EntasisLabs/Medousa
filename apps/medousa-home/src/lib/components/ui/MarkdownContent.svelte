@@ -119,12 +119,19 @@
   });
 
   function handleLinkClick(event: MouseEvent | KeyboardEvent) {
-    if (!openLinksInWeb || event.defaultPrevented) return;
+    if (event.defaultPrevented) return;
     if (event instanceof MouseEvent && event.button > 1) return;
     const target = (event.target as Element | null)?.closest("a");
     if (!target || !(target instanceof HTMLAnchorElement)) return;
     const href = target.getAttribute("href")?.trim();
     if (!href || href.startsWith("#")) return;
+    const create = /^medousa:\/\/create\/([a-zA-Z0-9_-]{1,128})$/.exec(href);
+    if (create) {
+      event.preventDefault();
+      void import("$lib/utils/openCreativeResult").then(({ openCreativeResult }) => openCreativeResult(create[1]));
+      return;
+    }
+    if (!openLinksInWeb) return;
     let url: string;
     try { url = linkBaseUrl ? new URL(href, linkBaseUrl).href : href; }
     catch { return; }

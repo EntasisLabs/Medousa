@@ -34,12 +34,41 @@ pub struct HostContextDiagnostic {
     pub end: Option<HostContextPosition>,
 }
 
+/// A resource selected by the user. Identity is workshop-local; references never
+/// grant access or change a session's execution binding.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TurnResourceReference {
+    VaultNote {
+        root_id: String,
+        path: String,
+        title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selection: Option<HostContextSelection>,
+    },
+    CodeProject {
+        work_id: String,
+        title: String,
+    },
+    CreativeSelection {
+        document_id: String,
+        title: String,
+        #[serde(default)]
+        selected_ids: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        snapshot_id: Option<String>,
+    },
+}
+
 /// Bounded, advisory context captured by an editor, notes app, or browser.
 /// This never grants filesystem or vault authority to the sending client.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct HostTurnContext {
     pub source: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<TurnResourceReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -205,6 +234,23 @@ mod tests {
     use super::TurnPart;
     use serde_json::json;
 
+    #[test]
+    fn resource_reference_context_roundtrips_without_becoming_message_text() {
+        let context: super::HostTurnContext = serde_json::from_value(json!({
+            "source": "notes", "references": [{"kind":"vault_note", "root_id":"obsidian", "path":"same.md", "title":"Spec", "selection":{"text":"Captured passage"}}]
+        })).unwrap();
+        let part = TurnPart::HostContext { context };
+        let encoded = serde_json::to_value(&part).unwrap();
+        assert_eq!(encoded["context"]["references"][0]["root_id"], "obsidian");
+        assert_eq!(
+            encoded["context"]["references"][0]["selection"]["text"],
+            "Captured passage"
+        );
+        assert_eq!(serde_json::from_value::<TurnPart>(encoded).unwrap(), part);
+        let legacy: super::HostTurnContext =
+            serde_json::from_value(json!({"source":"vscode"})).unwrap();
+        assert!(legacy.references.is_empty());
+    }
     #[test]
     fn legacy_text_part_defaults_segment_metadata() {
         let part: TurnPart = serde_json::from_value(json!({

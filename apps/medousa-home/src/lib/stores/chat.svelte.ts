@@ -148,6 +148,7 @@ export class ChatStore implements ChatStoreHost {
   pinVaultNoteContext = $state(false);
   scriptWorkbenchContext = $state<ScriptWorkbenchContextScope | null>(null);
   pinScriptWorkbenchContext = $state(false);
+  pendingResourceRefs = $state<import("$lib/types/generated/daemon_api").TurnResourceReference[]>([]);
   pendingMediaRefs = $state<MediaRef[]>([]);
   pendingMediaUploading = $state(false);
   backgroundActivity = $state(0);
@@ -230,7 +231,7 @@ export class ChatStore implements ChatStoreHost {
     this.pinVaultNoteContext = false;
     this.scriptWorkbenchContext = null;
     this.pinScriptWorkbenchContext = false;
-    this.pendingMediaRefs = [];
+    this.pendingResourceRefs = []; this.pendingMediaRefs = [];
     this.pendingMediaUploading = false;
     this.budgetAlert = null;
     this.permissionAlert = null;
@@ -378,6 +379,7 @@ export class ChatStore implements ChatStoreHost {
   snapshotFocusedRuntime(): ChatSessionRuntime {
     return {
       sessionId: this.sessionId,
+      resourceRefs: this.pendingResourceRefs, noteContext: this.vaultNoteContext, pinNoteContext: this.pinVaultNoteContext,
       messages: this.messages,
       draft: this.draft,
       streamError: this.streamError,
@@ -404,6 +406,9 @@ export class ChatStore implements ChatStoreHost {
 
   loadRuntimeIntoFocused(runtime: ChatSessionRuntime) {
     this.sessionId = runtime.sessionId;
+    this.pendingResourceRefs = runtime.resourceRefs ?? [];
+    this.vaultNoteContext = runtime.noteContext ?? null;
+    this.pinVaultNoteContext = runtime.pinNoteContext ?? false;
     this.messages = runtime.messages;
     this.draft = runtime.draft;
     this.streamError = runtime.streamError;

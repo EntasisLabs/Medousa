@@ -1797,6 +1797,25 @@ fn code_handoff_context_requires_the_exact_frame_revision_and_visual() {
     };
     let (context, _) = store.code_context("shell", &request).unwrap();
     assert_eq!(context.revision, 0);
+    let snapshot = store
+        .save_context_snapshot(context.clone(), "build_session")
+        .unwrap();
+    assert_eq!(
+        snapshot,
+        store
+            .save_context_snapshot(context.clone(), "build_session")
+            .unwrap()
+    );
+    assert!(
+        store
+            .read_context_snapshot(&snapshot, "shell", "unrelated_session")
+            .is_err()
+    );
+    assert!(
+        store
+            .read_context_snapshot(&snapshot, "other", "build_session")
+            .is_err()
+    );
     assert!(context.nodes.len() > 20);
     assert_eq!(store.get("shell").unwrap().document.revision, 0);
     request.frame_id = "composer".into();
@@ -1829,6 +1848,16 @@ fn code_handoff_context_requires_the_exact_frame_revision_and_visual() {
             b"\x89PNG\r\n\x1a\nframe",
         )
         .unwrap();
+    // Editing the canvas cannot change a previously admitted Code reference.
+    assert_eq!(
+        serde_json::to_value(
+            store
+                .read_context_snapshot(&snapshot, "shell", "build_session")
+                .unwrap()
+        )
+        .unwrap(),
+        serde_json::to_value(context).unwrap()
+    );
     request.visual_asset_id = fresh.id;
     assert_eq!(store.code_context("shell", &request).unwrap().0.revision, 1);
     request.session_id = "../escape".into();
@@ -1875,7 +1904,14 @@ fn rich_typography_is_durable_and_rejects_invalid_inline_ranges() {
     let store = CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
     create(&store);
     let mut node = text("rich_text");
-    node.content = CreativeContent::Text { text: "A🌟 title".into(), color: "#111111".into(), font_family: "Georgia".into(), font_size: 40., font_weight: Some(500), font_style: None };
+    node.content = CreativeContent::Text {
+        text: "A🌟 title".into(),
+        color: "#111111".into(),
+        font_family: "Georgia".into(),
+        font_size: 40.,
+        font_weight: Some(500),
+        font_style: None,
+    };
     node.text_layout = Some(serde_json::from_value(serde_json::json!({"width":300,"align":"left","line_height":1.2,"letter_spacing":-2.5,"paragraph_spacing":12,"underline":true,"spans":[{"start":1,"end":3,"font_weight":700,"font_style":"italic","color":"#a7442d","underline":false}]})).unwrap());
     let saved = store.transact("project_one", edit("rich",0,node.clone())).unwrap();
     assert_eq!(saved.document.scene.nodes[0].text_layout, node.text_layout);

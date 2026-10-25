@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
+  import { composerContext } from "$lib/utils/turnContext";
+  import type { HostTurnContext } from "$lib/types/generated/daemon_api";
   import { useChatHistoryPanel } from "$lib/chat/chatHistoryPanel.svelte";
   import { composerModel } from "$lib/chat/composerModel";
   import { tick, untrack } from "svelte";
@@ -59,7 +62,6 @@
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
   import {
-    ensureVaultSelectionInPrompt,
     vaultContextHasSelection,
   } from "$lib/utils/vaultNoteBridge";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
@@ -470,6 +472,7 @@
     mode: "interactive" | "background",
     codeProjectSetupAuthorized = false,
     onAccepted?: () => void,
+    hostContext?: HostTurnContext | null,
   ) {
     if (providerRuntime) {
       await externalConversation.send(prompt, chat.pendingMediaRefs.length > 0 || chatAttachments.skillIds.length > 0 || chatAttachments.toolIds.length > 0);
@@ -479,6 +482,7 @@
     await submitChatTurn({
       userContent,
       prompt,
+      hostContext,
       mode,
       codeProjectSetupAuthorized,
       synchronizeAgentSession: agentSession.synchronizeAgentSession,
@@ -492,6 +496,7 @@
 
   type FailedSend = {
     display: string;
+    hostContext?: HostTurnContext | null;
     prompt: string;
     draft: string;
     mode: "interactive" | "background";
@@ -528,6 +533,7 @@
         () => {
           accepted = true;
         },
+        payload.hostContext,
       );
     } catch (err) {
       if (!accepted) {
@@ -558,8 +564,12 @@
       return;
     }
     const scopeForSend = chat.vaultNoteContext;
+    const resourceDraft = [...chat.pendingResourceRefs];
+    let hostContext: HostTurnContext | null;
+    try { hostContext = composerContext("chat", chat.pendingResourceRefs, scopeForSend, activeWorkshopId()); }
+    catch (error) { chat.setError(String(error)); return; }
     const draftForSend = chat.draft;
-    const basePrompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
+    const basePrompt = chat.draft.trim();
     const prompt = panelBot ? basePrompt : applyActiveAgentPrompt(basePrompt);
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
@@ -603,7 +613,9 @@
             chatAttachments.toolIds,
           ),
           modelHint: chatModel.model,
+          hostContext,
         });
+        chat.pendingResourceRefs = chat.pendingResourceRefs.filter(ref => !resourceDraft.includes(ref));
         chatAttachments.clear();
         chat.historyNotice = "Ask queued — follow progress in Activity.";
         return;
@@ -625,12 +637,13 @@
 
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
       const display =
-        prompt ||
+        draftForSend.trim() ||
         (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
-      pendingSend = { display, prompt, draft: draftForSend, mode, codeProjectSetupAuthorized };
+      pendingSend = { display, prompt, hostContext, draft: draftForSend, mode, codeProjectSetupAuthorized };
       await submitTurn(display, prompt, mode, codeProjectSetupAuthorized, () => {
         accepted = true;
-      });
+        chat.pendingResourceRefs = chat.pendingResourceRefs.filter(ref => !resourceDraft.includes(ref));
+      }, hostContext);
     } catch (err) {
       lastFailedSend = accepted ? null : pendingSend;
       if (!accepted && pendingSend && !chat.draft.trim()) {
@@ -696,13 +709,13 @@
     if (connection.offline || chat.composerBlocked) return;
     if (mobile) haptic("light");
     const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
-    const fullPrompt = ensureVaultSelectionInPrompt(prompt, chat.vaultNoteContext);
+    const fullPrompt = prompt;
     let accepted = false;
     try {
       lastFailedSend = null;
       await submitTurn(fullPrompt, fullPrompt, mode, false, () => {
         accepted = true;
-      });
+      }, composerContext("chat", chat.pendingResourceRefs, chat.vaultNoteContext, activeWorkshopId()));
     } catch (err) {
       lastFailedSend = accepted
         ? null

@@ -1,5 +1,10 @@
+import { uploadChatFiles } from "$lib/utils/chatMediaUpload";
+import { resourceContext } from "$lib/utils/turnContext";
+import { MAX_MEDIA_REFS_PER_TURN, MAX_MEDIA_UPLOAD_MB } from "$lib/utils/normieErrors";
+import type { MediaRef } from "$lib/types/media";
+import type { TurnResourceReference } from "$lib/types/generated/daemon_api";
 import { isRuntimeStartupText, visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
-import { createSession, getActiveSessionTurn, getSessionHistory, listAgentRuntimes, type AgentRuntimeInfo } from "$lib/daemon";
+import { createSession, getActiveSessionTurn, getSessionHistory, listAgentRuntimes, setSessionCodeBinding, type AgentRuntimeInfo } from "$lib/daemon";
 import { chat } from "$lib/stores/chat.svelte";
 import { bots } from "$lib/stores/bots.svelte";
 import { connection } from "$lib/stores/connection.svelte";
@@ -16,13 +21,30 @@ export function transcriptExcerpt(messages: readonly ChatMessage[]): ChatMessage
     id: message.id, role: message.role,
     content: message.role === "assistant" && isRuntimeStartupText(message.content) ? "" : message.content.slice(-4000),
     createdAt: message.createdAt, streaming: message.streaming,
+    hostContext: message.hostContext, mediaAttachments: message.mediaAttachments,
     statusLine: visibleChatStatusLine(message.statusLine, false),
-  })).filter(message => message.content.trim() || message.streaming || message.statusLine).slice(-6);
+  })).filter(message => message.content.trim() || message.mediaAttachments?.length || message.streaming || message.statusLine).slice(-6);
 }
 
 /** Surface-independent destination and delivery. Native streams still belong to ChatStore. */
 export class AddressedConversation {
   target = $state<ConversationTarget | null>(null);
+  files = $state<File[]>([]);
+  references = $state<TurnResourceReference[]>([]);
+  uploading = $state(false);
+  private uploaded: { sessionId: string; files: File[]; refs: MediaRef[] } | null = null;
+  private draftEpoch = chat.workshopEpoch;
+  addFiles(files: File[]) {
+    if (this.sending) { this.error = "Wait for this message to finish sending before attaching another image."; return; }
+    if (this.draftEpoch !== chat.workshopEpoch) { this.files = []; this.references = []; this.uploaded = null; }
+    this.draftEpoch = chat.workshopEpoch;
+    if (files.some(file => !file.type.startsWith("image/"))) { this.error = "Attach an image or screenshot."; return; }
+    if (this.files.length + files.length > MAX_MEDIA_REFS_PER_TURN) { this.error = `Attach up to ${MAX_MEDIA_REFS_PER_TURN} images.`; return; }
+    if (files.some(file => file.size > MAX_MEDIA_UPLOAD_MB * 1024 * 1024)) { this.error = `Images must be under ${MAX_MEDIA_UPLOAD_MB} MB.`; return; }
+    this.files = [...this.files, ...files]; this.error = null;
+  }
+  removeFile(index: number) { if (!this.sending) this.files = this.files.filter((_, i) => i !== index); }
+
   sessionId = $state<string | null>(null);
   loading = $state(false);
   sending = $state(false);
@@ -66,12 +88,16 @@ export class AddressedConversation {
     this.target = null;
     this.sessionId = null;
     this.preview = [];
+    this.files = []; this.references = []; this.uploaded = null; this.draftEpoch = chat.workshopEpoch;
     this.loading = false;
     this.error = null;
     // Dismissing a surface never cancels an admitted turn or its stream.
   }
   select(target: ConversationTarget, resumedSessionId: string | null = null) {
+    const files = this.draftEpoch === chat.workshopEpoch ? this.files : [];
+    const references = this.draftEpoch === chat.workshopEpoch ? this.references : [];
     this.clear();
+    this.files = files; this.references = references;
     this.target = target;
     this.sessionId = target.kind === "session" ? target.sessionId : target.kind === "bot" ? target.bot.primary_session_id || null : resumedSessionId;
     void this.refresh();
@@ -106,18 +132,40 @@ export class AddressedConversation {
     });
     if (retained.length !== this.ownedSessions.length) this.ownedSessions = retained;
   }
+  async bindProject(workId: string): Promise<void> {
+    const target = this.target;
+    if (!target || this.sending) throw new Error("Choose a conversation before binding a project.");
+    const epoch = chat.workshopEpoch, generation = this.generation;
+    const current = () => epoch === chat.workshopEpoch && generation === this.generation && target.scope === chat.workshopScopeId;
+    if (!current()) throw new Error("The workshop changed. Select the project again.");
+    let sessionId = this.sessionId;
+    if (!sessionId) {
+      if (target.kind === "bot") sessionId = (await bots.open(target.bot)).binding.session_id;
+      else if (target.kind === "new") {
+        sessionId = (await createSession()).session_id;
+        if (current()) setSessionAgentRuntime(sessionId, target.runtime);
+      }
+    }
+    if (!sessionId || !current()) throw new Error("The conversation changed before binding.");
+    this.sessionId = sessionId;
+    await setSessionCodeBinding(sessionId, workId);
+  }
   send(text: string, onAccepted?: () => void): Promise<void> {
     if (this.submission) return Promise.reject(new Error("A message is still sending."));
     const target = this.target;
-    if (!target || !text.trim()) return Promise.resolve();
+    if (!target || (!text.trim() && !this.files.length)) return Promise.resolve();
     const generation = this.generation;
     const epoch = chat.workshopEpoch;
     const current = () => epoch === chat.workshopEpoch && target.scope === chat.workshopScopeId;
+    const files = [...this.files];
+    const references = structuredClone($state.snapshot(this.references));
     this.sending = true;
     this.error = null;
     const request = (async () => {
       if (!current()) throw new Error("Workshop changed. Select a destination again.");
       if (connection.offline) throw new Error("Reconnect to your workshop to send.");
+      const targetRuntime = target.kind === "new" ? target.runtime : getSessionAgentRuntime(this.sessionId ?? "");
+      if (files.length && (isExternalAgentRuntime(targetRuntime) || (target.kind === "bot" && target.bot.external_agent))) throw new Error("This agent accepts text only. Select Medousa to use screenshots.");
       let sessionId = this.sessionId;
       if (!sessionId) {
         if (target.kind === "bot") sessionId = (await bots.open(target.bot)).binding.session_id;
@@ -138,10 +186,26 @@ export class AddressedConversation {
       if (!current()) throw new Error("Workshop changed before sending.");
       const external = isExternalAgentRuntime(getSessionAgentRuntime(sessionId));
       if (active.active && external) throw new Error("This agent is still working. Wait for its reply before sending another message.");
+      let mediaRefs: MediaRef[] = [];
+      if (files.length) {
+        const cached = this.uploaded;
+        if (cached && cached.sessionId === sessionId && cached.files.length === files.length && cached.files.every((file, i) => file === files[i])) mediaRefs = cached.refs;
+        else {
+          this.uploading = true;
+          try { mediaRefs = await uploadChatFiles(sessionId, files, current); }
+          finally { this.uploading = false; }
+          if (!current() || generation !== this.generation) throw new Error("The conversation changed while uploading. Attach the image again.");
+          this.uploaded = { sessionId, files, refs: mediaRefs };
+        }
+      }
+      if (generation !== this.generation) throw new Error("The conversation changed before sending.");
       await submitChatTurn({
-        sessionId, userContent: text.trim(), prompt: text.trim(), mode: active.active ? "background" : "interactive",
+        sessionId, userContent: text.trim(), prompt: text.trim(), mediaRefs, hostContext: resourceContext("spotlight", references), mode: active.active ? "background" : "interactive",
         synchronizeAgentSession: (id, runtime) => prepareAgentSession(id, runtime),
-        onAgentSessionLost: () => {}, scrollToLatest: () => {}, onAccepted,
+        onAgentSessionLost: () => {}, scrollToLatest: () => {}, onAccepted: () => {
+          if (generation === this.generation) { this.files = []; this.references = []; this.uploaded = null; }
+          onAccepted?.();
+        },
       });
       if (current()) void chat.refreshSessions();
     })().catch(cause => {

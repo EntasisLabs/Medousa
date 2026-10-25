@@ -804,6 +804,49 @@ class StageRoutingMatrix(MedousaModel):
     verifier: StageRoute
 
 
+class Kind9(Enum):
+    vault_note = 'vault_note'
+
+
+class TurnResourceReference1(MedousaModel):
+    kind: Kind9
+    path: str
+    root_id: str
+    selection: HostContextSelection | None = None
+    title: str
+
+
+class Kind10(Enum):
+    code_project = 'code_project'
+
+
+class TurnResourceReference2(MedousaModel):
+    kind: Kind10
+    title: str
+    work_id: str
+
+
+class Kind11(Enum):
+    creative_selection = 'creative_selection'
+
+
+class TurnResourceReference3(MedousaModel):
+    document_id: str
+    kind: Kind11
+    selected_ids: list[str] | None = []
+    snapshot_id: str | None = None
+    title: str
+
+
+class TurnResourceReference(
+    RootModel[TurnResourceReference1 | TurnResourceReference2 | TurnResourceReference3]
+):
+    root: TurnResourceReference1 | TurnResourceReference2 | TurnResourceReference3 = Field(
+        ...,
+        description="A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+    )
+
+
 class TurnTicketMode(Enum):
     interactive = 'interactive'
     background = 'background'
@@ -1264,45 +1307,45 @@ class IntegrationSecretSlot(Enum):
     auth_key = 'auth_key'
 
 
-class Kind9(Enum):
+class Kind12(Enum):
     acknowledge = 'acknowledge'
 
 
 class WakeAuthority1(MedousaModel):
-    kind: Kind9
-
-
-class Kind10(Enum):
-    report = 'report'
-
-
-class WakeAuthority2(MedousaModel):
-    kind: Kind10
-
-
-class Kind11(Enum):
-    continue_bounded = 'continue_bounded'
-
-
-class WakeAuthority3(MedousaModel):
-    kind: Kind11
-    rounds: int = Field(..., ge=0)
-
-
-class Kind12(Enum):
-    execute = 'execute'
-
-
-class WakeAuthority4(MedousaModel):
     kind: Kind12
 
 
 class Kind13(Enum):
+    report = 'report'
+
+
+class WakeAuthority2(MedousaModel):
+    kind: Kind13
+
+
+class Kind14(Enum):
+    continue_bounded = 'continue_bounded'
+
+
+class WakeAuthority3(MedousaModel):
+    kind: Kind14
+    rounds: int = Field(..., ge=0)
+
+
+class Kind15(Enum):
+    execute = 'execute'
+
+
+class WakeAuthority4(MedousaModel):
+    kind: Kind15
+
+
+class Kind16(Enum):
     continue_work = 'continue_work'
 
 
 class WakeAuthority5(MedousaModel):
-    kind: Kind13
+    kind: Kind16
 
 
 class WakeAuthority(
@@ -1715,7 +1758,7 @@ class ResourceRef(MedousaModel):
     kind: ResourceKind
 
 
-class Kind14(Enum):
+class Kind17(Enum):
     silent = 'silent'
 
 
@@ -1723,10 +1766,10 @@ class WorkContactPreference1(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind14
+    kind: Kind17
 
 
-class Kind15(Enum):
+class Kind18(Enum):
     return_to_origin = 'return_to_origin'
 
 
@@ -1734,10 +1777,10 @@ class WorkContactPreference2(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind15
+    kind: Kind18
 
 
-class Kind16(Enum):
+class Kind19(Enum):
     participant = 'participant'
 
 
@@ -1745,11 +1788,11 @@ class WorkContactPreference3(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    kind: Kind16
+    kind: Kind19
     participant: ResourceRef
 
 
-class Kind17(Enum):
+class Kind20(Enum):
     channel = 'channel'
 
 
@@ -1758,7 +1801,7 @@ class WorkContactPreference4(MedousaModel):
         extra='forbid',
     )
     channel: ResourceRef
-    kind: Kind17
+    kind: Kind20
 
 
 class WorkContactPreference(
@@ -2282,120 +2325,120 @@ class Status1(Enum):
     error = 'error'
 
 
-class Kind18(Enum):
+class Kind21(Enum):
     labels = 'labels'
 
 
 class ReviewProviderResult1(MedousaModel):
-    kind: Kind18
+    kind: Kind21
     labels: list[ReviewLabel]
     next_cursor: str | None = None
 
 
-class Kind19(Enum):
+class Kind22(Enum):
     people = 'people'
 
 
 class ReviewProviderResult2(MedousaModel):
-    kind: Kind19
+    kind: Kind22
     next_cursor: str | None = None
     people: list[ReviewPerson]
 
 
-class Kind20(Enum):
+class Kind23(Enum):
     updated = 'updated'
 
 
 class ReviewProviderResult3(MedousaModel):
-    kind: Kind20
+    kind: Kind23
     message: str
 
 
-class Kind21(Enum):
+class Kind24(Enum):
     check_details = 'check_details'
 
 
 class ReviewProviderResult4(MedousaModel):
     annotations: list[str]
-    kind: Kind21
+    kind: Kind24
     summary: str
     text: str
     title: str
     url: str | None = None
 
 
-class Kind22(Enum):
+class Kind25(Enum):
     repository = 'repository'
 
 
 class ReviewProviderResult5(MedousaModel):
     host: str
-    kind: Kind22
+    kind: Kind25
     provider_id: str
     repository: str
 
 
-class Kind23(Enum):
+class Kind26(Enum):
     published = 'published'
 
 
-class Kind24(Enum):
+class Kind27(Enum):
     connection = 'connection'
 
 
 class ReviewProviderResult7(MedousaModel):
     account: str | None = None
     authenticated: bool
-    kind: Kind24
+    kind: Kind27
     message: str
 
 
-class Kind25(Enum):
+class Kind28(Enum):
     reviews = 'reviews'
 
 
-class Kind26(Enum):
+class Kind29(Enum):
     review = 'review'
 
 
-class Kind27(Enum):
+class Kind30(Enum):
     files = 'files'
 
 
 class ReviewProviderResult10(MedousaModel):
     files: list[HostedReviewFile]
-    kind: Kind27
+    kind: Kind30
     next_cursor: str | None = None
 
 
-class Kind28(Enum):
+class Kind31(Enum):
     diff = 'diff'
 
 
 class ReviewProviderResult11(MedousaModel):
-    kind: Kind28
+    kind: Kind31
     message: str | None = None
     patch: str | None = None
     path: str
 
 
-class Kind29(Enum):
+class Kind32(Enum):
     checks = 'checks'
 
 
 class ReviewProviderResult12(MedousaModel):
     checks: list[HostedReviewCheck]
-    kind: Kind29
+    kind: Kind32
     next_cursor: str | None = None
 
 
-class Kind30(Enum):
+class Kind33(Enum):
     discussion = 'discussion'
 
 
 class ReviewProviderResult13(MedousaModel):
     entries: list[HostedReviewDiscussionEntry]
-    kind: Kind30
+    kind: Kind33
     next_cursor: str | None = None
 
 
@@ -2462,46 +2505,46 @@ class TurnArtifactRef(MedousaModel):
     role: str
 
 
-class Kind31(Enum):
+class Kind34(Enum):
     model_receipt = 'model_receipt'
 
 
 class TurnPart1(MedousaModel):
-    kind: Kind31
+    kind: Kind34
     model: str
     provider: str
 
 
-class Kind32(Enum):
+class Kind35(Enum):
     text = 'text'
 
 
 class TurnPart2(MedousaModel):
-    kind: Kind32
+    kind: Kind35
     markdown: str
     model_round: int | None = Field(None, ge=0)
     segment_id: str | None = None
 
 
-class Kind33(Enum):
+class Kind36(Enum):
     progress = 'progress'
 
 
 class TurnPart3(MedousaModel):
-    kind: Kind33
+    kind: Kind36
     markdown: str
 
 
-class Kind34(Enum):
+class Kind37(Enum):
     reasoning = 'reasoning'
 
 
 class TurnPart4(MedousaModel):
-    kind: Kind34
+    kind: Kind37
     markdown: str
 
 
-class Kind35(Enum):
+class Kind38(Enum):
     tool_run = 'tool_run'
 
 
@@ -2510,7 +2553,7 @@ class TurnPart5(MedousaModel):
     finished_at: AwareDatetime | None = None
     input_params: list[ToolInputParam] | None = None
     input_summary: str
-    kind: Kind35
+    kind: Kind38
     output_summary: str | None = None
     run_id: str
     started_at: AwareDatetime
@@ -2519,43 +2562,43 @@ class TurnPart5(MedousaModel):
     tool_round: int | None = Field(None, ge=0)
 
 
-class Kind36(Enum):
+class Kind39(Enum):
     handoff = 'handoff'
 
 
 class TurnPart6(MedousaModel):
     handoff_kind: str
-    kind: Kind36
+    kind: Kind39
     text: str
     work_id: str | None = None
 
 
-class Kind37(Enum):
+class Kind40(Enum):
     user_media = 'user_media'
 
 
 class TurnPart7(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind37
+    kind: Kind40
     label: str | None = None
     media_id: str
     mime: str
 
 
-class Kind38(Enum):
+class Kind41(Enum):
     user_drawing = 'user_drawing'
 
 
 class TurnPart8(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind38
+    kind: Kind41
     label: str | None = None
     media_id: str
     mime: str
     preview_media_id: str
 
 
-class Kind39(Enum):
+class Kind42(Enum):
     generated_media = 'generated_media'
 
 
@@ -2563,7 +2606,7 @@ class TurnPart9(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
     generation_id: str
     height_px: int | None = Field(None, ge=0)
-    kind: Kind39
+    kind: Kind42
     label: str
     media_id: str
     mime: str
@@ -2573,11 +2616,11 @@ class TurnPart9(MedousaModel):
     width_px: int | None = Field(None, ge=0)
 
 
-class Kind40(Enum):
+class Kind43(Enum):
     host_context = 'host_context'
 
 
-class Kind41(Enum):
+class Kind44(Enum):
     attachment_ref = 'attachment_ref'
 
 
@@ -2585,18 +2628,18 @@ class TurnPart11(MedousaModel):
     artifact_id: str
     byte_size: int | None = Field(None, ge=0)
     height_px: int | None = Field(None, ge=0)
-    kind: Kind41
+    kind: Kind44
     label: str
     mime: str
     presentation: str | None = None
 
 
-class Kind42(Enum):
+class Kind45(Enum):
     unknown = 'unknown'
 
 
 class TurnPart12(MedousaModel):
-    kind: Kind42
+    kind: Kind45
 
 
 class TurnSliceSummary(MedousaModel):
@@ -4097,48 +4140,48 @@ class WorldRecipe(MedousaModel):
     steps: list[WorldRecipeStep]
 
 
-class Kind43(Enum):
+class Kind46(Enum):
     text = 'text'
 
 
 class WorldRecipeRunInputValue1(MedousaModel):
-    kind: Kind43
+    kind: Kind46
     text: str
 
 
-class Kind44(Enum):
+class Kind47(Enum):
     selection = 'selection'
 
 
 class WorldRecipeRunInputValue2(MedousaModel):
-    kind: Kind44
+    kind: Kind47
     value: str
 
 
-class Kind45(Enum):
+class Kind48(Enum):
     key = 'key'
 
 
 class WorldRecipeRunInputValue3(MedousaModel):
     key: str
-    kind: Kind45
+    kind: Kind48
 
 
-class Kind46(Enum):
+class Kind49(Enum):
     scroll_delta = 'scroll_delta'
 
 
 class WorldRecipeRunInputValue4(MedousaModel):
     delta_y: int
-    kind: Kind46
+    kind: Kind49
 
 
-class Kind47(Enum):
+class Kind50(Enum):
     wait_duration = 'wait_duration'
 
 
 class WorldRecipeRunInputValue5(MedousaModel):
-    kind: Kind47
+    kind: Kind50
     milliseconds: int = Field(..., ge=0)
 
 
@@ -4764,29 +4807,6 @@ class DisconnectMcpOAuthResponse(MedousaModel):
 
 class DuplicateBotRequest(MedousaModel):
     display_name: str | None = None
-
-
-class EnqueueAskRequest(MedousaModel):
-    additional_manuscript_ids: list[str] | None = Field(
-        None, description='Extra manuscript specialties beyond `manuscript_id`.'
-    )
-    idempotency_key: str | None = Field(
-        None,
-        description='Reuse this key when retrying the same admission after an uncertain response.',
-    )
-    identity_channel_id: str | None = None
-    identity_persona_id: str | None = None
-    identity_user_id: str | None = None
-    manuscript_id: str | None = Field(
-        None, description='Primary YAML manuscript specialty for the ask turn.'
-    )
-    max_turns: int | None = Field(None, ge=0)
-    model_hint: str | None = None
-    policy_profile: str | None = None
-    prompt: str
-    suggested_capability_ids: list[str] | None = Field(
-        None, description='Capability catalog ids the operator suggests for this ask.'
-    )
 
 
 class EnqueuePromptRequest(MedousaModel):
@@ -5965,6 +5985,7 @@ class HostTurnContext(MedousaModel):
     diagnostics: list[HostContextDiagnostic] | None = None
     document_excerpt: str | None = None
     language: str | None = None
+    references: list[TurnResourceReference] | None = None
     related_resources: list[str] | None = None
     resource_kind: str | None = None
     resource_path: str | None = None
@@ -6262,18 +6283,18 @@ class ReviewProviderOutcome2(MedousaModel):
 
 class ReviewProviderResult6(MedousaModel):
     existing: bool
-    kind: Kind23
+    kind: Kind26
     review: HostedReview
 
 
 class ReviewProviderResult8(MedousaModel):
-    kind: Kind25
+    kind: Kind28
     next_cursor: str | None = None
     reviews: list[HostedReview]
 
 
 class ReviewProviderResult9(MedousaModel):
-    kind: Kind26
+    kind: Kind29
     review: HostedReview
 
 
@@ -6316,7 +6337,7 @@ class RuntimeConfigCommandSpec(
 
 class TurnPart10(MedousaModel):
     context: HostTurnContext
-    kind: Kind40
+    kind: Kind43
 
 
 class TurnPart(
@@ -6843,6 +6864,30 @@ class DeriveSessionResponse(MedousaModel):
         ..., description='True when this idempotency key had already committed the same request.'
     )
     session_id: str
+
+
+class EnqueueAskRequest(MedousaModel):
+    additional_manuscript_ids: list[str] | None = Field(
+        None, description='Extra manuscript specialties beyond `manuscript_id`.'
+    )
+    host_context: HostTurnContext | None = None
+    idempotency_key: str | None = Field(
+        None,
+        description='Reuse this key when retrying the same admission after an uncertain response.',
+    )
+    identity_channel_id: str | None = None
+    identity_persona_id: str | None = None
+    identity_user_id: str | None = None
+    manuscript_id: str | None = Field(
+        None, description='Primary YAML manuscript specialty for the ask turn.'
+    )
+    max_turns: int | None = Field(None, ge=0)
+    model_hint: str | None = None
+    policy_profile: str | None = None
+    prompt: str
+    suggested_capability_ids: list[str] | None = Field(
+        None, description='Capability catalog ids the operator suggests for this ask.'
+    )
 
 
 class ExternalConversationSendRequest(MedousaModel):
@@ -7524,6 +7569,7 @@ class CreateExternalConversationResponse(MedousaModel):
 class CreativeCodeContext(MedousaModel):
     context: CreativeSelectionContext
     media_refs: list[MediaRef]
+    snapshot_id: str
 
 
 class CreativeCreateRequest(MedousaModel):

@@ -115,6 +115,7 @@ Browser chords (also in Spotlight when Web is focused) include address bar, new/
 | Destination | Subtitle |
 |-------------|----------|
 | Chat | Talk with Medousa |
+| Create | Canvases and visual work |
 | Notes | Vault notes and markdown |
 | Files | Pinned folders on this machine |
 | Artifacts | HTML decks and agent widgets |

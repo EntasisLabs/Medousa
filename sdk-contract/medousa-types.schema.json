@@ -8887,6 +8887,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -9112,6 +9118,104 @@
           }
         }
       },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "TurnSurfaceContext": {
         "type": "object",
         "properties": {
@@ -9327,7 +9431,8 @@
     "type": "object",
     "required": [
       "context",
-      "media_refs"
+      "media_refs",
+      "snapshot_id"
     ],
     "properties": {
       "context": {
@@ -9338,6 +9443,9 @@
         "items": {
           "$ref": "#/definitions/MediaRef"
         }
+      },
+      "snapshot_id": {
+        "type": "string"
       }
     },
     "definitions": {
@@ -20242,6 +20350,16 @@
           "type": "string"
         }
       },
+      "host_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HostTurnContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "idempotency_key": {
         "description": "Reuse this key when retrying the same admission after an uncertain response.",
         "default": null,
@@ -20309,6 +20427,291 @@
         "items": {
           "type": "string"
         }
+      }
+    },
+    "definitions": {
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
       }
     }
   },
@@ -28553,6 +28956,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -28777,6 +29186,104 @@
             "$ref": "#/definitions/StageRoute"
           }
         }
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
       },
       "TurnSurfaceContext": {
         "type": "object",
@@ -37324,6 +37831,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -37890,6 +38403,104 @@
                 "enum": [
                   "unknown"
                 ]
+              }
+            }
+          }
+        ]
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
               }
             }
           }
@@ -38928,6 +39539,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -39638,6 +40255,104 @@
                 "enum": [
                   "unknown"
                 ]
+              }
+            }
+          }
+        ]
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
               }
             }
           }
@@ -40608,6 +41323,12 @@
               "null"
             ]
           },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
           "related_resources": {
             "type": "array",
             "items": {
@@ -41217,6 +41938,104 @@
                 "enum": [
                   "unknown"
                 ]
+              }
+            }
+          }
+        ]
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
               }
             }
           }

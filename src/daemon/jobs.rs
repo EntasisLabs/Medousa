@@ -433,7 +433,7 @@ pub async fn enqueue_ask(
         model: model.clone(),
         stage_routing: Some(stage_routing.clone()),
         surface: None,
-        host_context: None,
+        host_context: request.host_context.clone(),
         model_hint: request.model_hint.clone(),
         manuscript_id,
         additional_manuscript_ids,
@@ -1288,6 +1288,7 @@ mod tests {
     #[test]
     fn ask_idempotency_is_principal_scoped_and_payload_bound() {
         let mut request = EnqueueAskRequest {
+            host_context: None,
             prompt: "Summarize status".into(),
             idempotency_key: Some(" retry-1 ".into()),
             policy_profile: Some("interactive".into()),

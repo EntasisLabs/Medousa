@@ -24,3 +24,30 @@ selected destination’s **×**, or press **Backspace** in an empty field, to re
 to search. A failed send keeps your text in the field. Closing Spotlight does not
 cancel accepted work. Destinations belong to the current workshop; switching
 workshops clears the selection.
+
+## Screenshots and references
+
+Paste a screenshot into Spotlight, or drag an image onto it. Choose **@Medousa**
+and ask, for example, “Create an editable wireframe from this.” Images appear as
+removable thumbnails and upload to the selected conversation's workshop when you
+send. Failed sends retain the draft. Medousa creates an empty frame and proposes
+editable text and shapes; follow **Open in Create**, preview the proposal, and
+choose **Use this**. Applying remains undoable. From Desktop Spotlight, the
+result opens in a Create window without opening the main shell.
+
+After choosing a recipient, type **@** within your request to reference a note,
+Code project, or Create project. **/note**, **/project**, and **/frame** narrow the
+picker. Chat supports the same reference picker. Notes show their vault, including
+when several vaults contain the same relative path. Create frame references use
+object IDs; project references let Medousa inspect their top-level objects.
+
+References supply context. **Work here** on a Code project explicitly binds the
+conversation to it through the normal project binding. Removing the reference
+chip does not undo that binding. Resource references and screenshot attachments
+currently require Medousa; external coding-agent and provider conversations keep
+their existing text-only input contract.
+
+Your message remains your wording. Resource identities and captured passages are
+stored separately as context, and Medousa reads referenced resources with tools.
+Closing Spotlight leaves accepted work running; changing workshops clears its
+unsubmitted attachment and reference draft.

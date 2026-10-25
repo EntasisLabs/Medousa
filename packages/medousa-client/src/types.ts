@@ -17,6 +17,7 @@ import type {
   TurnStreamEnvelopeV2,
   TurnStreamEventV2,
   HostTurnContext,
+  TurnResourceReference,
   SessionAgentModeResponse,
   SessionCodeBindingResponse,
   SessionCodeProjectResponse,
@@ -32,6 +33,7 @@ export type {
   TurnStreamEnvelopeV2,
   TurnStreamEventV2,
   HostTurnContext,
+  TurnResourceReference,
   AgentModeId,
   AgentModeAvailability,
   AgentModeListResponse,
@@ -67,6 +69,7 @@ export interface Diagnostic {
 }
 
 export interface MedousaContext {
+  references?: TurnResourceReference[];
   surface: MedousaSurface;
   workspace?: string;
   file?: string;

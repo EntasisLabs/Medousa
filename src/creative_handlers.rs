@@ -192,7 +192,11 @@ async fn code_context(
                 "Selected Create frame",
             )
             .map_err(ForgeError::Store)?;
+            let snapshot_id = store
+                .save_context_snapshot(context.clone(), &request.session_id)
+                .map_err(|e| ForgeError::Store(e.to_string()))?;
             Ok(CreativeCodeContext {
+                snapshot_id,
                 context,
                 media_refs: vec![media],
             })

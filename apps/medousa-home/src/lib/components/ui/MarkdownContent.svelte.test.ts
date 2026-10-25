@@ -4,7 +4,8 @@ import { flushSync, mount, tick, unmount } from "svelte";
 import { fromStore, writable } from "svelte/store";
 import MarkdownContent from "./MarkdownContent.svelte";
 
-const { highlight, writeText, openInBrowser } = vi.hoisted(() => ({
+const { highlight, writeText, openInBrowser, openCreative } = vi.hoisted(() => ({
+  openCreative: vi.fn().mockResolvedValue(undefined),
   highlight: vi.fn().mockResolvedValue(undefined),
   writeText: vi.fn().mockResolvedValue(undefined),
   openInBrowser: vi.fn().mockResolvedValue(undefined),
@@ -13,6 +14,7 @@ vi.mock("$lib/utils/openInBrowser", async (importOriginal) => ({
   ...await importOriginal<typeof import("$lib/utils/openInBrowser")>(),
   openInBrowser,
 }));
+vi.mock("$lib/utils/openCreativeResult", () => ({ openCreativeResult: openCreative }));
 vi.mock("$lib/markdown/highlight", () => ({ highlightCodeBlocks: highlight }));
 vi.mock("$lib/haptics", () => ({ haptic: vi.fn() }));
 // Happy DOM's parser drops the outer wrapper during DOMPurify sanitization.
@@ -123,4 +125,13 @@ it("resolves raw relative review links against the provider page and preserves l
   document.querySelector('a[href="#section"]')!.dispatchEvent(anchorEvent);
   expect(anchorEvent.defaultPrevented).toBe(false);
   expect(openInBrowser).toHaveBeenCalledTimes(1);
+});
+
+it("opens a validated Create result from a conversation without navigating the webview", async () => {
+  component = mount(MarkdownContent, { target: document.body, props: { content: "[Open wireframe](medousa://create/wireframe_123)" } });
+  flushSync(); await tick();
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+  document.querySelector("a")!.dispatchEvent(event);
+  await vi.waitFor(() => expect(openCreative).toHaveBeenCalledWith("wireframe_123"));
+  expect(event.defaultPrevented).toBe(true); expect(openInBrowser).not.toHaveBeenCalled();
 });

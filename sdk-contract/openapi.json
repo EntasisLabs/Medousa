@@ -3129,11 +3129,15 @@
               "$ref": "#/components/schemas/MediaRef"
             },
             "type": "array"
+          },
+          "snapshot_id": {
+            "type": "string"
           }
         },
         "required": [
           "context",
-          "media_refs"
+          "media_refs",
+          "snapshot_id"
         ],
         "title": "CreativeCodeContext",
         "type": "object"
@@ -4971,6 +4975,16 @@
               "null"
             ]
           },
+          "host_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HostTurnContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "idempotency_key": {
             "default": null,
             "description": "Reuse this key when retrying the same admission after an uncertain response.",
@@ -6757,6 +6771,12 @@
               "string",
               "null"
             ]
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/TurnResourceReference"
+            },
+            "type": "array"
           },
           "related_resources": {
             "items": {
@@ -12165,6 +12185,104 @@
             },
             "required": [
               "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "vault_note"
+                ],
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "code_project"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "creative_selection"
+                ],
+                "type": "string"
+              },
+              "selected_ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "document_id",
+              "kind",
+              "title"
             ],
             "type": "object"
           }

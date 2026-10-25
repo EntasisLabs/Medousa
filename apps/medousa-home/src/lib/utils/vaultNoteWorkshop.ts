@@ -1,5 +1,7 @@
 /** Launch the floating vault note workshop with scoped chat context. */
 
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
+import { composerContext } from "$lib/utils/turnContext";
 import { getVaultNote } from "$lib/daemon";
 import { chat } from "$lib/stores/chat.svelte";
 import { layout } from "$lib/runtime/layout.svelte";
@@ -15,6 +17,15 @@ import {
 } from "$lib/utils/vaultNoteBridge";
 import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
+function noteIdentity() {
+  const rootId = vault.activeVaultRootId;
+  const workshopId = activeWorkshopId();
+  if (!rootId) throw new Error("Choose a vault before attaching a note.");
+  return { rootId, workshopId };
+}
+function checkIdentity(identity: ReturnType<typeof noteIdentity>) {
+  if (identity.rootId !== vault.activeVaultRootId || identity.workshopId !== activeWorkshopId()) throw new Error("The vault changed. Attach the note again.");
+}
 async function resolveNotePayload(path: string): Promise<{
   path: string;
   title: string;
@@ -56,7 +67,9 @@ export async function talkAboutVaultNote(path: string): Promise<void> {
   if (!trimmed) return;
   if (vault.isLooseFile && vault.selectedPath === trimmed) return;
 
+  const identity = noteIdentity();
   const note = await resolveNotePayload(trimmed);
+  checkIdentity(identity);
 
   if (shouldUseMobileShell()) {
     if (note.flushSave) await note.flushSave();
@@ -67,7 +80,7 @@ export async function talkAboutVaultNote(path: string): Promise<void> {
       note.wikilinksOut,
       note.backlinks,
     );
-    chat.prefillFromVaultNote(scope, draft, { pin: true });
+    chat.prefillFromVaultNote({ ...scope, ...identity }, draft, { pin: true });
     void chat.ensureSessionHydrated();
     layout.setMobileTab("home", { bump: true });
     return;
@@ -90,11 +103,14 @@ export async function sendVaultNoteToWork(path: string): Promise<void> {
   if (!trimmed) return;
   if (vault.isLooseFile && vault.selectedPath === trimmed) return;
 
+  const identity = noteIdentity();
   const note = await resolveNotePayload(trimmed);
+  checkIdentity(identity);
   if (note.flushSave) await note.flushSave();
 
   await workspace.submitAsk({
     prompt: buildWorkAskFromNote(note.path, note.title, note.content),
+    hostContext: composerContext("notes", [], { path: note.path, title: note.title, linkCount: 0, ...identity }, identity.workshopId),
   });
 }
 
@@ -108,7 +124,9 @@ export async function launchVaultNoteWorkshop(input: {
   flushSave?: () => Promise<void | boolean>;
   selection?: VaultNoteSelection | null;
 }) {
+  const identity = noteIdentity();
   if (input.flushSave) await input.flushSave();
+  checkIdentity(identity);
 
   if (input.session === "fresh") {
     await chat.newSession();
@@ -116,6 +134,7 @@ export async function launchVaultNoteWorkshop(input: {
     await chat.switchSession(input.session);
   }
 
+  checkIdentity(identity);
   const selectionText = input.selection?.text.trim();
   if (selectionText) {
     const { scope, draft } = prepareAddSelectionToChat(
@@ -129,12 +148,10 @@ export async function launchVaultNoteWorkshop(input: {
       input.wikilinksOut,
       input.backlinks,
     );
-    chat.vaultNoteContext = scope;
+    chat.vaultNoteContext = { ...scope, ...identity };
     chat.pinVaultNoteContext = true;
     if (!chat.draft.trim() || chat.messages.length === 0) {
       chat.prefillDraft(draft);
-    } else if (!chat.draft.includes(selectionText)) {
-      chat.prefillDraft(`${draft}\n\n---\n\n${chat.draft}`);
     }
   } else {
     const { scope, draft } = prepareTalkAboutNote(
@@ -146,9 +163,9 @@ export async function launchVaultNoteWorkshop(input: {
     );
 
     if (input.session === "fresh" || chat.messages.length === 0) {
-      chat.prefillFromVaultNote(scope, draft, { pin: true });
+      chat.prefillFromVaultNote({ ...scope, ...identity }, draft, { pin: true });
     } else {
-      chat.vaultNoteContext = scope;
+      chat.vaultNoteContext = { ...scope, ...identity };
       chat.pinVaultNoteContext = true;
     }
   }
@@ -167,6 +184,7 @@ export async function addVaultSelectionToChat(input: {
   selection: VaultNoteSelection;
   flushSave?: () => Promise<void | boolean>;
 }) {
+  const identity = noteIdentity();
   const title =
     input.title?.trim() ||
     vaultDisplayTitle(input.path.split("/").pop()?.replace(/\.md$/i, "") ?? input.path, input.path);
@@ -183,7 +201,8 @@ export async function addVaultSelectionToChat(input: {
       input.backlinks ?? [],
     );
     await chat.newSession();
-    chat.prefillFromVaultNote(scope, draft, { pin: true });
+    checkIdentity(identity);
+    chat.prefillFromVaultNote({ ...scope, ...identity }, draft, { pin: true });
     void chat.ensureSessionHydrated();
     layout.setMobileTab("home", { bump: true });
     return;

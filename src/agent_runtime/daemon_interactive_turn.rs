@@ -2019,10 +2019,6 @@ async fn run_agent_turn_inner(
         &request.media_refs,
         &vision_plan.merge_options,
     );
-    let effective_prompt = crate::agent_runtime::host_context::append_host_context(
-        &effective_prompt,
-        host_context.as_ref(),
-    );
     let effective_prompt = crate::liquid_interactions::append_to_prompt(
         &effective_prompt,
         &session_id,
@@ -2224,7 +2220,7 @@ async fn run_agent_turn_inner(
                 serde_json::json!({
                     "action": "workshop.spawn",
                     "intent": "coder",
-                    "task": effective_prompt,
+                    "task": crate::agent_runtime::host_context::append_host_context(&effective_prompt, host_context.as_ref()),
                     "user_ack": user_ack,
                     "execution_target": {
                         "kind": "exact",
@@ -2299,6 +2295,17 @@ async fn run_agent_turn_inner(
 
     let identity_user_id = speaker_profile_id.clone();
 
+    let mut context_appendices = mode_context_appendix.into_iter().collect::<Vec<_>>();
+    if let Some(context) = host_context.as_ref() {
+        context_appendices
+            .push(crate::agent_runtime::host_context::format_host_context_block(context));
+    }
+    #[cfg(feature = "full-daemon")]
+    if let Some(guidance) = crate::creative_jobs::turn_guidance().await {
+        context_appendices.push(guidance);
+    }
+    let mode_context_appendix =
+        (!context_appendices.is_empty()).then(|| context_appendices.join("\n\n"));
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         agent_mode,
         mode_context_appendix: mode_context_appendix.as_deref(),

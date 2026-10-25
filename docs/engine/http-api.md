@@ -1227,3 +1227,30 @@ medousa-cli daemon-ask "Summarize open risks" --daemon-url http://127.0.0.1:7419
    unversioned media type for v1. All retain `?since=<seq>` replay semantics.
 
 More: [integrate-without-the-app.md](../cookbook/integrate-without-the-app.md)
+
+### Resource reference context
+
+`HostTurnContext.references` is an optional list of typed `TurnResourceReference`
+values: `vault_note` (exact `root_id`, `path`, title, optional captured selection),
+`code_project` (`work_id`, title), or `creative_selection` (document ID, title,
+selected IDs, optional immutable `snapshot_id`). References belong to the
+receiving workshop, remain advisory, and neither grant access nor establish a
+Code binding. Use the existing binding endpoint for an explicit binding action.
+The daemon bounds this context and preserves it as a separate turn part; the
+current runtime projects its guidance independently from the human prompt.
+
+`EnqueueAskRequest.host_context` carries the same metadata for background Work
+requests. `cognition_store_read` actions `vault.read` and `vault.search` accept
+`root_id` to read or search that configured vault without changing the active
+editing root. Qualified reads enforce vault-relative paths and no-follow file
+access; a stale or unknown root fails instead of falling back to another vault.
+The `vault.write`, `vault.move`, and `vault.delete` store actions accept the same
+`root_id`. When omitted, an exact note reference supplies its root; references to
+the same path in multiple vaults require an explicit root. Reads return
+`note_version` for write `if_match` checks. Mutations use the existing durable
+vault transaction service and never change the active editing root.
+
+Engines supporting these references advertise `turn.resource_references.v1` in
+the health runtime descriptor. Home checks this before submitting resource-bound
+turns or Work requests: older engines would otherwise ignore new fields and
+could read the active vault instead of the referenced one.

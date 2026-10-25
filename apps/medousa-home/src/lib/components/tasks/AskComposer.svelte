@@ -1,4 +1,8 @@
 <script lang="ts">
+  import ResourceReferencePicker from "$lib/components/chat/ResourceReferencePicker.svelte";
+  import { resourceContext } from "$lib/utils/turnContext";
+  import { referenceToken } from "$lib/context/resourceReferences";
+  import type { TurnResourceReference } from "$lib/types/generated/daemon_api";
   import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import { tick } from "svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
@@ -42,6 +46,9 @@
   const attachments = composerAttachments.ask;
 
   let prompt = $state("");
+  let references = $state<TurnResourceReference[]>([]);
+  let referenceScope = activeWorkshopId();
+  $effect(() => { if (referenceScope !== activeWorkshopId()) { references = []; referenceScope = activeWorkshopId(); } });
   let rootEl = $state<HTMLElement | null>(null);
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
   let cursor = $state(0);
@@ -61,7 +68,7 @@
         })
       : [],
   );
-  const slashOpen = $derived(Boolean(slashToken && slashItems.length > 0));
+  const slashOpen = $derived(Boolean(slashToken && slashItems.length > 0 && !referenceToken(prompt, cursor)));
 
   const canSubmit = $derived(
     !workspace.askSubmitting &&
@@ -130,6 +137,7 @@
     prompt = "";
     cursor = 0;
     attachments.clear();
+    references = [];
   }
 
   async function submit(event?: Event) {
@@ -142,7 +150,7 @@
     );
     const scope = activeWorkshopId();
     try {
-      await workspace.submitAsk({ ...request, modelHint: runtime.model });
+      await workspace.submitAsk({ ...request, modelHint: runtime.model, hostContext: resourceContext("work", references) });
       if (activeWorkshopId() !== scope) return;
       resetComposer();
       onQueued?.();
@@ -221,6 +229,8 @@
       {workspace.askSubmitting ? "…" : "↑"}
     </button>
   </div>
+
+  <ResourceReferencePicker bind:value={prompt} bind:references element={textareaEl} enabled={!workspace.askSubmitting}/>
 
   {#if workspace.askError}
     <p class="text-xs text-content-error">{workspace.askError}</p>

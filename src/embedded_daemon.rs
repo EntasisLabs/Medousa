@@ -2275,6 +2275,7 @@ impl EmbeddedDaemon {
         lease: crate::execution_context::TurnExecutionLease,
         prompt: String,
         inference_prompt: String,
+        host_context: Option<medousa_types::HostTurnContext>,
         current_turn_user_message: ChatMessage,
         media_refs: Vec<medousa_types::daemon_api::MediaRef>,
         reasoning_effort: String,
@@ -2331,8 +2332,9 @@ impl EmbeddedDaemon {
                     return;
                 }
             };
-        let user_turn = crate::turn_parts::user_conversation_turn_with_media_and_speaker(
+        let user_turn = crate::turn_parts::user_conversation_turn_with_context_media_and_speaker(
             prompt.clone(),
+            host_context,
             &media_refs,
             context.legacy_scope().identity_user_id.as_deref(),
         );
@@ -5606,6 +5608,39 @@ impl EmbeddedDaemonClient {
         liquid_interactions: Vec<medousa_types::LiquidInteractionEnvelope>,
         worker_execution_target: Option<crate::workshop_contract::ExecutionTargetSelection>,
     ) -> Result<InteractiveTurnResponse> {
+        self.start_turn_with_host_context(
+            session_id,
+            prompt,
+            identity_user_id,
+            surface,
+            voice_preset_id,
+            voice_appendix,
+            response_depth_mode,
+            reasoning_effort,
+            media_refs,
+            liquid_interactions,
+            worker_execution_target,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn start_turn_with_host_context(
+        &self,
+        session_id: &str,
+        prompt: impl Into<String>,
+        identity_user_id: Option<String>,
+        surface: TurnSurfaceContext,
+        voice_preset_id: Option<String>,
+        voice_appendix: Option<String>,
+        response_depth_mode: String,
+        reasoning_effort: String,
+        media_refs: Vec<medousa_types::daemon_api::MediaRef>,
+        liquid_interactions: Vec<medousa_types::LiquidInteractionEnvelope>,
+        worker_execution_target: Option<crate::workshop_contract::ExecutionTargetSelection>,
+        host_context: Option<medousa_types::HostTurnContext>,
+    ) -> Result<InteractiveTurnResponse> {
         self.require(Capability::WorkshopInteract)?;
         if self.daemon.backgrounded.load(Ordering::Acquire) {
             bail!("embedded daemon is backgrounded");
@@ -5640,6 +5675,16 @@ impl EmbeddedDaemonClient {
             &effective_prompt,
             session_id.as_str(),
             &liquid_interactions,
+        );
+        if let Some(context) = host_context.as_ref() {
+            crate::agent_runtime::host_context::validate_references(context).map_err(anyhow::Error::msg)?;
+        }
+        let host_context = host_context
+            .as_ref()
+            .map(crate::agent_runtime::host_context::bound_host_context);
+        let effective_prompt = crate::agent_runtime::host_context::append_host_context(
+            &effective_prompt,
+            host_context.as_ref(),
         );
         let compiled_prompt = crate::engine_context::compile_context_prompt(
             crate::engine_context::ContextCompilerInput {
@@ -5764,6 +5809,7 @@ impl EmbeddedDaemonClient {
                 .map(|timeout| Instant::now() + timeout),
             scope,
         );
+        context = context.with_resource_references(host_context.as_ref().map(|context| context.references.clone()).unwrap_or_default());
         if let Some(target) = worker_execution_target {
             context = context.with_worker_execution_target(target);
         }
@@ -5782,6 +5828,7 @@ impl EmbeddedDaemonClient {
                     lease,
                     prompt,
                     inference_prompt,
+                    host_context,
                     current_turn_user_message,
                     media_refs,
                     reasoning_effort,

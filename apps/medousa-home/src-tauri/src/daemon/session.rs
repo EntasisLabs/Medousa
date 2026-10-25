@@ -680,6 +680,8 @@ pub struct SessionTurnsResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CreateTurnTicketBody {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    host_context: Option<medousa_types::HostTurnContext>,
     session_id: String,
     prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -746,6 +748,7 @@ pub async fn turn_create(
     channel_surface: Option<String>,
     browser_driver_id: Option<String>,
     selected_worlds: Option<Vec<TurnWorldSelection>>,
+    host_context: Option<medousa_types::HostTurnContext>,
     media_refs: Option<Vec<MediaRef>>,
     liquid_interactions: Option<Vec<medousa_types::LiquidInteractionEnvelope>>,
     voice_preset_id: Option<String>,
@@ -808,9 +811,8 @@ pub async fn turn_create(
         supports_ui_artifacts: true,
         supports_liquid_markdown: true,
         supports_browser_host,
-        browser_driver_id: browser_driver_id.or_else(|| {
-            supports_browser_host.then(|| crate::browser_driver::id().to_string())
-        }),
+        browser_driver_id: browser_driver_id
+            .or_else(|| supports_browser_host.then(|| crate::browser_driver::id().to_string())),
         selected_worlds: selected_worlds.unwrap_or_default(),
     };
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -843,7 +845,7 @@ pub async fn turn_create(
             .unwrap_or("default")
             .to_string();
         let accepted = client
-            .start_turn_with_options(
+            .start_turn_with_host_context(
                 trimmed_session,
                 prompt.clone(),
                 identity_user_id.clone(),
@@ -855,6 +857,7 @@ pub async fn turn_create(
                 media_refs.clone().unwrap_or_default(),
                 liquid_interactions.clone().unwrap_or_default(),
                 worker_execution_target.clone(),
+                host_context.clone(),
             )
             .await
             .map_err(|error| error.to_string())?;
@@ -906,6 +909,7 @@ pub async fn turn_create(
         stage_routing
     };
     let body = CreateTurnTicketBody {
+        host_context,
         session_id: trimmed_session.to_string(),
         prompt,
         agent_mode,
