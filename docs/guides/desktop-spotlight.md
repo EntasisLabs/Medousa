@@ -56,6 +56,10 @@ Opening the same conversation, canvas, or Code project again focuses and restore
 its existing window. Files requested for an open Code project open inside that
 project’s existing window. Different workshops keep separate window identities.
 
+Work windows show their editor directly, without an extra Medousa/workshop header.
+In Code, use **Hide files** or **Show files** in the **Editor options** menu to toggle
+the file sidebar. With no file open, these controls are in **Project options**.
+
 Terminal windows reuse the same terminal emulator and workshop-owned PTYs as the
 main app. Opening the same live session focuses its existing window. Repeating an
 SSH destination reuses its live session, including after closing and reopening

@@ -79,6 +79,9 @@
     /** Background split panes render but must not own global interactions. */
     interactive?: boolean;
     reviewScope?: string;
+    /** Detached Code windows keep file controls in the project menu. */
+    filesVisible?: boolean;
+    onToggleFiles?: () => void;
   }
 
   let {
@@ -87,6 +90,8 @@
     resource = { kind: "workspace" },
     interactive = true,
     reviewScope = "local",
+    filesVisible = true,
+    onToggleFiles,
   }: Props = $props();
 
   let title = $state("");
@@ -1230,6 +1235,10 @@
             onReclaimHuman={reclaimHuman}
           >
             {#snippet projectMenu()}
+              {#if onToggleFiles}
+                <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={onToggleFiles}>{filesVisible ? "Hide files" : "Show files"}</button>
+                <div class="code-chrome-menu-sep" role="separator"></div>
+              {/if}
               {#if actions?.start_agent.allowed}
                 {#each EXTERNAL_AGENTS as agent (agent.id)}
                   <button type="button" role="menuitem" class="code-chrome-menu-item" disabled={busy} title={actions?.start_agent.reason ?? ""} onclick={() => void startAgent(agent.id)}>Ask {agent.label} to continue</button>

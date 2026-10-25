@@ -3,7 +3,6 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { Search, PanelLeft, ArrowUpLeft } from "@lucide/svelte";
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   const loadChat = () => import("$lib/components/chat/ChatPanel.svelte");
   const loadCreate = () => import("$lib/components/create/CreatePanel.svelte");
@@ -16,12 +15,10 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
-  import { workshops } from "$lib/stores/workshops.svelte";
   import { creativeBridgeApi } from "$lib/create/creativeBridge";
   import { flushCreativeProject } from "$lib/create/creativeWorkspace.svelte";
   import { connectDesktopWindow } from "$lib/desktop/connect";
-  import { openDesktopWindow, toggleDesktopSpotlight, type DesktopTarget } from "$lib/desktop/windows";
-  import { showMainWindow } from "$lib/window";
+  import { openDesktopWindow, type DesktopTarget } from "$lib/desktop/windows";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import "$lib/styles/lme.postcss";
 
@@ -101,14 +98,6 @@
 </script>
 
 <div class="desktop-work" class:desktop-work-closing={closing}>
-  <header>
-    <button type="button" title="Open Medousa" onclick={() => void showMainWindow()}><ArrowUpLeft size={14} />Medousa</button>
-    <span class="desktop-work-location">{workshops.activeLabel} <span>/</span> {target?.title || (target?.kind === "chat" ? "Chat" : target?.kind === "create" ? "Create" : target?.kind === "terminal" ? "Terminal" : "Code")}</span>
-    <div class="desktop-work-actions">
-      {#if target?.kind === "code" && target.resourceId}<button type="button" title="Toggle files" aria-pressed={rail} onclick={() => rail = !rail}><PanelLeft size={15}/></button>{/if}
-      <button type="button" title="Desktop Spotlight" onclick={() => void toggleDesktopSpotlight()}><Search size={15} />Spotlight</button>
-    </div>
-  </header>
   {#if error}<div class="desktop-work-error" role="alert">{error}<button type="button" onclick={() => { error = null; if (!ready) void initialize(); }}> {ready ? "Dismiss" : "Try again"}</button></div>{/if}
   {#if closeFailed}<div class="desktop-work-error"><button type="button" onclick={() => { closeFailed = false; error = null; }}>Keep editing</button><button type="button" onclick={() => void close(true)}>Close without saving</button></div>{/if}
   <div class="desktop-work-content">
@@ -119,7 +108,7 @@
     {:else if target?.kind === "code"}
       {#if target.resourceId}
         {#if rail}<aside class="desktop-work-files"><CodeRepositoryTree workId={target.resourceId} prepared={Boolean(undertakings.active?.worktree)} fill /></aside>{/if}
-        <LazyFeatureView loader={loadCode} workId={target.resourceId} showBrowser={false} />
+        <LazyFeatureView loader={loadCode} workId={target.resourceId} showBrowser={false} filesVisible={rail} onToggleFiles={() => rail = !rail} />
       {:else}<aside class="desktop-work-files"><LmeCodeExplorer onOpenProject={openCode}/></aside><div class="desktop-work-empty"><h1>Code</h1><p>Open a project to edit files and run your app.</p></div>{/if}
     {:else if target?.kind === "terminal" && target.resourceId}
       <LazyFeatureView loader={loadTerminal} sessionId={target.resourceId} workshopId={target.workshopId} title={target.title ?? "Terminal"} onClose={() => void close()} />
@@ -130,12 +119,8 @@
 
 <style>
   .desktop-work { height: 100dvh; display: flex; flex-direction: column; background: rgb(var(--theme-canvas)); color: rgb(var(--theme-text)); }
-  header { height: 44px; flex-shrink: 0; display: flex; align-items: center; gap: 18px; padding: 0 14px; border-bottom: 1px solid rgb(var(--theme-border) / .3); font-size: 12px; }
   button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 5px; }
   button:hover { background: rgb(var(--theme-border) / .2); }
-  .desktop-work-location { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .desktop-work-location span { opacity: .4; padding: 0 8px; }
-  .desktop-work-actions { margin-left: auto; display: flex; gap: 4px; flex-shrink: 0; }
   .desktop-work-content { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .desktop-work-files { width: 260px; flex-shrink: 0; overflow: auto; border-right: 1px solid rgb(var(--theme-border) / .3); }
   .desktop-work-empty { margin: auto; color: rgb(var(--theme-text-muted)); font-size: 13px; }
