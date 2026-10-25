@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { Copy, Download, FilePlus2, Pencil, RotateCcw, Share2, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import ChatDrawingDialog from "$lib/components/chat/ChatDrawingDialog.svelte";
@@ -25,11 +25,21 @@
   let actionBusy = $state(false);
   let actionStatus = $state<string | null>(null);
 
-  $effect(() => {
-    const activeSessionId = sessionId;
-    const images = attachments
+  // Stream/history snapshots may replace attachment objects without changing
+  // their image bytes. Only a different media source should reload a thumbnail.
+  const imageSourceKey = $derived(JSON.stringify([
+    sessionId,
+    attachments
       .filter((attachment) => attachment.mime.startsWith("image/"))
-      .map((attachment) => ({ ...attachment }));
+      .map((attachment) => [attachment.mediaId, attachment.mime]),
+  ]));
+
+  $effect(() => {
+    void imageSourceKey;
+    const activeSessionId = untrack(() => sessionId);
+    const images = untrack(() => attachments
+      .filter((attachment) => attachment.mime.startsWith("image/"))
+      .map((attachment) => ({ ...attachment })));
     let cancelled = false;
     let ownedUrls: string[] = [];
     urls = {};
