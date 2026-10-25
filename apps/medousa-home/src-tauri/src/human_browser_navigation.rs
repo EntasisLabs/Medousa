@@ -50,29 +50,35 @@ pub(super) async fn read(view: Webview, direction: Option<Action>) -> Result<Sta
                 })
             }
             #[cfg(windows)]
-            unsafe {
-                let page = platform
-                    .controller()
-                    .CoreWebView2()
-                    .map_err(|e| e.to_string())?;
-                match direction {
-                    Some(Action::Back) => page.GoBack().map_err(|e| e.to_string())?,
-                    Some(Action::Forward) => page.GoForward().map_err(|e| e.to_string())?,
-                    Some(Action::Stop) => page.Stop().map_err(|e| e.to_string())?,
-                    None => {}
-                }
-                let mut back = Default::default();
-                let mut forward = Default::default();
-                page.CanGoBack(&mut back).map_err(|e| e.to_string())?;
-                page.CanGoForward(&mut forward).map_err(|e| e.to_string())?;
-                let mut source = Default::default();
-                page.Source(&mut source).map_err(|e| e.to_string())?;
-                Ok(State {
-                    can_go_back: back.as_bool(),
-                    can_go_forward: forward.as_bool(),
-                    url: Some(webview2_com::take_pwstr(source)),
-                    loading: None,
-                })
+            {
+                // `with_webview`'s closure returns `()`, so `?` is not allowed there.
+                // Run the WebView2 calls in a Result closure and send that through `tx`.
+                (move || -> Result<State, String> {
+                    unsafe {
+                        let page = platform
+                            .controller()
+                            .CoreWebView2()
+                            .map_err(|e| e.to_string())?;
+                        match direction {
+                            Some(Action::Back) => page.GoBack().map_err(|e| e.to_string())?,
+                            Some(Action::Forward) => page.GoForward().map_err(|e| e.to_string())?,
+                            Some(Action::Stop) => page.Stop().map_err(|e| e.to_string())?,
+                            None => {}
+                        }
+                        let mut back = Default::default();
+                        let mut forward = Default::default();
+                        page.CanGoBack(&mut back).map_err(|e| e.to_string())?;
+                        page.CanGoForward(&mut forward).map_err(|e| e.to_string())?;
+                        let mut source = Default::default();
+                        page.Source(&mut source).map_err(|e| e.to_string())?;
+                        Ok(State {
+                            can_go_back: back.as_bool(),
+                            can_go_forward: forward.as_bool(),
+                            url: Some(webview2_com::take_pwstr(source)),
+                            loading: None,
+                        })
+                    }
+                })()
             }
             #[cfg(any(
                 target_os = "linux",

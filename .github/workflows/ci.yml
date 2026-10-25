@@ -142,6 +142,36 @@ jobs:
       - name: cargo check (Installer)
         run: cargo check --locked --manifest-path apps/medousa-installer/src-tauri/Cargo.toml
 
+  # Linux `tauri-ubuntu` never compiles `cfg(windows)` code. Release is the
+  # only job that used to typecheck the desktop app on Windows, which is how
+  # the 0.12.0 `human_browser_navigation` breakage shipped. `cargo check` is
+  # enough to catch that class of error without a frontend or daemon build.
+  tauri-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/medousa-home/src-tauri -> ../../../.cache/cargo-target
+          cache-on-failure: true
+      - name: Stub externalBin sidecar for cargo check
+        run: |
+          set -euo pipefail
+          # tauri-build copies bundle.externalBin during every compile. A
+          # placeholder satisfies that file check; this job does not execute it.
+          triple="$(rustc -vV | sed -n 's/^host: //p')"
+          dir="apps/medousa-home/src-tauri/binaries"
+          mkdir -p "${dir}"
+          : > "${dir}/medousa_daemon-${triple}.exe"
+      - name: cargo check (Home Tauri, Windows)
+        run: cargo check --manifest-path apps/medousa-home/src-tauri/Cargo.toml
+
   perf-micro:
     runs-on: ubuntu-latest
     steps:

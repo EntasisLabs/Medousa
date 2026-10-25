@@ -859,6 +859,13 @@ jobs:
             exit 1
           fi
           echo "Apple signing secrets are present."
+          # Presence is not validity: Apple password resets revoke app-specific
+          # passwords. Fail before the expensive build, without logging credentials
+          # or submission history. This read-only check does not submit an app.
+          if ! xcrun notarytool history --apple-id "${APPLE_ID}" --password "${APPLE_PASSWORD}" --team-id "${APPLE_TEAM_ID}" >/dev/null 2>&1; then
+            echo "::error::Apple notarization authentication preflight failed. Verify MEDOUSA environment credentials and Apple service availability before retrying."
+            exit 1
+          fi
 
       # On a self-hosted Mac you can instead sign from the machine's login
       # keychain (skip this import + drop the APPLE_CERTIFICATE secret) — leave
@@ -1074,6 +1081,11 @@ jobs:
             exit 1
           fi
           echo "Apple signing secrets are present."
+          # Use the same read-only authentication gate as the desktop build.
+          if ! xcrun notarytool history --apple-id "${APPLE_ID}" --password "${APPLE_PASSWORD}" --team-id "${APPLE_TEAM_ID}" >/dev/null 2>&1; then
+            echo "::error::Apple notarization authentication preflight failed. Verify MEDOUSA environment credentials and Apple service availability before retrying."
+            exit 1
+          fi
 
       - name: Import Apple Developer certificate
         if: startsWith(matrix.name, 'macos-')
