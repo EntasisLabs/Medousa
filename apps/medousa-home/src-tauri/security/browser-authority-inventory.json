@@ -277,6 +277,7 @@
     "desktop_windows::desktop_open_window",
     "desktop_windows::desktop_shortcut_error",
     "desktop_windows::desktop_spotlight_context",
+    "desktop_windows::desktop_spotlight_pointer",
     "desktop_windows::desktop_spotlight_reply",
     "desktop_windows::desktop_spotlight_request",
     "desktop_windows::desktop_spotlight_restore",

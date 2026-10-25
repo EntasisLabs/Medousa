@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "spotlight-focus",
+  "description": "Return keyboard focus to Desktop Spotlight after an external image drop",
+  "platforms": ["linux", "macOS", "windows"],
+  "webviews": ["desktop-spotlight"],
+  "permissions": ["core:window:allow-set-focus"]
+}

@@ -6,6 +6,11 @@ again, press **Escape**, or click outside it to dismiss it. Closing the main
 Medousa window leaves the launcher available. Use the tray or menu-bar **Quit**
 action to quit Medousa completely.
 
+On macOS, you can click and hold an image in another app, then drag it into
+Spotlight. The launcher stays visible while the mouse button is held. Releasing
+outside dismisses it; dropping inside attaches the image and returns keyboard
+focus to the composer. Escape and the shortcut still dismiss it immediately.
+
 You can also choose **Spotlight** from Medousa’s tray/menu-bar menu or search for
 **Desktop Spotlight** in the app’s command center. **⌘/Ctrl K** still opens the
 in-app command center. If another app owns the global shortcut, Medousa reports

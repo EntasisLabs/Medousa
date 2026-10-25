@@ -11,6 +11,7 @@
   import { creativeBridgeApi } from "$lib/create/creativeBridge";
   import { desktopWindowCommands } from "$lib/desktop/commands";
   import { connectDesktopWindow } from "$lib/desktop/connect";
+  import { spotlightDismissal, type SpotlightPointer } from "$lib/desktop/spotlightDismissal";
   import { createDesktopSpotlightHost } from "$lib/desktop/spotlightHost";
   import { openDesktopWindow } from "$lib/desktop/windows";
   import { prepareForWorkshopSwitch } from "$lib/workshopConnection";
@@ -69,22 +70,31 @@
     });
   }
   function requestOpen() {
+    dismissal.cancel();
     visibleRequested = true;
     opening = opening.then(open).catch(cause => { if (!disposed) error = cause instanceof Error ? cause.message : String(cause); });
   }
-  function dismiss() { commandSpotlight.closeSpotlight(); void getCurrentWindow().hide(); }
+  function dismiss() { dismissal.cancel(); visibleRequested = false; commandSpotlight.closeSpotlight(); void getCurrentWindow().hide(); }
+  const dismissal = spotlightDismissal({
+    pointer: () => invoke<SpotlightPointer | null>("desktop_spotlight_pointer"),
+    releaseInside: () => { void getCurrentWindow().setFocus().catch(() => {}); },
+    canDismiss: () => !disposed && visibleRequested && (!ready || commandSpotlight.open) && !pendingActions,
+    dismiss: () => { visibleRequested = false; if (spotlight) spotlight.dismiss(); else dismiss(); },
+  });
   onMount(() => {
     const stops: (() => void)[] = [];
     const keep = (pending: Promise<() => void>) => { void pending.then(stop => disposed ? stop() : stops.push(stop)); };
     keep(listen("desktop-spotlight-open", requestOpen));
     keep(listen("desktop-spotlight-dismiss", () => { visibleRequested = false; if (spotlight) spotlight.dismiss(); else commandSpotlight.closeSpotlight(); }));
     keep(getCurrentWindow().onFocusChanged(event => {
-      visibleRequested = event.payload;
-      if (!event.payload && !pendingActions) { if (spotlight) spotlight.dismiss(); else commandSpotlight.closeSpotlight(); }
+      // A shell handoff hides the overlay but keeps its state for an actionable failure.
+      if (!event.payload && pendingActions) { dismissal.cancel(); void getCurrentWindow().hide(); return; }
+      dismissal.focusChanged(event.payload);
     }));
+    keep(getCurrentWindow().onDragDropEvent(event => dismissal.dragChanged(event.payload.type)));
     void invoke<string | null>("desktop_shortcut_error").then(value => { shortcutError = value; });
     requestOpen();
-    return () => { disposed = true; generation++; stops.forEach(stop => stop()); disconnect?.(); };
+    return () => { dismissal.cancel(); disposed = true; generation++; stops.forEach(stop => stop()); disconnect?.(); };
   });
 </script>
 

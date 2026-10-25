@@ -320,7 +320,7 @@ pub async fn desktop_toggle_spotlight(app: AppHandle) -> Result<(), String> {
     let state = app.state::<DesktopWindows>();
     let _gate = state.gate.lock().await;
     if let Some(window) = app.get_webview_window("desktop-spotlight") {
-        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+        if window.is_visible().unwrap_or(false) {
             window
                 .emit("desktop-spotlight-dismiss", ())
                 .map_err(|e| e.to_string())?;
@@ -388,6 +388,56 @@ pub async fn desktop_toggle_spotlight(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     window.center().map_err(|e| e.to_string())?;
     show_and_resume(&window)
+}
+
+/// A local UI snapshot, independent of the workshop daemon or file authority.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotlightPointer {
+    buttons_down: bool,
+    inside: bool,
+}
+
+#[tauri::command]
+pub async fn desktop_spotlight_pointer(
+    window: Webview,
+) -> Result<Option<SpotlightPointer>, String> {
+    if window.label() != "desktop-spotlight" {
+        return Err("Pointer checks are only available to Desktop Spotlight".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let native = window
+            .app_handle()
+            .get_webview_window("desktop-spotlight")
+            .ok_or_else(|| "Spotlight is closed".to_string())?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let target = native.clone();
+        native
+            .run_on_main_thread(move || {
+                let result = target
+                    .ns_window()
+                    .map(|pointer| {
+                        // AppKit coordinates are screen points for both mouseLocation and frame.
+                        let native = unsafe { &*(pointer as *const objc2_app_kit::NSWindow) };
+                        let frame = native.frame();
+                        let point = objc2_app_kit::NSEvent::mouseLocation();
+                        SpotlightPointer {
+                            buttons_down: objc2_app_kit::NSEvent::pressedMouseButtons() != 0,
+                            inside: point.x >= frame.origin.x
+                                && point.x < frame.origin.x + frame.size.width
+                                && point.y >= frame.origin.y
+                                && point.y < frame.origin.y + frame.size.height,
+                        }
+                    })
+                    .map_err(|error| error.to_string());
+                let _ = tx.send(result);
+            })
+            .map_err(|error| error.to_string())?;
+        return rx.await.map_err(|error| error.to_string())?.map(Some);
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(None)
 }
 
 /// Pin legacy actions and stream consumers to the workshop shown by this opening.

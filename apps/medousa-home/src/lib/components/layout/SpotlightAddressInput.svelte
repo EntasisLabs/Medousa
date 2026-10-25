@@ -57,6 +57,7 @@
               files.push(new File([media.bytes as BlobPart], media.filename, { type: media.mime }));
             }
             conversation.addFiles(files);
+            focus();
           } catch (cause) { if (!disposed && scope === activeWorkshopId()) conversation.error = String(cause); }
         })();
       });

@@ -1,8 +1,11 @@
 /** @vitest-environment happy-dom */
 import { afterEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync } from "svelte";
-const api = vi.hoisted(() => ({ history: vi.fn(), submit: vi.fn(), messages: vi.fn(() => []) }));
-vi.mock("$lib/daemon", () => ({ getSessionHistory: api.history, createSession: vi.fn(), getActiveSessionTurn: async () => ({ active: false }), listAgentRuntimes: async () => ({ runtimes: [] }) }));
+const api = vi.hoisted(() => ({ history: vi.fn(), submit: vi.fn(), messages: vi.fn(() => []), native: false, label: "desktop-spotlight", focus: vi.fn(async () => {}), readImage: vi.fn(), drag: null as null | ((event: { payload: { type: string; position: { x: number; y: number }; paths: string[] } }) => void) }));
+vi.mock("$lib/platform", async importOriginal => ({ ...await importOriginal<typeof import("$lib/platform")>(), isTauriDesktop: () => api.native }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: api.label, scaleFactor: async () => 2, setFocus: api.focus }) }));
+vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async (callback: typeof api.drag) => { api.drag = callback; return () => { api.drag = null; }; } }) }));
+vi.mock("$lib/daemon", () => ({ getSessionHistory: api.history, readMediaImagePath: api.readImage, createSession: vi.fn(), getActiveSessionTurn: async () => ({ active: false }), listAgentRuntimes: async () => ({ runtimes: [] }) }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: { workshopScopeId: "test", workshopEpoch: 1, sessionId: "other", sessions: [{ session_id: "lab", display_name: "Labbing", preview: "Recent work", turns: 2, verification_runs: 0 }], messagesFor: api.messages, streamErrorFor: () => null, history: { open: vi.fn() }, sessionRuntimes: new Map(), warmBackgroundSession: vi.fn(), refreshSessions: vi.fn() } }));
 vi.mock("$lib/stores/bots.svelte", () => ({ bots: { bots: [{ bot_id: "taco", display_name: "Taco", primary_session_id: "taco-thread" }], loading: false, error: null } }));
 vi.mock("$lib/stores/connection.svelte", () => ({ connection: { offline: false } }));
@@ -29,7 +32,7 @@ async function setup(query: string) {
 const input = () => document.querySelector<HTMLInputElement>("input")!;
 function type(value: string) { input().value = value; input().dispatchEvent(new Event("input", { bubbles: true })); flushSync(); }
 function key(value: string, options: KeyboardEventInit = {}) { input().dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...options })); flushSync(); }
-afterEach(async () => { cleanup?.(); if (inputComponent) await unmount(inputComponent); if (transcript) await unmount(transcript); document.body.replaceChildren(); vi.clearAllMocks(); });
+afterEach(async () => { cleanup?.(); if (inputComponent) await unmount(inputComponent); if (transcript) await unmount(transcript); document.body.replaceChildren(); vi.clearAllMocks(); api.native = false; api.label = "desktop-spotlight"; api.drag = null; });
 it("shows grouped destinations in an anchored picker, then uses the same field for messages", async () => {
   const conversation = await setup("@");
   expect(document.querySelectorAll("input")).toHaveLength(1); expect(document.body.textContent).toContain("Bots"); expect(document.body.textContent).toContain("Conversations"); expect(document.body.textContent).toContain("Start new");
@@ -66,4 +69,50 @@ it("shows a quiet working indicator instead of a fake assistant reply while wait
   expect(document.body.textContent).toContain("Working…");
   expect(document.body.textContent).not.toContain("agent runtime");
   expect(document.querySelector(".command-spotlight-transcript-speaker")).toBeNull();
+});
+
+it("attaches a native image drop and focuses the composer without changing native window focus", async () => {
+  api.native = true;
+  api.readImage.mockResolvedValue({ bytes: new Uint8Array([137, 80, 78, 71]), filename: "screenshot.png", mime: "image/png" });
+  const conversation = await setup("");
+  const area = document.querySelector('[aria-label="Spotlight message; paste or drop screenshots"]')!;
+  vi.spyOn(area, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 500));
+  await vi.waitFor(() => expect(api.drag).not.toBeNull());
+  api.drag!({ payload: { type: "enter", position: { x: 100, y: 100 }, paths: [] } });
+  expect(api.focus).not.toHaveBeenCalled();
+  api.drag!({ payload: { type: "drop", position: { x: 100, y: 100 }, paths: ["/client/screenshot.png"] } });
+  await vi.waitFor(() => expect(conversation.files).toHaveLength(1));
+  expect(api.readImage).toHaveBeenCalledWith("/client/screenshot.png");
+  expect(api.focus).not.toHaveBeenCalled();
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  expect(document.activeElement).toBe(input());
+});
+it("does not steal focus when a drop finishes reading after Spotlight was dismissed", async () => {
+  api.native = true;
+  let resolve!: (value: { bytes: Uint8Array; filename: string; mime: string }) => void;
+  api.readImage.mockReturnValueOnce(new Promise(done => { resolve = done; }));
+  const conversation = await setup("");
+  const area = document.querySelector('[aria-label="Spotlight message; paste or drop screenshots"]')!;
+  vi.spyOn(area, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 500));
+  await vi.waitFor(() => expect(api.drag).not.toBeNull());
+  api.drag!({ payload: { type: "drop", position: { x: 100, y: 100 }, paths: ["/client/screenshot.png"] } });
+  await vi.waitFor(() => expect(api.readImage).toHaveBeenCalled());
+  expect(api.focus).not.toHaveBeenCalled();
+  await unmount(inputComponent); inputComponent = undefined as never;
+  resolve({ bytes: new Uint8Array([137, 80, 78, 71]), filename: "screenshot.png", mime: "image/png" });
+  await new Promise(done => setTimeout(done, 0));
+  expect(conversation.files).toHaveLength(0);
+  expect(api.focus).not.toHaveBeenCalled();
+});
+
+it("keeps native file drops working in the in-app palette without launcher-only focus permission", async () => {
+  api.native = true; api.label = "main";
+  api.readImage.mockResolvedValue({ bytes: new Uint8Array([137, 80, 78, 71]), filename: "screenshot.png", mime: "image/png" });
+  const conversation = await setup("");
+  const area = document.querySelector('[aria-label="Spotlight message; paste or drop screenshots"]')!;
+  vi.spyOn(area, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 500));
+  await vi.waitFor(() => expect(api.drag).not.toBeNull());
+  api.drag!({ payload: { type: "drop", position: { x: 100, y: 100 }, paths: ["/client/screenshot.png"] } });
+  await vi.waitFor(() => expect(conversation.files).toHaveLength(1));
+  expect(api.focus).not.toHaveBeenCalled();
 });

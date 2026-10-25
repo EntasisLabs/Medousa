@@ -349,7 +349,7 @@ fn run_home() {
                 return;
             }
             if window.label() == "desktop-spotlight" {
-                if matches!(event, tauri::WindowEvent::Focused(false)) { let _ = window.hide(); }
+                // The launcher owns dismissal: focus loss can be the start of an image drag.
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); let _ = window.emit("desktop-spotlight-dismiss", ()); let _ = window.hide(); }
                 return;
             }
@@ -955,6 +955,8 @@ fn run_home() {
             desktop_windows::desktop_shortcut_error,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             desktop_windows::desktop_spotlight_context,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            desktop_windows::desktop_spotlight_pointer,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             desktop_windows::desktop_spotlight_restore,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]

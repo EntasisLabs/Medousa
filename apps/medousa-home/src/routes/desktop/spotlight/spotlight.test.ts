@@ -1,9 +1,9 @@
 /** @vitest-environment happy-dom */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, unmount, flushSync } from "svelte";
-const api = vi.hoisted(() => ({ invoke: vi.fn(), hide: vi.fn(), stop: vi.fn(), focus: null as null | ((event: { payload: boolean }) => void), events: new Map<string, () => void>(), fail: null as null | ((cause: Error) => void) }));
+const api = vi.hoisted(() => ({ invoke: vi.fn(), hide: vi.fn(), setFocus: vi.fn(async () => {}), stop: vi.fn(), focus: null as null | ((event: { payload: boolean }) => void), drag: null as null | ((event: { payload: { type: "enter" | "over" | "drop" | "leave" } }) => void), events: new Map<string, () => void>(), fail: null as null | ((cause: Error) => void) }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: api.invoke }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ hide: api.hide, onFocusChanged: async (callback: typeof api.focus) => { api.focus = callback; return () => { api.focus = null; }; } }) }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ hide: api.hide, setFocus: api.setFocus, onDragDropEvent: async (callback: typeof api.drag) => { api.drag = callback; return () => { api.drag = null; }; }, onFocusChanged: async (callback: typeof api.focus) => { api.focus = callback; return () => { api.focus = null; }; } }) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: async (name: string, callback: () => void) => { api.events.set(name, callback); return () => { api.events.delete(name); }; } }));
 vi.mock("$lib/desktop/connect", () => ({ connectDesktopWindow: (_scope: string, ready: () => void) => { queueMicrotask(ready); return api.stop; } }));
 vi.mock("$lib/workshopConnection", () => ({ prepareForWorkshopSwitch: vi.fn() }));
@@ -37,6 +37,7 @@ async function handoff() {
   expect(api.fail).not.toBeNull();
   api.focus?.({ payload: false }); flushSync();
   expect(commandSpotlight.open).toBe(true);
+  expect(api.hide).toHaveBeenCalled();
 }
 it("keeps a shell handoff pending across blur and restores an actionable failure", async () => {
   await handoff();
@@ -52,4 +53,32 @@ it("does not reopen the launcher when the operator dismisses a pending handoff",
   api.fail!(new Error("Late failure")); await settle();
   expect(api.invoke.mock.calls.some(([name]) => name === "desktop_spotlight_restore")).toBe(false);
   expect(commandSpotlight.open).toBe(false);
+});
+
+it("keeps Spotlight visible through an external press and drop, then handles ordinary blur", async () => {
+  component = mount(Launcher, { target: document.body }); await settle(80);
+  api.invoke.mockImplementation(async name => name === "desktop_spotlight_pointer" ? { buttonsDown: true, inside: false } : null);
+  api.focus?.({ payload: false }); await settle();
+  expect(commandSpotlight.open).toBe(true);
+  expect(api.hide).not.toHaveBeenCalled();
+  api.drag?.({ payload: { type: "enter" } });
+  expect(api.setFocus).not.toHaveBeenCalled();
+  api.drag?.({ payload: { type: "drop" } });
+  expect(api.setFocus).toHaveBeenCalledOnce();
+  api.focus?.({ payload: true }); await settle();
+  expect(commandSpotlight.open).toBe(true);
+  api.invoke.mockImplementation(async name => name === "desktop_spotlight_pointer" ? { buttonsDown: false, inside: false } : null);
+  api.focus?.({ payload: false }); await settle();
+  expect(commandSpotlight.open).toBe(false);
+  expect(api.hide).toHaveBeenCalled();
+});
+it("lets the shortcut dismiss a held outside press without a later probe reopening it", async () => {
+  component = mount(Launcher, { target: document.body }); await settle(80);
+  api.invoke.mockImplementation(async name => name === "desktop_spotlight_pointer" ? { buttonsDown: true, inside: false } : null);
+  api.focus?.({ payload: false }); await settle();
+  api.events.get("desktop-spotlight-dismiss")?.(); await settle();
+  expect(commandSpotlight.open).toBe(false);
+  const count = api.invoke.mock.calls.length;
+  await settle(65);
+  expect(api.invoke.mock.calls.length).toBe(count);
 });
