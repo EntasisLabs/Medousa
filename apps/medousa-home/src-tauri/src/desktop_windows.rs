@@ -434,7 +434,7 @@ pub async fn desktop_spotlight_pointer(
                 let _ = tx.send(result);
             })
             .map_err(|error| error.to_string())?;
-        return rx.await.map_err(|error| error.to_string())?.map(Some);
+        rx.await.map_err(|error| error.to_string())?.map(Some)
     }
     #[cfg(not(target_os = "macos"))]
     Ok(None)

@@ -1,6 +1,7 @@
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+
 from medousa import MedousaClient, MedousaClientSync
 
 

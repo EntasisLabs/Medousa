@@ -325,6 +325,11 @@ pub fn transport_base_url() -> Result<String, String> {
     Ok(transport_config()?.lan_base)
 }
 
+/// Retained renderers keep their own workshop subscriptions across shell switches.
+pub fn is_resource_window(label: &str) -> bool {
+    label == "desktop-spotlight" || label.starts_with("desktop-work-")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,9 +444,4 @@ mod tests {
         assert!(resolve_scope_for_registry(&registry, "missing", false).is_err());
         assert!(resolve_scope_for_registry(&registry, "peer", false).is_err());
     }
-}
-
-/// Retained renderers keep their own workshop subscriptions across shell switches.
-pub fn is_resource_window(label: &str) -> bool {
-    label == "desktop-spotlight" || label.starts_with("desktop-work-")
 }

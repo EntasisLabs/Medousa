@@ -112,8 +112,12 @@ async def test_code_handoff_preserves_the_frame_visual_revision_and_session():
     from medousa.types import CreativeCodeContextRequest
     transport = MockTransport({
         ("POST", "/v1/create/projects/doc/code-context"): lambda *_: {
-            "context": {"document_id": "doc", "revision": 7, "selected_ids": ["frame"],
-                        "nodes": [], "assets": [], "fingerprint": "frozen"}, "snapshot_id": "frozen_context", "media_refs": []},
+            "context": {
+                "document_id": "doc", "revision": 7, "selected_ids": ["frame"],
+                "nodes": [], "assets": [], "fingerprint": "frozen",
+            },
+            "snapshot_id": "frozen_context", "media_refs": [],
+        },
     })
     client = MedousaClient("http://workshop", transport=transport)
     request = CreativeCodeContextRequest(
