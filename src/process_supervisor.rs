@@ -788,7 +788,7 @@ mod tests {
             session_id: "ses_grace".into(),
             profile_id: "user:alice".into(),
             home_session: None,
-            argv: vec!["/bin/true".into()],
+            argv: vec!["/bin/sh".into(), "-c".into(), "exit 0".into()],
             cwd: None,
             deadline: None,
             background_after: Some(Duration::from_secs(2)),
@@ -802,7 +802,10 @@ mod tests {
     #[test]
     fn pid_probe_sees_this_process_and_not_a_finished_one() {
         assert!(pid_alive(std::process::id()));
-        let mut child = Command::new("/bin/true").spawn().expect("true");
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .expect("immediate-exit command");
         let pid = child.id();
         let _ = child.wait();
         assert!(!pid_alive(pid));
