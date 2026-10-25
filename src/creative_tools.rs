@@ -19,7 +19,7 @@ pub struct CreativeRead {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreativePropose {
     pub document_id: String,
-    /// Use the captured revision/IDs from creative.read. Does not modify the canvas.
+    /// Propose document edits against a revision. selected_ids is context only. Does not modify the canvas.
     pub proposal: CreativeProposalRequest,
 }
 impl CreativeRead {
@@ -173,46 +173,254 @@ impl CreativeCreate {
         }
         let response =
             crate::creative_handlers::run(crate::creative_handlers::service()?, move |store| {
-                use medousa_types::{
-                    CreativeContent, CreativeNode, CreativeScene, CreativeTransform,
-                };
-                let frame = CreativeNode {
-                    id: "frame".into(),
-                    name: None,
-                    parent_id: None,
-                    appearance: None,
-                    design_source: None,
-                    text_layout: None,
-                    transform: CreativeTransform {
-                        x: 0.,
-                        y: 0.,
-                        width: self.width.unwrap_or(1280.),
-                        height: self.height.unwrap_or(800.),
-                        rotation: 0.,
-                    },
-                    opacity: 1.,
-                    visible: true,
-                    locked: false,
-                    content: CreativeContent::Frame {
-                        name: "Frame 1".into(),
-                        background: "#ffffff".into(),
-                    },
-                };
-                store.create(medousa_types::CreativeCreateRequest {
-                    id: self.id,
-                    title: self.title,
-                    scene: CreativeScene {
-                        nodes: vec![frame],
-                        ..Default::default()
-                    },
-                })
+                create_project(store, self)
             })
             .await
             .map_err(|(_, e)| StasisError::PortFailure(e))?;
-        Ok(
-            serde_json::json!({ "document_id": response.0.id, "title": response.0.title, "revision": response.0.revision, "selected_ids": ["frame"],
-            "next": "Use creative.propose with this frame selection to generate editable objects for explicit preview/apply.",
-            "open_url": format!("medousa://create/{}", response.0.id) }),
-        )
+        Ok(response.0)
+    }
+}
+
+fn create_project(
+    store: &medousa_create::CreativeStore,
+    request: CreativeCreate,
+) -> medousa_create::Result<Value> {
+    use medousa_types::{CreativeContent, CreativeNode, CreativeScene, CreativeTransform};
+    let frame = CreativeNode {
+        id: "frame".into(),
+        name: None,
+        parent_id: None,
+        appearance: None,
+        design_source: None,
+        text_layout: None,
+        transform: CreativeTransform {
+            x: 0.,
+            y: 0.,
+            width: request.width.unwrap_or(1280.),
+            height: request.height.unwrap_or(800.),
+            rotation: 0.,
+        },
+        opacity: 1.,
+        visible: true,
+        locked: false,
+        content: CreativeContent::Frame {
+            name: "Frame 1".into(),
+            background: "#ffffff".into(),
+        },
+    };
+    let document = store.create(medousa_types::CreativeCreateRequest {
+        id: request.id,
+        title: request.title,
+        scene: CreativeScene {
+            nodes: vec![frame],
+            ..Default::default()
+        },
+    })?;
+    Ok(serde_json::json!({
+        "document_id": document.id, "title": document.title, "revision": document.revision, "selected_ids": ["frame"],
+        "proposal_template": {
+            "document_id": document.id,
+            "proposal": { "id": "initial-design", "expected_revision": document.revision, "selected_ids": [], "label": "Build editable design", "operations": [] }
+        },
+        "next": "Fetch cognition_schema types=[creative.propose], fill proposal_template.proposal.operations, and call cognition_store_write action=creative.propose. Recreate UI screenshots/wireframes as separate editable text, shapes, groups, and frames. Use local coordinates within each parent; top-level objects and project-wide edits are supported. Name layers by their UI role. Match layout, typography, colors, and bounds. Image nodes are for actual photo/illustration assets, never the flattened wireframe. Return open_url for preview/apply; do not apply it yourself.",
+        "open_url": format!("medousa://create/{}", document.id)
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn screenshot_wireframe_is_an_editable_native_proposal_with_preview_apply_and_undo() {
+        let dir = tempfile::tempdir().unwrap();
+        let store =
+            medousa_create::CreativeStore::open(&dir.path().canonicalize().unwrap()).unwrap();
+        let create = || CreativeCreate {
+            id: "screenshot-ui".into(),
+            title: "UI wireframe".into(),
+            width: Some(1024.),
+            height: Some(768.),
+        };
+        let output = create_project(&store, create()).unwrap();
+        assert_eq!(
+            output,
+            create_project(&store, create()).unwrap(),
+            "exact retries retain the proposal identity"
+        );
+        let mut template = output["proposal_template"].clone();
+        let node = |id: &str,
+                    parent: &str,
+                    x: f64,
+                    y: f64,
+                    width: f64,
+                    height: f64,
+                    content: Value| {
+            json!({
+                "op": "put_node", "node": { "id": id, "name": id, "parent_id": parent,
+                    "transform": { "x": x, "y": y, "width": width, "height": height, "rotation": 0. },
+                    "opacity": 1., "visible": true, "locked": false, "content": content }
+            })
+        };
+        template["proposal"]["operations"] = json!([
+            node(
+                "card",
+                "frame",
+                64.,
+                80.,
+                600.,
+                240.,
+                json!({"kind": "group"})
+            ),
+            node(
+                "card-background",
+                "card",
+                0.,
+                0.,
+                600.,
+                240.,
+                json!({"kind": "shape", "shape": "rectangle", "fill": "#f4f4f5", "stroke": "#d4d4d8", "stroke_width": 1.})
+            ),
+            node(
+                "heading",
+                "card",
+                24.,
+                24.,
+                520.,
+                52.,
+                json!({"kind": "text", "text": "Welcome back", "color": "#18181b", "font_family": "Inter", "font_size": 28., "font_weight": 600})
+            ),
+            node(
+                "button",
+                "card",
+                24.,
+                150.,
+                160.,
+                44.,
+                json!({"kind": "shape", "shape": "rectangle", "fill": "#4f46e5", "stroke": "#4f46e5", "stroke_width": 0.})
+            ),
+            node(
+                "button-label",
+                "card",
+                40.,
+                160.,
+                128.,
+                24.,
+                json!({"kind": "text", "text": "Continue", "color": "#ffffff", "font_family": "Inter", "font_size": 16.})
+            ),
+            {"op": "set_background", "color": "#e4e4e7"},
+            {"op": "rename", "title": "Editable UI design"},
+            {"op": "reorder", "ids": ["frame", "card", "card-background", "heading", "button", "button-label"]}
+        ]);
+        // This is the same JSON contract consumed by the model-facing creative.propose action.
+        let proposal: CreativePropose = serde_json::from_value(template).unwrap();
+        assert_eq!(proposal.document_id, "screenshot-ui");
+        let suggested = store
+            .propose(&proposal.document_id, proposal.proposal)
+            .unwrap();
+        assert_eq!(
+            store
+                .get("screenshot-ui")
+                .unwrap()
+                .document
+                .scene
+                .nodes
+                .len(),
+            1,
+            "preview leaves the saved frame untouched"
+        );
+        let applied = store
+            .decide(
+                "screenshot-ui",
+                &suggested.request.id,
+                medousa_types::CreativeProposalDecision {
+                    expected_revision: 0,
+                    accept: true,
+                },
+            )
+            .unwrap();
+        assert_eq!(applied.document.scene.nodes.len(), 6);
+        assert!(applied.document.assets.is_empty());
+        assert!(
+            !applied
+                .document
+                .scene
+                .nodes
+                .iter()
+                .any(|n| matches!(n.content, medousa_types::CreativeContent::Image { .. }))
+        );
+        let mut heading = applied
+            .document
+            .scene
+            .nodes
+            .iter()
+            .find(|n| n.id == "heading")
+            .unwrap()
+            .clone();
+        assert_eq!(heading.parent_id.as_deref(), Some("card"));
+        assert!(
+            matches!(&heading.content, medousa_types::CreativeContent::Text { text, .. } if text == "Welcome back")
+        );
+        heading.transform.x += 30.;
+        if let medousa_types::CreativeContent::Text { text, .. } = &mut heading.content {
+            *text = "My revised heading".into();
+        }
+        let edited = store
+            .transact(
+                "screenshot-ui",
+                medousa_types::CreativeTransaction {
+                    id: "edit-heading".into(),
+                    expected_revision: applied.document.revision,
+                    label: "Edit heading".into(),
+                    operations: vec![medousa_types::CreativeOperation::PutNode {
+                        node: heading.clone(),
+                    }],
+                },
+            )
+            .unwrap();
+        assert!(edited.document.scene.nodes.contains(&heading));
+        let undone = store
+            .history(
+                "screenshot-ui",
+                medousa_types::CreativeHistoryRequest {
+                    id: "undo-text-edit".into(),
+                    expected_revision: edited.document.revision,
+                    redo: false,
+                },
+            )
+            .unwrap();
+        assert_ne!(
+            undone
+                .document
+                .scene
+                .nodes
+                .iter()
+                .find(|n| n.id == "heading")
+                .unwrap(),
+            &heading
+        );
+        let undone = store
+            .history(
+                "screenshot-ui",
+                medousa_types::CreativeHistoryRequest {
+                    id: "undo-wireframe".into(),
+                    expected_revision: undone.document.revision,
+                    redo: false,
+                },
+            )
+            .unwrap();
+        assert_eq!(undone.document.scene.nodes.len(), 1);
+        let redone = store
+            .history(
+                "screenshot-ui",
+                medousa_types::CreativeHistoryRequest {
+                    id: "redo-wireframe".into(),
+                    expected_revision: undone.document.revision,
+                    redo: true,
+                },
+            )
+            .unwrap();
+        assert_eq!(redone.document.scene, applied.document.scene);
     }
 }

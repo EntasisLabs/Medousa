@@ -247,7 +247,7 @@ impl CognitionImageGenerateTool {
 
 #[medousa_tool(id = COGNITION_IMAGE_GENERATE_ID)]
 impl CognitionImageGenerateTool {
-    /// Generate one or more images when a user explicitly asks to create or revise visual media. For an attached-image revision, pass its attachment id in reference_media_ids and its generation_id as parent_generation_id. Results are persisted by the workshop and appear directly in chat.
+    /// Generate raster images when a user asks for photos, illustrations, or bitmap assets. For an editable UI design or wireframe from a screenshot, use cognition_store_write creative.create then creative.propose with native frame/text/shape nodes; a generated bitmap does not fulfill that request. Image generation may supply individual raster assets when requested. For an attached-image revision, pass its attachment id in reference_media_ids and its generation_id as parent_generation_id. Results are persisted by the workshop and appear directly in chat.
     async fn invoke_typed(
         &self,
         input: ImageGenerateInput,

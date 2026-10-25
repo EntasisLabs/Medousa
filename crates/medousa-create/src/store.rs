@@ -561,79 +561,8 @@ impl CreativeStore {
         document: &CreativeDocument,
         request: &CreativeProposalRequest,
     ) -> Result<()> {
-        if request.selected_ids.is_empty() || request.selected_ids.len() > 1000 {
-            return Err(invalid("proposal requires 1–1000 selected objects"));
-        }
-        for selected in &request.selected_ids {
-            if !document.scene.nodes.iter().any(|n| &n.id == selected) {
-                return Err(invalid("proposal selection does not exist"));
-            }
-        }
-        let captured = Self::selection(document, &request.selected_ids)?;
-        let selected: BTreeSet<_> = captured.iter().map(|n| n.id.as_str()).collect();
-        let new_ids: BTreeSet<_> = request
-            .operations
-            .iter()
-            .filter_map(|op| match op {
-                CreativeOperation::PutNode { node }
-                    if !document.scene.nodes.iter().any(|n| n.id == node.id) =>
-                {
-                    Some(node.id.as_str())
-                }
-                _ => None,
-            })
-            .collect();
-        for op in &request.operations {
-            let target = match op {
-                CreativeOperation::PutNode { node } => node
-                    .parent_id
-                    .as_deref()
-                    .filter(|_| new_ids.contains(node.id.as_str()))
-                    .unwrap_or(&node.id),
-                CreativeOperation::RemoveNode { id } => id.as_str(),
-                _ => "",
-            };
-            if Self::locked(document, target) {
-                return Err(invalid("unlock selected objects before proposing changes"));
-            }
-            if let CreativeOperation::PutNode { node } = op {
-                if node
-                    .parent_id
-                    .as_deref()
-                    .is_some_and(|parent| Self::locked(document, parent))
-                {
-                    return Err(invalid(
-                        "proposal cannot move objects into locked containers",
-                    ));
-                }
-                if let Some(previous) = document.scene.nodes.iter().find(|n| n.id == node.id)
-                    && previous.parent_id != node.parent_id
-                    && node
-                        .parent_id
-                        .as_deref()
-                        .is_some_and(|p| !selected.contains(p) && !new_ids.contains(p))
-                {
-                    return Err(invalid(
-                        "proposal cannot reparent into an uncaptured container",
-                    ));
-                }
-            }
-            let allowed = match op {
-                CreativeOperation::PutNode { node } => {
-                    selected.contains(node.id.as_str())
-                        || (new_ids.contains(node.id.as_str())
-                            && node
-                                .parent_id
-                                .as_deref()
-                                .is_some_and(|p| selected.contains(p) || new_ids.contains(p)))
-                }
-                CreativeOperation::RemoveNode { id } => selected.contains(id.as_str()),
-                _ => false,
-            };
-            if !allowed {
-                return Err(invalid("proposal operation escapes its captured selection"));
-            }
-        }
+        // Selection is context, not edit authority. Proposals support the same
+        // document operations as ordinary edits; acceptance is the user's decision.
         bounded_text(&request.label, 256, "proposal label")?;
         apply_operations(document, &request.operations)?;
         Ok(())
@@ -678,20 +607,6 @@ impl CreativeStore {
             .filter(|n| included.contains(n.id.as_str()))
             .cloned()
             .collect())
-    }
-    fn locked(doc: &CreativeDocument, id: &str) -> bool {
-        let nodes: BTreeMap<_, _> = doc.scene.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-        let mut cursor = Some(id);
-        while let Some(id) = cursor {
-            let Some(node) = nodes.get(id) else {
-                break;
-            };
-            if node.locked {
-                return true;
-            }
-            cursor = node.parent_id.as_deref();
-        }
-        false
     }
     pub fn context(
         &self,

@@ -284,11 +284,11 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_store_read",
-        "Read or search vault, artifacts, code, or saved scripts",
+        if cfg!(feature = "full-daemon") { "Read Create frames/objects with creative.read; also read/search vault notes, artifacts, code, or saved scripts" } else { "Read or search vault, artifacts, code, or saved scripts" },
     ),
     (
         "cognition_store_write",
-        "Write, delete, or move vault, artifacts, code, or saved scripts",
+        if cfg!(feature = "full-daemon") { "Build editable Create canvases and UI wireframes from screenshots: creative.create then creative.propose with native frames, text, and shapes for preview/apply. Also write/delete/move vault notes, artifacts, code, or saved scripts" } else { "Write, delete, or move vault, artifacts, code, or saved scripts" },
     ),
     (
         crate::public_api::COGNITION_CALENDAR_QUERY,
@@ -297,6 +297,10 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     (
         crate::public_api::COGNITION_CALENDAR_MUTATE,
         "Write personal calendar by typed action (calendar.create, calendar.update, calendar.delete, calendar.import)",
+    ),
+    (
+        "cognition_image_generate",
+        if cfg!(feature = "full-daemon") { "Generate raster images, photos, or art assets. Editable UI designs/wireframes belong in Create via creative.create/propose, not a generated bitmap" } else { "Generate raster images, photos, or art assets. Editable UI wireframes require a Create-enabled workshop; a bitmap does not fulfill that request" },
     ),
     (
         "cognition_web_search",
@@ -418,6 +422,43 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
 mod tests {
     use super::*;
 
+    #[test]
+    #[cfg(feature = "full-daemon")]
+    fn compact_catalog_distinguishes_editable_create_from_raster_generation() {
+        let index = first_party_placement_index();
+        let summary = |name| {
+            index
+                .placement(ToolId::new(name))
+                .presentation_summary
+                .unwrap()
+        };
+        let write = summary("cognition_store_write");
+        for required in [
+            "editable Create",
+            "wireframes",
+            "screenshots",
+            "creative.create",
+            "creative.propose",
+            "frames, text, and shapes",
+            "preview/apply",
+        ] {
+            assert!(
+                write.contains(required),
+                "compact store summary hides {required}"
+            );
+        }
+        assert!(summary("cognition_store_read").contains("creative.read"));
+        let images = summary("cognition_image_generate");
+        assert!(images.contains("raster"));
+        assert!(images.contains("creative.create/propose"));
+        for mode in [GENERAL_MODE_ID, ASSISTANT_MODE_ID] {
+            assert!(
+                index
+                    .placement(ToolId::new("cognition_store_write"))
+                    .exposes_mode(mode)
+            );
+        }
+    }
     #[test]
     fn peer_coordination_is_assistant_only_while_inventory_is_shared() {
         let index = first_party_placement_index();

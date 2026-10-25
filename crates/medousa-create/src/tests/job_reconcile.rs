@@ -119,7 +119,7 @@ fn conflicting_fields_preserve_the_result_and_clear_after_undo() {
 }
 
 #[test]
-fn deleting_a_container_never_removes_new_human_children_or_ignores_locks() {
+fn reconciliation_preserves_new_human_children_and_current_lock_state() {
     let (_dir, store) = job_store();
     let mut frame = text("title");
     frame.content = CreativeContent::Frame {
@@ -174,11 +174,10 @@ fn deleting_a_container_never_removes_new_human_children_or_ignores_locks() {
     store
         .transact("project_one", edit("lock", 1, locked))
         .unwrap();
-    assert!(
-        store
-            .decide_job("project_one", "locked", "owner", decision(true, 2))
-            .is_err()
-    );
+    store
+        .decide_job("project_one", "locked", "owner", decision(true, 2))
+        .unwrap();
+    assert!(store.get("project_one").unwrap().document.scene.nodes[0].locked);
 }
 
 #[test]

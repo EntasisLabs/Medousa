@@ -465,13 +465,13 @@ pub fn store_type_schemas() -> Vec<TypedActionSchema> {
         typed_action_schema::<crate::creative_tools::CreativeCreate>(
             STORE_WRITE_ID,
             "creative.create",
-            "Create a new empty frame scaffold; then use creative.propose for the editable design and explicit preview/apply. Exact retries are safe",
+            "Start an editable Create project or screenshot-to-wireframe with an empty frame. Fill the returned proposal_template with native text/shapes using creative.propose for preview/apply, not image generation. Exact retries are safe",
         ),
         #[cfg(feature = "full-daemon")]
         typed_action_schema::<crate::creative_tools::CreativePropose>(
             STORE_WRITE_ID,
             "creative.propose",
-            "Save a selection-bound creative edit proposal for explicit acceptance",
+            "Propose editable Create document changes for preview/apply, including top-level objects, background, and ordering. selected_ids is context, not an edit boundary. Rebuild UI as native frame/text/shape nodes",
         ),
         #[cfg(feature = "full-daemon")]
         typed_action_schema::<crate::creative_tools::CreativePromoteMedia>(

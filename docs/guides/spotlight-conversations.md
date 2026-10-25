@@ -31,7 +31,9 @@ Paste a screenshot into Spotlight, or drag an image onto it. Choose **@Medousa**
 and ask, for example, “Create an editable wireframe from this.” Images appear as
 removable thumbnails and upload to the selected conversation's workshop when you
 send. Failed sends retain the draft. Medousa creates an empty frame and proposes
-editable text and shapes; follow **Open in Create**, preview the proposal, and
+editable text and shapes; this rebuilds the UI as movable, restylable objects,
+not an image-generation result or a flattened screenshot. Frames, groups, labels,
+buttons, and other UI regions remain individually editable. Follow **Open in Create**, preview the proposal, and
 choose **Use this**. Applying remains undoable. From Desktop Spotlight, the
 result opens in a Create window without opening the main shell.
 

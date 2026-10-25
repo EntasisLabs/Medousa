@@ -130,9 +130,11 @@ exposes that context. `cognition_store_write` action `creative.promote_media` pr
 its bound conversation, and action `creative.propose` persists a
 typed suggestion; it never accepts the suggestion on the user's behalf.
 
-Proposals capture an expected revision and selected IDs. Operations may edit
-selected nodes or create children in the captured selection; project-wide metadata
-and ordering changes are excluded. Accepting a ready proposal is one validated,
+Proposals capture an expected revision; selected IDs are context rather than an
+edit boundary. They support the same operations as ordinary document edits,
+including top-level objects, background, metadata, and ordering. Object locks
+control direct canvas gestures and do not veto a proposal. Accepting a ready
+proposal is one validated,
 undoable transaction. A revision conflict leaves the proposal available for
 inspection or cancellation. Up to 32 proposals and 2 MiB are retained per project;
 terminal proposals are evicted before ready ones. Cancellation advances the
@@ -355,7 +357,15 @@ cut through a paragraph or card; this is a viewport capture, not semantic pagina
 
 `cognition_store_write` action `creative.create` creates a new empty frame
 scaffold with a stable project ID, title, and optional width/height (defaults
-1280 × 800). It returns revision, selected frame IDs, and an `open_url`.
+1280 × 800). It returns revision, selected frame IDs, an `open_url`, and a
+`proposal_template` containing the document ID and initial `CreativeProposalRequest`
+binding. Fetch the `creative.propose` schema, fill the template's operations with
+native `put_node` text/shape/group nodes, and submit it through the existing store
+write action. Nodes use local coordinates within their parents. Top-level objects
+and project-wide operations are supported regardless of the selection. A
+screenshot-to-wireframe request creates editable design objects;
+image generation is for actual raster assets and does not replace this workflow.
+The compact model-facing store and media descriptions preserve this distinction.
 It requires an active execution and is unavailable inside a selection-bound job.
 Generate the design using `creative.propose`; acceptance still uses the existing
 proposal transaction, preview/apply controls, and undo history. Initial creation
