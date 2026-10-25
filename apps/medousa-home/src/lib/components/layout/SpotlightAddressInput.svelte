@@ -62,7 +62,7 @@
         })();
       });
       if (disposed) release();
-    })().catch(cause => { if (!disposed) conversation.error = String(cause); });
+    })().catch(() => { /* Native drops are optional; paste remains available. */ });
     return () => { disposed = true; release?.(); };
   });
   let dismissed = $state(false);
@@ -104,9 +104,9 @@
 
 <div bind:this={dropElement} role="group" aria-label="Spotlight message; paste or drop screenshots" ondrop={drop} ondragover={event => { if (enabled && event.dataTransfer?.types.includes("Files")) event.preventDefault(); }}>
 <div class="command-spotlight-search-row">
-  {#if conversation.target}<button type="button" class="command-spotlight-recipient" aria-label={`Remove destination ${conversation.target.label}`} onclick={remove}><span>@{conversation.target.label}</span><X size={12}/></button>{/if}
+  {#if conversation.target}<button type="button" class="command-spotlight-recipient" title={conversation.target.label} aria-label={`Remove destination ${conversation.target.label}`} onclick={remove}><span>@{conversation.assistantLabel}</span><X size={12}/></button>{/if}
   <input use:guardTextNavigation bind:this={inputEl} class="command-spotlight-input"
-    placeholder={conversation.target ? `Message ${conversation.target.label}…` : placeholder}
+    placeholder={conversation.target ? `Message ${conversation.assistantLabel}…` : placeholder}
     aria-label={conversation.target ? `Message ${conversation.target.label}` : "Search or address a conversation"}
     role="combobox" aria-expanded={picking || resultsOpen} aria-autocomplete="list"
     aria-controls={picking ? `${idPrefix}-targets` : resultsOpen ? `${idPrefix}-results` : undefined}
@@ -116,7 +116,7 @@
   {#if picking && !inlinePicker}<SpotlightTargetPicker {targets} {index} {idPrefix} loading={bots.loading} error={bots.error} onSelect={select} onHighlight={value => index = value}/>{/if}
 </div>
 <SpotlightAttachmentDraft {conversation}/>
-{#if conversation.error && !conversation.target}<p class="command-spotlight-conversation-notice" role="alert">{conversation.error}</p>{/if}
+{#if conversation.error && !conversation.target}<p class="command-spotlight-conversation-notice">{conversation.error}</p>{/if}
 <ResourceReferencePicker bind:value={query} bind:references={conversation.references} element={inputEl} enabled={enabled && !mention && !conversation.sending && Boolean(conversation.target || defaultTarget)} onChange={onQueryChange} onBindProject={bindProject}/>
 </div>
 {#if picking && inlinePicker}<SpotlightTargetPicker {targets} {index} {idPrefix} inline loading={bots.loading} error={bots.error} onSelect={select} onHighlight={value => index = value}/>{/if}

@@ -35,7 +35,7 @@ import {
   isWorkerSynthesisStreamEvent,
   isWorkshopHandoffStreamEvent,
 } from "$lib/utils/streamEvents";
-import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
+import { budgetRequestIdFromStreamEvent, notifySpotlightTurnCompletion, registerSpotlightWorker } from "$lib/notifications";
 import { randomUuid } from "$lib/utils/randomUuid";
 import { handleWorkerSynthesisStreamEvent, workerLinkForTurn } from "$lib/chat/workerLaneController";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
@@ -101,6 +101,7 @@ export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventT
         host.contextUsage = event.report;
         return;
       case "worker_synthesis":
+        void notifySpotlightTurnCompletion(host.workshopScopeId ?? "", host.sessionId, envelope);
         handleWorkerSynthesisStreamEvent(host, presentation);
         return;
       case "browser_challenge":
@@ -125,6 +126,7 @@ export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventT
         }
         return;
       case "worker_ack":
+        registerSpotlightWorker(host.workshopScopeId ?? "", envelope);
         if (messageId) {
           releaseComposerHandoff(
             host,
@@ -141,6 +143,7 @@ export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventT
         }
         return;
       case "turn_completed":
+        void notifySpotlightTurnCompletion(host.workshopScopeId ?? "", host.sessionId, envelope);
         if (event.outcome === "failed" || event.outcome === "fuse_exhausted") {
           handleTurnError(host, presentation);
         } else if (messageId) {

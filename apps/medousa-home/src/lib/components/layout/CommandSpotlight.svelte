@@ -42,7 +42,7 @@
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
   } from "$lib/utils/browserPopoverOverlay";
-  import { formatShortcut, isTauriDesktop } from "$lib/platform";
+  import { isTauriDesktop } from "$lib/platform";
   import { loadVaultExportPreviewModal } from "$lib/runtime/viewLoaders";
   import { collectDesktopGroups, spotlightTabKind as tabKindLabel, spotlightTabPreview as previewForTab } from "$lib/spotlight/desktopGroups";
   import type { SpotlightHost, SpotlightSnapshot } from "$lib/spotlight/host";
@@ -90,7 +90,7 @@
   let mounted = false;
 
   let query = $state("");
-  const conversation = createSpotlightConversation(() => Boolean(mention), () => { query = ""; });
+  const conversation = createSpotlightConversation(() => Boolean(mention), () => { query = ""; }, () => Boolean(host));
   let addressInput = $state<{ handleKeydown: (event: KeyboardEvent) => boolean }>();
   const mention = $derived(commandSpotlight.mode === "default" && !commandSpotlight.promptStep && !conversation.target ? mentionQuery(query) : null);
   const addressing = $derived(Boolean(conversation.target) || Boolean(mention));
@@ -349,8 +349,11 @@
             if (extra.length) groups.push({ id: "resources", label: "Open a window", commands: extra });
           }
           if (selectedId) { const index = groups.flatMap(group => group.commands).findIndex(command => command.id === selectedId); if (index >= 0) highlightIndex = index; }
-        }).catch(cause => {
-          if (!cancelled) { commandError = cause instanceof Error ? cause.message : String(cause); groups = [{ id: "resources", label: "Open a window", commands: filterAndSortCommands(extras, request.query, 32) }]; }
+        }).catch(() => {
+          if (!cancelled) {
+            groups = [{ id: "resources", label: "Open a window", commands: filterAndSortCommands(extras, request.query, 32) }];
+            if (!groups[0].commands.length) commandError = "Couldn’t search this workshop. Try again.";
+          }
         }).finally(() => { if (!cancelled) collecting = false; });
       }, request.query ? 80 : 0);
       return () => { cancelled = true; clearTimeout(timer); };
@@ -816,7 +819,7 @@
       {/if}
 
       {#if conversation.target}
-        <SpotlightTranscript {conversation} onOpen={() => { if (host && conversation.sessionId) void host.openConversation(conversation.sessionId).catch(reportHostError); else openAddressedConversation(conversation); }}/>
+        <SpotlightTranscript {conversation} onOpen={() => { if (host && conversation.sessionId) return host.openConversation(conversation.sessionId); openAddressedConversation(conversation); }}/>
       {:else if mention}
         <div class="command-spotlight-conversation"><p class="command-spotlight-conversation-empty">Choose who to talk to. Continue a conversation or start something new.</p></div>
       {:else if activityMode}
@@ -827,7 +830,7 @@
       <div class="command-spotlight-body">
         <div class="command-spotlight-results" bind:this={resultsEl} aria-busy={collecting}>
           {#if collecting}<p class="command-spotlight-empty" role="status">Searching your workshop…</p>{/if}
-          <SpotlightTerminalStatus {sshMode} data={sshData} {query} commandError={commandError ?? (host ? snapshot?.notice ?? null : vaultSearchCatalog.error)} empty={!flatCommands.length} onManage={() => { if (host) void host.manageConnection().catch(reportHostError); else { ctx.openSettingsSection("basement"); ctx.callbacks.close(); } }} />
+          <SpotlightTerminalStatus {sshMode} data={sshData} {query} {commandError} empty={!flatCommands.length} onManage={() => { if (host) void host.manageConnection().catch(reportHostError); else { ctx.openSettingsSection("basement"); ctx.callbacks.close(); } }} />
           {#each groups as group, sectionIndex (group.id)}
             <div class="command-spotlight-section-label">{group.label}</div>
             <ul class="command-spotlight-list">
@@ -958,10 +961,6 @@
       </div>
       {/if}
 
-      <footer class="command-spotlight-footer">
-        <span>{mention ? "↑↓ Choose · ↵ Select · esc Dismiss" : conversation.target ? "↵ Send · ⌫ Remove empty target · esc Close" : activityMode ? "↑↓ Navigate · ←→ Expand · ↵ Open · esc Close" : sshMode ? "↑↓ Navigate · ↵ Open · esc Back" : "↑↓ Navigate · ↵ Run · esc Close"}</span>
-        <span class="command-spotlight-kbd">{host ? "⌘/Ctrl ⇧ Space" : formatShortcut("K")}</span>
-      </footer>
     </div>
   </div>
 {/if}

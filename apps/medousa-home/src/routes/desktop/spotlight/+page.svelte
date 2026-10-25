@@ -16,6 +16,7 @@
   import { openDesktopWindow } from "$lib/desktop/windows";
   import { prepareForWorkshopSwitch } from "$lib/workshopConnection";
   import { showMainWindow } from "$lib/window";
+  import { friendlyUserError } from "$lib/utils/normieErrors";
   import type { SpotlightHost } from "$lib/spotlight/host";
   import type { CreativeProjectSummary } from "$lib/types/generated/daemon_api";
   import type { ItemProjection } from "$lib/forge";
@@ -25,7 +26,7 @@
   let terminals = $state<TerminalSessionSummary[]>([]);
   let host = $state<SpotlightHost>();
   let spotlight = $state<{ dismiss: () => void }>();
-  let ready = $state(false), error = $state<string | null>(null), shortcutError = $state<string | null>(null);
+  let ready = $state(false), error = $state<string | null>(null);
   let pendingActions = $state(0);
   let generation = 0, scope = "", disposed = false, visibleRequested = true;
   let disconnect: (() => void) | undefined;
@@ -39,7 +40,7 @@
   }
   async function refresh(epoch: number, openPalette = false) {
     if (disposed || epoch !== generation) return;
-    ready = true; error = null;
+    ready = true;
     if (visibleRequested && openPalette) commandSpotlight.openSpotlight();
     const owner = scope;
     const results = await Promise.allSettled([chat.refreshSessions({ force: true }), creativeApi(owner).list(), creativeBridgeApi(owner).projects(), terminalSessions(null)]);
@@ -47,8 +48,7 @@
     if (results[1].status === "fulfilled") canvases = results[1].value.projects;
     if (results[2].status === "fulfilled") projects = results[2].value;
     if (results[3].status === "fulfilled") terminals = results[3].value;
-    // The optional session host need not be installed for the launcher to work.
-    if (results.slice(0, 3).some(result => result.status === "rejected")) error = "Some recent work couldn’t load. Search and available destinations remain usable.";
+    // Optional catalogs retain their last results without interrupting the launcher.
   }
   async function open() {
     const owner = await invoke<string>("desktop_spotlight_context");
@@ -66,7 +66,9 @@
       close: () => { if (spotlight) spotlight.dismiss(); else commandSpotlight.closeSpotlight(); },
     });
     disconnect = connectDesktopWindow(owner, () => refresh(epoch, true), health => {
-      if (!disposed && epoch === generation && health && !health.ok) { error = health.message; ready = true; if (visibleRequested) commandSpotlight.openSpotlight(); }
+      if (disposed || epoch !== generation || !health) return;
+      error = health.ok ? null : health.message;
+      if (!health.ok) { ready = true; if (visibleRequested) commandSpotlight.openSpotlight(); }
     });
   }
   function requestOpen() {
@@ -92,16 +94,15 @@
       dismissal.focusChanged(event.payload);
     }));
     keep(getCurrentWindow().onDragDropEvent(event => dismissal.dragChanged(event.payload.type)));
-    void invoke<string | null>("desktop_shortcut_error").then(value => { shortcutError = value; });
     requestOpen();
     return () => { dismissal.cancel(); disposed = true; generation++; stops.forEach(stop => stop()); disconnect?.(); };
   });
 </script>
 
 <main class="desktop-launcher">
-  <header data-tauri-drag-region><span>Medousa <span class="text-content-quiet">/ {workshops.activeLabel}</span></span><span class="text-content-quiet">⌘ / Ctrl ⇧ Space</span></header>
+  <header data-tauri-drag-region><span>Medousa <span class="text-content-quiet">/ {workshops.activeLabel}</span></span></header>
   {#if ready}<CommandSpotlight bind:this={spotlight} {host} additionalCommands={commands} onDismiss={dismiss} />{:else}<p class="p-6 text-content-quiet" role="status">Connecting to your workshop…</p>{/if}
-  {#if error || shortcutError}<p class="desktop-launcher-notice" role="status">{error ?? shortcutError}</p>{/if}
+  {#if error}<details class="desktop-launcher-notice"><summary>Couldn’t connect to this workshop</summary><p>{friendlyUserError(error)}</p></details>{/if}
 </main>
 
 <style>
@@ -123,5 +124,7 @@
   header { height: 38px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; font-size: 11px; user-select: none; }
   :global(.command-spotlight-backdrop.command-spotlight-desktop) { position: absolute; inset: 38px 0 0; padding: 0; background: transparent; backdrop-filter: none; }
   :global(.command-spotlight-desktop .command-spotlight-panel) { width: 100%; height: 100%; max-height: none; border: none; border-radius: 0; box-shadow: none; }
-  .desktop-launcher-notice { position: absolute; z-index: 201; bottom: 34px; left: 16px; right: 16px; font-size: 11px; padding: 8px 12px; border-radius: 6px; background: rgb(var(--theme-pane)); color: rgb(var(--theme-text-muted)); }
+  .desktop-launcher-notice { position: absolute; z-index: 201; bottom: 16px; left: 20px; right: 20px; font-size: 12px; padding: 10px 12px; border: 1px solid rgb(var(--theme-border) / .4); border-radius: 8px; background: rgb(var(--theme-pane)); color: rgb(var(--theme-text-secondary)); }
+  summary { cursor: pointer; }
+  .desktop-launcher-notice p { margin: 8px 0 0; }
 </style>

@@ -13,8 +13,12 @@ or click a destination. The destination appears beside the same search field;
 there is no separate message composer. Type your message there and press
 **Enter** to send. Further messages continue in that conversation.
 
-Spotlight’s body shows a short recent transcript. **Open conversation** opens
-its full view when you need more detail. Sending from Spotlight does not switch
+Spotlight’s body shows recent messages with complete answers, Markdown, and
+attachments. It shows one progress indicator while a request is running, then
+the saved reply when it finishes, including if the live connection was interrupted.
+Routine tool activity and background loading notices stay out of this view.
+A failed send or request shows a compact explanation you can expand.
+**Open conversation** opens its full view when you need more detail. Sending from Spotlight does not switch
 the conversation you already have open. Existing session model selections and
 Bot runtime bindings still apply. Coding sessions that require a project keep
 that requirement; use their full conversation to select the project.
@@ -24,6 +28,15 @@ selected destination’s **×**, or press **Backspace** in an empty field, to re
 to search. A failed send keeps your text in the field. Closing Spotlight does not
 cancel accepted work. Destinations belong to the current workshop; switching
 workshops clears the selection.
+
+Requests sent from **global Desktop Spotlight** send an OS notification when the
+agent finishes, even after you dismiss Spotlight and return to another app.
+Completion does not open or focus a window. Reopen Spotlight to continue the
+session, or open its conversation when you are ready. This uses the existing
+completion receipts, so tool retries and intermediate progress do not send alerts.
+**Spotlight replies** is on by default in notification preferences and can be
+disabled independently of regular chat turn updates. OS notification permissions
+still apply.
 
 ## Screenshots and references
 

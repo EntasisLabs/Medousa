@@ -60,6 +60,23 @@ it("dismisses the picker before allowing Escape to close Spotlight", async () =>
 it("keeps a failed message in the same input and renders the delivery error in the body", async () => {
   await setup("@labbing"); key("Enter"); api.submit.mockRejectedValueOnce(new Error("Workshop unreachable")); type("Do this"); key("Enter");
   await vi.waitFor(() => expect(document.body.textContent).toContain("Workshop unreachable")); expect(input().value).toBe("Do this");
+  const failure = document.querySelector<HTMLDetailsElement>(".command-spotlight-conversation-failure")!;
+  expect(failure.open).toBe(false);
+  expect(failure.querySelector("summary")?.textContent).toBe("Couldn’t send this message");
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("renders the saved Markdown answer and clears Working after a missed completion", async () => {
+  const conversation = await setup("@labbing"); key("Enter");
+  api.messages.mockReturnValue([{ id: "pending", role: "assistant", turnId: "done-turn", content: "", streaming: true, statusLine: "Running cognition_store_write" }] as never[]);
+  api.history.mockResolvedValue({ authority_id: "", turns: [{ role: "assistant", content: "Your **design** is ready.\n\n- Editable text\n- Shapes", caused_by: { execution_id: "done-turn" }, timestamp: "2026-10-25T02:03:00Z" }] });
+  await conversation.refresh(); flushSync();
+  expect(document.body.querySelector("strong")?.textContent).toBe("design");
+  expect(document.body.querySelectorAll(".markdown-content li")).toHaveLength(2);
+  expect(document.body.textContent).not.toContain("Working");
+  expect(document.body.textContent).not.toContain("cognition_store_write");
+  expect(input().placeholder).toBe("Message Medousa…");
+  expect(document.querySelector(".command-spotlight-recipient")?.textContent).toContain("@Medousa");
 });
 
 it("shows a quiet working indicator instead of a fake assistant reply while waiting", async () => {

@@ -1,3 +1,4 @@
+import { SPOTLIGHT_REPLIES_KEY } from "$lib/spotlight/completionOrigins";
 import {
   COLOR_THEME_OPTIONS,
   DEFAULT_COLOR_THEME,
@@ -46,6 +47,7 @@ export class SettingsStore {
   colorTheme = $state(loadColorTheme());
   medousaMark = $state(loadMedousaMark());
   turnUpdatesEnabled = $state(notificationPreferences.turnUpdatesEnabled);
+  spotlightRepliesEnabled = $state(typeof localStorage === "undefined" || localStorage.getItem(SPOTLIGHT_REPLIES_KEY) !== "0");
   needsInputEnabled = $state(notificationPreferences.needsInputEnabled);
   peerMessagesEnabled = $state(notificationPreferences.peerMessagesEnabled);
   remindersEnabled = $state(notificationPreferences.remindersEnabled);
@@ -106,6 +108,11 @@ export class SettingsStore {
     this.turnUpdatesEnabled = enabled;
     localStorage.setItem(TURN_UPDATES_KEY, enabled ? "1" : "0");
     this.syncNotificationPreferences();
+  }
+
+  setSpotlightRepliesEnabled(enabled: boolean) {
+    this.spotlightRepliesEnabled = enabled;
+    localStorage.setItem(SPOTLIGHT_REPLIES_KEY, enabled ? "1" : "0");
   }
 
   setNeedsInputEnabled(enabled: boolean) {

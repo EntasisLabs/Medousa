@@ -15,19 +15,22 @@ import { refreshRuntimeBotTurn, runtimeBotJob, runtimeBotJobPending } from "$lib
 import { agentRuntimeLabel, isExternalAgentRuntime, getSessionAgentRuntime, setSessionAgentRuntime } from "$lib/utils/sessionAgentRuntime";
 import type { ChatMessage } from "$lib/types/chat";
 import type { ConversationTarget } from "./conversationTargets";
+import type { TurnTicketResponse } from "$lib/types/session";
 
 export function transcriptExcerpt(messages: readonly ChatMessage[]): ChatMessage[] {
   return messages.filter(message => message.role !== "system").map(message => ({
     id: message.id, role: message.role,
-    content: message.role === "assistant" && isRuntimeStartupText(message.content) ? "" : message.content.slice(-4000),
+    content: message.role === "assistant" && isRuntimeStartupText(message.content) ? "" : message.content,
     createdAt: message.createdAt, streaming: message.streaming,
+    turnId: message.turnId, failed: message.failed, errorLine: message.errorLine,
     hostContext: message.hostContext, mediaAttachments: message.mediaAttachments,
-    statusLine: visibleChatStatusLine(message.statusLine, false),
-  })).filter(message => message.content.trim() || message.mediaAttachments?.length || message.streaming || message.statusLine).slice(-6);
+    statusLine: message.streaming ? visibleChatStatusLine(message.statusLine, false) : null,
+  })).filter(message => message.content.trim() || message.mediaAttachments?.length || message.streaming || message.failed).slice(-6);
 }
 
 /** Surface-independent destination and delivery. Native streams still belong to ChatStore. */
 export class AddressedConversation {
+  constructor(private onAdmitted?: (ticket: TurnTicketResponse, label: string) => void) {}
   target = $state<ConversationTarget | null>(null);
   files = $state<File[]>([]);
   references = $state<TurnResourceReference[]>([]);
@@ -63,17 +66,27 @@ export class AddressedConversation {
     return agentRuntimeLabel(runtime);
   }
   get messages() {
+    // A persisted reply settles the same turn even if this window missed its
+    // terminal stream event. Keep newer live turns intact while history catches up.
     const live = this.sessionId ? chat.messagesFor(this.sessionId) : [];
+    const pending = live.findLast(message => message.role === "assistant" && message.streaming);
+    const submittedAt = live.findLast(message => message.role === "user")?.createdAt ?? "";
+    const committed = pending?.turnId && this.preview.some(message => message.role === "assistant"
+      && message.turnId === pending.turnId && (message.createdAt ?? "") >= submittedAt);
+    if (committed) return transcriptExcerpt(this.preview);
     const liveAt = live.reduce((latest, message) => message.createdAt || latest, "");
     const previewAt = this.preview.at(-1)?.createdAt ?? "";
     return transcriptExcerpt(live.some(message => message.streaming) || (live.length && liveAt >= previewAt) ? live : this.preview);
   }
-  get status(): string | null {
+  get working(): boolean {
+    return Boolean(this.sessionId && (runtimeBotJobPending(this.sessionId) || this.messages.some(message => message.streaming)));
+  }
+  get failure(): string | null {
     if (!this.sessionId) return null;
     const job = runtimeBotJob(this.sessionId);
-    if (job?.error) return job.error;
-    if (runtimeBotJobPending(this.sessionId)) return "Working…";
-    return chat.streamErrorFor(this.sessionId);
+    if (job?.status === "failed") return job.error || "This request couldn’t finish.";
+    const last = this.messages.at(-1);
+    return last?.failed ? last.errorLine || "This request couldn’t finish." : null;
   }
   async loadRuntimes() {
     const epoch = chat.workshopEpoch;
@@ -114,10 +127,11 @@ export class AddressedConversation {
       if (epoch !== chat.workshopEpoch) return;
       const history = await getSessionHistory(sessionId, { limit: 6 });
       if (generation === this.generation && request === this.previewRequest && epoch === chat.workshopEpoch) {
-        this.preview = transcriptExcerpt(mapTurns(history.turns, { sessionId, authorityId: history.authority_id }));
+        this.preview = mapTurns(history.turns, { sessionId, authorityId: history.authority_id });
       }
-    } catch (cause) {
-      if (generation === this.generation && request === this.previewRequest && epoch === chat.workshopEpoch) this.error = cause instanceof Error ? cause.message : String(cause);
+    } catch {
+      // Optional preview refreshes retain the last answer. Delivery failures
+      // belong to send(), not to a background history read.
     } finally {
       if (generation === this.generation && request === this.previewRequest && epoch === chat.workshopEpoch) this.loading = false;
     }
@@ -154,6 +168,7 @@ export class AddressedConversation {
     if (this.submission) return Promise.reject(new Error("A message is still sending."));
     const target = this.target;
     if (!target || (!text.trim() && !this.files.length)) return Promise.resolve();
+    const assistantLabel = this.assistantLabel;
     const generation = this.generation;
     const epoch = chat.workshopEpoch;
     const current = () => epoch === chat.workshopEpoch && target.scope === chat.workshopScopeId;
@@ -202,7 +217,8 @@ export class AddressedConversation {
       await submitChatTurn({
         sessionId, userContent: text.trim(), prompt: text.trim(), mediaRefs, hostContext: resourceContext("spotlight", references), mode: active.active ? "background" : "interactive",
         synchronizeAgentSession: (id, runtime) => prepareAgentSession(id, runtime),
-        onAgentSessionLost: () => {}, scrollToLatest: () => {}, onAccepted: () => {
+        onAgentSessionLost: () => {}, scrollToLatest: () => {}, onAccepted: ticket => {
+          this.onAdmitted?.(ticket, assistantLabel);
           if (generation === this.generation) { this.files = []; this.references = []; this.uploaded = null; }
           onAccepted?.();
         },

@@ -37,8 +37,7 @@
   .command-spotlight-input,
   .command-spotlight-prompt-header,
   .command-spotlight-mode-chip,
-  .command-spotlight-navigation,
-  .command-spotlight-footer {
+  .command-spotlight-navigation {
     flex-shrink: 0;
   }
 
@@ -612,24 +611,6 @@
     white-space: pre-wrap;
   }
 
-  .command-spotlight-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-top: 1px solid rgb(var(--theme-border) / 0.3);
-    padding: 0.65rem 0.95rem;
-    color: rgb(var(--theme-text-tertiary));
-    font-size: 0.65rem;
-    box-shadow: inset 0 1px rgb(var(--theme-border) / 0.18);
-  }
-
-  .command-spotlight-kbd {
-    border: 1px solid rgb(var(--theme-border) / 0.42);
-    border-radius: 0.25rem;
-    padding: 0.1rem 0.34rem;
-    color: rgb(var(--theme-text-tertiary));
-  }
-
   @media (max-width: 720px) {
     .command-spotlight-backdrop {
       align-items: stretch;
@@ -657,11 +638,6 @@
       overflow-x: auto;
     }
 
-    .command-spotlight-footer span:first-child {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
   }
 }
 
@@ -674,9 +650,19 @@
   .command-spotlight-target-picker .command-spotlight-row-subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .command-spotlight-conversation { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 1.15rem 1.5rem .9rem; }
   .command-spotlight-transcript { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: .5rem; }
-  .command-spotlight-transcript-entry { margin: 0 0 1.35rem; }
+  .command-spotlight-transcript-entry { margin: 0 0 1.5rem; min-width: 0; }
+  .command-spotlight-transcript-user { padding: .8rem 1rem; border-radius: .75rem; background: rgb(var(--theme-text) / .035); }
+  .command-spotlight-transcript-entry .markdown-content { font-size: .875rem; line-height: 1.65; }
+  .command-spotlight-transcript-entry .markdown-content > :first-child { margin-top: 0; }
+  .command-spotlight-transcript-entry .markdown-content > :last-child { margin-bottom: 0; }
+  .command-spotlight-transcript-entry .markdown-content p { white-space: normal; }
+  .command-spotlight-conversation-failure { font-size: .75rem; color: rgb(var(--theme-text-secondary)); padding: .6rem 0; }
+  .command-spotlight-conversation-failure summary { cursor: pointer; }
+  .command-spotlight-conversation-failure p { margin: .5rem 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+  .command-spotlight-transcript-status { display: flex; align-items: center; gap: .5rem; }
+  .command-spotlight-working-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .5; }
   .command-spotlight-transcript-speaker { display: block; font-size: .75rem; color: rgb(var(--theme-text-secondary)); margin-bottom: .4rem; }
-  .command-spotlight-transcript-entry p { margin: 0; font-size: .875rem; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; color: rgb(var(--theme-text)); }
+  .command-spotlight-transcript-entry > p { margin: 0; font-size: .875rem; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; color: rgb(var(--theme-text)); }
   .command-spotlight-conversation-empty { font-size: .8125rem; color: rgb(var(--theme-text-secondary)); margin: 1rem 0; }
   .command-spotlight-transcript-status, .command-spotlight-conversation-notice, .command-spotlight-target-notice { font-size: .75rem; color: rgb(var(--theme-text-secondary)); margin: .5rem 0; }
   .command-spotlight-open-conversation { display: flex; align-items: center; align-self: flex-start; gap: .35rem; padding: .6rem 0 0; border: 0; background: transparent; color: rgb(var(--theme-text-secondary)); font-size: .75rem; }

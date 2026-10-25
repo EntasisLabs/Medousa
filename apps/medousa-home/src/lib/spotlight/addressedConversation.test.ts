@@ -40,6 +40,18 @@ it("keeps the created destination after a failed admission so retry does not cre
   await expect(controller.send("Hello")).rejects.toThrow("Try again"); expect(controller.error).toBe("Try again");
   await controller.send("Hello"); expect(api.create).toHaveBeenCalledTimes(1);
 });
+
+it("registers completion delivery only after the request is accepted", async () => {
+  const admitted = vi.fn();
+  const controller = new AddressedConversation(admitted); controller.select(fresh);
+  api.submit.mockRejectedValueOnce(new Error("Admission failed"));
+  await expect(controller.send("Make this design")).rejects.toThrow("Admission failed");
+  expect(admitted).not.toHaveBeenCalled();
+  const ticket = { turn_id: "turn-accepted", session_id: "created", accepted_at_utc: "2026-10-25T02:00:00Z" };
+  api.submit.mockImplementationOnce(async ({ onAccepted }) => { onAccepted(ticket); });
+  await controller.send("Make this design");
+  expect(admitted).toHaveBeenCalledExactlyOnceWith(ticket, "Medousa");
+});
 it("opens a bot's own binding instead of the currently selected chat", async () => {
   const controller = new AddressedConversation(); api.open.mockResolvedValue({ binding: { session_id: "taco-session" } });
   controller.select({ id: "bot:taco", kind: "bot", bot: { bot_id: "taco", display_name: "Taco" } as never, label: "Taco", group: "Bots", scope: "workshop-a", description: "" });
@@ -69,9 +81,76 @@ it("rejects double submission and uses background admission when the conversatio
   await expect(controller.send("Second")).rejects.toThrow("still sending");
   await vi.waitFor(() => expect(api.submit).toHaveBeenCalledWith(expect.objectContaining({ mode: "background" }))); finish(); await sending;
 });
-it("bounds a transcript to six short entries without mutating the source", () => {
+it("keeps six complete entries without slicing answers in the middle of Markdown", () => {
   const source = Array.from({ length: 20 }, (_, id) => ({ id: String(id), role: "assistant" as const, content: "x".repeat(10000) }));
-  const excerpt = transcriptExcerpt(source); expect(excerpt).toHaveLength(6); expect(excerpt.every(message => message.content.length <= 4000)).toBe(true); expect(source[0].content).toHaveLength(10000);
+  const excerpt = transcriptExcerpt(source); expect(excerpt).toHaveLength(6); expect(excerpt.every(message => message.content.length === 10000)).toBe(true); expect(source[0].content).toHaveLength(10000);
+});
+
+it("uses the persisted reply to settle a cached streaming placeholder after a missed terminal event", async () => {
+  const controller = new AddressedConversation(); controller.select(session);
+  api.messages.mockReturnValue([
+    { id: "user", role: "user", content: "Make a wireframe", createdAt: "2026-10-25T02:01:00Z" },
+    { id: "pending", role: "assistant", turnId: "turn-1", content: "", streaming: true, statusLine: "Working…" },
+  ] as never[]);
+  expect(controller.working).toBe(true);
+  api.history.mockResolvedValue({ authority_id: "workshop-a", turns: [
+    { entry_id: "answer", role: "assistant", caused_by: { execution_id: "turn-1" }, content: "Your editable wireframe is ready.", timestamp: "2026-10-25T02:03:00Z" },
+  ] });
+  await controller.refresh();
+  expect(controller.messages.at(-1)?.content).toBe("Your editable wireframe is ready.");
+  expect(controller.working).toBe(false);
+});
+
+it("does not settle a new live turn when history returns an older answer", async () => {
+  const controller = new AddressedConversation(); controller.select(session);
+  api.messages.mockReturnValue([{ id: "pending", role: "assistant", turnId: "new-turn", content: "New answer", streaming: true }] as never[]);
+  api.history.mockResolvedValue({ authority_id: "workshop-a", turns: [
+    { entry_id: "old", role: "assistant", caused_by: { execution_id: "old-turn" }, content: "Older answer", timestamp: "2026-10-24T00:00:00Z" },
+  ] });
+  await controller.refresh();
+  expect(controller.messages.at(-1)?.content).toBe("New answer");
+  expect(controller.working).toBe(true);
+});
+
+it("does not reuse an old reply when an external agent reuses its stream ID for a new prompt", async () => {
+  const controller = new AddressedConversation(); controller.select(session);
+  api.messages.mockReturnValue([
+    { id: "user", role: "user", content: "A new request", createdAt: "2026-10-25T03:00:00Z" },
+    { id: "pending", role: "assistant", turnId: "reusable-agent-stream", content: "", streaming: true },
+  ] as never[]);
+  api.history.mockResolvedValue({ authority_id: "workshop-a", turns: [
+    { entry_id: "old", role: "assistant", caused_by: { execution_id: "reusable-agent-stream" }, content: "Previous response", timestamp: "2026-10-25T02:00:00Z" },
+  ] });
+  await controller.refresh();
+  expect(controller.working).toBe(true);
+  expect(controller.messages.at(-1)?.content).toBe("");
+});
+
+it("settles a completed turn even when it has no prose and retains fatal failure details", async () => {
+  const controller = new AddressedConversation(); controller.select(session);
+  api.messages.mockReturnValue([{ id: "pending", role: "assistant", turnId: "turn-1", content: "", streaming: true }] as never[]);
+  api.history.mockResolvedValue({ authority_id: "workshop-a", turns: [
+    { entry_id: "answer", role: "assistant", caused_by: { execution_id: "turn-1" }, content: "", timestamp: "2026-10-25T02:03:00Z" },
+  ] });
+  await controller.refresh();
+  expect(controller.working).toBe(false);
+  expect(controller.messages).toEqual([]);
+  api.history.mockResolvedValue({ authority_id: "workshop-a", turns: [
+    { entry_id: "answer", role: "assistant", caused_by: { execution_id: "turn-1" }, content: "", answer_state: "failed", slice_summary: { failures: ["Provider unavailable"] }, timestamp: "2026-10-25T02:03:00Z" },
+  ] });
+  await controller.refresh();
+  expect(controller.working).toBe(false);
+  expect(controller.failure).toBe("Provider unavailable");
+});
+
+it("keeps the last answer without surfacing routine preview refresh errors", async () => {
+  const controller = new AddressedConversation(); controller.select(session);
+  api.history.mockResolvedValue({ authority_id: "", turns: [{ role: "assistant", content: "Finished answer", timestamp: "2026-10-25T02:03:00Z" }] });
+  await controller.refresh();
+  api.history.mockRejectedValueOnce(new Error("Optional history request failed"));
+  await controller.refresh();
+  expect(controller.messages.at(-1)?.content).toBe("Finished answer");
+  expect(controller.error).toBeNull();
 });
 
 it("keeps a just-finished live reply visible when its assistant entry has no timestamp", async () => {

@@ -2,6 +2,7 @@
   import { settings } from "$lib/stores/settings.svelte";
 
   const options = [
+    { title: "Spotlight replies", detail: "When requests from global Spotlight finish", enabled: () => settings.spotlightRepliesEnabled, set: settings.setSpotlightRepliesEnabled.bind(settings) },
     { title: "Turn updates", detail: "Final answers and completed work", enabled: () => settings.turnUpdatesEnabled, set: settings.setTurnUpdatesEnabled.bind(settings) },
     { title: "Needs your input", detail: "When work is waiting on you", enabled: () => settings.needsInputEnabled, set: settings.setNeedsInputEnabled.bind(settings) },
     { title: "Peer messages", detail: "Messages from connected devices", enabled: () => settings.peerMessagesEnabled, set: settings.setPeerMessagesEnabled.bind(settings) },

@@ -25,11 +25,20 @@ it("uses shared navigation and routes selected commands to their real owner", as
   expect(document.querySelector('[aria-label="Spotlight categories"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Activity");
   expect(document.body.textContent).toContain("Labbing");
+  expect(document.querySelector(".command-spotlight-footer")).toBeNull();
   const input = document.querySelector<HTMLInputElement>("input")!;
   input.value = "Hello note"; input.dispatchEvent(new Event("input", { bubbles: true })); flushSync(); await settle(110);
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); await settle();
   expect(owner.execute).toHaveBeenCalledWith(snapshot.groups[0].commands[0], undefined);
   expect(commandSpotlight.open).toBe(false);
+});
+
+it("keeps background catalog notices quiet when commands are available", async () => {
+  const owner = host();
+  vi.mocked(owner.collect).mockResolvedValue({ ...snapshot, notice: "An optional catalog could not load" });
+  await start(owner);
+  expect(document.body.textContent).toContain("Hello note");
+  expect(document.body.textContent).not.toContain("An optional catalog could not load");
 });
 
 it("passes create, run and advanced prefixes through the shared catalog", async () => {
