@@ -1802,7 +1802,10 @@ mod tests {
             forge_work_id: "work-1".into(),
             existing_agent_session_id: None,
         };
-        assert_eq!(assignment.context.sources[0].selection.session, owner_session);
+        assert_eq!(
+            assignment.context.sources[0].selection.session,
+            owner_session
+        );
         #[cfg(feature = "full-daemon")]
         {
             let prompt = medousa_acp_client::coordination::context::hydrate_assignment_context(
@@ -1812,7 +1815,9 @@ mod tests {
             )
             .unwrap();
             assert!(prompt.contains("isolated swarm trial"));
-            assert!(prompt.len() <= medousa_acp_client::coordination::context::MAX_PEER_CONTEXT_BYTES);
+            assert!(
+                prompt.len() <= medousa_acp_client::coordination::context::MAX_PEER_CONTEXT_BYTES
+            );
         }
     }
 

@@ -377,7 +377,10 @@ fn operation_object(spec: &OperationSpec) -> Value {
 fn schema_object(schema: &SchemaRef) -> Value {
     if schema.opaque {
         json!({ "description": schema.name, "x-medousa-opaque": true })
-    } else if matches!(schema.name.as_str(), "string" | "integer" | "number" | "boolean") {
+    } else if matches!(
+        schema.name.as_str(),
+        "string" | "integer" | "number" | "boolean"
+    ) {
         json!({ "type": schema.name })
     } else {
         json!({ "$ref": format!("#/components/schemas/{}", schema.name) })

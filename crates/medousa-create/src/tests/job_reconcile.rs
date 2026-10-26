@@ -39,7 +39,9 @@ fn generation_applies_after_unrelated_edits_and_frame_movement_with_one_undo() {
                 expected_revision: 2,
                 selected_ids: vec!["title".into()],
                 label: "Generated image".into(),
-                operations: vec![CreativeOperation::PutNode { node: Box::new(image.clone()) }],
+                operations: vec![CreativeOperation::PutNode {
+                    node: Box::new(image.clone()),
+                }],
             },
         )
         .unwrap();

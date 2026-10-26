@@ -4,11 +4,25 @@ export const MAX_MEDIA_REFS_PER_TURN = 5;
 export const MAX_MEDIA_UPLOAD_MB = 25;
 
 const GENERIC_TURN =
-  "Something went wrong on this turn. Try again in a moment.";
+  "Medousa couldn't complete this turn. Check the error details before retrying.";
 
 export function friendlyUserError(raw: string, context?: { fileName?: string }): string {
   const trimmed = raw.trim();
   if (!trimmed) return GENERIC_TURN;
+
+  // A lease/storage failure may mention a missing file or permission denial;
+  // it is not an attachment error, even on surfaces that accept uploads.
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.includes("cannot acquire coder authority") ||
+    lower.includes("coder forge lease rejected") ||
+    (lower.includes("invalid transition") && lower.includes("cannot begin attempt")) ||
+    lower.includes("no space left on device") ||
+    lower.includes("disk quota exceeded") ||
+    lower.includes("undertaking workspace is held by an executor outside coder shared-space coordination")
+  ) {
+    return friendlyTurnError(trimmed);
+  }
 
   const media = friendlyMediaUploadError(trimmed, context?.fileName);
   if (media !== trimmed) return media;
@@ -69,11 +83,38 @@ export function friendlyMediaUploadError(raw: string, fileName?: string): string
   return text;
 }
 
+// Match explicit HTTP status wrappers, not incidental IDs or byte counts.
+function hasHttpStatus(text: string, code: string): boolean {
+  return new RegExp(`(?:http |http error: |status |status: |status code |status code: |status_code=|status=|statuscode\\()\\s*${code}(?![0-9])`).test(text);
+}
+
 export function friendlyTurnError(raw: string): string {
   const text = raw.trim();
   if (!text) return GENERIC_TURN;
   const lower = text.toLowerCase();
 
+  if (lower.includes("undertaking workspace is held by an executor outside coder shared-space coordination")) {
+    return "This project's workspace is in use by another executor. Finish or stop that work before starting Coder.";
+  }
+  // Local lifecycle/storage blockers must win over incidental provider text.
+  if (lower.includes("invalid transition") && lower.includes("cannot begin attempt")) {
+    if (lower.includes(" is accepted,")) {
+      return "Coder couldn't start because this work is already accepted. Create a new undertaking for the next changes; retrying this assignment won't reopen it.";
+    }
+    if (lower.includes(" is discarded,")) {
+      return "Coder couldn't start because this work was discarded. Create a new undertaking to continue.";
+    }
+    if (lower.includes(" is awaiting_review,")) {
+      return "Coder couldn't start because this work is awaiting review. Review it or request changes before assigning more work.";
+    }
+    return "Coder couldn't start because this work isn't executable in its current state. Inspect the undertaking's state before assigning more work.";
+  }
+  if (lower.includes("no space left on device") || lower.includes("disk quota exceeded")) {
+    return "Medousa couldn't save runtime data because the workshop disk is full. Free disk space, then check the work state before retrying.";
+  }
+  if (lower.includes("cannot acquire coder authority") || lower.includes("coder forge lease rejected")) {
+    return "Coder couldn't obtain permission to execute this work. Check the undertaking's state and active executor in the runtime details before retrying.";
+  }
   if (lower.includes("chatgpt") && lower.includes("sign-in")) {
     return "Reconnect ChatGPT in Settings → Medousa Agent → Models, then submit a new request.";
   }
@@ -85,8 +126,18 @@ export function friendlyTurnError(raw: string): string {
     return "Turn cancelled.";
   }
   if (
-    lower.includes("401") ||
-    lower.includes("403") ||
+    lower.includes("forge command queue is full") ||
+    lower.includes("forge queued-byte budget is exhausted") ||
+    lower.includes("repository-lane registry is full")
+  ) {
+    return "Medousa's work queue is full. Wait for active work to finish, then try again.";
+  }
+  if (lower.includes("estimated retained bytes") && lower.includes("class budget")) {
+    return "This operation exceeds Medousa's per-operation data limit. See the error details for the operation and limit.";
+  }
+  if (
+    hasHttpStatus(lower, "401") ||
+    hasHttpStatus(lower, "403") ||
     lower.includes("invalid api key") ||
     lower.includes("incorrect api key") ||
     lower.includes("authentication") ||
@@ -95,7 +146,7 @@ export function friendlyTurnError(raw: string): string {
     return "The model provider rejected the API key. Check Settings → Medousa Agent and try again.";
   }
   if (
-    lower.includes("429") ||
+    hasHttpStatus(lower, "429") ||
     lower.includes("rate limit") ||
     lower.includes("too many requests") ||
     lower.includes("quota")
@@ -103,9 +154,9 @@ export function friendlyTurnError(raw: string): string {
     return "The model provider is rate-limiting requests. Wait a moment and try again.";
   }
   if (
-    lower.includes("404") ||
+    hasHttpStatus(lower, "404") ||
     lower.includes("model not found") ||
-    lower.includes("does not exist") ||
+    (lower.includes("model") && lower.includes("does not exist")) ||
     lower.includes("unknown model") ||
     lower.includes("invalid model")
   ) {
@@ -116,15 +167,15 @@ export function friendlyTurnError(raw: string): string {
     lower.includes("timed out") ||
     lower.includes("deadline exceeded")
   ) {
-    return "The model took too long to respond. Try again with a shorter message.";
+    return "The turn timed out. Check whether any work completed before retrying.";
   }
   if (
     lower.includes("connection") ||
     lower.includes("transport") ||
     lower.includes("unavailable") ||
-    lower.includes("502") ||
-    lower.includes("503") ||
-    lower.includes("504") ||
+    hasHttpStatus(lower, "502") ||
+    hasHttpStatus(lower, "503") ||
+    hasHttpStatus(lower, "504") ||
     (lower.includes("queue") && (lower.includes("busy") || lower.includes("full")))
   ) {
     return "Couldn't reach the model provider. Try again in a moment.";

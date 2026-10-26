@@ -2852,6 +2852,51 @@ impl ToolRegistry for CoderBoundToolRegistry {
             return self.inner.invoke_tool(tool_name, input).await;
         }
         let authority = self.authority()?;
+        if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT {
+            let (metadata, input) = take_coder_call(input)?;
+            let input = self.bind_input(tool_name, input)?;
+            if input.get("session_id").and_then(Value::as_str).is_none() {
+                return Err(StasisError::PortFailure(
+                    "session_id is required for interrupt".into(),
+                ));
+            }
+            self.validate_shell_session(tool_name, &input).await?;
+            // SIGINT is a recovery control, not new work. Keep grant, lease,
+            // and session ownership checks, but do not require a successful
+            // heartbeat or activity write before stopping our own process.
+            let check_authority = authority.clone();
+            let check = move || {
+                if let Some(guard) = &check_authority.execution_guard {
+                    guard.verify()?;
+                }
+                check_authority
+                    .forge
+                    .verify_execution_lease(check_authority.lease())
+                    .map_err(|error| {
+                        StasisError::PortFailure(format!("Coder Forge lease rejected: {error}"))
+                    })
+            };
+            // Do not queue cancellation behind ordinary StoreIo jobs.
+            tokio::task::spawn_blocking(check).await.map_err(|error| {
+                StasisError::PortFailure(format!("interrupt authority check failed: {error}"))
+            })??;
+            let result = crate::coding_tools::with_coder_shell_state(
+                self.shell_state.clone(),
+                crate::coding_tools::with_coder_tool_root(
+                    self.entry.worktree.clone(),
+                    self.inner.invoke_tool(tool_name, input),
+                ),
+            )
+            .await;
+            tracing::info!(
+                tool = tool_name,
+                intent = metadata.intent.as_str(),
+                work_id = %authority.lease().work_id,
+                ok = result.is_ok(),
+                "coder_shell_interrupt"
+            );
+            return result;
+        }
         authority.heartbeat_admitted().await?;
         let (metadata, input) = take_coder_call(input)?;
         let intent = metadata.intent;
@@ -4003,6 +4048,16 @@ mod tests {
             );
         }
         guard.revoked.store(true, Ordering::SeqCst);
+        registry
+            .shell_state
+            .lock()
+            .await
+            .owned_sessions
+            .insert("shell-guard".into());
+        assert!(registry.invoke_tool(
+            crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT,
+            json!({"intent": "Reject revoked assignment interrupt", "session_id": "shell-guard"}),
+        ).await.unwrap_err().to_string().contains("revoked"));
         for action in [
             "turn.finish",
             "turn.checkpoint",
@@ -5905,6 +5960,93 @@ mod tests {
             )
             .expect_err("sibling attempt rejected");
         assert!(mismatch.to_string().contains("attempt_id"));
+    }
+
+    #[tokio::test]
+    async fn coder_shell_interrupt_needs_ownership_and_a_live_lease_but_no_writes() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        registry
+            .invoke_tool(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                json!({"intent": "Start owned verification", "command": "echo one"}),
+            )
+            .await
+            .unwrap();
+        let snapshot = fixture
+            .forge
+            .store()
+            .snapshot_path(&authority.lease().work_id);
+        let before = std::fs::read(&snapshot).unwrap();
+        let activity_path = fixture._forge_root.path().join("coder-activity.json");
+        let activity_before = std::fs::read(&activity_path).unwrap();
+        let interrupt = crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT;
+        registry
+            .invoke_tool(
+                interrupt,
+                json!({"intent": "Stop owned verification", "session_id": "shell-1"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&snapshot).unwrap(), before);
+        assert_eq!(std::fs::read(&activity_path).unwrap(), activity_before);
+        assert!(
+            registry
+                .invoke_tool(
+                    interrupt,
+                    json!({"intent": "Reject unrelated session", "session_id": "other-shell"}),
+                )
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("not owned")
+        );
+        // A missing snapshot must not turn the read-only fence into a cache write.
+        std::fs::remove_file(&snapshot).unwrap();
+        registry
+            .invoke_tool(
+                interrupt,
+                json!({"intent": "Stop with absent snapshot", "session_id": "shell-1"}),
+            )
+            .await
+            .unwrap();
+        assert!(!snapshot.exists());
+        fixture
+            .forge
+            .interrupt_attempt(
+                authority.lease(),
+                RecoveryDisposition::RestartAllowed,
+                &Forge::system_actor(),
+            )
+            .unwrap();
+        assert!(
+            registry
+                .invoke_tool(
+                    interrupt,
+                    json!({"intent": "Reject expired lease", "session_id": "shell-1"}),
+                )
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("lease rejected")
+        );
+        assert_eq!(
+            inner
+                .invocations
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(tool, _)| tool == interrupt)
+                .count(),
+            2
+        );
     }
 
     #[tokio::test]

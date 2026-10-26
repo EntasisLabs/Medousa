@@ -322,8 +322,14 @@ impl InteractiveTurnStreamSink {
     ) -> bool {
         if let Err(error) = self.persist_via_spine(assistant_turn, event).await {
             let message = format!("turn persistence failed: {error}");
-            self.publish_failure(TurnCompletionOutcomeV3::Fatal, message.clone(), None)
-                .await;
+            let operator = crate::turn_failure::runtime_blocker_message(&message)
+                .unwrap_or("This turn stopped because its activity could not be saved.");
+            self.publish_failure(
+                TurnCompletionOutcomeV3::Fatal,
+                operator.into(),
+                Some(message.clone()),
+            )
+            .await;
             self.sync_ask_job_failed(message).await;
             return false;
         }
@@ -391,9 +397,42 @@ impl InteractiveTurnStreamSink {
                     outcome = TurnCompletionOutcomeV3::Fatal;
                     operator_message =
                         "This turn stopped, and its activity could not be saved.".into();
-                    debug_message = Some(format!("turn persistence failed: {error}"));
+                    // Saving failure activity must not erase the failure that
+                    // stopped execution. The projection below keeps both ends
+                    // bounded and redacted for the operator's details view.
+                    debug_message = Some(match debug_message {
+                        Some(original) => {
+                            format!("{original}\nAdditionally, turn persistence failed: {error}")
+                        }
+                        None => format!("turn persistence failed: {error}"),
+                    });
                 }
             }
+        }
+        // Diagnostics may contain provider responses, credentials, or paths.
+        // Bound and redact details before exposing them to Home or replay storage,
+        // including the secondary persistence-failure path above.
+        debug_message = debug_message.map(|raw| {
+            let redacted = super::coder_evidence::redact_evidence_text(&raw);
+            crate::text_budget::truncate_text_for_budget(&redacted, 4096)
+        });
+        if matches!(
+            outcome,
+            TurnCompletionOutcomeV3::Failed
+                | TurnCompletionOutcomeV3::Fatal
+                | TurnCompletionOutcomeV3::FuseExhausted
+        ) {
+            let diagnostic = debug_message.as_deref().unwrap_or(&operator_message);
+            let failure = crate::turn_failure::TurnFailure::from_debug(diagnostic);
+            tracing::warn!(
+                target: "medousa::turn",
+                turn_id = %self.turn_id,
+                session_id = %self.session_id,
+                category = failure.category_label(),
+                retryable = failure.retryable,
+                debug_message = %diagnostic,
+                "interactive_turn_failed"
+            );
         }
         // One settlement after the transcript receipt. A separate Error journal
         // event would terminate the pipeline before TurnCompleted reaches Home.
@@ -477,7 +516,13 @@ impl InteractiveTurnStreamSink {
                 ..
             } = &event
         {
-            let result = operator_message.as_ref().unwrap_or(aggregate_text).clone();
+            let result = crate::daemon::coordination::native_coder::terminal_result(
+                *outcome,
+                aggregate_text,
+                operator_message.as_deref(),
+                &self.turn_id,
+                &self.session_id,
+            );
             if let Err(error) = sink
                 .terminal(
                     crate::daemon::coordination::native_coder::terminal_outcome(*outcome),
@@ -2963,6 +3008,42 @@ mod chronological_sink_tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], TurnPipelineEnvelope::V3(envelope)
             if matches!(envelope.event, TurnStreamEventV3::TurnCompleted { outcome: TurnCompletionOutcomeV3::Failed, .. })));
+        drop(events);
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn failed_settlement_redacts_and_bounds_details_without_losing_the_cause() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+        let raw = format!(
+            "cannot acquire Coder authority: invalid transition: work work-test is accepted, cannot begin attempt; api_key=sk-do-not-surface {}",
+            "x".repeat(6000)
+        );
+        let failure = crate::turn_failure::TurnFailure::from_debug(&raw);
+        sink.publish_failure(
+            TurnCompletionOutcomeV3::Failed,
+            failure.operator_message,
+            Some(raw),
+        )
+        .await;
+        let events = output.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        let TurnPipelineEnvelope::V3(envelope) = &events[0] else {
+            panic!("expected V3 settlement");
+        };
+        let TurnStreamEventV3::TurnCompleted {
+            operator_message: Some(operator),
+            debug_message: Some(debug),
+            ..
+        } = &envelope.event
+        else {
+            panic!("expected failure with details");
+        };
+        assert!(operator.contains("already accepted"));
+        assert!(debug.contains("cannot begin attempt"));
+        assert!(!debug.contains("sk-do-not-surface"));
+        assert!(debug.chars().count() <= 4100);
         drop(events);
         sink.pipeline.cancel();
     }

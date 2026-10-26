@@ -8,16 +8,16 @@
 
 use std::sync::Mutex;
 
-use grapheme_wasm::{execute, ExecuteRequest};
+use grapheme_wasm::{ExecuteRequest, execute};
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::prelude::{RuntimeComposition, RuntimeFactory};
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
-use wasm_bindgen::prelude::*;
+use surrealdb::engine::any::Any;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::stasis_surreal_schema::ensure_stasis_runtime_schema;
@@ -652,7 +652,7 @@ pub async fn write_vault(path: &str, body: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{accept_workshop_endpoint, reject_memory_boot, WORKSHOP_ENDPOINT};
+    use super::{WORKSHOP_ENDPOINT, accept_workshop_endpoint, reject_memory_boot};
 
     #[test]
     fn in_memory_boot_is_a_hard_error() {

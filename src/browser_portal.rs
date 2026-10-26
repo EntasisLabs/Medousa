@@ -589,17 +589,16 @@ async fn iroh_json<T: for<'de> Deserialize<'de>>(
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
-    let (status, text) =
-        reach_text(
-            ticket,
-            http_base,
-            method,
-            path,
-            &refs,
-            encoded.as_deref(),
-            bootstrap_loopback,
-        )
-        .await?;
+    let (status, text) = reach_text(
+        ticket,
+        http_base,
+        method,
+        path,
+        &refs,
+        encoded.as_deref(),
+        bootstrap_loopback,
+    )
+    .await?;
     if !(200..300).contains(&status) {
         return Err(format!(
             "Workshop returned HTTP {status} for {method} {path}: {text}"

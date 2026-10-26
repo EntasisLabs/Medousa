@@ -152,9 +152,8 @@ async fn package_call(
     max_output: usize,
 ) -> Result<Vec<u8>, ForgeError> {
     let argument = argument.to_string();
-    // Account for queued input and expected response size. The output ceiling
-    // is enforced by capture; reserving that entire ceiling here would consume
-    // the default global byte budget and reject a second ordinary review read.
+    // Estimate retained input and expected response size for class validation.
+    // The full output ceiling is enforced independently by capture.
     let estimated_bytes = input.len().saturating_add(max_output.min(256 * 1024));
     execution
         .run_async(

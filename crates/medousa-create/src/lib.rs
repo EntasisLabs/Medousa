@@ -104,10 +104,19 @@ pub fn validate_scene(
             if let Some(work_id) = &source.work_id {
                 validate_id(work_id)?;
             }
-            if let Some(asset_id) = &source.original_asset_id && !assets.contains_key(asset_id) { return Err(invalid("original reference asset is missing")); }
-            if let Some(y) = source.scroll_y { number(y, 0., 1e7)?; }
+            if let Some(asset_id) = &source.original_asset_id
+                && !assets.contains_key(asset_id)
+            {
+                return Err(invalid("original reference asset is missing"));
+            }
+            if let Some(y) = source.scroll_y {
+                number(y, 0., 1e7)?;
+            }
             if source.page_count.is_some_and(|n| n == 0 || n > 12)
-                || source.page_index.is_some_and(|n| n == 0 || n > source.page_count.unwrap_or(12)) {
+                || source
+                    .page_index
+                    .is_some_and(|n| n == 0 || n > source.page_count.unwrap_or(12))
+            {
                 return Err(invalid("invalid captured page index"));
             }
             if source.viewport_width == 0
@@ -148,21 +157,41 @@ pub fn validate_scene(
                 number(width, 4., 1e7)?;
             }
             number(layout.line_height, 0.8, 4.)?;
-            if let Some(v) = layout.letter_spacing { number(v, -100., 100.)?; }
-            if let Some(v) = layout.paragraph_spacing { number(v, 0., 512.)?; }
-            let CreativeContent::Text { text, .. } = &node.content else { unreachable!() };
+            if let Some(v) = layout.letter_spacing {
+                number(v, -100., 100.)?;
+            }
+            if let Some(v) = layout.paragraph_spacing {
+                number(v, 0., 512.)?;
+            }
+            let CreativeContent::Text { text, .. } = &node.content else {
+                unreachable!()
+            };
             let length = text.encode_utf16().count();
             let mut boundaries = BTreeSet::from([0_u32]);
             let mut position = 0;
-            for ch in text.chars() { position += ch.len_utf16() as u32; boundaries.insert(position); }
+            for ch in text.chars() {
+                position += ch.len_utf16() as u32;
+                boundaries.insert(position);
+            }
             let mut end = 0;
-            if layout.spans.len() > 1024 { return Err(invalid("too many text spans")); }
+            if layout.spans.len() > 1024 {
+                return Err(invalid("too many text spans"));
+            }
             for span in &layout.spans {
-                if span.start < end || span.end <= span.start || span.end as usize > length || !boundaries.contains(&span.start) || !boundaries.contains(&span.end) {
+                if span.start < end
+                    || span.end <= span.start
+                    || span.end as usize > length
+                    || !boundaries.contains(&span.start)
+                    || !boundaries.contains(&span.end)
+                {
                     return Err(invalid("invalid text span range"));
                 }
-                if span.font_weight.is_some_and(|w| !(100..=900).contains(&w)) { return Err(invalid("invalid text span weight")); }
-                if let Some(color) = &span.color { paint(color)?; }
+                if span.font_weight.is_some_and(|w| !(100..=900).contains(&w)) {
+                    return Err(invalid("invalid text span weight"));
+                }
+                if let Some(color) = &span.color {
+                    paint(color)?;
+                }
                 end = span.end;
             }
         }

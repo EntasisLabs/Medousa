@@ -101,6 +101,12 @@ is older than the project tools — rebuild and restart `medousa_daemon` from th
 checkout rather than showing a fake-ready empty editor. If the project has no
 workspace yet, **Set up project** is the primary action in the center and rail.
 
+If chat says Medousa's work queue is full, wait for active work to finish before
+retrying; the error details identify the local queue. Older daemons can instead
+fail ordinary coding work with `forge queued-byte budget is exhausted`. Update
+the workshop daemon to a build with that shared-byte gate removed. Restarting
+the same old binary does not fix it.
+
 ## Language assistance
 
 Syntax highlighting and typing remain available when a language service cannot

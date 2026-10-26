@@ -2,8 +2,8 @@
 
 pub mod admission;
 pub mod baseline;
-pub mod contracts;
 pub mod catalog;
+pub mod contracts;
 #[cfg(any(test, feature = "full-daemon"))]
 pub mod fixtures;
 #[cfg(any(test, feature = "full-daemon"))]
