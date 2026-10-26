@@ -317,8 +317,10 @@ Home Settings → Rhythm writes these fields to `tui_defaults.json` on Mac deskt
 ## Forge / Coder (H06)
 
 These are compile-time caps in `medousa-forge::execution` and
-`medousa-forge::observation`. There is no env override today; change the
-constants and rebuild if an operator needs different budgets.
+`medousa-forge::observation`. There is no shared queued-byte budget;
+`MEDOUSA_FORGE_QUEUED_BYTE_BUDGET` is no longer used. Per-command data limits
+and the command-count cap bound retained-data estimates without rejecting
+unrelated jobs because one command reserves its output capture allowance.
 
 | Cap | Starting value |
 |-----|----------------|
@@ -326,7 +328,7 @@ constants and rebuild if an operator needs different budgets.
 | Blocking workers | 8 (wait inside the 64-command queue) |
 | Network Git processes | 2 (wait inside the queue) |
 | Observation jobs | 2 (wait inside the queue) |
-| Queued command bytes | 8 MiB (hard reject when exhausted) |
+| Work-environment jobs | 4 (wait inside the queue) |
 | Per-command metadata / store / capture | 256 KiB / 1 MiB / 8 MiB (reject when estimate exceeds class budget; no under-reserve) |
 | Git stdout+stderr capture | 8 MiB combined; truncated output is incomplete; excess bytes are drained |
 | Compaction trigger / buffer | 1,000 events or 8 MiB |
@@ -339,8 +341,10 @@ constants and rebuild if an operator needs different budgets.
 | Network Git deadline | 120s (`supervise_git`; timeout kills process tree) |
 | P04 / P05 harness size | `MEDOUSA_P04_EVENTS`, `MEDOUSA_P05_FILES` |
 
-Queue-full (global admit slots or byte budget) returns HTTP `503` / `overloaded`.
-Class and repository-lane contention waits under the global cap. Do not add a
+Queue-full (global admit slots) returns HTTP `503` / `overloaded`.
+Class and repository-lane contention waits under the global cap. Per-operation
+data limits apply to retained application data, not subprocess memory or
+repository size. Do not add a
 setting that falls back to inline blocking on a Tokio worker.
 
 ---

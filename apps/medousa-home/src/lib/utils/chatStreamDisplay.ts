@@ -118,7 +118,7 @@ export function operatorStreamErrorLine(
     return friendlyTurnError(raw);
   }
 
-  return "Something went wrong on this turn. Try again in a moment.";
+  return friendlyTurnError("");
 }
 
 /**

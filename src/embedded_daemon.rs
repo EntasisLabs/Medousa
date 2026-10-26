@@ -5677,7 +5677,8 @@ impl EmbeddedDaemonClient {
             &liquid_interactions,
         );
         if let Some(context) = host_context.as_ref() {
-            crate::agent_runtime::host_context::validate_references(context).map_err(anyhow::Error::msg)?;
+            crate::agent_runtime::host_context::validate_references(context)
+                .map_err(anyhow::Error::msg)?;
         }
         let host_context = host_context
             .as_ref()
@@ -5809,7 +5810,12 @@ impl EmbeddedDaemonClient {
                 .map(|timeout| Instant::now() + timeout),
             scope,
         );
-        context = context.with_resource_references(host_context.as_ref().map(|context| context.references.clone()).unwrap_or_default());
+        context = context.with_resource_references(
+            host_context
+                .as_ref()
+                .map(|context| context.references.clone())
+                .unwrap_or_default(),
+        );
         if let Some(target) = worker_execution_target {
             context = context.with_worker_execution_target(target);
         }

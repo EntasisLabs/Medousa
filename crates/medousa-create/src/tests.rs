@@ -44,7 +44,9 @@ fn edit(id: &str, revision: u64, node: CreativeNode) -> CreativeTransaction {
         id: id.into(),
         expected_revision: revision,
         label: "Edit text".into(),
-        operations: vec![CreativeOperation::PutNode { node: Box::new(node) }],
+        operations: vec![CreativeOperation::PutNode {
+            node: Box::new(node),
+        }],
     }
 }
 fn history(id: &str, revision: u64, redo: bool) -> CreativeHistoryRequest {
@@ -239,7 +241,9 @@ fn stale_proposal_cannot_overwrite_a_human_edit() {
                 expected_revision: 1,
                 selected_ids: vec!["title".into()],
                 label: "AI edit".into(),
-                operations: vec![CreativeOperation::PutNode { node: Box::new(text("title")) }],
+                operations: vec![CreativeOperation::PutNode {
+                    node: Box::new(text("title")),
+                }],
             },
         )
         .unwrap();
@@ -288,7 +292,9 @@ fn accepting_a_proposal_is_one_undoable_idempotent_transaction() {
                 expected_revision: 1,
                 selected_ids: vec!["title".into()],
                 label: "AI align".into(),
-                operations: vec![CreativeOperation::PutNode { node: Box::new(replacement.clone()) }],
+                operations: vec![CreativeOperation::PutNode {
+                    node: Box::new(replacement.clone()),
+                }],
             },
         )
         .unwrap();
@@ -569,7 +575,9 @@ fn frame_context_captures_descendants_and_locks_do_not_block_proposals() {
                 expected_revision: 0,
                 label: "Scene".into(),
                 operations: vec![
-                    CreativeOperation::PutNode { node: Box::new(frame) },
+                    CreativeOperation::PutNode {
+                        node: Box::new(frame),
+                    },
                     CreativeOperation::PutNode {
                         node: Box::new(child.clone()),
                     },
@@ -591,7 +599,9 @@ fn frame_context_captures_descendants_and_locks_do_not_block_proposals() {
         expected_revision: 1,
         selected_ids: context.selected_ids,
         label: "Change".into(),
-        operations: vec![CreativeOperation::PutNode { node: Box::new(child) }],
+        operations: vec![CreativeOperation::PutNode {
+            node: Box::new(child),
+        }],
     };
     store.propose("project_one", request).unwrap();
     let applied = store
@@ -629,7 +639,9 @@ fn cancelled_proposal_retries_do_not_resurrect_after_terminal_eviction() {
         expected_revision: 1,
         selected_ids: vec!["title".into()],
         label: "Original".into(),
-        operations: vec![CreativeOperation::PutNode { node: Box::new(text("title")) }],
+        operations: vec![CreativeOperation::PutNode {
+            node: Box::new(text("title")),
+        }],
     };
     store.propose("project_one", original.clone()).unwrap();
     store
@@ -697,7 +709,9 @@ fn job_result(id: &str) -> CreativeProposalRequest {
         expected_revision: 1,
         selected_ids: vec!["title".into()],
         label: "Clarify title".into(),
-        operations: vec![CreativeOperation::PutNode { node: Box::new(node) }],
+        operations: vec![CreativeOperation::PutNode {
+            node: Box::new(node),
+        }],
     }
 }
 fn job_store() -> (tempfile::TempDir, Arc<CreativeStore>) {
@@ -1206,7 +1220,12 @@ fn creative_job_rejects_oversized_result_without_losing_the_job() {
     if let CreativeContent::Text { text, .. } = &mut node.content {
         *text = "a".repeat(100_000);
     }
-    result.operations = vec![CreativeOperation::PutNode { node: Box::new(node) }; 6];
+    result.operations = vec![
+        CreativeOperation::PutNode {
+            node: Box::new(node)
+        };
+        6
+    ];
     assert!(
         store
             .complete_job("project_one", "first", &job.turn_id, result)
@@ -1230,7 +1249,9 @@ fn creative_job_snapshot_budget_does_not_corrupt_large_documents() {
         if let CreativeContent::Text { text, .. } = &mut node.content {
             *text = "a".repeat(100_000);
         }
-        operations.push(CreativeOperation::PutNode { node: Box::new(node) });
+        operations.push(CreativeOperation::PutNode {
+            node: Box::new(node),
+        });
     }
     store
         .transact(
@@ -1696,7 +1717,10 @@ fn surface_and_text_layout_are_durable_undoable_and_legacy_optional() {
     assert!(legacy.get("appearance").is_none());
     assert!(legacy.get("text_layout").is_none());
     node.text_layout = Some(CreativeTextLayout {
-        letter_spacing: None, paragraph_spacing: None, underline: None, spans: vec![],
+        letter_spacing: None,
+        paragraph_spacing: None,
+        underline: None,
+        spans: vec![],
         width: Some(240.),
         align: CreativeTextAlign::Center,
         line_height: 1.5,
@@ -1754,7 +1778,10 @@ fn invalid_surface_and_text_layout_fail_atomically() {
     {
         let mut node = text("label");
         node.text_layout = Some(CreativeTextLayout {
-        letter_spacing: None, paragraph_spacing: None, underline: None, spans: vec![],
+            letter_spacing: None,
+            paragraph_spacing: None,
+            underline: None,
+            spans: vec![],
             width,
             align: CreativeTextAlign::Left,
             line_height: leading,
@@ -1947,7 +1974,10 @@ fn design_origin_is_advisory_frame_metadata_and_survives_storage() {
         background: "#fff".into(),
     };
     node.design_source = Some(CreativeDesignSource {
-        original_asset_id: None, scroll_y: None, page_index: None, page_count: None,
+        original_asset_id: None,
+        scroll_y: None,
+        page_index: None,
+        page_count: None,
         work_id: Some("code_project".into()),
         session_id: Some("build_session".into()),
         url: "http://localhost:5173/".into(),
@@ -1985,15 +2015,39 @@ fn rich_typography_is_durable_and_rejects_invalid_inline_ranges() {
         font_style: None,
     };
     node.text_layout = Some(serde_json::from_value(serde_json::json!({"width":300,"align":"left","line_height":1.2,"letter_spacing":-2.5,"paragraph_spacing":12,"underline":true,"spans":[{"start":1,"end":3,"font_weight":700,"font_style":"italic","color":"#a7442d","underline":false}]})).unwrap());
-    let saved = store.transact("project_one", edit("rich",0,node.clone())).unwrap();
+    let saved = store
+        .transact("project_one", edit("rich", 0, node.clone()))
+        .unwrap();
     assert_eq!(saved.document.scene.nodes[0].text_layout, node.text_layout);
-    let mut invalid = node.clone(); invalid.text_layout.as_mut().unwrap().spans[0].end = 2;
-    assert!(store.transact("project_one",edit("split_surrogate",1,invalid)).is_err());
-    let mut invalid = node.clone(); invalid.text_layout.as_mut().unwrap().spans[0].font_weight=Some(999);
-    assert!(store.transact("project_one",edit("bad_weight",1,invalid)).is_err());
-    let mut invalid = node.clone(); invalid.text_layout.as_mut().unwrap().letter_spacing=Some(f64::NAN);
-    assert!(store.transact("project_one",edit("bad_tracking",1,invalid)).is_err());
-    store.history("project_one",history("undo_rich",1,false)).unwrap();
-    let restored=store.history("project_one",history("redo_rich",2,true)).unwrap();
-    assert_eq!(restored.document.scene.nodes[0].text_layout,node.text_layout);
+    let mut invalid = node.clone();
+    invalid.text_layout.as_mut().unwrap().spans[0].end = 2;
+    assert!(
+        store
+            .transact("project_one", edit("split_surrogate", 1, invalid))
+            .is_err()
+    );
+    let mut invalid = node.clone();
+    invalid.text_layout.as_mut().unwrap().spans[0].font_weight = Some(999);
+    assert!(
+        store
+            .transact("project_one", edit("bad_weight", 1, invalid))
+            .is_err()
+    );
+    let mut invalid = node.clone();
+    invalid.text_layout.as_mut().unwrap().letter_spacing = Some(f64::NAN);
+    assert!(
+        store
+            .transact("project_one", edit("bad_tracking", 1, invalid))
+            .is_err()
+    );
+    store
+        .history("project_one", history("undo_rich", 1, false))
+        .unwrap();
+    let restored = store
+        .history("project_one", history("redo_rich", 2, true))
+        .unwrap();
+    assert_eq!(
+        restored.document.scene.nodes[0].text_layout,
+        node.text_layout
+    );
 }

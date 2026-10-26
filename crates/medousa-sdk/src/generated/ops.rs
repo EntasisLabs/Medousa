@@ -681,26 +681,29 @@ pub const CONTINUATIONS_STATUS_GET: Operation = Operation {
     streaming: false,
 };
 
-pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_APPROVE_POST: Operation = Operation {
-    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
-    method: "POST",
-    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve",
-    streaming: false,
-};
+pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_APPROVE_POST: Operation =
+    Operation {
+        id: "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
+        method: "POST",
+        path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve",
+        streaming: false,
+    };
 
-pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DENY_POST: Operation = Operation {
-    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
-    method: "POST",
-    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny",
-    streaming: false,
-};
+pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DENY_POST: Operation =
+    Operation {
+        id: "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
+        method: "POST",
+        path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny",
+        streaming: false,
+    };
 
-pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DISPATCH_POST: Operation = Operation {
-    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
-    method: "POST",
-    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch",
-    streaming: false,
-};
+pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DISPATCH_POST: Operation =
+    Operation {
+        id: "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
+        method: "POST",
+        path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch",
+        streaming: false,
+    };
 
 pub const COORDINATION_PROPOSALS_GET: Operation = Operation {
     id: "coordination.proposals.get",
@@ -2921,14 +2924,16 @@ pub const SESSIONS_BY_SESSION_ID_HISTORY_GET: Operation = Operation {
     streaming: false,
 };
 
-pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_GET: Operation = Operation {
+pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_GET:
+    Operation = Operation {
     id: "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get",
     method: "GET",
     path: "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}",
     streaming: false,
 };
 
-pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_PUT: Operation = Operation {
+pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_PUT:
+    Operation = Operation {
     id: "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put",
     method: "PUT",
     path: "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}",

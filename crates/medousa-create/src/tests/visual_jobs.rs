@@ -84,7 +84,9 @@ fn preview_refinements_share_a_conversation_and_apply_as_one_undoable_replacemen
         expected_revision: 1,
         selected_ids: vec!["title".into()],
         label: "Larger and red".into(),
-        operations: vec![CreativeOperation::PutNode { node: Box::new(node) }],
+        operations: vec![CreativeOperation::PutNode {
+            node: Box::new(node),
+        }],
     };
     let ready = store
         .complete_job("project_one", "follow", &second.turn_id, result.clone())
@@ -171,7 +173,9 @@ fn refinement_keeps_generated_image_references_without_importing_a_human_edit() 
                 expected_revision: 1,
                 selected_ids: vec!["title".into()],
                 label: "Refine image placement".into(),
-                operations: vec![CreativeOperation::PutNode { node: Box::new(node) }],
+                operations: vec![CreativeOperation::PutNode {
+                    node: Box::new(node),
+                }],
             },
         )
         .unwrap();

@@ -34,7 +34,11 @@ fn main() {
     );
     export_type!(schemas, CreativeCodeContext, "CreativeCodeContext");
     export_type!(schemas, BrowserDesignCapture, "BrowserDesignCapture");
-    export_type!(schemas, BrowserDesignPageCapture, "BrowserDesignPageCapture");
+    export_type!(
+        schemas,
+        BrowserDesignPageCapture,
+        "BrowserDesignPageCapture"
+    );
     export_type!(schemas, CreativeJobRequest, "CreativeJobRequest");
     export_type!(schemas, CreativeJob, "CreativeJob");
     export_type!(schemas, CreativeJobListResponse, "CreativeJobListResponse");

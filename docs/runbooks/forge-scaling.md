@@ -9,15 +9,24 @@ Forge/Git work is admitted through `ForgeExecutionService` before it runs.
 
 | Symptom | Meaning | Action |
 |---------|---------|--------|
-| HTTP `503` with `kind: overloaded` | Global command queue (64) or queued-byte budget is exhausted, or estimated retained bytes exceed the class budget / lane registry is full | Retry with backoff. Do not restart the daemon to “clear” a healthy queue. Reduce concurrent Home/API clients or wait for network Git / observation jobs to finish. |
+| HTTP `503` with `kind: overloaded` | Global command queue (64) or lane registry is full, or a work item's retained-data estimate exceeds its class limit | For queue contention, retry with backoff after active work finishes. A per-operation data-limit failure needs the operation corrected, rather than a retry. Do not restart the daemon to “clear” a healthy queue. |
 | Forge request waits while others run | Class worker or repository-lane slot is busy; the job is queued under the global cap | Expected. Health and unrelated streams should still respond (ASYNC-001). |
 | Health stays up while Forge is slow | Expected. Blocking work is off Tokio request workers | Confirm `/health` and H03 streams still respond. If they stall, file an ASYNC-001 regression. |
 
 Caps: 64 admitted commands (queued or running), 8 blocking workers, 2 network Git
-processes, 2 observation jobs, 8 MiB queued bytes, 1 mutating operation per
+processes, 2 observation jobs, 4 work-environment jobs, 1 mutating operation per
 repository. Class and repository-lane slots **wait** inside the 64-command
-queue; only a full global queue or exhausted byte budget returns `503`
-immediately.
+queue. There is no aggregate queued-byte gate. Per-job retained-data limits
+and the command-count cap bound estimates to at most 64 × 8 MiB per execution
+service; these are application data estimates, not limits on subprocess memory
+or repository size. A full command queue still returns `503` immediately.
+
+Older daemons can report `forge queued-byte budget is exhausted` even when just
+one ordinary Git or observation job is active. That gate has been removed;
+`MEDOUSA_FORGE_QUEUED_BYTE_BUDGET` is no longer used. Update the daemon binary
+to apply the fix. Restarting the old binary does not change its admission policy.
+Chat identifies local queue saturation separately from model-provider failures
+and retains the underlying error in details.
 
 ## Slug and catalog repair
 

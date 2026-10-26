@@ -691,7 +691,8 @@ fn redact_evidence_value(value: &Value) -> Value {
     }
 }
 
-pub(super) fn redact_evidence_text(value: &str) -> String {
+/// Shared by turn streaming and native launch diagnostics; never surface raw errors.
+pub(crate) fn redact_evidence_text(value: &str) -> String {
     const TOKEN_MARKERS: &[&str] = &[
         "bearer ",
         "api_key=",
@@ -703,7 +704,20 @@ pub(super) fn redact_evidence_text(value: &str) -> String {
         "password=",
     ];
     const LINE_MARKERS: &[&str] = &["authorization:", "x-api-key:"];
+    // Provider errors can echo credentials without a header/assignment marker.
+    // Also scrub URL userinfo and JSON-shaped key values before logging text.
+    static PATTERNS: std::sync::OnceLock<[(regex::Regex, &str); 3]> = std::sync::OnceLock::new();
+    let patterns = PATTERNS.get_or_init(|| {
+        [
+            (r"(?i)\b(?:sk-[a-z0-9_-]+|gh[pousr]_[a-z0-9_]+|github_pat_[a-z0-9_]+|xox[baprs]-[a-z0-9-]+)\b", "[REDACTED]"),
+            (r"(?i)(https?://|ssh://)[^/\s@]+@", "$1[REDACTED]@"),
+            (r#"(?i)("(?:api_?key|access_token|auth_token|token|secret|password|authorization|x-api-key)"\s*:\s*")[^"]*(")"#, "$1[REDACTED]$2"),
+        ].map(|(pattern, replacement)| (regex::Regex::new(pattern).expect("credential redaction pattern"), replacement))
+    });
     let mut redacted = value.to_string();
+    for (pattern, replacement) in patterns {
+        redacted = pattern.replace_all(&redacted, *replacement).into_owned();
+    }
     for marker in TOKEN_MARKERS {
         redacted = redact_after_marker(&redacted, marker, false);
     }
@@ -831,6 +845,28 @@ mod tests {
             short_ttl_seconds: 60,
             extended_ttl_seconds: 600,
         }
+    }
+
+    #[test]
+    fn diagnostic_text_redacts_echoed_credentials_without_hiding_the_cause() {
+        let raw = r#"HTTP 401 invalid API key sk-proj-example; https://user:pass@example.test/api {"api_key": "json-secret", "password": "another-secret"} ghp_example github_pat_example xoxb-example Authorization: Bearer header-secret
+request timed out"#;
+        let redacted = redact_evidence_text(raw);
+        for secret in [
+            "sk-proj-example",
+            "user:pass",
+            "json-secret",
+            "another-secret",
+            "ghp_example",
+            "github_pat_example",
+            "xoxb-example",
+            "header-secret",
+        ] {
+            assert!(!redacted.contains(secret), "{redacted}");
+        }
+        assert!(redacted.contains("HTTP 401 invalid API key"));
+        assert!(redacted.contains("example.test/api"));
+        assert!(redacted.contains("request timed out"));
     }
 
     #[test]

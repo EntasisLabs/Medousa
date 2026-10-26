@@ -1,14 +1,15 @@
 //! Bounded Forge/Git execution service (H06.1 / H06.7).
 //!
-//! Async callers admit count, bytes, subprocess, and keyed-lane capacity
+//! Async callers admit count, subprocess, and keyed-lane capacity
 //! before dispatch. A full or closed queue never falls back to inline work
 //! on a Tokio worker.
 //!
 //! Queue contract: up to [`MAX_QUEUED_COMMANDS`] jobs may hold a global admit
 //! slot (queued or running). Class worker slots serialize execution inside
-//! that queue — callers **wait** for a free class/lane permit. Only a full
-//! global queue or exhausted byte budget returns [`ForgeError::Overloaded`]
-//! immediately.
+//! that queue — callers **wait** for a free class/lane permit. A full global
+//! queue returns [`ForgeError::Overloaded`] immediately. Per-job retained-data
+//! bounds and the job-count cap bound reservations; there is no shared byte
+//! gate that lets one capture reservation reject unrelated bookkeeping.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -27,20 +28,6 @@ pub const MAX_BLOCKING_JOBS: usize = 8;
 pub const MAX_NETWORK_GIT: usize = 2;
 pub const MAX_OBSERVATION_JOBS: usize = 2;
 pub const MAX_WORK_ENVIRONMENT_JOBS: usize = 4;
-pub const MAX_QUEUED_BYTES: usize = 8 * 1024 * 1024;
-
-/// Shared forge admission budget. `MEDOUSA_FORGE_QUEUED_BYTE_BUDGET` overrides
-/// the default. The limit is process-wide; each work item still has to fit.
-pub fn queued_byte_budget() -> usize {
-    static BUDGET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *BUDGET.get_or_init(|| {
-        std::env::var("MEDOUSA_FORGE_QUEUED_BYTE_BUDGET")
-            .ok()
-            .and_then(|value| value.parse().ok())
-            .filter(|value| *value > 0)
-            .unwrap_or(MAX_QUEUED_BYTES)
-    })
-}
 pub const MAX_METADATA_BYTES: usize = 256 * 1024;
 pub const MAX_STORE_PAYLOAD_BYTES: usize = 1024 * 1024;
 pub const MAX_CAPTURE_BYTES: usize = 8 * 1024 * 1024;
@@ -99,7 +86,6 @@ struct RepoLane {
 
 pub struct ForgeExecutionService {
     global_commands: Arc<Semaphore>,
-    queued_bytes: Arc<Semaphore>,
     blocking: Arc<Semaphore>,
     network_git: Arc<Semaphore>,
     observation: Arc<Semaphore>,
@@ -120,7 +106,6 @@ impl ForgeExecutionService {
     pub fn new() -> Self {
         Self {
             global_commands: Arc::new(Semaphore::new(MAX_QUEUED_COMMANDS)),
-            queued_bytes: Arc::new(Semaphore::new(queued_byte_budget())),
             blocking: Arc::new(Semaphore::new(MAX_BLOCKING_JOBS)),
             network_git: Arc::new(Semaphore::new(MAX_NETWORK_GIT)),
             observation: Arc::new(Semaphore::new(MAX_OBSERVATION_JOBS)),
@@ -162,7 +147,10 @@ impl ForgeExecutionService {
 
     fn evict_idle_lanes_locked(lanes: &mut HashMap<String, RepoLane>, now: Instant) {
         lanes.retain(|_, lane| {
-            let in_use = lane.semaphore.available_permits() == 0;
+            // A caller may have cloned the lane but not acquired its permit
+            // yet. Evicting it would create two locks for the same repository.
+            let in_use =
+                Arc::strong_count(&lane.semaphore) > 1 || lane.semaphore.available_permits() == 0;
             if in_use {
                 return true;
             }
@@ -234,7 +222,6 @@ impl ForgeExecutionService {
         if already_admitted() {
             return Ok(Admission {
                 _global: None,
-                _bytes: None,
                 _class: None,
                 _lane: None,
                 account: None,
@@ -249,7 +236,6 @@ impl ForgeExecutionService {
                 class.max_retained_bytes()
             )));
         }
-        let bytes = estimated_bytes.max(1);
         let global = self
             .global_commands
             .clone()
@@ -258,28 +244,11 @@ impl ForgeExecutionService {
                 self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
                 ForgeError::Overloaded("forge command queue is full".into())
             })?;
-        let byte_permit = match self
-            .queued_bytes
-            .clone()
-            .try_acquire_many_owned(bytes as u32)
-        {
-            Ok(permit) => permit,
-            Err(_) => {
-                self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
-                drop(global);
-                return Err(ForgeError::Overloaded(format!(
-                    "forge queued-byte budget is exhausted (limit {} bytes, this admission needs {bytes} bytes). Narrow this work item or set MEDOUSA_FORGE_QUEUED_BYTE_BUDGET. The budget is shared across queued forge jobs.",
-                    queued_byte_budget()
-                )));
-            }
-        };
-
         // Holding a global slot counts as queued until class/lane permits arrive
         // and the job is marked running. Partial Admission ensures permits and
         // counters release on cancel or later failure.
         let mut admission = Admission {
             _global: Some(global),
-            _bytes: Some(byte_permit),
             _class: None,
             _lane: None,
             account: Some(JobAccount::enter_queued(
@@ -290,13 +259,8 @@ impl ForgeExecutionService {
             nested: false,
         };
 
-        admission._class = Some(
-            self.class_semaphore(class)
-                .acquire_owned()
-                .await
-                .map_err(|_| ForgeError::Store("execution class semaphore closed".into()))?,
-        );
-
+        // Repository waiters must not occupy worker capacity: one busy
+        // repository could otherwise starve unrelated repositories and StoreIo.
         if matches!(
             class,
             ExecutionClass::LocalMutation | ExecutionClass::NetworkGit
@@ -316,6 +280,13 @@ impl ForgeExecutionService {
                     .map_err(|_| ForgeError::Store("repository lane semaphore closed".into()))?,
             );
         }
+
+        admission._class = Some(
+            self.class_semaphore(class)
+                .acquire_owned()
+                .await
+                .map_err(|_| ForgeError::Store("execution class semaphore closed".into()))?,
+        );
 
         self.metrics.admitted.fetch_add(1, Ordering::Relaxed);
         if let Some(account) = admission.account.as_mut() {
@@ -549,7 +520,6 @@ impl Drop for JobAccount {
 
 struct Admission {
     _global: Option<OwnedSemaphorePermit>,
-    _bytes: Option<OwnedSemaphorePermit>,
     _class: Option<OwnedSemaphorePermit>,
     _lane: Option<OwnedSemaphorePermit>,
     account: Option<JobAccount>,
@@ -978,12 +948,15 @@ mod tests {
     #[tokio::test]
     async fn rejects_when_global_queue_is_full() {
         let service = Arc::new(ForgeExecutionService::new());
-        // Saturate the 64 global slots: 8 hold class permits; the rest wait on class.
+        // Full capture reservations must reach the command cap, rather than
+        // rejecting a second job at an unrelated aggregate byte ceiling.
         let mut holders = Vec::new();
         for _ in 0..MAX_QUEUED_COMMANDS {
             let service = Arc::clone(&service);
             holders.push(tokio::spawn(async move {
-                service.admit(ExecutionClass::StoreIo, 16, None).await
+                service
+                    .admit(ExecutionClass::WorkEnvironment, MAX_CAPTURE_BYTES, None)
+                    .await
             }));
         }
         for _ in 0..500 {
@@ -996,6 +969,7 @@ mod tests {
             service.queued_commands() + service.running_commands(),
             MAX_QUEUED_COMMANDS
         );
+        assert_eq!(service.running_commands(), MAX_WORK_ENVIRONMENT_JOBS);
         let overflow = tokio::time::timeout(
             Duration::from_millis(200),
             service.admit(ExecutionClass::StoreIo, 16, None),
@@ -1011,7 +985,14 @@ mod tests {
         }
         for holder in holders {
             holder.abort();
+            let _ = holder.await;
         }
+        assert_eq!(service.queued_commands(), 0);
+        assert_eq!(service.running_commands(), 0);
+        assert_eq!(
+            service.global_commands.available_permits(),
+            MAX_QUEUED_COMMANDS
+        );
     }
 
     #[tokio::test]
@@ -1032,7 +1013,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_command_capture_is_admitted_and_reserves_the_global_budget() {
+    async fn capture_jobs_allow_concurrent_git_observation_and_bookkeeping() {
         let service = ForgeExecutionService::new();
         service
             .run_async(
@@ -1041,19 +1022,21 @@ mod tests {
                 Some("review-commit".into()),
                 async {
                     assert_eq!(service.running_commands(), 1);
-                    assert_eq!(service.queued_bytes.available_permits(), 0);
-                    let error = match service.admit(ExecutionClass::StoreIo, 1, None).await {
-                        Ok(_) => panic!("expected global byte budget exhaustion"),
-                        Err(error) => error,
-                    };
-                    assert!(error.to_string().contains("queued-byte"));
+                    let _git = service
+                        .admit(ExecutionClass::NetworkGit, MAX_CAPTURE_BYTES, None)
+                        .await?;
+                    let _observation = service
+                        .admit(ExecutionClass::Observation, MAX_CAPTURE_BYTES, None)
+                        .await?;
+                    let receipt = service.run(ExecutionClass::StoreIo, 1, || Ok(7)).await?;
+                    assert_eq!(receipt, 7);
+                    assert_eq!(service.running_commands(), 3);
                     Ok(())
                 },
             )
             .await
             .unwrap();
         assert_eq!(service.running_commands(), 0);
-        assert_eq!(service.queued_bytes.available_permits(), MAX_QUEUED_BYTES);
         service
             .run(ExecutionClass::LocalMutation, MAX_CAPTURE_BYTES, || Ok(()))
             .await
@@ -1061,30 +1044,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reserves_full_estimated_bytes() {
-        let service = ForgeExecutionService::new();
-        let slots = MAX_QUEUED_BYTES / MAX_STORE_PAYLOAD_BYTES;
+    async fn cancelled_capture_waiter_releases_its_queue_slot() {
+        let service = Arc::new(ForgeExecutionService::new());
         let mut held = Vec::new();
-        for _ in 0..slots {
+        for _ in 0..MAX_WORK_ENVIRONMENT_JOBS {
             held.push(
                 service
-                    .admit(ExecutionClass::StoreIo, MAX_STORE_PAYLOAD_BYTES, None)
+                    .admit(ExecutionClass::WorkEnvironment, MAX_CAPTURE_BYTES, None)
                     .await
                     .unwrap(),
             );
         }
-        let error = match service
-            .admit(ExecutionClass::StoreIo, MAX_STORE_PAYLOAD_BYTES, None)
-            .await
-        {
-            Ok(_) => panic!("expected overload"),
-            Err(error) => error,
+        let waiter = {
+            let service = Arc::clone(&service);
+            tokio::spawn(async move {
+                service
+                    .admit(ExecutionClass::WorkEnvironment, MAX_CAPTURE_BYTES, None)
+                    .await
+            })
         };
-        assert!(
-            error.to_string().contains("queued-byte"),
-            "expected byte budget exhaustion, got {error}"
-        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while service.queued_commands() != 1 {
+                assert!(
+                    !waiter.is_finished(),
+                    "capture job should wait for a worker"
+                );
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("capture job should enter the queue");
+        waiter.abort();
+        match waiter.await {
+            Err(error) => assert!(error.is_cancelled()),
+            Ok(_) => panic!("queued capture job should have been cancelled"),
+        }
+        assert_eq!(service.queued_commands(), 0);
+        assert_eq!(service.running_commands(), MAX_WORK_ENVIRONMENT_JOBS);
         drop(held);
+        assert_eq!(service.running_commands(), 0);
+        assert_eq!(
+            service.global_commands.available_permits(),
+            MAX_QUEUED_COMMANDS
+        );
+        service
+            .run(
+                ExecutionClass::WorkEnvironment,
+                MAX_CAPTURE_BYTES,
+                || Ok(()),
+            )
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1257,6 +1267,78 @@ mod tests {
         assert!(status.success());
         assert!(truncated);
         assert!(stdout.len() <= 1024);
+    }
+
+    #[tokio::test]
+    async fn repo_waiters_do_not_starve_bookkeeping_or_other_repositories() {
+        let service = Arc::new(ForgeExecutionService::new());
+        let held = service
+            .admit(ExecutionClass::LocalMutation, 16, Some("busy-repo"))
+            .await
+            .unwrap();
+        let mut waiters = Vec::new();
+        for _ in 0..MAX_BLOCKING_JOBS {
+            let service = Arc::clone(&service);
+            waiters.push(tokio::spawn(async move {
+                service
+                    .admit(ExecutionClass::LocalMutation, 16, Some("busy-repo"))
+                    .await
+            }));
+        }
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while service.queued_commands() != MAX_BLOCKING_JOBS {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("repository waiters should enter the queue");
+        let bookkeeping = tokio::time::timeout(
+            Duration::from_millis(200),
+            service.admit(ExecutionClass::StoreIo, 16, None),
+        )
+        .await;
+        let other_repo = tokio::time::timeout(
+            Duration::from_millis(200),
+            service.admit(ExecutionClass::LocalMutation, 16, Some("other-repo")),
+        )
+        .await;
+        for waiter in waiters {
+            waiter.abort();
+            let _ = waiter.await;
+        }
+        drop(held);
+        assert!(
+            bookkeeping.is_ok(),
+            "repository waiters starved bookkeeping"
+        );
+        assert!(
+            other_repo.is_ok(),
+            "repository waiters starved another repository"
+        );
+        drop(bookkeeping.unwrap().unwrap());
+        drop(other_repo.unwrap().unwrap());
+        assert_eq!(service.queued_commands(), 0);
+        assert_eq!(service.running_commands(), 0);
+        assert_eq!(service.blocking.available_permits(), MAX_BLOCKING_JOBS);
+        assert_eq!(
+            service.global_commands.available_permits(),
+            MAX_QUEUED_COMMANDS
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_lane_with_pending_reference_is_not_evicted() {
+        let service = ForgeExecutionService::new();
+        let pending = service.repo_lane("repo-a").unwrap();
+        service.force_repo_lane_idle_for_test("repo-a");
+        service.evict_idle_repo_lanes();
+        let current = service.repo_lane("repo-a").unwrap();
+        assert!(Arc::ptr_eq(&pending, &current));
+        drop(pending);
+        drop(current);
+        service.force_repo_lane_idle_for_test("repo-a");
+        service.evict_idle_repo_lanes();
+        assert_eq!(service.repo_lane_count(), 0);
     }
 
     #[tokio::test]

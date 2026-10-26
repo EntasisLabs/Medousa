@@ -573,6 +573,10 @@ impl Forge {
     /// Load an item: snapshot cache when fresh, snapshot+tail when compacted,
     /// or bounded fold-from-events otherwise.
     pub fn load(&self, work_id: &WorkId) -> Result<WorkItem> {
+        self.load_with_snapshot_repair(work_id, true)
+    }
+
+    fn load_with_snapshot_repair(&self, work_id: &WorkId, repair: bool) -> Result<WorkItem> {
         if !self.store.item_exists(work_id) {
             return Err(ForgeError::WorkNotFound(work_id.clone()));
         }
@@ -604,7 +608,9 @@ impl Forge {
             return Err(ForgeError::WorkNotFound(work_id.clone()));
         }
         let item = fold(&events)?;
-        self.persist(&item, last_seq)?;
+        if repair {
+            self.persist(&item, last_seq)?;
+        }
         Ok(item)
     }
 
@@ -1724,6 +1730,13 @@ impl Forge {
                 forked_at,
             }),
         })
+    }
+
+    /// Validate an execution lease without refreshing liveness or writing metadata.
+    /// Recovery controls must remain available when the snapshot cannot be written.
+    pub fn verify_execution_lease(&self, lease: &ExecutionLease) -> Result<()> {
+        let item = self.load_with_snapshot_repair(&lease.work_id, false)?;
+        self.fence(&item, lease)
     }
 
     /// Liveness signal from the executor. Updates the lease record in the

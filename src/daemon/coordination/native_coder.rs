@@ -132,11 +132,19 @@ impl LocalPeerDispatcher {
         let store = self.store.clone();
         let saved = request.clone();
         let saved_binding = binding.clone();
+        let forge = self.state.forge.clone();
         let turn_id = binding.agent_session_id.clone();
         self.state
             .forge_execution
             .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
                 Ok((|| -> Result<()> {
+                    // Reject known lifecycle blockers before recording custody or
+                    // advertising a running peer. The real lease acquisition still
+                    // checks state atomically, so this does not bypass fencing.
+                    let work = forge.load(&medousa_forge::model::WorkId::from(
+                        saved.forge_work_id.clone(),
+                    ))?;
+                    validate_native_work_state(work.state)?;
                     store.record_native_coder(&turn_id, &saved)?;
                     // Native custody is committed before a fast turn can finish.
                     store.record_peer(&saved_binding)?;
@@ -205,16 +213,46 @@ impl LocalPeerDispatcher {
         }
         .await;
         if let Err(error) = launch {
+            let failure = crate::turn_failure::TurnFailure::from_debug(&format!("{error:#}"));
+            let diagnostic =
+                crate::agent_runtime::coder_evidence::redact_evidence_text(&failure.debug_message);
+            tracing::warn!(
+                target: "medousa::turn",
+                turn_id = %binding.agent_session_id,
+                session_id = %request.execution_session.session_id,
+                category = failure.category_label(),
+                retryable = failure.retryable,
+                debug_message = %crate::text_budget::truncate_text_for_budget(&diagnostic, 4096),
+                "native_coder_launch_failed"
+            );
+            let result = terminal_result(
+                medousa_types::TurnCompletionOutcomeV3::Failed,
+                "",
+                Some(&failure.operator_message),
+                &binding.agent_session_id,
+                request.execution_session.session_id.as_str(),
+            );
             PeerReceiptSink {
                 host: self.clone(),
                 binding: binding.clone(),
             }
-            .terminal(PeerAssignmentOutcome::Interrupted, error.to_string())
+            .terminal(PeerAssignmentOutcome::Interrupted, result.clone())
             .await?;
-            return Err(error);
+            return Err(anyhow::anyhow!(result));
         }
         Ok(binding)
     }
+}
+
+fn validate_native_work_state(state: medousa_forge::model::WorkState) -> Result<()> {
+    use medousa_forge::model::WorkState;
+    if !matches!(state, WorkState::Ready | WorkState::Executing) {
+        let failure = crate::turn_failure::TurnFailure::from_debug(&format!(
+            "invalid transition: work is {state}, cannot begin attempt"
+        ));
+        bail!("{}", failure.operator_message);
+    }
+    Ok(())
 }
 
 fn native_binding(request: &ExternalPeerAssignmentRequest) -> ExternalPeerAssignmentBinding {
@@ -226,6 +264,34 @@ fn native_binding(request: &ExternalPeerAssignmentRequest) -> ExternalPeerAssign
         execution_session: request.execution_session.clone(),
         agent_session_id: format!("medousa_coder_{}", request.assignment_id),
     }
+}
+
+/// Keep raw errors out of coordinator/model context, but never return an
+/// untraceable generic failure. The reference joins to the daemon diagnostic.
+pub(crate) fn terminal_result(
+    outcome: medousa_types::TurnCompletionOutcomeV3,
+    aggregate_text: &str,
+    operator_message: Option<&str>,
+    turn_id: &str,
+    session_id: &str,
+) -> String {
+    if matches!(
+        outcome,
+        medousa_types::TurnCompletionOutcomeV3::Failed
+            | medousa_types::TurnCompletionOutcomeV3::Fatal
+            | medousa_types::TurnCompletionOutcomeV3::FuseExhausted
+    ) {
+        // A failure without explicit operator copy must not expose partial
+        // model output or a raw provider error as its explanation.
+        let fallback = crate::turn_failure::TurnFailure::from_debug(aggregate_text);
+        let message = operator_message
+            .filter(|message| !message.trim().is_empty())
+            .unwrap_or(&fallback.operator_message);
+        return format!(
+            "{message}\nFailure reference: turn_id={turn_id} session_id={session_id}. Inspect this turn's error details or the matching daemon diagnostic before retrying."
+        );
+    }
+    operator_message.unwrap_or(aggregate_text).to_string()
 }
 
 pub(crate) fn terminal_outcome(
@@ -244,6 +310,94 @@ pub(crate) fn terminal_outcome(
 mod tests {
     use super::*;
     use medousa_types::TurnCompletionOutcomeV3 as Outcome;
+
+    #[test]
+    fn native_admission_rejects_non_executable_states() {
+        use medousa_forge::model::WorkState;
+        for state in [WorkState::Ready, WorkState::Executing] {
+            assert!(validate_native_work_state(state).is_ok());
+        }
+        for state in [
+            WorkState::Draft,
+            WorkState::Provisioning,
+            WorkState::Sealing,
+            WorkState::AwaitingReview,
+            WorkState::ApplyingDecision,
+            WorkState::Accepted,
+            WorkState::Discarded,
+            WorkState::Failed,
+        ] {
+            assert!(validate_native_work_state(state).is_err(), "{state}");
+        }
+        assert!(
+            validate_native_work_state(WorkState::Accepted)
+                .unwrap_err()
+                .to_string()
+                .contains("already accepted")
+        );
+    }
+
+    #[test]
+    fn failed_receipt_without_operator_copy_never_exposes_raw_output() {
+        let result = terminal_result(
+            Outcome::Failed,
+            "private partial output secret=do-not-surface",
+            None,
+            "turn-test",
+            "session-test",
+        );
+        assert!(!result.contains("private partial output"));
+        assert!(!result.contains("do-not-surface"));
+        assert!(result.contains("turn_id=turn-test"));
+        let failure = crate::turn_failure::TurnFailure::from_debug(
+            "invalid transition: work work-test is accepted, cannot begin attempt",
+        );
+        let result = terminal_result(
+            Outcome::Failed,
+            "",
+            Some(&failure.operator_message),
+            "turn-test",
+            "session-test",
+        );
+        assert!(result.contains("already accepted"));
+        assert!(result.contains("new undertaking"));
+    }
+
+    #[test]
+    fn failed_native_receipts_include_a_traceable_reference() {
+        for outcome in [Outcome::Failed, Outcome::Fatal, Outcome::FuseExhausted] {
+            let result = terminal_result(
+                outcome,
+                "partial work",
+                Some("Medousa couldn't complete this turn."),
+                "turn-test",
+                "session-test",
+            );
+            assert!(result.contains("Medousa couldn't complete"));
+            assert!(result.contains("turn_id=turn-test session_id=session-test"));
+            assert!(!result.contains("partial work"));
+        }
+        assert_eq!(
+            terminal_result(
+                Outcome::Completed,
+                "done",
+                None,
+                "turn-test",
+                "session-test"
+            ),
+            "done"
+        );
+        assert_eq!(
+            terminal_result(
+                Outcome::NeedsInput,
+                "question",
+                None,
+                "turn-test",
+                "session-test"
+            ),
+            "question"
+        );
+    }
 
     #[test]
     fn only_completed_native_turns_satisfy_the_executor_stage() {
