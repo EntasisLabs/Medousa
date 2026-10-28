@@ -33,6 +33,31 @@ describe("groupChatTurnBeats", () => {
     expect(beats[1]).toMatchObject({ kind: "single", message: { id: "u2" } });
   });
 
+  it("does not attach a delayed worker result to a newer human request", () => {
+    const beats = groupChatTurnBeats([
+      msg({ id: "new-question", role: "user", turnId: "new-turn" }),
+      msg({ id: "old-result", role: "assistant", lane: "worker", workId: "old-work" }),
+      msg({ id: "new-reply", role: "assistant", turnId: "new-turn" }),
+    ]);
+    expect(beats.map(beat => beat.kind)).toEqual(["single", "single", "single"]);
+    expect(beats[1]).toMatchObject({ message: { id: "old-result" } });
+  });
+
+  it("does not pair different known turn tickets even in the host lane", () => {
+    const beats = groupChatTurnBeats([
+      msg({ id: "u", role: "user", turnId: "new-turn" }),
+      msg({ id: "a", role: "assistant", turnId: "callback-turn" }),
+    ]);
+    expect(beats.map(beat => beat.kind)).toEqual(["single", "single"]);
+  });
+
+  it("pairs matching turn tickets while preserving legacy pairing without tickets", () => {
+    expect(groupChatTurnBeats([
+      msg({ id: "u", role: "user", turnId: "turn" }),
+      msg({ id: "a", role: "assistant", turnId: "turn" }),
+    ])[0].kind).toBe("pair");
+  });
+
   it("leaves orphan assistants alone", () => {
     const beats = groupChatTurnBeats([msg({ id: "a1", role: "assistant", content: "solo" })]);
     expect(beats).toEqual([{ kind: "single", message: expect.objectContaining({ id: "a1" }) }]);

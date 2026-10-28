@@ -23,7 +23,9 @@ export function groupChatTurnBeats(
   while (i < messages.length) {
     const current = messages[i];
     const next = messages[i + 1];
-    if (current.role === "user" && next?.role === "assistant") {
+    if (current.role === "user" && next?.role === "assistant"
+      && next.lane !== "worker" && next.lane !== "ask"
+      && (!current.turnId || !next.turnId || current.turnId === next.turnId)) {
       beats.push({ kind: "pair", user: current, assistant: next });
       i += 2;
       continue;

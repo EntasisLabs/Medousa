@@ -6,6 +6,8 @@ export interface PeerProposalControls {
   busy: boolean;
   busyId: string | null;
   feedback: string | null;
+  /** Dispatch failures stay attached to the exact request across refreshes. */
+  actionErrors?: Record<string, string>;
   hasMore: boolean;
   loadMore: () => Promise<void>;
   action: (row: PeerProposalReviewRecord, kind: "approve_and_dispatch" | "deny" | "dispatch") => Promise<void>;

@@ -4,6 +4,7 @@ import { flushSync, mount, tick, unmount } from "svelte";
 import PeerProposalBar from "./PeerProposalBar.svelte";
 import { connection } from "$lib/stores/connection.svelte";
 import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
+import type { PeerProposalControls } from './peerProposalControls';
 
 const api = vi.hoisted(() => ({ list: vi.fn(), act: vi.fn() }));
 const navigation = vi.hoisted(() => ({ openChat: vi.fn(() => 'tab'), openProject: vi.fn() }));
@@ -45,8 +46,8 @@ function record(id: string, runtime = "local"): PeerProposalReviewRecord {
   };
 }
 async function settle() { await tick(); await vi.advanceTimersByTimeAsync(0); flushSync(); }
-async function render() {
-  const props = $state({ sessionId: "ses_owner" });
+async function render(onSnapshot?: (session: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) => void) {
+  const props = $state({ sessionId: "ses_owner", onSnapshot });
   const target = document.createElement("div"); document.body.append(target);
   component = mount(PeerProposalBar, { target, props });
   await settle();
@@ -62,6 +63,20 @@ beforeEach(() => {
 afterEach(async () => { if (component) await unmount(component); component = undefined; document.body.replaceChildren(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("assignment card lifecycle", () => {
+  it('shares the same polled snapshot and controls with the composer dock', async () => {
+    const snapshot = vi.fn();
+    api.list.mockResolvedValue({ proposals: [record('one')] });
+    const props = await render(snapshot);
+    expect(snapshot.mock.lastCall?.[0]).toBe('ses_owner');
+    expect(snapshot.mock.lastCall?.[1][0].proposal.proposal_id).toBe('one');
+    expect(snapshot.mock.lastCall?.[2].action).toBeTypeOf('function');
+    expect(api.list).toHaveBeenCalledTimes(1);
+    expect(api.act).not.toHaveBeenCalled();
+    api.list.mockResolvedValue({ proposals: [] });
+    props.sessionId = 'other'; await settle();
+    expect(snapshot.mock.lastCall?.[0]).toBe('other');
+    expect(snapshot.mock.lastCall?.[1]).toEqual([]);
+  });
   it.each(["completed", "failed", "cancelled"] as const)("restores %s work after reopening without an in-memory selected id", async outcome => {
     const work = record("saved-work");
     work.receipt = { receipt_id: "receipt", binding: work.binding!, outcome, result: "Saved agent result" };
@@ -118,7 +133,8 @@ describe("assignment card lifecycle", () => {
     api.list.mockResolvedValue({ proposals: [], next_cursor: null, tracked_proposal: { ...work, receipt: { outcome: "completed", result: "Verified result" } } });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
     expect(api.list).toHaveBeenLastCalledWith("ses_owner", null, undefined, "proposal-one");
-    expect(document.body.textContent).toContain("Work completed");
+    expect(document.body.textContent).toContain("Result returned");
+    expect(document.querySelector('.work-status')?.textContent).not.toContain('working');
     expect(document.body.textContent).toContain("Verified result");
     expect(document.body.textContent).not.toContain("Run verification");
     expect(api.act).not.toHaveBeenCalled();
@@ -260,7 +276,7 @@ describe("grouped agent activity", () => {
     expect(document.querySelectorAll('details.agent-work-line')[5]).toBe(row);
     expect(row.open).toBe(true);
     expect(more.open).toBe(true);
-    expect(document.querySelector('.group-header')?.textContent).toContain('9 completed');
+    expect(document.querySelector('.group-header')?.textContent).toContain('9 sessions ended');
   });
 
   it("tracks all results when multiple assignments leave the inbox", async () => {
@@ -286,5 +302,12 @@ describe("grouped agent activity", () => {
     expect(api.act).toHaveBeenCalledWith(second.proposal, 'dispatch', null);
     expect(api.act).not.toHaveBeenCalledWith(first.proposal, expect.anything(), expect.anything());
     expect(document.body.textContent).toContain('Start approved work');
+    const affected = document.querySelectorAll('.proposal-row')[1];
+    expect(affected.textContent).toContain('Startup unavailable');
+    expect(affected.textContent).toContain('Start not confirmed');
+    expect(document.querySelectorAll('.proposal-row')[0].textContent).not.toContain('Startup unavailable');
+    api.list.mockResolvedValue({ proposals: [first, { ...second, decision: { approved: true } }] });
+    await vi.advanceTimersByTimeAsync(15_000); await settle();
+    expect(affected.textContent).toContain('Startup unavailable');
   });
 });

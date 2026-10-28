@@ -13,7 +13,7 @@ const stateLabels = {
   unobserved: "Execution status unavailable",
 } as const;
 const outcomeLabels = {
-  completed: "Work completed",
+  completed: "Result returned",
   failed: "Work failed",
   cancelled: "Work cancelled",
   interrupted: "Work interrupted",

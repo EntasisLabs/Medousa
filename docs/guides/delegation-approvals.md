@@ -9,6 +9,27 @@ discovery.
 
 ## Tracking work in chat
 
+The **agents** pill above the composer opens **Work & attention** without
+scrolling back through the conversation. It is explicitly scoped to **This chat**,
+including its delegated work across projects and execution workshops—not a
+workshop-wide inventory. Requests needing your decision appear first. Each task
+shows its project/workshop, request identity, state, and next actor where known.
+Choose the task you want; opening the list or a task never approves or starts it.
+Returned sessions remain available here as history.
+
+A delegated task opens in a side sheet with its exact assignment, approval or
+retry controls, result and review. Workshop workers open their transcript beside
+the conversation. On narrow screens these sheets use the available screen width.
+The separate **changes** pill opens the existing working-change or sealed-review
+surface for the chat's bound project. It counts changed files, not commits or
+accepted work, and opening it does not apply, commit or publish changes.
+
+Human messages and direct responses remain in the main conversation. Known worker
+follow-ups and different turn tickets are not paired with an unrelated newer
+human message just because they arrived next. Worker return links open the
+corresponding transcript when available. Older history without turn metadata
+retains its adjacent-message grouping.
+
 Delegated agents and workshop background workers appear in an **agent group**
 inside the turn that requested their work. The group shows how many agents are
 working, ready for review, accepted, or need attention. Each row leads with its
@@ -23,8 +44,9 @@ transcript and tool activity. If more requests are available from the workshop,
 choose **More requests** to load them into their corresponding groups.
 Assignments whose originating entries are outside the loaded history remain
 available together before the visible turns.
-Workshop worker results include **View agent**, which opens the originating
-group and task so you can reconnect the result with its assignment.
+Workshop worker results include **Open thread**, which opens the corresponding
+transcript. Surfaces without a transcript opener return to the originating group
+and task instead.
 
 Local sender-controlled handoffs can start directly when your request authorizes
 the work. Only proposals needing your decision show **Approve & start** (or
@@ -32,7 +54,9 @@ the work. Only proposals needing your decision show **Approve & start** (or
 acceptance and completion updates, and reviews the returned result. A finished
 worker stays **Awaiting sender review** until the sender records its decision;
 **Result accepted** means that review was accepted. If the sender chose worker
-completion without review, the line says **Work completed** instead.
+completion without review, the line says **Result returned** instead. A terminal
+session does not prove that commands ran, files changed, checks passed, or a
+project was merged or published.
 
 Ownership transfer, review, sender wakeups, and user follow-up are separate
 choices captured by the sender. Inspect them under **Details**.
@@ -97,7 +121,9 @@ Choose **Approve & start** for new work or **Approve & adopt** for discovered
 existing work. Approval is durably recorded before startup or observer
 attachment. If provider startup
 fails, the same card remains approved and offers **Start approved work** for a
-safe retry. Choose **Decline** instead to permanently reject it; a revised
+safe retry. Startup errors stay attached to that exact request across status
+refreshes. **Start not confirmed** does not claim the agent is definitely absent:
+uncertain execution still requires the daemon's reconciliation. Choose **Decline** instead to permanently reject it; a revised
 request needs a new assignment. Expired proposals cannot be approved or started.
 Conversational proposals expire after one hour. Saying “yes” in chat or Live
 does not replace these approval controls or start the agent.

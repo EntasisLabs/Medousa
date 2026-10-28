@@ -22,7 +22,7 @@ describe("assignment progress presentation", () => {
     const record = row({ state: "running", current_activity: "Old action" });
     record.receipt = { outcome } as NonNullable<PeerProposalReviewRecord["receipt"]>;
     const result = peerProgressPresentation(record, now);
-    expect(result.headline).toBe(`Work ${outcome}`);
+    expect(result.headline).toBe(outcome === 'completed' ? 'Result returned' : `Work ${outcome}`);
     expect(result.activity).toBeNull();
     expect(result.notice).toBeNull();
   });
