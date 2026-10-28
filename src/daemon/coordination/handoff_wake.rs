@@ -136,13 +136,9 @@ impl LocalPeerDispatcher {
             if acceptance {
                 "The destination accepted this assignment. Briefly acknowledge it and explain the agreed next step."
             } else {
-                "The assignment reached a terminal outcome. Return the result for the sender's decision. You may record sender acceptance for this exact handoff with cognition_peer_review. A new safety review is not the expected response."
+                "The assignment reached a terminal outcome. Assess the result for the sender's decision and any already-authorized next step. You may record sender acceptance for this exact handoff with cognition_peer_review; sender acceptance does not replace independent review."
             },
-            if acceptance {
-                "Expected response: continue the saved work within two rounds, then finish. You still have your tools. If you go past that, say why."
-            } else {
-                "The peer's work is done. Nothing new was asked. Expected response: report the outcome, then finish. You still have your tools. If you go past that, say why."
-            },
+            medousa_types::wake::CALLBACK_CONTINUATION_GUIDANCE,
             if session == record.request.owner_session {
                 "Report naturally in the originating conversation."
             } else {

@@ -706,7 +706,7 @@ export interface CodingRuntimePreferences {
   preferred: ExternalPeerRuntime;
 }
 
-export type PeerHandoffAdmission = "delegate" | "propose";
+export type PeerHandoffAdmission = "delegate" | "stage" | "propose";
 
 export type HandoffCompletion = "sender_review" | "worker_result";
 

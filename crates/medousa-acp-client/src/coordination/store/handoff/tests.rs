@@ -9,6 +9,18 @@ fn fixture(
     PeerHandoffRecord,
     ExternalPeerAssignmentBinding,
 ) {
+    fixture_with_admission(path, policy, PeerHandoffAdmission::Delegate)
+}
+
+fn fixture_with_admission(
+    path: &std::path::Path,
+    policy: PeerHandoffPolicy,
+    admission: PeerHandoffAdmission,
+) -> (
+    CoordinationStore,
+    PeerHandoffRecord,
+    ExternalPeerAssignmentBinding,
+) {
     let store = CoordinationStore::open(path).unwrap();
     let authority = format!("auth_{}", "a".repeat(64)).parse().unwrap();
     let owner_session = SessionRef {
@@ -71,7 +83,7 @@ fn fixture(
     let record = PeerHandoffRecord {
         request: request.clone(),
         policy,
-        admission: PeerHandoffAdmission::Delegate,
+        admission,
         source: medousa_types::TranscriptEntryRef {
             session: owner_session,
             entry_id: format!("ent_{}", "c".repeat(32)).parse().unwrap(),
@@ -106,9 +118,178 @@ fn fixture(
             expires_at: proposal.expires_at,
         })
         .unwrap();
-    store.claim_assignment(&request).unwrap();
+    if admission.dispatches_immediately() {
+        store.claim_assignment(&request).unwrap();
+    }
     (store, record, binding)
 }
+#[test]
+fn staged_handoff_and_exact_grant_survive_reopen_without_dispatch_or_acceptance() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, record, binding) = fixture_with_admission(
+        root.path(),
+        PeerHandoffPolicy::default(),
+        PeerHandoffAdmission::Stage,
+    );
+    assert!(record.admission.requires_human_admission());
+    assert!(!record.admission.dispatches_immediately());
+    let grant = store
+        .assignment_grant(&binding.channel, &record.request.execution_grant_id)
+        .unwrap();
+    assert_eq!(grant.request, record.request);
+    assert_eq!(grant.expires_at, record.expires_at);
+    drop(store);
+
+    let store = CoordinationStore::open(root.path()).unwrap();
+    assert_eq!(
+        store
+            .handoff(&binding.channel, &binding.assignment_id)
+            .unwrap(),
+        Some(record.clone())
+    );
+    assert!(!store.record_handoff(&record).unwrap());
+    assert!(!store.approve_assignment(&grant).unwrap());
+    store
+        .require_assignment_grant(&record.request, chrono::Utc::now())
+        .unwrap();
+    let mut different_request = record.request.clone();
+    different_request
+        .instructions
+        .push_str(" and unrelated work");
+    assert!(
+        store
+            .require_assignment_grant(&different_request, chrono::Utc::now())
+            .is_err()
+    );
+    let view = store
+        .handoff_view(&binding.channel, &binding.assignment_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(view.handoff, record);
+    assert_eq!(view.state, PeerHandoffState::AwaitingAcceptance);
+    assert_eq!(view.responsible_session, record.request.owner_session);
+    assert!(view.binding.is_none());
+    assert!(view.receipt.is_none());
+    assert!(view.review.is_none());
+    assert!(store.handoff_acceptance(&record).unwrap().is_none());
+    // Approval alone has not even claimed the assignment for native dispatch.
+    assert!(store.record_peer(&binding).is_err());
+    assert!(
+        store
+            .peer_if_recorded(&binding.channel, &binding.assignment_id)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn staged_handoff_retry_cannot_change_source_policy_or_admission() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, record, binding) = fixture_with_admission(
+        root.path(),
+        PeerHandoffPolicy::default(),
+        PeerHandoffAdmission::Stage,
+    );
+    let mut changed = record.clone();
+    changed.source.entry_id = format!("ent_{}", "d".repeat(32)).parse().unwrap();
+    assert!(store.record_handoff(&changed).is_err());
+    changed = record.clone();
+    changed.source_digest = "sha256:other-human-turn".into();
+    assert!(store.record_handoff(&changed).is_err());
+    changed = record.clone();
+    changed.policy.completion = HandoffCompletion::WorkerResult;
+    assert!(store.record_handoff(&changed).is_err());
+    for admission in [
+        PeerHandoffAdmission::Delegate,
+        PeerHandoffAdmission::Propose,
+    ] {
+        changed = record.clone();
+        changed.admission = admission;
+        assert!(store.record_handoff(&changed).is_err());
+    }
+    assert_eq!(
+        store
+            .handoff(&binding.channel, &binding.assignment_id)
+            .unwrap(),
+        Some(record.clone())
+    );
+    assert!(!store.record_handoff(&record).unwrap());
+}
+
+#[test]
+fn staged_grant_expiry_and_revocation_cannot_be_bypassed_by_exact_replay() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, record, binding) = fixture_with_admission(
+        root.path(),
+        PeerHandoffPolicy::default(),
+        PeerHandoffAdmission::Stage,
+    );
+    let grant = store
+        .assignment_grant(&binding.channel, &record.request.execution_grant_id)
+        .unwrap();
+    store
+        .require_assignment_grant(
+            &record.request,
+            grant.expires_at - chrono::Duration::seconds(1),
+        )
+        .unwrap();
+    assert!(
+        store
+            .require_assignment_grant(&record.request, grant.expires_at)
+            .is_err()
+    );
+    assert!(
+        store
+            .require_assignment_grant(
+                &record.request,
+                grant.expires_at + chrono::Duration::seconds(1)
+            )
+            .is_err()
+    );
+    store
+        .revoke_assignment_grant(&binding.channel, &record.request.execution_grant_id)
+        .unwrap();
+    drop(store);
+
+    let store = CoordinationStore::open(root.path()).unwrap();
+    assert!(!store.record_handoff(&record).unwrap());
+    assert!(!store.approve_assignment(&grant).unwrap());
+    assert!(
+        store
+            .require_assignment_grant(&record.request, chrono::Utc::now())
+            .is_err()
+    );
+    // Even a later controller claim cannot turn revoked approval into custody.
+    store.claim_assignment(&record.request).unwrap();
+    assert!(store.record_peer(&binding).is_err());
+    assert!(
+        store
+            .peer_if_recorded(&binding.channel, &binding.assignment_id)
+            .unwrap()
+            .is_none()
+    );
+    assert!(store.handoff_acceptance(&record).unwrap().is_none());
+}
+
+#[test]
+fn existing_delegate_handoff_is_never_upgraded_to_stage_on_retry() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, record, binding) = fixture(root.path(), PeerHandoffPolicy::default());
+    drop(store);
+    let store = CoordinationStore::open(root.path()).unwrap();
+    let mut staged = record.clone();
+    staged.admission = PeerHandoffAdmission::Stage;
+    assert!(store.record_handoff(&staged).is_err());
+    assert_eq!(
+        store
+            .handoff(&binding.channel, &binding.assignment_id)
+            .unwrap(),
+        Some(record.clone())
+    );
+    assert_eq!(record.admission, PeerHandoffAdmission::Delegate);
+    assert!(!store.record_handoff(&record).unwrap());
+}
+
 fn terminal(store: &CoordinationStore, binding: &ExternalPeerAssignmentBinding) -> OwnerEvent {
     let receipt = ExternalPeerAssignmentReceipt {
         receipt_id: super::super::intake::terminal_receipt_id(binding),

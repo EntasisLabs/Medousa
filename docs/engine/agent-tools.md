@@ -193,7 +193,18 @@ content. Missing or deleted media is skipped without failing the chat.
 
 `cognition_chat_history_read` returns committed message attachment references,
 including image-only messages. Use `before_turn` with the oldest returned
-`turn_index` to page backward. Its optional `media_id` reopens one stored image
+`turn_index` to page backward. Window reads return bounded message prefixes.
+For the complete text of a long message, set `message_turn` to its `turn_index`
+(without `before_turn` or `media_id`). The response includes `total_chars`,
+`char_offset`, `next_char_offset`, and a SHA-256 `content_digest` of the full
+visible text. Continue with the same `message_turn`, `char_offset` set to
+`next_char_offset`, and `expected_digest` set to `content_digest` until the next
+offset is null. Offsets count Unicode characters, not bytes. Each page respects
+`max_chars` (maximum 24,000); stale digests and invalid offsets fail rather than
+silently mixing revisions. Every page rechecks profile/session access and
+exposes only visible prose, never reasoning or tool payloads.
+
+Its optional `media_id` reopens one stored image
 only when that image is attached to the authorized session transcript and the
 caller has profile/session access. Accepted images up to the 25 MiB upload limit
 use one shared rendition path for current-turn vision, recent history, and

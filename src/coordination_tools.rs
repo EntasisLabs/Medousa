@@ -106,7 +106,7 @@ struct PeerHandoffTool;
 struct PeerReviewTool;
 #[medousa_tool(id = PEER_HANDOFF_ID)]
 impl PeerHandoffTool {
-    /// Delegate user-requested work in an owned Forge project through native admission without a second approval card. Use admission=propose for recommendations needing a user decision. The current human request must be included in the committed context. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.
+    /// Delegate user-requested work in an owned Forge project through native admission without a second approval card. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage for each exact stage during this human turn, then register those proposal IDs with work.coordinate; staged admission issues the same bounded native approval without dispatch, allowing native coordination to advance without callback reauthorization. A callback cannot mint new stages. The current human request must be included in the committed context. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.
     async fn invoke_typed(
         &self,
         input: medousa_types::work_handoff::PeerHandoffIntent,

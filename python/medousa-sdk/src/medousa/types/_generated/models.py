@@ -1727,6 +1727,7 @@ class HandoffResponsibility(Enum):
 
 class PeerHandoffAdmission(Enum):
     delegate = 'delegate'
+    stage = 'stage'
     propose = 'propose'
 
 

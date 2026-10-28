@@ -14,6 +14,18 @@ fn source_for_admission<'a>(
         && entry.entry_seq <= through && (!direct || entry.caused_by.as_ref() == Some(execution)))
         .ok_or_else(|| anyhow::anyhow!("direct delegation requires this admitted human request in its committed context; use a proposal for recommendations"))
 }
+fn require_handoff_admission(
+    principal: &RequestPrincipal,
+    admission: PeerHandoffAdmission,
+) -> Result<()> {
+    if admission.requires_human_admission()
+        && !principal.capabilities().contains(Capability::AdminExecute)
+    {
+        bail!("this turn has no human delegation authority; use a proposal");
+    }
+    Ok(())
+}
+
 impl LocalPeerDispatcher {
     pub(super) async fn accept_handoff(
         &self,
@@ -30,15 +42,9 @@ impl LocalPeerDispatcher {
         turn: &TurnExecutionContext,
         input: PeerHandoffIntent,
     ) -> Result<serde_json::Value> {
-        let direct = input.admission == PeerHandoffAdmission::Delegate;
-        if direct
-            && !turn
-                .principal()
-                .capabilities()
-                .contains(Capability::AdminExecute)
-        {
-            bail!("this turn has no human delegation authority; use a proposal");
-        }
+        let direct = input.admission.requires_human_admission();
+        let dispatch_now = input.admission.dispatches_immediately();
+        require_handoff_admission(turn.principal(), input.admission)?;
         let owner = turn
             .principal()
             .profile_id()
@@ -168,15 +174,18 @@ impl LocalPeerDispatcher {
                     })())
                 })
                 .await??;
-            self.dispatch(&principal, &record.request).await?;
-            self.wake.notify_one();
+            if dispatch_now {
+                self.dispatch(&principal, &record.request).await?;
+                self.wake.notify_one();
+            }
         }
         let store = self.store.clone();
         self.state.forge_execution.run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
             Ok((|| -> Result<_> {
                 let view = store.handoff_view(&record.request.channel, &record.request.assignment_id)?;
                 Ok(serde_json::json!({ "admission": record.admission, "proposal": proposal, "handoff": view,
-                    "status": if direct { "delegated" } else { "proposed" } }))
+                    "status": if dispatch_now { "delegated" } else if direct { "staged" } else { "proposed" },
+                    "next_action": if direct && !dispatch_now { Some("Register this exact proposal with work.coordinate before dispatch; pre-admit the other requested stages in this human turn.") } else { None } }))
             })())
         }).await?
     }
@@ -318,6 +327,37 @@ mod tests {
         changed.caused_by = None;
         assert!(source_for_admission(&[changed], &execution, true, 0, 2).is_err());
     }
+    #[test]
+    fn deferred_stages_require_human_admission_but_never_dispatch_immediately() {
+        assert!(PeerHandoffAdmission::Stage.requires_human_admission());
+        assert!(!PeerHandoffAdmission::Stage.dispatches_immediately());
+        assert!(PeerHandoffAdmission::Delegate.requires_human_admission());
+        assert!(PeerHandoffAdmission::Delegate.dispatches_immediately());
+        assert!(!PeerHandoffAdmission::Propose.requires_human_admission());
+        assert!(!PeerHandoffAdmission::Propose.dispatches_immediately());
+        let intent: PeerHandoffIntent = serde_json::from_value(serde_json::json!({
+            "request_key":"review-stage", "instructions":"Review the exact executor output",
+            "forge_work_id":"work-1", "after_entry_seq":0, "through_entry_seq":2,
+            "admission":"stage"
+        }))
+        .unwrap();
+        assert_eq!(intent.admission, PeerHandoffAdmission::Stage);
+        // Test the very same admission guard used before any native effect.
+        for principal in [
+            RequestPrincipal::continuation("owner"),
+            RequestPrincipal::worker("owner"),
+        ] {
+            assert!(require_handoff_admission(&principal, PeerHandoffAdmission::Stage).is_err());
+            assert!(require_handoff_admission(&principal, PeerHandoffAdmission::Delegate).is_err());
+            assert!(require_handoff_admission(&principal, PeerHandoffAdmission::Propose).is_ok());
+        }
+        let operator = RequestPrincipal::local_app(
+            std::sync::Arc::from("test-operator"),
+            crate::request_principal::TransportClass::Loopback,
+        );
+        assert!(require_handoff_admission(&operator, PeerHandoffAdmission::Stage).is_ok());
+    }
+
     #[test]
     fn handoff_intent_cannot_mint_authority_or_choose_a_sender() {
         let base = serde_json::json!({"request_key":"send", "instructions":"Implement", "forge_work_id":"work-1", "after_entry_seq":0, "through_entry_seq":2});

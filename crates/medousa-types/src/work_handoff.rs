@@ -45,7 +45,20 @@ impl Default for PeerHandoffPolicy {
 pub enum PeerHandoffAdmission {
     #[default]
     Delegate,
+    // Admit the exact requested stage now, but leave dispatch to a registered
+    // work.coordinate plan. Requires the same human authority as Delegate.
+    // Keep variants as a string enum in generated SDK schemas.
+    Stage,
     Propose,
+}
+impl PeerHandoffAdmission {
+    pub fn requires_human_admission(self) -> bool {
+        !matches!(self, Self::Propose)
+    }
+
+    pub fn dispatches_immediately(self) -> bool {
+        matches!(self, Self::Delegate)
+    }
 }
 /// Model supplies intent. The native host captures source identity and issues scoped authority.
 #[derive(Debug, Deserialize)]

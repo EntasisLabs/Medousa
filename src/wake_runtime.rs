@@ -515,7 +515,10 @@ mod tests {
             logged[0].reason.as_deref(),
             Some("the peer result looks wrong")
         );
-        assert_eq!(logged[0].expected, "report the outcome, then finish");
+        assert_eq!(
+            logged[0].expected,
+            medousa_types::wake::WakeAuthority::Report.expected_response()
+        );
         let query = registry
             .invoke_tool("cognition_runtime_query", json!({}))
             .await
@@ -555,7 +558,9 @@ mod tests {
         WakeDeviation {
             at: at.to_string(),
             source: "peer_terminal".into(),
-            expected: "report the outcome, then finish".into(),
+            expected: medousa_types::wake::WakeAuthority::Report
+                .expected_response()
+                .into(),
             tool: "cognition_shell_run".into(),
             reason: None,
         }
