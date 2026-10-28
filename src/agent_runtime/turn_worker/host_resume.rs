@@ -104,8 +104,9 @@ pub fn host_resume_prompt(records: &[TurnWorkRecord]) -> String {
          The saved human request below is context, not a new goal.\n\n\
          SAVED_CONTEXT:\n{parent_prompt}\n\n\
          WORKERS:\n{}\n\n\
-         The worker finished; here is the result. Nothing new was asked. Expected response: report the outcome, then finish. You still have your tools. If you go past that, say why.",
-        blocks.join("\n\n")
+         {}",
+        blocks.join("\n\n"),
+        medousa_types::wake::CALLBACK_CONTINUATION_GUIDANCE
     )
 }
 
@@ -930,6 +931,8 @@ mod tests {
         assert!(prompt.contains("source=worker_result"));
         assert!(prompt.contains("not a new goal"));
         assert!(!prompt.contains("Prose is delivered immediately"));
+        assert!(prompt.contains(medousa_types::wake::CALLBACK_CONTINUATION_GUIDANCE));
+        assert!(!prompt.contains("report the outcome, then finish"));
     }
 
     #[test]

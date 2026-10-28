@@ -8349,6 +8349,7 @@
       "PeerHandoffAdmission": {
         "enum": [
           "delegate",
+          "stage",
           "propose"
         ],
         "type": "string"

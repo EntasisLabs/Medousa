@@ -489,13 +489,22 @@
     {
       "registry": "coder_bound",
       "name": "cognition_chat_history_read",
-      "description": "Read messages and attachment IDs from a Medousa chat. Use before_turn to page backward, or media_id to reopen an attached image for visual inspection.",
+      "description": "Read visible chat messages and attachments. Use before_turn for older turns. For a long message, use message_turn plus next_char_offset and content_digest as expected_digest to recover every character. Use media_id to reopen an attached image.",
       "input_schema": {
         "properties": {
           "before_turn": {
             "description": "Return turns before this exclusive, one-based transcript turn index. Use the oldest returned message's turn_index to continue paging backward.",
             "minimum": 0,
             "type": "integer"
+          },
+          "char_offset": {
+            "description": "Unicode character offset within message_turn (default 0). Continue with next_char_offset.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expected_digest": {
+            "description": "Required when char_offset is nonzero. Use the returned content_digest to reject changed messages.",
+            "type": "string"
           },
           "intent": {
             "description": "Purpose, usually 4-8 words.",
@@ -517,6 +526,11 @@
           "media_id": {
             "description": "Reopen an attached image by its returned media_id so a vision-capable model can inspect its pixels.",
             "type": "string"
+          },
+          "message_turn": {
+            "description": "Read exactly this one-based visible transcript turn, using the full prose budget. Mutually exclusive with before_turn and media_id.",
+            "minimum": 1,
+            "type": "integer"
           },
           "session_id": {
             "description": "Session returned by cognition_chat_history_search.",
@@ -3280,13 +3294,22 @@
     {
       "registry": "general_runtime",
       "name": "cognition_chat_history_read",
-      "description": "Read messages and attachment IDs from a Medousa chat. Use before_turn to page backward, or media_id to reopen an attached image for visual inspection.",
+      "description": "Read visible chat messages and attachments. Use before_turn for older turns. For a long message, use message_turn plus next_char_offset and content_digest as expected_digest to recover every character. Use media_id to reopen an attached image.",
       "input_schema": {
         "properties": {
           "before_turn": {
             "description": "Return turns before this exclusive, one-based transcript turn index. Use the oldest returned message's turn_index to continue paging backward.",
             "minimum": 0,
             "type": "integer"
+          },
+          "char_offset": {
+            "description": "Unicode character offset within message_turn (default 0). Continue with next_char_offset.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expected_digest": {
+            "description": "Required when char_offset is nonzero. Use the returned content_digest to reject changed messages.",
+            "type": "string"
           },
           "last_k": {
             "description": "Number of most recent visible turns (default 12, maximum 40).",
@@ -3303,6 +3326,11 @@
           "media_id": {
             "description": "Reopen an attached image by its returned media_id so a vision-capable model can inspect its pixels.",
             "type": "string"
+          },
+          "message_turn": {
+            "description": "Read exactly this one-based visible transcript turn, using the full prose budget. Mutually exclusive with before_turn and media_id.",
+            "minimum": 1,
+            "type": "integer"
           },
           "session_id": {
             "description": "Session returned by cognition_chat_history_search.",
@@ -5376,7 +5404,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_peer_handoff",
-      "description": "Delegate user-requested work in an owned Forge project through native admission without a second approval card. Use admission=propose for recommendations needing a user decision. The current human request must be included in the committed context. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.",
+      "description": "Delegate user-requested work in an owned Forge project through native admission without a second approval card. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage for each exact stage during this human turn, then register those proposal IDs with work.coordinate; staged admission issues the same bounded native approval without dispatch, allowing native coordination to advance without callback reauthorization. A callback cannot mint new stages. The current human request must be included in the committed context. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.",
       "input_schema": {
         "additionalProperties": false,
         "description": "Model supplies intent. The native host captures source identity and issues scoped authority.",
@@ -5385,7 +5413,8 @@
             "default": "delegate",
             "enum": [
               "delegate",
-              "propose"
+              "propose",
+              "stage"
             ],
             "type": "string"
           },

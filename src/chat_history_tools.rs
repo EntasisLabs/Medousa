@@ -584,6 +584,23 @@ pub struct ChatHistoryReadInput {
     #[serde(default)]
     #[schemars(with = "usize", skip_serializing_if = "CompatOption::is_none")]
     before_turn: CompatOption<usize>,
+    /// Read exactly this one-based visible transcript turn, using the full prose budget.
+    /// Mutually exclusive with before_turn and media_id.
+    #[serde(default)]
+    #[schemars(
+        with = "usize",
+        range(min = 1),
+        skip_serializing_if = "CompatOption::is_none"
+    )]
+    message_turn: CompatOption<usize>,
+    /// Unicode character offset within message_turn (default 0). Continue with next_char_offset.
+    #[serde(default)]
+    #[schemars(with = "usize", skip_serializing_if = "CompatOption::is_none")]
+    char_offset: CompatOption<usize>,
+    /// Required when char_offset is nonzero. Use the returned content_digest to reject changed messages.
+    #[serde(default)]
+    #[schemars(with = "String", skip_serializing_if = "CompatOption::is_none")]
+    expected_digest: CompatOption<String>,
     /// Reopen an attached image by its returned media_id so a vision-capable model can inspect its pixels.
     #[serde(default)]
     #[schemars(with = "String", skip_serializing_if = "CompatOption::is_none")]
@@ -631,6 +648,11 @@ pub struct ChatHistoryMessage {
     role: String,
     timestamp: String,
     content: String,
+    /// SHA-256 of the complete visible text, not just this page.
+    content_digest: String,
+    char_offset: usize,
+    total_chars: usize,
+    next_char_offset: Option<usize>,
     tool_names: Vec<String>,
     attachments: Vec<ChatHistoryAttachment>,
 }
@@ -701,9 +723,8 @@ impl medousa_runtime::ToolObservationHydrationPort for ChatHistoryMediaHydration
             let media_id = receipt.media_id.clone();
             let profile_id = access.profile_id;
             let expected = receipt.clone();
-            let observation = crate::media_vision::run_image_operation(
-                receipt.byte_size.max(1),
-                move || {
+            let observation =
+                crate::media_vision::run_image_operation(receipt.byte_size.max(1), move || {
                     let (verified, bytes) = load_chat_history_image_payload(
                         &source_session_id,
                         &session_id,
@@ -726,13 +747,37 @@ impl medousa_runtime::ToolObservationHydrationPort for ChatHistoryMediaHydration
                         sha256,
                         untrusted_content: true,
                     })
-                },
-            )
-            .await
-            .map_err(|error| format!("chat-history image lookup failed: {error}"))?;
+                })
+                .await
+                .map_err(|error| format!("chat-history image lookup failed: {error}"))?;
             Ok(Some(observation))
         })
     }
+}
+
+fn history_text_page(
+    content: &str,
+    offset: usize,
+    budget: usize,
+    expected_digest: Option<&str>,
+) -> StasisResult<(String, String, usize, Option<usize>)> {
+    let digest = format!("sha256:{:x}", Sha256::digest(content.as_bytes()));
+    if (offset > 0 && expected_digest.is_none())
+        || expected_digest.is_some_and(|expected| expected != digest)
+    {
+        return Err(StasisError::PortFailure(
+            "history page requires the matching content_digest; restart at char_offset=0".into(),
+        ));
+    }
+    let total = content.chars().count();
+    if offset > total {
+        return Err(StasisError::PortFailure(
+            "history char_offset exceeds message length".into(),
+        ));
+    }
+    let page: String = content.chars().skip(offset).take(budget).collect();
+    let end = offset + page.chars().count();
+    Ok((page, digest, total, (end < total).then_some(end)))
 }
 
 pub struct CognitionChatHistoryReadTool {
@@ -741,7 +786,7 @@ pub struct CognitionChatHistoryReadTool {
 
 #[medousa_tool(id = COGNITION_CHAT_HISTORY_READ_ID)]
 impl CognitionChatHistoryReadTool {
-    /// Read messages and attachment IDs from a Medousa chat. Use before_turn to page backward, or media_id to reopen an attached image for visual inspection.
+    /// Read visible chat messages and attachments. Use before_turn for older turns. For a long message, use message_turn plus next_char_offset and content_digest as expected_digest to recover every character. Use media_id to reopen an attached image.
     async fn invoke_typed(
         &self,
         input: ChatHistoryReadInput,
@@ -765,11 +810,34 @@ impl CognitionChatHistoryReadTool {
             .into_option()
             .unwrap_or(DEFAULT_READ_CHARS)
             .clamp(512, MAX_READ_CHARS);
-        let before_turn = input.before_turn.into_option().unwrap_or(usize::MAX).max(1);
-
+        let before_turn = input.before_turn.into_option();
+        let message_turn = input.message_turn.into_option();
+        let char_offset = input.char_offset.into_option().unwrap_or(0);
+        let expected_digest = input.expected_digest.into_option();
+        if (message_turn.is_some() && (before_turn.is_some() || !input.media_id.is_none()))
+            || (message_turn.is_none() && (char_offset != 0 || expected_digest.is_some()))
+        {
+            return Err(StasisError::PortFailure(
+                "history message pagination requires message_turn without before_turn or media_id"
+                    .into(),
+            ));
+        }
         let turns = load_history(&session_id);
         let total_turns = turns.len();
-        let (visible, mut truncated) = visible_turn_window(&turns, before_turn, last_k);
+        let (visible, mut truncated) = if let Some(number) = message_turn {
+            let index = number.checked_sub(1).ok_or_else(|| {
+                StasisError::PortFailure("history message_turn must be one-based".into())
+            })?;
+            let turn = turns.get(index).ok_or_else(|| {
+                StasisError::PortFailure("history message_turn is unavailable".into())
+            })?;
+            let content = visible_turn_text(turn).ok_or_else(|| {
+                StasisError::PortFailure("history message_turn has no visible content".into())
+            })?;
+            (vec![(index, turn, content)], false)
+        } else {
+            visible_turn_window(&turns, before_turn.unwrap_or(usize::MAX).max(1), last_k)
+        };
 
         let mut remaining = max_chars;
         let mut messages = Vec::new();
@@ -778,15 +846,28 @@ impl CognitionChatHistoryReadTool {
                 truncated = true;
                 break;
             }
-            let per_message = remaining.min(MAX_MESSAGE_CHARS);
-            let bounded = bounded_text(&content, per_message);
-            truncated |= bounded.chars().count() < content.chars().count();
+            let per_message = if message_turn.is_some() {
+                remaining
+            } else {
+                remaining.min(MAX_MESSAGE_CHARS)
+            };
+            let (bounded, content_digest, total_chars, next_char_offset) = history_text_page(
+                &content,
+                char_offset,
+                per_message,
+                expected_digest.as_deref(),
+            )?;
+            truncated |= next_char_offset.is_some();
             remaining = remaining.saturating_sub(bounded.chars().count());
             messages.push(ChatHistoryMessage {
                 turn_index: index + 1,
                 role: display_role(&turn.role),
                 timestamp: turn.timestamp.to_rfc3339(),
                 content: bounded,
+                content_digest,
+                char_offset,
+                total_chars,
+                next_char_offset,
                 tool_names: turn.tool_names.iter().take(16).cloned().collect(),
                 attachments: crate::media_vision::media_refs_from_turn(turn)
                     .into_iter()
@@ -809,19 +890,16 @@ impl CognitionChatHistoryReadTool {
             let source_session_id = access.source_session_id.clone();
             let profile_id = access.profile_id.clone();
             Some(
-                crate::media_vision::run_image_operation(
-                    MAX_CHAT_HISTORY_IMAGE_BYTES,
-                    move || {
-                        load_chat_history_image_payload(
-                            &source_session_id,
-                            &image_session_id,
-                            &image_media_id,
-                            &profile_id,
-                        )
-                        .map(|(receipt, _bytes)| receipt)
-                        .map_err(medousa_forge::error::ForgeError::Store)
-                    },
-                )
+                crate::media_vision::run_image_operation(MAX_CHAT_HISTORY_IMAGE_BYTES, move || {
+                    load_chat_history_image_payload(
+                        &source_session_id,
+                        &image_session_id,
+                        &image_media_id,
+                        &profile_id,
+                    )
+                    .map(|(receipt, _bytes)| receipt)
+                    .map_err(medousa_forge::error::ForgeError::Store)
+                })
                 .await
                 .map_err(|error| {
                     StasisError::PortFailure(format!(
@@ -975,6 +1053,104 @@ mod tests {
     }
 
     #[test]
+    fn history_pages_reconstruct_long_unicode_messages_without_gaps() {
+        let original = "start🦀é中\n".repeat(4_000);
+        let mut recovered = String::new();
+        let mut offset = 0;
+        let mut expected = None;
+        loop {
+            let (page, digest, total, next) =
+                history_text_page(&original, offset, 2_400, expected.as_deref()).unwrap();
+            assert!(page.chars().count() <= 2_400);
+            assert_eq!(total, original.chars().count());
+            recovered.push_str(&page);
+            expected = Some(digest);
+            match next {
+                Some(next) => {
+                    assert!(next > offset);
+                    offset = next;
+                }
+                None => break,
+            }
+        }
+        assert_eq!(recovered, original);
+    }
+
+    #[test]
+    fn history_window_cursor_recovers_only_visible_long_message_text() {
+        let public = "visible🦀é中\n".repeat(4_000);
+        let turns = vec![turn(
+            "assistant",
+            "",
+            Some(vec![
+                TurnPart::Reasoning {
+                    markdown: "PRIVATE_SENTINEL".into(),
+                },
+                TurnPart::Text {
+                    markdown: public.clone(),
+                    segment_id: None,
+                    model_round: None,
+                },
+            ]),
+        )];
+        let (window, _) = visible_turn_window(&turns, usize::MAX, 1);
+        let (index, _, visible) = &window[0];
+        assert_eq!(*index + 1, 1);
+        let (prefix, digest, _, next) =
+            history_text_page(visible, 0, MAX_MESSAGE_CHARS, None).unwrap();
+        let mut recovered = prefix;
+        let mut cursor = next;
+        while let Some(offset) = cursor {
+            let (page, _, _, next) =
+                history_text_page(visible, offset, MAX_READ_CHARS, Some(&digest)).unwrap();
+            recovered.push_str(&page);
+            cursor = next;
+        }
+        assert_eq!(recovered, public.trim());
+        assert!(!recovered.contains("PRIVATE_SENTINEL"));
+    }
+
+    #[test]
+    fn history_schema_and_inputs_expose_message_pagination() {
+        let schema = serde_json::to_value(schemars::schema_for!(ChatHistoryReadInput)).unwrap();
+        for (field, kind) in [
+            ("message_turn", "integer"),
+            ("char_offset", "integer"),
+            ("expected_digest", "string"),
+        ] {
+            assert_eq!(schema["properties"][field]["type"], kind);
+            assert!(
+                !schema["required"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!(field))
+            );
+        }
+        let input: ChatHistoryReadInput = serde_json::from_value(serde_json::json!({
+            "session_id":"ses_fixture", "message_turn":1, "char_offset":2400,
+            "expected_digest":"sha256:fixture", "max_chars":24000
+        }))
+        .unwrap();
+        assert_eq!(input.message_turn.as_ref(), Some(&1));
+        assert_eq!(input.char_offset.as_ref(), Some(&2400));
+        assert_eq!(
+            input.expected_digest.as_ref().map(String::as_str),
+            Some("sha256:fixture")
+        );
+    }
+
+    #[test]
+    fn history_pages_reject_stale_missing_digests_and_invalid_offsets() {
+        let (_, digest, _, _) = history_text_page("🦀abc", 0, 2, None).unwrap();
+        assert!(history_text_page("🦀abc", 2, 2, None).is_err());
+        assert!(history_text_page("🦀xyz", 2, 2, Some(&digest)).is_err());
+        assert!(history_text_page("🦀abc", usize::MAX, 2, Some(&digest)).is_err());
+        let (page, _, _, next) = history_text_page("🦀abc", 4, 2, Some(&digest)).unwrap();
+        assert!(page.is_empty());
+        assert_eq!(next, None);
+    }
+
+    #[test]
     fn history_reader_pages_older_than_the_returned_window() {
         let turns = vec![
             turn("user", "first", None),
@@ -1099,6 +1275,16 @@ mod tests {
         let error = history_access(&scope, COGNITION_CHAT_HISTORY_SEARCH)
             .await
             .expect_err("missing principal must be denied");
+        assert!(error.to_string().contains("principal identity required"));
+        let page_input: ChatHistoryReadInput = serde_json::from_value(serde_json::json!({
+            "session_id":"session-b", "message_turn":1, "char_offset":2400,
+            "expected_digest":"sha256:caller-cannot-authorize-access"
+        }))
+        .unwrap();
+        let error = CognitionChatHistoryReadTool { turn_scope: scope }
+            .invoke_typed(page_input)
+            .await
+            .expect_err("a continuation cursor is not access authority");
         assert!(error.to_string().contains("principal identity required"));
     }
 }

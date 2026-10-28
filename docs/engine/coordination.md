@@ -90,7 +90,7 @@ On a full workshop daemon, `cognition_peer_handoff` delegates work already
 covered by the current authenticated human request. Its input contains
 `request_key`, `forge_work_id`, `instructions`, `after_entry_seq`,
 `through_entry_seq`, optional `runtime`, optional `admission` (`delegate` by
-default, or `propose`), and optional `handoff` policy. Discover the owned project
+default, `stage`, or `propose`), and optional `handoff` policy. Discover the owned project
 and committed context first. Omitted runtime uses saved coding preferences.
 The source chat does not need a project binding.
 
@@ -115,6 +115,34 @@ approval or authority fields. `admission: "propose"` stores the same sender
 policy but waits for the existing native approval/start flow. The legacy
 `cognition_peer_propose` and portable remote `cognition_peer_delegate` contracts
 remain available; legacy proposals are not silently upgraded into handoffs.
+
+### Admit the requested sequence once
+
+For an already-requested executor → independent reviewer sequence, use
+`admission: "stage"` for **each exact stage during the authenticated human turn**.
+This captures the same immutable source, approval, exact assignment grant and
+expiry as `delegate`, but returns `status: "staged"` without dispatching a
+provider. Register the returned proposal IDs with `work.coordinate` (including
+separately staged fix/review rounds if requested). The existing native controller
+then advances dependencies, pins the executor revision for review, and checks
+scope, visibility, deadline, expiry and revocation before effects. A daemon
+restart or worker callback does not require a new human turn to dispatch those
+already-admitted stages. Registration alone still issues no grants.
+
+Do not use `delegate` for future reviewer/fix stages: it launches immediately,
+before the controller can pin the executor output or enforce dependencies.
+Unregistered staged grants do not launch themselves; registration failures must
+be reported with the saved proposal IDs, not described as running work. Their
+absolute expiry is not extended by a retry. Stage requests cannot be issued by
+worker/continuation principals, and callbacks cannot derive arbitrary new
+assignments from an earlier grant. Missing or out-of-scope stages require the
+proposal path or a concrete authorization blocker; never replay an old human
+entry as new authority.
+
+Callbacks assess receipts against saved work and continue permitted verification,
+review and correction rather than treating a worker terminal or acknowledgment
+as project completion. Wake guidance does not grant operator privileges or waive
+sender review, independent review, integration approval, or user-contact admission.
 
 Expired or revoked Coder execution authority blocks further workspace work,
 but does not block `turn.finish`, `turn.checkpoint`, `turn.request_input`, or
