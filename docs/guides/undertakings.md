@@ -157,8 +157,15 @@ Medousa stops with that state instead of silently running on the Home device.
 - If existing checkout changes include excluded, oversized, or secret-like
   content, Medousa refuses to attach before making the snapshot. Clean those
   paths or use **Isolated copy**.
-- The checked-out branch, `HEAD`, and real Git index stay principal-owned. Fetch
-  remains available; generic Pull, Push, and Sync stay disabled. The explicit
+- The checked-out branch, `HEAD`, and real Git index stay principal-owned.
+  Within an attached undertaking, Coder can stage scoped files and make ordinary
+  commits on that branch when you request it; a separate isolated checkout is
+  not required. Coder must inspect the diff and index, preserve unrelated edits
+  and existing staging, and never sweep unrelated files into a commit. Staging
+  and same-branch commits are reconciled during the active turn without changing
+  the original review baseline. Amending commits, switching branches, destructive
+  Git operations, and history rewrites remain blocked. Fetch remains available;
+  generic Pull, Push, and Sync stay disabled. The explicit
   **Commit** and **Create PR** actions in chat, and ordinary external commits on
   the attached branch, advance the custody boundary while preserving the
   original review baseline. Coder turns bound to the same project coordinate in

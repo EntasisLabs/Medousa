@@ -1082,11 +1082,8 @@ impl CoderTurnLease {
         self.forge.heartbeat(&self.lease).map_err(|err| {
             StasisError::PortFailure(format!("Coder Forge lease rejected: {err}"))
         })?;
-        let item = self.forge.load(&self.lease.work_id).map_err(|err| {
-            StasisError::PortFailure(format!("Coder workspace authority is unavailable: {err}"))
-        })?;
         self.forge
-            .verify_attempt_workspace(&item, &self.lease.attempt_id)
+            .reconcile_attempt_workspace(&self.lease, &self.actor)
             .map_err(|err| {
                 StasisError::PortFailure(format!("Coder workspace authority changed: {err}"))
             })
@@ -2486,10 +2483,10 @@ impl CoderBoundToolRegistry {
         }
         if self.entry.attached_checkout
             && let Some(command) = input.get("command").and_then(Value::as_str)
-            && attached_shell_command_mutates_git_authority(command)
+            && attached_shell_command_is_forbidden(command)
         {
             return Err(StasisError::PortFailure(
-                "Current-checkout Coder may inspect Git, but its shell cannot mutate HEAD, branches, refs, or the real index. Close the project before running that command manually."
+                "Current-checkout Coder may stage scoped files and make ordinary commits on the attached branch. Branch/ref changes, destructive Git operations, publication, and history rewrites remain blocked."
                     .into(),
             ));
         }
@@ -2583,10 +2580,16 @@ fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
     // not turn ordinary inspection into a refusal.
     command
         .split([';', '\n', '|', '&'])
-        .any(attached_shell_segment_mutates_git_authority)
+        .any(|segment| shell_segment_mutates_git_authority(segment, false))
 }
 
-fn attached_shell_segment_mutates_git_authority(command: &str) -> bool {
+fn attached_shell_command_is_forbidden(command: &str) -> bool {
+    command
+        .split([';', '\n', '|', '&'])
+        .any(|segment| shell_segment_mutates_git_authority(segment, true))
+}
+
+fn shell_segment_mutates_git_authority(command: &str, allow_commits: bool) -> bool {
     let lowercase = command.to_ascii_lowercase();
     let tokens = lowercase
         .split(|character: char| {
@@ -2633,6 +2636,15 @@ fn attached_shell_segment_mutates_git_authority(command: &str) -> bool {
         let Some(subcommand) = tokens.get(cursor).copied() else {
             continue;
         };
+        let args = &tokens[cursor + 1..];
+        if allow_commits && subcommand == "add" {
+            return false;
+        }
+        if allow_commits && subcommand == "commit" {
+            return args.iter().any(|arg| {
+                matches!(*arg, "--amend" | "--no-verify" | "-n") || arg.starts_with("--amend=")
+            });
+        }
         if matches!(
             subcommand,
             "add"
@@ -5753,6 +5765,36 @@ mod tests {
                 !attached_shell_command_mutates_git_authority(command),
                 "expected attached shell to allow {command}"
             );
+        }
+    }
+
+    #[test]
+    fn attached_shell_allows_staging_and_normal_commits_not_history_rewrites() {
+        for command in [
+            "git add -- src/lib.rs",
+            "git commit -m 'save work'",
+            "git commit --only -m 'save work' -- src/lib.rs",
+            "git -C . commit -m saved",
+            "git add -- src/lib.rs && git commit -m saved",
+        ] {
+            assert!(!attached_shell_command_is_forbidden(command), "{command}");
+            assert!(
+                attached_shell_command_mutates_git_authority(command),
+                "portable environments must still reject {command}"
+            );
+        }
+        for command in [
+            "git commit --amend -m rewritten",
+            "git commit --no-verify -m unchecked",
+            "git reset --hard HEAD",
+            "git switch other",
+            "git branch new-name",
+            "git push origin HEAD",
+            "git stash",
+            "git clean -fd",
+            "git add -- src/lib.rs && git reset HEAD",
+        ] {
+            assert!(attached_shell_command_is_forbidden(command), "{command}");
         }
     }
 

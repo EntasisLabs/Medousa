@@ -1514,7 +1514,7 @@ fn prompt_with_forge_workspace_policy(prompt: String, attached_checkout: bool) -
         return prompt;
     }
     format!(
-        "{prompt}\n\n<medousa_workspace_policy>\nThis project uses the principal's current checkout. Edit files in place, but do not switch branches, stage, commit, reset, clean, stash, merge, rebase, cherry-pick, discard changes, mutate local branches or tags, or rewrite history. Read-only Git inspection and fetch are allowed. Medousa snapshots and reviews the work without touching the real index or HEAD.\n</medousa_workspace_policy>"
+        "{prompt}\n\n<medousa_workspace_policy>\nThis undertaking uses the principal's current checkout. Edit files in place; scoped staging and ordinary commits on the attached branch are allowed when requested by the principal. Inspect the diff and index first; preserve unrelated files and existing staged changes. Never use stage-all or commit-all to sweep in unrelated work. Do not switch branches, amend commits, reset, clean, stash, merge, rebase, cherry-pick, discard changes, mutate local branches or tags, push, or rewrite history. Read-only Git inspection and fetch are allowed. Medousa reconciles same-branch commits while preserving the original review baseline.\n</medousa_workspace_policy>"
     )
 }
 
@@ -2694,8 +2694,10 @@ mod tests {
     fn attached_checkout_policy_is_explicit_and_isolated_prompts_stay_unchanged() {
         let prompt = prompt_with_forge_workspace_policy("Fix this".into(), true);
         assert!(prompt.starts_with("Fix this\n\n<medousa_workspace_policy>"));
-        assert!(prompt.contains("do not switch branches, stage, commit"));
-        assert!(prompt.contains("without touching the real index or HEAD"));
+        assert!(prompt.contains("Do not switch branches, amend commits"));
+        assert!(prompt.contains("scoped staging and ordinary commits"));
+        assert!(prompt.contains("preserve unrelated files and existing staged changes"));
+        assert!(prompt.contains("preserving the original review baseline"));
         assert!(prompt.ends_with("</medousa_workspace_policy>"));
         assert_eq!(
             prompt_with_forge_workspace_policy("Fix this".into(), false),
