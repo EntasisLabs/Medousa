@@ -247,7 +247,7 @@ impl CoderEntryContext {
     /// and separately labeled advisory editor/repository observations.
     pub fn prompt_appendix(&self) -> String {
         let workspace_safety = if self.attached_checkout {
-            "Principal-owned current checkout: edit files in place, but do not switch branches, stage, commit, reset, clean, stash, merge, rebase, discard changes, mutate local branches or tags, or rewrite history. Read-only Git inspection and fetch are allowed. Forge snapshots and reviews without touching the real index or HEAD."
+            "Principal-owned current checkout attached to this undertaking: edit files in place; scoped staging and ordinary commits on the attached branch are allowed when requested by the principal. Inspect the diff and index first; preserve unrelated files and existing staged changes. Never use stage-all or commit-all to sweep in unrelated work. Do not switch branches, amend commits, reset, clean, stash, merge, rebase, cherry-pick, discard changes, mutate local branches or tags, push, or rewrite history. Read-only Git inspection and fetch are allowed. Forge reconciles same-branch commits while preserving the original review baseline."
         } else {
             "Forge-owned isolated worktree: keep all reads, edits, and commands inside this workspace."
         };
@@ -641,8 +641,10 @@ mod tests {
         assert_eq!(entry.changed_paths, vec!["coder-change.txt"]);
         let appendix = entry.prompt_appendix();
         assert!(appendix.contains("attached_checkout"));
-        assert!(appendix.contains("do not switch branches"));
-        assert!(appendix.contains("without touching the real index or HEAD"));
+        assert!(appendix.contains("Do not switch branches"));
+        assert!(appendix.contains("scoped staging and ordinary commits"));
+        assert!(appendix.contains("preserve unrelated files and existing staged changes"));
+        assert!(appendix.contains("preserving the original review baseline"));
         assert!(!appendix.contains("owner-notes.txt"));
     }
 

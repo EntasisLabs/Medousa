@@ -603,7 +603,15 @@ staging. The response contains `head` and optional `warning` if a successful
 commit could not refresh staging. Attached custody advances through a durable
 `ReviewCommitRecorded` event; evidence baselines remain unchanged. When no
 executor is active, starting the next turn also adopts an ordinary same-branch
-fast-forward commit made directly in the current checkout. Branch switches,
+fast-forward commit made directly in the current checkout. Lease-backed Coder
+execution also reconciles scoped staging and ordinary same-branch commits during
+an active turn, under repository/item locks and lease fencing. This advances
+index/HEAD custody through `ReviewCommitRecorded`, never the evidence baseline.
+The attached shell guard permits `git add` and ordinary `git commit`, but still
+blocks amend, hook bypass, branch/ref changes, destructive operations, and push.
+Portable environment shells retain their separate Git-authority restriction.
+Agents must preserve unrelated edits and pre-existing staging; permission to
+commit is not permission to include all dirty files. Branch switches,
 detached HEADs, conflicts, and rewritten history still require explicit
 reattachment rather than silently moving existing authority.
 

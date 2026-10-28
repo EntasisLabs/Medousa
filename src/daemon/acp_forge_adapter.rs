@@ -125,9 +125,8 @@ impl<'a> AcpForgeAdapter<'a> {
     }
 
     fn verify_workspace(&self, lease: &ExecutionLease) -> Result<(), ForgeError> {
-        let item = self.forge.load(&lease.work_id)?;
         self.forge
-            .verify_attempt_workspace(&item, &lease.attempt_id)
+            .reconcile_attempt_workspace(lease, &self.daemon_actor())
     }
 
     fn daemon_actor(&self) -> ActorRef {

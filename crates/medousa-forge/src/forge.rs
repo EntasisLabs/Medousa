@@ -1338,6 +1338,53 @@ impl Forge {
         Ok(refreshed)
     }
 
+    /// Reconcile ordinary staging and same-branch commits made by an active
+    /// attached-checkout executor. Only custody advances; review evidence keeps
+    /// its original baseline. A fenced-out executor cannot adopt new authority.
+    pub fn reconcile_attempt_workspace(
+        &self,
+        lease: &ExecutionLease,
+        actor: &ActorRef,
+    ) -> Result<()> {
+        let probe = self.load(&lease.work_id)?;
+        if !probe.uses_attached_checkout() {
+            self.verify_execution_lease(lease)?;
+            return self.verify_attempt_workspace(&probe, &lease.attempt_id);
+        }
+        let target = git_target(&probe)?;
+        let _repo_lock = self
+            .store
+            .lock_repo(&self.repo_lock_key(&target.repo_path)?)?;
+        let _item_lock = self.store.lock_item(&lease.work_id)?;
+        let item = self.load(&lease.work_id)?;
+        self.fence(&item, lease)?;
+        let item = self.refresh_attached_checkout_after_commit_locked(&item, actor)?;
+        let environment = item
+            .environment_for_attempt(&lease.attempt_id)
+            .ok_or_else(|| ForgeError::EnvironmentDrift("no governed environment".into()))?;
+        // Staging is now an allowed executor action. Check every other boundary
+        // before recording its new index, including conflicts and branch identity.
+        let mut staged_environment = environment.clone();
+        staged_environment.attached_index_oid = None;
+        self.verify_attached_checkout(&item, &staged_environment)?;
+        let index = self.git.index_tree_oid_via_temporary_index(
+            &environment.worktree,
+            &self.attached_index_path(&item.id),
+        )?;
+        if environment.attached_index_oid.as_ref() != Some(&index) {
+            let target = git_target(&item)?;
+            self.record_review_commit_locked(
+                &item,
+                &target.base_oid,
+                &target.base_oid,
+                &environment.branch,
+                actor,
+            )?;
+        }
+        let reconciled = self.load(&lease.work_id)?;
+        self.verify_attempt_workspace(&reconciled, &lease.attempt_id)
+    }
+
     /// Revalidate the durable workspace boundary before a lease-backed tool
     /// mutates files. This is a no-op for Forge-owned worktrees; attached
     /// checkouts must still be the exact branch and HEAD the user granted.
@@ -3665,6 +3712,135 @@ mod tests {
         forge
             .interrupt_attempt(&next_lease, RecoveryDisposition::RestartAllowed, &actor())
             .unwrap();
+    }
+
+    #[test]
+    fn attached_checkout_active_executor_can_stage_commit_and_continue() {
+        let fx = fixture();
+        fs::write(fx.repo.join("owner-notes.txt"), "keep staged\n").unwrap();
+        fx.git
+            .run(&fx.repo, &["add", "--", "owner-notes.txt"])
+            .unwrap();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Save work in place",
+                "stage and commit scoped work",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let baseline = item.environment.as_ref().unwrap().baseline_oid.clone();
+        let (_, lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        fs::write(fx.repo.join("app.txt"), "committed work\n").unwrap();
+        fs::write(fx.repo.join("new.txt"), "new work\n").unwrap();
+        fx.git
+            .run(&fx.repo, &["add", "--", "app.txt", "new.txt"])
+            .unwrap();
+        forge.reconcile_attempt_workspace(&lease, &actor()).unwrap();
+        fx.git
+            .run(
+                &fx.repo,
+                &[
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "commit",
+                    "--only",
+                    "-m",
+                    "save work",
+                    "--",
+                    "app.txt",
+                    "new.txt",
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            fx.git
+                .run(&fx.repo, &["diff", "--cached", "--name-only"])
+                .unwrap()
+                .trim(),
+            "owner-notes.txt",
+            "unrelated principal staging must survive"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("owner-notes.txt")).unwrap(),
+            "keep staged\n"
+        );
+        let head = fx.git.head_oid(&fx.repo).unwrap();
+        forge.reconcile_attempt_workspace(&lease, &actor()).unwrap();
+        let updated = forge.load(&item.id).unwrap();
+        assert_eq!(git_target(&updated).unwrap().base_oid, head);
+        assert_eq!(updated.environment.as_ref().unwrap().baseline_oid, baseline);
+        assert!(
+            !forge
+                .workspace_changed_files(&updated, updated.environment.as_ref().unwrap(),)
+                .unwrap()
+                .is_empty(),
+            "committing must not hide work from review"
+        );
+        forge
+            .verify_attempt_workspace(&updated, &lease.attempt_id)
+            .unwrap();
+        // Sealing after the commit must still capture the committed changes.
+        let sealed = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
+        assert!(sealed.attempts.last().unwrap().evidence_id.is_some());
+        fs::write(fx.repo.join("app.txt"), "later unstaged work\n").unwrap();
+        fx.git.run(&fx.repo, &["add", "--", "app.txt"]).unwrap();
+        assert!(forge.reconcile_attempt_workspace(&lease, &actor()).is_err());
+        let unchanged = forge.load(&item.id).unwrap();
+        assert_eq!(git_target(&unchanged).unwrap().base_oid, head);
+        assert_eq!(
+            unchanged.environment.as_ref().unwrap().attached_index_oid,
+            sealed.environment.as_ref().unwrap().attached_index_oid,
+            "a stale lease cannot adopt later staging"
+        );
+    }
+
+    #[test]
+    fn attached_checkout_active_executor_rejects_branch_and_history_drift() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Keep custody fenced",
+                "reject branch and history drift",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let (_, lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        fx.git.run(&fx.repo, &["switch", "-c", "other"]).unwrap();
+        assert!(forge.reconcile_attempt_workspace(&lease, &actor()).is_err());
+        fx.git.run(&fx.repo, &["switch", "main"]).unwrap();
+        let tree = fx.git.run(&fx.repo, &["write-tree"]).unwrap();
+        let rewritten = fx
+            .git
+            .run(&fx.repo, &["commit-tree", tree.trim(), "-m", "new root"])
+            .unwrap();
+        fx.git
+            .run(&fx.repo, &["reset", "--hard", rewritten.trim()])
+            .unwrap();
+        assert!(forge.reconcile_attempt_workspace(&lease, &actor()).is_err());
+        assert_eq!(
+            git_target(&forge.load(&item.id).unwrap()).unwrap().base_oid,
+            git_target(&item).unwrap().base_oid
+        );
     }
 
     #[test]
