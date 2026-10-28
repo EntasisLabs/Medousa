@@ -13,10 +13,11 @@
 
   interface Props {
     workId: string | null;
+    sideThread?: boolean;
     onClose: () => void;
   }
 
-  let { workId, onClose }: Props = $props();
+  let { workId, onClose, sideThread = false }: Props = $props();
 
   const transcript = $derived(workId ? workerTranscripts.transcriptFor(workId) : null);
   const dispositionLabel = $derived(
@@ -31,7 +32,7 @@
   const thinkingHtml = $derived(renderMarkdown(thinking.replace(/\*{4}/g, "**\n\n**")));
   const isRunning = $derived(transcript?.streaming ?? false);
   const statusLabel = $derived(
-    isRunning ? transcript?.statusLine?.trim() || "Working" : transcript?.statusLine?.trim() || "Complete",
+    isRunning ? transcript?.statusLine?.trim() || "Working" : transcript?.terminal ? "Session ended · View result" : "Status unavailable",
   );
 
   /** Cold start (deep link / reload) still needs one fetch; SSE drives the rest. */
@@ -74,6 +75,7 @@
   <BodyPortal>
     <div
       class="worker-transcript-backdrop"
+      class:side-thread={sideThread}
       role="dialog"
       aria-modal="true"
       aria-label="Agent transcript"
@@ -574,6 +576,10 @@
       order: 2;
     }
   }
+
+  .side-thread { align-items: stretch; justify-content: flex-end; padding: 0; background: rgb(0 0 0 / .25); backdrop-filter: none; }
+  .side-thread .worker-transcript-sheet { width: min(36rem, 100%); height: 100dvh; border-radius: 0; }
+  .side-thread .worker-transcript-layout { grid-template-columns: minmax(0, 1fr); }
 
   @media (prefers-reduced-motion: reduce) {
     .worker-transcript-backdrop,

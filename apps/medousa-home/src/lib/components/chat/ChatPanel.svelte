@@ -28,6 +28,9 @@
   import ChatRuntimeControlRow from "$lib/components/chat/ChatRuntimeControlRow.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import PeerProposalBar from "$lib/components/chat/PeerProposalBar.svelte";
+  import ChatWorkDock from "$lib/components/chat/ChatWorkDock.svelte";
+  import type { PeerProposalControls } from "./peerProposalControls";
+  import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
@@ -214,6 +217,11 @@
   const subagentRows = $derived(subagentRowsForSession(panelSessionId));
   const subagentRowsByWorkId = $derived(subagentRowMap(panelSessionId));
   const activeSubagentCount = $derived(subagentRows.filter((row) => row.streaming).length);
+  let proposalSnapshot = $state<{ sessionId: string | null; rows: PeerProposalReviewRecord[]; controls: PeerProposalControls } | null>(null);
+  const dockSnapshot = $derived(proposalSnapshot?.sessionId === panelSessionId ? proposalSnapshot : null);
+  function receiveProposalSnapshot(sessionId: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) {
+    proposalSnapshot = { sessionId, rows, controls };
+  }
   const askThreads = $derived(groupAskThreads(panelMessages));
   const showInlineComposer = $derived(!mobile || (embedded && scriptWorkbench));
   const useMobileChatLayout = $derived(mobile);
@@ -949,7 +957,7 @@
             onOpenSource={openDerivationSource}
           />
         {/if}
-        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile} {visible}>
+        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile} {visible} onSnapshot={receiveProposalSnapshot}>
           {#snippet children(peerProposals, peerControls)}
             <ChatMessageList
               {peerProposals}
@@ -1029,23 +1037,9 @@
       </div>
       {/if}
       {#if !embedded && !providerRuntime && chatMessages.length === 0}
-        <PeerProposalBar sessionId={panelSessionId} {mobile} {visible} />
+        <PeerProposalBar sessionId={panelSessionId} {mobile} {visible} onSnapshot={receiveProposalSnapshot} />
       {/if}
-      {#if chatCodeProject && !embedded}
-        <ChatChangeReceipt
-          workId={chatCodeProject.workId}
-          projectTitle={chatCodeProject.title}
-          phase={chatCodeProject.humanPhase}
-          review={undertakings.review?.work_id === chatCodeProject.workId
-            ? undertakings.review
-            : null}
-          eventRevision={undertakings.eventRevision}
-          activityRunning={Boolean(streamingMessage) || activeSubagentCount > 0}
-          onOpenCode={openChatCodeReview}
-          onRequestRevision={requestChatCodeRevision}
-          onReviewChanged={() => undertakings.select(chatCodeProject.workId)}
-        />
-      {/if}
+
       {/if}
     </ChatScrollChrome>
 
@@ -1065,19 +1059,20 @@
       />
       <AgentPermissionBar />
       <AgentSecretBar />
-      {#if activeSubagentCount > 0}
-        <button
-          type="button"
-          class="chat-subagent-pill"
-          onclick={() => {
-            const running = subagentRows.find((row) => row.streaming);
-            if (running) openWorkerTranscript(running.workId);
-          }}
-        >
-          <span class="chat-subagent-pill-dot" aria-hidden="true"></span>
-          {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
-        </button>
-      {/if}
+      <ChatWorkDock sessionId={panelSessionId} proposals={dockSnapshot?.rows ?? []} workers={subagentRows} controls={dockSnapshot?.controls} onOpenWorker={openWorkerTranscript}>
+        {#if chatCodeProject}
+          <ChatChangeReceipt compact
+            workId={chatCodeProject.workId}
+            projectTitle={chatCodeProject.title}
+            phase={chatCodeProject.humanPhase}
+            review={undertakings.review?.work_id === chatCodeProject.workId ? undertakings.review : null}
+            eventRevision={undertakings.eventRevision}
+            activityRunning={Boolean(streamingMessage) || activeSubagentCount > 0}
+            onOpenCode={openChatCodeReview}
+            onRequestRevision={requestChatCodeRevision}
+            onReviewChanged={() => undertakings.select(chatCodeProject.workId)} />
+        {/if}
+      </ChatWorkDock>
     {/if}
     <form
       bind:this={composerFormEl}
@@ -1164,7 +1159,7 @@
     onChipSelect={prefillComposerFromChip}
   />
 
-  <WorkerTranscriptPanel
+  <WorkerTranscriptPanel sideThread
     workId={workerTranscriptWorkId}
     onClose={closeWorkerTranscript}
   />
@@ -1209,39 +1204,4 @@
     color: rgb(var(--color-surface-100));
   }
 
-  /* Ambient count only — the beats in-thread carry the detail. */
-  .chat-subagent-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    align-self: flex-start;
-    margin: 0 1rem 0.375rem;
-    border-radius: 999px;
-    padding: 0.125rem 0.5rem;
-    font-size: 0.625rem;
-    color: rgb(var(--theme-text-tertiary));
-    transition: color 120ms ease;
-  }
-
-  .chat-subagent-pill:hover {
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .chat-subagent-pill-dot {
-    width: 0.25rem;
-    height: 0.25rem;
-    border-radius: 999px;
-    background: rgb(var(--color-primary-400));
-    animation: subagent-pulse 1.8s ease-in-out infinite;
-  }
-
-  @keyframes subagent-pulse {
-    0%,
-    100% {
-      opacity: 0.4;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
 </style>

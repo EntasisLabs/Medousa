@@ -278,8 +278,8 @@
 {#snippet resultReceipt(message: ChatMessage)}
   {@const result = workerReturn(message)}
   {#if result}
-    <button class="agent-return" type="button" onclick={() => revealAgent(result.anchor, result.row.workId)}>
-      <CornerDownRight size={13} aria-hidden="true" /><span>{result.row.title} returned a result</span><span class="return-link">View agent ↑</span>
+    <button class="agent-return" type="button" onclick={() => onOpenSubagent ? onOpenSubagent(result.row.workId) : revealAgent(result.anchor, result.row.workId)}>
+      <CornerDownRight size={13} aria-hidden="true" /><span>{result.row.title} returned a result</span><span class="return-link">Open thread →</span>
     </button>
   {/if}
 {/snippet}
@@ -316,6 +316,7 @@
         forkHasDraft={canCarryDraft(beat.user)}
       />
       <article class="group relative {assistantClass(beat.assistant)}">
+        <p class="response-context">Medousa · Reply to your message</p>
         {@render resultReceipt(beat.assistant)}
         <LiquidChatMessage
           message={beat.assistant}
@@ -352,6 +353,7 @@
     <article
       class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}"
     >
+      {#if beat.message.role === "assistant"}<p class="response-context">{beat.message.lane === 'worker' ? 'Medousa · Agent follow-up' : 'Medousa'}</p>{/if}
       {@render resultReceipt(beat.message)}
       <LiquidChatMessage
         message={beat.message}
@@ -373,6 +375,7 @@
 {/each}
 
 <style>
+  .response-context { margin: 8px 0; font-size: 12px; color: rgb(var(--theme-text-tertiary)); }
   .agent-return { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-block: 8px; padding: 4px 0; border: 0; background: transparent; font-size: 12px; text-align: left; color: rgb(var(--theme-text-secondary)); }
   .agent-return > :global(svg) { flex-shrink: 0; }
   .agent-return span { min-width: 0; overflow-wrap: anywhere; }

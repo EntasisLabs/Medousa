@@ -1,22 +1,26 @@
 <script lang="ts">
-  import { ChevronRight, CircleCheck, CircleAlert, LoaderCircle } from "@lucide/svelte";
-  import type { Snippet } from "svelte";
+  import { ChevronRight, CircleCheck, CircleAlert, LoaderCircle, Clock } from "@lucide/svelte";
+  import { untrack, type Snippet } from "svelte";
 
-  let { title, status, activity = null, state = "working", attention = false, children }: {
+  let { title, status, activity = null, state: workState = "working", attention = false, expanded = false, children }: {
     title: string;
     status: string;
     activity?: string | null;
     state?: "working" | "review" | "complete" | "attention";
     attention?: boolean;
+    expanded?: boolean;
     children: Snippet;
   } = $props();
+  let open = $state(untrack(() => expanded));
+  $effect(() => { if (expanded) open = true; });
 </script>
 
-<details class="agent-work-line" data-state={state}>
+<details class="agent-work-line" data-state={workState} bind:open>
   <summary class:needs-attention={attention}>
     <span class="state-icon">
-      {#if state === "attention"}<CircleAlert size={15} aria-hidden="true" />
-      {:else if state === "working"}<LoaderCircle size={15} aria-hidden="true" />
+      {#if workState === "attention"}<CircleAlert size={15} aria-hidden="true" />
+      {:else if workState === "review"}<Clock size={15} aria-hidden="true" />
+      {:else if workState === "working"}<LoaderCircle size={15} aria-hidden="true" />
       {:else}<CircleCheck size={15} aria-hidden="true" />{/if}
     </span>
     <span class="work-heading"><span class="work-title" title={title}>{title}</span>{#if activity}<span class="work-activity" title={activity}>{activity}</span>{/if}</span>

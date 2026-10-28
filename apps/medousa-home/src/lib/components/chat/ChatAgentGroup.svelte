@@ -37,7 +37,7 @@
       else waiting += 1;
     }
     return [[working, "working"], [review, "ready for review"], [accepted, "accepted"],
-      [completed, "completed"], [attention, attention === 1 ? "needs attention" : "need attention"], [waiting, "waiting"]]
+      [completed, "sessions ended"], [attention, attention === 1 ? "needs attention" : "need attention"], [waiting, "waiting"]]
       .filter(([value]) => value).map(([value, label]) => `${value} ${label}`).join(" · ");
   });
 </script>

@@ -32,6 +32,7 @@
 
   interface Props {
     workId: string;
+    compact?: boolean;
     projectTitle: string;
     phase: string;
     review?: ReviewProjection | null;
@@ -44,6 +45,7 @@
 
   let {
     workId,
+    compact = false,
     projectTitle,
     phase,
     review = null,
@@ -329,7 +331,18 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-{#if expectedFileCount > 0}
+<style>
+  .change-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgb(var(--theme-border)); border-radius: 999px; padding: 5px 10px; font-size: 12px; color: rgb(var(--theme-text-secondary)); background: transparent; cursor: pointer; }
+  .change-pill:hover { background: rgb(var(--theme-card-hover)); }
+  .change-pill:focus-visible { outline: 2px solid rgb(var(--theme-link)); outline-offset: 2px; }
+  @media (pointer: coarse) { .change-pill { min-height: 44px; } }
+</style>
+
+{#if compact && expectedFileCount > 0}
+  <button type="button" class="change-pill" title={projectTitle} aria-label={`${expectedFileCount} changes in ${projectTitle}${isReady ? ', ready for review' : ', working copy'}`} onclick={() => sheetOpen = true}>
+    <FileDiff size={13} aria-hidden="true" /> {expectedFileCount} change{expectedFileCount === 1 ? '' : 's'}
+  </button>
+{:else if expectedFileCount > 0}
   <section
     class="chat-change-receipt"
     class:chat-change-receipt--ready={isReady}
@@ -373,7 +386,7 @@
     </header>
 
   </section>
-{:else if loading}
+{:else if loading && !compact}
   <div class="chat-change-loading" aria-label="Loading working changes">
     <LoaderCircle size={12} class="animate-spin" />
     Checking the working copy…

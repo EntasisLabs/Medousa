@@ -10,8 +10,10 @@
   import { peerRuntimeLabel } from "./peerProgress";
   import { peerHandoffPresentation, peerWorkTitle } from "./peerHandoffPresentation";
 
-  let { row: current, controls }: { row: PeerProposalReviewRecord; controls: PeerProposalControls } = $props();
+  let { row: current, controls, expanded = false }: { row: PeerProposalReviewRecord; controls: PeerProposalControls; expanded?: boolean } = $props();
   const completed = $derived(current.receipt ?? null);
+  const actionError = $derived(controls.actionErrors?.[current.proposal.proposal_id]);
+  const startFailed = $derived(Boolean(actionError && current.decision?.approved && !current.binding && !current.receipt));
   const progress = $derived(peerHandoffPresentation(current, controls.now));
   const executionWorkshop = $derived(workshops.workshops.find(workshop => workshop.pairing?.workshopDeviceId === current.proposal.request.target.execution_runtime_id));
   const onExecutionWorkshop = $derived(current.proposal.request.target.authority_id === connection.health?.runtime?.authority_id || executionWorkshop?.id === workshops.activeWorkshopId);
@@ -25,11 +27,11 @@
   const busy = $derived(controls.busyId === current.proposal.proposal_id);
   const available = $derived(controls.available);
   const activity = $derived(progress.activity ?? (completed ? completed.result.split(/\r?\n/).find(line => line.trim())?.trim() : null));
-  const state = $derived(progress.attention || progress.needsApproval ? "attention" : current.handoff?.state === "awaiting_sender_review" ? "review" : completed ? "complete" : "working");
+  const state = $derived(progress.attention || progress.needsApproval ? "attention" : current.handoff?.state === "awaiting_sender_review" || (completed && !current.handoff?.review) ? "review" : completed ? "complete" : "working");
 </script>
 
 <article class="proposal-row">
-  <AgentWorkContextLine title={workTitle} status={progress.status} activity={activity} {state} attention={progress.attention}>
+  <AgentWorkContextLine {expanded} title={workTitle} status={startFailed ? 'Start not confirmed' : progress.status} activity={activity} {state} attention={progress.attention}>
     <div class="participants">
       <div class="participant">
         <Bot size={16} aria-hidden="true" />
@@ -86,6 +88,7 @@
       </dl>
     </details>
   </AgentWorkContextLine>
+  {#if actionError}<p class="request-error" role="status">{actionError}</p>{/if}
   {#if !completed && !current.binding && progress.needsApproval}
     <div class="approval-actions">
       {#if current.decision?.approved}
@@ -100,6 +103,7 @@
 </article>
 
 <style>
+  .request-error { margin: 10px 14px; color: rgb(var(--theme-warning)); font-size: 12px; overflow-wrap: anywhere; }
   .proposal-row { min-width: 0; border-top: 1px solid rgb(var(--theme-border) / .6); }
   .participants { display: flex; flex-direction: column; gap: 12px; }
   .participant { display: flex; align-items: center; gap: 10px; min-width: 0; }

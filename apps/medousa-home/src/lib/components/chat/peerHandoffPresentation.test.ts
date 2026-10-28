@@ -17,9 +17,39 @@ describe('sender-controlled handoff presentation', () => {
     row.handoff!.state = 'accepted';
     row.receipt = { outcome: 'completed' } as NonNullable<typeof row.receipt>;
     const result = peerHandoffPresentation(row, Date.now());
-    expect(result.status).toBe('Work completed');
+    expect(result.status).toBe('Result returned');
     expect(result.senderResponsible).toBe(true);
     expect(result.senderStatus).not.toContain('Reviewed');
+  });
+
+  it('keeps a returned result above stale running progress without a handoff record', () => {
+    const row = work(); row.handoff = null;
+    row.progress = { state: 'running', current_activity: 'Old action' } as NonNullable<typeof row.progress>;
+    row.receipt = { outcome: 'completed' } as NonNullable<typeof row.receipt>;
+    expect(peerHandoffPresentation(row, Date.now()).status).toBe('Result returned');
+  });
+
+  it('returns expired approval to the sender instead of counting a disabled human action', () => {
+    const row = work(); row.handoff = null;
+    row.proposal.expires_at = '2020-01-01T00:00:00Z';
+    expect(peerHandoffPresentation(row, Date.now())).toMatchObject({ needsApproval: false, status: 'Approval expired', nextActor: 'Medousa' });
+  });
+
+  it('keeps the sender next on changes requested even when an old receipt is present', () => {
+    const row = work(); row.handoff!.state = 'changes_requested';
+    row.receipt = { outcome: 'completed' } as NonNullable<typeof row.receipt>;
+    expect(peerHandoffPresentation(row, Date.now()).nextActor).toBe('Medousa');
+    row.handoff!.responsible_session = { authority_id: 'other', session_id: 'other' };
+    expect(peerHandoffPresentation(row, Date.now()).nextActor).toBe('Responsible agent');
+  });
+
+  it('does not advertise failed handoffs as awaiting the agent or trust stale blocked progress after a result', () => {
+    const row = work(); row.handoff!.state = 'failed';
+    expect(peerHandoffPresentation(row, Date.now())).toMatchObject({ attention: true, nextActor: 'Medousa' });
+    row.handoff!.state = 'accepted';
+    row.receipt = { outcome: 'completed' } as NonNullable<typeof row.receipt>;
+    row.progress = { state: 'blocked' } as NonNullable<typeof row.progress>;
+    expect(peerHandoffPresentation(row, Date.now())).toMatchObject({ attention: false, nextActor: null });
   });
 
   it('uses the actual responsible session rather than treating transfer intent as a completed transfer', () => {

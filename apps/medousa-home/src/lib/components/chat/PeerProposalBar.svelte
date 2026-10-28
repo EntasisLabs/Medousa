@@ -13,11 +13,12 @@
   import { requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
   import { peerRuntimeLabel } from "./peerProgress";
 
-  let { sessionId, mobile = false, visible = true, children }: { sessionId: string | null; mobile?: boolean; visible?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]> } = $props();
+  let { sessionId, mobile = false, visible = true, children, onSnapshot }: { sessionId: string | null; mobile?: boolean; visible?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]>; onSnapshot?: (sessionId: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) => void } = $props();
   let rows = $state<PeerProposalReviewRecord[]>([]);
   let cursors = $state<{ runtime: string | null; cursor: string }[]>([]);
   let busy = $state(false);
   let feedback = $state<string | null>(null);
+  let actionErrors = $state<Record<string, string>>({});
   let now = $state(Date.now());
   let epoch = 0;
   let revision = 0;
@@ -53,7 +54,7 @@
     const scopeChanged = !loadedScope || loadedScope.session !== session || loadedScope.workshop !== workshop
       || Boolean(profile && loadedScope.profile && loadedScope.profile !== profile);
     if (scopeChanged) {
-      rows = []; cursors = []; feedback = null;
+      rows = []; cursors = []; feedback = null; actionErrors = {};
       loadedPages = new Map(); selectedId = undefined; selectedRuntime = null; proposalOrigins = new Map();
       discoveryRetryAt = new Map();
     }
@@ -143,6 +144,8 @@
     const proposal = current.proposal;
     ++revision;
     busy = true; busyId = proposal.proposal_id; feedback = null;
+    const { [proposal.proposal_id]: _previousError, ...otherErrors } = actionErrors;
+    actionErrors = otherErrors;
     try {
       // Pin paired portals; local workshops use the normal authenticated route.
       const targetWorkshop = proposalWorkshop(proposal.request.target.execution_runtime_id);
@@ -169,7 +172,7 @@
         feedback = null;
       }
     } catch (error) {
-      if (token === epoch) feedback = error instanceof Error ? error.message : String(error);
+      if (token === epoch) actionErrors = { ...actionErrors, [proposal.proposal_id]: error instanceof Error ? error.message : String(error) };
     } finally { if (token === epoch) { busy = false; busyId = null; } }
   }
   async function next() {
@@ -226,8 +229,10 @@
       if (token === epoch) feedback = error instanceof Error ? error.message : String(error);
     }
   }
-  const controls = $derived<PeerProposalControls>({ now, available, busy, busyId, feedback,
+  const controls = $derived<PeerProposalControls>({ now, available, busy, busyId, feedback, actionErrors,
     hasMore: cursors.length > 0, loadMore: next, action, openExecution });
+  // History and the composer dock consume this same controller, never a second poller.
+  $effect(() => { onSnapshot?.(sessionId, rows, controls); });
 </script>
 
 {#if children}
