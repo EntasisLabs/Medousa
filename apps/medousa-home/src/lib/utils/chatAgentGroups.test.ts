@@ -17,6 +17,20 @@ const messages = [message("request", "user", 1), message("spawn", "assistant", 2
   message("later-request", "user", 3), message("later-reply", "assistant", 4)];
 
 describe("agent turn placement", () => {
+  it("uses the parent turn when a refreshed link points at a later worker result", () => {
+    const history: ChatMessage[] = [messages[0], { ...messages[1], turnId: "parent" }, ...messages.slice(2),
+      { id: "result", role: "assistant", content: "Done", lane: "worker", turnId: "parent", workId: "work" }];
+    const workers = new Map([["work", { workId: "work", parentTurnId: "parent", parentMessageId: "result" } as SubagentRow]]);
+    expect([...chatAgentGroups(history, history, [], workers).keys()]).toEqual(["request"]);
+  });
+  it("keeps unknown spawn history in earlier work rather than attaching it to the result turn", () => {
+    const history: ChatMessage[] = [...messages.slice(2),
+      { id: "result", role: "assistant", content: "Done", lane: "worker", workId: "work" }];
+    for (const coordinates of [{}, { parentTurnId: "missing", parentMessageId: "missing" }]) {
+      const workers = new Map([["work", { workId: "work", ...coordinates } as SubagentRow]]);
+      expect([...chatAgentGroups(history, history, [], workers).keys()]).toEqual([null]);
+    }
+  });
   it("groups nine agents at their initiating reply without moving them to later turns", () => {
     const proposals = Array.from({ length: 9 }, (_, i) => proposal(`agent-${i}`, 1));
     const groups = chatAgentGroups(messages, messages, proposals, new Map());

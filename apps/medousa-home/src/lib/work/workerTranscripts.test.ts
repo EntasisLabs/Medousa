@@ -106,6 +106,19 @@ describe("WorkerTranscriptStore", () => {
     expect(transcript?.streaming).toBe(true);
   });
 
+  it.each(['backlog', 'wrapping_up', 'blocked'])("does not stream non-executing %s detail or progress", column => {
+    const fromDetail = store.ingestDetail(detail({ terminal: false }), column)!;
+    expect(fromDetail.streaming).toBe(false);
+    expect(fromDetail.terminal).toBe(false);
+    const fromProgress = store.ingestProgress({ work_id: 'work-2', column, terminal: false, live_status_line: 'Old tool status' })!;
+    expect(fromProgress.streaming).toBe(false);
+    expect(fromProgress.terminal).toBe(false);
+    if (column === 'wrapping_up') {
+      expect(fromDetail.statusLine).toBe('Result ready · Awaiting summary');
+      expect(fromProgress.statusLine).toBe('Result ready · Awaiting summary');
+    }
+  });
+
   it("marks terminal when column is done", () => {
     const transcript = store.ingestDetail(
       detail({

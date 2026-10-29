@@ -63,7 +63,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Saved artifacts](guides/artifacts.md) | Find and show earlier HTML artifacts in chat |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
-| [Delegation approvals](guides/delegation-approvals.md) | Use the composer work dock and task threads, review proposals, and queue remote background workers |
+| [Delegation approvals](guides/delegation-approvals.md) | Follow in-chat task receipts, the slim work/decision line, workshop activity, and explicit delegation approvals |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---

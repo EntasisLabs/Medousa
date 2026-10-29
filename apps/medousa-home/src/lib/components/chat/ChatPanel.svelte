@@ -71,7 +71,7 @@
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { openAskHistory } from "$lib/runtime/shellUseCases";
-  import WorkerTranscriptPanel from "$lib/components/chat/WorkerTranscriptPanel.svelte";
+  import WorkerTaskPanel from "$lib/components/chat/WorkerTaskPanel.svelte";
   import { subagentRowMap, subagentRowsForSession } from "$lib/utils/subagentRows";
   import {
     saveChatTurnToVault,
@@ -197,6 +197,7 @@
   const externalConversation = untrack(() => sharedExternalConversation ?? createExternalConversationController({ provider: () => providerRuntime, sessionId: () => panelSessionId, scope: () => chat.workshopScopeId, offline: () => connection.offline, visible: () => visible }));
   const panelBot = $derived(bots.forSession(panelSessionId));
   const chatCodeProject = $derived(undertakings.forChat(panelSessionId));
+  let projectReviewReceipt = $state<{ openReview: () => void }>();
   const panelMessages = $derived(history.messages());
   /**
    * Worker-lane turns stay in the principal thread: they carry the sub-agent's
@@ -1040,6 +1041,18 @@
       {#if !embedded && !providerRuntime && chatMessages.length === 0}
         <PeerProposalBar sessionId={panelSessionId} {mobile} {visible} onSnapshot={receiveProposalSnapshot} />
       {/if}
+      {#if chatCodeProject && !embedded && !providerRuntime}
+        <ChatChangeReceipt bind:this={projectReviewReceipt}
+          workId={chatCodeProject.workId}
+          projectTitle={chatCodeProject.title}
+          phase={chatCodeProject.humanPhase}
+          review={undertakings.review?.work_id === chatCodeProject.workId ? undertakings.review : null}
+          eventRevision={undertakings.eventRevision}
+          activityRunning={Boolean(streamingMessage) || activeSubagentCount > 0}
+          onOpenCode={openChatCodeReview}
+          onRequestRevision={requestChatCodeRevision}
+          onReviewChanged={() => undertakings.select(chatCodeProject.workId)} />
+      {/if}
 
       {/if}
     </ChatScrollChrome>
@@ -1060,20 +1073,9 @@
       />
       <AgentPermissionBar />
       <AgentSecretBar />
-      <ChatWorkDock sessionId={panelSessionId} proposals={dockSnapshot?.rows ?? []} workers={subagentRows} controls={dockSnapshot?.controls} onOpenWorker={openWorkerTranscript}>
-        {#if chatCodeProject}
-          <ChatChangeReceipt compact
-            workId={chatCodeProject.workId}
-            projectTitle={chatCodeProject.title}
-            phase={chatCodeProject.humanPhase}
-            review={undertakings.review?.work_id === chatCodeProject.workId ? undertakings.review : null}
-            eventRevision={undertakings.eventRevision}
-            activityRunning={Boolean(streamingMessage) || activeSubagentCount > 0}
-            onOpenCode={openChatCodeReview}
-            onRequestRevision={requestChatCodeRevision}
-            onReviewChanged={() => undertakings.select(chatCodeProject.workId)} />
-        {/if}
-      </ChatWorkDock>
+      <ChatWorkDock sessionId={panelSessionId} proposals={dockSnapshot?.rows ?? []} workers={subagentRows} controls={dockSnapshot?.controls} onOpenWorker={openWorkerTranscript}
+        projectNeedsReview={Boolean(chatCodeProject && undertakings.review?.work_id === chatCodeProject.workId && (chatCodeProject.humanPhase === 'review' || undertakings.review.human_phase === 'review'))}
+        onOpenProjectReview={() => projectReviewReceipt?.openReview()} />
     {/if}
     {#if !providerRuntime}
       <ChatStickyBoard sessionId={panelSessionId} workshopScopeId={chat.workshopScopeId} profileId={userProfiles.activeProfileId} enabled={visible && !connection.offline} />
@@ -1163,7 +1165,7 @@
     onChipSelect={prefillComposerFromChip}
   />
 
-  <WorkerTranscriptPanel sideThread
+  <WorkerTaskPanel
     workId={workerTranscriptWorkId}
     onClose={closeWorkerTranscript}
   />

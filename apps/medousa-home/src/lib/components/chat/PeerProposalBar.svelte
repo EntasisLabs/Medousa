@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import type { Snippet } from "svelte";
-  import ChatAgentGroup from "./ChatAgentGroup.svelte";
+  import ChatTaskGroup from "./ChatTaskGroup.svelte";
   import type { PeerProposalControls } from "./peerProposalControls";
   import { chat } from "$lib/stores/chat.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
@@ -239,7 +239,7 @@
   {@render children(rows, controls)}
 {:else if rows.length}
   <section class="delegation-context" class:mobile aria-label="Delegated work">
-    <ChatAgentGroup group={{ proposals: rows, workers: [] }} {controls} />
+    <ChatTaskGroup group={{ proposals: rows, workers: [] }} {controls} />
   </section>
 {/if}
 {#if feedback}<p class="feedback" role="status">{feedback}</p>{/if}

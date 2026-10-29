@@ -257,7 +257,7 @@
         needsAttentionCount={workspace.needsAttentionCount()}
         cronActiveCount={automations.activeCount().enabled}
         cronTotalCount={automations.activeCount().total}
-        motionCards={workspace.railCards()}
+        motionCards={workspace.visibleCards()}
         selectedMotionId={workspace.selectedCardId}
         onSelectMotion={handleCardSelect}
         onOpenRuntime={() => navigateToSurface("runtime")}

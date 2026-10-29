@@ -18,7 +18,7 @@ vi.mock("$lib/stores/executionTargets.svelte", () => ({ executionTargets: { runt
 vi.mock("$lib/stores/narration.svelte", () => ({ narration: { initialize: vi.fn(), available: false } }));
 
 describe("inline agent results", () => {
-  it("returns to the spawning group and reveals a folded task from its later result", async () => {
+  it("returns to the spawning task link from its later result without legacy blocks", async () => {
     const target = document.createElement("div"); document.body.append(target);
     const workers = new Map(Array.from({ length: 6 }, (_, i) => [`work-${i}`, {
       workId: `work-${i}`, parentMessageId: "spawn", title: `Task ${i}`,
@@ -34,20 +34,18 @@ describe("inline agent results", () => {
     } });
     flushSync();
     try {
-      const group = target.querySelector("details.agent-group") as HTMLDetailsElement;
+      const group = target.querySelector(".task-receipts")!;
       expect(target.querySelector(".chat-turn-beat")?.nextElementSibling).toBe(group);
-      group.open = false;
+      expect(target.querySelector('.agent-group, .agent-work-line')).toBeNull();
       const scroll = HTMLElement.prototype.scrollIntoView;
       HTMLElement.prototype.scrollIntoView = vi.fn();
       try { (target.querySelector(".agent-return") as HTMLButtonElement).click(); flushSync(); }
       finally { HTMLElement.prototype.scrollIntoView = scroll; }
-      expect(group.open).toBe(true);
-      expect((group.querySelector(".more-agents") as HTMLDetailsElement).open).toBe(true);
-      expect((group.querySelector('[data-worker-id="work-5"] details') as HTMLDetailsElement).open).toBe(true);
-      expect(document.activeElement).toBe(group.querySelector('[data-worker-id="work-5"] summary'));
+      expect(document.activeElement).toBe(group.querySelector('[data-worker-id="work-5"]'));
+      expect(group.querySelectorAll('.worker-receipt')).toHaveLength(6);
     } finally { await unmount(component); target.remove(); }
   });
-  it("keeps expanded agent details mounted when the handoff shell is hidden after completion", async () => {
+  it("keeps the task link mounted when the handoff shell is hidden after completion", async () => {
     const target = document.createElement("div"); document.body.append(target);
     const row: SubagentRow = { workId: "work", parentMessageId: "shell", title: "Verify setup", disposition: "parallel", statusLine: "Working", toolRuns: [], thinking: "", thinkingSeconds: null, streaming: true, terminal: false };
     const props = $state({ sessionId: "chat", subagentRows: new Map([["work", row]]), messages: [
@@ -56,17 +54,15 @@ describe("inline agent results", () => {
     ] });
     const component = mount(ChatMessageList, { target, props }); flushSync();
     try {
-      const group = target.querySelector(".agent-group") as HTMLDetailsElement;
-      const detail = target.querySelector(".agent-work-line") as HTMLDetailsElement;
-      detail.open = true;
+      const group = target.querySelector(".task-receipts")!;
+      const task = target.querySelector('[data-worker-id="work"]')!;
       props.messages = props.messages.map(message => message.role === "assistant" ? { ...message, streaming: false } : message);
       props.subagentRows = new Map([["work", { ...row, attention: true, terminal: true, streaming: false, statusLine: "Work failed" }]]);
       flushSync();
-      expect(target.querySelector(".agent-group")).toBe(group);
-      expect(target.querySelector(".agent-work-line")).toBe(detail);
-      expect(detail.open).toBe(true);
-      expect(group.querySelector(".group-status")?.textContent).toContain("1 needs attention");
-      expect(detail.querySelector(".work-status")?.textContent).toBe("Work failed");
+      expect(target.querySelector(".task-receipts")).toBe(group);
+      expect(target.querySelector('[data-worker-id="work"]')).toBe(task);
+      expect(task.textContent).toContain('Needs attention');
+      expect(target.querySelector('.agent-group, .agent-work-line')).toBeNull();
     } finally { await unmount(component); target.remove(); }
   });
 

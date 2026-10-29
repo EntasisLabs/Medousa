@@ -14,6 +14,7 @@ export function isEmptyHandoffShell(message: ChatMessage): boolean {
   if (message.toolRuns && message.toolRuns.length > 0) return false;
   if (message.tools && message.tools.length > 0) return false;
   if (message.uiArtifacts && message.uiArtifacts.length > 0) return false;
+  if (message.mediaAttachments?.length) return false;
   if (message.reasoning?.trim()) return false;
   if (message.budgetRequestId) return false;
   // Handoff shells carry a stage whisper (or were cleared to whisper-only).
@@ -43,7 +44,8 @@ export function presentWorkerThreadMessages(messages: ChatMessage[]): ChatMessag
         Boolean(m.streaming) ||
         Boolean(m.failed) ||
         Boolean(m.toolRuns?.length) ||
-        Boolean(m.uiArtifacts?.length)),
+        Boolean(m.uiArtifacts?.length) ||
+        Boolean(m.mediaAttachments?.length)),
   );
 
   if (!substance) return presentChatMessages(messages);

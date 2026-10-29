@@ -86,6 +86,7 @@
   let loading = $state(false);
   let loadError = $state<string | null>(null);
   let sheetOpen = $state(false);
+  export function openReview() { sheetOpen = true; }
   let refreshAvailable = $state(false);
   let projectRevision = $state(0);
 

@@ -27,6 +27,36 @@ it("reads live messages from the stream buffer rather than keeping a stale lates
   expect(window.pages.at(-1)!.messages).toEqual([]);
 });
 
+it("paints overlapping pages and the live buffer once, keeping the live version", () => {
+  const window = new TranscriptWindow("24");
+  window.prepend({ cursor: "24", olderCursor: null, messages: messages(0, 25) });
+  const live = messages(20, 30);
+  live[0] = { ...live[0], content: "Updated live reply", streaming: true };
+  const painted = window.messages(live);
+  expect(painted.map(message => message.id)).toEqual(messages(0, 30).map(message => message.id));
+  expect(painted[20]).toBe(live[0]);
+});
+
+it("reconciles a persisted reply with its differently named stream bubble by turn identity", () => {
+  const window = new TranscriptWindow("24");
+  window.prepend({ cursor: "24", olderCursor: null, messages: [
+    { id: "saved", role: "assistant", turnId: "turn", content: "Saved reply" },
+  ] });
+  const live: ChatMessage = { id: "live", role: "assistant", turnId: "turn", content: "Live reply", streaming: true };
+  expect(window.messages([live])).toEqual([live]);
+});
+
+it("keeps identical text from distinct turns and different lanes", () => {
+  const window = new TranscriptWindow("24");
+  const history: ChatMessage[] = [
+    { id: "one", role: "assistant", turnId: "one", content: "Done" },
+    { id: "two", role: "assistant", turnId: "two", content: "Done" },
+    { id: "worker", role: "assistant", turnId: "two", content: "Done", lane: "worker" },
+  ];
+  window.prepend({ cursor: "24", olderCursor: null, messages: history });
+  expect(window.messages([])).toEqual(history);
+});
+
 it("bounds live growth while preserving active messages outside the recent tail", () => {
   const all = messages(0, 500);
   all[0].streaming = true;

@@ -21,7 +21,26 @@ export class TranscriptWindow {
   get olderCursor() { return this.pages[0]?.olderCursor ?? null; }
 
   messages(live: ChatMessage[]): ChatMessage[] {
-    return this.pages.flatMap(page => page.cursor === null ? live : page.messages);
+    // History pages can overlap each other and the retained live tail after
+    // resume. Keep the original position but prefer the later (live) object;
+    // concatenating these buffers paints the same turn multiple times.
+    const output: ChatMessage[] = [];
+    const byId = new Map<string, number>();
+    const byTurn = new Map<string, number>();
+    for (const page of this.pages) {
+      for (const message of page.cursor === null ? live : page.messages) {
+        const turnKey = message.role === "assistant" && message.turnId?.trim()
+          ? JSON.stringify([message.turnId.trim(), message.lane ?? "chat", message.workId ?? null, message.askJobId ?? null])
+          : null;
+        const index = byId.get(message.id) ?? (turnKey ? byTurn.get(turnKey) : undefined);
+        const position = index ?? output.length;
+        if (index === undefined) output.push(message);
+        else output[index] = message;
+        byId.set(message.id, position);
+        if (turnKey) byTurn.set(turnKey, position);
+      }
+    }
+    return output;
   }
 
   prepend(page: TranscriptPage) {

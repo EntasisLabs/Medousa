@@ -234,6 +234,12 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
     }
   }
 
+  // Generated images are message attachments, not text/artifact segments.
+  // Keep them visible for both native segmented and legacy assistant replies.
+  if (message.mediaAttachments?.length) {
+    flow.push(child(`${id}:media`, "chat_media", { attachments: message.mediaAttachments }));
+  }
+
   return flow;
 }
 

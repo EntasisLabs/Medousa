@@ -46,6 +46,12 @@ function record(id: string, runtime = "local"): PeerProposalReviewRecord {
   };
 }
 async function settle() { await tick(); await vi.advanceTimersByTimeAsync(0); flushSync(); }
+function task(title: string) {
+  const button = [...document.querySelectorAll<HTMLButtonElement>('button.task-receipt')].find(button => button.querySelector('strong')?.textContent === title);
+  expect(button, `Task receipt for ${title}`).toBeDefined();
+  return button!;
+}
+async function inspect(title: string) { task(title).click(); await settle(); return document.querySelector('dialog[open]')!; }
 async function render(onSnapshot?: (session: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) => void) {
   const props = $state({ sessionId: "ses_owner", onSnapshot });
   const target = document.createElement("div"); document.body.append(target);
@@ -58,6 +64,8 @@ beforeEach(() => {
   workshopState.workshops = [];
   Object.assign(connection, { online: true, health: { active_profile_id: "owner", runtime: { authority_id: `auth_${"a".repeat(64)}`, advertised_capabilities: ["coordination.operator_proposals.v1"] } } });
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
+  vi.spyOn(HTMLDialogElement.prototype, 'close').mockImplementation(function (this: HTMLDialogElement) { this.open = false; this.dispatchEvent(new Event('close')); });
   api.list.mockResolvedValue({ proposals: [], next_cursor: null });
 });
 afterEach(async () => { if (component) await unmount(component); component = undefined; document.body.replaceChildren(); vi.restoreAllMocks(); vi.useRealTimers(); });
@@ -87,7 +95,9 @@ describe("assignment card lifecycle", () => {
     await render();
     expect(api.list).toHaveBeenCalledWith("ses_owner", null, undefined, undefined);
     expect(document.body.textContent).toContain("Assignment saved-work");
-    expect(document.body.textContent).toContain("Saved agent result");
+    expect(document.body.textContent).not.toContain("Saved agent result");
+    const detail = await inspect('Assignment saved-work');
+    expect(detail.textContent).toContain("Saved agent result");
     expect(api.act).not.toHaveBeenCalled();
   });
 
@@ -118,7 +128,7 @@ describe("assignment card lifecycle", () => {
       return { proposals: [] };
     });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
-    expect(document.body.textContent).toContain("2 agents");
+    expect(document.querySelectorAll('button.task-receipt')).toHaveLength(2);
     expect(document.body.textContent).toContain("Assignment one");
     expect(document.body.textContent).toContain("Assignment two");
     expect(api.act).not.toHaveBeenCalled();
@@ -128,13 +138,14 @@ describe("assignment card lifecycle", () => {
     const work = record("proposal-one");
     api.list.mockResolvedValueOnce({ proposals: [work], next_cursor: null });
     await render();
-    expect(document.body.textContent).toContain("Agent working");
-    expect(document.body.textContent).toContain("Run verification");
+    expect(task('Assignment proposal-one').textContent).toContain("Agent working");
+    const detail = await inspect('Assignment proposal-one');
+    expect(detail.textContent).toContain("Run verification");
     api.list.mockResolvedValue({ proposals: [], next_cursor: null, tracked_proposal: { ...work, receipt: { outcome: "completed", result: "Verified result" } } });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
     expect(api.list).toHaveBeenLastCalledWith("ses_owner", null, undefined, "proposal-one");
     expect(document.body.textContent).toContain("Result returned");
-    expect(document.querySelector('.work-status')?.textContent).not.toContain('working');
+    expect(task('Assignment proposal-one').textContent).not.toContain('Agent working');
     expect(document.body.textContent).toContain("Verified result");
     expect(document.body.textContent).not.toContain("Run verification");
     expect(api.act).not.toHaveBeenCalled();
@@ -145,7 +156,8 @@ describe("assignment card lifecycle", () => {
     await render(); api.list.mockRejectedValue(new Error("Workshop unavailable"));
     await vi.advanceTimersByTimeAsync(60_000); await settle();
     expect(document.body.textContent).toContain("Assignment proposal-one");
-    expect(document.body.textContent).toContain("Progress updates are delayed");
+    const detail = await inspect('Assignment proposal-one');
+    expect(detail.textContent).toContain("Progress updates are delayed");
     expect(api.act).not.toHaveBeenCalled();
   });
 
@@ -183,7 +195,8 @@ describe("delegation context line", () => {
     api.list.mockResolvedValue({ proposals: [record('native')] });
     await render();
     expect(navigation.openChat).not.toHaveBeenCalled();
-    [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Open chat'))!.click();
+    await inspect('Assignment native');
+    [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Open agent conversation'))!.click();
     await settle();
     expect(navigation.openChat).toHaveBeenCalledWith('ses_executor_native', { title: 'Medousa Coder', activate: true });
     expect(api.act).not.toHaveBeenCalled();
@@ -195,29 +208,29 @@ describe("delegation context line", () => {
     remote.proposal.request.target.authority_id = 'remote-authority';
     api.list.mockImplementation(async (_session, runtime) => ({ proposals: runtime === 'remote' ? [remote] : [] }));
     await render();
+    await inspect('Assignment remote-native');
     const labels = [...document.querySelectorAll('button')].map(button => button.textContent);
     expect(labels.some(label => label?.includes('Open Studio'))).toBe(true);
-    expect(labels.some(label => label?.includes('Open project') || label?.includes('Open chat'))).toBe(false);
+    expect(labels.some(label => label?.includes('Open project') || label?.includes('Open agent conversation'))).toBe(false);
     expect(navigation.openChat).not.toHaveBeenCalled();
     expect(navigation.openProject).not.toHaveBeenCalled();
   });
 
-  it("keeps assignment details collapsed and preserves expansion through progress updates", async () => {
+  it("keeps assignment details behind a task receipt and preserves the open dialog through progress updates", async () => {
     const work = record("compact-work");
     work.proposal.request.instructions = 'Scaffold Penjamin\nLong assignment details stay behind the disclosure.';
     api.list.mockResolvedValue({ proposals: [work] });
     await render();
-    const details = document.querySelector('details.agent-work-line')! as HTMLDetailsElement;
-    const summary = details.querySelector('summary')!;
-    expect(details.open).toBe(false);
-    expect(summary.textContent).toContain('Scaffold Penjamin');
+    const summary = task('Scaffold Penjamin');
+    expect(document.querySelector('dialog')?.open).toBe(false);
     expect(summary.textContent).not.toContain('Long assignment');
-    expect(summary.textContent).toContain('Run verification');
-    details.open = true;
+    expect(document.body.textContent).not.toContain('Long assignment');
+    const details = await inspect('Scaffold Penjamin');
+    expect(details.textContent).toContain('Long assignment details stay behind the disclosure.');
+    expect(details.textContent).toContain('Run verification');
     api.list.mockResolvedValue({ proposals: [], tracked_proposal: { ...work, progress: { ...work.progress, current_activity: 'Build application' } } });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
-    expect(document.querySelector('details.agent-work-line')).toBe(details);
-    expect(details.open).toBe(true);
+    expect(document.querySelector('dialog[open]')).toBe(details);
     expect(document.body.textContent).toContain('Build application');
     expect(api.act).not.toHaveBeenCalled();
   });
@@ -228,14 +241,16 @@ describe("delegation context line", () => {
     work.handoff = { admission: 'delegate', policy: { completion: 'sender_review', responsibility: 'retain' }, responsible_session: work.proposal.request.owner_session, state: 'awaiting_sender_review' };
     api.list.mockResolvedValue({ proposals: [work] });
     await render();
-    expect(document.querySelector('details.agent-work-line > summary')?.textContent).toContain('Awaiting sender review');
-    expect(document.body.textContent).toContain('Taco');
-    expect(document.body.textContent).toContain('Review pending');
+    expect(task('Assignment review-work').textContent).toContain('Awaiting sender review');
+    const detail = await inspect('Assignment review-work');
+    expect(detail.textContent).toContain('Awaiting sender review');
+    expect(detail.textContent).toContain('Worker finished');
     expect(document.body.textContent).not.toContain('Result accepted');
     expect([...document.querySelectorAll('button')].some(button => button.textContent?.includes('Approve'))).toBe(false);
     api.list.mockResolvedValue({ proposals: [], tracked_proposal: { ...work, handoff: { ...work.handoff, state: 'accepted', review: { verdict: 'accept', reason: 'Checks and scope verified', receipt_id: 'receipt', sender_session: work.proposal.request.owner_session, turn_id: 'review-turn' } } } });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
-    expect(document.querySelector('details.agent-work-line > summary')?.textContent).toContain('Result accepted');
+    expect(task('Assignment review-work').textContent).toContain('Result accepted');
+    expect(detail.textContent).toContain('Checks and scope verified');
     expect(api.act).not.toHaveBeenCalled();
   });
 
@@ -245,11 +260,13 @@ describe("delegation context line", () => {
     proposal.progress = null;
     api.list.mockResolvedValue({ proposals: [proposal] });
     await render();
+    expect([...document.querySelectorAll('button')].some(button => button.textContent === 'Approve & start')).toBe(false);
+    await inspect('Assignment suggested-work');
     expect([...document.querySelectorAll('button')].some(button => button.textContent === 'Approve & start')).toBe(true);
     const direct = { ...proposal, handoff: { admission: 'delegate' as const, policy: {}, responsible_session: proposal.proposal.request.owner_session, state: 'awaiting_acceptance' as const } };
     api.list.mockResolvedValue({ proposals: [], tracked_proposal: direct });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
-    expect(document.querySelector('details.agent-work-line > summary')?.textContent).toContain('Waiting for agent');
+    expect(task('Assignment suggested-work').textContent).toContain('Waiting for agent');
     expect([...document.querySelectorAll('button')].some(button => button.textContent?.includes('Approve'))).toBe(false);
     expect(api.act).not.toHaveBeenCalled();
   });
@@ -257,26 +274,23 @@ describe("delegation context line", () => {
 
 
 describe("grouped agent activity", () => {
-  it("shows nine tasks together, keeps their order and expansion as results arrive", async () => {
+  it("shows nine compact task receipts and preserves their order and selected detail as results arrive", async () => {
     const rows = Array.from({ length: 9 }, (_, i) => record(`task-${i}`));
     api.list.mockResolvedValue({ proposals: rows });
     await render();
-    expect(document.querySelector('.group-header')?.textContent).toContain('9 agents');
-    expect(document.querySelectorAll('details.agent-work-line')).toHaveLength(9);
-    const more = document.querySelector('details.more-agents') as HTMLDetailsElement;
-    expect(more.open).toBe(false);
-    more.open = true;
-    const row = document.querySelectorAll('details.agent-work-line')[5] as HTMLDetailsElement;
-    row.open = true;
+    expect(document.querySelectorAll('button.task-receipt')).toHaveLength(9);
+    expect(document.querySelector('details.agent-work-line')).toBeNull();
+    const row = task('Assignment task-5');
+    const detail = await inspect('Assignment task-5');
     const finished = rows.map(work => ({ ...work, receipt: { receipt_id: `result-${work.proposal.proposal_id}`, binding: work.binding!, outcome: 'completed' as const, result: 'Checks passed' } }));
     api.list.mockResolvedValue({ proposals: [...finished].reverse() });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
-    expect([...document.querySelectorAll('.work-title')].map(el => el.textContent)).toEqual(rows.map(work => work.proposal.request.instructions));
-    expect(document.querySelector('details.more-agents')).toBe(more);
-    expect(document.querySelectorAll('details.agent-work-line')[5]).toBe(row);
-    expect(row.open).toBe(true);
-    expect(more.open).toBe(true);
-    expect(document.querySelector('.group-header')?.textContent).toContain('9 sessions ended');
+    expect([...document.querySelectorAll('button.task-receipt strong')].map(el => el.textContent)).toEqual(rows.map(work => work.proposal.request.instructions));
+    expect(task('Assignment task-5')).toBe(row);
+    expect(document.querySelector('dialog[open]')).toBe(detail);
+    expect(detail.textContent).toContain('Assignment task-5');
+    expect(detail.textContent).toContain('Checks passed');
+    expect([...document.querySelectorAll('button.task-receipt')].every(button => button.textContent?.includes('Result returned'))).toBe(true);
   });
 
   it("tracks all results when multiple assignments leave the inbox", async () => {
@@ -285,8 +299,8 @@ describe("grouped agent activity", () => {
     await render();
     api.list.mockImplementation(async (_session, _runtime, _after, selected) => ({ proposals: [], tracked_proposal: selected ? { ...(selected === 'one' ? first : second), receipt: { outcome: 'completed', result: `Result ${selected}` } } : null }));
     await vi.advanceTimersByTimeAsync(15_000); await settle();
-    expect(document.body.textContent).toContain('Result one');
-    expect(document.body.textContent).toContain('Result two');
+    expect((await inspect('Assignment one')).textContent).toContain('Result one');
+    expect((await inspect('Assignment two')).textContent).toContain('Result two');
     expect(api.list).toHaveBeenCalledWith('ses_owner', null, undefined, 'two');
   });
 
@@ -296,16 +310,19 @@ describe("grouped agent activity", () => {
     api.list.mockResolvedValue({ proposals: [first, second] });
     api.act.mockImplementation(async (_proposal, action) => { if (action === 'dispatch') throw new Error('Startup unavailable'); return {}; });
     await render();
-    [...document.querySelectorAll('button')].filter(button => button.textContent === 'Approve & start')[1].click();
+    const affected = await inspect('Assignment two');
+    [...affected.querySelectorAll('button')].find(button => button.textContent === 'Approve & start')!.click();
     await settle();
     expect(api.act).toHaveBeenCalledWith(second.proposal, 'approve', null);
     expect(api.act).toHaveBeenCalledWith(second.proposal, 'dispatch', null);
     expect(api.act).not.toHaveBeenCalledWith(first.proposal, expect.anything(), expect.anything());
     expect(document.body.textContent).toContain('Start approved work');
-    const affected = document.querySelectorAll('.proposal-row')[1];
     expect(affected.textContent).toContain('Startup unavailable');
-    expect(affected.textContent).toContain('Start not confirmed');
-    expect(document.querySelectorAll('.proposal-row')[0].textContent).not.toContain('Startup unavailable');
+    expect(task('Assignment two').textContent).toContain('Decision needed');
+    expect([...affected.querySelectorAll('button')].find(button => button.textContent === 'Start approved work')?.disabled).toBe(false);
+    expect(api.act).toHaveBeenCalledTimes(2);
+    expect((await inspect('Assignment one')).textContent).not.toContain('Startup unavailable');
+    await inspect('Assignment two');
     api.list.mockResolvedValue({ proposals: [first, { ...second, decision: { approved: true } }] });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
     expect(affected.textContent).toContain('Startup unavailable');

@@ -9,20 +9,24 @@ discovery.
 
 ## Tracking work in chat
 
-The **agents** pill above the composer opens **Work & attention** without
-scrolling back through the conversation. It is explicitly scoped to **This chat**,
+The slim task count above the composer opens a floating **Work & attention**
+picker without scrolling back or pushing the conversation and composer apart.
+Close it with Escape, the close button, or a click outside. It is explicitly scoped to **This chat**,
 including its delegated work across projects and execution workshops—not a
 workshop-wide inventory. Requests needing your decision appear first. Each task
-shows its project/workshop, request identity, state, and next actor where known.
+shows its project/workshop, state, and next actor where known. A separate amber
+link shows requests that actually need your decision; sender reviews are not
+misrepresented as a second user approval.
 Choose the task you want; opening the list or a task never approves or starts it.
 Returned sessions remain available here as history.
 
-A delegated task opens in a side sheet with its exact assignment, approval or
-retry controls, result and review. Workshop workers open their transcript beside
-the conversation. On narrow screens these sheets use the available screen width.
-The separate **changes** pill opens the existing working-change or sealed-review
-surface for the chat's bound project. It counts changed files, not commits or
-accepted work, and opening it does not apply, commit or publish changes.
+A delegated task opens in a side sheet with its assignment, approval or retry
+controls, result and review. Workshop workers open a focused task-result sheet,
+not raw reasoning, tool blocks or technical transcript metadata. On narrow screens
+these sheets use the available screen width. The chat's bound project has a
+change-review entry inside the conversation, rather than another composer pill.
+It counts changed files, not commits or accepted work. Opening a review never
+applies, commits or publishes changes.
 
 Human messages and direct responses remain in the main conversation. Known worker
 follow-ups and different turn tickets are not paired with an unrelated newer
@@ -30,23 +34,26 @@ human message just because they arrived next. Worker return links open the
 corresponding transcript when available. Older history without turn metadata
 retains its adjacent-message grouping.
 
-Delegated agents and workshop background workers appear in an **agent group**
-inside the turn that requested their work. The group shows how many agents are
-working, ready for review, accepted, or need attention. Each row leads with its
-task, status, and current activity. Results update those rows in place; finishing
-does not move an agent to the bottom of the conversation.
+Delegated tasks appear as compact receipts inside the turn that requested their
+work. Requests requiring approval have an amber **Decision needed** receipt;
+working and returned tasks keep their actual status. Select **Review request** or
+**View task** to inspect details on demand. Workshop workers have compact task
+links behind a collapsed per-turn summary, rather than a repeated list of live
+updates. Only executing workers count as working; queued work and returned results
+awaiting the host summary do not. Results update in place; finishing does not move a task to the bottom of
+the conversation. The older expandable agent blocks and raw worker transcript
+panel are not used by the active chat path.
 
-Groups show four tasks initially. Open **more agents** to see the rest together,
-or collapse the whole group. Open a task to see its worker, workshop, sender
-responsibility, result, and review. The full assignment and technical provenance
-stay behind **Assignment** and **Details**. Workshop workers also offer their
-transcript and tool activity. If more requests are available from the workshop,
-choose **More requests** to load them into their corresponding groups.
+If more requests are available from the workshop, choose **More requests**.
 Assignments whose originating entries are outside the loaded history remain
-available together before the visible turns.
-Workshop worker results include **Open thread**, which opens the corresponding
-transcript. Surfaces without a transcript opener return to the originating group
-and task instead.
+available together before the visible turns. Worker return links open the
+focused result sheet when a task opener is available.
+
+For workshop-wide activity, select **X in motion** in the status bar. The popover
+groups visible workshop work into **Needs your decision**, **In progress**, and
+**Recently finished**, and links to the selected work. It remains accessible when
+only waiting or finished work remains. This is separate from the composer line,
+which stays scoped to this chat.
 
 Local sender-controlled handoffs can start directly when your request authorizes
 the work. Only proposals needing your decision show **Approve & start** (or
@@ -59,14 +66,14 @@ session does not prove that commands ran, files changed, checks passed, or a
 project was merged or published.
 
 Ownership transfer, review, sender wakeups, and user follow-up are separate
-choices captured by the sender. Inspect them under **Details**.
+choices captured by the sender. The task details show the next actor and recorded review.
 Choosing no user follow-up does not suppress the sender's requested callbacks.
 An unavailable workshop leaves the last observed work visible. Refresh errors
 and delayed progress do not turn a working assignment into a failed one.
 
-On the execution workshop, the expanded task offers **Open project**, and native
-Medousa Coder assignments offer **Open chat**. For another connected workshop,
-open that workshop first; session and project ids remain scoped to its daemon.
+On the execution workshop, a task can offer **Open agent conversation**. For
+another connected workshop, open that workshop first; session and project ids
+remain scoped to its daemon.
 
 ## Background Medousa workers
 
@@ -113,9 +120,9 @@ immutable provenance, not a separate model-authored transcript. Discovery
 suggests the most recent 32 entries; one proposal can share at most 256 entries.
 Review that selection before starting.
 
-On a supported workshop, a proposal appears in its chat turn's agent group. Expand it to review the
-agent, instructions, channel, governed work item, execution workshop, exact
-shared conversation ranges, expiry, and owner-continuation choice.
+On a supported workshop, a proposal appears as a decision receipt in its chat
+turn. Open **Review request** to read the assignment and the approval scope.
+Approval starts or adopts that work; it does not approve the eventual changes.
 
 Choose **Approve & start** for new work or **Approve & adopt** for discovered
 existing work. Approval is durably recorded before startup or observer

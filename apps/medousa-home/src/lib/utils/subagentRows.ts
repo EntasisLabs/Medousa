@@ -97,7 +97,7 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
     const workId = detail.work_id?.trim() || card.id;
     const transcript = workerTranscripts.transcriptFor(workId);
     const terminal =
-      card.column === "done" || (card.column === "blocked" && detail.terminal);
+      card.column === "done" || (card.column === "blocked" && detail.terminal) || Boolean(transcript?.terminal);
     seen.add(workId);
     rows.push(
       {
@@ -108,6 +108,7 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
           executionRuntimeId:
             detail.execution_runtime_id?.trim() || transcript?.executionRuntimeId || null,
           statusLine:
+            (card.column === "wrapping_up" ? "Result ready · Awaiting summary" : null) ||
             transcript?.statusLine?.trim() ||
             detail.live_status_line?.trim() ||
             card.status_label ||
@@ -115,7 +116,9 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
           terminal,
           attention: card.column === "blocked",
         }),
-        parentTurnId: chat.workers.get(workId)?.parentTurnId,
+        // Nonterminal includes queued and completed-but-unsummarized work, not just execution.
+        streaming: !terminal && card.column === "in_flight",
+        parentTurnId: chat.workers.get(workId)?.parentTurnId ?? detail.correlation_id?.trim(),
         parentMessageId: chat.workers.get(workId)?.messageId,
       },
     );
@@ -137,6 +140,7 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
           statusLine: transcript?.statusLine ?? "Working…",
           terminal: transcript?.terminal ?? false,
         }),
+        streaming: transcript?.streaming ?? false,
         parentTurnId: link.parentTurnId,
         parentMessageId: link.messageId,
       },
