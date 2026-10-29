@@ -43,6 +43,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Notes and vaults](guides/notes-and-vaults.md) | Switch linked vaults, search across them, and discuss notes with separate context |
 | [Files](guides/files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
 | [Context](guides/context.md) | Browse saved session memory and its sources |
+| [Chat sticky notes](guides/chat-sticky-notes.md) | Keep corrections, exact details, and follow-ups hot across turns |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
 | [External agent conversations](guides/provider-conversations.md) | Find and connect named agents from Sessions or Spotlight through WhatsApp, Slack, or a webhook |
 | [Instinct Agent](guides/instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |

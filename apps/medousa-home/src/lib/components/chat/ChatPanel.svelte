@@ -29,6 +29,7 @@
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import PeerProposalBar from "$lib/components/chat/PeerProposalBar.svelte";
   import ChatWorkDock from "$lib/components/chat/ChatWorkDock.svelte";
+  import ChatStickyBoard from "$lib/components/chat/ChatStickyBoard.svelte";
   import type { PeerProposalControls } from "./peerProposalControls";
   import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
@@ -1073,6 +1074,9 @@
             onReviewChanged={() => undertakings.select(chatCodeProject.workId)} />
         {/if}
       </ChatWorkDock>
+    {/if}
+    {#if !providerRuntime}
+      <ChatStickyBoard sessionId={panelSessionId} workshopScopeId={chat.workshopScopeId} profileId={userProfiles.activeProfileId} enabled={visible && !connection.offline} />
     {/if}
     <form
       bind:this={composerFormEl}

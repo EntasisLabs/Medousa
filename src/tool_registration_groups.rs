@@ -55,6 +55,7 @@ pub fn register_portable_foundation_tools(
     bindings: &SharedToolRegistrationBindings,
 ) -> stasis::prelude::Result<()> {
     crate::schema_api::register_schema_tools(registry)?;
+    crate::chat_sticky_tools::register_sticky_tools(registry, bindings.runtime.clone())?;
     crate::runtime_api::register_runtime_api_tools(
         registry,
         bindings.runtime.clone(),

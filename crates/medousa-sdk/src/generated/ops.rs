@@ -2947,6 +2947,20 @@ pub const SESSIONS_BY_SESSION_ID_NAME_PUT: Operation = Operation {
     streaming: false,
 };
 
+pub const SESSIONS_BY_SESSION_ID_STICKIES_GET: Operation = Operation {
+    id: "sessions.by_session_id.stickies.get",
+    method: "GET",
+    path: "/v1/sessions/{session_id}/stickies",
+    streaming: false,
+};
+
+pub const SESSIONS_BY_SESSION_ID_STICKIES_POST: Operation = Operation {
+    id: "sessions.by_session_id.stickies.post",
+    method: "POST",
+    path: "/v1/sessions/{session_id}/stickies",
+    streaming: false,
+};
+
 pub const SESSIONS_BY_SESSION_ID_TURNS_GET: Operation = Operation {
     id: "sessions.by_session_id.turns.get",
     method: "GET",
@@ -4060,6 +4074,8 @@ pub static ALL: &[Operation] = &[
     SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_GET,
     SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_PUT,
     SESSIONS_BY_SESSION_ID_NAME_PUT,
+    SESSIONS_BY_SESSION_ID_STICKIES_GET,
+    SESSIONS_BY_SESSION_ID_STICKIES_POST,
     SESSIONS_BY_SESSION_ID_TURNS_GET,
     SESSIONS_BY_SESSION_ID_TURNS_POST,
     SESSIONS_BY_SESSION_ID_WORKSHOP_STEER_POST,

@@ -172,11 +172,13 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         crate::public_api::COGNITION_RUNTIME_QUERY,
         crate::public_api::COGNITION_SCHEMA,
         crate::public_api::COGNITION_MEMORY_QUERY,
+        "cognition_sticky_query",
         #[cfg(feature = "full-daemon")]
         crate::computer_tools::COGNITION_COMPUTER_SNAPSHOT,
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
+    index.set_effect(ToolId::new("cognition_sticky_mutate"), ToolEffect::Mutate);
     #[cfg(feature = "full-daemon")]
     index.set_effect(
         ToolId::new("cognition_peer_propose"),

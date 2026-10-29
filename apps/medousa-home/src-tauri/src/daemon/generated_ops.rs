@@ -842,6 +842,10 @@ pub enum DaemonOperation {
     SessionsBySessionIdLiquidStateByMessageIdByNodeIdByInstanceIdPut,
     #[serde(rename = "sessions.by_session_id.name.put")]
     SessionsBySessionIdNamePut,
+    #[serde(rename = "sessions.by_session_id.stickies.get")]
+    SessionsBySessionIdStickiesGet,
+    #[serde(rename = "sessions.by_session_id.stickies.post")]
+    SessionsBySessionIdStickiesPost,
     #[serde(rename = "sessions.by_session_id.turns.get")]
     SessionsBySessionIdTurnsGet,
     #[serde(rename = "sessions.by_session_id.turns.post")]
@@ -1464,6 +1468,8 @@ impl DaemonOperation {
             Self::SessionsBySessionIdLiquidStateByMessageIdByNodeIdByInstanceIdGet => "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get",
             Self::SessionsBySessionIdLiquidStateByMessageIdByNodeIdByInstanceIdPut => "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put",
             Self::SessionsBySessionIdNamePut => "sessions.by_session_id.name.put",
+            Self::SessionsBySessionIdStickiesGet => "sessions.by_session_id.stickies.get",
+            Self::SessionsBySessionIdStickiesPost => "sessions.by_session_id.stickies.post",
             Self::SessionsBySessionIdTurnsGet => "sessions.by_session_id.turns.get",
             Self::SessionsBySessionIdTurnsPost => "sessions.by_session_id.turns.post",
             Self::SessionsBySessionIdWorkshopSteerPost => "sessions.by_session_id.workshop.steer.post",

@@ -510,6 +510,26 @@ impl MedousaToolLoopPipeline {
                     push_round_context(&mut turn_ctx.tool_lane.messages, context, true);
                 }
                 perception_governor.compact_tool_history(&mut turn_ctx.tool_lane.messages);
+                // Sticky residency has its own model-aware whole-note budget. It
+                // must not be head/tail-clipped by the world-context governor.
+                if let Some(provider) = completion_gate
+                    .as_ref()
+                    .and_then(|gate| gate.round_context_provider.as_ref())
+                {
+                    let context = await_turn_result(
+                        "sticky context refresh",
+                        provider.sticky_context_for_next_round(),
+                    )
+                    .await?;
+                    crate::turn_context::replace_sticky_context(
+                        &mut turn_ctx.user_lane_prefix,
+                        None,
+                    );
+                    crate::turn_context::replace_sticky_context(
+                        &mut turn_ctx.tool_lane.messages,
+                        context,
+                    );
+                }
                 let mut messages =
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
                 ensure_assistant_tool_turn_reasoning(&mut messages);

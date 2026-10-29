@@ -628,6 +628,21 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
             put(crate::daemon_worker::rename_daemon_worker),
         )
         .merge(crate::live_handlers::surface())
+        .methods([
+            (
+                workshop_read_policy("/v1/sessions/{session_id}/stickies"),
+                get(crate::daemon::chat_stickies::read),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::POST,
+                    "/v1/sessions/{session_id}/stickies",
+                    Capability::WorkshopInteract,
+                    64 * 1024,
+                ),
+                post(crate::daemon::chat_stickies::mutate),
+            ),
+        ])
         .route(workshop_read_policy("/v1/health"), get(health))
         .route(workshop_read_policy("/v1/stats"), get(stats))
         .route(

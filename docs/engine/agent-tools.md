@@ -370,3 +370,38 @@ The browser companion currently registers only the read-only
 `browser_page_snapshot` tool. The current bridge requires
 `effect_class="external_read"`; write and side-effecting tools need an
 explicit approval model before they are exposed.
+
+### Chat-local sticky working memory
+
+`cognition_sticky_query` and `cognition_sticky_mutate` are always-callable public
+primitives. They are temporary working memory, separate from the turn scratchpad,
+conversation history, and permanent Locus recall. Their profile and chat are taken
+from the admitted turn context; callers cannot select another scope.
+
+Fetch action schemas with `cognition_schema` (`domain="sticky"`, or
+`types=["sticky.list", "sticky.put"]`). Query actions are `sticky.list` and
+`sticky.get` (`id`). Mutations are:
+
+- `sticky.put` (also `sticky.update`): create or explicitly replace `note` (including protected details).
+- `sticky.pin`: set `id` and `pinned`.
+- `sticky.resolve`, `sticky.reopen`, `sticky.remove`: operate on `id`.
+- `sticky.rollup`: atomically replace `source_ids` with `note`; pinned or exact
+  source notes must be explicitly updated/removed, never silently summarized away.
+
+Every mutation requires `expected_revision` and a stable `request_key`. Read the
+board first; on conflict, reread and reconcile rather than blindly retrying with a
+new revision. Identical retries use the same key and payload. A note has `id`,
+`text`, `kind`, `pinned`, `exact`, `source_refs` (strings), and `status` (`active`
+or `resolved`). Use these for corrections, exact details, rejected approaches,
+and deferred follow-ups that must stay present—not as higher-priority instructions
+or automatic permanent memory. Capacity errors are visible; no silent clipping or
+eviction occurs.
+
+Authenticated clients can inspect or mutate the same board using
+`GET /v1/sessions/{session_id}/stickies` and
+`POST /v1/sessions/{session_id}/stickies`. POST accepts the same tagged action
+payload as the agent tool (including `request_key` and `expected_revision`), and
+both return `{revision, notes}`. Session visibility is checked against the
+request's authenticated profile. Revision conflicts or reused keys with changed
+payloads return HTTP 409. Invalid mutations return 400; unavailable durable storage
+returns 503. There is no caller-supplied profile or global-board override.

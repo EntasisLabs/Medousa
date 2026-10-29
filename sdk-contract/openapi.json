@@ -41785,6 +41785,124 @@
         }
       }
     },
+    "/v1/sessions/{session_id}/stickies": {
+      "get": {
+        "operationId": "sessions.by_session_id.stickies.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SESSIONS_BY_SESSION_ID_STICKIES_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "sessions.by_session_id.stickies.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.stickies.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.stickies.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "sessions.by_session_id.stickies.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SESSIONS_BY_SESSION_ID_STICKIES_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "sessions.by_session_id.stickies.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.stickies.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.stickies.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/sessions/{session_id}/turns": {
       "get": {
         "operationId": "sessions.by_session_id.turns.get",

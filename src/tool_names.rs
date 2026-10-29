@@ -63,6 +63,8 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_manuscript_overlay_list",
     "cognition_manuscript_overlay_propose",
     "cognition_manuscript_resolve",
+    "cognition_sticky_query",
+    "cognition_sticky_mutate",
     "cognition_memory_mutate",
     "cognition_memory_query",
     "cognition_openshell_request_secret",

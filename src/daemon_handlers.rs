@@ -30,6 +30,7 @@ use medousa_types::PromptStashId;
 #[derive(Clone)]
 pub struct SessionDeleteState {
     pub memory_operations: Option<Arc<dyn MemoryOperations>>,
+    pub sticky_store: Option<crate::chat_stickies::ChatStickyStore>,
     pub turn_tickets: TurnTicketRegistry,
     pub turn_streams: Option<crate::daemon::turn_stream_registry::TurnStreamRegistry>,
 }
@@ -537,6 +538,7 @@ pub async fn delete_session(
     let summary = crate::session_lifecycle::delete_session(
         &session_id,
         state.memory_operations,
+        state.sticky_store,
         &state.turn_tickets,
         state.turn_streams.as_ref(),
         query.purge_memory,

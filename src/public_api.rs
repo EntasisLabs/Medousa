@@ -22,6 +22,8 @@ pub const COGNITION_WORKSHOP_QUERY: &str = "cognition_workshop_query";
 
 /// Primitives that every mode may call. Grows as families collapse.
 pub const PUBLIC_API_TOOLS: &[&str] = &[
+    "cognition_sticky_query",
+    "cognition_sticky_mutate",
     COGNITION_STORE_READ,
     COGNITION_STORE_WRITE,
     COGNITION_CAPABILITY,

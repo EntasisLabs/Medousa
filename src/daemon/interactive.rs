@@ -723,6 +723,8 @@ pub async fn delete_session_handler(
     crate::daemon_handlers::delete_session(
         State(crate::daemon_handlers::SessionDeleteState {
             memory_operations: Some(state.platform.memory_operations()),
+            sticky_store: crate::chat_sticky_tools::store_for_runtime(state.platform.composition())
+                .ok(),
             turn_tickets: state.turn_tickets.clone(),
             turn_streams: Some(state.interactive_turn_streams.clone()),
         }),

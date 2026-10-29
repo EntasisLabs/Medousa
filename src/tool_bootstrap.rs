@@ -74,6 +74,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_workshop_mutate",
     "cognition_memory_query",
     "cognition_memory_mutate",
+    "cognition_sticky_query",
+    "cognition_sticky_mutate",
     "cognition_identity_query",
     "cognition_identity_mutate",
     "cognition_web_search",
@@ -103,6 +105,8 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_store_write",
     "cognition_memory_query",
     "cognition_memory_mutate",
+    "cognition_sticky_query",
+    "cognition_sticky_mutate",
     "cognition_identity_query",
     "cognition_identity_mutate",
     "cognition_calendar_query",
@@ -887,7 +891,10 @@ mod tests {
     #[test]
     fn bootstrap_host_tools_are_small() {
         assert!(HOST_BOOTSTRAP_TOOLS.len() >= 8);
-        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 24);
+        // Two dedicated working-memory tools are always resident alongside permanent memory.
+        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 26);
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_sticky_query"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_sticky_mutate"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_turn"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_mutate"));

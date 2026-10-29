@@ -5196,6 +5196,7 @@ impl EmbeddedDaemonClient {
         let summary = crate::session_lifecycle::delete_session(
             session_id,
             Some(self.daemon.memory_operations.clone()),
+            crate::chat_sticky_tools::store_for_runtime(self.daemon.runtime.as_ref()).ok(),
             &self.daemon.turn_tickets,
             Some(&self.daemon.turn_streams),
             purge_memory,
@@ -5408,6 +5409,48 @@ impl EmbeddedDaemonClient {
             limit,
             before_entry_seq,
         ))
+    }
+
+    async fn sticky_profile(&self, session_id: &str) -> Result<String> {
+        let profile = self.active_profile_id()?;
+        let chat = session_id.to_string();
+        let owner = profile.clone();
+        let visible = tokio::task::spawn_blocking(move || {
+            crate::session_catalog::session_visible_to_profile(&chat, &owner)
+        })
+        .await?;
+        if !visible {
+            bail!("session is not available");
+        }
+        Ok(profile)
+    }
+
+    /// Read the same chat-local board used by the agent's sticky tools.
+    pub async fn session_stickies(
+        &self,
+        session_id: &str,
+    ) -> Result<crate::chat_stickies::StickyBoard> {
+        self.require(Capability::ContentRead)?;
+        let profile = self.sticky_profile(session_id).await?;
+        let store = crate::chat_sticky_tools::store_for_runtime(&self.daemon.runtime)
+            .map_err(anyhow::Error::msg)?;
+        store.read(&profile, session_id).await
+    }
+
+    pub async fn mutate_session_stickies(
+        &self,
+        session_id: &str,
+        action: crate::chat_sticky_tools::StickyMutateAction,
+    ) -> Result<crate::chat_stickies::StickyBoard> {
+        self.require(Capability::ContentWrite)?;
+        let profile = self.sticky_profile(session_id).await?;
+        let (_session, _lease) = crate::session_deletion::acquire_mutation_for_str(session_id)
+            .map_err(anyhow::Error::msg)?;
+        let store = crate::chat_sticky_tools::store_for_runtime(&self.daemon.runtime)
+            .map_err(anyhow::Error::msg)?;
+        store
+            .mutate(&profile, session_id, action.into_request())
+            .await
     }
 
     pub fn session_agent_mode(&self, session_id: &str) -> Result<SessionAgentModeResponse> {
@@ -6966,6 +7009,107 @@ query MobileProbe {
                 }
             }
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn embedded_stickies_enforce_authority_and_chat_isolation() {
+        let sandbox = tempfile::tempdir().expect("sticky embedded sandbox");
+        let daemon = EmbeddedDaemon::boot(EmbeddedDaemonConfig::with_chat_client(
+            sandbox.path(),
+            InstallationId::parse(INSTALLATION_ID).unwrap(),
+            "openai",
+            "embedded-test-model",
+            Arc::new(LifecycleChatClient::default()),
+        ))
+        .await
+        .expect("boot embedded daemon");
+        let client = daemon.local_client();
+        let session = client.create_session().unwrap();
+        let other_chat = client.create_session().unwrap();
+        let action = || {
+            serde_json::from_value::<crate::chat_sticky_tools::StickyMutateAction>(
+                serde_json::json!({
+                    "action": "sticky.put", "expected_revision": 0, "request_key": "mobile-1",
+                    "note": { "id": "mobile-note", "text": "Keep this exact detail",
+                        "kind": "constraint", "pinned": true, "exact": true,
+                        "source_refs": [], "status": "active" }
+                }),
+            )
+            .unwrap()
+        };
+        let anonymous = EmbeddedDaemonClient {
+            daemon: daemon.clone(),
+            principal: RequestPrincipal::anonymous(
+                crate::request_principal::TransportClass::Loopback,
+            ),
+        };
+        assert!(
+            anonymous
+                .session_stickies(&session.session_id)
+                .await
+                .is_err()
+        );
+        assert!(
+            anonymous
+                .mutate_session_stickies(&session.session_id, action())
+                .await
+                .is_err()
+        );
+        let outsider = EmbeddedDaemonClient {
+            daemon: daemon.clone(),
+            principal: RequestPrincipal::worker("unrelated-sticky-profile"),
+        };
+        assert!(
+            outsider
+                .session_stickies(&session.session_id)
+                .await
+                .is_err()
+        );
+        assert!(
+            outsider
+                .mutate_session_stickies(&session.session_id, action())
+                .await
+                .is_err()
+        );
+        assert!(client.session_stickies("nonexistent-chat").await.is_err());
+        let board = client
+            .mutate_session_stickies(&session.session_id, action())
+            .await
+            .unwrap();
+        assert_eq!(board.revision, 1);
+        assert_eq!(board.notes[0].text, "Keep this exact detail");
+        assert_eq!(
+            client.session_stickies(&session.session_id).await.unwrap(),
+            board
+        );
+        assert_eq!(
+            client
+                .mutate_session_stickies(&session.session_id, action())
+                .await
+                .unwrap(),
+            board
+        );
+        assert!(
+            client
+                .session_stickies(&other_chat.session_id)
+                .await
+                .unwrap()
+                .notes
+                .is_empty()
+        );
+        let store = crate::chat_sticky_tools::store_for_runtime(&daemon.runtime).unwrap();
+        assert_eq!(
+            store
+                .read(&client.active_profile_id().unwrap(), &session.session_id)
+                .await
+                .unwrap(),
+            board
+        );
+        drop(outsider);
+        drop(anonymous);
+        drop(client);
+        crate::session_store::reset_session_store_for_test();
+        drop(daemon);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
