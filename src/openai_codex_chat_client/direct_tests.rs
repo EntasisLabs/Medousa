@@ -89,6 +89,16 @@ async fn failure_fixture(
     stream: bool,
     with_deltas: bool,
 ) -> (StreamOnceError, usize) {
+    failure_fixture_with_cooldown(status, body, stream, with_deltas, None).await
+}
+
+async fn failure_fixture_with_cooldown(
+    status: u16,
+    body: String,
+    stream: bool,
+    with_deltas: bool,
+    retry_after: Option<&'static str>,
+) -> (StreamOnceError, usize) {
     let calls = Arc::new(AtomicUsize::new(0));
     let count = calls.clone();
     let router = axum::Router::new().route(
@@ -98,7 +108,11 @@ async fn failure_fixture(
             let count = count.clone();
             async move {
                 count.fetch_add(1, Ordering::SeqCst);
-                axum::response::Response::builder()
+                let mut response = axum::response::Response::builder();
+                if let Some(retry_after) = retry_after {
+                    response = response.header("retry-after", retry_after);
+                }
+                response
                     .status(status)
                     .header("x-request-id", "request_fixture")
                     .header(
@@ -179,4 +193,44 @@ async fn direct_admission_detail_shape_is_preserved() {
     let message = stream_once_error("gpt-6.1-sol", error).to_string();
     assert!(message.contains("detail"));
     assert!(message.contains("Serving region restriction"));
+}
+
+#[tokio::test]
+async fn transient_stream_rate_limit_retries_but_visible_output_does_not() {
+    let event =
+        json!({"type":"response.failed","response":{"error":{"code":"rate_limit_exceeded"}}});
+    let body = format!("event: response.failed\ndata: {event}\n\n");
+    let (error, calls) = failure_fixture(200, body.clone(), true, false).await;
+    assert_eq!(calls, RESPONSES_MAX_ATTEMPTS);
+    assert!(matches!(
+        error,
+        StreamOnceError::Failure { status: 429, .. }
+    ));
+    let body = format!(
+        "event: response.output_text.delta\ndata: {{\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}}\n\n{body}"
+    );
+    let (error, calls) = failure_fixture(200, body, true, true).await;
+    assert_eq!(calls, 1);
+    assert!(!error.can_retry_before_output());
+}
+
+#[tokio::test]
+async fn provider_cooldown_beyond_budget_is_preserved_without_early_retry() {
+    for header in ["121", "Wed, 01 Jan 2031 00:00:00 GMT"] {
+        let body = json!({"error":{"code":"rate_limit_exceeded"}}).to_string();
+        let (error, calls) =
+            failure_fixture_with_cooldown(429, body, false, false, Some(header)).await;
+        assert_eq!(calls, 1);
+        assert!(
+            matches!(error, StreamOnceError::Failure { retry_after: Some(delay), .. } if delay > Duration::from_secs(120))
+        );
+    }
+}
+
+#[tokio::test]
+async fn insufficient_quota_does_not_retry() {
+    let body = json!({"error":{"code":"insufficient_quota"}}).to_string();
+    let (error, calls) = failure_fixture(429, body, false, false).await;
+    assert_eq!(calls, 1);
+    assert!(!error.can_retry_before_output());
 }

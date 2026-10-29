@@ -11,6 +11,7 @@ fn invalid(message: &str) -> StreamOnceError {
         status: 400,
         body: json!({"error": {"code": "invalid_request", "message": message}}),
         request_id: None,
+        retry_after: None,
         observable_output_delivered: false,
     }
 }
@@ -169,6 +170,23 @@ pub(super) async fn stream_once(
         .or_else(|| response.headers().get("openai-request-id"))
         .and_then(|h| h.to_str().ok())
         .map(str::to_owned);
+    let retry_after = response
+        .headers()
+        .get("retry-after")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|value| {
+            let value = value.trim();
+            if let Ok(seconds) = value.parse::<u64>() {
+                return Some(Duration::from_secs(seconds));
+            }
+            chrono::DateTime::parse_from_rfc2822(value)
+                .ok()
+                .map(|date| {
+                    (date.with_timezone(&chrono::Utc) - chrono::Utc::now())
+                        .to_std()
+                        .unwrap_or_default()
+                })
+        });
     if !(200..300).contains(&status) {
         let text = response
             .text()
@@ -179,6 +197,7 @@ pub(super) async fn stream_once(
             status,
             body,
             request_id,
+            retry_after,
             observable_output_delivered: false,
         });
     }
@@ -253,9 +272,13 @@ pub(super) async fn stream_once(
                 let code = body["error"]["code"]
                     .as_str()
                     .or(body["code"].as_str())
+                    .or(body["error"]["type"].as_str())
                     .unwrap_or_default();
                 let status = match code {
-                    "subscription_sharing_usage_limit_exceeded" => 429,
+                    "subscription_sharing_usage_limit_exceeded"
+                    | "rate_limit_exceeded"
+                    | "insufficient_quota"
+                    | "billing_hard_limit_reached" => 429,
                     "subscription_sharing_usage_unavailable"
                     | "subscription_sharing_user_unavailable" => 503,
                     "subscription_sharing_invalid_user" => 401,
@@ -265,6 +288,7 @@ pub(super) async fn stream_once(
                     status,
                     body,
                     request_id,
+                    retry_after,
                     observable_output_delivered,
                 });
             }

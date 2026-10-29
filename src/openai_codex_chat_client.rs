@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, ReasoningEffort};
 mod direct;
+mod retry;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 #[cfg(feature = "full-daemon")]
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
@@ -16,7 +17,6 @@ const DEFAULT_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const RESPONSES_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const RESPONSES_READ_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const RESPONSES_MAX_ATTEMPTS: usize = 3;
-const RESPONSES_RETRY_BACKOFF: Duration = Duration::from_millis(250);
 pub const OPENAI_CODEX_PROVIDER_ID: &str = "openai-codex";
 
 #[derive(Debug)]
@@ -33,6 +33,7 @@ enum StreamOnceError {
         status: u16,
         body: serde_json::Value,
         request_id: Option<String>,
+        retry_after: Option<Duration>,
         observable_output_delivered: bool,
     },
 }
@@ -58,9 +59,10 @@ impl StreamOnceError {
                 let code = body["error"]["code"]
                     .as_str()
                     .or(body["code"].as_str())
+                    .or(body["error"]["type"].as_str())
                     .unwrap_or_default();
                 !observable_output_delivered
-                    && code != "subscription_sharing_usage_limit_exceeded"
+                    && !retry::permanent_usage_error(code)
                     && matches!(status, 429 | 500 | 502 | 503 | 504)
             }
             Self::Transport {
@@ -233,8 +235,20 @@ impl OpenAiCodexChatClient {
                 Err(error)
                     if attempt < RESPONSES_MAX_ATTEMPTS && error.can_retry_before_output() =>
                 {
-                    let multiplier = u32::try_from(attempt).unwrap_or(u32::MAX);
-                    tokio::time::sleep(RESPONSES_RETRY_BACKOFF.saturating_mul(multiplier)).await;
+                    let retry_after = match &error {
+                        StreamOnceError::Failure { retry_after, .. } => *retry_after,
+                        _ => None,
+                    };
+                    // Never shorten a provider cooldown to fit our interactive budget.
+                    let jitter_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .subsec_nanos() as u64
+                        % 251;
+                    let Some(delay) = retry::delay(attempt, retry_after, jitter_ms) else {
+                        return Err(error);
+                    };
+                    tokio::time::sleep(delay).await;
                 }
                 Err(error) => return Err(error),
             }
@@ -447,11 +461,15 @@ fn stream_once_error(model: &str, error: StreamOnceError) -> StasisError {
             status,
             body,
             request_id,
+            retry_after,
             ..
         } => {
+            let cooldown = retry_after
+                .map(|delay| format!(". Provider retry cooldown: {} seconds", delay.as_secs()))
+                .unwrap_or_default();
             let usage_limit = body["error"]["code"] == "subscription_sharing_usage_limit_exceeded";
             StasisError::PortFailure(format!(
-                "ChatGPT Responses failed (HTTP {status}, request {}): {body}{}",
+                "ChatGPT Responses failed (HTTP {status}, request {}): {body}{cooldown}{}",
                 request_id.as_deref().unwrap_or("unknown"),
                 if usage_limit {
                     ". Manage usage: https://chatgpt.com/settings/usage"
