@@ -7,7 +7,7 @@
   import VirtualChatBeat from "./VirtualChatBeat.svelte";
   import { onMount } from "svelte";
   import { Copy, CornerDownRight, Library, Share2, Square, Volume2 } from "@lucide/svelte";
-  import ChatAgentGroup from "$lib/components/chat/ChatAgentGroup.svelte";
+  import ChatTaskGroup from "$lib/components/chat/ChatTaskGroup.svelte";
   import { chatAgentGroups } from "$lib/utils/chatAgentGroups";
   import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
   import type { PeerProposalControls } from "./peerProposalControls";
@@ -95,16 +95,11 @@
     return null;
   }
   function revealAgent(anchor: string | null, workId: string) {
-    const element = document.getElementById(groupId(anchor)) as HTMLDetailsElement | null;
-    if (!element) return;
-    element.open = true;
-    const row = [...element.querySelectorAll<HTMLElement>("[data-worker-id]")].find(item => item.dataset.workerId === workId);
-    const more = row?.closest(".more-agents") as HTMLDetailsElement | null;
-    if (more) more.open = true;
-    const details = row?.querySelector("details");
-    if (details) details.open = true;
-    (row?.querySelector("summary") ?? element.querySelector("summary"))?.focus();
-    (row ?? element).scrollIntoView({ block: "nearest" });
+    const element = document.getElementById(groupId(anchor));
+    const row = [...(element?.querySelectorAll<HTMLElement>("[data-worker-id]") ?? [])].find(item => item.dataset.workerId === workId);
+    const link = row?.querySelector("button");
+    if (link && !link.disabled) link.focus(); else row?.focus();
+    (row ?? element)?.scrollIntoView({ block: "nearest" });
   }
   let forkingEntryId = $state<string | null>(null);
 
@@ -271,7 +266,7 @@
 {#snippet agentGroup(anchor: string | null)}
   {@const group = agentGroups.get(anchor)}
   {#if group}
-    <ChatAgentGroup id={groupId(anchor)} {group} controls={peerControls} {compact} {onOpenSubagent} {onStopSubagent} />
+    <ChatTaskGroup id={groupId(anchor)} {group} controls={peerControls} {onOpenSubagent} {onStopSubagent} />
   {/if}
 {/snippet}
 

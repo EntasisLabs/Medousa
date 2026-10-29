@@ -32,6 +32,7 @@
     minimal?: boolean;
     /** Library continuity — connection + brain name styling. */
     continuity?: boolean;
+    /** Visible active-workshop cards, not only the in-motion subset. */
     motionCards?: WorkCard[];
     selectedMotionId?: string | null;
     onSelectMotion?: (id: string) => void | Promise<void>;
@@ -88,7 +89,13 @@
         : "text-content-quiet",
   );
 
-  const showMotion = $derived(inMotionCount > 0 && Boolean(onSelectMotion));
+  const showMotion = $derived(
+    (inMotionCount > 0 || needsAttentionCount > 0 || motionCards.length > 0) && Boolean(onSelectMotion),
+  );
+
+  $effect(() => {
+    if (!showMotion) motionPeekOpen = false;
+  });
 
   /** enabled / total — same ratio as Automations panel. */
   const automationsRatio = $derived(`${cronActiveCount}/${cronTotalCount}`);
@@ -203,7 +210,7 @@
             class:work-motion-trigger--open={motionPeekOpen}
             aria-expanded={motionPeekOpen}
             aria-haspopup="dialog"
-            title="In-motion work"
+            title="Workshop activity"
             onclick={toggleMotionPeek}
           >
             <Activity
@@ -215,25 +222,12 @@
             />
             <span>{inMotionCount} in motion</span>
             {#if needsAttentionCount > 0}
-              <span class="work-motion-attention" title="Needs attention">
+              <span class="work-motion-attention" title="Needs your decision">
                 {needsAttentionCount}
               </span>
             {/if}
           </button>
 
-          {#if motionPeekOpen}
-            <div
-              class="work-motion-peek"
-              role="dialog"
-              aria-label="In-motion work"
-            >
-              <WorkMotionPeek
-                cards={motionCards}
-                selectedId={selectedMotionId}
-                onSelect={handleSelectMotion}
-              />
-            </div>
-          {/if}
         </div>
       {:else if !quiet && needsAttentionCount > 0}
         <span class="text-content-warning/85">{needsAttentionCount} need attention</span>
@@ -280,6 +274,13 @@
       {/if}
     </div>
   </div>
+  {#if motionPeekOpen}
+    <div class="work-motion-peek" role="dialog" aria-label="Workshop activity" tabindex="-1">
+      <header><strong>Activity</strong><button type="button" aria-label="Close workshop activity" onclick={closeMotionPeek}>×</button></header>
+      <p>This workshop</p>
+      <WorkMotionPeek cards={motionCards} selectedId={selectedMotionId} onSelect={handleSelectMotion} />
+    </div>
+  {/if}
 </footer>
 
 {#if motionPeekOpen}
@@ -292,6 +293,17 @@
 {/if}
 
 <style>
+  /* Shell chrome must not depend on the lazily loaded work surface stylesheet. */
+  .workshop-status--peek-open { z-index: 45; }
+  .work-motion-control { display: flex; }
+  .work-motion-trigger { display: inline-flex; align-items: center; gap: .35rem; border: 0; border-radius: .35rem; background: transparent; padding: .15rem .35rem; color: inherit; font: inherit; cursor: pointer; }
+  .work-motion-trigger:hover, .work-motion-trigger--open { background: rgb(var(--theme-card-hover)); color: rgb(var(--theme-text-primary)); }
+  .work-motion-attention { border-radius: 999px; background: rgb(var(--theme-warning) / .18); color: rgb(var(--theme-warning)); padding: 0 .3rem; }
+  .work-motion-scrim { position: fixed; inset: 0; z-index: 44; }
+  .work-motion-peek { position: absolute; right: .75rem; bottom: calc(100% + .45rem); z-index: 46; width: min(22rem, calc(100vw - 2rem)); max-height: min(28rem, 60vh); overflow: auto; border: 1px solid rgb(var(--theme-border)); border-radius: 12px; background: rgb(var(--theme-card)); color: rgb(var(--theme-text-primary)); padding: 12px; box-shadow: 0 -8px 28px rgb(0 0 0 / .28); }
+  .work-motion-peek header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+  .work-motion-peek header button { border: 0; background: transparent; color: inherit; font-size: 20px; cursor: pointer; }
+  .work-motion-peek > p { color: rgb(var(--theme-text-tertiary)); margin-bottom: 8px; }
   .status-bar-mid {
     min-width: 0.5rem;
   }

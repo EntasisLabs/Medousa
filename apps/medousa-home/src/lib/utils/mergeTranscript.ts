@@ -76,9 +76,13 @@ function hydrateAssistantMetadata(existing: ChatMessage, message: ChatMessage): 
     answerState: message.answerState ?? existing.answerState,
     tools: message.tools ?? existing.tools,
     toolRuns: message.toolRuns ?? existing.toolRuns,
-    segments: message.segments ?? existing.segments,
+    // A history snapshot can be ahead of the SSE cursor. Replacing live text
+    // here makes the pending append events append that same suffix again.
+    // Attachments may hydrate independently; streamed projections must stay
+    // paired with the cursor that produced them until the bubble settles.
+    segments: existing.streaming ? existing.segments : message.segments ?? existing.segments,
     uiArtifacts: message.uiArtifacts ?? existing.uiArtifacts,
-    reasoning: message.reasoning ?? existing.reasoning,
+    reasoning: existing.streaming ? existing.reasoning : message.reasoning ?? existing.reasoning,
     responseProvider: message.responseProvider ?? existing.responseProvider,
     responseModel: message.responseModel ?? existing.responseModel,
   };

@@ -68,18 +68,23 @@ export function chatAgentGroups(
     }
     group(turnAnchor(index)).proposals.push(proposal);
   }
-  for (const worker of workers.values()) {
-    let index = messages.findIndex(message => message.id === worker.parentMessageId);
+  function workerIndex(worker: SubagentRow): number {
+    // A turn's active message may have advanced to its worker result. Never
+    // reinterpret that arrival as the spawn location.
+    let index = messages.findIndex(message => message.id === worker.parentMessageId && message.lane !== "worker");
     if (index < 0 && worker.parentTurnId) index = messages.findIndex(message => message.turnId === worker.parentTurnId && message.lane !== "worker");
-    if (index < 0) index = messages.findIndex(message => message.workId === worker.workId);
-    group(turnAnchor(index)).workers.push(worker);
+    if (index < 0 && !worker.parentMessageId && !worker.parentTurnId) {
+      index = messages.findIndex(message => message.workId === worker.workId && message.lane !== "worker");
+    }
+    return index;
+  }
+  for (const worker of workers.values()) {
+    group(turnAnchor(workerIndex(worker))).workers.push(worker);
   }
   for (const value of groups.values()) {
     value.workers.sort((a, b) => {
-      const first = messages.findIndex(message => a.parentMessageId ? message.id === a.parentMessageId
-        : a.parentTurnId ? message.turnId === a.parentTurnId && message.lane !== "worker" : message.workId === a.workId);
-      const second = messages.findIndex(message => b.parentMessageId ? message.id === b.parentMessageId
-        : b.parentTurnId ? message.turnId === b.parentTurnId && message.lane !== "worker" : message.workId === b.workId);
+      const first = workerIndex(a);
+      const second = workerIndex(b);
       return (first < 0 ? Infinity : first) - (second < 0 ? Infinity : second) || a.workId.localeCompare(b.workId);
     });
   }

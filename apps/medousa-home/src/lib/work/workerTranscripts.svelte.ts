@@ -56,6 +56,7 @@ export class WorkerTranscriptStore {
       executionRuntimeId:
         detail.execution_runtime_id?.trim() || existing?.executionRuntimeId || null,
       statusLine:
+        (column === "wrapping_up" ? "Result ready · Awaiting summary" : null) ||
         detail.live_status_line?.trim() ||
         existing?.statusLine ||
         detail.card.status_label ||
@@ -69,7 +70,7 @@ export class WorkerTranscriptStore {
         detail.thinking_finished_at ?? existing?.thinkingFinishedAt ?? null,
       resultText: detail.result_excerpt ?? existing?.resultText ?? null,
       synthesisText: detail.result_excerpt ?? existing?.synthesisText ?? null,
-      streaming: !terminal,
+      streaming: !terminal && column === "in_flight",
       terminal,
       error: detail.error ?? existing?.error ?? null,
       updatedAt: detail.card.updated_at_utc ?? existing?.updatedAt ?? null,
@@ -98,7 +99,7 @@ export class WorkerTranscriptStore {
       model: progress.model?.trim() || existing?.model || null,
       executionRuntimeId:
         progress.execution_runtime_id?.trim() || existing?.executionRuntimeId || null,
-      statusLine: progress.live_status_line?.trim() || existing?.statusLine || null,
+      statusLine: progress.column === "wrapping_up" ? "Result ready · Awaiting summary" : progress.live_status_line?.trim() || existing?.statusLine || null,
       toolRuns: progress.live_tool_activity ?? existing?.toolRuns ?? [],
       thinking: progress.live_thinking ?? existing?.thinking ?? "",
       output: progress.live_output ?? existing?.output ?? "",
@@ -108,7 +109,7 @@ export class WorkerTranscriptStore {
         progress.thinking_finished_at ?? existing?.thinkingFinishedAt ?? null,
       resultText: progress.result_excerpt ?? existing?.resultText ?? null,
       synthesisText: progress.result_excerpt ?? existing?.synthesisText ?? null,
-      streaming: !terminal,
+      streaming: !terminal && progress.column === "in_flight",
       terminal,
       error: existing?.error ?? null,
       updatedAt: new Date().toISOString(),

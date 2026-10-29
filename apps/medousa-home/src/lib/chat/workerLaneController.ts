@@ -98,8 +98,10 @@ export function linkWorker(
   const existing = host.workers.get(params.workId);
   const link: WorkerLink = {
     workId: params.workId,
-    parentTurnId: params.parentTurnId ?? existing?.parentTurnId ?? null,
-    messageId: params.messageId ?? existing?.messageId ?? null,
+    // Card refreshes can resolve the turn to its later synthesis bubble.
+    // Spawn coordinates are immutable once linked; only hydrate missing ones.
+    parentTurnId: existing?.parentTurnId ?? params.parentTurnId ?? null,
+    messageId: existing?.messageId ?? params.messageId ?? null,
     synthesisMessageId: existing?.synthesisMessageId ?? null,
     sessionId: params.sessionId,
     synthesisDelivered: existing?.synthesisDelivered ?? false,
@@ -108,11 +110,11 @@ export function linkWorker(
   nextWorkers.set(params.workId, link);
   host.workers = nextWorkers;
 
-  if (params.parentTurnId) {
-    const turn = host.turns.get(params.parentTurnId);
+  if (link.parentTurnId) {
+    const turn = host.turns.get(link.parentTurnId);
     if (turn) {
       const nextTurns = new Map(host.turns);
-      nextTurns.set(params.parentTurnId, {
+      nextTurns.set(link.parentTurnId, {
         ...turn,
         workspaceCardId: params.workId,
       });
