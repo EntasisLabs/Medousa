@@ -25,6 +25,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Notes and vaults](notes-and-vaults.md) | Switch linked vaults safely and search notes across them |
 | [Files](files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
 | [Context](context.md) | Browse saved session memory and its sources |
+| [Chat sticky notes](chat-sticky-notes.md) | Keep corrections, exact details, and follow-ups hot across turns |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
 | [External agent conversations](provider-conversations.md) | Connect provider-hosted agents and replay their messages |
 | [Instinct Agent](instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |

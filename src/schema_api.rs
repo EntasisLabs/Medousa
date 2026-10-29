@@ -30,6 +30,7 @@ enum SchemaDomain {
     Capability,
     Turn,
     Memory,
+    Sticky,
     Identity,
     Calendar,
     Workshop,
@@ -43,6 +44,7 @@ impl SchemaDomain {
             Self::Capability => "capability",
             Self::Turn => "turn",
             Self::Memory => "memory",
+            Self::Sticky => "sticky",
             Self::Identity => "identity",
             Self::Calendar => "calendar",
             Self::Workshop => "workshop",
@@ -90,6 +92,7 @@ impl JsonSchema for SchemaInput {
                     "capability",
                     "turn",
                     "memory",
+                    "sticky",
                     "identity",
                     "calendar",
                     "workshop",
@@ -206,6 +209,7 @@ fn catalog() -> Vec<CatalogItem> {
             capability_type_schemas(),
         ))
         .chain(generated_items(SchemaDomain::Memory, memory_type_schemas()))
+        .chain(generated_items(SchemaDomain::Sticky, crate::chat_sticky_tools::sticky_type_schemas()))
         .chain(generated_items(
             SchemaDomain::Calendar,
             calendar_type_schemas(),

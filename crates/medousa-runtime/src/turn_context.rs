@@ -8,6 +8,11 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 pub const ROUND_CONTEXT_PREFIX: &str = "[MEDOUSA_ROUND_CONTEXT]";
 
 pub const SCRATCH_PREFIX: &str = "[MEDOUSA_SCRATCH]";
+pub const STICKY_CONTEXT_PREFIX: &str = "[MEDOUSA_CHAT_STICKIES]";
+
+pub type StickyContextFuture<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = stasis::prelude::Result<Option<String>>> + Send + 'a>,
+>;
 
 /// Record one Stasis invocation batch into the portable scratch DTO.
 pub fn record_round_digest_from_invocations(
@@ -39,6 +44,13 @@ pub struct ToolLaneState {
 /// replaceable pointer refreshed immediately before each inference.
 pub trait ToolRoundContextProvider: Send + Sync {
     fn context_for_next_round(&self) -> stasis::prelude::Result<Option<String>>;
+
+    /// A separately budgeted, replaceable data lane. Async so durable storage
+    /// never blocks an executor thread. Called before the FIRST and every later
+    /// inference, including restored loops and prompt-only execution.
+    fn sticky_context_for_next_round(&self) -> StickyContextFuture<'_> {
+        Box::pin(async { Ok(None) })
+    }
 
     /// Replace a volatile tail pointer instead of retaining refresh history.
     /// Defaults to append for providers whose messages carry durable events.
@@ -103,6 +115,23 @@ pub fn push_round_context(messages: &mut Vec<ChatMessage>, context: String, repl
         )));
     } else {
         messages.push(ChatMessage::system(context));
+    }
+}
+
+/// Clear even on an empty snapshot: resolved/removed notes must not linger.
+/// Use a separate marker so engineering pointers cannot evict sticky context.
+pub fn replace_sticky_context(messages: &mut Vec<ChatMessage>, context: Option<String>) {
+    messages.retain(|message| {
+        message.role != genai::chat::ChatRole::System
+            || message
+                .content
+                .first_text()
+                .is_none_or(|text| !text.starts_with(STICKY_CONTEXT_PREFIX))
+    });
+    if let Some(context) = context {
+        messages.push(ChatMessage::system(format!(
+            "{STICKY_CONTEXT_PREFIX}\n{context}"
+        )));
     }
 }
 
@@ -328,6 +357,33 @@ fn truncate_field(text: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn sticky_refresh_replaces_restored_notes_and_clears_removed_notes() {
+        let mut messages = vec![
+            ChatMessage::user(format!("{STICKY_CONTEXT_PREFIX} quoted")),
+            ChatMessage::system("receipt"),
+        ];
+        replace_sticky_context(&mut messages, Some("revision=1 exact=old".into()));
+        let restored = messages.clone();
+        messages = restored;
+        replace_sticky_context(&mut messages, Some("revision=2 exact=new".into()));
+        assert_eq!(messages.len(), 3);
+        assert!(
+            messages
+                .last()
+                .unwrap()
+                .content
+                .first_text()
+                .unwrap()
+                .contains("exact=new")
+        );
+        assert!(!format!("{messages:?}").contains("exact=old"));
+        replace_sticky_context(&mut messages, None);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1].content.first_text(), Some("receipt"));
+        assert_eq!(messages[0].role, genai::chat::ChatRole::User);
+    }
 
     #[test]
     fn host_context_keeps_principal_and_tool_lanes_separate() {

@@ -6,6 +6,8 @@
 
 pub mod agent_mode_context;
 #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
+pub mod chat_stickies;
+#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
 pub mod assistant_placement;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub(crate) mod portable_grapheme_engine;

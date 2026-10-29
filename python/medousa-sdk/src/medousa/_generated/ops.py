@@ -431,6 +431,8 @@ OPERATIONS: dict[str, Operation] = {
     "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get": Operation("sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get", "GET", "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}", False),
     "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put": Operation("sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put", "PUT", "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}", False),
     "sessions.by_session_id.name.put": Operation("sessions.by_session_id.name.put", "PUT", "/v1/sessions/{session_id}/name", False),
+    "sessions.by_session_id.stickies.get": Operation("sessions.by_session_id.stickies.get", "GET", "/v1/sessions/{session_id}/stickies", False),
+    "sessions.by_session_id.stickies.post": Operation("sessions.by_session_id.stickies.post", "POST", "/v1/sessions/{session_id}/stickies", False),
     "sessions.by_session_id.turns.get": Operation("sessions.by_session_id.turns.get", "GET", "/v1/sessions/{session_id}/turns", False),
     "sessions.by_session_id.turns.post": Operation("sessions.by_session_id.turns.post", "POST", "/v1/sessions/{session_id}/turns", False),
     "sessions.by_session_id.workshop.steer.post": Operation("sessions.by_session_id.workshop.steer.post", "POST", "/v1/sessions/{session_id}/workshop/steer", False),

@@ -29,6 +29,7 @@ pub struct ContextUsageInput<'a> {
     pub resolved_prompt_chars: usize,
     pub prompt_for_request_chars: usize,
     pub ambient_chars: usize,
+    pub sticky_chars: usize,
     pub prior_build: &'a PriorMessageBuild,
     pub tool_count: usize,
     pub tool_schema_chars: usize,
@@ -63,6 +64,14 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageR
 
     if input.ambient_chars > 0 {
         layers.push(layer("ambient", "Ambient context", input.ambient_chars));
+    }
+
+    if input.sticky_chars > 0 {
+        layers.push(layer(
+            "chat_stickies",
+            "Chat sticky notes",
+            input.sticky_chars,
+        ));
     }
 
     let other_injection = injection_chars.saturating_sub(input.ambient_chars);
@@ -301,6 +310,7 @@ mod tests {
             resolved_prompt_chars: 1_200,
             prompt_for_request_chars: 1_600,
             ambient_chars: 600,
+            sticky_chars: 250,
             prior_build: &prior,
             tool_count: 28,
             tool_schema_chars: 36_000,
@@ -309,6 +319,15 @@ mod tests {
         assert!(report.total_tokens_estimate > 0);
         assert_eq!(report.tool_count, 28);
         assert!(report.layers.iter().any(|l| l.id == "system_prompt"));
+        assert_eq!(
+            report
+                .layers
+                .iter()
+                .find(|l| l.id == "chat_stickies")
+                .unwrap()
+                .chars,
+            250
+        );
         assert!(operator_summary(&report).contains("Context"));
     }
 
@@ -331,6 +350,7 @@ mod tests {
             resolved_prompt_chars: 100,
             prompt_for_request_chars: 100,
             ambient_chars: 0,
+            sticky_chars: 0,
             prior_build: &prior,
             tool_count: 5,
             tool_schema_chars: 9_000,

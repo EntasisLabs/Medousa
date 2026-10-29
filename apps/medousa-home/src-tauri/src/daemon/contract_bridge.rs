@@ -80,6 +80,11 @@ pub async fn daemon_unary(
     {
         if let Some(client) = embedded_state.client_if_active().await? {
             if let Some(response) =
+                embedded_sticky_unary(&client, operation, &path_params, body.as_ref()).await?
+            {
+                return Ok(response);
+            }
+            if let Some(response) =
                 embedded_browser_session_unary(&client, operation, &path_params, body.as_ref())?
             {
                 return Ok(response);
@@ -116,6 +121,42 @@ pub async fn daemon_unary(
         "PATCH" => workshop_http::patch_json(&state, &path, &body.unwrap_or(Value::Null)).await,
         other => Err(format!("unsupported method {other}")),
     }
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+async fn embedded_sticky_unary(
+    client: &medousa::embedded_daemon::EmbeddedDaemonClient,
+    operation: DaemonOperation,
+    path_params: &HashMap<String, String>,
+    body: Option<&Value>,
+) -> Result<Option<Value>, String> {
+    if !matches!(
+        operation,
+        DaemonOperation::SessionsBySessionIdStickiesGet
+            | DaemonOperation::SessionsBySessionIdStickiesPost
+    ) {
+        return Ok(None);
+    }
+    let session_id = path_params
+        .get("session_id")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "session_id is required".to_string())?;
+    let board = match operation {
+        DaemonOperation::SessionsBySessionIdStickiesGet => {
+            client.session_stickies(session_id).await
+        }
+        DaemonOperation::SessionsBySessionIdStickiesPost => {
+            let action = serde_json::from_value(body.cloned().unwrap_or(Value::Null))
+                .map_err(|error| format!("invalid sticky action: {error}"))?;
+            client.mutate_session_stickies(session_id, action).await
+        }
+        _ => unreachable!("sticky operations checked above"),
+    }
+    .map_err(|error| error.to_string())?;
+    serde_json::to_value(board)
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]

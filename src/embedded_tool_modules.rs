@@ -86,6 +86,7 @@ pub mod media_store;
 pub mod image_generation;
 pub mod media_text_extract;
 pub mod media_vision;
+pub mod chat_sticky_tools;
 pub mod memory_api;
 pub mod memory_tools;
 pub mod model_capability_registry;

@@ -44,6 +44,7 @@ impl SessionDeleteSummary {
 pub async fn delete_session(
     session_id: &str,
     memory_operations: Option<Arc<dyn MemoryOperations>>,
+    sticky_store: Option<crate::chat_stickies::ChatStickyStore>,
     turn_tickets: &TurnTicketRegistry,
     turn_streams: Option<&crate::turn_stream_registry::TurnStreamRegistry>,
     purge_locus: bool,
@@ -93,6 +94,19 @@ pub async fn delete_session(
         "turn_recovery",
         crate::engine_recovery::delete_session_recovery(session_id_text),
     ))?;
+
+    // Working memory belongs to the chat lifecycle, not the optional permanent
+    // Locus purge. The deletion coordinator already excludes mutation leases.
+    let sticky_result = if let Some(store) = sticky_store {
+        store
+            .delete_session(session_id_text)
+            .await
+            .map_err(|error| error.to_string())
+    } else {
+        // In-memory compositions cannot create durable sticky boards.
+        Ok(())
+    };
+    deletion.record_surface(surface_result("chat_stickies", sticky_result))?;
 
     if deletion.record().purge_locus {
         let locus_result = if let Some(ops) = memory_operations {
@@ -458,6 +472,7 @@ mod tests {
                 let summary = runtime
                     .block_on(delete_session(
                         session_id.as_str(),
+                        None,
                         None,
                         &crate::turn_ticket::new_registry(),
                         None,

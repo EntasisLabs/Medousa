@@ -36,6 +36,53 @@ use super::stream_sink::SharedAgentStreamSink;
 use super::turn_context::TurnScratchpad;
 use super::turn_orchestrator::{self, AssembleLocalTurnParams, PrepareTurnPromptParams};
 
+/// Composes engineering refreshes with the independent chat-local sticky lane.
+/// Each snapshot is read asynchronously from the SAME durable Locus handle used
+/// by tools; no stale turn-start cache, filesystem waits, or permanent recall.
+struct InteractiveStickyContext {
+    store: Option<crate::chat_stickies::ChatStickyStore>,
+    profile: String,
+    session: String,
+    budget: usize,
+    inner: Option<Arc<dyn super::turn_context::ToolRoundContextProvider>>,
+}
+
+impl super::turn_context::ToolRoundContextProvider for InteractiveStickyContext {
+    fn context_for_next_round(&self) -> stasis::prelude::Result<Option<String>> {
+        self.inner
+            .as_ref()
+            .map_or(Ok(None), |inner| inner.context_for_next_round())
+    }
+
+    fn replaces_previous_context(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_some_and(|inner| inner.replaces_previous_context())
+    }
+
+    fn sticky_context_for_next_round(
+        &self,
+    ) -> medousa_runtime::turn_context::StickyContextFuture<'_> {
+        Box::pin(async move {
+            let Some(store) = self.store.as_ref() else {
+                return Ok(Some("sticky_status=unavailable; this runtime has no durable Locus backend; do not assume any sticky board was loaded or saved".into()));
+            };
+            let board = store
+                .read(&self.profile, &self.session)
+                .await
+                .map_err(|error| {
+                    stasis::domain::errors::StasisError::PortFailure(format!(
+                        "chat sticky board read failed: {error}"
+                    ))
+                })?;
+            Ok(Some(crate::agent_mode_context::render_sticky_context(
+                &board,
+                self.budget,
+            )))
+        })
+    }
+}
+
 /// Delivery registry hooks for interactive turns (mirrors ingest `channel_deliveries` pattern).
 #[derive(Clone)]
 pub struct InteractiveTurnDeliveryContext {
@@ -2417,6 +2464,59 @@ async fn run_agent_turn_inner(
     let resolved_prompt =
         truncate_text_for_budget(&prepared.resolved_prompt, MAX_REQUEST_PROMPT_CHARS);
     let resolved_prompt_chars = resolved_prompt.chars().count();
+    let context_limit_tokens = final_route.as_ref().and_then(|route| {
+        crate::model_capability_registry::registry()
+            .resolve(&route.provider, &route.model)
+            .model
+            .and_then(|record| record.max_input_tokens)
+            .and_then(|limit| u32::try_from(limit).ok())
+    });
+    // Fallback targets can have smaller ceilings. Unknown metadata uses an
+    // explicit conservative 8k assumption, never the largest lane hard cap.
+    let sticky_input_tokens = inference_targets
+        .iter()
+        .map(|target| {
+            crate::model_capability_registry::registry()
+                .resolve(&target.provider, &target.model)
+                .model
+                .and_then(|record| record.max_input_tokens)
+                .and_then(|limit| u32::try_from(limit).ok())
+                .unwrap_or(8_000)
+        })
+        .chain(context_limit_tokens)
+        .min();
+    let sticky_store = match agent_rt.runtime.as_ref() {
+        stasis::prelude::RuntimeComposition::Surreal(runtime) => Some(
+            crate::chat_stickies::ChatStickyStore::new(runtime.job_store.db()),
+        ),
+        _ => None,
+    };
+    let round_context_provider: Arc<dyn super::turn_context::ToolRoundContextProvider> =
+        Arc::new(InteractiveStickyContext {
+            store: sticky_store,
+            profile: super::execution_context::active_turn_execution_context()
+                .and_then(|context| context.principal().profile_id().map(str::to_string))
+                .unwrap_or_else(|| speaker_profile_id.clone()),
+            session: session_id.clone(),
+            budget: crate::agent_mode_context::sticky_context_char_budget(
+                agent_mode.id,
+                sticky_input_tokens,
+            ),
+            inner: coder_registry
+                .clone()
+                .map(|registry| registry as Arc<dyn super::turn_context::ToolRoundContextProvider>),
+        });
+    // Initial telemetry snapshot; the provider reads again immediately before
+    // inference so mutations during assembly cannot leave stale working memory.
+    let sticky_chars = match round_context_provider.sticky_context_for_next_round().await {
+        Ok(context) => context.as_ref().map_or(0, |context| {
+            context.chars().count() + medousa_runtime::turn_context::STICKY_CONTEXT_PREFIX.len() + 1
+        }),
+        Err(error) => {
+            sink.agent_error(1, error.to_string()).await;
+            return;
+        }
+    };
     let assembled = turn_orchestrator::assemble_local_turn(AssembleLocalTurnParams {
         session_id: &session_id,
         settings: &settings,
@@ -2438,9 +2538,7 @@ async fn run_agent_turn_inner(
         inference_profile_kind,
         inference_targets,
         surface: request.surface.clone(),
-        round_context_provider: coder_registry
-            .clone()
-            .map(|registry| registry as Arc<dyn super::turn_context::ToolRoundContextProvider>),
+        round_context_provider: Some(round_context_provider),
         evidence_undertaking_id: coder_registry
             .as_ref()
             .map(|registry| registry.undertaking_id().to_string()),
@@ -2502,6 +2600,7 @@ async fn run_agent_turn_inner(
             resolved_prompt_chars,
             prompt_for_request_chars: assembled.execution.prompt_for_request.chars().count(),
             ambient_chars: prepared.ambient_appendix.chars().count(),
+            sticky_chars,
             prior_build: &assembled.prior_build,
             tool_count,
             tool_schema_chars,
@@ -2729,6 +2828,106 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn reset_streamed_markdown(&self) {
         self.inner.reset_streamed_markdown().await;
+    }
+}
+
+#[cfg(test)]
+mod sticky_context_tests {
+    use super::super::turn_context::ToolRoundContextProvider;
+    use super::*;
+    use crate::chat_stickies::{
+        ChatStickyStore, StickyMutationRequest, StickyNote, StickyOperation, StickyStatus,
+    };
+
+    #[tokio::test]
+    async fn sticky_context_reads_latest_board_for_first_and_every_next_inference() {
+        let db = surrealdb::engine::any::connect("mem://").await.unwrap();
+        db.use_ns("sticky_runtime").use_db("locus").await.unwrap();
+        let store = ChatStickyStore::new(db);
+        let provider = InteractiveStickyContext {
+            store: Some(store.clone()),
+            profile: "user:test".into(),
+            session: "chat".into(),
+            budget: 4_000,
+            inner: None,
+        };
+        let first = provider
+            .sticky_context_for_next_round()
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(first.contains("\"revision\":0"));
+        store
+            .mutate(
+                "user:test",
+                "chat",
+                StickyMutationRequest {
+                    expected_revision: 0,
+                    request_id: "pin".into(),
+                    operation: StickyOperation::Put {
+                        note: StickyNote {
+                            id: "exact".into(),
+                            text: "keep exact detail".into(),
+                            kind: "correction".into(),
+                            pinned: true,
+                            exact: true,
+                            source_refs: vec![],
+                            status: StickyStatus::Active,
+                        },
+                    },
+                },
+            )
+            .await
+            .unwrap();
+        let next = provider
+            .sticky_context_for_next_round()
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(next.contains("keep exact detail"));
+        assert!(next.contains("\"revision\":1"));
+        store
+            .mutate(
+                "user:test",
+                "chat",
+                StickyMutationRequest {
+                    expected_revision: 1,
+                    request_id: "resolve".into(),
+                    operation: StickyOperation::Resolve { id: "exact".into() },
+                },
+            )
+            .await
+            .unwrap();
+        let resumed_provider = InteractiveStickyContext {
+            store: Some(store.clone()),
+            profile: "user:test".into(),
+            session: "chat".into(),
+            budget: 4_000,
+            inner: None,
+        };
+        let resumed = resumed_provider
+            .sticky_context_for_next_round()
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!resumed.contains("keep exact detail"));
+        assert!(resumed.contains("\"revision\":2"));
+        assert!(
+            store
+                .read("user:test", "other")
+                .await
+                .unwrap()
+                .notes
+                .is_empty()
+        );
+        assert!(
+            store
+                .read("user:other", "chat")
+                .await
+                .unwrap()
+                .notes
+                .is_empty()
+        );
     }
 }
 

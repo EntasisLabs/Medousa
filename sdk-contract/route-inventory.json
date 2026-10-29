@@ -6819,6 +6819,38 @@
       ],
       "feature_profile": "core",
       "method": "GET",
+      "operation_id": "sessions.by_session_id.stickies.get",
+      "path": "/v1/sessions/{session_id}/stickies",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "sessions.by_session_id.stickies.post",
+      "path": "/v1/sessions/{session_id}/stickies",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
       "operation_id": "sessions.by_session_id.turns.get",
       "path": "/v1/sessions/{session_id}/turns",
       "rate_limit_class": "read",

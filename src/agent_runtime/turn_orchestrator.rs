@@ -641,6 +641,7 @@ fn system_one_input(prompt: &str, recent_context: &str) -> SystemOneInput {
 
 struct HostModelSystemOneEngine<'a> {
     pipeline: &'a PromptExecutionPipeline,
+    round_context_provider: Option<&'a dyn super::turn_context::ToolRoundContextProvider>,
 }
 
 #[async_trait]
@@ -650,7 +651,7 @@ impl SystemOneEngine for HostModelSystemOneEngine<'_> {
     }
 
     async fn decide(&self, input: &SystemOneInput) -> Result<SystemOneDecision, SystemOneError> {
-        let messages = vec![
+        let mut messages = vec![
             ChatMessage::system(
                 "Intent routing for tool-loop turns. Classify CURRENT_USER_MESSAGE with RECENT_CONTEXT as local grounding only. Return strict JSON: intent, confidence, reason. intent ∈ conversational | tool_required | clarify | mixed. Use clarify when the principal should get one direct question instead of tools (vague goal, missing target, ambiguous scope).".to_string(),
             ),
@@ -665,6 +666,13 @@ impl SystemOneEngine for HostModelSystemOneEngine<'_> {
             )),
         ];
 
+        if let Some(provider) = self.round_context_provider {
+            let context = provider
+                .sticky_context_for_next_round()
+                .await
+                .map_err(|error| SystemOneError::Engine(error.to_string()))?;
+            medousa_runtime::turn_context::replace_sticky_context(&mut messages, context);
+        }
         let completion =
             super::execution_context::await_turn_boundary(self.pipeline.complete_chat_stream(
                 ChatRequest::new(messages),
@@ -719,10 +727,37 @@ pub async fn classify_turn_intent_with_model(
     prompt: &str,
     recent_context: &str,
 ) -> Option<IntentClassification> {
+    classify_turn_intent_with_model_and_context(pipeline, prompt, recent_context, None).await
+}
+
+async fn classify_turn_intent_with_model_and_context(
+    pipeline: &PromptExecutionPipeline,
+    prompt: &str,
+    recent_context: &str,
+    round_context_provider: Option<&dyn super::turn_context::ToolRoundContextProvider>,
+) -> Option<IntentClassification> {
     match super::laya_system_one::LayaSystemOneEngine::from_env_if_selected() {
         Ok(Some(engine)) => {
-            if let Some(decision) =
-                classify_turn_intent_with_engine(engine, prompt, recent_context).await
+            let mut input = system_one_input(prompt, recent_context);
+            // Bound history first; never run the sticky lane through a generic
+            // history truncator that might cut an exact note in half.
+            if let Some(provider) = round_context_provider {
+                match provider.sticky_context_for_next_round().await {
+                    Ok(Some(context)) => {
+                        input.recent_context.push_str("\n\n");
+                        input
+                            .recent_context
+                            .push_str(medousa_runtime::turn_context::STICKY_CONTEXT_PREFIX);
+                        input.recent_context.push('\n');
+                        input.recent_context.push_str(&context);
+                    }
+                    Ok(None) => {}
+                    Err(error) => tracing::warn!(%error, "classifier sticky refresh failed"),
+                }
+            }
+            if let Ok(decision) = engine.decide(&input).await
+                && decision.is_valid()
+                && decision.engine == engine.id()
             {
                 return Some(decision);
             }
@@ -735,7 +770,10 @@ pub async fn classify_turn_intent_with_model(
     }
 
     classify_turn_intent_with_engine(
-        &HostModelSystemOneEngine { pipeline },
+        &HostModelSystemOneEngine {
+            pipeline,
+            round_context_provider,
+        },
         prompt,
         recent_context,
     )
@@ -1110,10 +1148,11 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 .await;
         } else if try_consume_classifier_budget(&sink, &mut orchestration_state, &turn_budget).await
         {
-            let classification = classify_turn_intent_with_model(
+            let classification = classify_turn_intent_with_model_and_context(
                 &no_tools_pipeline,
                 &original_prompt,
                 &intent_classifier_recent_context,
+                round_context_provider.as_deref(),
             )
             .await;
             if let Some(classification) = classification {
@@ -1240,6 +1279,28 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         sink.notice("◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string())
             .await;
 
+        // Prompt-only (including Instant) bypasses the tool loop, but not the
+        // chat-local working-memory refresh. Failure must be visible, not stale.
+        if let Some(provider) = round_context_provider.as_ref() {
+            match super::execution_context::await_turn_boundary(
+                provider.sticky_context_for_next_round(),
+            )
+            .await
+            {
+                Ok(Ok(context)) => {
+                    medousa_runtime::turn_context::replace_sticky_context(&mut messages, context)
+                }
+                result => {
+                    sink.agent_error(
+                        turn_id,
+                        format!("sticky context refresh failed: {result:?}"),
+                    )
+                    .await;
+                    stream_bridge.drain().await;
+                    return;
+                }
+            }
+        }
         let prompt_stream = stream_bridge.attempt();
         let prompt_only_result = match super::execution_context::await_turn_boundary(
             no_tools_pipeline.complete_chat_stream(

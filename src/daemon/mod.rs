@@ -32,6 +32,7 @@ pub mod jobs;
 pub mod remote_peer_completions;
 pub mod request_boundary;
 pub mod route_policy;
+pub mod chat_stickies;
 pub mod router;
 pub mod runtime_tui_defaults;
 pub mod shared_mode;
