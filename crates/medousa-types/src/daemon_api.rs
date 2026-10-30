@@ -2634,6 +2634,9 @@ pub struct WorkCardAssociations {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkCardDetail {
+    /// Full persisted worker text, attached only on explicit detail reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_transcript: Option<WorkerTranscriptDetail>,
     pub card: WorkCard,
     pub kind: WorkCardKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2688,6 +2691,28 @@ pub struct WorkCardDetail {
     /// Stable runtime identity that actually executed this worker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_runtime_id: Option<String>,
+}
+
+/// Persisted worker reading view. Tool/reasoning fields on the enclosing detail
+/// are retained rolling evidence, not a claim of an exhaustive transcript.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WorkerTranscriptDetail {
+    pub work_id: String,
+    pub session_id: String,
+    pub parent_runtime_id: String,
+    pub execution_runtime_id: String,
+    pub task_prompt: String,
+    pub result_text: Option<String>,
+    pub steer_messages: Vec<WorkerTranscriptSteerMessage>,
+    pub retention_note: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WorkerTranscriptSteerMessage {
+    pub text: String,
+    pub at: DateTime<Utc>,
 }
 
 /// One worker tool run, shaped to match the host's `ToolRun` turn part so both

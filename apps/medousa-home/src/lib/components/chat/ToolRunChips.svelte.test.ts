@@ -54,6 +54,34 @@ it("keeps streaming activity compact and shows running context together with fai
   expect(document.querySelector('[aria-label="Tool lineage"]')).toBeNull();
 });
 
+it("inspects every retained call inline and keeps updates compact without a nested dialog", async () => {
+  const props = $state<{ runs: ToolRunState[]; inspectorPresentation: 'inline' }>({ runs: [
+    { ...runs[0], inputParams: [{ key: 'path', value: 'src/example.ts', truncated: true }] },
+    { ...runs[1], status: 'failed' as const, outputSummary: 'Write rejected' },
+    { ...runs[2], status: 'running' as const },
+  ], inspectorPresentation: 'inline' as const });
+  component = mount(ToolRunChips, { target: document.body, props });
+  flushSync();
+  const trigger = document.querySelector<HTMLButtonElement>('.tool-context-trigger')!;
+  expect(trigger.getAttribute('aria-haspopup')).toBeNull();
+  expect(trigger.textContent).toContain('1 failed');
+  expect(document.querySelector('[aria-label="Tools in execution order"]')).toBeNull();
+  trigger.click(); await tick(); flushSync();
+  expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  expect(document.querySelectorAll('[aria-label="Tools in execution order"] > li')).toHaveLength(3);
+  expect(document.body.textContent).toContain('src/example.ts…');
+  expect(document.body.textContent).toContain('Write rejected');
+  expect(document.body.textContent).toContain('Waiting for the tool to finish…');
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  props.runs = props.runs.map(run => run.runId === 'test' ? { ...run, status: 'succeeded', outputSummary: 'All tests passed' } : run);
+  await tick(); flushSync();
+  expect(document.body.textContent).toContain('All tests passed');
+  expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  trigger.click(); await tick(); flushSync();
+  expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  expect(document.querySelector('[aria-label="Tools in execution order"]')).toBeNull();
+});
+
 it("preserves the explicit detailed transcript view", () => {
   component = mount(ToolRunChips, { target: document.body, props: { runs, inspectorCollapsed: false } });
   flushSync();

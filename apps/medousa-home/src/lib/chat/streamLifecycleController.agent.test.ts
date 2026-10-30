@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ChatStoreHost } from "./chatStoreHost";
 import type { TurnTicketResponse } from "$lib/types/session";
-const api = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn() }));
-vi.mock("$lib/daemon", () => ({ startInteractiveStream: api.start, stopInteractiveStreamTurn: api.stop }));
+const api = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), list: vi.fn(), active: vi.fn() }));
+vi.mock("$lib/daemon", () => ({ startInteractiveStream: api.start, stopInteractiveStreamTurn: api.stop, listSessionTurns: api.list, getActiveSessionTurn: api.active }));
 vi.mock("$lib/stores/narration.svelte", () => ({ narration: { stop: vi.fn() } }));
 vi.mock("$lib/chat/sessionController", () => ({ mapTurns: () => [], TRANSCRIPT_PAGE_SIZE: 32 }));
 vi.mock("$lib/chat/workerLaneController", () => ({ workerLinkForTurn: () => undefined }));
-import { registerTurn, settleTurn, startTurnStream } from "./streamLifecycleController";
+import { registerTurn, settleTurn, startTurnStream, tryReattachActiveTurn } from "./streamLifecycleController";
 import { applyPumpedStreamEvent } from "./streamApplyController";
 import { applyStreamSeq } from "$lib/stream/reconnect";
 
@@ -16,13 +16,47 @@ function host(): ChatStoreHost {
   return {
     workshopScopeId: "studio", workshopEpoch: 1, sessionId: "chat", messages: [], turns: new Map(), workers: new Map(),
     streamOwners: new Map(), lastSeqByTurn: new Map(), recentlySettledTurns: new Map(), terminalReconcileTimers: new Map(),
-    activeTurnId: null, assistantId: null, backgroundActivity: 0,
+    activeTurnId: null, assistantId: null, backgroundActivity: 0, transcriptEpoch: 0,
+    isRelevantSession: (id: string) => id === "chat", isDetachedWorkerTurnRecord: () => false,
+    isComposerOpenDuringHandoff: () => false, noteResumeFailure: vi.fn(), promotedAskIds: new Set(),
     withSessionFields: (_: string, run: () => void) => run(),
   } as unknown as ChatStoreHost;
 }
 function ticket(id: string, streamUrl: string): TurnTicketResponse {
   return { turn_id: id, session_id: "chat", mode: "interactive", phase: "accepted", accepted_at_utc: "2026-10-23T00:00:00Z", stream_url: streamUrl, stream_ready: true };
 }
+function activeRecord() {
+  return { turn_id: "native", session_id: "chat", mode: "interactive", phase: "streaming", stream_url: "/v1/interactive/turn/native/stream", prompt_preview: "Hi", started_at: "2026-10-30T00:00:00Z", updated_at: "2026-10-30T00:00:01Z", workspace_card_id: null };
+}
+it("marks a history-restored answer live and rebuilds its projection from replay", async () => {
+  const state = host();
+  state.messages = [{ id: "saved", role: "assistant", turnId: "native", content: "History ahead", segments: [{ kind: "text", segmentId: "text", modelRound: 1, markdown: "History ahead", committed: false }] }];
+  api.list.mockResolvedValue({ turns: [activeRecord()] });
+  expect(await tryReattachActiveTurn(state)).toBe(true);
+  expect(state.messages[0]).toMatchObject({ id: "saved", streaming: true, content: "" });
+  expect(state.messages[0].segments).toBeUndefined();
+  expect(state.assistantId).toBe("saved");
+  expect(api.start).toHaveBeenLastCalledWith("/v1/interactive/turn/native/stream");
+});
+it("preserves a live projection and resumes from its matching cursor", async () => {
+  const state = host();
+  state.messages = [{ id: "live", role: "assistant", turnId: "native", streaming: true, content: "Hello " }];
+  state.lastSeqByTurn.set("native", 3);
+  api.list.mockResolvedValue({ turns: [activeRecord()] });
+  expect(await tryReattachActiveTurn(state)).toBe(true);
+  expect(state.messages[0].content).toBe("Hello ");
+  expect(api.start).toHaveBeenLastCalledWith("/v1/interactive/turn/native/stream?since=3");
+});
+it("ignores delayed active-turn discovery after switching sessions", async () => {
+  const state = host();
+  api.list.mockImplementationOnce(async () => {
+    state.sessionId = "other";
+    return { turns: [activeRecord()] };
+  });
+  expect(await tryReattachActiveTurn(state)).toBe(false);
+  expect(state.messages).toEqual([]);
+  expect(api.start).not.toHaveBeenCalled();
+});
 it("continues an agent session after the previous prompt without replaying its terminal event", async () => {
   const state = host(); const url = "/v1/agents/sessions/provider-session/stream";
   const accepted = ticket("provider-session", url);

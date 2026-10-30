@@ -137,6 +137,7 @@ pub fn project_ask_job(
         .map(|text| truncate_line(text, 500));
 
     let detail = WorkCardDetail {
+        worker_transcript: None,
         card: card.clone(),
         kind: WorkCardKind::AskJob,
         subtitle: Some("background ask".to_string()),
@@ -211,6 +212,7 @@ pub fn project_turn_budget_request(
     });
 
     let detail = WorkCardDetail {
+        worker_transcript: None,
         card: card.clone(),
         kind: WorkCardKind::TurnBudgetRequest,
         subtitle: record.channel.clone(),
@@ -312,6 +314,7 @@ pub fn project_turn_worker(
     };
 
     let detail = WorkCardDetail {
+        worker_transcript: None,
         card: card.clone(),
         kind: WorkCardKind::TurnWorker,
         subtitle: Some(record.intent.clone()),
@@ -420,6 +423,7 @@ pub fn project_job(
         });
 
     let detail = WorkCardDetail {
+        worker_transcript: None,
         card: card.clone(),
         kind: WorkCardKind::StasisJob,
         subtitle: Some(job.job_type.clone()),
@@ -795,6 +799,7 @@ mod tests {
             archived: false,
             disposition: crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            steer_history: Vec::new(),
             processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
@@ -860,6 +865,7 @@ mod tests {
             archived: false,
             disposition: crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            steer_history: Vec::new(),
             processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
@@ -908,6 +914,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn explicit_worker_detail_retains_full_text_without_inflating_card_preview() {
+        let mut record = live_record(TurnWorkStatus::Running);
+        record.task_prompt = "task ".repeat(300);
+        record.result_text = Some("result ".repeat(300));
+        let projected = project_turn_worker(&record, None, true, Duration::hours(24)).unwrap();
+        assert!(projected.detail.worker_transcript.is_none());
+        assert!(projected.detail.task_line.as_ref().unwrap().len() < record.task_prompt.len());
+        assert!(
+            projected.detail.result_excerpt.as_ref().unwrap().len()
+                < record.result_text.as_ref().unwrap().len()
+        );
+        let full =
+            super::super::service::attach_worker_record(projected.detail.clone(), record.clone());
+        let transcript = full.worker_transcript.unwrap();
+        assert_eq!(transcript.task_prompt, record.task_prompt);
+        assert_eq!(transcript.result_text, record.result_text);
+        assert_eq!(full.live_tool_activity, projected.detail.live_tool_activity);
+        record.session_id = "foreign-session".to_string();
+        assert!(
+            super::super::service::attach_worker_record(projected.detail, record)
+                .worker_transcript
+                .is_none()
+        );
+    }
+
     fn live_record(status: TurnWorkStatus) -> TurnWorkRecord {
         TurnWorkRecord {
             work_id: "work-live".to_string(),
@@ -951,6 +983,7 @@ mod tests {
             archived: false,
             disposition: crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            steer_history: Vec::new(),
             processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,

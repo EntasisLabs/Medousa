@@ -24,7 +24,19 @@ export interface WorkerToolActivity {
   finished_at?: string | null;
 }
 
+export interface WorkerTranscriptDetail {
+  work_id: string;
+  session_id: string;
+  parent_runtime_id: string;
+  execution_runtime_id: string;
+  task_prompt: string;
+  result_text?: string | null;
+  steer_messages: { text: string; at: string }[];
+  retention_note: string;
+}
+
 export interface WorkCardDetail {
+  worker_transcript?: WorkerTranscriptDetail | null;
   card: WorkCard;
   kind: string;
   subtitle?: string | null;

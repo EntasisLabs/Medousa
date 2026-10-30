@@ -5,6 +5,8 @@ import PeerProposalBar from "./PeerProposalBar.svelte";
 import { connection } from "$lib/stores/connection.svelte";
 import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
 import type { PeerProposalControls } from './peerProposalControls';
+import type { ChatMessage } from '$lib/types/chat';
+const stream = $state({ messages: [] as ChatMessage[] });
 
 const api = vi.hoisted(() => ({ list: vi.fn(), act: vi.fn() }));
 const navigation = vi.hoisted(() => ({ openChat: vi.fn(() => 'tab'), openProject: vi.fn() }));
@@ -18,7 +20,7 @@ vi.mock("$lib/stores/connection.svelte", () => {
   return { connection: state };
 });
 vi.mock("$lib/stores/workshops.svelte", () => ({ workshops: workshopState }));
-vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessions: [{ session_id: "ses_owner", display_name: "Taco" }] } }));
+vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessions: [{ session_id: "ses_owner", display_name: "Taco" }], messagesFor: () => stream.messages } }));
 vi.mock("$lib/stores/undertakings.svelte", () => ({ undertakings: { active: null, items: [] } }));
 vi.mock("$lib/stores/shellTabs.svelte", () => ({ shellTabs: { openChat: navigation.openChat } }));
 vi.mock("$lib/stores/lmeWorkspace.svelte", () => ({ lmeWorkspace: { openCodeWorkspace: navigation.openProject } }));
@@ -60,7 +62,7 @@ async function render(onSnapshot?: (session: string | null, rows: PeerProposalRe
   return props;
 }
 beforeEach(() => {
-  vi.useFakeTimers(); vi.setSystemTime(now); vi.clearAllMocks();
+  vi.useFakeTimers(); vi.setSystemTime(now); vi.clearAllMocks(); stream.messages = [];
   workshopState.workshops = [];
   Object.assign(connection, { online: true, health: { active_profile_id: "owner", runtime: { authority_id: `auth_${"a".repeat(64)}`, advertised_capabilities: ["coordination.operator_proposals.v1"] } } });
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
@@ -71,6 +73,40 @@ beforeEach(() => {
 afterEach(async () => { if (component) await unmount(component); component = undefined; document.body.replaceChildren(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("assignment card lifecycle", () => {
+  it('discovers a new remote delegation on its tool event without waiting for the polling cooldown', async () => {
+    workshopState.workshops = [{ kind: 'portal', pairing: { workshopDeviceId: 'remote' } }];
+    await render();
+    api.list.mockClear();
+    api.list.mockImplementation(async (_session, runtime) => ({ proposals: runtime === 'remote' ? [record('fresh', 'remote')] : [] }));
+    stream.messages = [{ id: 'host', role: 'assistant', content: '', toolRuns: [{ runId: 'spawn', toolName: 'peer_handoff', round: 1, status: 'succeeded' }] }];
+    await settle();
+    expect(api.list).toHaveBeenCalledWith('ses_owner', 'remote', undefined, undefined);
+    expect(document.body.textContent).toContain('Assignment fresh');
+  });
+
+  it('replays a delegation invalidation arriving during remote discovery instead of losing it to the cooldown', async () => {
+    workshopState.workshops = [{ kind: 'portal', pairing: { workshopDeviceId: 'remote' } }];
+    let finish!: (value: { proposals: PeerProposalReviewRecord[] }) => void;
+    let remoteCalls = 0;
+    api.list.mockImplementation(async (_session, runtime) => {
+      if (runtime !== 'remote') return { proposals: [] };
+      if (++remoteCalls === 1) return new Promise(resolve => { finish = resolve; });
+      return { proposals: [record('queued', 'remote')] };
+    });
+    await render();
+    stream.messages = [{ id: 'host', role: 'assistant', content: '', segments: [{ kind: 'tool_group', groupId: 'spawn', toolRound: 1,
+      runs: [{ runId: 'spawn', toolName: 'peer_handoff', round: 1, status: 'succeeded' }] }] }];
+    await settle();
+    finish({ proposals: [] }); await settle();
+    expect(remoteCalls).toBe(2);
+    expect(document.body.textContent).toContain('Assignment queued');
+  });
+  it('does not poll again for ordinary text or unrelated tool updates', async () => {
+    await render(); api.list.mockClear();
+    stream.messages = [{ id: 'host', role: 'assistant', content: 'Working', toolRuns: [{ runId: 'read', toolName: 'code.read', round: 1, status: 'succeeded' }] }];
+    await settle();
+    expect(api.list).not.toHaveBeenCalled();
+  });
   it('shares the same polled snapshot and controls with the composer dock', async () => {
     const snapshot = vi.fn();
     api.list.mockResolvedValue({ proposals: [record('one')] });

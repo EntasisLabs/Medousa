@@ -20,7 +20,7 @@ import type { MediaRef } from "$lib/types/media";
 import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
 import { isEngineTelemetryText } from "$lib/utils/chatStreamDisplay";
 import { mergeTranscript } from "$lib/utils/mergeTranscript";
-import { shouldReattachTurnRecord } from "$lib/utils/streamOwnership";
+import { isReusableAgentStream, shouldReattachTurnRecord } from "$lib/utils/streamOwnership";
 import { streamPathWithSince } from "$lib/stream/reconnect";
 import { friendlyUserError } from "$lib/utils/normieErrors";
 import { randomUuid } from "$lib/utils/randomUuid";
@@ -126,13 +126,21 @@ export async function tryReattachActiveTurn(
   const sessionId = host.sessionId.trim();
   if (!sessionId || externalConversationBinding(sessionId)) return false;
 
+  const workshopEpoch = host.workshopEpoch;
+  const transcriptEpoch = host.transcriptEpoch;
+  const current = () => host.workshopEpoch === workshopEpoch &&
+    host.transcriptEpoch === transcriptEpoch && host.sessionId.trim() === sessionId &&
+    !host.history?.isReleased(sessionId);
   await pruneStreamOwnership(host);
+  if (!current()) return false;
 
   try {
     const targets: TurnTicketRecord[] = [];
     const response = await listSessionTurns(sessionId, true);
+    if (!current()) return false;
     if (response.turns.length === 0) {
       const legacy = await getActiveSessionTurn(sessionId);
+      if (!current()) return false;
       if (!legacy?.active || !legacy.turn) {
         host.activeTurnId = null;
         clearOrphanedInteractiveTurns(host);
@@ -159,6 +167,7 @@ export async function tryReattachActiveTurn(
       if (card.column === "done" || card.column === "blocked") continue;
       try {
         const askResponse = await listSessionTurns(askSessionId(card.id), true);
+        if (!current()) return false;
         targets.push(...askResponse.turns);
       } catch {
         // Best-effort — card may still be queued.
@@ -170,7 +179,8 @@ export async function tryReattachActiveTurn(
     for (const record of targets) {
       if (seen.has(record.turn_id)) continue;
       seen.add(record.turn_id);
-      if (await attachTurnStream(host, record)) {
+      if (!current()) return false;
+      if (await attachTurnStream(host, record, current)) {
         attached = true;
       }
     }
@@ -317,7 +327,7 @@ async function pruneStreamOwnership(host: ChatStoreHost) {
   }
 }
 
-async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord): Promise<boolean> {
+async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord, current: () => boolean): Promise<boolean> {
   if (host.streamRole === "observer") return false;
   if (!shouldReattachTurnRecord(record, reattachContextFor(host, record))) {
     return false;
@@ -325,6 +335,7 @@ async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord): 
 
   if (host.streamOwners.has(record.turn_id)) {
     await detachStreamOwner(host, record.turn_id);
+    if (!current()) return false;
   }
 
   let messageId = host.messages.find(
@@ -351,8 +362,22 @@ async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord): 
     if (record.mode === "interactive") {
       host.assistantId = messageId;
     }
-  } else if (messageId && record.mode === "interactive") {
-    host.assistantId = messageId;
+  } else if (messageId && !record.composer_handoff) {
+    // A history snapshot has no SSE cursor. Native streams replay from zero;
+    // never append that replay onto text/tools hydrated from a later snapshot.
+    // An existing live projection with its cursor, however, resumes unchanged.
+    const replayFromStart = !host.lastSeqByTurn.has(record.turn_id) &&
+      !isReusableAgentStream(record.stream_url);
+    host.messages = host.messages.map(message => message.id === messageId ? {
+      ...message,
+      ...(replayFromStart ? {
+        content: "", segments: undefined, reasoning: null, tools: undefined,
+        toolRuns: undefined, uiArtifacts: undefined,
+      } : {}),
+      streaming: true, failed: false, errorLine: null, errorDetail: null,
+      phase: record.phase,
+    } : message);
+    if (record.mode === "interactive") host.assistantId = messageId;
   }
 
   registerTurnFromRecord(host, record, messageId ?? null);
@@ -363,6 +388,10 @@ async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord): 
   }
 
   await startInteractiveStream(streamUrlWithSince(host, record.stream_url, record.turn_id));
+  if (!current()) {
+    await stopInteractiveStreamTurn(record.turn_id).catch(() => undefined);
+    return false;
+  }
   markStreamOwner(host, record.turn_id, record.session_id, record.stream_url);
   return true;
 }

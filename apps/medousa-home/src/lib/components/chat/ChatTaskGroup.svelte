@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { X } from "@lucide/svelte";
-  import type { ChatAgentGroup } from "$lib/utils/chatAgentGroups";
+  import { agentEntries, type ChatAgentGroup } from "$lib/utils/chatAgentGroups";
+  import type { SubagentRow } from "$lib/utils/subagentRows";
   import type { PeerProposalControls } from "./peerProposalControls";
   import { peerHandoffPresentation, peerWorkTitle } from "./peerHandoffPresentation";
   import AgentTaskDetail from "./AgentTaskDetail.svelte";
@@ -11,6 +12,18 @@
     onOpenSubagent?: (workId: string) => void;
     onStopSubagent?: (workId: string) => void;
   } = $props();
+  const batches = $derived.by(() => {
+    const result: ({ kind: "proposal"; row: ChatAgentGroup["proposals"][number] } | { kind: "workers"; rows: SubagentRow[] })[] = [];
+    for (const entry of agentEntries(group)) {
+      if (entry.kind === "proposal") result.push(entry);
+      else {
+        const previous = result.at(-1);
+        if (previous?.kind === "workers") previous.rows.push(entry.row);
+        else result.push({ kind: "workers", rows: [entry.row] });
+      }
+    }
+    return result;
+  });
   let selectedId = $state<string | null>(null);
   let dialog: HTMLDialogElement;
   const selected = $derived(group.proposals.find(row => row.proposal.proposal_id === selectedId));
@@ -20,25 +33,27 @@
 
 {#if group.proposals.length || group.workers.length}
   <section {id} class="task-receipts" aria-label="Work from this turn">
-    {#each group.proposals as row (row.proposal.proposal_id)}
+    {#each batches as batch (batch.kind === 'proposal' ? batch.row.proposal.proposal_id : batch.rows[0].workId)}
+    {#if batch.kind === 'proposal'}
+      {@const row = batch.row}
       {@const progress = peerHandoffPresentation(row, controls?.now ?? Date.now())}
       <button type="button" class="task-receipt" class:decision={progress.needsApproval} disabled={!controls} onclick={() => void inspect(row.proposal.proposal_id)}>
         <span class="signal" aria-hidden="true">●</span>
         <span class="heading"><small>{progress.needsApproval ? 'Decision needed' : progress.status}</small><strong>{peerWorkTitle(row.proposal.request.instructions)}</strong><span>{progress.needsApproval ? 'Review the request before starting' : progress.nextActor ? `Next: ${progress.nextActor}` : 'Open exchange'}</span></span>
         <span class="link">{progress.needsApproval ? 'Review request' : 'View exchange'} →</span>
       </button>
-    {/each}
-    {#if group.workers.length}
-      <details class="worker-summary">
-        <summary>{group.workers.length} agent task{group.workers.length === 1 ? '' : 's'} · {group.workers.some(row => row.streaming) ? 'In progress' : group.workers.every(row => row.terminal) ? 'Finished' : 'View details'}</summary>
-    {#each group.workers as row (row.workId)}
+    {:else}
+      {@const workers = batch.rows}
+      <div class="worker-summary">
+    {#each workers as row (row.workId)}
       <div class="worker-receipt" data-worker-id={row.workId} tabindex="-1">
-        <button type="button" disabled={!onOpenSubagent} onclick={() => onOpenSubagent?.(row.workId)}><span class="signal" aria-hidden="true">{row.streaming ? '●' : '↳'}</span><span>{row.title}</span><small>{row.attention ? 'Needs attention' : row.terminal ? 'View result →' : row.statusLine || 'Working'}</small></button>
+        <button type="button" disabled={!onOpenSubagent} onclick={() => onOpenSubagent?.(row.workId)}><span class="signal" aria-hidden="true">{row.streaming ? '●' : '↳'}</span><span>{row.title}</span><small>{row.attention ? 'Needs attention' : row.terminal ? 'Finished · Open thread →' : `${row.statusLine || 'Working'} · Open thread →`}</small></button>
         {#if row.streaming && onStopSubagent}<button type="button" class="stop" onclick={() => onStopSubagent?.(row.workId)} aria-label={`Stop ${row.title}`}>Stop</button>{/if}
       </div>
     {/each}
-      </details>
+      </div>
     {/if}
+    {/each}
   </section>
 {/if}
 <dialog bind:this={dialog} aria-label="Task details" onclose={() => selectedId = null} onclick={(event) => { if (event.target === dialog) dialog.close(); }}>
@@ -62,7 +77,6 @@
   small, .heading > span, .link { font-size: 12px; }
   .heading > span { margin-top: 3px; }
   .worker-summary { min-width: 0; border-left: 2px solid rgb(var(--theme-border)); padding-left: 10px; }
-  summary { color: rgb(var(--theme-text-secondary)); font-size: 12px; cursor: pointer; padding: 6px 0; }
   .worker-receipt { display: flex; gap: 8px; align-items: center; }
   .worker-receipt > button:first-child > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(48ch, 55vw); }
   .worker-receipt > button:first-child { min-width: 0; }

@@ -23,6 +23,27 @@ The workspace projector surfaces agent work as **cards** on a kanban-style board
 
 ---
 
+## Worker reading detail
+
+For a retained `turn_worker` card, the explicit card-detail read can additionally
+return `worker_transcript`. It contains `work_id`, parent `session_id`,
+`parent_runtime_id`, `execution_runtime_id`, the complete persisted `task_prompt`
+and `result_text`, recorded `steer_messages` (`text`, `at`), and a
+`retention_note`. Older daemons or unavailable records may omit this optional
+field. List/stream projections remain lightweight previews; their short
+`task_line` and `result_excerpt` are not full transcript sources.
+
+The enrichment uses the already-visible card and matching worker/session on the
+serving daemon. It does not resolve arbitrary runtime/work pairs or fetch foreign
+workshop history. Reading a result does not accept, apply, or publish it.
+
+The enclosing `live_tool_activity`, `live_thinking`, and `live_output` remain
+rolling retained evidence. Tool arguments/results are redacted previews and
+summaries, not raw payload archives. New steering instructions remain recorded
+after delivery; legacy consumed instructions and earlier discarded tool/output
+tails cannot be reconstructed. Consumers should display the retention notice,
+not promise an exhaustive historical transcript.
+
 ## SSE stream
 
 `GET /v1/workspace/stream` emits events when cards move, complete, or feed entries append. The Medousa app uses Tauri `workspace_stream_start` / `workspace_stream_stop`.

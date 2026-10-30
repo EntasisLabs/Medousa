@@ -17,6 +17,52 @@ const messages = [message("request", "user", 1), message("spawn", "assistant", 2
   message("later-request", "user", 3), message("later-reply", "assistant", 4)];
 
 describe("agent turn placement", () => {
+  it('keeps one durable conversation at its original spawn and retains the exact latest proposal', () => {
+    const first = proposal('first', 1), followup = proposal('followup', 3);
+    for (const [index, row] of [first, followup].entries()) {
+      row.proposal.request.context.created_at = `2026-10-30T14:0${index}:00Z`;
+      row.proposal.request.target = { authority_id: 'local', execution_runtime_id: 'runtime' } as typeof row.proposal.request.target;
+      row.binding = { execution_session: { authority_id: 'local', session_id: 'durable' } } as NonNullable<typeof row.binding>;
+    }
+    const groups = chatAgentGroups(messages, messages, [followup, first], new Map());
+    expect([...groups.keys()]).toEqual(['request']);
+    expect(groups.get('request')?.proposals).toEqual([followup]);
+    expect(groups.get('request')?.proposals[0]).toBe(followup);
+    const foreign = structuredClone(followup);
+    foreign.proposal.proposal_id = 'foreign';
+    foreign.binding!.execution_session.authority_id = 'another-authority';
+    expect([...chatAgentGroups(messages, messages, [first, foreign], new Map()).values()].flatMap(group => group.proposals)).toHaveLength(2);
+  });
+  it('orders mixed peers and workers by spawn segments, not kind, ID, or arrival', () => {
+    const history: ChatMessage[] = [messages[0], { ...messages[1], segments: [
+      { kind: 'tool_group', groupId: 'first', toolRound: 1, runs: [{ runId: 'one', toolName: 'workshop.spawn', status: 'succeeded', round: 1, outputSummary: 'work-z' }] },
+      { kind: 'tool_group', groupId: 'second', toolRound: 2, runs: [{ runId: 'two', toolName: 'peer_handoff', status: 'succeeded', round: 2, outputSummary: 'peer-middle' }] },
+      { kind: 'handoff', handoffKind: 'worker', text: 'Delegated', workId: 'work-a' },
+    ] }];
+    const workers = new Map(['work-a', 'work-z'].map(workId => [workId, { workId, parentMessageId: 'spawn' } as SubagentRow]));
+    const group = chatAgentGroups(history, history, [proposal('peer-middle', 1)], workers).get('request')!;
+    expect(group.entries?.map(entry => entry.kind === 'worker' ? entry.row.workId : entry.row.proposal.proposal_id)).toEqual(['work-z', 'peer-middle', 'work-a']);
+    expect(group.entries?.map(entry => entry.nodeId)).toEqual(['spawn:segment:first', 'spawn:segment:second', 'spawn:segment:handoff:work-a:2']);
+  });
+  it('orders mixed delegations inside the same uninterrupted tool group by call order', () => {
+    const history: ChatMessage[] = [messages[0], { ...messages[1], segments: [{ kind: 'tool_group', groupId: 'batch', toolRound: 1, runs: [
+      { runId: 'first', toolName: 'workshop.spawn', round: 1, status: 'succeeded', outputSummary: 'work-z' },
+      { runId: 'second', toolName: 'peer_handoff', round: 2, status: 'succeeded', outputSummary: 'peer' },
+    ] }] }];
+    const group = chatAgentGroups(history, history, [proposal('peer', 1)], new Map([['work-z', { workId: 'work-z', parentMessageId: 'spawn' } as SubagentRow]])).get('request');
+    expect(group?.entries?.map(entry => entry.kind)).toEqual(['worker', 'proposal']);
+    expect(group?.entries?.map(entry => entry.nodeId)).toEqual(['spawn:segment:batch', 'spawn:segment:batch']);
+  });
+  it('preserves admitted worker insertion order when legacy history has no segment coordinates', () => {
+    const workers = new Map(['work-z', 'work-a'].map(workId => [workId, { workId, parentMessageId: 'spawn' } as SubagentRow]));
+    expect(chatAgentGroups(messages, messages, [], workers).get('request')?.workers.map(row => row.workId)).toEqual(['work-z', 'work-a']);
+  });
+  it('never matches a spawn ID from a later user turn', () => {
+    const history: ChatMessage[] = [...messages.slice(0, 3), { ...messages[3], segments: [{ kind: 'handoff', handoffKind: 'worker', text: 'Delegated', workId: 'work' }] }];
+    const group = chatAgentGroups(history, history, [], new Map([['work', { workId: 'work', parentMessageId: 'spawn' } as SubagentRow]])).get('request');
+    expect(group?.entries?.[0].nodeId).toBeUndefined();
+  });
+
   it("uses the parent turn when a refreshed link points at a later worker result", () => {
     const history: ChatMessage[] = [messages[0], { ...messages[1], turnId: "parent" }, ...messages.slice(2),
       { id: "result", role: "assistant", content: "Done", lane: "worker", turnId: "parent", workId: "work" }];

@@ -6,7 +6,7 @@
    */
   import VirtualChatBeat from "./VirtualChatBeat.svelte";
   import { onMount } from "svelte";
-  import { Copy, CornerDownRight, Library, Share2, Square, Volume2 } from "@lucide/svelte";
+  import { Copy, Library, Share2, Square, Volume2 } from "@lucide/svelte";
   import ChatTaskGroup from "$lib/components/chat/ChatTaskGroup.svelte";
   import { chatAgentGroups } from "$lib/utils/chatAgentGroups";
   import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
@@ -79,28 +79,17 @@
   }: Props = $props();
 
   const painted = $derived(
-    workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages),
+    workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages, subagentRows),
   );
   const beats = $derived(groupChatTurnBeats(painted));
   const agentGroups = $derived(chatAgentGroups(messages, painted, peerProposals, subagentRows ?? new Map(),
     authorityId ? { authority_id: authorityId, session_id: sessionId } : undefined));
+  function delegationNodes(message: ChatMessage): string[] {
+    return [...agentGroups.values()].flatMap(group => group.entries?.flatMap(entry =>
+      entry.nodeId?.startsWith(`${message.id}:`) ? [entry.nodeId] : []) ?? []);
+  }
   const groupPrefix = $props.id();
   function groupId(anchor: string | null) { return `${groupPrefix}-agents-${encodeURIComponent(anchor ?? "earlier")}`; }
-  function workerReturn(message: ChatMessage) {
-    if (message.lane !== "worker" || !message.workId || !message.content.trim() || message.streaming) return null;
-    for (const [anchor, group] of agentGroups) {
-      const row = group.workers.find(worker => worker.workId === message.workId);
-      if (row) return { anchor, row };
-    }
-    return null;
-  }
-  function revealAgent(anchor: string | null, workId: string) {
-    const element = document.getElementById(groupId(anchor));
-    const row = [...(element?.querySelectorAll<HTMLElement>("[data-worker-id]") ?? [])].find(item => item.dataset.workerId === workId);
-    const link = row?.querySelector("button");
-    if (link && !link.disabled) link.focus(); else row?.focus();
-    (row ?? element)?.scrollIntoView({ block: "nearest" });
-  }
   let forkingEntryId = $state<string | null>(null);
 
   onMount(() => narration.initialize());
@@ -263,20 +252,19 @@
   {/if}
 {/snippet}
 
-{#snippet agentGroup(anchor: string | null)}
-  {@const group = agentGroups.get(anchor)}
-  {#if group}
-    <ChatTaskGroup id={groupId(anchor)} {group} controls={peerControls} {onOpenSubagent} {onStopSubagent} />
+{#snippet agentGroup(anchor: string | null, nodeId?: string)}
+  {@const original = agentGroups.get(anchor)}
+  {@const entries = original?.entries?.filter(entry => entry.nodeId === nodeId)}
+  {#if entries?.length}
+    {@const group = { entries, proposals: entries.flatMap(entry => entry.kind === 'proposal' ? [entry.row] : []), workers: entries.flatMap(entry => entry.kind === 'worker' ? [entry.row] : []) }}
+    <ChatTaskGroup id={groupId(nodeId ?? anchor)} {group} controls={peerControls} {onOpenSubagent} {onStopSubagent} />
   {/if}
 {/snippet}
 
-{#snippet resultReceipt(message: ChatMessage)}
-  {@const result = workerReturn(message)}
-  {#if result}
-    <button class="agent-return" type="button" onclick={() => onOpenSubagent ? onOpenSubagent(result.row.workId) : revealAgent(result.anchor, result.row.workId)}>
-      <CornerDownRight size={13} aria-hidden="true" /><span>{result.row.title} returned a result</span><span class="return-link">Open thread →</span>
-    </button>
-  {/if}
+{#snippet inlineAgents(nodeId: string)}
+  {#each [...agentGroups.keys()] as anchor (anchor)}
+    {@render agentGroup(anchor, nodeId)}
+  {/each}
 {/snippet}
 
 {@render agentGroup(null)}
@@ -310,21 +298,6 @@
         forkBusy={forkingEntryId === beat.user.transcript?.entryId}
         forkHasDraft={canCarryDraft(beat.user)}
       />
-      <article class="group relative {assistantClass(beat.assistant)}">
-        <p class="response-context">Medousa · Reply to your message</p>
-        {@render resultReceipt(beat.assistant)}
-        <LiquidChatMessage
-          message={beat.assistant}
-          {sessionId}
-          {mobile}
-          {compact}
-          {onPromoteToFlow}
-          {onSubmitIntent}
-          {onOpenCardDetail}
-          onRetryWorker={retryWorkerSynthesis}
-        />
-        {@render turnActions(beat.assistant, beat.user)}
-      </article>
     </section>
   {:else if beat.message.role === "user"}
     <div
@@ -345,13 +318,15 @@
       />
     </div>
   {:else}
+    {@render agentGroup(beat.message.id)}
     <article
       class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}"
     >
-      {#if beat.message.role === "assistant"}<p class="response-context">{beat.message.lane === 'worker' ? 'Medousa · Agent follow-up' : 'Medousa'}</p>{/if}
-      {@render resultReceipt(beat.message)}
+      {#if beat.message.role === "assistant"}<p class="response-context">Medousa</p>{/if}
       <LiquidChatMessage
         message={beat.message}
+        afterNode={inlineAgents}
+        delegationNodeIds={delegationNodes(beat.message)}
         {sessionId}
         {mobile}
         {compact}
@@ -365,15 +340,25 @@
       {/if}
     </article>
   {/if}
-  {@render agentGroup(beat.kind === "pair" ? beat.user.id : beat.message.id)}
+  {#if beat.kind === "pair" || beat.message.role === "user"}
+    {@render agentGroup(beat.kind === "pair" ? beat.user.id : beat.message.id)}
+  {/if}
+  {#if beat.kind === "pair"}
+    <article class="group relative {assistantClass(beat.assistant)}">
+      <p class="response-context">Medousa · Reply to your message</p>
+      <LiquidChatMessage
+        message={beat.assistant}
+        {sessionId} {mobile} {compact} {onPromoteToFlow} {onSubmitIntent} {onOpenCardDetail}
+        onRetryWorker={retryWorkerSynthesis}
+        afterNode={inlineAgents}
+        delegationNodeIds={delegationNodes(beat.assistant)}
+      />
+      {@render turnActions(beat.assistant, beat.user)}
+    </article>
+  {/if}
   </VirtualChatBeat>
 {/each}
 
 <style>
   .response-context { margin: 8px 0; font-size: 12px; color: rgb(var(--theme-text-tertiary)); }
-  .agent-return { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-block: 8px; padding: 4px 0; border: 0; background: transparent; font-size: 12px; text-align: left; color: rgb(var(--theme-text-secondary)); }
-  .agent-return > :global(svg) { flex-shrink: 0; }
-  .agent-return span { min-width: 0; overflow-wrap: anywhere; }
-  .return-link { color: rgb(var(--theme-link)); white-space: nowrap; }
-  @media (pointer: coarse) { .agent-return { min-height: 44px; } }
 </style>

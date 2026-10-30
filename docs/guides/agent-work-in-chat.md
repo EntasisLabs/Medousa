@@ -20,13 +20,23 @@ Pinned child chats remain at the top level instead of being duplicated underneat
 
 Home discovers these links from existing handoff records and keeps a scoped local index. Older workshops without those records, unlinked chats, foreign-workshop execution chats, and chats whose parent is not in the loaded list remain standalone. No relationship is guessed from a similar name. Discovering a link or opening a chat does not start work, cancel it, accept a result, or imply that anything is currently working.
 
+## Live turns and delegation order
+
+Reopening or refreshing a chat restores saved history and reconnects its active turn. Incoming text and tool activity continue in the existing reply rather than waiting for a finished answer. Recovered history follows durable transcript sequence; separate prompts with identical words remain separate turns.
+
+Delegation receipts appear beside their recorded initiating tool or handoff, before later reply text. Peers and workers share that order rather than being split by agent type. Older records without an initiating segment stay with their originating turn; their exact mixed spawn order cannot be reconstructed. Delegation events trigger a progress refresh immediately, with periodic refresh retained as a fallback.
+
 ## Follow an exchange
 
 Select a task in the picker, or its handoff link in the conversation. Both open the same exchange view inside the chat, with a **Medousa ↔ agent** header. The parent chat stays mounted: your draft and reading position are not replaced by a different session.
 
-- Local bound agent sessions show their recorded conversation in chronological order, with **Earlier messages**, **Later messages**, and **Refresh exchange**. The latest page refreshes while the view is open.
-- Worker tasks show the recorded assignment and latest output or result. These workers do not expose a separate message history; the view labels that limitation.
+The original delegation stays a compact, clickable thread row. Follow-ups to the same recorded execution conversation update that entry instead of adding another task card. Exact copies of a linked worker’s returned output are not repeated as full replies in our chat; Medousa’s own summaries, decisions, failures, and unmatched legacy messages remain visible.
+
+- Local bound agent sessions show their recorded conversation and expandable tool activity in chronological order. **Earlier messages** adds older history without replacing what you are reading; **Refresh exchange** and periodic refresh update the latest messages while keeping loaded history. A returned receipt already present in the conversation is not repeated below it.
+- Worker tasks load the persisted full assignment and result, recorded follow-up instructions, and expandable retained tools instead of treating the short card preview as the complete conversation. Live output updates in place. A notice explains retention limits: older intermediate text and full tool payloads may not have been stored. If only a card preview is available, it is labelled as a preview.
 - For work on another workshop, the view shows the recorded handoff, updates, result, and review. The full conversation remains on its execution workshop; local session identifiers are never used to fetch a foreign workshop's transcript.
+
+Consecutive tool calls share one compact activity row with a count, activity preview, and any failures. Expand it to inspect every retained call in execution order, then expand an individual call for its recorded parameters and result. Details stay inside the exchange instead of opening a second dialog. Instructions and written updates separate tool groups so their order remains clear; missing result summaries are labelled rather than invented.
 
 Use **Our chat**, **Return to our chat**, Escape, or mobile Back to return. There is no message composer in this view, so inspecting the exchange cannot accidentally redirect the agent.
 

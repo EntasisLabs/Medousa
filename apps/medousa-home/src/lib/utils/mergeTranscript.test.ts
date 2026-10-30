@@ -4,7 +4,56 @@ import { mergeTranscript } from "./mergeTranscript";
 import { applyV3EnvelopeToMessage } from "$lib/stream/v3TranscriptReducer";
 import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 
+function saved(id: string, seq: number, role: ChatMessage["role"], content: string): ChatMessage {
+  return { id, role, content, transcript: { authorityId: "authority", sessionId: "chat", entryId: id, entrySeq: seq } };
+}
+
 describe("mergeTranscript", () => {
+  it("inserts a recovered earlier answer before the next user and active shell", () => {
+    const first = saved("first", 1, "user", "First");
+    const next = saved("next", 3, "user", "Next");
+    const active: ChatMessage = { id: "live", role: "assistant", content: "Working", streaming: true, turnId: "active" };
+    const result = mergeTranscript([first, next, active], [first, saved("answer", 2, "assistant", "Done"), next]);
+    expect(result.map(message => message.id)).toEqual(["first", "answer", "next", "live"]);
+    expect(result[3]).toBe(active);
+  });
+  it("repairs previously appended durable entries without separating the active prompt", () => {
+    const first = saved("first", 1, "user", "First");
+    const next = saved("next", 3, "user", "Next");
+    const answer = saved("answer", 2, "assistant", "Done");
+    const active: ChatMessage = { id: "live", role: "assistant", content: "Working", streaming: true };
+    expect(mergeTranscript([first, next, active, answer], [first, answer, next]).map(message => message.id))
+      .toEqual(["first", "answer", "next", "live"]);
+  });
+  it("places recovered history before a coordinate-less active prompt and shell", () => {
+    const prompt: ChatMessage = { id: "prompt", role: "user", content: "Next" };
+    const active: ChatMessage = { id: "live", role: "assistant", content: "", streaming: true };
+    const recovered = saved("older", 2, "assistant", "Previous answer");
+    expect(mergeTranscript([prompt, active], [recovered]).map(message => message.id)).toEqual(["older", "prompt", "live"]);
+  });
+  it("hydrates plain content on a settled empty shell without changing its render identity", () => {
+    const result = mergeTranscript([{ id: "shell", role: "assistant", turnId: "turn", content: "", streaming: false }],
+      [{ ...saved("entry", 2, "assistant", "Recovered answer"), turnId: "turn" }]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: "shell", content: "Recovered answer", transcript: { entrySeq: 2 } });
+  });
+  it("preserves distinct durable prompts with identical text", () => {
+    const first = saved("first", 1, "user", "continue");
+    const second = saved("second", 3, "user", "continue");
+    expect(mergeTranscript([first], [first, second]).map(message => message.id)).toEqual(["first", "second"]);
+  });
+  it("matches each optimistic prompt once and remains idempotent", () => {
+    const local: ChatMessage[] = [{ id: "optimistic", role: "user", content: "continue" }];
+    const history = [saved("first", 1, "user", "continue"), saved("second", 3, "user", "continue")];
+    const result = mergeTranscript(local, history);
+    expect(result.map(message => message.id)).toEqual(["optimistic", "second"]);
+    expect(mergeTranscript(result, history)).toEqual(result);
+  });
+  it("never replaces a durable assistant with an equal-text entry from another turn", () => {
+    const first = saved("first", 2, "assistant", "Done");
+    const second = saved("second", 4, "assistant", "Done");
+    expect(mergeTranscript([first], [second])).toEqual([first, second]);
+  });
   it("keeps streamed segments at their consumed cursor when history is ahead", () => {
     const local: ChatMessage = {
       id: "live", role: "assistant", turnId: "turn", streaming: true,
