@@ -27,6 +27,7 @@
   import { activeWorkshopId } from "$lib/utils/workshopLocality";
   import { getVaultNote } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
+  import { spotlightSessionSearch } from "$lib/chat/sessionSearch.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { sessionExportPreview } from "$lib/stores/sessionExportPreview.svelte";
@@ -317,6 +318,14 @@
     };
   });
 
+  $effect(() => {
+    const scope = `${chat.workshopScopeId}:${chat.workshopEpoch}`;
+    const parsed = parseSpotlightQuery(query);
+    if (host || !commandSpotlight.open || addressing || notesMode || sshMode || activityMode || selectedScopeId !== "home" || promptStep || !chat.workshopScopeId) return;
+    untrack(() => { void spotlightSessionSearch.search(scope, parsed.rawQuery); });
+    return () => spotlightSessionSearch.cancel();
+  });
+
   /** Side effects + command collection belong in $effect, never $derived. */
   $effect(() => {
     if (!commandSpotlight.open) {
@@ -372,6 +381,7 @@
     void bots.bots;
     void connectedAgents.conversations;
     void chat.sessions;
+    void spotlightSessionSearch.sessions;
     void chat.pendingBudgetApprovals;
     void chat.contextUsage;
     void chat.liveStreamActive;
@@ -828,8 +838,14 @@
         {/key}
       {:else}
       <div class="command-spotlight-body">
-        <div class="command-spotlight-results" bind:this={resultsEl} aria-busy={collecting}>
+        <div class="command-spotlight-results" bind:this={resultsEl} aria-busy={collecting || (!host && spotlightSessionSearch.loading)}>
           {#if collecting}<p class="command-spotlight-empty" role="status">Searching your workshop…</p>{/if}
+          {#if !host && spotlightSessionSearch.loading}<p class="command-spotlight-empty" role="status">Searching all chats…</p>{/if}
+          {#if !host && spotlightSessionSearch.error}
+            <p class="command-spotlight-empty" role="alert">Chat search is incomplete: {spotlightSessionSearch.error}
+              <button type="button" onclick={() => void spotlightSessionSearch.search(`${chat.workshopScopeId}:${chat.workshopEpoch}`, parseSpotlightQuery(query).rawQuery)}>Retry chat search</button>
+            </p>
+          {/if}
           <SpotlightTerminalStatus {sshMode} data={sshData} {query} {commandError} empty={!flatCommands.length} onManage={() => { if (host) void host.manageConnection().catch(reportHostError); else { ctx.openSettingsSection("basement"); ctx.callbacks.close(); } }} />
           {#each groups as group, sectionIndex (group.id)}
             <div class="command-spotlight-section-label">{group.label}</div>
@@ -880,7 +896,7 @@
               {/each}
             </ul>
           {:else}
-            {#if !sshMode && !collecting}<p class="command-spotlight-empty">No matching commands</p>{/if}
+            {#if !sshMode && !collecting && (host || (!spotlightSessionSearch.loading && !spotlightSessionSearch.error))}<p class="command-spotlight-empty">No matching commands</p>{/if}
           {/each}
         </div>
 

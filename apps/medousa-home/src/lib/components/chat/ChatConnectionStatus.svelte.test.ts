@@ -25,14 +25,18 @@ function button(label: string) { return [...document.querySelectorAll("button")]
 beforeEach(() => {
   vi.clearAllMocks(); api.local = false;
   api.diagnose.mockResolvedValue({ title: "Medousa isn't running", message: "Start Medousa", issue: "not_running" });
+  connection.setHealth(null);
   connection.setHealth({ ok: true } as DaemonHealth); connection.setRecovering(false);
 });
-afterEach(async () => { if (component) await unmount(component); component = undefined; document.body.replaceChildren(); });
+afterEach(async () => { if (component) await unmount(component); component = undefined; connection.setHealth(null); document.body.replaceChildren(); });
 
 it("keeps recovery non-modal and quiet through repeated background failures", async () => {
   component = mount(ChatConnectionStatus, { target: document.body }); await settle();
-  const status = document.querySelector(".chat-connection-status");
+  expect(document.querySelector(".chat-connection-status")).toBeNull();
   for (let attempt = 0; attempt < 5; attempt++) {
+    connection.setHealth(failed); await settle();
+    const status = document.querySelector(".chat-connection-status");
+    expect(status).not.toBeNull();
     connection.setHealth(failed); await settle();
     expect(document.querySelector(".chat-connection-status")).toBe(status);
     expect(document.querySelector('[role="dialog"], [role="alertdialog"], [aria-modal="true"]')).toBeNull();
@@ -40,13 +44,27 @@ it("keeps recovery non-modal and quiet through repeated background failures", as
     expect(document.body.textContent).not.toContain("iroh request failed");
     expect(document.body.textContent).not.toContain("Medousa isn't connected");
     connection.setHealth({ ok: true } as DaemonHealth); await settle();
-    expect(document.querySelector(".chat-connection-status")).toBe(status);
+    expect(document.querySelector(".chat-connection-status")).toBeNull();
+    expect(document.querySelector('[role="status"]')).toBeNull();
     expect(document.body.textContent).not.toContain("Reconnecting…");
   }
   expect(api.refresh).not.toHaveBeenCalled();
   expect(api.diagnose).not.toHaveBeenCalled();
   expect(api.start).not.toHaveBeenCalled();
   expect(api.more).not.toHaveBeenCalled();
+});
+
+it("only renders the status row while checking or offline", async () => {
+  connection.setHealth(null);
+  component = mount(ChatConnectionStatus, { target: document.body }); await settle();
+  expect(document.querySelector('[role="status"]')?.textContent).toContain("Connecting…");
+  expect(document.querySelectorAll("button")).toHaveLength(0);
+  connection.setHealth({ ok: true } as DaemonHealth); await settle();
+  expect(document.body.children).toHaveLength(0);
+  connection.setHealth(failed); await settle();
+  expect(document.querySelector('[role="status"]')?.textContent).toContain("Reconnecting…");
+  connection.noteTraffic(); await settle();
+  expect(document.body.children).toHaveLength(0);
 });
 
 it("provides explicit retry and connection settings without reopening pairing", async () => {

@@ -333,15 +333,19 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <style>
-  .change-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgb(var(--theme-border)); border-radius: 999px; padding: 5px 10px; font-size: 12px; color: rgb(var(--theme-text-secondary)); background: transparent; cursor: pointer; }
+  .change-pill { display: inline-flex; flex-shrink: 0; align-items: center; gap: 7px; min-height: 32px; border: 0; border-radius: 9px; padding: 6px 8px; margin-left: -8px; font-size: 12px; line-height: 20px; white-space: nowrap; color: rgb(var(--theme-text-secondary)); background: transparent; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
+  .change-pill--ready { color: rgb(var(--theme-link)); }
+  .change-action { color: rgb(var(--theme-text-tertiary)); }
+  @media (max-width: 600px) { .change-action { display: none; } }
   .change-pill:hover { background: rgb(var(--theme-card-hover)); }
   .change-pill:focus-visible { outline: 2px solid rgb(var(--theme-link)); outline-offset: 2px; }
   @media (pointer: coarse) { .change-pill { min-height: 44px; } }
 </style>
 
 {#if compact && expectedFileCount > 0}
-  <button type="button" class="change-pill" title={projectTitle} aria-label={`${expectedFileCount} changes in ${projectTitle}${isReady ? ', ready for review' : ', working copy'}`} onclick={() => sheetOpen = true}>
-    <FileDiff size={13} aria-hidden="true" /> {expectedFileCount} change{expectedFileCount === 1 ? '' : 's'}
+  <button type="button" class="change-pill" class:change-pill--ready={isReady} title={projectTitle} aria-haspopup="dialog" aria-expanded={sheetOpen} aria-label={`${expectedFileCount} changes in ${projectTitle}${isReady ? ', ready for review' : ', working copy'}`} onclick={() => sheetOpen = true}>
+    {#if isReady}<ShieldCheck size={16} strokeWidth={1.75} aria-hidden="true" />{:else}<FileDiff size={16} strokeWidth={1.75} aria-hidden="true" />{/if}
+    <span>{expectedFileCount} change{expectedFileCount === 1 ? '' : 's'}</span><span class="change-action" aria-hidden="true">· {isReady ? 'Review' : 'View'}</span>
   </button>
 {:else if expectedFileCount > 0}
   <section

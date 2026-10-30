@@ -121,7 +121,8 @@
   );
 </script>
 
-<!-- Reserve the same space through health changes so the transcript never jumps. -->
+<!-- Healthy connections need no status row or reserved composer space. -->
+{#if connection.checking || connection.offline}
 <div class="chat-connection-status">
   <span class="text-xs text-content-quiet" role="status">
     {#if connection.checking}Connecting…{:else if connection.offline}Reconnecting…{/if}
@@ -141,6 +142,7 @@
     </div>
   {/if}
 </div>
+{/if}
 
 <!-- Recovery details are opt-in, never an automatic modal over the conversation. -->
 {#if connection.offline && detailsOpen && workshops.activeWorkshop?.kind === "local"}

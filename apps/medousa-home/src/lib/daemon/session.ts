@@ -95,7 +95,7 @@ export async function listSessions(
     if (options.cursor?.trim()) query.cursor = options.cursor.trim();
     return portalRequest<ListSessionsResponse>("GET", `${operationPath("sessions.get")}?${new URLSearchParams(query)}`);
   }
-  if (isBrowserWorkshop()) return listBrowserSessions(options.limit);
+  if (isBrowserWorkshop()) return listBrowserSessions(options.limit, options.q, options.cursor);
   return invoke<ListSessionsResponse>("session_list", {
     limit: options.limit,
     includeVerification: options.includeVerification ?? false,

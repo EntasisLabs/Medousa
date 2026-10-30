@@ -230,11 +230,8 @@ describe("theme contract", () => {
     });
   });
 
-  /**
-   * Dark ramps already fan out across surface 300-600, so the derivation must
-   * not reach them. These are the stops the light branch would have replaced.
-   */
-  it("leaves dark themes on the verbatim ramp steps", () => {
+  /** UI text is measured independently of decorative syntax palette stops. */
+  it("gives dark themes readable ordered UI tiers without changing syntax", () => {
     const darkThemes = allThemes.filter(
       (theme) =>
         luminance((theme.properties as Record<string, string>)["--theme-canvas"]!) <= 0.5,
@@ -243,15 +240,23 @@ describe("theme contract", () => {
 
     for (const theme of darkThemes) {
       const properties = theme.properties as Record<string, string>;
-      expect(properties["--theme-text-tertiary"], theme.name).toBe(
-        properties["--color-surface-400"],
-      );
-      expect(properties["--theme-text-quiet"], theme.name).toBe(
-        properties["--color-surface-500"],
-      );
-      expect(properties["--theme-text-faint"], theme.name).toBe(
-        properties["--color-surface-600"],
-      );
+      const backgrounds = ["canvas", "chrome", "header", "pane", "pane-muted", "card", "card-hover"];
+      const worstContrast = (role: string) => Math.min(...backgrounds.map(
+        (background) => contrast(properties[`--theme-text${role}`]!, properties[`--theme-${background}`]!),
+      ));
+      const available = worstContrast("");
+      const scale = Math.min(1, available / 7.5);
+      const secondary = worstContrast("-secondary");
+      const tertiary = worstContrast("-tertiary");
+      const quiet = worstContrast("-quiet");
+      const faint = worstContrast("-faint");
+      expect(secondary, theme.name).toBeGreaterThanOrEqual(7.5 * scale);
+      expect(tertiary, theme.name).toBeGreaterThanOrEqual(5.5 * scale);
+      expect(quiet, theme.name).toBeGreaterThanOrEqual(4.5 * scale);
+      expect(faint, theme.name).toBeGreaterThanOrEqual(3.2 * scale);
+      expect(secondary, theme.name).toBeGreaterThan(tertiary);
+      expect(tertiary, theme.name).toBeGreaterThan(quiet);
+      expect(quiet, theme.name).toBeGreaterThan(faint);
       const unchanged: Array<[string, string]> = [
         ["--syn-bg", "--color-surface-900"],
         ["--syn-comment", "--color-surface-400"],

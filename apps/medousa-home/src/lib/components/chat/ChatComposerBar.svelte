@@ -53,6 +53,8 @@
     composerBlocked?: boolean;
     /** Hide attachment hint + model picker (Presence empty landing). */
     quietChrome?: boolean;
+    /** False when the host renders attachments above its context controls. */
+    showAttachments?: boolean;
     /** Expose the source-aware model selector in this composer. */
     modelPickerEnabled?: boolean;
     agentRuntime?: ChatAgentRuntime;
@@ -78,6 +80,7 @@
     offline = false,
     composerBlocked = false,
     quietChrome = false,
+    showAttachments = true,
     modelPickerEnabled = true,
     agentRuntime = "medousa",
     agentConfigOptions = [],
@@ -413,7 +416,9 @@
   </div>
 {/if}
 
-{#if !providerConversation || chat.pendingMediaRefs.length > 0}<ChatAttachmentChips disabled={disabled || offline} />{/if}
+{#snippet attachments()}
+  {#if showAttachments && (!providerConversation || chat.pendingMediaRefs.length > 0)}<ChatAttachmentChips disabled={disabled || offline} />{/if}
+{/snippet}
 
 <ResourceReferencePicker bind:value={chat.draft} bind:references={chat.pendingResourceRefs} {element} enabled={!blocked && !providerConversation} onBindProject={async workId => { await setSessionCodeBinding(chat.focusedSessionId || chat.sessionId, workId); }}/>
 
@@ -427,6 +432,7 @@
       ? 'composer-bar-voice-transcribing'
       : ''}"
   >
+    {@render attachments()}
     {#if voiceActive}
       <ChatVoiceRecorder
         {mobile}
@@ -578,6 +584,7 @@
     ? 'composer-bar-voice-mode'
     : ''} {voiceTranscribing ? 'composer-bar-voice-transcribing' : ''}"
 >
+  {@render attachments()}
   {#if voiceActive}
     <ChatVoiceRecorder
       {mobile}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, type Snippet } from "svelte";
+  import { onMount, untrack, type Snippet } from "svelte";
   import ResourceReferencePicker from "$lib/components/chat/ResourceReferencePicker.svelte";
   import SpotlightAttachmentDraft from "./SpotlightAttachmentDraft.svelte";
   import { handleChatImagePaste } from "$lib/utils/chatImagePaste";
@@ -10,6 +10,7 @@
   import { X } from "@lucide/svelte";
   import { bots } from "$lib/stores/bots.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { SessionSearch } from "$lib/chat/sessionSearch.svelte";
   import type { AddressedConversation } from "$lib/spotlight/addressedConversation.svelte";
   import { conversationTargets, mentionQuery, type ConversationTarget } from "$lib/spotlight/conversationTargets";
   import SpotlightTargetPicker from "./SpotlightTargetPicker.svelte";
@@ -69,7 +70,17 @@
   const mention = $derived(enabled && !conversation.target ? mentionQuery(query) : null);
   const picking = $derived(Boolean(mention) && !dismissed);
   $effect(() => { onPickingChange?.(picking); });
-  const targets = $derived(conversationTargets(chat.workshopScopeId ?? "", bots.bots, chat.sessions, conversation.runtimes, mention?.name ?? ""));
+  const sessionSearch = new SessionSearch();
+  const searchScope = $derived(`${chat.workshopScopeId}:${chat.workshopEpoch}`);
+  $effect(() => {
+    const scope = searchScope;
+    const name = mention?.name ?? "";
+    if (!picking || !chat.workshopScopeId) return;
+    untrack(() => { void sessionSearch.search(scope, name); });
+    return () => sessionSearch.cancel();
+  });
+  const targets = $derived(conversationTargets(chat.workshopScopeId ?? "", bots.bots,
+    sessionSearch.resultsFor(searchScope, mention?.name ?? "", chat.sessions), conversation.runtimes, mention?.name ?? ""));
   function focus() { requestAnimationFrame(() => inputEl?.focus()); }
   function select(target: ConversationTarget) {
     const text = mention?.message ?? "";
@@ -113,10 +124,10 @@
     aria-activedescendant={picking && targets[index] ? `${idPrefix}-target-${index}` : activeResultId}
     onpaste={paste} bind:value={query} onpointerdown={() => onActivate?.()} oninput={() => { index = 0; dismissed = false; onQueryChange(); }} disabled={busy}/>
   {@render trailing?.()}
-  {#if picking && !inlinePicker}<SpotlightTargetPicker {targets} {index} {idPrefix} loading={bots.loading} error={bots.error} onSelect={select} onHighlight={value => index = value}/>{/if}
+  {#if picking && !inlinePicker}<SpotlightTargetPicker {targets} {index} {idPrefix} loading={bots.loading || sessionSearch.loading} error={sessionSearch.error ?? bots.error} onSelect={select} onHighlight={value => index = value}/>{/if}
 </div>
 <SpotlightAttachmentDraft {conversation}/>
 {#if conversation.error && !conversation.target}<p class="command-spotlight-conversation-notice">{conversation.error}</p>{/if}
 <ResourceReferencePicker bind:value={query} bind:references={conversation.references} element={inputEl} enabled={enabled && !mention && !conversation.sending && Boolean(conversation.target || defaultTarget)} onChange={onQueryChange} onBindProject={bindProject}/>
 </div>
-{#if picking && inlinePicker}<SpotlightTargetPicker {targets} {index} {idPrefix} inline loading={bots.loading} error={bots.error} onSelect={select} onHighlight={value => index = value}/>{/if}
+{#if picking && inlinePicker}<SpotlightTargetPicker {targets} {index} {idPrefix} inline loading={bots.loading || sessionSearch.loading} error={sessionSearch.error ?? bots.error} onSelect={select} onHighlight={value => index = value}/>{/if}

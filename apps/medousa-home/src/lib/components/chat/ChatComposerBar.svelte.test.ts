@@ -15,7 +15,7 @@ vi.mock("$lib/chat/composerModel", () => ({ composerModel: () => ({ provider: "t
 vi.mock("$lib/utils/composerStt", () => ({ composerSttStatus: async () => ({ available: false }), appendComposerDraft: vi.fn(), transcribeComposerAudio: vi.fn() }));
 vi.mock("$lib/utils/composerAudioCapture", () => ({ composerMicSupported: () => false, startComposerAudioCapture: vi.fn() }));
 vi.mock("$lib/platform", () => ({ isTauri: () => false, isTauriMobilePlatform: () => false, isTauriMacDesktop: () => false }));
-vi.mock("$lib/components/chat/ChatAttachmentChips.svelte", () => ({ default: () => {} }));
+vi.mock("$lib/components/chat/ChatAttachmentChips.svelte", () => ({ default: (anchor: Node) => { const rail = document.createElement('div'); rail.className = 'composer-attachment-chips'; rail.textContent = 'Attachment preview'; anchor.parentNode!.insertBefore(rail, anchor); } }));
 vi.mock("$lib/components/chat/ChatModelPicker.svelte", () => ({ default: () => { actions.modelPicker(); } }));
 vi.mock("$lib/components/chat/ChatRuntimePicker.svelte", () => ({ default: () => {} }));
 vi.mock("$lib/components/chat/ChatVoiceRecorder.svelte", () => ({ default: () => {} }));
@@ -56,6 +56,25 @@ it.each([true, false])("keeps the %s mobile draft and caret editable across reco
   expect(chat.draft).toBe("Draft edited while offline");
   expect(send.disabled).toBe(true);
   expect(actions.attach).not.toHaveBeenCalled();
+});
+
+it.each([true, false])("contains the %s mobile attachment rail above the draft inside the outline", async (mobile) => {
+  component = mount(ChatComposerBar, { target: document.body, props: { mobile } });
+  await settle();
+  const shell = document.querySelector(mobile ? '.mobile-composer-dock' : '.chat-composer-shell')!;
+  const rail = document.querySelector('.composer-attachment-chips')!;
+  const textarea = document.querySelector('textarea')!;
+  expect(document.querySelectorAll('.composer-attachment-chips')).toHaveLength(1);
+  expect(shell.contains(rail)).toBe(true);
+  expect(rail.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(document.querySelector('[aria-label="Send message"]')?.closest('.chat-composer-drop-target')).toBe(shell.closest('.chat-composer-drop-target'));
+});
+
+it.each([true, false])("omits the %s mobile rail when the host owns previews", async (mobile) => {
+  component = mount(ChatComposerBar, { target: document.body, props: { mobile, showAttachments: false } });
+  await settle();
+  expect(document.querySelector('.composer-attachment-chips')).toBeNull();
+  expect(document.querySelector('textarea')).not.toBeNull();
 });
 
 it("keeps cancellation available during an outage without submitting another message", async () => {

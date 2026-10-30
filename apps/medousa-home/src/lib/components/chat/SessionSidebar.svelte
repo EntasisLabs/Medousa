@@ -4,6 +4,12 @@
   import { ChevronDown, ChevronRight, Plus, Search, Users, X } from "@lucide/svelte";
   import { agentCreation } from "$lib/stores/agentCreation.svelte";
   import ConnectedAgentList from "./ConnectedAgentList.svelte";
+  import SidebarSectionHeading from "./SidebarSectionHeading.svelte";
+  import { connection } from '$lib/stores/connection.svelte';
+  import { listPeerProposals } from '$lib/daemon/coordination';
+  import { sidebarRelations } from './sidebarRelations.svelte';
+  import { sessionFamilies } from '$lib/utils/sessionRelations';
+  import { readSidebarValue, writeSidebarValue, sidebarKey } from '$lib/utils/sidebarState';
   import { getSessionAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
   import { botExecutorUpdate } from "$lib/utils/botExecutorUpdate";
   import BotEditor from "$lib/components/chat/BotEditor.svelte";
@@ -13,6 +19,8 @@
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
+  import { loadMoreSessions } from "$lib/chat/sessionController";
+  import { SessionSearch } from "$lib/chat/sessionSearch.svelte";
   import { bots } from "$lib/stores/bots.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
@@ -42,6 +50,17 @@
   const showBuiltInToolbar = $derived(chrome !== "rail-list");
 
   let query = $state("");
+  const sessionSearch = new SessionSearch();
+  const searchScope = $derived(`${chat.workshopScopeId}:${chat.workshopEpoch}`);
+  $effect(() => {
+    const scope = searchScope;
+    const needle = query;
+    if (!open || !chat.workshopScopeId) { untrack(() => sessionSearch.cancel()); return; }
+    untrack(() => { void sessionSearch.search(scope, needle); });
+    return () => sessionSearch.cancel();
+  });
+  const searchedSessions = $derived(query.trim()
+    ? sessionSearch.resultsFor(searchScope, query, chat.sessions) : chat.sessions);
   let now = $state(Date.now());
   $effect(() => {
     if (!open) return;
@@ -59,7 +78,6 @@
   let renameInputEl = $state<HTMLInputElement | null>(null);
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
-  let olderCollapsed = $state(true);
   let archivedBotsCollapsed = $state(true);
   let botEditorOpen = $state(false);
   let editingBot = $state<BotProfile | null>(null);
@@ -149,18 +167,69 @@
     ),
   );
 
+  const relationScope = $derived(sidebarKey(chat.workshopScopeId, connection.health?.runtime?.authority_id ?? '', connection.health?.active_profile_id ?? '', 'families'));
+  const candidates = $derived(searchedSessions.filter(session => !botSessionIds.has(session.session_id)
+    && !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id))));
+  const families = $derived(sessionFamilies(candidates, sidebarRelations.scope === relationScope ? sidebarRelations.links : [], new Set(chat.pinnedIds)));
+  const visibleSessions = $derived(query.trim() ? candidates.map(families.display) : families.roots);
+  let familyCollapsed = $state<Record<string, boolean>>({});
+  function familyKey(id: string): string {
+    return sidebarKey(chat.workshopScopeId, connection.health?.runtime?.authority_id ?? '', connection.health?.active_profile_id ?? '', 'related:' + id);
+  }
+  function familyExpanded(id: string): boolean {
+    const key = familyKey(id);
+    const initiallyCollapsed = !families.children.get(id)?.some(child => child.session_id === chat.focusedSessionId);
+    return !(familyCollapsed[key] ?? readSidebarValue(key, initiallyCollapsed));
+  }
+  function toggleFamily(id: string) {
+    const key = familyKey(id);
+    const collapsed = familyExpanded(id);
+    familyCollapsed[key] = collapsed;
+    writeSidebarValue(key, collapsed);
+  }
+  const discoveryIds = $derived(JSON.stringify(searchedSessions.map(session => session.session_id).sort()));
+  const relationAuthority = $derived(connection.health?.runtime?.authority_id ?? '');
+  const discoveryAvailable = $derived(open && connection.online && Boolean(connection.health?.runtime?.advertised_capabilities.includes('coordination.operator_proposals.v1')));
+  $effect(() => { sidebarRelations.load(relationScope); });
+  $effect(() => {
+    const scope = relationScope;
+    const authority = relationAuthority;
+    const ids = JSON.parse(discoveryIds) as string[];
+    const workshopScope = chat.workshopScopeId;
+    if (!discoveryAvailable) return;
+    let cancelled = false;
+    // Three bounded lanes; never request every transcript or guess from names.
+    const queue = [...ids];
+    async function discover() {
+      while (!cancelled && queue.length) {
+        const id = queue.shift()!;
+        let after: string | undefined;
+        const seen = new Set<string>();
+        try {
+          do {
+            const page = await listPeerProposals(id, null, after, undefined, workshopScope);
+            if (cancelled) return;
+            sidebarRelations.observe(scope, [...page.proposals, ...(page.tracked_proposal ? [page.tracked_proposal] : [])], authority);
+            after = page.next_cursor ?? undefined;
+            if (after && seen.has(after)) break;
+            if (after) seen.add(after);
+          } while (after && !cancelled);
+        } catch { /* Older/offline workshops keep their normal flat history. */ }
+      }
+    }
+    for (let lane = 0; lane < 3; lane++) void discover();
+    return () => { cancelled = true; };
+  });
+
+  // Pins are an explicit destination, independent of collapsed family roots.
   const pinned = $derived(
-    chat.sessions.filter(
-      (session) =>
-        !botSessionIds.has(session.session_id) &&
-        !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)) &&
-        chat.isPinned(session.session_id) &&
-        matchesQuery(session),
+    candidates.map(families.display).filter(
+      (session) => chat.isPinned(session.session_id) && matchesQuery(session),
     ),
   );
 
   const recent = $derived(
-    chat.sessions.filter(
+    visibleSessions.filter(
       (session) =>
         !botSessionIds.has(session.session_id) &&
         !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)) &&
@@ -188,6 +257,14 @@
   const archivedBots = $derived(
     bots.bots.filter((bot) => bot.archived && matchesBotQuery(bot)),
   );
+
+  function toggleSessionPin(session: SessionSummary) {
+    // A server search hit may never have been in the browse cache.
+    if (!chat.isPinned(session.session_id) && !chat.sessions.some(row => row.session_id === session.session_id)) {
+      chat.sessions = [...chat.sessions, session];
+    }
+    chat.togglePin(session.session_id);
+  }
 
   async function selectSession(sessionId: string, title?: string) {
     if (onOpenSession) { await onOpenSession(sessionId, title); onPick?.(); return; }
@@ -361,7 +438,12 @@
     renameSaving = true;
     renameError = null;
     try {
-      await chat.renameSession(renamingSession.session_id, renameDraft.trim());
+      const id = renamingSession.session_id;
+      const scope = searchScope;
+      await chat.renameSession(id, renameDraft.trim());
+      if (scope !== searchScope) return;
+      // Invalidate an older in-flight search snapshot after the mutation.
+      void sessionSearch.search(scope, query);
       closeRename();
     } catch (err) {
       renameError = err instanceof Error ? err.message : String(err);
@@ -385,7 +467,11 @@
     deleteSaving = true;
     deleteError = null;
     try {
-      await chat.deleteSession(deletingSession.session_id);
+      const id = deletingSession.session_id;
+      const scope = searchScope;
+      await chat.deleteSession(id);
+      if (scope !== searchScope) return;
+      void sessionSearch.search(scope, query);
       closeDelete();
       if (variant === "drawer" || variant === "sheet") {
         layout.setSessionDrawerOpen(false);
@@ -470,6 +556,27 @@
   {/if}
 {/if}
 
+{#snippet plainRow(session: SessionSummary, isPinned: boolean, relatedCount = 0)}
+  <SessionRow {session} {now} selected={chat.focusedSessionId === session.session_id} pinned={isPinned}
+    {relatedCount} relatedExpanded={relatedCount > 0 && familyExpanded(session.session_id)}
+    onToggleRelated={relatedCount > 0 ? () => toggleFamily(session.session_id) : undefined}
+    alwaysShowActions={touchActions} onSelect={() => void selectSession(session.session_id, formatSessionLabel(session))}
+    onRename={() => openRename(session)} onDelete={() => openDelete(session)} onTogglePin={() => toggleSessionPin(session)} />
+{/snippet}
+
+{#snippet familyRow(session: SessionSummary, isPinned: boolean)}
+  {@const children = families.children.get(session.session_id) ?? []}
+  {@render plainRow(session, isPinned, query.trim() ? 0 : children.length)}
+  {#if query.trim() && families.parents.has(session.session_id)}
+    {@const parent = candidates.find(item => item.session_id === families.parents.get(session.session_id))}
+    {#if parent}<button type="button" class="workshop-faint ml-6 truncate text-[10px]" onclick={() => void selectSession(parent.session_id)}>From: {formatSessionLabel(parent)}</button>{/if}
+  {:else if !query.trim() && children.length && familyExpanded(session.session_id)}
+    <ul class="session-sidebar-section-list session-family-children" aria-label={'Related chats for ' + formatSessionLabel(session)}>
+      {#each children as child (child.session_id)}<li>{@render plainRow(child, false)}</li>{/each}
+    </ul>
+  {/if}
+{/snippet}
+
 {#snippet sessionPanelBody()}
   <div class="flex min-h-0 flex-1 flex-col">
     {#if showBuiltInToolbar}
@@ -486,7 +593,7 @@
               bind:this={searchInputEl}
               class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
               type="search"
-              placeholder="Search titles…"
+              placeholder="Search all chats…"
               bind:value={query}
             />
           </div>
@@ -563,12 +670,8 @@
 
     <ol class="session-sidebar-list {variant === 'sheet' ? 'mobile-chat-history-list' : ''}">
       <li class="session-sidebar-section">
-        <div class="session-sidebar-section-heading">
-          <p class="session-sidebar-section-title">Bots</p>
-          <span class="session-sidebar-section-heading__trailing">
-            {#if activeBots.length > 0}
-              <span class="session-sidebar-section-count">{activeBots.length}</span>
-            {/if}
+        <SidebarSectionHeading id="bots" label="Bots" count={activeBots.length} searching={Boolean(query.trim())}>
+          {#snippet children()}
             <button
               type="button"
               class="session-sidebar-heading-action"
@@ -578,8 +681,8 @@
             >
               <Plus size={13} strokeWidth={2} />
             </button>
-          </span>
-        </div>
+          {/snippet}
+          {#snippet content()}
         {#if activeBots.length > 0}
           <ul class="session-sidebar-section-list">
             {#each activeBots as bot (bot.bot_id)}
@@ -610,9 +713,25 @@
             </button>
           </div>
         {/if}
+          {/snippet}
+        </SidebarSectionHeading>
       </li>
 
       <ConnectedAgentList {open} {query} onSelect={(sessionId, title) => void selectSession(sessionId, title)} />
+
+      <li class="session-sidebar-section">
+        <SidebarSectionHeading id="pinned" label="Pinned" count={pinned.length} searching={Boolean(query.trim())}>
+          {#snippet content()}
+            {#if pinned.length > 0}
+              <ul class="session-sidebar-section-list">
+                {#each pinned as session (session.session_id)}
+                  <li>{@render familyRow(session, true)}</li>
+                {/each}
+              </ul>
+            {/if}
+          {/snippet}
+        </SidebarSectionHeading>
+      </li>
 
       {#if archivedBots.length > 0}
         <li class="session-sidebar-section">
@@ -652,81 +771,21 @@
         </li>
       {/if}
 
-      {#if pinned.length > 0}
-        <li class="session-sidebar-section">
-          <div class="session-sidebar-section-heading">
-            <p class="session-sidebar-section-title">Pinned</p>
-            <span class="session-sidebar-section-count">{pinned.length}</span>
-          </div>
-          <ul class="session-sidebar-section-list">
-            {#each pinned as session (session.session_id)}
-              <li>
-                <SessionRow
-                  {session}
-                  {now}
-                  selected={chat.sessionId === session.session_id}
-                  pinned
-                  alwaysShowActions={touchActions}
-                  onSelect={() => void selectSession(session.session_id)}
-                  onRename={() => openRename(session)}
-                  onDelete={() => openDelete(session)}
-                  onTogglePin={() => chat.togglePin(session.session_id)}
-                />
-              </li>
-            {/each}
-          </ul>
-        </li>
-      {/if}
-
       {#if recent.length > 0}
         {#each recentGroups as group (group.id)}
-          {@const collapsed = group.id === "older" && olderCollapsed && !query.trim()}
           <li class="session-sidebar-section">
-            {#if group.id === "older"}
-              <button
-                type="button"
-                class="session-sidebar-section-heading session-sidebar-section-heading--button"
-                aria-expanded={!collapsed}
-                onclick={() => (olderCollapsed = !olderCollapsed)}
-              >
-                <span class="session-sidebar-section-title">{group.label}</span>
-                <span class="session-sidebar-section-heading__trailing">
-                  <span class="session-sidebar-section-count">{group.sessions.length}</span>
-                  {#if collapsed}
-                    <ChevronRight size={12} strokeWidth={1.75} aria-hidden="true" />
-                  {:else}
-                    <ChevronDown size={12} strokeWidth={1.75} aria-hidden="true" />
-                  {/if}
-                </span>
-              </button>
-            {:else}
-              <div class="session-sidebar-section-heading">
-                <p class="session-sidebar-section-title">{group.label}</p>
-                <span class="session-sidebar-section-count">{group.sessions.length}</span>
-              </div>
-            {/if}
-            {#if !collapsed}
+            <SidebarSectionHeading id={group.id} label={group.label} count={group.sessions.length} searching={Boolean(query.trim())} initiallyCollapsed={group.id === 'older'}>
+              {#snippet content()}
               <ul class="session-sidebar-section-list">
                 {#each group.sessions as session (session.session_id)}
-                  <li>
-                    <SessionRow
-                      {session}
-                      {now}
-                      selected={chat.sessionId === session.session_id}
-                      pinned={false}
-                      alwaysShowActions={touchActions}
-                      onSelect={() => void selectSession(session.session_id)}
-                      onRename={() => openRename(session)}
-                      onDelete={() => openDelete(session)}
-                      onTogglePin={() => chat.togglePin(session.session_id)}
-                    />
-                  </li>
+                  <li>{@render familyRow(session, false)}</li>
                 {/each}
               </ul>
-            {/if}
+              {/snippet}
+            </SidebarSectionHeading>
           </li>
         {/each}
-      {:else if listEmpty && bots.bots.length === 0}
+      {:else if listEmpty && !sessionSearch.loading && !sessionSearch.error && bots.bots.length === 0}
         <li class="session-sidebar-empty">
           {#if query.trim()}
             No sessions match “{query.trim()}”.
@@ -737,6 +796,25 @@
             </span>
           {/if}
         </li>
+      {/if}
+      {#if query.trim() && sessionSearch.loading}
+        <li class="workshop-faint px-3 py-2 text-xs" role="status">Searching all chats…</li>
+      {/if}
+      {#if query.trim() && sessionSearch.error}
+        <li class="px-3 py-2 text-xs text-content-error" role="alert">
+          Search is incomplete: {sessionSearch.error}
+          <button type="button" class="session-sidebar-new" onclick={() => void sessionSearch.search(searchScope, query)}>Retry search</button>
+        </li>
+      {/if}
+      {#if !query.trim() && chat.sessionsCursor}
+        <li class="px-3 py-2">
+          <button type="button" class="session-sidebar-new" disabled={chat.sessionsLoadingOlder || chat.sessionsRefreshing} onclick={() => void loadMoreSessions(chat)}>
+            {chat.sessionsLoadingOlder ? "Loading older chats…" : "Load older chats"}
+          </button>
+        </li>
+      {/if}
+      {#if chat.sessionsError}
+        <li class="px-3 py-2"><button type="button" class="session-sidebar-new" disabled={chat.sessionsRefreshing} onclick={() => void chat.refreshSessions({ force: true })}>Retry loading chats</button></li>
       {/if}
     </ol>
   </div>

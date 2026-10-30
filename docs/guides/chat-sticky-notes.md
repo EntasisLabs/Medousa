@@ -4,9 +4,12 @@ Sticky notes keep small, consequential details present while a conversation grow
 
 ## Use the board
 
-Open **Sticky notes** beside the chat composer. Medousa can maintain the board through its tools; you can also:
+Open **Sticky notes** beside the chat composer to see the **Kept in mind** notebook. It opens in a lightweight popover without dimming or replacing the conversation. Click outside, press Escape, or use the close button to dismiss it; unfinished edits are retained while you stay in the same chat and profile.
 
-- **Add** a detail or **Edit** an existing note.
+Medousa can maintain the board through its tools; you can also:
+
+- Choose **Add a note**, or click a note's text to edit it inline. **Save changes** and **Cancel** stay beside the editor.
+- Open a note's **⋯** menu for pinning, exact wording, resolve/reopen, or removal.
 - Mark a note **Pinned** or **Preserve exact text** to protect it from consolidation.
 - **Resolve** a note when it no longer needs to stay hot. Turn on **Show resolved** to inspect it or **Reopen** it.
 - **Remove** a note explicitly, with confirmation.

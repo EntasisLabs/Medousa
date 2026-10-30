@@ -15,7 +15,7 @@
   let dialog: HTMLDialogElement;
   const selected = $derived(group.proposals.find(row => row.proposal.proposal_id === selectedId));
   $effect(() => { if (!selected) dialog?.close(); });
-  async function inspect(id: string) { selectedId = id; await tick(); if (selectedId === id && selected) dialog.showModal(); }
+  async function inspect(id: string) { if (controls?.inspect) { controls.inspect(id); return; } selectedId = id; await tick(); if (selectedId === id && selected) dialog.showModal(); }
 </script>
 
 {#if group.proposals.length || group.workers.length}
@@ -24,8 +24,8 @@
       {@const progress = peerHandoffPresentation(row, controls?.now ?? Date.now())}
       <button type="button" class="task-receipt" class:decision={progress.needsApproval} disabled={!controls} onclick={() => void inspect(row.proposal.proposal_id)}>
         <span class="signal" aria-hidden="true">●</span>
-        <span class="heading"><small>{progress.needsApproval ? 'Decision needed' : progress.status}</small><strong>{peerWorkTitle(row.proposal.request.instructions)}</strong><span>{progress.needsApproval ? 'Review the request before starting' : progress.nextActor ? `Next: ${progress.nextActor}` : 'Open task details'}</span></span>
-        <span class="link">{progress.needsApproval ? 'Review request' : 'View task'} →</span>
+        <span class="heading"><small>{progress.needsApproval ? 'Decision needed' : progress.status}</small><strong>{peerWorkTitle(row.proposal.request.instructions)}</strong><span>{progress.needsApproval ? 'Review the request before starting' : progress.nextActor ? `Next: ${progress.nextActor}` : 'Open exchange'}</span></span>
+        <span class="link">{progress.needsApproval ? 'Review request' : 'View exchange'} →</span>
       </button>
     {/each}
     {#if group.workers.length}
@@ -51,8 +51,9 @@
   button { background: transparent; color: rgb(var(--theme-text-secondary)); border: 0; cursor: pointer; text-align: left; }
   button:focus-visible { outline: 2px solid rgb(var(--theme-link)); outline-offset: 3px; }
   button:disabled { cursor: default; }
-  .task-receipt { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid rgb(var(--theme-border)); border-radius: 9px; min-width: 0; }
-  .task-receipt.decision { border-color: rgb(var(--theme-warning) / .55); }
+  .task-receipt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 14px; min-width: 0; }
+  .task-receipt:hover { background: rgb(var(--theme-card-hover) / .5); }
+  .task-receipt.decision { background: rgb(var(--theme-warning) / .06); }
   .signal { color: rgb(var(--theme-link)); flex-shrink: 0; font-size: 11px; }
   .decision .signal, .decision .link, .decision small { color: rgb(var(--theme-warning)); }
   .heading { flex: 1; min-width: 0; }

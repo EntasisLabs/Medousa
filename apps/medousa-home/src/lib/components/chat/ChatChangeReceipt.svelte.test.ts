@@ -32,9 +32,13 @@ describe('compact composer change receipt', () => {
     const pill = document.querySelector('.change-pill') as HTMLButtonElement;
     expect(pill.textContent).toContain('2 changes');
     expect(pill.getAttribute('aria-label')).toContain('working copy');
+    expect(pill.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(pill.getAttribute('aria-expanded')).toBe('false');
+    expect(pill.querySelector('.change-action')?.textContent).toContain('View');
     expect(document.querySelector('.chat-change-receipt')).toBeNull();
     expect(document.querySelector('.chat-review-sheet')).toBeNull();
     pill.click(); flushSync(); await tick();
+    expect(pill.getAttribute('aria-expanded')).toBe('true');
     expect(document.querySelector('.chat-review-sheet')).not.toBeNull();
     expect(props.onOpenCode).not.toHaveBeenCalled();
     expect(props.onRequestRevision).not.toHaveBeenCalled();
@@ -45,6 +49,8 @@ describe('compact composer change receipt', () => {
     const props = await render(review);
     expect(document.querySelector('.change-pill')?.textContent).toContain('1 change');
     expect(document.querySelector('.change-pill')?.getAttribute('aria-label')).toContain('ready for review');
+    expect(document.querySelector('.change-pill--ready')).not.toBeNull();
+    expect(document.querySelector('.change-action')?.textContent).toContain('Review');
     props.review = { ...review, work_id: 'unrelated' }; flushSync(); await vi.advanceTimersByTimeAsync(250); await tick(); flushSync();
     expect(document.querySelector('.change-pill')?.textContent).toContain('2 changes');
     expect(document.querySelector('.change-pill')?.getAttribute('aria-label')).toContain('working copy');

@@ -41,6 +41,10 @@ export type ChatStoreHost = {
   sessionListQuery: string;
   sessionsError: string | null;
   sessionsRefreshing: boolean;
+  sessionsCursor?: string | null;
+  sessionsLoadingOlder?: boolean;
+  sessionsBrowsePages?: number;
+  sessionsListRevision?: number;
   pinnedIds: string[];
   historyLoading: boolean;
   historyCursor: string | null;

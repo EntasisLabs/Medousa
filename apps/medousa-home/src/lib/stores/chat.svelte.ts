@@ -133,12 +133,13 @@ import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 
 import { ChatHistoryController } from "$lib/chat/chatHistoryController.svelte";
+import { resetSessionCatalog } from "$lib/chat/sessionDiscovery";
 
 export class ChatStore implements ChatStoreHost {
   history: ChatHistoryController = new ChatHistoryController(this);
   askHydrationInFlight = new Set<string>();
-  workshopScopeId = activeWorkshopId();
-  workshopEpoch = 0;
+  workshopScopeId = $state(activeWorkshopId());
+  workshopEpoch = $state(0);
   sessionId = $state(loadSessionId(this.workshopScopeId));
   messages = $state<ChatMessage[]>([]);
   draft = $state(
@@ -157,6 +158,10 @@ export class ChatStore implements ChatStoreHost {
   sessionListQuery = $state("");
   sessionsError = $state<string | null>(null);
   sessionsRefreshing = $state(false);
+  sessionsCursor = $state<string | null>(null);
+  sessionsLoadingOlder = $state(false);
+  sessionsBrowsePages = 1;
+  sessionsListRevision = 0;
   pinnedIds = $state<string[]>(loadPinnedIds(this.workshopScopeId));
   historyLoading = $state(true);
   historyCursor = $state<string | null>(null);
@@ -201,11 +206,7 @@ export class ChatStore implements ChatStoreHost {
     this.flushDraftPersist();
     this.workshopEpoch += 1;
     this.workshopScopeId = "";
-    if (this.sessionsRefreshTimer) clearTimeout(this.sessionsRefreshTimer);
-    this.sessionsRefreshTimer = null;
-    this.sessionsRefreshInFlight = null;
-    this.sessionBootstrapInFlight = null;
-    this.sessionsRefreshDesiredQuery = null;
+    resetSessionCatalog(this);
     for (const timer of this.contentRevealTimers.values()) clearTimeout(timer);
     for (const timer of this.terminalReconcileTimers.values()) clearTimeout(timer);
     this.contentRevealTimers.clear();
@@ -221,11 +222,7 @@ export class ChatStore implements ChatStoreHost {
     this.multiLiveBootstrapped = false;
     this.loadRuntimeIntoFocused(emptySessionRuntime(""));
     this.transcriptEpoch = this.workshopEpoch;
-    this.sessions = [];
-    this.sessionListQuery = "";
-    this.sessionsError = null;
-    this.sessionsRefreshing = false;
-    this.pinnedIds = [];
+
     this.promotedAskIds = new Set();
     this.vaultNoteContext = null;
     this.pinVaultNoteContext = false;

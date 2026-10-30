@@ -6,7 +6,6 @@
 import {
   deriveSession,
   getSessionHistory,
-  listSessions,
   deleteSession as daemonDeleteSession,
   setSessionDisplayName,
 } from "$lib/daemon";
@@ -41,6 +40,7 @@ import { sessionModelSelections } from "./sessionModelSelection.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { externalConversationBinding } from "$lib/utils/externalConversationSession";
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
+import { mergeSessionSummaries, readMissingPins, readSessionPages } from "./sessionDiscovery";
 
 export const SESSION_KEY = "medousa-home-session-id";
 export const PINS_KEY = "medousa-home-pinned-sessions";
@@ -405,40 +405,55 @@ export async function deleteSession(
   }
 }
 
-async function fetchSessions(host: ChatStoreHost, hadCache: boolean, query = "") {
+async function fetchSessions(host: ChatStoreHost, _hadCache: boolean, _query = "") {
   const workshopEpoch = host.workshopEpoch;
-  host.sessionsRefreshing = hadCache;
-  if (!hadCache) {
-    host.sessionsError = null;
-  }
+  const revision = host.sessionsListRevision = (host.sessionsListRevision ?? 0) + 1;
+  const current = () => host.workshopEpoch === workshopEpoch && host.sessionsListRevision === revision;
+  host.sessionsRefreshing = true;
+  host.sessionsLoadingOlder = false;
+  host.sessionsError = null;
   try {
-    const response = await listSessions({
-      limit: 50,
-      includeVerification: false,
-      q: query || undefined,
-    });
-    if (host.workshopEpoch !== workshopEpoch) return;
-    const previous = new Map(host.sessions.map(session => [session.session_id, session]));
-    const next = response.sessions.map(session => {
-      const existing = previous.get(session.session_id);
-      return existing && Object.keys(existing).length === Object.keys(session).length
-        && (Object.keys(session) as Array<keyof typeof session>).every(key => existing[key] === session[key])
-        ? existing : session;
-    });
-    if (next.length !== host.sessions.length || next.some((session, index) => session !== host.sessions[index])) {
-      host.sessions = next;
-    }
+    // Refresh the depth already browsed, rather than collapsing back to page one.
+    // Search owns a separate result set and never replaces this browse cache.
+    const response = await readSessionPages({ pages: host.sessionsBrowsePages ?? 1, current });
+    if (!response || !current()) return;
+    const previousPins = host.sessions.filter(session => host.pinnedIds.includes(session.session_id));
+    host.sessions = response.sessions;
+    host.sessionsCursor = response.cursor;
+    host.sessionsBrowsePages = response.pages;
+    const { pins, failed, failedIds } = await readMissingPins([...host.pinnedIds], response.sessions, current);
+    if (!current()) return;
+    // A transport failure must not hide a pin we already knew. A confirmed
+    // missing/deleted session, in contrast, is not restored from stale cache.
+    host.sessions = mergeSessionSummaries(host.sessions,
+      previousPins.filter(pin => failedIds.includes(pin.session_id) && host.pinnedIds.includes(pin.session_id)),
+      pins.filter(pin => host.pinnedIds.includes(pin.session_id)));
     host.sessionsFetchedAt = Date.now();
-    host.sessionsError = null;
+    host.sessionsError = failed ? "Some pinned chats couldn’t be loaded. Refresh to retry." : null;
   } catch (err) {
-    if (host.workshopEpoch !== workshopEpoch) return;
-    if (!hadCache) {
-      host.sessionsError = err instanceof Error ? err.message : String(err);
-    }
+    if (current()) host.sessionsError = err instanceof Error ? err.message : String(err);
   } finally {
-    if (host.workshopEpoch === workshopEpoch) {
-      host.sessionsRefreshing = false;
-    }
+    if (current()) host.sessionsRefreshing = false;
+  }
+}
+
+export async function loadMoreSessions(host: ChatStoreHost) {
+  if (host.sessionsRefreshing || host.sessionsLoadingOlder || !host.sessionsCursor) return;
+  const epoch = host.workshopEpoch;
+  const revision = host.sessionsListRevision ?? 0;
+  const current = () => host.workshopEpoch === epoch && (host.sessionsListRevision ?? 0) === revision;
+  host.sessionsLoadingOlder = true;
+  host.sessionsError = null;
+  try {
+    const response = await readSessionPages({ pages: 1, cursor: host.sessionsCursor, current });
+    if (!response || !current()) return;
+    host.sessions = mergeSessionSummaries(host.sessions, response.sessions);
+    host.sessionsCursor = response.cursor;
+    host.sessionsBrowsePages = (host.sessionsBrowsePages ?? 1) + response.pages;
+  } catch (err) {
+    if (current()) host.sessionsError = err instanceof Error ? err.message : String(err);
+  } finally {
+    if (current()) host.sessionsLoadingOlder = false;
   }
 }
 

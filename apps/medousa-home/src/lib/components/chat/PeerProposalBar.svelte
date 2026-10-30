@@ -10,10 +10,12 @@
   import { connection } from "$lib/stores/connection.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { isTauri, isTauriMobilePlatform } from "$lib/platform";
+  import { sidebarRelations } from './sidebarRelations.svelte';
+  import { sidebarKey } from '$lib/utils/sidebarState';
   import { requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
   import { peerRuntimeLabel } from "./peerProgress";
 
-  let { sessionId, mobile = false, visible = true, children, onSnapshot }: { sessionId: string | null; mobile?: boolean; visible?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]>; onSnapshot?: (sessionId: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) => void } = $props();
+  let { sessionId, mobile = false, visible = true, children, onSnapshot, onInspect }: { sessionId: string | null; mobile?: boolean; visible?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]>; onInspect?: (proposalId: string) => void; onSnapshot?: (sessionId: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) => void } = $props();
   let rows = $state<PeerProposalReviewRecord[]>([]);
   let cursors = $state<{ runtime: string | null; cursor: string }[]>([]);
   let busy = $state(false);
@@ -136,6 +138,10 @@
       ...responses.flatMap(({ runtime, response }) => response.next_cursor && !loadedPages.get(runtime)?.has(response.next_cursor) ? [{ runtime, cursor: response.next_cursor }] : []),
     ].map(page => [JSON.stringify([page.runtime, page.cursor]), page])).values()];
     now = Date.now();
+    const authority = connection.health?.runtime?.authority_id ?? '';
+    const scope = sidebarKey(chat.workshopScopeId, authority, connection.health?.active_profile_id ?? '', 'families');
+    sidebarRelations.load(scope);
+    sidebarRelations.observe(scope, rows, authority);
   }
 
   async function action(current: PeerProposalReviewRecord, kind: "approve_and_dispatch" | "deny" | "dispatch") {
@@ -230,7 +236,7 @@
     }
   }
   const controls = $derived<PeerProposalControls>({ now, available, busy, busyId, feedback, actionErrors,
-    hasMore: cursors.length > 0, loadMore: next, action, openExecution });
+    hasMore: cursors.length > 0, loadMore: next, action, openExecution, inspect: onInspect });
   // History and the composer dock consume this same controller, never a second poller.
   $effect(() => { onSnapshot?.(sessionId, rows, controls); });
 </script>
