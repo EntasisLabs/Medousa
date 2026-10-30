@@ -15,6 +15,8 @@ export interface SubagentRow {
   parentTurnId?: string | null;
   parentMessageId?: string | null;
   title: string;
+  /** Exact raw returns only; used to keep host-authored synthesis visible. */
+  returnedTexts?: string[];
   disposition: "bound" | "parallel";
   model?: string | null;
   executionRuntimeId?: string | null;
@@ -75,6 +77,7 @@ function rowFromTranscript(
   return {
     workId,
     ...base,
+    returnedTexts: [transcript?.resultText, transcript?.output].filter((text): text is string => Boolean(text?.trim())),
     toolRuns: toolRunsFromWorkerActivity(transcript?.toolRuns ?? []),
     thinking: transcript?.thinking ?? "",
     thinkingSeconds: thinkingSecondsFor(transcript),
@@ -116,6 +119,7 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
           terminal,
           attention: card.column === "blocked",
         }),
+        returnedTexts: [transcript?.resultText, transcript?.output, detail.result_excerpt].filter((text): text is string => Boolean(text?.trim())),
         // Nonterminal includes queued and completed-but-unsummarized work, not just execution.
         streaming: !terminal && card.column === "in_flight",
         parentTurnId: chat.workers.get(workId)?.parentTurnId ?? detail.correlation_id?.trim(),

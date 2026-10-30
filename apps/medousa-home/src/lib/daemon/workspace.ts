@@ -68,6 +68,7 @@ import type {
   WorkflowFromSliceResponse,
 } from "$lib/types/toolHistory";
 import { invokePlain, type StreamErrorPayload } from "./client";
+import { daemonUnary } from "./contractClient";
 import { operationPath } from "./opPath";
 
 export async function listManuscripts(options?: {
@@ -179,8 +180,10 @@ export function onWorkspaceError(
 
 export async function getWorkspaceCard(
   cardId: string,
+  executionRuntimeId?: string | null,
+  workshopScopeId?: string,
 ): Promise<WorkCardDetail> {
-  return invoke<WorkCardDetail>("workspace_get_card", { cardId });
+  return daemonUnary("workspace.cards.by_card_id.get", { card_id: cardId }, undefined, executionRuntimeId, undefined, workshopScopeId);
 }
 
 export async function fetchWorkspaceSnapshot(

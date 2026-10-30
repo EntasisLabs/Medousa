@@ -18,12 +18,23 @@ vi.mock("$lib/stores/executionTargets.svelte", () => ({ executionTargets: { runt
 vi.mock("$lib/stores/narration.svelte", () => ({ narration: { initialize: vi.fn(), available: false } }));
 
 describe("inline agent results", () => {
-  it("returns to the spawning task link from its later result without legacy blocks", async () => {
+  it('places legacy task receipts before a standalone assistant reply when its user row is outside loaded history', async () => {
+    const target = document.createElement('div'); document.body.append(target);
+    const component = mount(ChatMessageList, { target, props: { sessionId: 'chat',
+      messages: [{ id: 'spawn', role: 'assistant', content: 'Starting a task' }],
+      subagentRows: new Map([['work', { workId: 'work', parentMessageId: 'spawn', title: 'Task' } as SubagentRow]]),
+    } });
+    flushSync();
+    try { expect(target.querySelector('.task-receipts')!.compareDocumentPosition(target.querySelector('article')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); }
+    finally { await unmount(component); target.remove(); }
+  });
+
+  it("keeps one spawning task link when its raw result arrives later", async () => {
     const target = document.createElement("div"); document.body.append(target);
     const workers = new Map(Array.from({ length: 6 }, (_, i) => [`work-${i}`, {
       workId: `work-${i}`, parentMessageId: "spawn", title: `Task ${i}`,
       disposition: "parallel", statusLine: "Work completed", toolRuns: [],
-      thinking: "", thinkingSeconds: null, streaming: false, terminal: true,
+      thinking: "", thinkingSeconds: null, streaming: false, terminal: true, returnedTexts: ['Verified result'],
     } as SubagentRow]));
     const component = mount(ChatMessageList, { target, props: { sessionId: "chat", subagentRows: workers,
       messages: [{ id: "request", role: "user", content: "Start six tasks" },
@@ -37,11 +48,9 @@ describe("inline agent results", () => {
       const group = target.querySelector(".task-receipts")!;
       expect(target.querySelector(".chat-turn-beat")?.nextElementSibling).toBe(group);
       expect(target.querySelector('.agent-group, .agent-work-line')).toBeNull();
-      const scroll = HTMLElement.prototype.scrollIntoView;
-      HTMLElement.prototype.scrollIntoView = vi.fn();
-      try { (target.querySelector(".agent-return") as HTMLButtonElement).click(); flushSync(); }
-      finally { HTMLElement.prototype.scrollIntoView = scroll; }
-      expect(document.activeElement).toBe(group.querySelector('[data-worker-id="work-5"]'));
+      expect(target.querySelector('.agent-return')).toBeNull();
+      expect(target.textContent).not.toContain('Agent follow-up');
+      expect(target.querySelectorAll('article')).toHaveLength(2);
       expect(group.querySelectorAll('.worker-receipt')).toHaveLength(6);
     } finally { await unmount(component); target.remove(); }
   });

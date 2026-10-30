@@ -44,6 +44,22 @@ describe("presentChatMessages", () => {
   });
 });
 
+describe('single durable thread presentation', () => {
+  it('hides exact linked raw returns but keeps host synthesis, errors and unlinked results', () => {
+    const raw = msg({ id: 'raw', lane: 'worker', workId: 'w', content: 'Full result' });
+    const synthesis = msg({ ...raw, id: 'summary', content: 'My synthesis and decision' });
+    const failure = msg({ ...raw, id: 'failed', failed: true });
+    const unknown = msg({ ...raw, id: 'unknown', workId: 'other' });
+    const threads = new Map([['w', { returnedTexts: ['Full result'] }]]);
+    expect(presentChatMessages([raw, synthesis, failure, unknown], threads).map(m => m.id)).toEqual(['summary', 'failed', 'unknown']);
+    expect(presentWorkerThreadMessages([raw])).toEqual([raw]);
+  });
+  it('does not match truncated prefixes or erase an unmatched streaming synthesis', () => {
+    const raw = msg({ lane: 'worker', workId: 'w', content: 'Full result continued', streaming: true });
+    expect(presentChatMessages([raw], new Map([['w', { returnedTexts: ['Full result'] }]]))).toEqual([raw]);
+  });
+});
+
 describe("presentWorkerThreadMessages", () => {
   it("collapses handoff + synthesis to one row", () => {
     const handoff = msg({

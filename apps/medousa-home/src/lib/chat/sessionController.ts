@@ -27,7 +27,6 @@ import { isRuntimeStartupText } from "$lib/utils/chatStreamDisplay";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import { dedupeMessagesById, mergeTranscript } from "$lib/utils/mergeTranscript";
 import { attachLiveTranscripts } from "$lib/liveTranscriptAttachments";
-import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
 import {
@@ -583,7 +582,6 @@ export async function newSession(
   host.sessionPristine = true;
   host.historyLoading = false;
   host.transcriptEpoch += 1;
-  chatScenes.reset();
   chatInteractions.reset();
   host.contextUsage = null;
   host.contextUsagePanelOpen = false;
@@ -651,7 +649,6 @@ export async function newSharedRoom(
   host.sessionPristine = true;
   host.historyLoading = false;
   host.transcriptEpoch += 1;
-  chatScenes.reset();
   chatInteractions.reset();
   host.contextUsage = null;
   host.contextUsagePanelOpen = false;
@@ -756,15 +753,16 @@ export async function reloadCurrentSession(
   try {
     const history = await getSessionHistory(sessionId, { limit: TRANSCRIPT_PAGE_SIZE });
     if (!stillSameSession()) return;
-    host.messages = mapTurns(history.turns, {
+    host.messages = mergeTranscript(host.messages, mapTurns(history.turns, {
       sessionId,
       authorityId: history.authority_id,
-    });
+    }));
     host.historyCursor = historyCursor(history);
     if (options?.notice !== false && history.turns.length > 0) {
       const count = history.turns.length;
       host.historyNotice = `Restored ${count} turn${count === 1 ? "" : "s"}`;
     }
+    await host.tryReattachActiveTurn();
   } catch (err) {
     if (stillSameSession()) {
       host.streamError = err instanceof Error ? err.message : String(err);
@@ -825,7 +823,7 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
       workshopScopedStorageKey(SESSION_KEY, host.workshopScopeId),
       trimmed,
     );
-    chatScenes.reset();
+    // Retained scenes and stream cursors must survive session switches together.
     chatInteractions.reset();
     chatStreamPool.acquire(trimmed);
     host.stashFocusedRuntime();
@@ -849,7 +847,6 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
     workshopScopedStorageKey(SESSION_KEY, host.workshopScopeId),
     trimmed,
   );
-  chatScenes.reset();
   chatInteractions.reset();
   if (externalConversationBinding(trimmed)) {
     host.historyLoading = false;
@@ -890,7 +887,8 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
       host.historyLoading = false;
     }
   }
-  if (host.workshopEpoch !== workshopEpoch) return;
+  if (host.workshopEpoch !== workshopEpoch || host.sessionId !== trimmed ||
+    switchEpoch !== host.transcriptEpoch || host.history?.isReleased(trimmed)) return;
   host.stashFocusedRuntime();
   chatStreamPool.acquire(trimmed);
   void host.tryReattachActiveTurn();

@@ -6,6 +6,7 @@
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
   import { sliceRefFromChatToolRun } from "$lib/types/toolHistory";
   import { toolActivitySummary } from "$lib/utils/toolActivitySummary";
+  import { formatToolName } from "$lib/utils/formatTurn";
   import type { ToolLineageSegment } from "$lib/utils/toolRunLineage";
   import {
     buildToolLineage,
@@ -22,6 +23,8 @@
     onPromoteToFlow?: (ref: ToolHistorySliceRef) => void | Promise<void>;
     compact?: boolean;
     inspectorCollapsed?: boolean;
+    /** Keep inspection inside a reading view, including native dialogs. */
+    inspectorPresentation?: 'sheet' | 'inline';
   }
 
   let {
@@ -31,6 +34,7 @@
     onPromoteToFlow,
     compact = false,
     inspectorCollapsed = true,
+    inspectorPresentation = 'sheet',
   }: Props = $props();
 
   const lineage = $derived(buildToolLineage(runs));
@@ -44,7 +48,7 @@
 
   function openActivity() {
     haptic("light");
-    activityOpen = true;
+    activityOpen = inspectorPresentation === 'inline' ? !activityOpen : true;
   }
 
   function segmentHasDetail(segment: ToolLineageSegment): boolean {
@@ -198,7 +202,7 @@
       type="button"
       class="tool-trace tool-context-trigger"
       title={fullTrace}
-      aria-haspopup="dialog"
+      aria-haspopup={inspectorPresentation === 'sheet' ? 'dialog' : undefined}
       aria-expanded={activityOpen}
       onclick={openActivity}
     >
@@ -213,16 +217,42 @@
       {#if summary.failed > 0}
         <span class="tool-context-failed">{summary.failed} failed</span>
       {/if}
-      <ChevronRight class="tool-context-chevron" size={13} aria-hidden="true" />
+      <ChevronRight class={`tool-context-chevron ${inspectorPresentation === 'inline' && activityOpen ? 'tool-context-chevron-open' : ''}`} size={13} aria-hidden="true" />
     </button>
-    <ToolActivitySheet
-      open={activityOpen}
-      {runs}
-      {sessionId}
-      {turnIndex}
-      {onPromoteToFlow}
-      onClose={() => (activityOpen = false)}
-    />
+    {#if inspectorPresentation === 'inline'}
+      {#if activityOpen}
+        <ol class="exchange-tool-list" aria-label="Tools in execution order">
+          {#each runs as run, index (run.runId)}
+            <li>
+              <details>
+                <summary>
+                  <ChevronRight class="exchange-tool-chevron" size={12} aria-hidden="true" />
+                  <span class="exchange-tool-index">{index + 1}</span>
+                  <span class="exchange-tool-name">{formatToolName(run.toolName)}</span>
+                  <span class="exchange-tool-status" data-status={run.status}>{run.status === 'running' ? 'Running' : run.status === 'failed' ? 'Failed' : 'Done'}</span>
+                </summary>
+                <div class="exchange-tool-detail">
+                  <p class="exchange-tool-identifier">{run.toolName}</p>
+                  {@render segmentDetail(run)}
+                  {#if !run.outputSummary?.trim()}
+                    <p class="text-content-tertiary">{run.status === 'running' ? 'Waiting for the tool to finish…' : 'No result summary was recorded.'}</p>
+                  {/if}
+                </div>
+              </details>
+            </li>
+          {/each}
+        </ol>
+      {/if}
+    {:else}
+      <ToolActivitySheet
+        open={activityOpen}
+        {runs}
+        {sessionId}
+        {turnIndex}
+        {onPromoteToFlow}
+        onClose={() => (activityOpen = false)}
+      />
+    {/if}
   {:else}
     <div
       class="tool-trace overflow-hidden rounded-lg border border-primary-500/25 bg-gradient-to-br from-primary-500/[0.08] to-surface-900/30 px-2.5 py-2"
@@ -239,6 +269,19 @@
 {/if}
 
 <style>
+  .exchange-tool-list { list-style: none; margin: 8px 0 20px 14px; padding: 0 0 0 12px; border-left: 1px solid rgb(var(--theme-border)); }
+  .exchange-tool-list summary { display: flex; align-items: baseline; gap: 10px; min-height: 32px; padding: 6px 4px; cursor: pointer; font-size: 12px; color: rgb(var(--theme-text-secondary)); }
+  .exchange-tool-identifier { margin-bottom: 8px; color: rgb(var(--theme-text-tertiary)); font-family: monospace; }
+  .exchange-tool-index { color: rgb(var(--theme-text-tertiary)); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .exchange-tool-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .exchange-tool-status { flex-shrink: 0; font-size: 10px; color: rgb(var(--theme-text-tertiary)); }
+  .exchange-tool-status[data-status='failed'] { color: rgb(var(--theme-warning)); }
+  .exchange-tool-detail { padding: 6px 4px 16px 24px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+  .exchange-tool-list summary:hover { color: rgb(var(--theme-text-primary)); background: rgb(var(--theme-card-hover) / .4); border-radius: 6px; }
+  .exchange-tool-list :global(.exchange-tool-chevron) { flex-shrink: 0; align-self: center; }
+  .exchange-tool-list details[open] > summary :global(.exchange-tool-chevron), :global(.tool-context-chevron-open) { transform: rotate(90deg); }
+  .exchange-tool-list summary:focus-visible { outline: 2px solid rgb(var(--theme-link)); outline-offset: 2px; }
+  @media (pointer: coarse) { .exchange-tool-list summary { min-height: 44px; } }
   .trace-rail {
     background: linear-gradient(
       to bottom,

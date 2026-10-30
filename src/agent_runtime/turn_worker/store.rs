@@ -247,6 +247,9 @@ pub struct TurnWorkRecord {
     pub disposition: TurnWorkDisposition,
     #[serde(default)]
     pub steer_messages: Vec<WorkshopSteerMessage>,
+    /// Durable reading history; unlike the execution queue this is never drained.
+    #[serde(default)]
+    pub steer_history: Vec<WorkshopSteerMessage>,
     /// Durable idempotency fence for remote steering. Messages may be drained
     /// while their control ids remain so a transport retry cannot enqueue the
     /// same instruction twice.
@@ -337,6 +340,7 @@ impl TurnWorkRecord {
             archived: false,
             disposition: TurnWorkDisposition::Delegated,
             steer_messages: Vec::new(),
+            steer_history: Vec::new(),
             processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
@@ -1116,12 +1120,14 @@ impl TurnWorkerStore {
         let record = candidate
             .get_mut(work_id)
             .ok_or(BoundWorkshopMutationError::MissingGeneration)?;
-        record.steer_messages.push(WorkshopSteerMessage {
+        let message = WorkshopSteerMessage {
             control_id: None,
             text,
             at: Utc::now(),
             speaker_profile_id,
-        });
+        };
+        record.steer_history.push(message.clone());
+        record.steer_messages.push(message);
         record.updated_at = Utc::now();
         let updated = record.clone();
         self.persist_candidate(&mut candidate, &updated.work_id)
@@ -1173,12 +1179,14 @@ impl TurnWorkerStore {
         {
             return Ok(record.clone());
         }
-        record.steer_messages.push(WorkshopSteerMessage {
+        let message = WorkshopSteerMessage {
             control_id: Some(control_id.to_string()),
             text,
             at: Utc::now(),
             speaker_profile_id,
-        });
+        };
+        record.steer_history.push(message.clone());
+        record.steer_messages.push(message);
         record
             .processed_steer_control_ids
             .push(control_id.to_string());
@@ -1621,6 +1629,7 @@ mod tests {
             archived: false,
             disposition: TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            steer_history: Vec::new(),
             processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
@@ -1862,6 +1871,8 @@ mod tests {
             )
             .expect("idempotent retry");
         assert!(retried.steer_messages.is_empty());
+        assert_eq!(retried.steer_history.len(), 1);
+        assert_eq!(retried.steer_history[0].text, "inspect the parser");
     }
 
     #[test]

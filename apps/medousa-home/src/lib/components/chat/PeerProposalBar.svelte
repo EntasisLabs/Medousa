@@ -14,6 +14,7 @@
   import { sidebarKey } from '$lib/utils/sidebarState';
   import { requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
   import { peerRuntimeLabel } from "./peerProgress";
+  import { delegationRevision } from "$lib/utils/chatAgentGroups";
 
   let { sessionId, mobile = false, visible = true, children, onSnapshot, onInspect }: { sessionId: string | null; mobile?: boolean; visible?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]>; onInspect?: (proposalId: string) => void; onSnapshot?: (sessionId: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) => void } = $props();
   let rows = $state<PeerProposalReviewRecord[]>([]);
@@ -22,6 +23,9 @@
   let feedback = $state<string | null>(null);
   let actionErrors = $state<Record<string, string>>({});
   let now = $state(Date.now());
+  let refreshDelegations: (() => void) | undefined;
+  const delegationEvents = $derived(sessionId ? delegationRevision(chat.messagesFor(sessionId)) : "[]");
+  $effect(() => { void delegationEvents; untrack(() => refreshDelegations?.()); });
   let epoch = 0;
   let revision = 0;
   let loadedPages = new Map<string | null, Set<string>>();
@@ -65,8 +69,10 @@
     busy = false; busyId = null;
     if (!session || !enabled) return;
     let loading = false;
+    let pending = false;
     const refresh = async () => {
-      if (loading || untrack(() => busy) || document.visibilityState === "hidden") return;
+      if (loading) { pending = true; return; }
+      if (untrack(() => busy) || document.visibilityState === "hidden") return;
       // Desktop completion sync already has a shell-owned poller.
       if (isTauriMobilePlatform()) void requestRemotePeerCompletionSync();
       loading = true;
@@ -108,12 +114,16 @@
       } catch (error) {
         if (token === epoch && requestRevision === revision) feedback = untrack(() => rows.some(row => !row.receipt))
           ? "Some agent progress could not be refreshed. Showing the last known activity." : null;
-      } finally { loading = false; }
+      } finally {
+        loading = false;
+        if (pending && token === epoch) { pending = false; discoveryRetryAt.clear(); void refresh(); }
+      }
     };
+    refreshDelegations = () => { discoveryRetryAt.clear(); void refresh(); };
     void refresh();
     const timer = setInterval(() => { now = Date.now(); void refresh(); }, 15_000);
     document.addEventListener("visibilitychange", refresh);
-    return () => { ++epoch; clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
+    return () => { ++epoch; refreshDelegations = undefined; clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
   });
 
   function applyResponses(responses: { runtime: string | null; response: PeerProposalInboxResponse }[], tracked: { runtime: string | null; response: PeerProposalInboxResponse }[] = []) {

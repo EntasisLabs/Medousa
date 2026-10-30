@@ -1,3 +1,5 @@
+import { getWorkspaceCard } from "$lib/daemon";
+import { setActiveWorkshopIdPort } from "$lib/utils/workshopLocality";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkCardDetail } from "$lib/types/card";
 import { WorkerTranscriptStore } from "$lib/work/workerTranscripts.svelte";
@@ -53,6 +55,8 @@ describe("WorkerTranscriptStore", () => {
   let store: WorkerTranscriptStore;
 
   beforeEach(() => {
+    vi.clearAllMocks();
+    setActiveWorkshopIdPort(null);
     store = new WorkerTranscriptStore();
   });
 
@@ -154,4 +158,71 @@ describe("WorkerTranscriptStore", () => {
     const after = await store.refresh("work-1");
     expect(after?.workId).toBe(before?.workId);
   });
+  it("loads full persisted text and follow-ups without subsequent previews truncating it", async () => {
+    const full = detail({ worker_transcript: {
+      work_id: "work-1", session_id: "sess-1", parent_runtime_id: "host",
+      execution_runtime_id: "runtime-mac-mini", task_prompt: "prompt ".repeat(300),
+      result_text: "result ".repeat(300), steer_messages: [{ text: "Follow up", at: "now" }],
+      retention_note: "Recorded evidence only",
+    }});
+    vi.mocked(getWorkspaceCard).mockResolvedValue(full);
+    store.ingestProgress({ work_id: "work-1", column: "done", terminal: true, result_excerpt: "short" });
+    const loaded = await store.refresh("work-1");
+    expect(getWorkspaceCard).toHaveBeenCalledOnce();
+    expect(loaded?.taskPrompt).toBe(full.worker_transcript!.task_prompt);
+    expect(loaded?.resultText).toBe(full.worker_transcript!.result_text);
+    expect(loaded?.steerMessages?.[0].text).toBe("Follow up");
+    expect(loaded?.toolRuns).toHaveLength(1);
+    store.ingestProgress({ work_id: "work-1", column: "done", terminal: true, result_excerpt: "short" });
+    store.ingestDetail(detail({ result_excerpt: "short" }), "done");
+    expect(store.transcriptFor("work-1")?.resultText).toBe(full.worker_transcript!.result_text);
+  });
+
+  it('does not promote an excerpt when the persisted detail has no final result', () => {
+    store.ingestDetail(detail({ result_excerpt: 'Short preview' }), 'in_flight');
+    store.ingestDetail(detail({ worker_transcript: {
+      work_id: 'work-1', session_id: 'sess-1', parent_runtime_id: 'host',
+      execution_runtime_id: 'runtime-mac-mini', task_prompt: 'Full assignment', result_text: null,
+      steer_messages: [], retention_note: 'Rolling output only',
+    } }), 'in_flight');
+    expect(store.transcriptFor('work-1')?.historyLoaded).toBe(true);
+    expect(store.transcriptFor('work-1')?.resultText).toBeNull();
+  });
+
+  it("does not hydrate foreign work or resurrect a cleared request", async () => {
+    vi.mocked(getWorkspaceCard).mockResolvedValue(detail({ work_id: "work-other" }));
+    expect(await store.refresh("work-1")).toBeNull();
+    let resolve!: (value: WorkCardDetail) => void;
+    vi.mocked(getWorkspaceCard).mockReturnValue(new Promise(done => { resolve = done; }));
+    const pending = store.refresh("work-1");
+    store.clear("work-1");
+    resolve(detail());
+    expect(await pending).toBeNull();
+    expect(store.transcriptFor("work-1")).toBeNull();
+  });
+
+  it("drops responses and cache across workshop authority changes", async () => {
+    let scope = "one";
+    setActiveWorkshopIdPort(() => scope);
+    store.ingestDetail(detail(), "in_flight");
+    let resolve!: (value: WorkCardDetail) => void;
+    vi.mocked(getWorkspaceCard).mockReturnValue(new Promise(done => { resolve = done; }));
+    const pending = store.refresh("work-1");
+    scope = "two";
+    resolve(detail());
+    expect(await pending).toBeNull();
+    expect(store.transcriptFor("work-1")).toBeNull();
+    setActiveWorkshopIdPort(null);
+  });
+
+  it("keeps observed tools when rolling progress advances and updates matched runs", () => {
+    const first = detail();
+    store.ingestDetail(first, "in_flight");
+    const nextRun = { ...first.live_tool_activity![0], run_id: "run-2", status: "running" };
+    store.ingestProgress({ work_id: "work-1", column: "in_flight", terminal: false, live_tool_activity: [nextRun] });
+    store.ingestProgress({ work_id: "work-1", column: "in_flight", terminal: false, live_tool_activity: [{...nextRun, status: "succeeded"}] });
+    store.ingestProgress({ work_id: "work-1", column: "in_flight", terminal: false, live_tool_activity: [nextRun] });
+    expect(store.transcriptFor("work-1")?.toolRuns.map(run => run.status)).toEqual(["running", "succeeded"]);
+  });
+
 });

@@ -25,8 +25,21 @@ export function isEmptyHandoffShell(message: ChatMessage): boolean {
  * Messages to paint in the main chat list: drop empty handoff shells.
  * Store may still keep them for worker linkage / history.
  */
-export function presentChatMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.filter((message) => !isEmptyHandoffShell(message));
+export function presentChatMessages(
+  messages: ChatMessage[],
+  threads: ReadonlyMap<string, { returnedTexts?: string[] }> = new Map(),
+): ChatMessage[] {
+  return messages.filter((message) => {
+    if (isEmptyHandoffShell(message)) return false;
+    // Only suppress a linked raw return, never every worker-lane message:
+    // that lane also carries host-authored synthesis and failure/retry UI.
+    if (message.role !== 'assistant' || message.lane !== 'worker' || !message.workId
+      || message.failed || message.budgetRequestId) return true;
+    const thread = threads.get(message.workId);
+    if (!thread) return true;
+    const text = message.content.trim();
+    return !text || !thread.returnedTexts?.some(result => result.trim() === text);
+  });
 }
 
 /**

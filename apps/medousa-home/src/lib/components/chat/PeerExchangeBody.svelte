@@ -22,14 +22,16 @@
   <AgentTaskDetail {row} {controls} />
 {:else}
   {#if sessionId}
-    {#key sessionId}<AgentExchangeHistory {sessionId} authorityId={row.binding!.execution_session.authority_id} {participant} />{/key}
+    {#key `${row.binding!.execution_session.authority_id}:${sessionId}`}<AgentExchangeHistory {sessionId} authorityId={row.binding!.execution_session.authority_id} {participant} fallbackResult={row.receipt?.result || progress.activity || ''} fallbackLabel={row.receipt ? 'Returned result' : 'Latest update'} />{/key}
     <details><summary>Original handoff</summary><ExchangeMessage label="Medousa · Assignment" text={row.proposal.request.instructions} sender /></details>
   {:else}
     <p class="notice">Recorded handoff exchange{!local ? ' · Full conversation remains on the execution workshop' : ''}</p>
     <ExchangeMessage label="Medousa · Assignment" text={row.proposal.request.instructions} sender />
   {/if}
-  {#if row.receipt}<ExchangeMessage label={`${participant} · Returned result`} text={row.receipt.result} />
-  {:else if progress.activity}<ExchangeMessage label={`${participant} · Latest update`} text={progress.activity} />{/if}
+  {#if !sessionId}
+    {#if row.receipt}<ExchangeMessage label={`${participant} · Returned result`} text={row.receipt.result} />
+    {:else if progress.activity}<ExchangeMessage label={`${participant} · Latest update`} text={progress.activity} />{/if}
+  {/if}
   {#if row.handoff?.review}<ExchangeMessage label="Medousa · Review" text={row.handoff.review.reason} />{/if}
   <details><summary>Assignment details & navigation</summary><AgentTaskDetail {row} {controls} /></details>
   <p class="notice">A returned result is not approval, application or publication.</p>

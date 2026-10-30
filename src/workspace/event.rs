@@ -295,6 +295,7 @@ mod tests {
 
     fn sample_turn_worker_detail() -> WorkCardDetail {
         WorkCardDetail {
+            worker_transcript: None,
             card: WorkCard {
                 id: WorkCardId("work-1".to_string()),
                 column: WorkBoardColumn::Done,

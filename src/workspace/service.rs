@@ -16,6 +16,57 @@ use crate::workspace::event::filter_events_by_card;
 use crate::workspace::projector::{apply_projection_to_store, workspace_hub};
 use crate::workspace::store::workspace_store;
 
+fn with_worker_transcript(detail: WorkCardDetail) -> WorkCardDetail {
+    if detail.kind != crate::daemon_api::WorkCardKind::TurnWorker {
+        return detail;
+    }
+    if let Some(record) = crate::agent_runtime::turn_worker::turn_worker_store().get(&detail.card.id.0)
+    {
+        return attach_worker_record(detail, record);
+    }
+    detail
+}
+
+pub(super) fn attach_worker_record(
+    mut detail: WorkCardDetail,
+    record: crate::agent_runtime::turn_worker::TurnWorkRecord,
+) -> WorkCardDetail {
+    // Enrich only the already-visible card from this daemon. Never resolve a
+    // client supplied runtime/work pair through a different authority.
+    if detail.card.id.0 != record.work_id
+        || detail.session_id.as_deref() != Some(record.session_id.as_str())
+    {
+        return detail;
+    }
+    let mut messages = record.steer_history.clone();
+    for message in &record.steer_messages {
+        if !messages
+            .iter()
+            .any(|old| old.at == message.at && old.text == message.text)
+        {
+            messages.push(message.clone());
+        }
+    }
+    messages.sort_by_key(|message| message.at);
+    detail.worker_transcript = Some(medousa_types::daemon_api::WorkerTranscriptDetail {
+        work_id: record.work_id,
+        session_id: record.session_id,
+        parent_runtime_id: record.parent_runtime_id,
+        execution_runtime_id: record.execution_placement.resolved_runtime_id,
+        task_prompt: record.task_prompt,
+        result_text: record.result_text,
+        steer_messages: messages
+            .into_iter()
+            .map(|message| medousa_types::daemon_api::WorkerTranscriptSteerMessage {
+                text: message.text,
+                at: message.at,
+            })
+            .collect(),
+        retention_note: "Tool activity, reasoning and live output are retained rolling previews. Earlier tool runs and legacy consumed follow-ups may not be available.".to_string(),
+    });
+    detail
+}
+
 pub struct WorkspaceService;
 
 impl WorkspaceService {
@@ -78,21 +129,23 @@ impl WorkspaceService {
         let card_id = card_id.trim();
         if let Some(hub) = workspace_hub() {
             if let Some(item) = hub.card_detail(card_id) {
-                return Ok(Some(item.detail));
+                return Ok(Some(with_worker_transcript(item.detail)));
             }
             hub.reconcile_now().await;
             if let Some(item) = hub.card_detail(card_id) {
-                return Ok(Some(item.detail));
+                return Ok(Some(with_worker_transcript(item.detail)));
             }
             hub.rebuild_full().await;
-            return Ok(hub.card_detail(card_id).map(|item| item.detail));
+            return Ok(hub
+                .card_detail(card_id)
+                .map(|item| with_worker_transcript(item.detail)));
         }
 
         let items = legacy_sync_and_project(runtime.as_ref(), true).await?;
         Ok(items
             .into_iter()
             .find(|item| item.card.id.0 == card_id)
-            .map(|item| item.detail))
+            .map(|item| with_worker_transcript(item.detail)))
     }
 
     pub async fn list_feed(

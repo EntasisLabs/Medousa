@@ -16,6 +16,7 @@
   import { daemonLiquidComponentState } from "$lib/daemon/liquidState";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import type { ChatMessage } from "$lib/types/chat";
+  import type { Snippet } from "svelte";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
@@ -24,6 +25,9 @@
   interface Props {
     message: ChatMessage;
     sessionId: string;
+    /** Inline delegation receipts keyed to the original scene block. */
+    afterNode?: Snippet<[string]>;
+    delegationNodeIds?: string[];
     mobile?: boolean;
     compact?: boolean;
     onPromoteToFlow?: (ref: ToolHistorySliceRef) => void | Promise<void>;
@@ -43,6 +47,8 @@
     onRetryWorker,
     onSubmitIntent,
     onOpenCardDetail,
+    afterNode,
+    delegationNodeIds = [],
   }: Props = $props();
 
   const statusLine = $derived(
@@ -85,4 +91,22 @@
   });
 </script>
 
-<SceneRenderer node={scene} {context} />
+{#if afterNode}
+  {#each [...new Set(delegationNodeIds)].filter(id => scene.type !== 'document' || !scene.slots?.flow?.some(node => node.id === id)) as id (id)}
+    {@render afterNode(id)}
+  {/each}
+{/if}
+{#if afterNode && scene.type === "document" && scene.slots?.flow?.some(node => delegationNodeIds.includes(node.id))}
+  <div class="delegated-document">
+    {#each scene.slots.flow as node (node.id)}
+      <SceneRenderer {node} {context} />
+      {#if delegationNodeIds.includes(node.id)}{@render afterNode(node.id)}{/if}
+    {/each}
+  </div>
+{:else}
+  <SceneRenderer node={scene} {context} />
+{/if}
+
+<style>
+  .delegated-document { display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+</style>
