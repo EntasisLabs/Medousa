@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { Plus, RefreshCw } from "@lucide/svelte";
+  import SidebarSectionHeading from './SidebarSectionHeading.svelte';
   import { type ExternalConversation, type ExternalProvider } from "$lib/daemon/externalConversations";
   import { externalConversationBinding, externalConversationSessionId } from "$lib/utils/externalConversationSession";
   import { getExternalConversationSelection } from "$lib/utils/externalConversationSelection";
@@ -42,13 +43,12 @@
 </script>
 
 <li class="session-sidebar-section">
-  <div class="session-sidebar-section-heading">
-    <p class="session-sidebar-section-title">Connected agents</p>
-    <span class="session-sidebar-section-heading__trailing">
+  <SidebarSectionHeading id="connected" label="Connected agents" count={groups.reduce((count, group) => count + group.conversations.length, 0)} searching={Boolean(query.trim())}>
+    {#snippet children()}
       <button type="button" class="session-sidebar-heading-action" aria-label="Refresh connected agents" title="Refresh connected agents" disabled={loading || connection.offline} onclick={() => void refresh()}><RefreshCw size={12} class={loading ? "animate-spin" : ""} /></button>
       <button type="button" class="session-sidebar-heading-action" aria-label="Connect an agent" title="Connect an agent" onclick={manage}><Plus size={13} /></button>
-    </span>
-  </div>
+    {/snippet}
+    {#snippet content()}
   {#each groups as group (group.provider)}
     <ul class="session-sidebar-section-list" aria-label={group.label}>
       {#each group.conversations as item (item.id)}
@@ -65,6 +65,8 @@
   {:else if loading && conversations.length === 0}<p class="workshop-faint px-4 py-2 text-[11px]">Loading connected agents…</p>
   {:else if connection.offline}<p class="workshop-faint px-4 py-2 text-[11px]">Connect to your workshop to open its agents.</p>
   {:else if groups.length === 0 && !query.trim()}<div class="session-row"><button type="button" class="session-row-main" onclick={manage}><span class="session-row-title">Connect an agent</span></button></div>{/if}
+    {/snippet}
+  </SidebarSectionHeading>
 </li>
 
 <style>

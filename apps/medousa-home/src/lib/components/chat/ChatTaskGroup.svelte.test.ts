@@ -19,6 +19,15 @@ function render(rows = [request('first'), request('second')], workers: SubagentR
 async function click(text: string) { [...document.querySelectorAll('button')].find(button => button.textContent?.includes(text))!.click(); await tick(); flushSync(); }
 
 describe('turn task receipts', () => {
+  it('uses the parent exchange route for the exact inline handoff without opening a modal', async () => {
+    const modal = vi.spyOn(HTMLDialogElement.prototype, 'showModal');
+    const props = render(); props.controls.inspect = vi.fn(); flushSync();
+    await click('Task second');
+    expect(props.controls.inspect).toHaveBeenCalledExactlyOnceWith('second');
+    expect(modal).not.toHaveBeenCalled();
+    expect(props.controls.action).not.toHaveBeenCalled();
+    expect(props.controls.openExecution).not.toHaveBeenCalled();
+  });
   it('shows compact decisions without legacy agent blocks or raw metadata', async () => {
     const props = render();
     expect(document.querySelectorAll('.task-receipt')).toHaveLength(2);

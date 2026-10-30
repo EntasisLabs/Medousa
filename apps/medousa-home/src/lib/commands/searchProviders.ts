@@ -4,6 +4,8 @@ import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { agentRuntimeLabel, getSessionAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
 import { externalConversationSessionId } from "$lib/utils/externalConversationSession";
 import { chat } from "$lib/stores/chat.svelte";
+import { spotlightSessionSearch } from "$lib/chat/sessionSearch.svelte";
+import { mergeSessionSummaries } from "$lib/chat/sessionDiscovery";
 import { browserHistory } from "$lib/browser/browserHistory.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -80,7 +82,8 @@ export function buildSessionOpenCommands(
   limit = 8,
 ): WorkshopCommand[] {
   const trimmed = query.trim().toLowerCase();
-  const sessions = [...chat.sessions].filter((session) => !bots.forSession(session.session_id) && !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)))
+  const source = mergeSessionSummaries(chat.sessions, spotlightSessionSearch.resultsFor(`${chat.workshopScopeId}:${chat.workshopEpoch}`, query, []));
+  const sessions = source.filter((session) => !bots.forSession(session.session_id) && !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)))
     .map((session) => {
       const label = formatSessionLabel(session);
       const haystack = `${label} ${session.session_id} ${session.preview}`.toLowerCase();

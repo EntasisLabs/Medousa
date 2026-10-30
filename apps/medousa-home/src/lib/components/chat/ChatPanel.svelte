@@ -13,6 +13,7 @@
   import RuntimeBotStatus from "./RuntimeBotStatus.svelte";
   import { admitRuntimeBotTurn, runtimeBotJob, runtimeBotJobPending } from "$lib/chat/runtimeBotTurns.svelte";
   import SessionIdentity from "./SessionIdentity.svelte";
+  import SessionParentLink from './SessionParentLink.svelte';
   import BotAvatar from "./BotAvatar.svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatChangeReceipt from "$lib/components/chat/ChatChangeReceipt.svelte";
@@ -23,6 +24,7 @@
   import { createAgentSessionController } from "$lib/chat/agentSessionController.svelte";
   import { submitChatTurn } from "$lib/chat/submitTurnController";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
+  import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ComposerSkillPills from "$lib/components/chat/ComposerSkillPills.svelte";
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
   import ChatRuntimeControlRow from "$lib/components/chat/ChatRuntimeControlRow.svelte";
@@ -71,7 +73,10 @@
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { openAskHistory } from "$lib/runtime/shellUseCases";
-  import WorkerTaskPanel from "$lib/components/chat/WorkerTaskPanel.svelte";
+  import AgentExchangeShell from "./AgentExchangeShell.svelte";
+  import WorkerExchangeBody from "./WorkerExchangeBody.svelte";
+  import PeerExchangeBody from "./PeerExchangeBody.svelte";
+  import { peerRuntimeLabel } from "./peerProgress";
   import { subagentRowMap, subagentRowsForSession } from "$lib/utils/subagentRows";
   import {
     saveChatTurnToVault,
@@ -154,6 +159,13 @@
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
   let workerTranscriptWorkId = $state<string | null>(null);
+  let exchangeProposalId = $state<string | null>(null);
+  let exchangeOrigin = $state.raw<HTMLElement | null>(null);
+  function rememberExchangeOrigin() { exchangeOrigin = document.activeElement instanceof HTMLElement ? document.activeElement : null; }
+  function inspectProposal(id: string) { rememberExchangeOrigin(); workerTranscriptWorkId = null; exchangeProposalId = id; }
+  function closeExchange() { workerTranscriptWorkId = null; exchangeProposalId = null; }
+  $effect(() => { panelSessionId; chat.workshopScopeId; userProfiles.activeProfileId; closeExchange(); });
+  $effect(() => { if (!visible) closeExchange(); });
   const history = useChatHistoryPanel(chat.history, () => panelSessionId, () => visible);
 
   function openCardDetail(detail: CardDetailPayload) {
@@ -169,11 +181,9 @@
   function openWorkerTranscript(workId: string) {
     const trimmed = workId.trim();
     if (!trimmed) return;
+    rememberExchangeOrigin();
+    exchangeProposalId = null;
     workerTranscriptWorkId = trimmed;
-  }
-
-  function closeWorkerTranscript() {
-    workerTranscriptWorkId = null;
   }
 
   function stopWorker(workId: string) {
@@ -221,6 +231,8 @@
   const activeSubagentCount = $derived(subagentRows.filter((row) => row.streaming).length);
   let proposalSnapshot = $state<{ sessionId: string | null; rows: PeerProposalReviewRecord[]; controls: PeerProposalControls } | null>(null);
   const dockSnapshot = $derived(proposalSnapshot?.sessionId === panelSessionId ? proposalSnapshot : null);
+  const exchangeProposal = $derived(dockSnapshot?.rows.find(row => row.proposal.proposal_id === exchangeProposalId));
+  const exchangeOpen = $derived(Boolean(workerTranscriptWorkId || exchangeProposal));
   function receiveProposalSnapshot(sessionId: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) {
     proposalSnapshot = { sessionId, rows, controls };
   }
@@ -696,6 +708,12 @@
     }
   }
 
+  async function openParentSession(sessionId: string) {
+    if (onOpenSession) return onOpenSession(sessionId);
+    const { shellTabs } = await import('$lib/stores/shellTabs.svelte');
+    if (!shellTabs.openChat(sessionId, { activate: true })) await chat.switchSession(sessionId);
+  }
+
   async function resumeSession(sessionId: string) {
     if (onOpenSession) return onOpenSession(sessionId);
     await chat.switchSession(sessionId);
@@ -748,6 +766,21 @@
   }
 </script>
 
+{#snippet projectChanges()}
+  {#if chatCodeProject && !embedded && !providerRuntime}
+    <ChatChangeReceipt bind:this={projectReviewReceipt} compact
+      workId={chatCodeProject.workId}
+      projectTitle={chatCodeProject.title}
+      phase={chatCodeProject.humanPhase}
+      review={undertakings.review?.work_id === chatCodeProject.workId ? undertakings.review : null}
+      eventRevision={undertakings.eventRevision}
+      activityRunning={Boolean(streamingMessage) || activeSubagentCount > 0}
+      onOpenCode={openChatCodeReview}
+      onRequestRevision={requestChatCodeRevision}
+      onReviewChanged={() => undertakings.select(chatCodeProject.workId)} />
+  {/if}
+{/snippet}
+
 <section
   class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible
     ? ''
@@ -759,6 +792,7 @@
         ? 'mobile-chat-panel'
         : 'chat-pane'}"
 >
+  <div class="parent-chat" inert={exchangeOpen} aria-hidden={exchangeOpen ? 'true' : undefined}>
   {#if !embedded && (!mobile || (!providerRuntime && chat.streamErrorFor(panelSessionId)))}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex w-full min-w-0 items-center gap-2">
@@ -815,6 +849,8 @@
     {/if}
   </header>
   {/if}
+
+  {#if !embedded && !providerRuntime}<SessionParentLink sessionId={panelSessionId} onOpen={openParentSession} />{/if}
 
   {#if mobile && !providerRuntime && chat.liveStreamActive && phaseLine}
     <div class="mobile-chat-phase" aria-live="polite">
@@ -959,7 +995,7 @@
             onOpenSource={openDerivationSource}
           />
         {/if}
-        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile} {visible} onSnapshot={receiveProposalSnapshot}>
+        <PeerProposalBar sessionId={embedded || providerRuntime ? null : panelSessionId} {mobile} {visible} onSnapshot={receiveProposalSnapshot} onInspect={inspectProposal}>
           {#snippet children(peerProposals, peerControls)}
             <ChatMessageList
               {peerProposals}
@@ -1039,19 +1075,10 @@
       </div>
       {/if}
       {#if !embedded && !providerRuntime && chatMessages.length === 0}
-        <PeerProposalBar sessionId={panelSessionId} {mobile} {visible} onSnapshot={receiveProposalSnapshot} />
+        <PeerProposalBar sessionId={panelSessionId} {mobile} {visible} onSnapshot={receiveProposalSnapshot} onInspect={inspectProposal} />
       {/if}
-      {#if chatCodeProject && !embedded && !providerRuntime}
-        <ChatChangeReceipt bind:this={projectReviewReceipt}
-          workId={chatCodeProject.workId}
-          projectTitle={chatCodeProject.title}
-          phase={chatCodeProject.humanPhase}
-          review={undertakings.review?.work_id === chatCodeProject.workId ? undertakings.review : null}
-          eventRevision={undertakings.eventRevision}
-          activityRunning={Boolean(streamingMessage) || activeSubagentCount > 0}
-          onOpenCode={openChatCodeReview}
-          onRequestRevision={requestChatCodeRevision}
-          onReviewChanged={() => undertakings.select(chatCodeProject.workId)} />
+      {#if !showInlineComposer}
+        <div class="mobile-project-context">{@render projectChanges()}</div>
       {/if}
 
       {/if}
@@ -1073,24 +1100,29 @@
       />
       <AgentPermissionBar />
       <AgentSecretBar />
-      <ChatWorkDock sessionId={panelSessionId} proposals={dockSnapshot?.rows ?? []} workers={subagentRows} controls={dockSnapshot?.controls} onOpenWorker={openWorkerTranscript}
-        projectNeedsReview={Boolean(chatCodeProject && undertakings.review?.work_id === chatCodeProject.workId && (chatCodeProject.humanPhase === 'review' || undertakings.review.human_phase === 'review'))}
-        onOpenProjectReview={() => projectReviewReceipt?.openReview()} />
     {/if}
+    <div class="{embedded
+      ? useMobileChatLayout
+        ? 'mobile-chat-composer script-workbench-chat-composer'
+        : workshopSticky
+          ? 'vault-workshop-chat-composer vault-workshop-chat-composer--sticky'
+          : 'vault-workshop-chat-composer'
+      : 'chat-composer'}">
+    <ChatAttachmentChips disabled={externalConversation.busy || connection.offline} />
     {#if !providerRuntime}
-      <ChatStickyBoard sessionId={panelSessionId} workshopScopeId={chat.workshopScopeId} profileId={userProfiles.activeProfileId} enabled={visible && !connection.offline} />
+      <div class="chat-context-strip" class:chat-context-strip--embedded={embedded} role="group" aria-label="Chat context">
+        {@render projectChanges()}
+        <div class="chat-context-work">
+          {#if !embedded && !presenceComposerCentered}
+            <ChatWorkDock sessionId={panelSessionId} proposals={dockSnapshot?.rows ?? []} workers={subagentRows} controls={dockSnapshot?.controls} onOpenWorker={openWorkerTranscript}
+              projectNeedsReview={Boolean(chatCodeProject && undertakings.review?.work_id === chatCodeProject.workId && (chatCodeProject.humanPhase === 'review' || undertakings.review.human_phase === 'review'))}
+              onOpenProjectReview={() => projectReviewReceipt?.openReview()} />
+          {/if}
+        </div>
+        <ChatStickyBoard sessionId={panelSessionId} workshopScopeId={chat.workshopScopeId} profileId={userProfiles.activeProfileId} enabled={visible && !connection.offline} />
+      </div>
     {/if}
-    <form
-      bind:this={composerFormEl}
-      class="{embedded
-        ? useMobileChatLayout
-          ? 'mobile-chat-composer script-workbench-chat-composer'
-          : workshopSticky
-            ? 'vault-workshop-chat-composer vault-workshop-chat-composer--sticky'
-            : 'vault-workshop-chat-composer'
-        : 'chat-composer'}"
-      onsubmit={submit}
-    >
+    <form bind:this={composerFormEl} class="chat-composer-message" onsubmit={submit}>
       <ChatConnectionStatus {onOpenConnection} />
       {#if !providerRuntime && chat.scriptWorkbenchContext}
         <ScriptChatContextChip compact={workshop || scriptWorkbench} class={embedded ? "mb-2" : "mx-4 mb-2"} />
@@ -1115,6 +1147,7 @@
       {/if}
       {#if panelBot?.external_agent}<RuntimeBotStatus sessionId={panelSessionId} />{/if}
       <ChatComposerBar
+        showAttachments={false}
         mobile={workshop || useMobileChatLayout}
         disabled={externalConversation.busy}
         offline={connection.offline}
@@ -1133,6 +1166,7 @@
         onkeydown={handleKeydown}
         onCursorChange={(cursor) => (draftCursor = cursor)}
       />
+    </form>
       {#if !workshop && !embedded && !providerRuntime && !panelBot?.external_agent}
         <ChatRuntimeControlRow
           sessionId={panelSessionId}
@@ -1154,7 +1188,7 @@
         onClose={dismissSlashMenu}
         onHighlight={(index) => (slashHighlight = index)}
       />{/if}
-    </form>
+    </div>
   </ChatPresenceDock>
   </div>
 
@@ -1165,13 +1199,31 @@
     onChipSelect={prefillComposerFromChip}
   />
 
-  <WorkerTaskPanel
-    workId={workerTranscriptWorkId}
-    onClose={closeWorkerTranscript}
-  />
+  </div>
+  {#if workerTranscriptWorkId}
+    {#key workerTranscriptWorkId}
+      <AgentExchangeShell title="Agent exchange" participant="Worker" onClose={closeExchange} returnFocus={exchangeOrigin} {mobile}>
+        <WorkerExchangeBody workId={workerTranscriptWorkId} />
+      </AgentExchangeShell>
+    {/key}
+  {:else if exchangeProposal && dockSnapshot}
+    {#key exchangeProposal.proposal.proposal_id}
+      <AgentExchangeShell title="Agent exchange" participant={peerRuntimeLabel(exchangeProposal.proposal.request.target.runtime)} onClose={closeExchange} returnFocus={exchangeOrigin} {mobile}>
+        <PeerExchangeBody row={exchangeProposal} controls={dockSnapshot.controls} />
+      </AgentExchangeShell>
+    {/key}
+  {/if}
 </section>
 
 <style>
+  /* Context is a close sibling above the input, never inside its outline or form. */
+  .chat-composer-message { min-width: 0; margin: 0; }
+  .chat-context-strip { display: flex; align-items: center; justify-content: space-between; gap: 12px; box-sizing: border-box; width: 100%; max-width: 40rem; margin: 0 0 4px; padding: 0 8px; flex-shrink: 0; }
+  .chat-context-strip--embedded { max-width: none; }
+  .chat-context-work { min-width: 0; margin-right: auto; }
+  .mobile-project-context { padding-inline: 8px; }
+  @media (max-width: 600px) { .chat-context-strip { gap: 10px; } }
+  .parent-chat { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
   .chat-ask-history-button { display:flex; align-items:center; justify-content:space-between; gap:1rem; width:100%; padding:.5rem .75rem; border:1px solid rgb(var(--theme-border) / .3); border-radius:.5rem; color:rgb(var(--theme-text-secondary)); font-size:.75rem; }
   .chat-ask-history-button:hover { background:rgb(var(--theme-border) / .1); }
 

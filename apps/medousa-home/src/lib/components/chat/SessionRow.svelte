@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MessagesSquare, Pencil, Star, Trash2 } from "@lucide/svelte";
+  import { ChevronDown, ChevronRight, MessagesSquare, Pencil, Star, Trash2 } from "@lucide/svelte";
   import SessionChannelMarks from "$lib/components/chat/SessionChannelMarks.svelte";
   import type { SessionSummary } from "$lib/types/session";
   import { formatSessionLabel, formatSessionWhen } from "$lib/utils/formatSession";
@@ -9,6 +9,9 @@
     now?: number;
     selected?: boolean;
     pinned?: boolean;
+    relatedCount?: number;
+    relatedExpanded?: boolean;
+    onToggleRelated?: () => void;
     /** Touch / sheet: keep actions visible without hover. */
     alwaysShowActions?: boolean;
     onSelect: () => void;
@@ -22,6 +25,9 @@
     now = Date.now(),
     selected = false,
     pinned = false,
+    relatedCount = 0,
+    relatedExpanded = false,
+    onToggleRelated,
     alwaysShowActions = false,
     onSelect,
     onRename,
@@ -42,7 +48,24 @@
     ? 'session-row--touch'
     : ''}"
 >
-  <button type="button" class="session-row-main" onclick={onSelect}>
+  {#if relatedCount > 0 && onToggleRelated}
+    <button
+      type="button"
+      class="session-row-disclosure"
+      aria-label={`${relatedCount} related chat${relatedCount === 1 ? '' : 's'} for ${title}`}
+      aria-expanded={relatedExpanded}
+      title={`${relatedExpanded ? 'Hide' : 'Show'} ${relatedCount} related chat${relatedCount === 1 ? '' : 's'}`}
+      onclick={onToggleRelated}
+    >
+      {#if relatedExpanded}<ChevronDown size={12} aria-hidden="true" />{:else}<ChevronRight size={12} aria-hidden="true" />{/if}
+    </button>
+  {/if}
+  <button
+    type="button"
+    class="session-row-main"
+    aria-current={selected ? "page" : undefined}
+    onclick={onSelect}
+  >
     <SessionChannelMarks
       originSurface={session.origin_surface}
       hasCodeWork={session.has_code_work}

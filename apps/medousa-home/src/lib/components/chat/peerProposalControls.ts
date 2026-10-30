@@ -1,6 +1,8 @@
 import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
 
 export interface PeerProposalControls {
+  /** Inspect without changing the parent session or sending instructions. */
+  inspect?: (proposalId: string) => void;
   now: number;
   available: boolean;
   busy: boolean;

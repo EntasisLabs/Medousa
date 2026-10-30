@@ -135,18 +135,31 @@ export function configureBrowserInference(baseUrl: string, apiKey: string, model
   });
 }
 
-export async function listBrowserSessions(limit?: number): Promise<{
+interface BrowserSessionRow {
+  session_id: string;
+  title?: string;
+  preview?: string;
+  updated_ms?: number;
+}
+
+/** Browser-local parity: filter the entire catalog before taking a page. */
+export function browserSessionPage(rows: BrowserSessionRow[], limit = 50, q = "", cursor?: string): {
   sessions: SessionSummary[];
   next_cursor: string | null;
-}> {
-  const daemon = await loadDaemon();
-  const rows = JSON.parse(await daemon.list_sessions()) as Array<{
-    session_id: string;
-    title?: string;
-    preview?: string;
-    updated_ms?: number;
-  }>;
-  const sessions: SessionSummary[] = rows.slice(0, limit ?? rows.length).map((row) => ({
+} {
+  const needle = q.trim().toLowerCase();
+  const matching = [...rows].filter(row => !needle || `${row.title ?? ""} ${row.preview ?? ""} ${row.session_id}`.toLowerCase().includes(needle))
+    .sort((a, b) => (b.updated_ms ?? 0) - (a.updated_ms ?? 0) || a.session_id.localeCompare(b.session_id));
+  let start = 0;
+  if (cursor) {
+    const value = JSON.parse(decodeURIComponent(cursor)) as { q?: string; after?: string };
+    const index = matching.findIndex(row => row.session_id === value.after);
+    if (value.q !== needle || index < 0) throw new Error("The session page changed. Refresh the chat list.");
+    start = index + 1;
+  }
+  const size = Math.max(1, Math.min(200, Math.floor(limit) || 50));
+  const page = matching.slice(start, start + size);
+  const sessions: SessionSummary[] = page.map(row => ({
     session_id: row.session_id,
     display_name: row.title ?? null,
     turns: 0,
@@ -154,7 +167,14 @@ export async function listBrowserSessions(limit?: number): Promise<{
     last_timestamp: row.updated_ms ? new Date(row.updated_ms).toISOString() : null,
     preview: row.preview ?? "",
   }));
-  return { sessions, next_cursor: null };
+  return { sessions, next_cursor: start + page.length < matching.length
+    ? encodeURIComponent(JSON.stringify({ q: needle, after: page[page.length - 1].session_id })) : null };
+}
+
+export async function listBrowserSessions(limit?: number, q?: string, cursor?: string) {
+  const daemon = await loadDaemon();
+  const rows = JSON.parse(await daemon.list_sessions()) as BrowserSessionRow[];
+  return browserSessionPage(rows, limit, q, cursor);
 }
 
 export async function createBrowserSession(displayName?: string): Promise<CreateSessionResponse> {

@@ -174,7 +174,7 @@ function deriveTextTier(
 }
 
 /**
- * Build the four subdued tiers for a light theme. When the palette's ink
+ * Build four distinct readable tiers for either theme mode. When the palette's ink
  * cannot reach the top target — Catppuccin Latte only manages 6.9:1 — every
  * target is scaled by the same factor so the ladder compresses instead of
  * collapsing onto the body text colour.
@@ -290,24 +290,16 @@ export function completeThemeConfig(
     surface("200"),
   ]);
   const isLight = relativeLuminance(canvas) > 0.5;
-  const darkestBackground = textBackgrounds.reduce((darkest, background) =>
-    relativeLuminance(background) < relativeLuminance(darkest) ? background : darkest,
+  const leastForgivingBackground = textBackgrounds.reduce((worst, background) =>
+    contrastRatio(text, background) < contrastRatio(text, worst) ? background : worst,
   );
-  /* Dark ramps already fan out across surface 300–600; light ramps do not. */
-  const ladder = isLight ? deriveTextLadder(text, darkestBackground, textBackgrounds) : null;
-  const textSecondary = ladder
-    ? roles.textSecondary ?? ladder.secondary
-    : readableForeground(textBackgrounds, [
-      roles.textSecondary,
-      surface("300"),
-      surface("200"),
-      surface("100"),
-      surface("50"),
-      text,
-    ]);
-  const textTertiary = roles.textTertiary ?? roles.textMuted ?? ladder?.tertiary ?? surface("400");
-  const textQuiet = roles.textQuiet ?? ladder?.quiet ?? surface("500");
-  const textFaint = roles.textFaint ?? ladder?.faint ?? surface("600");
+  /* Quiet is a hierarchy role, not a disabled state. Dark palette mid-stops
+     can be just as faint as mirrored light ramps, so measure both modes. */
+  const ladder = deriveTextLadder(text, leastForgivingBackground, textBackgrounds);
+  const textSecondary = roles.textSecondary ?? ladder.secondary;
+  const textTertiary = roles.textTertiary ?? roles.textMuted ?? ladder.tertiary;
+  const textQuiet = roles.textQuiet ?? ladder.quiet;
+  const textFaint = roles.textFaint ?? ladder.faint;
   const placeholder = roles.placeholder ?? textTertiary;
   const disabled = readableForeground(
     [canvas],

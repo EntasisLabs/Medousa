@@ -82,7 +82,7 @@
       bind:this={searchInputEl}
       class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0"
       type="search"
-      placeholder="Search titles…"
+      placeholder="Search all chats…"
       bind:value={query}
       onkeydown={handleSearchKeydown}
     />
