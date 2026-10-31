@@ -193,6 +193,7 @@ export const OPERATIONS = {
   "forge.items.by_work_id.provider.get": { id: "forge.items.by_work_id.provider.get", method: "GET", path: "/v1/forge/items/{work_id}/provider", streaming: false },
   "forge.items.by_work_id.provider.post": { id: "forge.items.by_work_id.provider.post", method: "POST", path: "/v1/forge/items/{work_id}/provider", streaming: false },
   "forge.items.by_work_id.provision.post": { id: "forge.items.by_work_id.provision.post", method: "POST", path: "/v1/forge/items/{work_id}/provision", streaming: false },
+  "forge.items.by_work_id.repair_git_target.post": { id: "forge.items.by_work_id.repair_git_target.post", method: "POST", path: "/v1/forge/items/{work_id}/repair-git-target", streaming: false },
   "forge.items.by_work_id.review.comments.by_comment_id.delete": { id: "forge.items.by_work_id.review.comments.by_comment_id.delete", method: "DELETE", path: "/v1/forge/items/{work_id}/review/comments/{comment_id}", streaming: false },
   "forge.items.by_work_id.review.comments.by_comment_id.patch": { id: "forge.items.by_work_id.review.comments.by_comment_id.patch", method: "PATCH", path: "/v1/forge/items/{work_id}/review/comments/{comment_id}", streaming: false },
   "forge.items.by_work_id.review.comments.get": { id: "forge.items.by_work_id.review.comments.get", method: "GET", path: "/v1/forge/items/{work_id}/review/comments", streaming: false },

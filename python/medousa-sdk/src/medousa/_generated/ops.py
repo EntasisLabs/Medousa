@@ -196,6 +196,7 @@ OPERATIONS: dict[str, Operation] = {
     "forge.items.by_work_id.provider.get": Operation("forge.items.by_work_id.provider.get", "GET", "/v1/forge/items/{work_id}/provider", False),
     "forge.items.by_work_id.provider.post": Operation("forge.items.by_work_id.provider.post", "POST", "/v1/forge/items/{work_id}/provider", False),
     "forge.items.by_work_id.provision.post": Operation("forge.items.by_work_id.provision.post", "POST", "/v1/forge/items/{work_id}/provision", False),
+    "forge.items.by_work_id.repair_git_target.post": Operation("forge.items.by_work_id.repair_git_target.post", "POST", "/v1/forge/items/{work_id}/repair-git-target", False),
     "forge.items.by_work_id.review.comments.by_comment_id.delete": Operation("forge.items.by_work_id.review.comments.by_comment_id.delete", "DELETE", "/v1/forge/items/{work_id}/review/comments/{comment_id}", False),
     "forge.items.by_work_id.review.comments.by_comment_id.patch": Operation("forge.items.by_work_id.review.comments.by_comment_id.patch", "PATCH", "/v1/forge/items/{work_id}/review/comments/{comment_id}", False),
     "forge.items.by_work_id.review.comments.get": Operation("forge.items.by_work_id.review.comments.get", "GET", "/v1/forge/items/{work_id}/review/comments", False),

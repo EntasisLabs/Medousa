@@ -1297,6 +1297,13 @@ pub const FORGE_ITEMS_BY_WORK_ID_PROVISION_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const FORGE_ITEMS_BY_WORK_ID_REPAIR_GIT_TARGET_POST: Operation = Operation {
+    id: "forge.items.by_work_id.repair_git_target.post",
+    method: "POST",
+    path: "/v1/forge/items/{work_id}/repair-git-target",
+    streaming: false,
+};
+
 pub const FORGE_ITEMS_BY_WORK_ID_REVIEW_COMMENTS_BY_COMMENT_ID_DELETE: Operation = Operation {
     id: "forge.items.by_work_id.review.comments.by_comment_id.delete",
     method: "DELETE",
@@ -3834,6 +3841,7 @@ pub static ALL: &[Operation] = &[
     FORGE_ITEMS_BY_WORK_ID_PROVIDER_GET,
     FORGE_ITEMS_BY_WORK_ID_PROVIDER_POST,
     FORGE_ITEMS_BY_WORK_ID_PROVISION_POST,
+    FORGE_ITEMS_BY_WORK_ID_REPAIR_GIT_TARGET_POST,
     FORGE_ITEMS_BY_WORK_ID_REVIEW_COMMENTS_BY_COMMENT_ID_DELETE,
     FORGE_ITEMS_BY_WORK_ID_REVIEW_COMMENTS_BY_COMMENT_ID_PATCH,
     FORGE_ITEMS_BY_WORK_ID_REVIEW_COMMENTS_GET,

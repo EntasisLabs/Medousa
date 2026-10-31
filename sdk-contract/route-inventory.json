@@ -3239,6 +3239,22 @@
       "trust_group": "administration"
     },
     {
+      "body_limit": 1048576,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "forge.items.by_work_id.repair_git_target.post",
+      "path": "/v1/forge/items/{work_id}/repair-git-target",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",

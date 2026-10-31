@@ -11,6 +11,23 @@ pub fn apply_payload(item: &mut WorkItem, event: &TransitionEvent) -> Result<()>
         EventPayload::ItemRegistered { .. } => {
             Err(ForgeError::Store("duplicate item_registered".into()))
         }
+        EventPayload::GitTargetRepaired {
+            old_base_ref,
+            branch,
+            baseline_oid,
+            ..
+        } => {
+            let crate::model::WorkTarget::Git(target) = &mut item.target;
+            if target.base_ref != *old_base_ref || target.base_oid != *baseline_oid {
+                return Err(ForgeError::Store(
+                    "target repair does not match prior target".into(),
+                ));
+            }
+            target.base_ref = branch.clone();
+            item.review_decisions.clear();
+            item.updated_at = event.at;
+            Ok(())
+        }
         EventPayload::EnvironmentProvisioned { env } => {
             item.environment = Some((**env).clone());
             Ok(())
