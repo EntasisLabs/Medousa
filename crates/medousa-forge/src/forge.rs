@@ -2258,7 +2258,7 @@ impl Forge {
             .collect();
 
         let current_base_oid = match &item.target {
-            WorkTarget::Git(t) => self.git.ref_oid(&t.repo_path, &t.base_ref)?,
+            WorkTarget::Git(t) => self.git.resolve_base_oid(&t.repo_path, &t.base_ref)?,
         };
         let evidence_base_oid = if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
             match &item.target {
@@ -2323,6 +2323,11 @@ impl Forge {
             return Err(ForgeError::DecisionInvalid {
                 reason: "keep_checkout is only valid for an attached checkout".into(),
             });
+        }
+        if decision.strategy == IntegrationStrategy::FastForwardOnly {
+            let target = git_target(&item)?;
+            self.git
+                .local_branch_oid(&target.repo_path, &target.base_ref)?;
         }
         item.review_decisions.push(decision.clone());
         self.commit_event(
@@ -2460,7 +2465,9 @@ impl Forge {
 
         // Expected base OID: the approval authorizes integration against
         // exactly this base state.
-        let current_base = self.git.ref_oid(&target.repo_path, &target.base_ref)?;
+        let current_base = self
+            .git
+            .local_branch_oid(&target.repo_path, &target.base_ref)?;
         if current_base != decision.expected_base_oid {
             return Err(ForgeError::BaseAdvanced {
                 expected: decision.expected_base_oid.clone(),
@@ -2505,12 +2512,20 @@ impl Forge {
                 &decision.reviewed_head_oid,
                 &decision.expected_base_oid,
             )
-            .map_err(|_| ForgeError::BaseAdvanced {
-                expected: decision.expected_base_oid.clone(),
-                found: self
+            .map_err(|err| {
+                // A lock, permission, invalid-ref or Git failure is not proof
+                // that the base moved. Preserve its diagnostic unless an exact
+                // branch re-read demonstrates a genuine CAS mismatch.
+                match self
                     .git
-                    .ref_oid(&target.repo_path, &target.base_ref)
-                    .unwrap_or_else(|_| decision.expected_base_oid.clone()),
+                    .local_branch_oid(&target.repo_path, &target.base_ref)
+                {
+                    Ok(found) if found != decision.expected_base_oid => ForgeError::BaseAdvanced {
+                        expected: decision.expected_base_oid.clone(),
+                        found,
+                    },
+                    _ => err,
+                }
             })?;
         self.commit_event(
             &item.id,
@@ -2722,6 +2737,81 @@ impl Forge {
         )?;
         self.transition(&mut item, WorkState::Discarded, None, actor)?;
         Ok(item)
+    }
+
+    /// Recover only legacy targets whose base_ref is the captured full OID.
+    /// No refs, evidence, attempts or candidate commits are modified. A single
+    /// append atomically replaces the target and revokes every old decision.
+    #[allow(clippy::too_many_arguments)]
+    pub fn repair_git_target(
+        &self,
+        work_id: &WorkId,
+        expected_old_ref: &str,
+        expected_baseline: &GitOid,
+        branch: &str,
+        reason: &str,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        let probe = self.load(work_id)?;
+        let _repo_lock = self
+            .store
+            .lock_repo(&self.repo_lock_key(&git_target(&probe)?.repo_path)?)?;
+        let _item_lock = self.store.lock_item(work_id)?;
+        let item = self.load(work_id)?;
+        if actor.kind != ActorKind::User || actor.id != item.owner {
+            return Err(ForgeError::PolicyViolation(
+                "only the work owner may repair its target".into(),
+            ));
+        }
+        if item.has_active_attempts()
+            || item.attempts.iter().any(|a| {
+                a.state == AttemptState::Running || a.lease.is_some() || a.ended_at.is_none()
+            })
+        {
+            return Err(ForgeError::AttemptAlreadyRunning(work_id.clone()));
+        }
+        expect_state(&item, WorkState::AwaitingReview, "repair git target")?;
+        let target = git_target(&item)?;
+        if item.uses_attached_checkout()
+            || target.base_ref != expected_old_ref
+            || target.base_oid != *expected_baseline
+            || target.base_ref != target.base_oid.as_str()
+            || reason.trim().is_empty()
+        {
+            return Err(ForgeError::DecisionInvalid {
+                reason:
+                    "repair requires the exact legacy OID target, baseline and a nonempty reason"
+                        .into(),
+            });
+        }
+        for attempt in &item.attempts {
+            if let Some(env) = item.environment_for_attempt(&attempt.id)
+                && env.baseline_oid != *expected_baseline
+            {
+                return Err(ForgeError::DecisionInvalid {
+                    reason: "attempt baseline differs from repair baseline".into(),
+                });
+            }
+        }
+        let found = self.git.local_branch_oid(&target.repo_path, branch)?;
+        if found != *expected_baseline {
+            return Err(ForgeError::BaseAdvanced {
+                expected: expected_baseline.clone(),
+                found,
+            });
+        }
+        self.commit_event(
+            work_id,
+            actor,
+            EventPayload::GitTargetRepaired {
+                old_base_ref: expected_old_ref.to_string(),
+                branch: branch.to_string(),
+                baseline_oid: expected_baseline.clone(),
+                invalidated_decisions: item.review_decisions.iter().map(|d| d.id.clone()).collect(),
+                reason: reason.to_string(),
+            },
+        )?;
+        self.load(work_id)
     }
 
     /// Invalidate a recorded decision (head moved, evidence superseded, human
@@ -5396,8 +5486,21 @@ mod tests {
         crate::model::GitOid,
         EvidenceManifest,
     ) {
+        to_awaiting_review_at_base(fx, forge, "main")
+    }
+
+    fn to_awaiting_review_at_base(
+        fx: &Fixture,
+        forge: &Forge,
+        base: &str,
+    ) -> (
+        WorkItem,
+        crate::model::GovernedEnv,
+        GitOid,
+        EvidenceManifest,
+    ) {
         let item = forge
-            .register("t", "b", &fx.repo, "main", "user-1", &actor())
+            .register("t", "b", &fx.repo, base, "user-1", &actor())
             .unwrap();
         forge.provision(&item.id, &actor()).unwrap();
         let (item, lease) = forge
@@ -5447,6 +5550,306 @@ mod tests {
             rationale: None,
             decided_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn legacy_oid_target_repair_revokes_decision_and_preserves_candidate() {
+        let actor = || ActorRef {
+            kind: ActorKind::User,
+            id: "user-1".into(),
+        };
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let (item, env, head, manifest) =
+            to_awaiting_review_at_base(&fx, &forge, fx.baseline.as_str());
+        let decision = decision_for(
+            &item,
+            &head,
+            &manifest,
+            IntegrationStrategy::FastForwardOnly,
+            &fx,
+        );
+        assert!(matches!(
+            forge.decide(&item.id, decision.clone(), &actor()),
+            Err(ForgeError::DecisionInvalid { .. })
+        ));
+        // Emulate a decision recorded by the old host, without rewriting any
+        // manifest or snapshot. Old history must survive recovery.
+        forge
+            .commit_event(
+                &item.id,
+                &actor(),
+                EventPayload::ReviewDecided {
+                    decision: Box::new(decision.clone()),
+                },
+            )
+            .unwrap();
+        let err = forge
+            .apply_decision(&item.id, &decision.id, &actor())
+            .unwrap_err();
+        assert!(matches!(err, ForgeError::DecisionInvalid { .. }));
+        let before = forge.load(&item.id).unwrap();
+        let review_query = || medousa_types::forge::ProjectReviewQuery {
+            work_id: item.id.to_string(),
+            attempt_id: None,
+        };
+        let old_review = crate::lifecycle::review(&forge, "user-1", review_query()).unwrap();
+        assert!(
+            !old_review["allowed_strategies"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("fast_forward_only"))
+        );
+        let manifest_path = forge
+            .store()
+            .item_dir(&item.id)
+            .join("attempts/1/evidence/manifest.json");
+        let sealed_bytes = fs::read(&manifest_path).unwrap();
+        let repaired = forge
+            .repair_git_target(
+                &item.id,
+                fx.baseline.as_str(),
+                &fx.baseline,
+                "main",
+                "legacy OID branch target",
+                &actor(),
+            )
+            .unwrap();
+        assert_eq!(fs::read(&manifest_path).unwrap(), sealed_bytes);
+        assert_eq!(repaired.id, item.id);
+        assert_eq!(repaired.state, WorkState::AwaitingReview);
+        let events = forge.store().replay(&item.id).unwrap();
+        assert!(events.iter().any(|event| matches!(&event.payload, EventPayload::ReviewDecided { decision: prior } if prior.id == decision.id)));
+        let audit = events
+            .iter()
+            .find(|event| matches!(&event.payload, EventPayload::GitTargetRepaired { .. }))
+            .unwrap();
+        assert_eq!(audit.actor, actor());
+        assert!(
+            matches!(&audit.payload, EventPayload::GitTargetRepaired { old_base_ref, branch, baseline_oid, invalidated_decisions, reason }
+            if old_base_ref == fx.baseline.as_str() && branch == "main" && baseline_oid == &fx.baseline
+                && invalidated_decisions == &vec![decision.id.clone()] && reason == "legacy OID branch target")
+        );
+        assert!(
+            forge
+                .repair_git_target(
+                    &item.id,
+                    fx.baseline.as_str(),
+                    &fx.baseline,
+                    "main",
+                    "retry",
+                    &actor()
+                )
+                .is_err()
+        );
+        assert_eq!(repaired.attempts, before.attempts);
+        assert_eq!(repaired.environment, before.environment);
+        assert!(repaired.review_decisions.is_empty());
+        let fresh_review = crate::lifecycle::review(&forge, "user-1", review_query()).unwrap();
+        assert!(
+            fresh_review["allowed_strategies"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("fast_forward_only"))
+        );
+        assert_eq!(fresh_review["reviewed"], old_review["reviewed"]);
+        assert_eq!(git_target(&repaired).unwrap().base_ref, "main");
+        assert_eq!(fx.git.head_oid(&env.worktree).unwrap(), head);
+        assert_eq!(forge.load(&item.id).unwrap().review_decisions.len(), 0);
+        assert!(
+            forge
+                .apply_decision(&item.id, &decision.id, &actor())
+                .is_err()
+        );
+        // Reopening the store proves the repair is log-backed, not a cache edit.
+        drop(forge);
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let repaired = forge.load(&item.id).unwrap();
+        assert_eq!(git_target(&repaired).unwrap().base_ref, "main");
+        let fresh = decision_for(
+            &repaired,
+            &head,
+            &manifest,
+            IntegrationStrategy::FastForwardOnly,
+            &fx,
+        );
+        forge.decide(&item.id, fresh.clone(), &actor()).unwrap();
+        forge.apply_decision(&item.id, &fresh.id, &actor()).unwrap();
+        assert_eq!(fx.git.local_branch_oid(&fx.repo, "main").unwrap(), head);
+    }
+
+    #[test]
+    fn legacy_target_repair_rejects_wrong_owner_revision_baseline_and_advanced_base() {
+        let actor = || ActorRef {
+            kind: ActorKind::User,
+            id: "user-1".into(),
+        };
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let (item, _, _, _) = to_awaiting_review_at_base(&fx, &forge, fx.baseline.as_str());
+        let repair = |old: &str, baseline: &GitOid, branch: &str, who: &ActorRef| {
+            forge.repair_git_target(&item.id, old, baseline, branch, "test", who)
+        };
+        let stranger = ActorRef {
+            kind: ActorKind::User,
+            id: "not-owner".into(),
+        };
+        assert!(matches!(
+            repair(fx.baseline.as_str(), &fx.baseline, "main", &stranger),
+            Err(ForgeError::PolicyViolation(_))
+        ));
+        let profile = ActorRef {
+            kind: ActorKind::Profile,
+            id: actor().id,
+        };
+        assert!(repair(fx.baseline.as_str(), &fx.baseline, "main", &profile).is_err());
+        for branch in [
+            "HEAD",
+            "refs/heads/main",
+            "main~0",
+            "missing",
+            "--help",
+            fx.baseline.as_str(),
+        ] {
+            assert!(
+                repair(fx.baseline.as_str(), &fx.baseline, branch, &actor()).is_err(),
+                "{branch}"
+            );
+        }
+        assert!(repair("stale", &fx.baseline, "main", &actor()).is_err());
+        assert!(
+            repair(
+                fx.baseline.as_str(),
+                &GitOid::new("0".repeat(40)),
+                "main",
+                &actor()
+            )
+            .is_err()
+        );
+        fs::write(fx.repo.join("advance.txt"), "new\n").unwrap();
+        fx.git
+            .commit_checkpoint(&fx.repo, "advance", &CheckpointAuthor::default())
+            .unwrap();
+        assert!(matches!(
+            repair(fx.baseline.as_str(), &fx.baseline, "main", &actor()),
+            Err(ForgeError::BaseAdvanced { .. })
+        ));
+        assert_eq!(forge.load(&item.id).unwrap().target, item.target);
+    }
+
+    #[test]
+    fn target_repair_rejects_active_executor_and_already_valid_target() {
+        let actor = || ActorRef {
+            kind: ActorKind::User,
+            id: "user-1".into(),
+        };
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let (item, _, _, _) = to_awaiting_review(&fx, &forge);
+        assert!(
+            forge
+                .repair_git_target(
+                    &item.id,
+                    "main",
+                    &fx.baseline,
+                    "main",
+                    "not legacy",
+                    &actor()
+                )
+                .is_err()
+        );
+        let item = forge
+            .register(
+                "legacy",
+                "b",
+                &fx.repo,
+                fx.baseline.as_str(),
+                "user-1",
+                &actor(),
+            )
+            .unwrap();
+        forge.provision(&item.id, &actor()).unwrap();
+        forge
+            .begin_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        assert!(matches!(
+            forge.repair_git_target(
+                &item.id,
+                fx.baseline.as_str(),
+                &fx.baseline,
+                "main",
+                "busy",
+                &actor()
+            ),
+            Err(ForgeError::AttemptAlreadyRunning(_))
+        ));
+    }
+
+    #[test]
+    fn local_branch_validation_ignores_tag_collisions_and_revision_work_can_be_preserved() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let (item, _, head, manifest) =
+            to_awaiting_review_at_base(&fx, &forge, fx.baseline.as_str());
+        fx.git
+            .run(&fx.repo, &["tag", "main", head.as_str()])
+            .unwrap();
+        fx.git
+            .run(&fx.repo, &["tag", "tag-only", head.as_str()])
+            .unwrap();
+        assert_eq!(
+            fx.git.local_branch_oid(&fx.repo, "main").unwrap(),
+            fx.baseline
+        );
+        assert_eq!(
+            fx.git.resolve_base_oid(&fx.repo, "main").unwrap(),
+            fx.baseline
+        );
+        assert_eq!(fx.git.resolve_base_oid(&fx.repo, "tag-only").unwrap(), head);
+        assert!(fx.git.local_branch_oid(&fx.repo, "tag-only").is_err());
+        assert!(fx.git.local_branch_oid(&fx.repo, "refs/tags/main").is_err());
+        let decision = decision_for(
+            &item,
+            &head,
+            &manifest,
+            IntegrationStrategy::PreserveBranch,
+            &fx,
+        );
+        forge.decide(&item.id, decision.clone(), &actor()).unwrap();
+        forge
+            .apply_decision(&item.id, &decision.id, &actor())
+            .unwrap();
+        assert_eq!(
+            fx.git.local_branch_oid(&fx.repo, "main").unwrap(),
+            fx.baseline
+        );
+    }
+
+    #[test]
+    fn cas_lock_failure_keeps_git_diagnostic_not_false_base_advanced() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let (item, _, head, manifest) = to_awaiting_review(&fx, &forge);
+        let decision = decision_for(
+            &item,
+            &head,
+            &manifest,
+            IntegrationStrategy::FastForwardOnly,
+            &fx,
+        );
+        forge.decide(&item.id, decision.clone(), &actor()).unwrap();
+        let lock = fx.repo.join(".git/refs/heads/main.lock");
+        fs::write(&lock, "held").unwrap();
+        let err = forge
+            .apply_decision(&item.id, &decision.id, &actor())
+            .unwrap_err();
+        assert!(matches!(err, ForgeError::Git(_)), "{err}");
+        assert!(err.to_string().contains("lock"));
+        fs::remove_file(lock).unwrap();
+        assert_eq!(
+            fx.git.local_branch_oid(&fx.repo, "main").unwrap(),
+            fx.baseline
+        );
     }
 
     #[test]

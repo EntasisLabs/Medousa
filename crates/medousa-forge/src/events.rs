@@ -47,6 +47,15 @@ pub enum EventPayload {
     ItemRegistered {
         item: Box<crate::model::WorkItem>,
     },
+    /// Owner-authorized recovery of a legacy OID stored as a branch target.
+    /// Target replacement and invalidation are one durable event.
+    GitTargetRepaired {
+        old_base_ref: String,
+        branch: String,
+        baseline_oid: GitOid,
+        invalidated_decisions: Vec<ReviewDecisionId>,
+        reason: String,
+    },
     /// A governed environment was provisioned (or re-provisioned) and is now
     /// the item's environment.
     EnvironmentProvisioned {

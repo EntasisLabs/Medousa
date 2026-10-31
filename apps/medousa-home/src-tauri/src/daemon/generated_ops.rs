@@ -372,6 +372,8 @@ pub enum DaemonOperation {
     ForgeItemsByWorkIdProviderPost,
     #[serde(rename = "forge.items.by_work_id.provision.post")]
     ForgeItemsByWorkIdProvisionPost,
+    #[serde(rename = "forge.items.by_work_id.repair_git_target.post")]
+    ForgeItemsByWorkIdRepairGitTargetPost,
     #[serde(rename = "forge.items.by_work_id.review.comments.by_comment_id.delete")]
     ForgeItemsByWorkIdReviewCommentsByCommentIdDelete,
     #[serde(rename = "forge.items.by_work_id.review.comments.by_comment_id.patch")]
@@ -1233,6 +1235,7 @@ impl DaemonOperation {
             Self::ForgeItemsByWorkIdProviderGet => "forge.items.by_work_id.provider.get",
             Self::ForgeItemsByWorkIdProviderPost => "forge.items.by_work_id.provider.post",
             Self::ForgeItemsByWorkIdProvisionPost => "forge.items.by_work_id.provision.post",
+            Self::ForgeItemsByWorkIdRepairGitTargetPost => "forge.items.by_work_id.repair_git_target.post",
             Self::ForgeItemsByWorkIdReviewCommentsByCommentIdDelete => "forge.items.by_work_id.review.comments.by_comment_id.delete",
             Self::ForgeItemsByWorkIdReviewCommentsByCommentIdPatch => "forge.items.by_work_id.review.comments.by_comment_id.patch",
             Self::ForgeItemsByWorkIdReviewCommentsGet => "forge.items.by_work_id.review.comments.get",

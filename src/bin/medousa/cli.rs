@@ -100,6 +100,18 @@ pub enum ProjectCommand {
         #[arg(long)]
         cursor: Option<String>,
     },
+    /// Repair a legacy OID-as-branch target and revoke its prior approvals.
+    RepairTarget {
+        work_id: String,
+        #[arg(long)]
+        expected_old_ref: String,
+        #[arg(long)]
+        expected_baseline_oid: String,
+        #[arg(long)]
+        branch: String,
+        #[arg(long)]
+        reason: String,
+    },
     /// Inspect a project by its Forge work ID.
     Inspect { work_id: String },
 }
@@ -1014,6 +1026,31 @@ mod tests {
     fn unknown_flag_errors() {
         let err = Cli::try_parse_from(["medousa", "status", "--deamon-url", "x"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn project_repair_requires_explicit_branch_baseline_and_reason() {
+        let repair = Cli::try_parse_from([
+            "medousa",
+            "project",
+            "repair-target",
+            "work-1",
+            "--expected-old-ref",
+            "legacy-oid",
+            "--expected-baseline-oid",
+            "baseline-oid",
+            "--branch",
+            "main",
+            "--reason",
+            "legacy target",
+        ])
+        .expect("explicit repair");
+        assert!(
+            matches!(repair.command, Some(Commands::Project(ProjectArgs {
+            command: ProjectCommand::RepairTarget { branch, .. }, ..
+        })) if branch == "main")
+        );
+        assert!(Cli::try_parse_from(["medousa", "project", "repair-target", "work-1"]).is_err());
     }
 
     #[test]

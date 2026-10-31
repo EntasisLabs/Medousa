@@ -94,6 +94,10 @@ fn ok_item(state: &AppState, item: WorkItem, kind: &str) -> Json<ItemProjection>
 pub fn forge_surface() -> DeclaredRouter<AppState> {
     DeclaredRouter::default()
         .route(
+            forge_post_policy("/v1/forge/items/{work_id}/repair-git-target"),
+            post(repair_git_target),
+        )
+        .route(
             forge_read_policy("/v1/forge/items/{work_id}/changes/git"),
             get(chat_git::state),
         )
@@ -11420,7 +11424,7 @@ async fn record_decision(
                 let WorkTarget::Git(target) = &item.target;
                 let expected_base_oid = forge(&state)
                     .git()
-                    .ref_oid(&target.repo_path, &target.base_ref)
+                    .resolve_base_oid(&target.repo_path, &target.base_ref)
                     .map_err(map_err)?;
                 let decision = ReviewDecision {
                     id: ReviewDecisionId::new(),
@@ -11449,6 +11453,46 @@ async fn record_decision(
         },
     )
     .await
+}
+
+/// Narrow legacy recovery, not a general retarget or integration override.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RepairGitTargetRequest {
+    expected_old_ref: String,
+    expected_baseline_oid: String,
+    branch: String,
+    reason: String,
+}
+
+async fn repair_git_target(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<RepairGitTargetRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let item = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                forge(&state)
+                    .repair_git_target(
+                        &id,
+                        &body.expected_old_ref,
+                        &GitOid::new(body.expected_baseline_oid),
+                        &body.branch,
+                        &body.reason,
+                        &actor_from_state(&state),
+                    )
+                    .map_err(map_err)
+            }
+        },
+    )
+    .await?;
+    Ok(ok_item(&state, item, "git_target_repaired"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -12022,6 +12066,37 @@ async fn forge_project_event_stream(
 #[cfg(test)]
 mod source_tests {
     use super::*;
+
+    #[test]
+    fn target_repair_request_requires_explicit_coordinates_and_cannot_impersonate_owner() {
+        let body = serde_json::json!({
+            "expected_old_ref": "a".repeat(40),
+            "expected_baseline_oid": "a".repeat(40),
+            "branch": "main",
+            "reason": "legacy target",
+        });
+        assert!(serde_json::from_value::<RepairGitTargetRequest>(body.clone()).is_ok());
+        for field in [
+            "expected_old_ref",
+            "expected_baseline_oid",
+            "branch",
+            "reason",
+        ] {
+            let mut missing = body.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(serde_json::from_value::<RepairGitTargetRequest>(missing).is_err());
+        }
+        let mut impersonated = body;
+        impersonated["owner"] = serde_json::json!("someone-else");
+        assert!(serde_json::from_value::<RepairGitTargetRequest>(impersonated).is_err());
+        let policy = forge_post_policy("/v1/forge/items/{work_id}/repair-git-target");
+        assert_eq!(
+            policy.required_capability,
+            Some(crate::request_principal::Capability::AdminExecute)
+        );
+        assert!(!policy.bootstrap_public);
+        assert!(matches!(policy.browser_policy, BrowserPolicy::NativeOnly));
+    }
 
     #[test]
     fn start_code_project_command_normalizes_request_fields() {

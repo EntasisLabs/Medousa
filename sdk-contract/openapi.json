@@ -29016,6 +29016,66 @@
         }
       }
     },
+    "/v1/forge/items/{work_id}/repair-git-target": {
+      "post": {
+        "operationId": "forge.items.by_work_id.repair_git_target.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "FORGE_ITEMS_BY_WORK_ID_REPAIR_GIT_TARGET_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.repair_git_target.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.repair_git_target.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.repair_git_target.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/forge/items/{work_id}/review": {
       "get": {
         "operationId": "forge.items.by_work_id.review.get",

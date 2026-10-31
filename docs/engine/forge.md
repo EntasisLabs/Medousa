@@ -328,6 +328,56 @@ auxiliary item metadata: failure never changes Forge custody or completion
 state. GitHub review comments can be listed and explicitly registered as a new
 follow-up item; feedback never mutates completed work implicitly.
 
+### Legacy Git target recovery
+
+Revision bases (commit OIDs, tags, and revision expressions) remain valid for
+isolated work that is preserved as a branch or exported as a patch. They are
+**not** writable integration branches. `fast_forward_only` requires an explicit
+short local branch name, resolved through `refs/heads/<branch>` both when recording
+a decision and when applying it. `HEAD`, full ref paths and full hash-named targets
+are rejected; a tag or remote-tracking ref alone is not a local branch. If Git's
+atomic ref update fails, Forge reports `base advanced` only when rereading the
+exact local branch proves it differs from the approved OID. Otherwise the original
+Git diagnostic (including lock/permission errors) is retained.
+
+An older host may have persisted a baseline OID as `target.base_ref` for work
+intended to integrate into a branch. Do not edit manifests, recreate the work,
+or merge manually. The owning user can use the native-only administrative route:
+
+`POST /v1/forge/items/{work_id}/repair-git-target`
+
+```json
+{
+  "expected_old_ref": "<full baseline OID currently stored as base_ref>",
+  "expected_baseline_oid": "<same captured baseline OID>",
+  "branch": "main",
+  "reason": "Recover legacy OID-as-branch target; require fresh review"
+}
+```
+
+The request has no caller-supplied owner. The daemon derives the user actor,
+requires the work owner, and admits blocking work through `ForgeExecutionService`.
+Under repository-then-item locks, recovery requires an isolated work item in
+`awaiting_review`, no active/unfinished executor, an exact old target equal to its
+captured baseline OID, matching attempt baselines, a nonempty reason, and an
+explicit existing local branch **still at that same baseline**. It cannot retarget
+normal branch work, rebase onto an advanced branch, or change candidate/evidence.
+
+One append-only `git_target_repaired` event records old target, selected branch,
+baseline, invalidated decision IDs, reason, actor and time. The same event replaces
+only `base_ref` and invalidates all prior decisions atomically. Work identity,
+attempts, candidate commit, sealed evidence and earlier review history remain.
+The work stays in `awaiting_review`; a fresh native review/decision is mandatory
+before normal apply. Repeating a successful repair rejects rather than granting
+new authority. After a timeout, inspect item and event history before retrying.
+
+The matching operator CLI is `medousa project repair-target WORK_ID
+--expected-old-ref OID --expected-baseline-oid OID --branch main --reason REASON`.
+Both CLI and daemon must contain this implementation. An older daemon returns
+an unsupported route; rebuilding a CLI does not activate daemon code. Host
+activation/replacement is an independent operator action, not part of recovery.
+See [Reviews](../guides/reviews.md#recovering-a-legacy-integration-target).
+
 ### Register body
 
 ```json

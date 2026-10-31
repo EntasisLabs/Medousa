@@ -61,7 +61,9 @@ fn sealed_review(
         return Err(invalid("sealed evidence identity changed"));
     }
     let WorkTarget::Git(target) = &item.target;
-    let expected_base_oid = forge.git().ref_oid(&target.repo_path, &target.base_ref)?;
+    let expected_base_oid = forge
+        .git()
+        .resolve_base_oid(&target.repo_path, &target.base_ref)?;
     Ok((
         ProjectReviewPin {
             attempt_id: attempt.id.to_string(),
@@ -122,11 +124,19 @@ pub fn review(forge: &Forge, owner: &str, input: ProjectReviewQuery) -> Result<V
     let strategies = if item.uses_attached_checkout() {
         vec![ProjectIntegrationStrategy::KeepCheckout]
     } else {
-        vec![
-            ProjectIntegrationStrategy::FastForwardOnly,
+        let WorkTarget::Git(target) = &item.target;
+        let mut strategies = vec![
             ProjectIntegrationStrategy::PreserveBranch,
             ProjectIntegrationStrategy::ExportPatch,
-        ]
+        ];
+        if forge
+            .git()
+            .local_branch_oid(&target.repo_path, &target.base_ref)
+            .is_ok()
+        {
+            strategies.insert(0, ProjectIntegrationStrategy::FastForwardOnly);
+        }
+        strategies
     };
     Ok(
         json!({ "work_id": item.id, "title": item.title, "state": item.state,

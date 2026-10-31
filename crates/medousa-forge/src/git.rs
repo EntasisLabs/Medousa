@@ -534,6 +534,27 @@ impl GitEngine {
         Ok(GitOid::new(out.trim()))
     }
 
+    /// Integration requires an explicit short local branch, not a revision,
+    /// tag, remote-tracking ref, HEAD alias, or a hash-named branch. Revision
+    /// bases remain supported for branch preservation and patch export.
+    pub fn local_branch_oid(&self, cwd: &Path, branch: &str) -> Result<GitOid> {
+        if branch.is_empty()
+            || branch != branch.trim()
+            || branch == "HEAD"
+            || branch.starts_with("refs/")
+            || branch.starts_with('-')
+            || (branch.len() >= 40 && branch.chars().all(|c| c.is_ascii_hexdigit()))
+        {
+            return Err(ForgeError::DecisionInvalid {
+                reason: format!(
+                    "fast-forward target must be an explicit local branch, not revision {branch:?}"
+                ),
+            });
+        }
+        self.run(cwd, &["check-ref-format", "--branch", branch])?;
+        self.resolve_oid(cwd, &format!("refs/heads/{branch}"))
+    }
+
     /// True when any commit exists in the repository, including on a branch
     /// other than the currently checked-out (possibly unborn) branch.
     pub fn has_commits(&self, cwd: &Path) -> Result<bool> {
@@ -547,6 +568,10 @@ impl GitEngine {
     /// between an empty repository and a branch that disappeared.
     pub fn resolve_base_oid(&self, cwd: &Path, rev: &str) -> Result<GitOid> {
         let revision = rev.trim();
+        // A same-named tag must not shadow the writable local base branch.
+        if let Ok(oid) = self.local_branch_oid(cwd, revision) {
+            return Ok(oid);
+        }
         if !revision.is_empty()
             && let Ok(oid) = self.resolve_oid(cwd, revision)
         {

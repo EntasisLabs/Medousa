@@ -39,6 +39,42 @@ Code, chat change receipts, and Spotlight Activity open the same review page.
 The queue and reviews belong to the connected workshop; opening a review does
 not require loading its editable source workspace.
 
+## Recovering a legacy integration target
+
+If a previously reviewed project cannot apply because an older Forge version
+saved a commit hash instead of its integration branch, keep the existing project
+and candidate. Do not hand-edit its metadata or merge around the native checks.
+This is an operator repair, not a way to override an advanced base or failed review.
+
+After the tooling correction has been independently reviewed, integrated through
+its own native lifecycle, and activated on the owning workshop, use a matching
+CLI connected to that daemon:
+
+```sh
+medousa project inspect WORK_ID --json
+medousa project repair-target WORK_ID \
+  --expected-old-ref FULL_BASELINE_OID \
+  --expected-baseline-oid FULL_BASELINE_OID \
+  --branch main \
+  --reason "Recover legacy OID-as-branch target; require fresh review" \
+  --json
+```
+
+First verify the intended branch and exact baseline; do not infer a branch from
+an OID. The owner must run the repair with no active executor. The daemon rejects
+non-legacy targets, missing branches, mismatched baselines and genuinely advanced
+branches. It preserves the project ID, sealed candidate, evidence and history,
+but **revokes all previous approvals** in the same audited event as the repair.
+Open that same project in Reviews, review the unchanged candidate against the
+explicit branch, record a fresh decision, then apply through the normal native
+flow. Repair itself never integrates code.
+
+A new CLI cannot add this route to an old running daemon. If the route is not
+available, stop: host activation is a separate operator step. If a request times
+out, inspect the project and history before retrying. See the
+[engine recovery contract](../engine/forge.md#legacy-git-target-recovery) for the
+exact guards and HTTP request.
+
 ## Repository-hosted reviews
 
 For a local workshop, install **GitHub reviews** in **Settings → Packages**.

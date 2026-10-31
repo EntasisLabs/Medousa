@@ -29,7 +29,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |
 | [Spotlight Activity](guides/spotlight-activity.md) | Follow workshop tasks, agents, code commands, and scheduled runs |
 | [Spotlight conversations](guides/spotlight-conversations.md) | Address conversations, attach screenshots and resources, and make wireframes without leaving Spotlight |
-| [Reviews](guides/reviews.md) | Review Forge changes and PRs with typed file groups, labels, reviewers, and CI |
+| [Reviews](guides/reviews.md) | Review Forge changes and PRs, and recover a legacy integration target without bypassing fresh review |
 | [Assistant terminal](guides/assistant-terminal.md) | Run assistant shell commands and understand local credential storage |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Run list, schedules, specialists, and Activity |

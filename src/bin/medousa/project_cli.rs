@@ -82,6 +82,31 @@ pub fn run_project(args: ProjectArgs) -> Result<()> {
                 }
             }
         }
+        ProjectCommand::RepairTarget {
+            work_id,
+            expected_old_ref,
+            expected_baseline_oid,
+            branch,
+            reason,
+        } => {
+            let url = endpoint(
+                &daemon_url,
+                &["v1", "forge", "items", &work_id, "repair-git-target"],
+            )?;
+            let response = client.post(url).json(&json!({
+                "expected_old_ref": expected_old_ref,
+                "expected_baseline_oid": expected_baseline_oid,
+                "branch": branch,
+                "reason": reason,
+            })).send().context("repair outcome is uncertain; inspect the project and event history before retrying")?;
+            let item = successful_json(response, "repair target")?;
+            if args.json {
+                println!("{}", serde_json::to_string_pretty(&item)?);
+            } else {
+                print_project(&item)?;
+                println!("Prior approvals invalidated; fresh native review is required.");
+            }
+        }
         ProjectCommand::Inspect { work_id } => {
             let url = endpoint(&daemon_url, &["v1", "forge", "items", &work_id])?;
             let item = successful_json(client.get(url).send()?, "inspect project")?;

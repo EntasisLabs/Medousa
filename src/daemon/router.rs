@@ -1464,14 +1464,14 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        // Create document and job routes plus review providers landed after
-        // this count was last recorded at 475. Pairing still adds 19 routes.
-        assert_eq!(without_pairing.entries().len(), 499);
-        assert_eq!(with_pairing.entries().len(), 518);
+        // Includes the native-only legacy Forge target repair route.
+        // Pairing still adds 19 routes.
+        assert_eq!(without_pairing.entries().len(), 502);
+        assert_eq!(with_pairing.entries().len(), 521);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 518);
+        assert_eq!(rows.len(), 521);
         assert_eq!(rows[0]["path"], "/health");
         for method in ["POST", "DELETE"] {
             assert!(rows.iter().any(|row| {
@@ -1897,7 +1897,13 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 79);
+        assert_eq!(entries.len(), 80);
+        let repair = entries
+            .iter()
+            .find(|entry| entry.path.ends_with("/repair-git-target"))
+            .expect("native legacy recovery policy");
+        assert_eq!(repair.method, "POST");
+        assert!(!repair.bootstrap_public);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::Administration
                 && entry.required_capability == Some("admin.execute")
