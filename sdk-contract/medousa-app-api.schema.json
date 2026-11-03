@@ -140,6 +140,34 @@
       }
     }
   },
+  "AskThreadBatch": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AskThreadBatch",
+    "description": "One ask-lane ledger page to merge into the focused chat session.",
+    "type": "object",
+    "required": [
+      "ask_job_id",
+      "ask_session_id",
+      "authority_id",
+      "turns"
+    ],
+    "properties": {
+      "ask_job_id": {
+        "type": "string"
+      },
+      "ask_session_id": {
+        "description": "Ask ledger session id (`medousa-ask-{job_id}`) for transcript coordinates.",
+        "type": "string"
+      },
+      "authority_id": {
+        "type": "string"
+      },
+      "turns": {
+        "type": "array",
+        "items": true
+      }
+    }
+  },
   "BeginTurnRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "BeginTurnRequest",
@@ -872,6 +900,114 @@
         }
       },
       {
+        "description": "Append ask-lane history batches into the focused chat session.",
+        "type": "object",
+        "required": [
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "batches": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AskThreadBatch"
+            }
+          },
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "promoted_ask_ids": {
+            "description": "Jobs the host has promoted; skip even if absent from items.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "hydrate_ask_threads"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Flip ask-lane items for a job onto the main chat lane.",
+        "type": "object",
+        "required": [
+          "ask_job_id",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "ask_job_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "promote_ask_to_chat"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Pure visibility projection (painted ids). Beats stay in the renderer.",
+        "type": "object",
+        "required": [
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatItem"
+            }
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "project_visible_items"
+            ]
+          },
+          "worker_returns": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkerReturnFact"
+            }
+          }
+        }
+      },
+      {
         "type": "object",
         "required": [
           "session_id",
@@ -944,6 +1080,32 @@
           },
           "option_id": {
             "type": "string"
+          }
+        }
+      },
+      "AskThreadBatch": {
+        "description": "One ask-lane ledger page to merge into the focused chat session.",
+        "type": "object",
+        "required": [
+          "ask_job_id",
+          "ask_session_id",
+          "authority_id",
+          "turns"
+        ],
+        "properties": {
+          "ask_job_id": {
+            "type": "string"
+          },
+          "ask_session_id": {
+            "description": "Ask ledger session id (`medousa-ask-{job_id}`) for transcript coordinates.",
+            "type": "string"
+          },
+          "authority_id": {
+            "type": "string"
+          },
+          "turns": {
+            "type": "array",
+            "items": true
           }
         }
       },
@@ -3108,6 +3270,25 @@
               "string",
               "null"
             ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkerReturnFact": {
+        "description": "Host-supplied worker return texts used to hide exact linked raw returns.",
+        "type": "object",
+        "required": [
+          "work_id"
+        ],
+        "properties": {
+          "returned_texts": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "work_id": {
             "type": "string"
@@ -6019,6 +6200,27 @@
       {
         "type": "object",
         "required": [
+          "item_ids",
+          "type"
+        ],
+        "properties": {
+          "item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "visible_items"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
           "reason",
           "session_id",
           "type"
@@ -7614,6 +7816,27 @@
           "string",
           "null"
         ]
+      },
+      "work_id": {
+        "type": "string"
+      }
+    }
+  },
+  "WorkerReturnFact": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkerReturnFact",
+    "description": "Host-supplied worker return texts used to hide exact linked raw returns.",
+    "type": "object",
+    "required": [
+      "work_id"
+    ],
+    "properties": {
+      "returned_texts": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       },
       "work_id": {
         "type": "string"

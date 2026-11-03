@@ -34,16 +34,18 @@ export function isAskJobId(id: string): boolean {
   return id.startsWith("medousa-daemon-ask-");
 }
 
-/** Matches [`ask_job_session_id`] in the Rust ask job store. */
+const ASK_SESSION_PREFIX = "medousa-ask-";
+
+/** Matches [`ask_job_session_id`] in the Rust ask job store (`medousa-ask-{jobId}`). */
 export function askSessionId(jobId: string): string {
-  return `medousa-ask:${jobId.trim()}`;
+  return `${ASK_SESSION_PREFIX}${jobId.trim()}`;
 }
 
 export function isAskSessionId(sessionId: string): boolean {
-  return sessionId.startsWith("medousa-ask:");
+  return sessionId.startsWith(ASK_SESSION_PREFIX);
 }
 
 export function askJobIdFromSession(sessionId: string): string | null {
   if (!isAskSessionId(sessionId)) return null;
-  return sessionId.slice("medousa-ask:".length);
+  return sessionId.slice(ASK_SESSION_PREFIX.length);
 }

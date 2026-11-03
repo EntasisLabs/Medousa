@@ -12,9 +12,10 @@
     joinAgentGroups,
     proposalFactsFromRows,
     workerFactsFromRows,
+    workerReturnFactsFromRows,
   } from "$lib/utils/chatAgentGroups";
   import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
-  import { projectAgentPlacement } from "$lib/appChat/client";
+  import { projectAgentPlacement, projectVisibleItems } from "$lib/appChat/client";
   import type { AgentPlacementGroup } from "$lib/types/generated/app_api";
   import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
   import type { PeerProposalControls } from "./peerProposalControls";
@@ -85,6 +86,8 @@
     onStopSubagent,
   }: Props = $props();
 
+  // Sync paint stays local (beats / worker-panel collapse). Placement visible
+  // ids are projected through Rust so core owns the painted-id contract.
   const painted = $derived(
     workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages, subagentRows),
   );
@@ -96,18 +99,29 @@
   $effect(() => {
     const token = ++placementEpoch;
     const workers = subagentRows ?? new Map();
-    void projectAgentPlacement({
-      sessionId,
-      authorityId: authorityId ?? "",
-      items: messages.map(chatMessageToItem),
-      proposals: proposalFactsFromRows(peerProposals),
-      workers: workerFactsFromRows(workers),
-      visibleItemIds: painted.map(message => message.id),
-    })
-      .then(groups => {
-        if (token === placementEpoch) projectedGroups = groups;
-      })
-      .catch(() => {});
+    const items = messages.map(chatMessageToItem);
+    void (async () => {
+      let visibleItemIds = painted.map(message => message.id);
+      try {
+        visibleItemIds = await projectVisibleItems({
+          sessionId,
+          items,
+          workerReturns: workerReturnFactsFromRows(workers),
+        });
+      } catch {
+        // Keep sync-painted ids when the core path is unavailable.
+      }
+      if (token !== placementEpoch) return;
+      const groups = await projectAgentPlacement({
+        sessionId,
+        authorityId: authorityId ?? "",
+        items,
+        proposals: proposalFactsFromRows(peerProposals),
+        workers: workerFactsFromRows(workers),
+        visibleItemIds,
+      });
+      if (token === placementEpoch) projectedGroups = groups;
+    })().catch(() => {});
   });
   const agentGroups = $derived(joinAgentGroups(projectedGroups, peerProposals, subagentRows ?? new Map()));
   function delegationNodes(message: ChatMessage): string[] {

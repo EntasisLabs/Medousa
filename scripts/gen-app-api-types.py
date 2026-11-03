@@ -24,6 +24,8 @@ EXPORTED_TYPES = [
     "ProposalFact",
     "WorkerPlacementFact",
     "WorkerLinkFact",
+    "AskThreadBatch",
+    "WorkerReturnFact",
     "AgentPlacementEntry",
     "AgentPlacementGroup",
     "ChatSnapshot",

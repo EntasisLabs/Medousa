@@ -10,10 +10,11 @@ use crate::agents::{
     resolve_worker_parent_item_id,
 };
 use crate::contract::{
-    BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole, ChatLane, ChatRevision, ChatSnapshot,
-    ChatUpdate, ProposalFact, WorkerLinkFact, WorkerPlacementFact,
+    AskThreadBatch, BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole, ChatLane, ChatRevision,
+    ChatSnapshot, ChatUpdate, ProposalFact, WorkerLinkFact, WorkerPlacementFact, WorkerReturnFact,
 };
-use crate::merge::merge_transcript;
+use crate::display::present_chat_item_ids;
+use crate::merge::{dedupe_messages_by_id, merge_transcript};
 use crate::stream::{apply_v3_envelope_to_item, v3_event_promotes_chat_message};
 use crate::wire_history::{decode_wire_turns, project_wire_history};
 
@@ -314,6 +315,27 @@ impl ChatCore {
                 workers,
                 visible_item_ids,
             ),
+            ChatCommand::HydrateAskThreads {
+                session_id,
+                batches,
+                promoted_ask_ids,
+                expected_revision,
+            } => self.hydrate_ask_threads(
+                &session_id,
+                batches,
+                promoted_ask_ids,
+                expected_revision,
+            ),
+            ChatCommand::PromoteAskToChat {
+                session_id,
+                ask_job_id,
+                expected_revision,
+            } => self.promote_ask_to_chat(&session_id, &ask_job_id, expected_revision),
+            ChatCommand::ProjectVisibleItems {
+                session_id,
+                items,
+                worker_returns,
+            } => self.project_visible_items(&session_id, items, worker_returns),
             ChatCommand::SwitchFocus { session_id } => {
                 if !self.sessions.contains_key(&session_id) {
                     return Err(ChatCoreError::SessionNotOpen(session_id));
@@ -904,6 +926,123 @@ impl ChatCore {
             scope_session,
         );
         Ok(ChatUpdate::AgentPlacement { groups })
+    }
+
+    fn hydrate_ask_threads(
+        &mut self,
+        session_id: &str,
+        batches: Vec<AskThreadBatch>,
+        promoted_ask_ids: Vec<String>,
+        expected_revision: Option<ChatRevision>,
+    ) -> Result<ChatUpdate, ChatCoreError> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?;
+        Self::ensure_revision(session, expected_revision)?;
+
+        let promoted: std::collections::HashSet<&str> =
+            promoted_ask_ids.iter().map(String::as_str).collect();
+        let mut already: std::collections::HashSet<String> = session
+            .items
+            .iter()
+            .filter_map(|item| {
+                item.ask_job_id
+                    .as_ref()
+                    .map(|id| id.trim().to_string())
+                    .filter(|id| !id.is_empty())
+            })
+            .collect();
+
+        let mut appended = Vec::new();
+        for batch in batches {
+            let job_id = batch.ask_job_id.trim().to_string();
+            if job_id.is_empty() {
+                continue;
+            }
+            if promoted.contains(job_id.as_str()) || already.contains(&job_id) {
+                continue;
+            }
+            if batch.turns.is_empty() {
+                continue;
+            }
+            let projected = project_wire_history(
+                &batch.ask_session_id,
+                &batch.authority_id,
+                &decode_wire_turns(&batch.turns),
+                Some(ChatLane::Ask),
+                Some(job_id.clone()),
+            );
+            if projected.is_empty() {
+                continue;
+            }
+            appended.extend(projected);
+            already.insert(job_id);
+        }
+
+        if !appended.is_empty() {
+            let mut next = session.items.clone();
+            next.extend(appended);
+            session.items = dedupe_messages_by_id(next);
+            session.bump();
+        }
+
+        Ok(ChatUpdate::Snapshot {
+            snapshot: session.snapshot(),
+        })
+    }
+
+    fn promote_ask_to_chat(
+        &mut self,
+        session_id: &str,
+        ask_job_id: &str,
+        expected_revision: Option<ChatRevision>,
+    ) -> Result<ChatUpdate, ChatCoreError> {
+        let trimmed = ask_job_id.trim();
+        if trimmed.is_empty() {
+            return Err(ChatCoreError::Rejected(
+                "ask_job_id must not be empty".into(),
+            ));
+        }
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?;
+        Self::ensure_revision(session, expected_revision)?;
+
+        let mut changed = false;
+        for item in &mut session.items {
+            if item.ask_job_id.as_deref() == Some(trimmed) {
+                item.lane = Some(ChatLane::Chat);
+                item.ask_job_id = None;
+                changed = true;
+            }
+        }
+        if changed {
+            session.bump();
+        }
+        Ok(ChatUpdate::Snapshot {
+            snapshot: session.snapshot(),
+        })
+    }
+
+    fn project_visible_items(
+        &self,
+        session_id: &str,
+        items: Option<Vec<ChatItem>>,
+        worker_returns: Vec<WorkerReturnFact>,
+    ) -> Result<ChatUpdate, ChatCoreError> {
+        let items = match items {
+            Some(items) => items,
+            None => self
+                .sessions
+                .get(session_id)
+                .map(|session| session.items.clone())
+                .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?,
+        };
+        Ok(ChatUpdate::VisibleItems {
+            item_ids: present_chat_item_ids(&items, &worker_returns),
+        })
     }
 }
 

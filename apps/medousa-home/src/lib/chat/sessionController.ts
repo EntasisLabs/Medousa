@@ -12,7 +12,6 @@ import {
 import type { ChatMessage } from "$lib/types/chat";
 import type { SessionHistoryResponse } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
-import { isAskJobId, askSessionId } from "$lib/types/askJob";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import {
   applyHistoryToSession,
@@ -867,83 +866,3 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
   mirrorShellChat();
 }
 
-export function promoteAskToChat(host: ChatStoreHost, jobId: string) {
-  const trimmed = jobId.trim();
-  if (!trimmed) return;
-  host.messages = dedupeMessagesById(
-    host.messages.map((message) =>
-      message.askJobId === trimmed ? { ...message, lane: "chat", askJobId: null } : message,
-    ),
-  );
-  host.promotedAskIds.add(trimmed);
-  savePromotedAskIds(host.promotedAskIds, host.workshopScopeId);
-}
-
-export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) {
-  const workshopEpoch = host.workshopEpoch;
-  const epoch = host.transcriptEpoch;
-  const targets = cards.filter((card) => {
-    if (!isAskJobId(card.id)) return false;
-    if (host.promotedAskIds.has(card.id)) return false;
-    if (host.askHydrationInFlight.has(card.id)) return false;
-    return !host.messages.some((message) => message.askJobId === card.id);
-  });
-  if (targets.length === 0) return;
-
-  for (const card of targets) {
-    host.askHydrationInFlight.add(card.id);
-  }
-
-  try {
-    const batches = await Promise.all(
-      targets.map(async (card) => {
-        try {
-          const sessionId = askSessionId(card.id);
-          const history = await getSessionHistory(sessionId, {
-            limit: TRANSCRIPT_PAGE_SIZE,
-          });
-          if (
-            workshopEpoch !== host.workshopEpoch ||
-            epoch !== host.transcriptEpoch ||
-            history.turns.length === 0
-          ) {
-            return [] as ChatMessage[];
-          }
-          return await mapTurns(history.turns, {
-            lane: "ask",
-            askJobId: card.id,
-            sessionId,
-            authorityId: history.authority_id,
-          });
-        } catch {
-          return [] as ChatMessage[];
-        }
-      }),
-    );
-
-    if (workshopEpoch !== host.workshopEpoch || epoch !== host.transcriptEpoch) return;
-
-    const hydrated = batches.flat();
-    if (hydrated.length === 0) return;
-
-    const jobsAlreadyHydrated = new Set(
-      host.messages
-        .map((message) => message.askJobId)
-        .filter((jobId): jobId is string => Boolean(jobId?.trim())),
-    );
-    const fresh = hydrated.filter((message) => {
-      const jobId = message.askJobId?.trim();
-      if (!jobId) return true;
-      if (host.promotedAskIds.has(jobId)) return false;
-      if (jobsAlreadyHydrated.has(jobId)) return false;
-      return true;
-    });
-    if (fresh.length === 0) return;
-
-    host.messages = dedupeMessagesById([...host.messages, ...fresh]);
-  } finally {
-    for (const card of targets) {
-      host.askHydrationInFlight.delete(card.id);
-    }
-  }
-}
