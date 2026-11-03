@@ -18,9 +18,11 @@ pub mod stream;
 pub mod wire_history;
 
 pub use contract::{
-    BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole, ChatLane, ChatRelationship, ChatRevision,
-    ChatSnapshot, ChatUpdate, TranscriptCoordinate,
+    AgentPlacementEntry, AgentPlacementGroup, BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole,
+    ChatLane, ChatRelationship, ChatRevision, ChatSnapshot, ChatUpdate, ProposalFact,
+    TranscriptCoordinate, WorkerPlacementFact,
 };
+pub use agents::project_agent_placement;
 pub use history::{project_history, ProjectHistoryOptions};
 pub use merge::{dedupe_messages_by_id, merge_transcript};
 pub use session::{guard_focused_session, ChatCore, ChatCoreError};
