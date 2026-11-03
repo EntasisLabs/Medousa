@@ -23,6 +23,7 @@ EXPORTED_TYPES = [
     "ChatRelationship",
     "ProposalFact",
     "WorkerPlacementFact",
+    "WorkerLinkFact",
     "AgentPlacementEntry",
     "AgentPlacementGroup",
     "ChatSnapshot",

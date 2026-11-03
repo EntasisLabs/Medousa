@@ -363,6 +363,24 @@ pub struct WorkerPlacementFact {
     pub parent_item_id: Option<String>,
 }
 
+/// Full worker-lane link projected on the snapshot (spawn + synthesis lifecycle).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerLinkFact {
+    pub work_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_turn_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_item_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to_work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synthesis_item_id: Option<String>,
+    #[serde(default)]
+    pub synthesis_delivered: bool,
+}
+
 /// One proposal or worker in mixed spawn order for a turn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(JsonSchema))]
@@ -409,12 +427,15 @@ pub struct ChatSnapshot {
     /// Turn placement for proposals/workers. Thin ids — UI joins full rows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agent_groups: Vec<AgentPlacementGroup>,
+    /// Worker-lane spawn + synthesis links (thin facts for the host map).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workers: Vec<WorkerLinkFact>,
     /// Reconnect/dedup cursors keyed by turn id. Never presentation identity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub last_seq_by_turn: BTreeMap<String, u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BeginTurnRequest {
@@ -430,6 +451,12 @@ pub struct BeginTurnRequest {
     pub ask_job_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_line: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_attachments: Option<Vec<ChatMediaAttachment>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -504,6 +531,46 @@ pub enum ChatCommand {
         parent_item_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply_to_work_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Create or patch the worker-lane synthesis follow-up bubble.
+    EnsureWorkerFollowUp {
+        session_id: String,
+        work_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn_id: Option<String>,
+        /// Stable id when omitted: `worker-synth:{work_id}`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status_line: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        streaming: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Clear live chrome on the handoff ack bubble after synthesis arrives.
+    FinalizeWorkerHandoff {
+        session_id: String,
+        item_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Unlock stream settle after synthesis is painted.
+    MarkWorkerSynthesisDelivered {
+        session_id: String,
+        work_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Card/history recovery: ensure follow-up, write content, finalize, mark delivered.
+    DeliverWorkerSynthesis {
+        session_id: String,
+        work_id: String,
+        content: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tools: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expected_revision: Option<ChatRevision>,
     },
@@ -583,6 +650,7 @@ pub fn schema_export_names() -> &'static [&'static str] {
         "ChatRelationship",
         "ProposalFact",
         "WorkerPlacementFact",
+        "WorkerLinkFact",
         "AgentPlacementEntry",
         "AgentPlacementGroup",
         "ChatSnapshot",

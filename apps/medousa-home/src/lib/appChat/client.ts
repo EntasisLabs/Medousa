@@ -183,6 +183,79 @@ export async function linkChatWorker(
   );
 }
 
+export async function ensureChatWorkerFollowUp(
+  sessionId: string,
+  workId: string,
+  options?: {
+    turnId?: string | null;
+    itemId?: string | null;
+    statusLine?: string | null;
+    streaming?: boolean | null;
+    expectedRevision?: number | null;
+  },
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "ensure_worker_follow_up",
+      session_id: sessionId,
+      work_id: workId,
+      turn_id: options?.turnId ?? null,
+      item_id: options?.itemId ?? null,
+      status_line: options?.statusLine ?? null,
+      streaming: options?.streaming ?? null,
+      expected_revision: options?.expectedRevision ?? null,
+    }),
+  );
+}
+
+export async function finalizeChatWorkerHandoff(
+  sessionId: string,
+  itemId: string,
+  expectedRevision?: number | null,
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "finalize_worker_handoff",
+      session_id: sessionId,
+      item_id: itemId,
+      expected_revision: expectedRevision ?? null,
+    }),
+  );
+}
+
+export async function markChatWorkerSynthesisDelivered(
+  sessionId: string,
+  workId: string,
+  expectedRevision?: number | null,
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "mark_worker_synthesis_delivered",
+      session_id: sessionId,
+      work_id: workId,
+      expected_revision: expectedRevision ?? null,
+    }),
+  );
+}
+
+export async function deliverChatWorkerSynthesis(
+  sessionId: string,
+  workId: string,
+  content: string,
+  options?: { tools?: string[] | null; expectedRevision?: number | null },
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "deliver_worker_synthesis",
+      session_id: sessionId,
+      work_id: workId,
+      content,
+      tools: options?.tools ?? null,
+      expected_revision: options?.expectedRevision ?? null,
+    }),
+  );
+}
+
 export async function applyChatProposals(
   sessionId: string,
   proposals: ProposalFact[],

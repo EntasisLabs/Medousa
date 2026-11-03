@@ -28,8 +28,15 @@ import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
 import { workerLinkForTurn } from "$lib/chat/workerLaneController";
 import { narration } from "$lib/stores/narration.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
-import { applyHistoryToSession, applySnapshotToMessages, openChatSession } from "$lib/appChat/client";
+import {
+  applyHistoryToSession,
+  applySnapshotToMessages,
+  beginChatTurn,
+  openChatSession,
+  settleChatTurn,
+} from "$lib/appChat/client";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
+import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 
 const TERMINAL_RECONCILE_DELAY_MS = 2_000;
 const RECENTLY_SETTLED_TTL_MS = 30_000;
@@ -61,7 +68,14 @@ export function beginTurn(
   host.transcriptEpoch += 1;
   host.historyNotice = null;
   host.askHandoffNotice = null;
+  const userMessageId = randomUuid();
   const assistantId = randomUuid();
+  const isAsk = ticket.mode === "background";
+  const askJobId = ticket.workspace_card_id ?? ticket.turn_id;
+  const lane = isAsk ? ("ask" as const) : ("chat" as const);
+  const statusLine = ticket.mode === "background" ? "Background turn started" : null;
+  const mediaAttachments =
+    mediaRefs.length > 0 ? chatMediaAttachmentsFromRefs(mediaRefs) : null;
   host.messages = [
     ...host.messages,
     ...beginTurnMessages({
@@ -69,7 +83,7 @@ export function beginTurn(
       ticket,
       mediaRefs,
       speakerProfileId,
-      userMessageId: randomUuid(),
+      userMessageId,
       assistantId,
     }),
   ];
@@ -82,6 +96,28 @@ export function beginTurn(
     host.askHandoffNotice = "Ask started";
   }
   host.streamError = null;
+
+  // Seed the Rust app core with the same ids the host painted. Failures are
+  // non-fatal — stream projection still re-seeds via localItems.
+  const authority =
+    host.messages.find((message) => message.transcript?.authorityId)?.transcript
+      ?.authorityId ?? `auth_${"0".repeat(64)}`;
+  void openChatSession(host.sessionId, authority)
+    .then(() =>
+      beginChatTurn(host.sessionId, {
+        turnId: ticket.turn_id,
+        userItemId: userMessageId,
+        assistantItemId: assistantId,
+        userText: userContent,
+        createdAt: ticket.accepted_at_utc ?? null,
+        lane,
+        askJobId: isAsk ? askJobId : null,
+        statusLine,
+        speakerProfileId: speakerProfileId?.trim() || null,
+        mediaAttachments,
+      }),
+    )
+    .catch(() => {});
 }
 
 export function registerTurnFromRecord(
@@ -493,6 +529,9 @@ export function settleTurn(host: ChatStoreHost, turnId: string) {
   markRecentlySettled(host, turnId);
   scheduleTerminalHistoryReconcile(host, turnId);
   void detachStreamOwner(host, turnId);
+  void settleChatTurn(host.sessionId, turnId, {
+    reusableStream: turn.reusableStream,
+  }).catch(() => {});
 }
 
 function markRecentlySettled(host: ChatStoreHost, turnId: string) {

@@ -6,7 +6,8 @@ use medousa_types::{
 };
 
 use crate::contract::{
-    ChatItem, ChatSegment, ToolArtifactRef, ToolRunState, UiArtifact, UiArtifactPresentation,
+    ChatItem, ChatLane, ChatSegment, ToolArtifactRef, ToolRunState, UiArtifact,
+    UiArtifactPresentation,
 };
 use crate::display::{is_runtime_startup_text, visible_chat_status_line};
 
@@ -394,6 +395,10 @@ pub fn apply_v3_envelope_to_item(message: ChatItem, envelope: &TurnStreamEnvelop
                 work_id: work_id.clone(),
             });
         }
+        TurnStreamEventV3::WorkerSynthesis { .. } => {
+            chrome.streaming = Some(false);
+            chrome.status_line = Some(None);
+        }
         TurnStreamEventV3::ReasoningAppend { text } => {
             chrome.reasoning = Some(format!("{}{text}", message.reasoning.as_deref().unwrap_or("")));
         }
@@ -528,6 +533,27 @@ pub fn apply_v3_envelope_to_item(message: ChatItem, envelope: &TurnStreamEnvelop
     }
     if let Some(value) = chrome.reactions {
         next.reactions = Some(value);
+    }
+
+    if let TurnStreamEventV3::WorkerSynthesis {
+        text,
+        tool_names,
+        work_id,
+        ..
+    } = event
+    {
+        next.content = text.clone();
+        next.streaming = Some(false);
+        next.phase = None;
+        next.status_line = None;
+        next.lane = Some(ChatLane::Worker);
+        if let Some(work_id) = work_id {
+            next.work_id = Some(work_id.clone());
+        }
+        if !tool_names.is_empty() {
+            next.tools = Some(tool_names.clone());
+        }
+        return next;
     }
 
     if has_segment_projection {

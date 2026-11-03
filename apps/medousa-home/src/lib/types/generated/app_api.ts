@@ -191,6 +191,15 @@ export interface WorkerPlacementFact {
   work_id: string;
 }
 
+export interface WorkerLinkFact {
+  parentItemId?: string | null;
+  parentTurnId?: string | null;
+  replyToWorkId?: string | null;
+  synthesisDelivered?: boolean;
+  synthesisItemId?: string | null;
+  workId: string;
+}
+
 export type AgentPlacementEntry = { kind: "proposal"; nodeId?: string | null; originProposalId: string; proposalId: string } | { kind: "worker"; nodeId?: string | null; workId: string };
 
 export interface AgentPlacementGroup {
@@ -207,6 +216,7 @@ export interface ChatSnapshot {
   relationships?: ChatRelationship[];
   revision: number;
   sessionId: string;
+  workers?: WorkerLinkFact[];
 }
 
 export interface BeginTurnRequest {
@@ -214,6 +224,9 @@ export interface BeginTurnRequest {
   assistantItemId: string;
   createdAt?: string | null;
   lane?: ChatLane | null;
+  mediaAttachments?: ChatMediaAttachment[] | null;
+  speakerProfileId?: string | null;
+  statusLine?: string | null;
   turnId: string;
   userItemId: string;
   userText: string;
@@ -281,6 +294,6 @@ export interface TurnStreamEnvelopeV3 {
   turn_id: string;
 }
 
-export type ChatCommand = { authority_id: string; session_id: string; type: "open_session" } | { ask_job_id?: string | null; authority_id: string; expected_revision?: number | null; lane?: ChatLane | null; local_items?: ChatItem[] | null; replace?: boolean; session_id: string; turns: unknown[]; type: "apply_history" } | { ask_job_id?: string | null; authority_id: string; lane?: ChatLane | null; session_id: string; turns: unknown[]; type: "project_history" } | { expected_revision?: number | null; request: BeginTurnRequest; session_id: string; type: "begin_turn" } | { envelope: TurnStreamEnvelopeV3; expected_revision?: number | null; promote_item_id?: string | null; session_id: string; type: "apply_stream_event" } | { expected_revision?: number | null; reusable_stream?: boolean; session_id: string; turn_id: string; type: "settle_turn" } | { expected_revision?: number | null; parent_item_id?: string | null; parent_turn_id?: string | null; reply_to_work_id?: string | null; session_id: string; type: "link_worker"; work_id: string } | { expected_revision?: number | null; proposals: ProposalFact[]; session_id: string; type: "apply_proposals"; visible_item_ids?: string[] | null } | { expected_revision?: number | null; session_id: string; type: "apply_visible_items"; visible_item_ids: string[] } | { authority_id: string; items?: ChatItem[] | null; proposals?: ProposalFact[]; session_id: string; type: "project_agent_placement"; visible_item_ids?: string[]; workers?: WorkerPlacementFact[] } | { session_id: string; type: "switch_focus" } | { session_id: string; type: "dispose_session" } | { session_id: string; type: "snapshot" };
+export type ChatCommand = { authority_id: string; session_id: string; type: "open_session" } | { ask_job_id?: string | null; authority_id: string; expected_revision?: number | null; lane?: ChatLane | null; local_items?: ChatItem[] | null; replace?: boolean; session_id: string; turns: unknown[]; type: "apply_history" } | { ask_job_id?: string | null; authority_id: string; lane?: ChatLane | null; session_id: string; turns: unknown[]; type: "project_history" } | { expected_revision?: number | null; request: BeginTurnRequest; session_id: string; type: "begin_turn" } | { envelope: TurnStreamEnvelopeV3; expected_revision?: number | null; promote_item_id?: string | null; session_id: string; type: "apply_stream_event" } | { expected_revision?: number | null; reusable_stream?: boolean; session_id: string; turn_id: string; type: "settle_turn" } | { expected_revision?: number | null; parent_item_id?: string | null; parent_turn_id?: string | null; reply_to_work_id?: string | null; session_id: string; type: "link_worker"; work_id: string } | { expected_revision?: number | null; item_id?: string | null; session_id: string; status_line?: string | null; streaming?: boolean | null; turn_id?: string | null; type: "ensure_worker_follow_up"; work_id: string } | { expected_revision?: number | null; item_id: string; session_id: string; type: "finalize_worker_handoff" } | { expected_revision?: number | null; session_id: string; type: "mark_worker_synthesis_delivered"; work_id: string } | { content: string; expected_revision?: number | null; session_id: string; tools?: string[] | null; type: "deliver_worker_synthesis"; work_id: string } | { expected_revision?: number | null; proposals: ProposalFact[]; session_id: string; type: "apply_proposals"; visible_item_ids?: string[] | null } | { expected_revision?: number | null; session_id: string; type: "apply_visible_items"; visible_item_ids: string[] } | { authority_id: string; items?: ChatItem[] | null; proposals?: ProposalFact[]; session_id: string; type: "project_agent_placement"; visible_item_ids?: string[]; workers?: WorkerPlacementFact[] } | { session_id: string; type: "switch_focus" } | { session_id: string; type: "dispose_session" } | { session_id: string; type: "snapshot" };
 
 export type ChatUpdate = { snapshot: ChatSnapshot; type: "snapshot" } | { items: ChatItem[]; type: "projected" } | { groups: AgentPlacementGroup[]; type: "agent_placement" } | { reason: string; revision?: number | null; session_id: string; type: "rejected" } | { session_id: string; type: "disposed" };
