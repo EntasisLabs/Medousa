@@ -80,6 +80,9 @@ mod tests {
                     lane: None,
                     ask_job_id: None,
                     work_id: None,
+                    status_line: None,
+                    speaker_profile_id: None,
+                    media_attachments: None,
                 },
                 expected_revision: None,
             })

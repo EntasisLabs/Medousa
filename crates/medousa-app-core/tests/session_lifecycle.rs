@@ -56,6 +56,9 @@ fn replay_does_not_duplicate_stream_content() {
             lane: Some(ChatLane::Chat),
             ask_job_id: None,
             work_id: None,
+            status_line: None,
+            speaker_profile_id: None,
+            media_attachments: None,
         },
         expected_revision: None,
     })
@@ -121,6 +124,9 @@ fn recovery_preserves_active_turn_when_history_merges() {
             lane: Some(ChatLane::Chat),
             ask_job_id: None,
             work_id: None,
+            status_line: None,
+            speaker_profile_id: None,
+            media_attachments: None,
         },
         expected_revision: None,
     })
@@ -187,6 +193,9 @@ fn session_switch_rejects_stale_revision() {
                 lane: None,
                 ask_job_id: None,
                 work_id: None,
+                status_line: None,
+                speaker_profile_id: None,
+                media_attachments: None,
             },
             expected_revision: None,
         })
@@ -241,6 +250,9 @@ fn tool_and_agent_relationships_retain_stable_placement() {
             lane: None,
             ask_job_id: None,
             work_id: None,
+            status_line: None,
+            speaker_profile_id: None,
+            media_attachments: None,
         },
         expected_revision: None,
     })
@@ -361,6 +373,9 @@ fn begin_turn_user_appears_once() {
                 lane: None,
                 ask_job_id: None,
                 work_id: None,
+                status_line: None,
+                speaker_profile_id: None,
+                media_attachments: None,
             },
             expected_revision: None,
         })

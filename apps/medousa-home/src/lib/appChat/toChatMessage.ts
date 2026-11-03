@@ -167,3 +167,25 @@ export function applySnapshotToMessages(snapshot: ChatSnapshot): {
     revision: snapshot.revision,
   };
 }
+
+/** Merge Rust worker-lane facts into the host WorkerLink map (preserves sessionId). */
+export function applySnapshotWorkers(
+  existing: Map<string, import("$lib/chat/chatSessionRuntime").WorkerLink>,
+  snapshot: ChatSnapshot,
+  fallbackSessionId: string,
+): Map<string, import("$lib/chat/chatSessionRuntime").WorkerLink> {
+  if (!snapshot.workers?.length) return existing;
+  const next = new Map(existing);
+  for (const fact of snapshot.workers) {
+    const prior = next.get(fact.workId);
+    next.set(fact.workId, {
+      workId: fact.workId,
+      parentTurnId: fact.parentTurnId ?? prior?.parentTurnId ?? null,
+      messageId: fact.parentItemId ?? prior?.messageId ?? null,
+      synthesisMessageId: fact.synthesisItemId ?? prior?.synthesisMessageId ?? null,
+      sessionId: prior?.sessionId ?? fallbackSessionId,
+      synthesisDelivered: fact.synthesisDelivered || prior?.synthesisDelivered || false,
+    });
+  }
+  return next;
+}

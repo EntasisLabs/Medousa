@@ -26,6 +26,9 @@ Canonical chat timeline:
 7. Agent/task turn placement (`LinkWorker`, `ApplyProposals`, `ApplyVisibleItems`,
    `ProjectAgentPlacement`) — anchors, proposal threading, mixed spawn order;
    snapshot `agent_groups` are thin ids the renderer joins to full rows
+8. Worker-lane bubble lifecycle (`EnsureWorkerFollowUp`, `FinalizeWorkerHandoff`,
+   `MarkWorkerSynthesisDelivered`, `DeliverWorkerSynthesis`) plus production
+   `BeginTurn` / `SettleTurn` dual-write; snapshot `workers` carries synthesis links
 
 ## Regenerate client types
 

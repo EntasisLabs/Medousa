@@ -176,6 +176,27 @@
           }
         ]
       },
+      "mediaAttachments": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/ChatMediaAttachment"
+        }
+      },
+      "speakerProfileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "statusLine": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "turnId": {
         "type": "string"
       },
@@ -200,6 +221,71 @@
           "ask",
           "worker"
         ]
+      },
+      "ChatMediaAttachment": {
+        "type": "object",
+        "required": [
+          "kind",
+          "mediaId",
+          "mime"
+        ],
+        "properties": {
+          "editableSourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mediaId": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentGenerationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "widthPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
       }
     }
   },
@@ -494,6 +580,168 @@
         }
       },
       {
+        "description": "Create or patch the worker-lane synthesis follow-up bubble.",
+        "type": "object",
+        "required": [
+          "session_id",
+          "type",
+          "work_id"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "item_id": {
+            "description": "Stable id when omitted: `worker-synth:{work_id}`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status_line": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streaming": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ensure_worker_follow_up"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "description": "Clear live chrome on the handoff ack bubble after synthesis arrives.",
+        "type": "object",
+        "required": [
+          "item_id",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "finalize_worker_handoff"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Unlock stream settle after synthesis is painted.",
+        "type": "object",
+        "required": [
+          "session_id",
+          "type",
+          "work_id"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "mark_worker_synthesis_delivered"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "description": "Card/history recovery: ensure follow-up, write content, finalize, mark delivered.",
+        "type": "object",
+        "required": [
+          "content",
+          "session_id",
+          "type",
+          "work_id"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "deliver_worker_synthesis"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
         "description": "Store host-supplied proposal facts and refresh placement on the snapshot.",
         "type": "object",
         "required": [
@@ -731,6 +979,27 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "mediaAttachments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatMediaAttachment"
+            }
+          },
+          "speakerProfileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statusLine": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "turnId": {
@@ -4397,6 +4666,13 @@
       },
       "sessionId": {
         "type": "string"
+      },
+      "workers": {
+        "description": "Worker-lane spawn + synthesis links (thin facts for the host map).",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorkerLinkFact"
+        }
       }
     },
     "definitions": {
@@ -5633,6 +5909,46 @@
           "panel",
           "fullscreen"
         ]
+      },
+      "WorkerLinkFact": {
+        "description": "Full worker-lane link projected on the snapshot (spawn + synthesis lifecycle).",
+        "type": "object",
+        "required": [
+          "workId"
+        ],
+        "properties": {
+          "parentItemId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentTurnId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replyToWorkId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "synthesisDelivered": {
+            "default": false,
+            "type": "boolean"
+          },
+          "synthesisItemId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workId": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -6453,6 +6769,13 @@
           },
           "sessionId": {
             "type": "string"
+          },
+          "workers": {
+            "description": "Worker-lane spawn + synthesis links (thin facts for the host map).",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkerLinkFact"
+            }
           }
         }
       },
@@ -7039,6 +7362,46 @@
           "panel",
           "fullscreen"
         ]
+      },
+      "WorkerLinkFact": {
+        "description": "Full worker-lane link projected on the snapshot (spawn + synthesis lifecycle).",
+        "type": "object",
+        "required": [
+          "workId"
+        ],
+        "properties": {
+          "parentItemId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentTurnId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replyToWorkId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "synthesisDelivered": {
+            "default": false,
+            "type": "boolean"
+          },
+          "synthesisItemId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workId": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -7186,6 +7549,48 @@
             "type": "string"
           }
         }
+      }
+    }
+  },
+  "WorkerLinkFact": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkerLinkFact",
+    "description": "Full worker-lane link projected on the snapshot (spawn + synthesis lifecycle).",
+    "type": "object",
+    "required": [
+      "workId"
+    ],
+    "properties": {
+      "parentItemId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "parentTurnId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "replyToWorkId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "synthesisDelivered": {
+        "default": false,
+        "type": "boolean"
+      },
+      "synthesisItemId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "workId": {
+        "type": "string"
       }
     }
   },

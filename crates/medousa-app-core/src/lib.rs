@@ -20,7 +20,7 @@ pub mod wire_history;
 pub use contract::{
     AgentPlacementEntry, AgentPlacementGroup, BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole,
     ChatLane, ChatRelationship, ChatRevision, ChatSnapshot, ChatUpdate, ProposalFact,
-    TranscriptCoordinate, WorkerPlacementFact,
+    TranscriptCoordinate, WorkerLinkFact, WorkerPlacementFact,
 };
 pub use agents::project_agent_placement;
 pub use history::{project_history, ProjectHistoryOptions};
