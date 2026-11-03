@@ -8,7 +8,14 @@
   import { onMount } from "svelte";
   import { Copy, Library, Share2, Square, Volume2 } from "@lucide/svelte";
   import ChatTaskGroup from "$lib/components/chat/ChatTaskGroup.svelte";
-  import { chatAgentGroups } from "$lib/utils/chatAgentGroups";
+  import {
+    joinAgentGroups,
+    proposalFactsFromRows,
+    workerFactsFromRows,
+  } from "$lib/utils/chatAgentGroups";
+  import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
+  import { projectAgentPlacement } from "$lib/appChat/client";
+  import type { AgentPlacementGroup } from "$lib/types/generated/app_api";
   import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
   import type { PeerProposalControls } from "./peerProposalControls";
   import ChatForkMenu from "$lib/components/chat/ChatForkMenu.svelte";
@@ -82,8 +89,27 @@
     workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages, subagentRows),
   );
   const beats = $derived(groupChatTurnBeats(painted));
-  const agentGroups = $derived(chatAgentGroups(messages, painted, peerProposals, subagentRows ?? new Map(),
-    authorityId ? { authority_id: authorityId, session_id: sessionId } : undefined));
+  // Thin placement from Rust; join to live rows stays synchronous so card status
+  // updates do not wait on another projection round-trip.
+  let projectedGroups = $state<AgentPlacementGroup[]>([]);
+  let placementEpoch = 0;
+  $effect(() => {
+    const token = ++placementEpoch;
+    const workers = subagentRows ?? new Map();
+    void projectAgentPlacement({
+      sessionId,
+      authorityId: authorityId ?? "",
+      items: messages.map(chatMessageToItem),
+      proposals: proposalFactsFromRows(peerProposals),
+      workers: workerFactsFromRows(workers),
+      visibleItemIds: painted.map(message => message.id),
+    })
+      .then(groups => {
+        if (token === placementEpoch) projectedGroups = groups;
+      })
+      .catch(() => {});
+  });
+  const agentGroups = $derived(joinAgentGroups(projectedGroups, peerProposals, subagentRows ?? new Map()));
   function delegationNodes(message: ChatMessage): string[] {
     return [...agentGroups.values()].flatMap(group => group.entries?.flatMap(entry =>
       entry.nodeId?.startsWith(`${message.id}:`) ? [entry.nodeId] : []) ?? []);

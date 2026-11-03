@@ -12,6 +12,7 @@ import { randomUuid } from "$lib/utils/randomUuid";
 import type { WorkerLink } from "$lib/chat/chatSessionRuntime";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
+import { linkChatWorker } from "$lib/appChat/client";
 
 export function workerLinkForTurn(
   workers: Map<string, WorkerLink>,
@@ -121,6 +122,13 @@ export function linkWorker(
       host.turns = nextTurns;
     }
   }
+
+  // Keep the Rust app core's placement/relationship projection in sync. Failures
+  // are non-fatal — the host map remains the live card index.
+  void linkChatWorker(params.sessionId, params.workId, {
+    parentTurnId: link.parentTurnId,
+    parentItemId: link.messageId,
+  }).catch(() => {});
 }
 
 export function linkWorkerFromStream(

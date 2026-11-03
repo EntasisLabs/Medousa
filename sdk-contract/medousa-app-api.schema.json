@@ -1,4 +1,145 @@
 {
+  "AgentPlacementEntry": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentPlacementEntry",
+    "description": "One proposal or worker in mixed spawn order for a turn.",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "originProposalId",
+          "proposalId"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "proposal"
+            ]
+          },
+          "nodeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "originProposalId": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "workId"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "worker"
+            ]
+          },
+          "nodeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workId": {
+            "type": "string"
+          }
+        }
+      }
+    ]
+  },
+  "AgentPlacementGroup": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentPlacementGroup",
+    "description": "Agents/tasks anchored to an initiating turn (or `None` for earlier/unknown).",
+    "type": "object",
+    "required": [
+      "entries"
+    ],
+    "properties": {
+      "anchorItemId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "entries": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentPlacementEntry"
+        }
+      }
+    },
+    "definitions": {
+      "AgentPlacementEntry": {
+        "description": "One proposal or worker in mixed spawn order for a turn.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "originProposalId",
+              "proposalId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proposal"
+                ]
+              },
+              "nodeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "originProposalId": {
+                "type": "string"
+              },
+              "proposalId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "worker"
+                ]
+              },
+              "nodeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "workId": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
   "BeginTurnRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "BeginTurnRequest",
@@ -349,6 +490,136 @@
           },
           "work_id": {
             "type": "string"
+          }
+        }
+      },
+      {
+        "description": "Store host-supplied proposal facts and refresh placement on the snapshot.",
+        "type": "object",
+        "required": [
+          "proposals",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ProposalFact"
+            }
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "apply_proposals"
+            ]
+          },
+          "visible_item_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "description": "Update painted/visible item ids used by turn-anchor placement.",
+        "type": "object",
+        "required": [
+          "session_id",
+          "type",
+          "visible_item_ids"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "apply_visible_items"
+            ]
+          },
+          "visible_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "description": "Pure placement projection. Uses `items` when provided, otherwise session items.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "authority_id": {
+            "type": "string"
+          },
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatItem"
+            }
+          },
+          "proposals": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ProposalFact"
+            }
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "project_agent_placement"
+            ]
+          },
+          "visible_item_ids": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workers": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkerPlacementFact"
+            }
           }
         }
       },
@@ -1264,6 +1535,84 @@
             "additionalProperties": false
           }
         ]
+      },
+      "ProposalFact": {
+        "type": "object",
+        "required": [
+          "proposal_id"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "binding_authority_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "binding_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_runtime_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "sources": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ProposalSourceFact"
+            }
+          }
+        }
+      },
+      "ProposalSourceFact": {
+        "description": "Thin host-supplied proposal facts for turn placement (no daemon fetch in core).",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "authority_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
       },
       "StreamToolArtifactRef": {
         "type": "object",
@@ -2471,6 +2820,30 @@
           "worker",
           "workshop"
         ]
+      },
+      "WorkerPlacementFact": {
+        "description": "Worker coordinates used for placement (insertion order preserved by the Vec).",
+        "type": "object",
+        "required": [
+          "work_id"
+        ],
+        "properties": {
+          "parent_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -3986,6 +4359,13 @@
           "null"
         ]
       },
+      "agentGroups": {
+        "description": "Turn placement for proposals/workers. Thin ids — UI joins full rows.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentPlacementGroup"
+        }
+      },
       "authorityId": {
         "type": "string"
       },
@@ -4020,6 +4400,84 @@
       }
     },
     "definitions": {
+      "AgentPlacementEntry": {
+        "description": "One proposal or worker in mixed spawn order for a turn.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "originProposalId",
+              "proposalId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proposal"
+                ]
+              },
+              "nodeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "originProposalId": {
+                "type": "string"
+              },
+              "proposalId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "worker"
+                ]
+              },
+              "nodeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "workId": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "AgentPlacementGroup": {
+        "description": "Agents/tasks anchored to an initiating turn (or `None` for earlier/unknown).",
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "anchorItemId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentPlacementEntry"
+            }
+          }
+        }
+      },
       "ChatItem": {
         "description": "One canonical timeline item. Identities come from durable entry ids / turn tickets — never from rendered text, timestamps alone, or array position.",
         "type": "object",
@@ -5224,6 +5682,27 @@
       {
         "type": "object",
         "required": [
+          "groups",
+          "type"
+        ],
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentPlacementGroup"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "agent_placement"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
           "reason",
           "session_id",
           "type"
@@ -5271,6 +5750,84 @@
       }
     ],
     "definitions": {
+      "AgentPlacementEntry": {
+        "description": "One proposal or worker in mixed spawn order for a turn.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "originProposalId",
+              "proposalId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proposal"
+                ]
+              },
+              "nodeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "originProposalId": {
+                "type": "string"
+              },
+              "proposalId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "workId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "worker"
+                ]
+              },
+              "nodeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "workId": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "AgentPlacementGroup": {
+        "description": "Agents/tasks anchored to an initiating turn (or `None` for earlier/unknown).",
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "anchorItemId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentPlacementEntry"
+            }
+          }
+        }
+      },
       "ChatItem": {
         "description": "One canonical timeline item. Identities come from durable entry ids / turn tickets — never from rendered text, timestamps alone, or array position.",
         "type": "object",
@@ -5857,6 +6414,13 @@
               "string",
               "null"
             ]
+          },
+          "agentGroups": {
+            "description": "Turn placement for proposals/workers. Thin ids — UI joins full rows.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AgentPlacementGroup"
+            }
           },
           "authorityId": {
             "type": "string"
@@ -6478,6 +7042,88 @@
       }
     }
   },
+  "ProposalFact": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ProposalFact",
+    "type": "object",
+    "required": [
+      "proposal_id"
+    ],
+    "properties": {
+      "assignment_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "binding_authority_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "binding_session_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "created_at": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "execution_runtime_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "proposal_id": {
+        "type": "string"
+      },
+      "sources": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ProposalSourceFact"
+        }
+      }
+    },
+    "definitions": {
+      "ProposalSourceFact": {
+        "description": "Thin host-supplied proposal facts for turn placement (no daemon fetch in core).",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "authority_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
   "TranscriptCoordinate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "TranscriptCoordinate",
@@ -6540,6 +7186,32 @@
             "type": "string"
           }
         }
+      }
+    }
+  },
+  "WorkerPlacementFact": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkerPlacementFact",
+    "description": "Worker coordinates used for placement (insertion order preserved by the Vec).",
+    "type": "object",
+    "required": [
+      "work_id"
+    ],
+    "properties": {
+      "parent_item_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "parent_turn_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "work_id": {
+        "type": "string"
       }
     }
   }

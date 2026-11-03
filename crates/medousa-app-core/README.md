@@ -13,7 +13,7 @@ Renderer-agnostic **application** core for Medousa Home.
 
 Daemon API and application API stay separate. This crate does not become a competing workshop authority.
 
-## First slice
+## Slices
 
 Canonical chat timeline:
 
@@ -23,6 +23,9 @@ Canonical chat timeline:
 4. Reconnect / session switch with revision guards
 5. Stable turn/item identities and ordering
 6. Tool and agent/A2A relationships on the snapshot
+7. Agent/task turn placement (`LinkWorker`, `ApplyProposals`, `ApplyVisibleItems`,
+   `ProjectAgentPlacement`) — anchors, proposal threading, mixed spawn order;
+   snapshot `agent_groups` are thin ids the renderer joins to full rows
 
 ## Regenerate client types
 

@@ -168,8 +168,39 @@ export interface ChatItem {
 
 export type ChatRelationship = { item_id: string; kind: "tool_belongs_to"; tool_run_id: string; turn_id: string } | { kind: "agent_spawn"; parent_item_id?: string | null; parent_turn_id?: string | null; work_id: string } | { kind: "agent_follow_up"; parent_item_id?: string | null; parent_turn_id?: string | null; reply_to_work_id: string; work_id: string } | { anchor_item_id?: string | null; kind: "proposal_anchored"; origin_proposal_id: string; proposal_id: string };
 
+export interface ProposalSourceFact {
+  after_entry_seq?: number | null;
+  authority_id: string;
+  session_id: string;
+  through_entry_seq: number;
+}
+
+export interface ProposalFact {
+  assignment_id?: string | null;
+  binding_authority_id?: string | null;
+  binding_session_id?: string | null;
+  created_at?: string | null;
+  execution_runtime_id?: string | null;
+  proposal_id: string;
+  sources?: ProposalSourceFact[];
+}
+
+export interface WorkerPlacementFact {
+  parent_item_id?: string | null;
+  parent_turn_id?: string | null;
+  work_id: string;
+}
+
+export type AgentPlacementEntry = { kind: "proposal"; nodeId?: string | null; originProposalId: string; proposalId: string } | { kind: "worker"; nodeId?: string | null; workId: string };
+
+export interface AgentPlacementGroup {
+  anchorItemId?: string | null;
+  entries: AgentPlacementEntry[];
+}
+
 export interface ChatSnapshot {
   activeTurnId?: string | null;
+  agentGroups?: AgentPlacementGroup[];
   authorityId: string;
   items: ChatItem[];
   lastSeqByTurn?: Record<string, number>;
@@ -250,6 +281,6 @@ export interface TurnStreamEnvelopeV3 {
   turn_id: string;
 }
 
-export type ChatCommand = { authority_id: string; session_id: string; type: "open_session" } | { ask_job_id?: string | null; authority_id: string; expected_revision?: number | null; lane?: ChatLane | null; local_items?: ChatItem[] | null; replace?: boolean; session_id: string; turns: unknown[]; type: "apply_history" } | { ask_job_id?: string | null; authority_id: string; lane?: ChatLane | null; session_id: string; turns: unknown[]; type: "project_history" } | { expected_revision?: number | null; request: BeginTurnRequest; session_id: string; type: "begin_turn" } | { envelope: TurnStreamEnvelopeV3; expected_revision?: number | null; promote_item_id?: string | null; session_id: string; type: "apply_stream_event" } | { expected_revision?: number | null; reusable_stream?: boolean; session_id: string; turn_id: string; type: "settle_turn" } | { expected_revision?: number | null; parent_item_id?: string | null; parent_turn_id?: string | null; reply_to_work_id?: string | null; session_id: string; type: "link_worker"; work_id: string } | { session_id: string; type: "switch_focus" } | { session_id: string; type: "dispose_session" } | { session_id: string; type: "snapshot" };
+export type ChatCommand = { authority_id: string; session_id: string; type: "open_session" } | { ask_job_id?: string | null; authority_id: string; expected_revision?: number | null; lane?: ChatLane | null; local_items?: ChatItem[] | null; replace?: boolean; session_id: string; turns: unknown[]; type: "apply_history" } | { ask_job_id?: string | null; authority_id: string; lane?: ChatLane | null; session_id: string; turns: unknown[]; type: "project_history" } | { expected_revision?: number | null; request: BeginTurnRequest; session_id: string; type: "begin_turn" } | { envelope: TurnStreamEnvelopeV3; expected_revision?: number | null; promote_item_id?: string | null; session_id: string; type: "apply_stream_event" } | { expected_revision?: number | null; reusable_stream?: boolean; session_id: string; turn_id: string; type: "settle_turn" } | { expected_revision?: number | null; parent_item_id?: string | null; parent_turn_id?: string | null; reply_to_work_id?: string | null; session_id: string; type: "link_worker"; work_id: string } | { expected_revision?: number | null; proposals: ProposalFact[]; session_id: string; type: "apply_proposals"; visible_item_ids?: string[] | null } | { expected_revision?: number | null; session_id: string; type: "apply_visible_items"; visible_item_ids: string[] } | { authority_id: string; items?: ChatItem[] | null; proposals?: ProposalFact[]; session_id: string; type: "project_agent_placement"; visible_item_ids?: string[]; workers?: WorkerPlacementFact[] } | { session_id: string; type: "switch_focus" } | { session_id: string; type: "dispose_session" } | { session_id: string; type: "snapshot" };
 
-export type ChatUpdate = { snapshot: ChatSnapshot; type: "snapshot" } | { items: ChatItem[]; type: "projected" } | { reason: string; revision?: number | null; session_id: string; type: "rejected" } | { session_id: string; type: "disposed" };
+export type ChatUpdate = { snapshot: ChatSnapshot; type: "snapshot" } | { items: ChatItem[]; type: "projected" } | { groups: AgentPlacementGroup[]; type: "agent_placement" } | { reason: string; revision?: number | null; session_id: string; type: "rejected" } | { session_id: string; type: "disposed" };
