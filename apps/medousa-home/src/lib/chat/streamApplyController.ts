@@ -22,10 +22,7 @@ import {
   applyStreamEventToMessage as reduceStreamEventToMessage,
   type StreamMessageFollowUp,
 } from "$lib/stream/transcriptReducer";
-import {
-  applyV3EnvelopeToMessage,
-  v3EventPromotesChatMessage,
-} from "$lib/stream/v3TranscriptReducer";
+import { v3EventPromotesChatMessage } from "$lib/stream/v3TranscriptReducer";
 import { v3PresentationEvent } from "$lib/stream/v3PresentationAdapter";
 import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
 import { chatSettingsPort } from "$lib/runtime/chatSettingsPort";
@@ -50,17 +47,33 @@ import {
   settleTurn,
   transcriptTurnIdSet,
 } from "$lib/chat/streamLifecycleController";
+import {
+  applyHistoryToSession,
+  applySnapshotToMessages,
+  applyStreamEvent,
+  openChatSession,
+} from "$lib/appChat/client";
+import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
 
 const CONTENT_REVEAL_CHUNK_CHARS = 14;
 const CONTENT_REVEAL_INTERVAL_MS = 16;
 
 export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventTarget) {
+  void applyPumpedStreamEventAsync(host, target);
+}
+
+async function applyPumpedStreamEventAsync(host: ChatStoreHost, target: StreamEventTarget) {
+  const envelope = target.event;
+  const event = envelope.event;
+  const presentation = v3PresentationEvent(envelope);
+  let messageId: string | null = null;
+  let shouldProject = false;
+  let accepted = false;
+
   host.withSessionFields(target.sessionId, () => {
-    const envelope = target.event;
-    const event = envelope.event;
-    const presentation = v3PresentationEvent(envelope);
     if (!isRelevantStreamEvent(host, presentation)) return;
     if (!applyStreamSeq(host.lastSeqByTurn, envelope)) return;
+    accepted = true;
 
     if (
       event.type === "status" &&
@@ -80,21 +93,26 @@ export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventT
       syncTurnFromEvent(host, presentation);
     }
 
-    const messageId =
+    messageId =
       event.type === "tool_started" || event.type === "tool_finished"
         ? host.messageIdForToolStream(envelope.turn_id)
         : host.messageIdForTurn(envelope.turn_id);
-    if (messageId) {
-      const index = host.messageIndexForId(messageId);
-      if (index >= 0) {
-        host.replaceMessageAt(
-          index,
-          applyV3EnvelopeToMessage(host.messages[index], envelope),
-        );
-      }
-    } else if (v3EventPromotesChatMessage(event)) {
-      attachOrphanV3(host, target);
-    }
+    shouldProject = Boolean(messageId || v3EventPromotesChatMessage(event));
+  });
+
+  if (!accepted) return;
+
+  if (shouldProject) {
+    await applyStreamProjection(host, target.sessionId, envelope, messageId);
+  }
+
+  host.withSessionFields(target.sessionId, () => {
+    if (!isRelevantStreamEvent(host, presentation)) return;
+    messageId =
+      messageId ??
+      (event.type === "tool_started" || event.type === "tool_finished"
+        ? host.messageIdForToolStream(envelope.turn_id)
+        : host.messageIdForTurn(envelope.turn_id));
 
     switch (event.type) {
       case "context_usage":
@@ -166,35 +184,65 @@ export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventT
   });
 }
 
-function attachOrphanV3(host: ChatStoreHost, target: StreamEventTarget) {
-  const envelope = target.event;
-  const turn = host.turns.get(envelope.turn_id);
-  const background = turn?.mode === "background";
-  const id = randomUuid();
-  const seed = applyV3EnvelopeToMessage(
-    {
-      id,
-      role: "assistant",
-      content: "",
-      segments: [],
-      streaming: envelope.event.type !== "turn_completed",
-      turnId: envelope.turn_id,
-      lane: background ? "ask" : "chat",
-      askJobId: background ? turn?.workspaceCardId ?? envelope.turn_id : null,
-      phase: null,
-      statusLine: null,
-    },
-    envelope,
-  );
-  host.appendMessage(seed);
-
-  if (turn) {
-    const next = new Map(host.turns);
-    next.set(envelope.turn_id, { ...turn, messageId: id });
-    host.turns = next;
-  }
-  if (turn?.mode === "interactive" && envelope.event.type !== "turn_completed") {
-    host.assistantId = id;
+async function applyStreamProjection(
+  host: ChatStoreHost,
+  sessionId: string,
+  envelope: StreamEventTarget["event"],
+  knownMessageId: string | null,
+) {
+  const epoch = host.transcriptEpoch;
+  const workshopEpoch = host.workshopEpoch;
+  try {
+    const authority =
+      host.messages.find((message) => message.transcript?.authorityId)?.transcript
+        ?.authorityId ?? `auth_${"0".repeat(64)}`;
+    await openChatSession(sessionId, authority);
+    await applyHistoryToSession({
+      sessionId,
+      history: {
+        authority_id: authority,
+        session_id: sessionId,
+        turns: [],
+      },
+      replace: false,
+      localItems: host.messages.map(chatMessageToItem),
+    });
+    const snapshot = await applyStreamEvent(sessionId, envelope, {
+      promoteItemId: knownMessageId ?? randomUuid(),
+    });
+    if (
+      workshopEpoch !== host.workshopEpoch ||
+      epoch !== host.transcriptEpoch ||
+      host.history?.isReleased(sessionId)
+    ) {
+      return;
+    }
+    const applied = applySnapshotToMessages(snapshot);
+    host.withSessionFields(sessionId, () => {
+      host.messages = applied.messages;
+      for (const [turnId, seq] of applied.lastSeqByTurn) {
+        host.lastSeqByTurn.set(turnId, seq);
+      }
+      const turn = host.turns.get(envelope.turn_id);
+      const assistant = applied.messages.find(
+        (message) =>
+          message.role === "assistant" && message.turnId === envelope.turn_id,
+      );
+      if (turn && assistant && turn.messageId !== assistant.id) {
+        const next = new Map(host.turns);
+        next.set(envelope.turn_id, { ...turn, messageId: assistant.id });
+        host.turns = next;
+      }
+      if (
+        turn?.mode === "interactive" &&
+        envelope.event.type !== "turn_completed" &&
+        assistant
+      ) {
+        host.assistantId = assistant.id;
+      }
+    });
+  } catch {
+    // Stream projection failures fall through to terminal reconcile / reload.
   }
 }
 

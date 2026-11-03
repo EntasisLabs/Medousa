@@ -18,8 +18,8 @@ function turn(
   };
 }
 
-describe("mapTurns chronological history", () => {
-  it("restores a failed callback's tool timeline and failure state after refreshing", () => {
+describe("mapTurns chronological history (Rust app core)", () => {
+  it("restores a failed callback's tool timeline and failure state after refreshing", async () => {
     const saved = turn([
       { kind: "text", markdown: "Reviewing the result", segment_id: "wake:text:1", model_round: 1 },
       { kind: "tool_run", run_id: "review", tool_name: "cognition_peer_review", status: "succeeded", input_summary: "Review receipt", tool_round: 1, started_at: "2026-10-04T19:38:00Z" },
@@ -27,7 +27,7 @@ describe("mapTurns chronological history", () => {
     saved.answer_state = "failed";
     saved.caused_by = { authority_id: "authority", session_id: "taco", execution_id: "handoff_wake_done" };
     saved.slice_summary = { goal: "Review delegated work", tool_rounds: 1, tools: ["cognition_peer_review"], outcomes: [], failures: ["This turn could not finish."] };
-    const [message] = mapTurns([saved], { sessionId: "taco" });
+    const [message] = await mapTurns([saved], { sessionId: "taco" });
     expect(message.turnId).toBe("handoff_wake_done");
     expect(message.failed).toBe(true);
     expect(message.errorLine).toBe("This turn could not finish.");
@@ -35,15 +35,15 @@ describe("mapTurns chronological history", () => {
     expect(message.toolRuns?.[0].toolName).toBe("cognition_peer_review");
   });
 
-  it("uses durable entry coordinates for stable ids and turn indexes", () => {
-    const messages = mapTurns([turn([])], { sessionId: "session-a" });
+  it("uses durable entry coordinates for stable ids and turn indexes", async () => {
+    const messages = await mapTurns([turn([])], { sessionId: "session-a" });
 
     expect(messages[0]?.id).toBe("session-a:entry-1");
     expect(messages[0]?.turnIndex).toBe(1);
   });
 
-  it("hydrates segment-aware assistant parts into the V3 scene model", () => {
-    const messages = mapTurns([
+  it("hydrates segment-aware assistant parts into the V3 scene model", async () => {
+    const messages = await mapTurns([
       turn([
         {
           kind: "text",
@@ -79,11 +79,11 @@ describe("mapTurns chronological history", () => {
       "progress",
       "text",
     ]);
-    expect(messages[0]?.statusLine).toBeNull();
+    expect(messages[0]?.statusLine == null).toBe(true);
   });
 
-  it("keeps pre-V3 history on the legacy flat layout", () => {
-    const messages = mapTurns([
+  it("keeps pre-V3 history on the legacy flat layout", async () => {
+    const messages = await mapTurns([
       turn([
         { kind: "text", markdown: "Old answer" },
         {
@@ -103,15 +103,15 @@ describe("mapTurns chronological history", () => {
   });
 });
 
-it("removes saved runtime plumbing from assistant bodies, progress, and chronological parts", () => {
+it("removes saved runtime plumbing from assistant bodies, progress, and chronological parts", async () => {
   const noise = "interactive turn accepted; agent runtime started";
   const saved = { ...turn([{ kind: "text", markdown: noise, segment_id: "startup" }, { kind: "progress", markdown: noise }]), content: noise };
-  const [message] = mapTurns([saved]);
-  expect(message.content).toBe(""); expect(message.statusLine).toBeNull(); expect(message.segments ?? []).toEqual([]);
-  const [user] = mapTurns([{ ...saved, role: "user" }]);
+  const [message] = await mapTurns([saved]);
+  expect(message.content).toBe(""); expect(message.statusLine == null).toBe(true); expect(message.segments ?? []).toEqual([]);
+  const [user] = await mapTurns([{ ...saved, role: "user" }]);
   expect(user.content).toBe(noise);
 });
-it("keeps useful saved progress when the latest part is only a startup acknowledgement", () => {
-  const [message] = mapTurns([turn([{ kind: "progress", markdown: "Reading the project files" }, { kind: "progress", markdown: "Agent runtime started" }])]);
+it("keeps useful saved progress when the latest part is only a startup acknowledgement", async () => {
+  const [message] = await mapTurns([turn([{ kind: "progress", markdown: "Reading the project files" }, { kind: "progress", markdown: "Agent runtime started" }])]);
   expect(message.statusLine).toBe("Reading the project files");
 });

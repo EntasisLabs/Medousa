@@ -127,7 +127,7 @@ export class AddressedConversation {
       if (epoch !== chat.workshopEpoch) return;
       const history = await getSessionHistory(sessionId, { limit: 6 });
       if (generation === this.generation && request === this.previewRequest && epoch === chat.workshopEpoch) {
-        this.preview = mapTurns(history.turns, { sessionId, authorityId: history.authority_id });
+        this.preview = await mapTurns(history.turns, { sessionId, authorityId: history.authority_id });
       }
     } catch {
       // Optional preview refreshes retain the last answer. Delivery failures

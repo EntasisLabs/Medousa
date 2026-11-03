@@ -4,7 +4,9 @@ import { getSessionHistory } from "$lib/daemon";
 import { mapTurns, TRANSCRIPT_PAGE_SIZE, reloadCurrentSession, warmBackgroundSession, reconcileOnResume } from "./sessionController";
 import { emptySessionRuntime } from "./chatSessionRuntime";
 import { loadDraftForSession, persistDraftForSession } from "./draftPersistence";
-import { dedupeMessagesById, mergeTranscript } from "$lib/utils/mergeTranscript";
+import { dedupeMessagesById } from "$lib/utils/mergeTranscript";
+import { applyHistoryToSession, applySnapshotToMessages, openChatSession } from "$lib/appChat/client";
+import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
 import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { boundedLiveTranscript, TranscriptWindow } from "./transcriptWindow";
 
@@ -141,15 +143,24 @@ export class ChatHistoryController {
     try {
       const history = await getSessionHistory(id, { limit: TRANSCRIPT_PAGE_SIZE, ...(cursor ? { cursor } : {}) });
       if (epoch !== host.workshopEpoch || this.windows.get(this.key(id, viewId)) !== window || this.isReleased(id)) return 0;
-      const messages = mapTurns(history.turns, { sessionId: id, authorityId: history.authority_id });
+      const messages = await mapTurns(history.turns, { sessionId: id, authorityId: history.authority_id });
       const page = { cursor: cursor ?? null, olderCursor: history.next_cursor?.trim() || null, messages };
       if (direction === "older") {
         if (page.olderCursor === cursor) page.olderCursor = null;
         window.prepend(page);
       } else {
         if (cursor == null) {
+          await openChatSession(id, history.authority_id);
+          const snapshot = await applyHistoryToSession({
+            sessionId: id,
+            history,
+            replace: false,
+            localItems: host.messages.map(chatMessageToItem),
+          });
+          if (epoch !== host.workshopEpoch || this.windows.get(this.key(id, viewId)) !== window || this.isReleased(id)) return 0;
+          const applied = applySnapshotToMessages(snapshot);
           host.withSessionFields(id, () => {
-            host.messages = mergeTranscript(host.messages, messages);
+            host.messages = applied.messages;
             host.historyCursor = page.olderCursor;
             this.sanitize();
           });

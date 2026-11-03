@@ -33,7 +33,7 @@
       const result = await getSessionHistory(id, { limit: TRANSCRIPT_PAGE_SIZE, ...(cursor ? { cursor } : {}) });
       if (token !== generation) return;
       if (result.session_id !== id || result.authority_id !== authority) throw new Error('Exchange authority changed. Return to our chat and reopen it.');
-      const incoming = mapTurns(result.turns, { sessionId: id, authorityId: authority }).filter(message => message.role === 'user' || message.role === 'assistant');
+      const incoming = (await mapTurns(result.turns, { sessionId: id, authorityId: authority })).filter(message => message.role === 'user' || message.role === 'assistant');
       const updated = new Map(incoming.map(message => [message.id, message]));
       const retained = messages.map(message => updated.get(message.id) ?? message);
       const existing = new Set(messages.map(message => message.id));

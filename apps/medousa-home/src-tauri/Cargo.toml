@@ -43,6 +43,7 @@ sha2 = "0.10"
 bytes = "1"
 url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
+medousa-app-core = { path = "../../../crates/medousa-app-core" }
 medousa-forge = { path = "../../../crates/medousa-forge" }
 medousa-runtime = { path = "../../../crates/medousa-runtime" }
 medousa-secrets = { path = "../../../crates/medousa-secrets" }
