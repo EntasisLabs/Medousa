@@ -3,11 +3,12 @@ import type {
   AgentPlacementGroup,
   ProposalFact,
   WorkerPlacementFact,
+  WorkerReturnFact,
 } from "$lib/types/generated/app_api";
 import type { PeerProposalReviewRecord, SessionRef } from "$lib/types/generated/daemon_api";
 import type { SubagentRow } from "./subagentRows";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
-import { projectAgentPlacement } from "$lib/appChat/client";
+import { projectAgentPlacement, projectVisibleItems } from "$lib/appChat/client";
 
 export type ChatAgentEntry =
   | { kind: "proposal"; row: PeerProposalReviewRecord; nodeId?: string }
@@ -73,6 +74,16 @@ export function workerFactsFromRows(
   }));
 }
 
+/** Host-supplied raw return texts for painted-id visibility projection. */
+export function workerReturnFactsFromRows(
+  workers: ReadonlyMap<string, { returnedTexts?: string[] }>,
+): WorkerReturnFact[] {
+  return [...workers.entries()].map(([workId, row]) => ({
+    work_id: workId,
+    returned_texts: row.returnedTexts ?? [],
+  }));
+}
+
 /**
  * Join Rust placement groups to full UI rows. Missing rows are skipped so the
  * renderer never invents placement.
@@ -109,7 +120,8 @@ export function joinAgentGroups(
 
 /**
  * Project agent/task placement through the Rust application core, then join
- * full proposal/worker rows for painting.
+ * full proposal/worker rows for painting. Visible ids come from core too;
+ * `painted` remains a sync paint fallback when projection is unavailable.
  */
 export async function projectChatAgentGroups(
   messages: ChatMessage[],
@@ -118,13 +130,25 @@ export async function projectChatAgentGroups(
   workers: Map<string, SubagentRow>,
   scope?: SessionRef,
 ): Promise<Map<string | null, ChatAgentGroup>> {
+  const items = messages.map(chatMessageToItem);
+  const sessionId = scope?.session_id ?? "";
+  let visibleItemIds = painted.map((message) => message.id);
+  try {
+    visibleItemIds = await projectVisibleItems({
+      sessionId,
+      items,
+      workerReturns: workerReturnFactsFromRows(workers),
+    });
+  } catch {
+    // Keep host-painted ids when the core path is unavailable.
+  }
   const groups = await projectAgentPlacement({
-    sessionId: scope?.session_id ?? "",
+    sessionId,
     authorityId: scope?.authority_id ?? "",
-    items: messages.map(chatMessageToItem),
+    items,
     proposals: proposalFactsFromRows(proposals),
     workers: workerFactsFromRows(workers),
-    visibleItemIds: painted.map(message => message.id),
+    visibleItemIds,
   });
   return joinAgentGroups(groups, proposals, workers);
 }

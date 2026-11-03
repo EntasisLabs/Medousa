@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AgentPlacementGroup,
+  AskThreadBatch,
   BeginTurnRequest,
   ChatCommand,
   ChatItem,
@@ -16,6 +17,7 @@ import type {
   ChatUpdate,
   ProposalFact,
   WorkerPlacementFact,
+  WorkerReturnFact,
 } from "$lib/types/generated/app_api";
 import type { SessionHistoryResponse } from "$lib/types/session";
 import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
@@ -314,6 +316,59 @@ export async function projectAgentPlacement(options: {
   return update.groups;
 }
 
+/** Append ask-lane history batches into the focused chat session. */
+export async function hydrateAskThreadsInCore(
+  sessionId: string,
+  batches: AskThreadBatch[],
+  options?: {
+    promotedAskIds?: string[];
+    expectedRevision?: number | null;
+  },
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "hydrate_ask_threads",
+      session_id: sessionId,
+      batches,
+      promoted_ask_ids: options?.promotedAskIds ?? [],
+      expected_revision: options?.expectedRevision ?? null,
+    }),
+  );
+}
+
+export async function promoteAskToChatInCore(
+  sessionId: string,
+  askJobId: string,
+  expectedRevision?: number | null,
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "promote_ask_to_chat",
+      session_id: sessionId,
+      ask_job_id: askJobId,
+      expected_revision: expectedRevision ?? null,
+    }),
+  );
+}
+
+/** Pure painted-id projection — empty handoff shells and exact linked raw returns. */
+export async function projectVisibleItems(options: {
+  sessionId: string;
+  items?: ChatItem[] | null;
+  workerReturns?: WorkerReturnFact[];
+}): Promise<string[]> {
+  const update = await dispatchAppChat({
+    type: "project_visible_items",
+    session_id: options.sessionId,
+    items: options.items ?? null,
+    worker_returns: options.workerReturns ?? [],
+  });
+  if (update.type !== "visible_items") {
+    throw new Error(`expected visible_items, got ${update.type}`);
+  }
+  return update.item_ids;
+}
+
 export async function disposeChatSession(sessionId: string): Promise<void> {
   await dispatchAppChat({ type: "dispose_session", session_id: sessionId });
 }
@@ -325,4 +380,13 @@ export async function readChatSnapshot(sessionId: string): Promise<ChatSnapshot>
 }
 
 export { applySnapshotToMessages, snapshotMessages, chatItemToMessage };
-export type { AgentPlacementGroup, ChatItem, ChatSnapshot, ChatUpdate, ProposalFact, WorkerPlacementFact };
+export type {
+  AgentPlacementGroup,
+  AskThreadBatch,
+  ChatItem,
+  ChatSnapshot,
+  ChatUpdate,
+  ProposalFact,
+  WorkerPlacementFact,
+  WorkerReturnFact,
+};
