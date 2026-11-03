@@ -5,10 +5,13 @@ use std::collections::{BTreeMap, HashMap};
 use medousa_types::TurnStreamEnvelopeV3;
 use thiserror::Error;
 
-use crate::agents::{relationships_from_items, resolve_worker_parent_item_id};
+use crate::agents::{
+    project_agent_placement, proposal_relationships_from_groups, relationships_from_items,
+    resolve_worker_parent_item_id,
+};
 use crate::contract::{
     BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole, ChatLane, ChatRevision, ChatSnapshot,
-    ChatUpdate,
+    ChatUpdate, ProposalFact, WorkerPlacementFact,
 };
 use crate::merge::merge_transcript;
 use crate::stream::{apply_v3_envelope_to_item, v3_event_promotes_chat_message};
@@ -56,13 +59,46 @@ struct SessionState {
     active_turn_id: Option<String>,
     last_seq_by_turn: BTreeMap<String, u64>,
     workers: HashMap<String, WorkerLink>,
+    /// Insertion order for placement when segment coordinates are missing.
+    worker_order: Vec<String>,
+    proposals: Vec<ProposalFact>,
+    visible_item_ids: Vec<String>,
 }
 
 impl SessionState {
+    fn worker_facts(&self) -> Vec<WorkerPlacementFact> {
+        self.worker_order
+            .iter()
+            .filter_map(|work_id| self.workers.get(work_id))
+            .map(|link| WorkerPlacementFact {
+                work_id: link.work_id.clone(),
+                parent_turn_id: link.parent_turn_id.clone(),
+                parent_item_id: link.parent_item_id.clone(),
+            })
+            .collect()
+    }
+
+    fn placement_groups(&self) -> Vec<crate::contract::AgentPlacementGroup> {
+        let visible = if self.visible_item_ids.is_empty() {
+            self.items.iter().map(|item| item.id.clone()).collect()
+        } else {
+            self.visible_item_ids.clone()
+        };
+        project_agent_placement(
+            &self.items,
+            &visible,
+            &self.proposals,
+            &self.worker_facts(),
+            Some(self.authority_id.as_str()),
+            Some(self.session_id.as_str()),
+        )
+    }
+
     fn snapshot(&self) -> ChatSnapshot {
         let worker_tuples: Vec<_> = self
-            .workers
-            .values()
+            .worker_order
+            .iter()
+            .filter_map(|work_id| self.workers.get(work_id))
             .map(|link| {
                 (
                     link.work_id.clone(),
@@ -72,13 +108,17 @@ impl SessionState {
                 )
             })
             .collect();
+        let agent_groups = self.placement_groups();
+        let mut relationships = relationships_from_items(&self.items, &worker_tuples);
+        relationships.extend(proposal_relationships_from_groups(&agent_groups));
         ChatSnapshot {
             session_id: self.session_id.clone(),
             authority_id: self.authority_id.clone(),
             revision: self.revision,
             items: self.items.clone(),
             active_turn_id: self.active_turn_id.clone(),
-            relationships: relationships_from_items(&self.items, &worker_tuples),
+            relationships,
+            agent_groups,
             last_seq_by_turn: self.last_seq_by_turn.clone(),
         }
     }
@@ -186,6 +226,32 @@ impl ChatCore {
                 reply_to_work_id,
                 expected_revision,
             ),
+            ChatCommand::ApplyProposals {
+                session_id,
+                proposals,
+                visible_item_ids,
+                expected_revision,
+            } => self.apply_proposals(&session_id, proposals, visible_item_ids, expected_revision),
+            ChatCommand::ApplyVisibleItems {
+                session_id,
+                visible_item_ids,
+                expected_revision,
+            } => self.apply_visible_items(&session_id, visible_item_ids, expected_revision),
+            ChatCommand::ProjectAgentPlacement {
+                session_id,
+                authority_id,
+                items,
+                proposals,
+                workers,
+                visible_item_ids,
+            } => self.project_placement(
+                &session_id,
+                &authority_id,
+                items,
+                proposals,
+                workers,
+                visible_item_ids,
+            ),
             ChatCommand::SwitchFocus { session_id } => {
                 if !self.sessions.contains_key(&session_id) {
                     return Err(ChatCoreError::SessionNotOpen(session_id));
@@ -219,6 +285,9 @@ impl ChatCore {
                 active_turn_id: None,
                 last_seq_by_turn: BTreeMap::new(),
                 workers: HashMap::new(),
+                worker_order: Vec::new(),
+                proposals: Vec::new(),
+                visible_item_ids: Vec::new(),
             });
         if let Some(existing) = self.sessions.get_mut(&session_id)
             && existing.authority_id != authority_id
@@ -455,6 +524,7 @@ impl ChatCore {
                 }
             }
             None => {
+                session.worker_order.push(work_id.clone());
                 session.workers.insert(
                     work_id.clone(),
                     WorkerLink {
@@ -470,6 +540,81 @@ impl ChatCore {
         Ok(ChatUpdate::Snapshot {
             snapshot: session.snapshot(),
         })
+    }
+
+    fn apply_proposals(
+        &mut self,
+        session_id: &str,
+        proposals: Vec<ProposalFact>,
+        visible_item_ids: Option<Vec<String>>,
+        expected_revision: Option<ChatRevision>,
+    ) -> Result<ChatUpdate, ChatCoreError> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?;
+        Self::ensure_revision(session, expected_revision)?;
+        session.proposals = proposals;
+        if let Some(visible) = visible_item_ids {
+            session.visible_item_ids = visible;
+        }
+        session.bump();
+        Ok(ChatUpdate::Snapshot {
+            snapshot: session.snapshot(),
+        })
+    }
+
+    fn apply_visible_items(
+        &mut self,
+        session_id: &str,
+        visible_item_ids: Vec<String>,
+        expected_revision: Option<ChatRevision>,
+    ) -> Result<ChatUpdate, ChatCoreError> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?;
+        Self::ensure_revision(session, expected_revision)?;
+        session.visible_item_ids = visible_item_ids;
+        session.bump();
+        Ok(ChatUpdate::Snapshot {
+            snapshot: session.snapshot(),
+        })
+    }
+
+    fn project_placement(
+        &self,
+        session_id: &str,
+        authority_id: &str,
+        items: Option<Vec<ChatItem>>,
+        proposals: Vec<ProposalFact>,
+        workers: Vec<WorkerPlacementFact>,
+        visible_item_ids: Vec<String>,
+    ) -> Result<ChatUpdate, ChatCoreError> {
+        let session_items = self.sessions.get(session_id).map(|session| &session.items);
+        let items = match items {
+            Some(items) => items,
+            None => session_items
+                .cloned()
+                .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?,
+        };
+        let scope_authority = if authority_id.trim().is_empty() {
+            self.sessions
+                .get(session_id)
+                .map(|session| session.authority_id.as_str())
+        } else {
+            Some(authority_id)
+        };
+        let scope_session = Some(session_id);
+        let groups = project_agent_placement(
+            &items,
+            &visible_item_ids,
+            &proposals,
+            &workers,
+            scope_authority,
+            scope_session,
+        );
+        Ok(ChatUpdate::AgentPlacement { groups })
     }
 }
 

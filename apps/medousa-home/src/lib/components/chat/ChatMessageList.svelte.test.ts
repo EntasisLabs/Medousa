@@ -17,6 +17,12 @@ vi.mock("$lib/stores/workshops.svelte", () => ({ workshops: {} }));
 vi.mock("$lib/stores/executionTargets.svelte", () => ({ executionTargets: { runtimeLabel: () => "Mac mini" } }));
 vi.mock("$lib/stores/narration.svelte", () => ({ narration: { initialize: vi.fn(), available: false } }));
 
+async function waitForTaskReceipts(target: HTMLElement) {
+  await vi.waitFor(() => {
+    expect(target.querySelector(".task-receipts")).toBeTruthy();
+  });
+}
+
 describe("inline agent results", () => {
   it('places legacy task receipts before a standalone assistant reply when its user row is outside loaded history', async () => {
     const target = document.createElement('div'); document.body.append(target);
@@ -25,7 +31,10 @@ describe("inline agent results", () => {
       subagentRows: new Map([['work', { workId: 'work', parentMessageId: 'spawn', title: 'Task' } as SubagentRow]]),
     } });
     flushSync();
-    try { expect(target.querySelector('.task-receipts')!.compareDocumentPosition(target.querySelector('article')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); }
+    try {
+      await waitForTaskReceipts(target);
+      expect(target.querySelector('.task-receipts')!.compareDocumentPosition(target.querySelector('article')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
     finally { await unmount(component); target.remove(); }
   });
 
@@ -45,6 +54,7 @@ describe("inline agent results", () => {
     } });
     flushSync();
     try {
+      await waitForTaskReceipts(target);
       const group = target.querySelector(".task-receipts")!;
       expect(target.querySelector(".chat-turn-beat")?.nextElementSibling).toBe(group);
       expect(target.querySelector('.agent-group, .agent-work-line')).toBeNull();
@@ -63,14 +73,17 @@ describe("inline agent results", () => {
     ] });
     const component = mount(ChatMessageList, { target, props }); flushSync();
     try {
+      await waitForTaskReceipts(target);
       const group = target.querySelector(".task-receipts")!;
       const task = target.querySelector('[data-worker-id="work"]')!;
       props.messages = props.messages.map(message => message.role === "assistant" ? { ...message, streaming: false } : message);
       props.subagentRows = new Map([["work", { ...row, attention: true, terminal: true, streaming: false, statusLine: "Work failed" }]]);
       flushSync();
+      await vi.waitFor(() => {
+        expect(target.querySelector('[data-worker-id="work"]')?.textContent).toContain("Needs attention");
+      });
       expect(target.querySelector(".task-receipts")).toBe(group);
       expect(target.querySelector('[data-worker-id="work"]')).toBe(task);
-      expect(task.textContent).toContain('Needs attention');
       expect(target.querySelector('.agent-group, .agent-work-line')).toBeNull();
     } finally { await unmount(component); target.remove(); }
   });

@@ -7,12 +7,15 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AgentPlacementGroup,
   BeginTurnRequest,
   ChatCommand,
   ChatItem,
   ChatLane,
   ChatSnapshot,
   ChatUpdate,
+  ProposalFact,
+  WorkerPlacementFact,
 } from "$lib/types/generated/app_api";
 import type { SessionHistoryResponse } from "$lib/types/session";
 import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
@@ -180,6 +183,64 @@ export async function linkChatWorker(
   );
 }
 
+export async function applyChatProposals(
+  sessionId: string,
+  proposals: ProposalFact[],
+  options?: {
+    visibleItemIds?: string[] | null;
+    expectedRevision?: number | null;
+  },
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "apply_proposals",
+      session_id: sessionId,
+      proposals,
+      visible_item_ids: options?.visibleItemIds ?? null,
+      expected_revision: options?.expectedRevision ?? null,
+    }),
+  );
+}
+
+export async function applyChatVisibleItems(
+  sessionId: string,
+  visibleItemIds: string[],
+  expectedRevision?: number | null,
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "apply_visible_items",
+      session_id: sessionId,
+      visible_item_ids: visibleItemIds,
+      expected_revision: expectedRevision ?? null,
+    }),
+  );
+}
+
+/** Pure placement projection — does not require an open session when items are provided. */
+export async function projectAgentPlacement(options: {
+  sessionId: string;
+  authorityId: string;
+  items?: ChatItem[] | null;
+  proposals?: ProposalFact[];
+  workers?: WorkerPlacementFact[];
+  visibleItemIds?: string[];
+}): Promise<AgentPlacementGroup[]> {
+  const update = await dispatchAppChat({
+    type: "project_agent_placement",
+    session_id: options.sessionId,
+    authority_id: options.authorityId,
+    items: options.items ?? null,
+    proposals: options.proposals ?? [],
+    workers: options.workers ?? [],
+    visible_item_ids: options.visibleItemIds ?? [],
+  });
+  if (update.type !== "agent_placement") {
+    throw new Error(`expected agent_placement, got ${update.type}`);
+  }
+  return update.groups;
+}
+
 export async function disposeChatSession(sessionId: string): Promise<void> {
   await dispatchAppChat({ type: "dispose_session", session_id: sessionId });
 }
@@ -191,4 +252,4 @@ export async function readChatSnapshot(sessionId: string): Promise<ChatSnapshot>
 }
 
 export { applySnapshotToMessages, snapshotMessages, chatItemToMessage };
-export type { ChatItem, ChatSnapshot, ChatUpdate };
+export type { AgentPlacementGroup, ChatItem, ChatSnapshot, ChatUpdate, ProposalFact, WorkerPlacementFact };

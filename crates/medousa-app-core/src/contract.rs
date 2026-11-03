@@ -320,6 +320,80 @@ pub enum ChatRelationship {
     },
 }
 
+/// Thin host-supplied proposal facts for turn placement (no daemon fetch in core).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub struct ProposalSourceFact {
+    pub authority_id: String,
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_entry_seq: Option<u64>,
+    pub through_entry_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub struct ProposalFact {
+    pub proposal_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_runtime_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_authority_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_session_id: Option<String>,
+    #[serde(default)]
+    pub sources: Vec<ProposalSourceFact>,
+}
+
+/// Worker coordinates used for placement (insertion order preserved by the Vec).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub struct WorkerPlacementFact {
+    pub work_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_turn_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_item_id: Option<String>,
+}
+
+/// One proposal or worker in mixed spawn order for a turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentPlacementEntry {
+    Proposal {
+        #[serde(rename = "proposalId")]
+        proposal_id: String,
+        #[serde(rename = "originProposalId")]
+        origin_proposal_id: String,
+        #[serde(rename = "nodeId", default, skip_serializing_if = "Option::is_none")]
+        node_id: Option<String>,
+    },
+    Worker {
+        #[serde(rename = "workId")]
+        work_id: String,
+        #[serde(rename = "nodeId", default, skip_serializing_if = "Option::is_none")]
+        node_id: Option<String>,
+    },
+}
+
+/// Agents/tasks anchored to an initiating turn (or `None` for earlier/unknown).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPlacementGroup {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_item_id: Option<String>,
+    pub entries: Vec<AgentPlacementEntry>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -332,6 +406,9 @@ pub struct ChatSnapshot {
     pub active_turn_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relationships: Vec<ChatRelationship>,
+    /// Turn placement for proposals/workers. Thin ids — UI joins full rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_groups: Vec<AgentPlacementGroup>,
     /// Reconnect/dedup cursors keyed by turn id. Never presentation identity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub last_seq_by_turn: BTreeMap<String, u64>,
@@ -430,6 +507,35 @@ pub enum ChatCommand {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expected_revision: Option<ChatRevision>,
     },
+    /// Store host-supplied proposal facts and refresh placement on the snapshot.
+    ApplyProposals {
+        session_id: String,
+        proposals: Vec<ProposalFact>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        visible_item_ids: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Update painted/visible item ids used by turn-anchor placement.
+    ApplyVisibleItems {
+        session_id: String,
+        visible_item_ids: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Pure placement projection. Uses `items` when provided, otherwise session items.
+    ProjectAgentPlacement {
+        session_id: String,
+        authority_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        items: Option<Vec<ChatItem>>,
+        #[serde(default)]
+        proposals: Vec<ProposalFact>,
+        #[serde(default)]
+        workers: Vec<WorkerPlacementFact>,
+        #[serde(default)]
+        visible_item_ids: Vec<String>,
+    },
     SwitchFocus {
         session_id: String,
     },
@@ -450,6 +556,9 @@ pub enum ChatUpdate {
     },
     Projected {
         items: Vec<ChatItem>,
+    },
+    AgentPlacement {
+        groups: Vec<AgentPlacementGroup>,
     },
     Rejected {
         session_id: String,
@@ -472,6 +581,10 @@ pub fn schema_export_names() -> &'static [&'static str] {
         "ChatSegment",
         "ChatItem",
         "ChatRelationship",
+        "ProposalFact",
+        "WorkerPlacementFact",
+        "AgentPlacementEntry",
+        "AgentPlacementGroup",
         "ChatSnapshot",
         "BeginTurnRequest",
         "ChatCommand",

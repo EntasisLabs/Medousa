@@ -5,8 +5,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use medousa_app_core::contract::{
-    BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole, ChatLane, ChatRelationship, ChatRevision,
-    ChatSegment, ChatSnapshot, ChatUpdate, TranscriptCoordinate,
+    AgentPlacementEntry, AgentPlacementGroup, BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole,
+    ChatLane, ChatRelationship, ChatRevision, ChatSegment, ChatSnapshot, ChatUpdate, ProposalFact,
+    TranscriptCoordinate, WorkerPlacementFact,
 };
 use schemars::schema::RootSchema;
 use schemars::schema_for;
@@ -26,6 +27,10 @@ fn main() {
     export_type!(schemas, ChatSegment, "ChatSegment");
     export_type!(schemas, ChatItem, "ChatItem");
     export_type!(schemas, ChatRelationship, "ChatRelationship");
+    export_type!(schemas, ProposalFact, "ProposalFact");
+    export_type!(schemas, WorkerPlacementFact, "WorkerPlacementFact");
+    export_type!(schemas, AgentPlacementEntry, "AgentPlacementEntry");
+    export_type!(schemas, AgentPlacementGroup, "AgentPlacementGroup");
     export_type!(schemas, ChatSnapshot, "ChatSnapshot");
     export_type!(schemas, BeginTurnRequest, "BeginTurnRequest");
     export_type!(schemas, ChatCommand, "ChatCommand");
