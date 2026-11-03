@@ -3499,9 +3499,9 @@ class PeerProposalIntent(MedousaModel):
         ...,
         description='Result-only owner-chat continuation; must be false for HTTP work participants.',
     )
-    existing_agent_session_id: str | None = Field(
-        None, description='Exact adoptable native session; omit to create fresh work.'
-    )
+    existing_agent_session_id: (
+        str | None
+    ) = Field(None, description='Exact adoptable native session; omit to create fresh work.')
     forge_work_id: str | None = Field(
         None, description='An explicit owned project; omission preserves legacy chat binding.'
     )
@@ -4050,10 +4050,6 @@ class WorkspaceEventKind(Enum):
 class WorkspaceEventRef(MedousaModel):
     ref_id: str
     ref_type: str
-
-
-class CountsByColumn(RootModel[int]):
-    root: int = Field(..., ge=0)
 
 
 class WorldTimelineCheckpoint(MedousaModel):
@@ -4905,9 +4901,9 @@ class FeedTailQuery(MedousaModel):
 
 
 class HealthResponse(MedousaModel):
-    active_profile_display_name: str | None = Field(
-        None, description='Human label for `active_profile_id`.'
-    )
+    active_profile_display_name: (
+        str | None
+    ) = Field(None, description='Human label for `active_profile_id`.')
     active_profile_id: str | None = Field(
         None, description='Active workshop identity profile (`user:{slug}`).'
     )
@@ -6143,9 +6139,10 @@ class ExternalPeerAssignmentRequest(MedousaModel):
     execution_session: SessionRef = Field(
         ..., description="Separate executor session: never reuse the owner's interactive session."
     )
-    existing_agent_session_id: str | None = Field(
-        None,
-        description='Exact live ACP custody to adopt instead of creating a new provider session. Absence means this assignment creates new work.',
+    existing_agent_session_id: (
+        str | None
+    ) = (
+        Field(None, description='Exact live ACP custody to adopt instead of creating a new provider session. Absence means this assignment creates new work.')
     )
     forge_work_id: str = Field(
         ..., description='Initial local bridge is restricted to a governed Forge work item.'
@@ -6738,7 +6735,7 @@ class WorkspaceEvent(MedousaModel):
 
 class WorkspaceSnapshot(MedousaModel):
     cards: list[WorkCard]
-    counts_by_column: dict[str, CountsByColumn]
+    counts_by_column: dict[str, int]
     feed_tail: list[WorkspaceEvent]
     server_time_utc: AwareDatetime
     workspace_revision: int = Field(..., ge=0)
@@ -6815,8 +6812,10 @@ class CreateTurnTicketRequest(MedousaModel):
         None, description='Per-turn behavioral mode override; independent of delivery mode.'
     )
     code_context: CodeIntentContext | None = None
-    code_project_setup_authorized: bool | None = Field(
-        False, description='Structured principal authorization from a project-setup surface action.'
+    code_project_setup_authorized: (
+        bool | None
+    ) = (
+        Field(False, description='Structured principal authorization from a project-setup surface action.')
     )
     host_context: HostTurnContext | None = None
     identity_user_id: str | None = Field(
@@ -6907,9 +6906,10 @@ class ExternalConversationSendRequest(MedousaModel):
         None,
         description='Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.',
     )
-    after_provider_completion: WorkProviderRequestRef | None = Field(
-        None,
-        description='Native operator admission for one send after this exact provider request completes. Requires work metadata; mutually exclusive with the native trigger.',
+    after_provider_completion: (
+        WorkProviderRequestRef | None
+    ) = (
+        Field(None, description='Native operator admission for one send after this exact provider request completes. Requires work metadata; mutually exclusive with the native trigger.')
     )
     coordinator_wake: bool | None = Field(
         None,
@@ -6972,9 +6972,10 @@ class InteractiveTurnRequest(MedousaModel):
         None,
         description='Advisory editor/undertaking intent. Coder entry re-resolves Forge authority.',
     )
-    code_project_setup_authorized: bool | None = Field(
-        False,
-        description='The principal explicitly selected the surface action allowing unbound Coder to choose, bind, or create a project for this turn.',
+    code_project_setup_authorized: (
+        bool | None
+    ) = (
+        Field(False, description='The principal explicitly selected the surface action allowing unbound Coder to choose, bind, or create a project for this turn.')
     )
     host_context: HostTurnContext | None = Field(
         None,
@@ -7132,9 +7133,10 @@ class PeerHandoffIntent(MedousaModel):
     )
     admission: PeerHandoffAdmission | None = 'delegate'
     after_entry_seq: int = Field(..., ge=0)
-    existing_agent_session_id: str | None = Field(
-        None,
-        description='Exact reusable agent_session_id from peer discovery; omission creates fresh work.',
+    existing_agent_session_id: (
+        str | None
+    ) = (
+        Field(None, description='Exact reusable agent_session_id from peer discovery; omission creates fresh work.')
     )
     forge_work_id: str
     handoff: PeerHandoffPolicy | None = Field(
