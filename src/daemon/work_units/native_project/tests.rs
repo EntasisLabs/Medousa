@@ -418,7 +418,9 @@ fn missing_and_replaced_repositories_keep_old_links_and_never_inherit_identity()
     ));
     assert_eq!(old.resolution, ResourceResolution::Unavailable);
     assert_eq!(replaced["affected_resources"].as_array().unwrap().len(), 2);
-    std::fs::remove_dir_all(fx.repo.join(".git")).unwrap();
+    // Keep both directory identities intact while restoring the original.
+    // TempDir owns cleanup after all repository observations are complete.
+    std::fs::rename(fx.repo.join(".git"), fx.repo.join(".git-replaced")).unwrap();
     std::fs::rename(fx.repo.join(".git-retained"), fx.repo.join(".git")).unwrap();
     let restored = resource(&observe(&fx, &item, ProjectResolveTarget::Project {}));
     assert_eq!(restored.reference, original.reference);

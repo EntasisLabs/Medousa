@@ -73,6 +73,9 @@ struct ValidatedScreenshotReceipt {
 
 impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
     fn accepts(&self, tool_name: &str) -> bool {
+        if tool_name == crate::image_view_tools::COGNITION_IMAGE_VIEW {
+            return true;
+        }
         if tool_name == crate::chat_history_tools::COGNITION_CHAT_HISTORY_READ {
             return true;
         }
@@ -86,6 +89,9 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
         &self,
         request: ToolObservationHydrationRequest,
     ) -> RuntimePortFuture<Result<Option<HydratedToolObservation>, String>> {
+        if request.tool_name == crate::image_view_tools::COGNITION_IMAGE_VIEW {
+            return crate::image_view_tools::hydrate(request);
+        }
         if request.tool_name == crate::chat_history_tools::COGNITION_CHAT_HISTORY_READ {
             return crate::chat_history_tools::ChatHistoryMediaHydrationPort.hydrate(request);
         }
@@ -104,9 +110,8 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
                 return Ok(None);
             }
             let receipt = if request.tool_name == COGNITION_BROWSER_SNAPSHOT {
-                let receipt: BrowserScreenshotReceipt =
-                    serde_json::from_value(screenshot.clone())
-                        .map_err(|_| "browser screenshot receipt is malformed".to_string())?;
+                let receipt: BrowserScreenshotReceipt = serde_json::from_value(screenshot.clone())
+                    .map_err(|_| "browser screenshot receipt is malformed".to_string())?;
                 validate_browser_receipt(&request.source_call_id, &receipt)?;
                 ValidatedScreenshotReceipt {
                     artifact_id: receipt.artifact_id,
@@ -117,9 +122,8 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
                     image_height: receipt.image_height,
                 }
             } else {
-                let receipt: ComputerScreenshotReceipt =
-                    serde_json::from_value(screenshot.clone())
-                        .map_err(|_| "computer screenshot receipt is malformed".to_string())?;
+                let receipt: ComputerScreenshotReceipt = serde_json::from_value(screenshot.clone())
+                    .map_err(|_| "computer screenshot receipt is malformed".to_string())?;
                 validate_computer_receipt(&request.source_call_id, &receipt)?;
                 ValidatedScreenshotReceipt {
                     artifact_id: receipt.artifact_id,
@@ -137,8 +141,8 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
                 crate::artifact_store::fetch_binary_artifact(&fetch_session_id, &artifact_id)
             })
             .await
-                .map_err(|_| "screenshot artifact lookup failed".to_string())?
-                .ok_or_else(|| "screenshot artifact is unavailable in this session".to_string())?;
+            .map_err(|_| "screenshot artifact lookup failed".to_string())?
+            .ok_or_else(|| "screenshot artifact is unavailable in this session".to_string())?;
 
             if fetched.record.session_id != session_id
                 || fetched.record.artifact_id != receipt.artifact_id

@@ -283,6 +283,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_computer_snapshot",
             "cognition_computer_act",
             "cognition_image_generate",
+            "cognition_image_view",
         ],
     );
 

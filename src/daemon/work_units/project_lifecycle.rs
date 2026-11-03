@@ -9,6 +9,7 @@ use medousa_types::forge::*;
 
 pub enum ProjectLifecycleMutation {
     PrepareMerge(ProjectPrepareMergeInput),
+    RepairGitTarget(ProjectRepairGitTargetInput),
     Approve(ProjectApproveInput),
     Apply(ProjectApplyInput),
     RequestChanges(ProjectRequestChangesInput),
@@ -94,7 +95,9 @@ impl WorkUnitHost {
             ProjectLifecycleMutation::PrepareMerge(_) => {
                 (ExecutionClass::WorkEnvironment, 8 * 1024 * 1024)
             }
-            ProjectLifecycleMutation::Apply(_) | ProjectLifecycleMutation::Discard(_) => {
+            ProjectLifecycleMutation::Apply(_)
+            | ProjectLifecycleMutation::Discard(_)
+            | ProjectLifecycleMutation::RepairGitTarget(_) => {
                 (ExecutionClass::LocalMutation, 256 * 1024)
             }
             ProjectLifecycleMutation::Approve(_) | ProjectLifecycleMutation::RequestChanges(_) => {
@@ -109,6 +112,10 @@ impl WorkUnitHost {
                         bail!("owner turn was cancelled before lifecycle admission");
                     }
                     Ok(match input {
+                        ProjectLifecycleMutation::RepairGitTarget(input) => (
+                            lifecycle::repair_git_target(&forge, &owner, &actor, input)?,
+                            None,
+                        ),
                         ProjectLifecycleMutation::PrepareMerge(input) => (
                             lifecycle::prepare_merge(&forge, &owner, &actor, input)?,
                             None,

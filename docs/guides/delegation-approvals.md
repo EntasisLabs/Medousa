@@ -100,6 +100,20 @@ after its bounded retry period. This flow does not add push notifications or
 indefinite phone background execution. Completed results return to the original
 chat after the workshop is reachable again.
 
+## Reusing a delegated Coder chat
+
+You can ask Medousa to give a delegated Coder a recognizable chat title and,
+after it returns a result, send the next correction to that same conversation.
+The parent chat can rediscover its native Coder chats even after a daemon restart;
+it does not have to spawn a fresh chat and discard the conversation context.
+
+Medousa uses a new scoped assignment for each follow-up, preserving the original
+sender, owner, project, and runtime. Chat titles help you find the right worker;
+they do not grant permission. A still-running or uncertain assignment cannot be
+silently restarted, and a completed project must follow its normal lifecycle
+before more editing can begin. External Codex/Cursor/Hermes session adoption is
+separate from this native Coder continuation route.
+
 ## Agent approval proposals
 
 You can also ask what work is active without first opening a project-bound chat.
@@ -131,8 +145,10 @@ fails, the same card remains approved and offers **Start approved work** for a
 safe retry. Startup errors stay attached to that exact request across status
 refreshes. **Start not confirmed** does not claim the agent is definitely absent:
 uncertain execution still requires the daemon's reconciliation. Choose **Decline** instead to permanently reject it; a revised
-request needs a new assignment. Expired proposals cannot be approved or started.
-Conversational proposals expire after one hour. Saying “yes” in chat or Live
+request needs a new assignment. Proposals do not expire: pending requests remain
+available until you approve or decline them, including requests created earlier.
+Approval creates a fresh, bounded 24-hour execution window; retries do not extend
+that window. Execution grants and worker leases still expire. Saying “yes” in chat or Live
 does not replace these approval controls or start the agent.
 
 If starting fails, the request remains visible unless recorded peer custody
@@ -142,13 +158,14 @@ agent accepted the assignment, not that its work passed review or was deployed.
 The card remains in the chat as tracked custody until the daemon records a
 terminal receipt; it then yields to Medousa's attributable owner continuation.
 
-Owner continuation, when included, permits one bounded Assistant turn in the
-same chat. Medousa can explain the verified result and, only when the existing
-conversation already requested a next Codex/Cursor/Hermes step, prepare one
-follow-up proposal against the same governed work. The continuation can inspect
-peer scope and create that proposal; it cannot approve, launch, steer, cancel,
-deploy, or inherit the completed peer's authority. Every follow-up still appears
-as a separate approval card before execution.
+Owner continuation, when included, permits a bounded Assistant turn in the
+same chat. Medousa can explain the verified result and delegate follow-on work,
+review, or fixes already covered by your request in the same governed project.
+These steps do not need another approval card. The daemon verifies the saved
+callback, original owner, project and human request before admitting a worker.
+A callback cannot authorize another project or new scope, become an operator,
+or bypass expired or revoked execution authority. Work needing another decision
+still appears as a separate proposal.
 
 For work executed on a paired workshop, the originating phone chat also projects
 the immutable terminal outcome and result into the delegation card. When owner
@@ -181,7 +198,8 @@ approval and launch are still executed by the exact destination workshop.
    Personal and open the original chat with the paired workshop reachable.
 4. Check that Medousa's answer appears once in that chat and describes the actual
    result. Reopen the chat and reconnect again to check that it stays a single
-   answer. Any proposed next step still needs its own approval card.
+   answer. Follow-on work within the original authorized project can continue;
+   a proposal for new scope still needs its own approval card.
 
 A terminal agent result is evidence that its prompt finished. Inspect the changes
 and relevant checks before treating the project as reviewed or ready to publish.

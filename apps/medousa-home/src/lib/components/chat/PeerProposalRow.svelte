@@ -23,7 +23,6 @@
   const agentLabel = $derived(peerRuntimeLabel(current.proposal.request.target.runtime));
   const workshopLabel = $derived(executionWorkshop?.label ?? (onExecutionWorkshop ? workshops.activeLabel : "Execution workshop"));
   const adopting = $derived(Boolean(current.proposal.request.existing_agent_session_id));
-  const expired = $derived(Date.parse(current.proposal.expires_at) <= controls.now);
   const busy = $derived(controls.busyId === current.proposal.proposal_id);
   const available = $derived(controls.available);
   const activity = $derived(progress.activity ?? (completed ? completed.result.split(/\r?\n/).find(line => line.trim())?.trim() : null));
@@ -83,7 +82,6 @@
         <dt>Execution workshop</dt><dd>{current.proposal.request.target.execution_runtime_id} · {current.proposal.request.target.authority_id}</dd>
         <dt>Channel</dt><dd>{current.proposal.request.channel.channel_id}</dd>
         {#if current.binding}<dt>Agent session</dt><dd>{current.binding.agent_session_id}</dd>{/if}
-        <dt>Expires</dt><dd>{new Date(current.proposal.expires_at).toLocaleString()}{expired ? ' · expired' : ''}</dd>
         <dt>Request</dt><dd>{current.proposal.proposal_id}</dd>
       </dl>
     </details>
@@ -92,12 +90,11 @@
   {#if !completed && !current.binding && progress.needsApproval}
     <div class="approval-actions">
       {#if current.decision?.approved}
-        <button type="button" class="btn btn-sm variant-filled-primary" disabled={controls.busy || expired || !available} onclick={() => void controls.action(current, 'dispatch')}>{busy ? 'Starting…' : 'Start approved work'}</button>
+        <button type="button" class="btn btn-sm variant-filled-primary" disabled={controls.busy || !available} onclick={() => void controls.action(current, 'dispatch')}>{busy ? 'Starting…' : 'Start approved work'}</button>
       {:else}
-        <button type="button" class="btn btn-sm variant-filled-primary" disabled={controls.busy || expired || !available} onclick={() => void controls.action(current, 'approve_and_dispatch')}>{busy ? 'Starting…' : adopting ? 'Approve & adopt' : 'Approve & start'}</button>
+        <button type="button" class="btn btn-sm variant-filled-primary" disabled={controls.busy || !available} onclick={() => void controls.action(current, 'approve_and_dispatch')}>{busy ? 'Starting…' : adopting ? 'Approve & adopt' : 'Approve & start'}</button>
         <button type="button" class="btn btn-sm variant-ghost-surface" disabled={controls.busy || !available} onclick={() => void controls.action(current, 'deny')}>Decline</button>
       {/if}
-      {#if expired}<span class="notice">Expired</span>{/if}
     </div>
   {/if}
 </article>

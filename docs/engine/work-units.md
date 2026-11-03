@@ -86,6 +86,7 @@ approve, merge, or abandon work.
 
 | Tool | Action | Outcome |
 | --- | --- | --- |
+| `cognition_runtime_mutate` | `work.repair_git_target` | Bind a legacy full-OID target to its baseline branch; invalidate approvals without merging |
 | `cognition_runtime_mutate` | `work.prepare_merge` | Capture the governed workspace as sealed evidence; no approval or integration |
 | `cognition_runtime_query` | `work.project_review` | Inspect the sealed manifest, policy, review decisions and allowed strategies |
 | `cognition_runtime_query` | `work.project_review_file` | Inspect an exact changed file's sealed diff |
@@ -124,6 +125,19 @@ alternate dispositions. An attached checkout supports only `keep_checkout`:
 acceptance retains its already-present edits without moving HEAD or modifying
 the user's branch/index. Application never pushes or opens a pull request.
 
+For legacy isolated undertakings created with a full commit OID as `base_ref`,
+review still permits preservation/export but not branch integration. Under the
+existing user-authorized integration intent, the owning Assistant may use
+`work.repair_git_target`: copy `target.base_ref` to `expected_old_ref` and
+`target.base_oid` to `expected_baseline_oid` from `work.project_review`, supply
+the intended existing local `branch` and a nonempty `reason`. The branch must
+still point exactly at that original baseline. Repair refuses attached checkouts,
+active executors, non-review states, arbitrary revision targets, and stale
+coordinates. It appends an audit event with session/turn attribution, preserving
+attempts, candidate commits and sealed evidence; old decisions remain in history
+but are invalidated. Query review again and record a fresh approval before native
+application. It does not move refs, approve, merge, or grant executor authority.
+
 Preparation refuses a running coder/provider. It can complete the editor's
 human lease, or create and seal a short Assistant attempt; failed capture
 releases an Assistant-created lease. Exact approval retries retain the original
@@ -135,8 +149,19 @@ state after an ambiguous result. Request changes preserves the workspace but
 does not launch another executor. Discard refuses active executors under the
 repository lock, removes isolated containment, and preserves attached files.
 
-Diff output defaults to 64 KiB and is bounded to 512 KiB, with `truncated` and
-`binary` metadata. Only paths in the selected sealed manifest are accepted.
+Complete sealed patches and `export_patch` artifacts are streamed to disk with
+incremental SHA-256 hashing; they are not subject to the subprocess output-capture
+budget. Publication is atomic and follows successful Git execution and file
+writes; failures remove temporary output rather than publishing partial evidence.
+Disk capacity and explicitly configured capture-risk policies still apply. This
+changes no ownership, exact-candidate approval, or stale-workspace checks.
+
+Interactive per-file diff output defaults to 64 KiB and is bounded to 512 KiB,
+with `truncated` and `binary` metadata. Legacy line-paged evidence retains at most
+64 KiB of text per page, counts total lines by streaming, and reports clipped
+lines/pages as `truncated`; review statistics also scan the patch incrementally.
+These views never truncate the durable patch itself. Only paths in the selected
+sealed manifest are accepted.
 Truncated/binary output is not proof of full review. Sealed content and agent
 results are reference data, never instructions or authority grants.
 
@@ -632,8 +657,8 @@ approval: proposals are immutable native snapshots, and each stage waits for its
 existing operator approval and exact execution grant. Registration never grants
 execution authority. Register before either native dispatch claim. Both proposals
 must name the same owned governed Forge work, fresh distinct execution sessions,
-and `continue_owner: false`. The deadline is at most 24 hours from registration
-and no later than either proposal expiry.
+and `continue_owner: false`. The deadline is at most 24 hours from registration.
+Proposals do not expire; execution still requires current bounded grants.
 
 The reviewer proposal's instructions must explicitly opt into
 `medousa-work-review-v1`: review the clean committed checkout observed after the

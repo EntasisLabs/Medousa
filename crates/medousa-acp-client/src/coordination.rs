@@ -490,22 +490,17 @@ mod tests {
             };
             assert!(store.decide_proposal(&request.channel, &decision).is_err());
             decision.owner_principal_id = request.owner_principal_id.clone();
+            store.decide_proposal(&request.channel, &decision).unwrap();
             assert_eq!(
-                store.decide_proposal(&request.channel, &decision).is_err(),
-                expired
+                store
+                    .require_approved_proposal(
+                        &request.channel,
+                        &proposal.proposal_id,
+                        &request.owner_principal_id
+                    )
+                    .unwrap(),
+                proposal
             );
-            if !expired {
-                assert_eq!(
-                    store
-                        .require_approved_proposal(
-                            &request.channel,
-                            &proposal.proposal_id,
-                            &request.owner_principal_id
-                        )
-                        .unwrap(),
-                    proposal
-                );
-            }
         }
     }
 
@@ -632,6 +627,115 @@ mod tests {
                     257,
                     None
                 )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn aged_proposal_approval_mints_a_fresh_bounded_nonrenewable_execution_window() {
+        use medousa_types::coordination::*;
+        let (temp, store, mut request) = persisted_fixture();
+        request.assignment_id = "aged-proposal".into();
+        request.execution_grant_id = "aged-proposal-grant".into();
+        request.idempotency_key = "aged-proposal-command".into();
+        let mut proposal = PeerAssignmentProposal {
+            proposal_id: String::new(),
+            request: request.clone(),
+            expires_at: chrono::Utc::now() - chrono::Duration::days(30),
+            continue_owner: false,
+        };
+        proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+        store.record_proposal(&proposal).unwrap();
+        assert!(store.proposal_execution_deadline(&proposal).is_err());
+        let decision = PeerProposalDecision {
+            proposal_id: proposal.proposal_id.clone(),
+            owner_principal_id: request.owner_principal_id.clone(),
+            approved: true,
+        };
+        store.decide_proposal(&request.channel, &decision).unwrap();
+        let before = chrono::Utc::now();
+        let deadline = store.proposal_execution_deadline(&proposal).unwrap();
+        assert!(deadline >= before + chrono::Duration::hours(24));
+        assert!(deadline <= chrono::Utc::now() + chrono::Duration::hours(24));
+        store
+            .approve_assignment(&ExternalPeerAssignmentGrant {
+                request: request.clone(),
+                expires_at: deadline,
+            })
+            .unwrap();
+        store.require_assignment_grant(&request, before).unwrap();
+        assert!(store.require_assignment_grant(&request, deadline).is_err());
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        reopened
+            .decide_proposal(&request.channel, &decision)
+            .unwrap();
+        assert_eq!(
+            reopened.proposal_execution_deadline(&proposal).unwrap(),
+            deadline
+        );
+        assert_eq!(
+            reopened
+                .require_approved_proposal(
+                    &request.channel,
+                    &proposal.proposal_id,
+                    &request.owner_principal_id,
+                )
+                .unwrap(),
+            proposal
+        );
+        reopened
+            .revoke_assignment_grant(&request.channel, &request.execution_grant_id)
+            .unwrap();
+        reopened
+            .decide_proposal(&request.channel, &decision)
+            .unwrap();
+        assert_eq!(
+            reopened.proposal_execution_deadline(&proposal).unwrap(),
+            deadline
+        );
+        assert!(reopened.require_assignment_grant(&request, before).is_err());
+        let denied = PeerProposalDecision {
+            approved: false,
+            ..decision
+        };
+        assert!(reopened.decide_proposal(&request.channel, &denied).is_err());
+    }
+
+    #[test]
+    fn proposal_compilation_preserves_legacy_grants_and_rejects_changed_snapshots() {
+        use medousa_types::coordination::*;
+        let (_temp, store, request) = persisted_fixture();
+        let existing = store
+            .assignment_grant(&request.channel, &request.execution_grant_id)
+            .unwrap();
+        let mut proposal = PeerAssignmentProposal {
+            proposal_id: String::new(),
+            request: request.clone(),
+            expires_at: chrono::Utc::now() - chrono::Duration::days(30),
+            continue_owner: false,
+        };
+        proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+        store.record_proposal(&proposal).unwrap();
+        store
+            .decide_proposal(
+                &request.channel,
+                &PeerProposalDecision {
+                    proposal_id: proposal.proposal_id.clone(),
+                    owner_principal_id: request.owner_principal_id.clone(),
+                    approved: true,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            store.proposal_execution_deadline(&proposal).unwrap(),
+            existing.expires_at
+        );
+        let mut changed = proposal.clone();
+        changed.request.execution_grant_id = "unapproved-grant".into();
+        assert!(store.proposal_execution_deadline(&changed).is_err());
+        assert!(
+            store
+                .require_assignment_grant(&request, existing.expires_at)
                 .is_err()
         );
     }
@@ -1050,6 +1154,167 @@ mod tests {
             })
             .unwrap();
         (temp, store, request)
+    }
+
+    fn native_fixture() -> (
+        tempfile::TempDir,
+        store::CoordinationStore,
+        ExternalPeerAssignmentRequest,
+        ExternalPeerAssignmentBinding,
+    ) {
+        let (temp, store, mut request) = persisted_fixture();
+        request.assignment_id = "native-1".into();
+        request.idempotency_key = "native-command-1".into();
+        request.execution_grant_id = "native-grant-1".into();
+        request.target.runtime = ExternalPeerRuntime::Medousa;
+        approve_native(&store, &request);
+        let binding = ExternalPeerAssignmentBinding {
+            assignment_id: request.assignment_id.clone(),
+            owner_principal_id: request.owner_principal_id.clone(),
+            channel: request.channel.clone(),
+            target: request.target.clone(),
+            execution_session: request.execution_session.clone(),
+            agent_session_id: format!("medousa_coder_{}", request.assignment_id),
+        };
+        store
+            .record_native_coder(&binding.agent_session_id, &request)
+            .unwrap();
+        store.record_peer(&binding).unwrap();
+        (temp, store, request, binding)
+    }
+
+    fn approve_native(store: &store::CoordinationStore, request: &ExternalPeerAssignmentRequest) {
+        store
+            .approve_assignment(&medousa_types::coordination::ExternalPeerAssignmentGrant {
+                request: request.clone(),
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            })
+            .unwrap();
+        store.claim_assignment(request).unwrap();
+    }
+
+    fn finish_native(store: &store::CoordinationStore, binding: &ExternalPeerAssignmentBinding) {
+        store
+            .observe_receipt_once(
+                &medousa_types::coordination::ExternalPeerAssignmentReceipt {
+                    receipt_id: store::intake::terminal_receipt_id(binding),
+                    binding: binding.clone(),
+                    outcome: medousa_types::coordination::PeerAssignmentOutcome::Completed,
+                    result: "done".into(),
+                },
+            )
+            .unwrap();
+    }
+
+    fn native_followup(
+        request: &ExternalPeerAssignmentRequest,
+        binding: &ExternalPeerAssignmentBinding,
+    ) -> ExternalPeerAssignmentRequest {
+        let mut next = request.clone();
+        next.assignment_id = "native-2".into();
+        next.idempotency_key = "native-command-2".into();
+        next.execution_grant_id = "native-grant-2".into();
+        next.existing_agent_session_id = Some(binding.agent_session_id.clone());
+        next.instructions = "Continue the correction in the existing conversation".into();
+        next
+    }
+
+    #[test]
+    fn native_coder_reuse_survives_restart_and_requires_fresh_grant() {
+        let (temp, store, request, binding) = native_fixture();
+        let next = native_followup(&request, &binding);
+        assert!(
+            store
+                .native_coder_reuse(&next, &binding.agent_session_id)
+                .is_err()
+        );
+        finish_native(&store, &binding);
+        drop(store);
+        let store = store::CoordinationStore::open(temp.path()).unwrap();
+        assert_eq!(
+            store
+                .native_coder_reuse(&next, &binding.agent_session_id)
+                .unwrap(),
+            request
+        );
+        let sessions = store
+            .native_coder_sessions(&request.target.authority_id, &request.owner_principal_id)
+            .unwrap();
+        assert_eq!(sessions, vec![request.clone()]);
+        assert!(
+            store
+                .native_coder_sessions(&request.target.authority_id, "another-owner")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            store
+                .record_native_coder("medousa_coder_native-2", &next)
+                .is_err()
+        );
+        approve_native(&store, &next);
+        store
+            .record_native_coder("medousa_coder_native-2", &next)
+            .unwrap();
+        // The exact correlation can be replayed, but a second unresolved
+        // assignment cannot concurrently take this same execution chat.
+        store
+            .record_native_coder("medousa_coder_native-2", &next)
+            .unwrap();
+        let mut competing = native_followup(&request, &binding);
+        competing.assignment_id = "native-3".into();
+        competing.idempotency_key = "native-command-3".into();
+        competing.execution_grant_id = "native-grant-3".into();
+        approve_native(&store, &competing);
+        assert!(
+            store
+                .record_native_coder("medousa_coder_native-3", &competing)
+                .unwrap_err()
+                .to_string()
+                .contains("unresolved")
+        );
+    }
+
+    #[test]
+    fn native_coder_reuse_rejects_changed_sender_project_runtime_and_owner() {
+        let (_temp, store, request, binding) = native_fixture();
+        finish_native(&store, &binding);
+        let next = native_followup(&request, &binding);
+        assert!(
+            store
+                .native_coder_reuse(&next, &binding.agent_session_id)
+                .is_ok()
+        );
+        for field in ["owner", "sender", "project", "runtime", "channel"] {
+            let mut changed = next.clone();
+            match field {
+                "owner" => changed.owner_principal_id = "someone-else".into(),
+                "sender" => changed.owner_session.session_id = "other-sender".parse().unwrap(),
+                "project" => changed.forge_work_id = "work-other".into(),
+                "runtime" => changed.target.execution_runtime_id = "other-host".into(),
+                "channel" => changed.channel.channel_id = "other-channel".into(),
+                _ => unreachable!(),
+            }
+            assert!(
+                store
+                    .native_coder_reuse(&changed, &binding.agent_session_id)
+                    .is_err(),
+                "{field}"
+            );
+        }
+        assert!(
+            store
+                .native_coder_reuse(&next, "medousa_coder_missing")
+                .is_err()
+        );
+        let mut wrong_session = next;
+        wrong_session.execution_session.session_id = "replacement-session".parse().unwrap();
+        approve_native(&store, &wrong_session);
+        assert!(
+            store
+                .record_native_coder("medousa_coder_native-2", &wrong_session)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1535,6 +1800,74 @@ mod tests {
         };
         wrong_grant.request.instructions.push_str(" and deploy");
         assert!(store.approve_owner_continuation(&wrong_grant).is_err());
+    }
+
+    #[test]
+    fn callback_scope_requires_native_unsettled_owner_admission() {
+        let (_temp, store, request, receipt) = receipt_fixture();
+        store.record_receipt(&receipt).unwrap();
+        let turn_id = format!("{}-owner-0", receipt.receipt_id);
+        assert!(
+            store
+                .owner_request_for_wake(&request.owner_session, &turn_id)
+                .is_err()
+        );
+        let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+        let store::intake::OwnerIntakeClaim::Started(intake) =
+            store.begin_owner_intake(&receipt, &lease).unwrap()
+        else {
+            panic!("expected native intake")
+        };
+        assert_eq!(
+            store
+                .owner_request_for_wake(&request.owner_session, &intake.turn_id)
+                .unwrap(),
+            request
+        );
+        let mut wrong_session = request.owner_session.clone();
+        wrong_session.session_id = "another-owner-session".parse().unwrap();
+        assert!(
+            store
+                .owner_request_for_wake(&wrong_session, &intake.turn_id)
+                .is_err()
+        );
+        assert!(
+            store
+                .owner_request_for_wake(&request.owner_session, "invented-turn")
+                .is_err()
+        );
+        store.reject_owner_admission(&intake, &lease).unwrap();
+        assert!(
+            store
+                .owner_request_for_wake(&request.owner_session, &intake.turn_id)
+                .is_err()
+        );
+        let store::intake::OwnerIntakeClaim::Started(retry) =
+            store.begin_owner_intake(&receipt, &lease).unwrap()
+        else {
+            panic!("expected fresh retry")
+        };
+        assert_eq!(
+            store
+                .owner_request_for_wake(&request.owner_session, &retry.turn_id)
+                .unwrap(),
+            request
+        );
+        let ack = medousa_types::coordination::PeerOwnerIntakeAcknowledgment {
+            intake: retry.clone(),
+            decision: medousa_types::TranscriptEntryRef {
+                session: request.owner_session.clone(),
+                entry_id: format!("ent_{}", "e".repeat(32)).parse().unwrap(),
+                entry_seq: 1,
+            },
+            decision_digest: "sha256:decision".into(),
+        };
+        store.acknowledge_owner_intake(&ack, &lease).unwrap();
+        assert!(
+            store
+                .owner_request_for_wake(&request.owner_session, &retry.turn_id)
+                .is_err()
+        );
     }
 
     #[test]

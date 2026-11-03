@@ -6178,7 +6178,10 @@ class PeerAssignmentProgress(MedousaModel):
 
 class PeerAssignmentProposal(MedousaModel):
     continue_owner: bool
-    expires_at: AwareDatetime
+    expires_at: AwareDatetime = Field(
+        ...,
+        description='Legacy snapshot metadata retained for identity compatibility, not an approval deadline. Execution grants receive their own bounded window.',
+    )
     proposal_id: str
     request: ExternalPeerAssignmentRequest
 

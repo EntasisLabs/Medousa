@@ -1077,3 +1077,5 @@ mod tests {
 
 #[cfg(test)]
 mod direct_tests;
+#[cfg(all(test, feature = "full-daemon"))]
+mod image_flow_tests;

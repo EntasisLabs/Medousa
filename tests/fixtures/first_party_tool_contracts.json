@@ -1811,6 +1811,39 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_image_view",
+      "description": "View a PNG, JPEG, WebP, or GIF file produced or found through terminal tools. Sends actual pixels to vision-capable models, not just metadata. Paths are on the workshop daemon, confined to authorized coding roots; Coder uses its admitted checkout. No URLs or arbitrary host paths. Large images use a bounded PNG rendition; originals are unchanged. Invoke this tool directly: generic parallel wrappers may return metadata without forwarding image attachments. A receipt alone is not visual verification.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "intent": {
+            "description": "Purpose, usually 4-8 words.",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "path": {
+            "description": "Image path on the workshop daemon's disk, not the UI device. Relative to root.",
+            "type": "string"
+          },
+          "root": {
+            "description": "Existing authorized workshop root. Defaults to the admitted Coder checkout or scripts library.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent",
+          "path"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:workspace",
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_memory_mutate",
       "description": "Write Locus memory: store an STTP node, calibrate AVEC, or evict nodes. action is a typed name (memory.store, memory.calibrate, memory.evict). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
@@ -1881,8 +1914,451 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_peer_discover",
+      "description": "Discover local Medousa Coder/Codex/Cursor/Hermes peers and saved coding runtime preferences, exact adoptable agent sessions, durable reusable native Coder chats (including titles), and this chat's bound project/context range. Continue a terminal reusable chat with peer_handoff existing_agent_session_id; no new chat is needed. Unavailable explicit targets must not be substituted; omitted runtime follows the saved fallback order. Use peer_handoff for work authorized by the current human request, or peer_propose for recommendations and adoption.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "intent": {
+            "description": "Purpose, usually 4-8 words.",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:messages"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_peer_handoff",
+      "description": "Delegate user-requested work in an owned Forge project through native admission without a second approval card. To continue a terminal native Coder chat, use existing_agent_session_id from peer discovery reusable_sessions; a fresh scoped assignment reuses its conversation, never its old grant. Optional session_title names the executor chat for future discovery. Omission creates fresh work. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage and work.coordinate when the stages are known ahead of time. Verified owner callbacks may also delegate or stage follow-on workers in the same already-authorized Forge project without another approval card; native admission checks the durable callback, original owner, source context and project. Callbacks are not operators and cannot use this to authorize new project scope. Human turns must include the current human request in committed context; callbacks inherit their saved human source. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Model supplies intent. The native host captures source identity and issues scoped authority.",
+        "properties": {
+          "admission": {
+            "default": "delegate",
+            "enum": [
+              "delegate",
+              "propose",
+              "stage"
+            ],
+            "type": "string"
+          },
+          "after_entry_seq": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "existing_agent_session_id": {
+            "default": null,
+            "description": "Exact reusable agent_session_id from peer discovery; omission creates fresh work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "handoff": {
+            "additionalProperties": false,
+            "default": {
+              "completion": "sender_review",
+              "contact": {
+                "kind": "return_to_origin"
+              },
+              "responsibility": "retain",
+              "wake_on_accepted": true,
+              "wake_on_terminal": true
+            },
+            "properties": {
+              "completion": {
+                "default": "sender_review",
+                "enum": [
+                  "sender_review",
+                  "worker_result"
+                ],
+                "type": "string"
+              },
+              "contact": {
+                "default": {
+                  "kind": "return_to_origin"
+                },
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "silent"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "return_to_origin"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "participant"
+                        ],
+                        "type": "string"
+                      },
+                      "participant": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "authority_id": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "artifact",
+                              "assignment",
+                              "bot",
+                              "component",
+                              "external_agent",
+                              "feed",
+                              "forge_work",
+                              "job",
+                              "project",
+                              "session",
+                              "vault_folder",
+                              "vault_note",
+                              "work_unit"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "authority_id",
+                          "id",
+                          "kind"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "participant"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "channel": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "authority_id": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "artifact",
+                              "assignment",
+                              "bot",
+                              "component",
+                              "external_agent",
+                              "feed",
+                              "forge_work",
+                              "job",
+                              "project",
+                              "session",
+                              "vault_folder",
+                              "vault_note",
+                              "work_unit"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "authority_id",
+                          "id",
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      "kind": {
+                        "enum": [
+                          "channel"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "channel",
+                      "kind"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "responsibility": {
+                "default": "retain",
+                "enum": [
+                  "retain",
+                  "transfer"
+                ],
+                "type": "string"
+              },
+              "wake_on_accepted": {
+                "default": true,
+                "type": "boolean"
+              },
+              "wake_on_terminal": {
+                "default": true,
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "intent": {
+            "description": "Purpose, usually 4-8 words.",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "request_key": {
+            "type": "string"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude",
+                  "codex",
+                  "cursor",
+                  "devin",
+                  "hades",
+                  "hermes",
+                  "medousa",
+                  "muse_code",
+                  "pi"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "session_title": {
+            "default": null,
+            "description": "Optional human-readable executor chat title. Names are not execution authority.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "through_entry_seq": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "after_entry_seq",
+          "forge_work_id",
+          "instructions",
+          "intent",
+          "request_key",
+          "through_entry_seq"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:messages"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_peer_propose",
+      "description": "Prepare an immutable coder assignment for an owned local Forge project. Pass forge_work_id from active-work discovery or work.create_project; when the user requests new work in an existing Git folder without an undertaking, use cognition_runtime_mutate action=work.create_project first; the source chat need not be bound to it. Omit runtime to follow saved preferences and available fallbacks, defaulting to Medousa Coder. Set runtime only when the user explicitly requests it. Never ask the user to move chats just to assign work. Discover first and select an explicit committed context range. To adopt existing work, copy only an exact existing_agent_session_id returned by discovery; omission starts new work. Reuse request_key for exact retries only. This requests human review; it does NOT approve, launch, adopt, or complete work. Tell the user to review the approval card and explicitly start approved work. A conversational yes is not execution authority.",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Source selection is checked against a visible, owned, governed chat.",
+        "properties": {
+          "after_entry_seq": {
+            "description": "Exclusive lower bound from native discovery.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "continue_owner": {
+            "description": "Result-only owner-chat continuation; must be false for HTTP work participants.",
+            "type": "boolean"
+          },
+          "existing_agent_session_id": {
+            "description": "Exact adoptable native session; omit to create fresh work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forge_work_id": {
+            "default": null,
+            "description": "An explicit owned project; omission preserves legacy chat binding.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "intent": {
+            "description": "Purpose, usually 4-8 words.",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "request_key": {
+            "description": "Stable request key; reuse for exact retries.",
+            "type": "string"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude",
+                  "codex",
+                  "cursor",
+                  "devin",
+                  "hades",
+                  "hermes",
+                  "medousa",
+                  "muse_code",
+                  "pi"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Omit to use the workshop's saved preference and available fallbacks."
+          },
+          "through_entry_seq": {
+            "description": "Inclusive committed upper bound from native discovery.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "after_entry_seq",
+          "continue_owner",
+          "instructions",
+          "intent",
+          "request_key",
+          "through_entry_seq"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:messages"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_peer_review",
+      "description": "Record the sender's acceptance or requested changes for an exact completed handoff. Only the originating sender may decide; executor completion is not sender acceptance. This does not launch another agent or mark a whole project satisfied.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "properties": {
+              "authority_id": {
+                "type": "string"
+              },
+              "channel_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "authority_id",
+              "channel_id"
+            ],
+            "type": "object"
+          },
+          "intent": {
+            "description": "Purpose, usually 4-8 words.",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "accept",
+              "changes_requested"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "channel",
+          "intent",
+          "reason",
+          "receipt_id",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:messages"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_runtime_mutate",
-      "description": "Mutate durable runtime work. SSH: discover granted targets with runtime query ssh.targets; use ssh.run then poll ssh.execution, reusing request_key on retries. ssh.open_terminal/ssh.terminal_input provide interactive access. Do not replay changes with an unknown remote outcome. Native undertaking lifecycle: work.prepare_merge, work.approve_project, work.apply_project, work.request_project_changes, work.discard_project. First inspect exact sealed evidence with runtime query work.project_review and work.project_review_file. Use existing user intent; do not repeatedly ask for approval already given. Callbacks can continue the owner lifecycle, but delegated executors cannot approve or integrate work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].",
+      "description": "Mutate durable runtime work. SSH: discover granted targets with runtime query ssh.targets; use ssh.run then poll ssh.execution, reusing request_key on retries. ssh.open_terminal/ssh.terminal_input provide interactive access. Do not replay changes with an unknown remote outcome. Native undertaking lifecycle: work.prepare_merge, work.repair_git_target (legacy full-OID recovery only; invalidates approvals without merging), work.approve_project, work.apply_project, work.request_project_changes, work.discard_project. First inspect exact sealed evidence with runtime query work.project_review and work.project_review_file. Use existing user intent; do not repeatedly ask for approval already given. Callbacks can continue the owner lifecycle, but delegated executors cannot approve or integrate work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -1904,6 +2380,7 @@
               "work.prepare_merge",
               "work.reconcile",
               "work.record",
+              "work.repair_git_target",
               "work.request_project_changes",
               "work.resolve",
               "work.resolve_content",
@@ -2109,6 +2586,7 @@
                 "work.project_review_file",
                 "work.reconcile",
                 "work.record",
+                "work.repair_git_target",
                 "work.request_project_changes",
                 "work.resolve",
                 "work.resolve_content",
@@ -4929,6 +5407,35 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_image_view",
+      "description": "View a PNG, JPEG, WebP, or GIF file produced or found through terminal tools. Sends actual pixels to vision-capable models, not just metadata. Paths are on the workshop daemon, confined to authorized coding roots; Coder uses its admitted checkout. No URLs or arbitrary host paths. Large images use a bounded PNG rendition; originals are unchanged. Invoke this tool directly: generic parallel wrappers may return metadata without forwarding image attachments. A receipt alone is not visual verification.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Image path on the workshop daemon's disk, not the UI device. Relative to root.",
+            "type": "string"
+          },
+          "root": {
+            "description": "Existing authorized workshop root. Defaults to the admitted Coder checkout or scripts library.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "assistant:authorized",
+        "assistant:domain:media",
+        "general:authorized",
+        "general:domain:media"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_intent_resolve",
       "description": "Resolve an operator intent or fuzzy query to capabilities with suggested feed ids and component templates.",
       "input_schema": {
@@ -5466,7 +5973,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_peer_discover",
-      "description": "Discover local Medousa Coder/Codex/Cursor/Hermes peers and saved coding runtime preferences, exact adoptable agent sessions, and this chat's bound project/context range. Unavailable explicit targets must not be substituted; omitted runtime follows the saved fallback order. Use peer_handoff for work authorized by the current human request, or peer_propose for recommendations and adoption.",
+      "description": "Discover local Medousa Coder/Codex/Cursor/Hermes peers and saved coding runtime preferences, exact adoptable agent sessions, durable reusable native Coder chats (including titles), and this chat's bound project/context range. Continue a terminal reusable chat with peer_handoff existing_agent_session_id; no new chat is needed. Unavailable explicit targets must not be substituted; omitted runtime follows the saved fallback order. Use peer_handoff for work authorized by the current human request, or peer_propose for recommendations and adoption.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {},
@@ -5481,7 +5988,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_peer_handoff",
-      "description": "Delegate user-requested work in an owned Forge project through native admission without a second approval card. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage for each exact stage during this human turn, then register those proposal IDs with work.coordinate; staged admission issues the same bounded native approval without dispatch, allowing native coordination to advance without callback reauthorization. A callback cannot mint new stages. The current human request must be included in the committed context. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.",
+      "description": "Delegate user-requested work in an owned Forge project through native admission without a second approval card. To continue a terminal native Coder chat, use existing_agent_session_id from peer discovery reusable_sessions; a fresh scoped assignment reuses its conversation, never its old grant. Optional session_title names the executor chat for future discovery. Omission creates fresh work. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage and work.coordinate when the stages are known ahead of time. Verified owner callbacks may also delegate or stage follow-on workers in the same already-authorized Forge project without another approval card; native admission checks the durable callback, original owner, source context and project. Callbacks are not operators and cannot use this to authorize new project scope. Human turns must include the current human request in committed context; callbacks inherit their saved human source. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.",
       "input_schema": {
         "additionalProperties": false,
         "description": "Model supplies intent. The native host captures source identity and issues scoped authority.",
@@ -5498,6 +6005,14 @@
           "after_entry_seq": {
             "minimum": 0,
             "type": "integer"
+          },
+          "existing_agent_session_id": {
+            "default": null,
+            "description": "Exact reusable agent_session_id from peer discovery; omission creates fresh work.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "forge_work_id": {
             "type": "string"
@@ -5710,6 +6225,14 @@
             ],
             "default": null
           },
+          "session_title": {
+            "default": null,
+            "description": "Optional human-readable executor chat title. Names are not execution authority.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "through_entry_seq": {
             "minimum": 0,
             "type": "integer"
@@ -5888,7 +6411,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_runtime_mutate",
-      "description": "Mutate durable runtime work. SSH: discover granted targets with runtime query ssh.targets; use ssh.run then poll ssh.execution, reusing request_key on retries. ssh.open_terminal/ssh.terminal_input provide interactive access. Do not replay changes with an unknown remote outcome. Native undertaking lifecycle: work.prepare_merge, work.approve_project, work.apply_project, work.request_project_changes, work.discard_project. First inspect exact sealed evidence with runtime query work.project_review and work.project_review_file. Use existing user intent; do not repeatedly ask for approval already given. Callbacks can continue the owner lifecycle, but delegated executors cannot approve or integrate work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].",
+      "description": "Mutate durable runtime work. SSH: discover granted targets with runtime query ssh.targets; use ssh.run then poll ssh.execution, reusing request_key on retries. ssh.open_terminal/ssh.terminal_input provide interactive access. Do not replay changes with an unknown remote outcome. Native undertaking lifecycle: work.prepare_merge, work.repair_git_target (legacy full-OID recovery only; invalidates approvals without merging), work.approve_project, work.apply_project, work.request_project_changes, work.discard_project. First inspect exact sealed evidence with runtime query work.project_review and work.project_review_file. Use existing user intent; do not repeatedly ask for approval already given. Callbacks can continue the owner lifecycle, but delegated executors cannot approve or integrate work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -5910,6 +6433,7 @@
               "work.prepare_merge",
               "work.reconcile",
               "work.record",
+              "work.repair_git_target",
               "work.request_project_changes",
               "work.resolve",
               "work.resolve_content",
@@ -6120,6 +6644,7 @@
                 "work.project_review_file",
                 "work.reconcile",
                 "work.record",
+                "work.repair_git_target",
                 "work.request_project_changes",
                 "work.resolve",
                 "work.resolve_content",

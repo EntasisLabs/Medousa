@@ -25,6 +25,9 @@ fn git(repo: &std::path::Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).to_string()
 }
 fn fixture(mode: WorkspaceMode) -> Fixture {
+    fixture_with_legacy_target(mode, false)
+}
+fn fixture_with_legacy_target(mode: WorkspaceMode, legacy: bool) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().canonicalize().unwrap().join("repo");
     std::fs::create_dir(&repo).unwrap();
@@ -39,12 +42,14 @@ fn fixture(mode: WorkspaceMode) -> Fixture {
         git(&repo, &["add", "hello.txt"]);
     }
     let forge = Forge::open(dir.path().canonicalize().unwrap().join("forge")).unwrap();
+    let baseline = git(&repo, &["rev-parse", "HEAD"]);
+    let base_ref = if legacy { baseline.trim() } else { "main" };
     let item = forge
         .register_with_workspace_mode(
             "lifecycle",
             "finish this work",
             &repo,
-            "main",
+            base_ref,
             "owner",
             mode,
             &actor(),
@@ -58,6 +63,92 @@ fn fixture(mode: WorkspaceMode) -> Fixture {
         item,
     }
 }
+#[test]
+fn native_legacy_target_repair_preserves_evidence_and_requires_fresh_approval() {
+    let fx = fixture_with_legacy_target(WorkspaceMode::Isolated, true);
+    let reviewed = prepare(&fx);
+    let query = || ProjectReviewQuery {
+        work_id: fx.item.id.to_string(),
+        attempt_id: None,
+    };
+    let before = review(&fx.forge, "owner", query()).unwrap();
+    let input = ProjectRepairGitTargetInput {
+        work_id: fx.item.id.to_string(),
+        expected_old_ref: before["target"]["base_ref"].as_str().unwrap().into(),
+        expected_baseline_oid: before["target"]["base_oid"].as_str().unwrap().into(),
+        branch: "main".into(),
+        reason: "Restore legacy integration branch".into(),
+    };
+    let (_, old_decision) = approve(
+        &fx.forge,
+        "owner",
+        &actor(),
+        approval(
+            &fx,
+            reviewed.clone(),
+            ProjectIntegrationStrategy::PreserveBranch,
+        ),
+    )
+    .unwrap();
+    assert!(repair_git_target(&fx.forge, "other", &actor(), input.clone()).is_err());
+    let repaired = repair_git_target(&fx.forge, "owner", &actor(), input.clone()).unwrap();
+    assert!(repaired.review_decisions.is_empty());
+    assert!(repair_git_target(&fx.forge, "owner", &actor(), input).is_err());
+    let after = review(&fx.forge, "owner", query()).unwrap();
+    assert_eq!(before["reviewed"], after["reviewed"]);
+    assert_eq!(before["evidence"], after["evidence"]);
+    assert_eq!(after["target"]["base_ref"], "main");
+    assert!(
+        after["allowed_strategies"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("fast_forward_only"))
+    );
+    let events = fx.forge.store().replay(&fx.item.id).unwrap();
+    assert!(events.iter().any(|event| event.actor == actor()
+        && matches!(
+            event.payload,
+            crate::events::EventPayload::GitTargetRepaired { .. }
+        )));
+    assert!(
+        apply(
+            &fx.forge,
+            "owner",
+            &actor(),
+            ProjectApplyInput {
+                work_id: fx.item.id.to_string(),
+                decision_id: old_decision.to_string(),
+            }
+        )
+        .is_err()
+    );
+    let (_, decision) = approve(
+        &fx.forge,
+        "owner",
+        &actor(),
+        approval(
+            &fx,
+            reviewed.clone(),
+            ProjectIntegrationStrategy::FastForwardOnly,
+        ),
+    )
+    .unwrap();
+    apply(
+        &fx.forge,
+        "owner",
+        &actor(),
+        ProjectApplyInput {
+            work_id: fx.item.id.to_string(),
+            decision_id: decision.to_string(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        git(&fx.repo, &["rev-parse", "main"]).trim(),
+        reviewed.reviewed_head_oid
+    );
+}
+
 fn prepare(fx: &Fixture) -> ProjectReviewPin {
     let workspace = fx.item.workspace_environment().unwrap().worktree.clone();
     std::fs::write(workspace.join("hello.txt"), "after\n").unwrap();

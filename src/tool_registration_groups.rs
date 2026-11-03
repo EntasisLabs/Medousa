@@ -154,6 +154,8 @@ pub fn register_portable_interactive_tools(
         bindings.turn_scope.clone(),
     )?;
     crate::chat_history_tools::register_chat_history_tools(registry, bindings.turn_scope.clone())?;
+    #[cfg(feature = "full-daemon")]
+    crate::image_view_tools::register_image_view_tool(registry)?;
     crate::tool_history_tools::register_tool_history_tools(registry, bindings.turn_scope.clone())?;
     #[cfg(feature = "full-daemon")]
     crate::turn_api::register_turn_tools(

@@ -175,6 +175,8 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_sticky_query",
         #[cfg(feature = "full-daemon")]
         crate::computer_tools::COGNITION_COMPUTER_SNAPSHOT,
+        #[cfg(feature = "full-daemon")]
+        crate::image_view_tools::COGNITION_IMAGE_VIEW,
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
@@ -286,11 +288,19 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_store_read",
-        if cfg!(feature = "full-daemon") { "Read Create frames/objects with creative.read; also read/search vault notes, artifacts, code, or saved scripts" } else { "Read or search vault, artifacts, code, or saved scripts" },
+        if cfg!(feature = "full-daemon") {
+            "Read Create frames/objects with creative.read; also read/search vault notes, artifacts, code, or saved scripts"
+        } else {
+            "Read or search vault, artifacts, code, or saved scripts"
+        },
     ),
     (
         "cognition_store_write",
-        if cfg!(feature = "full-daemon") { "Build editable Create canvases and UI wireframes from screenshots: creative.create then creative.propose with native frames, text, and shapes for preview/apply. Also write/delete/move vault notes, artifacts, code, or saved scripts" } else { "Write, delete, or move vault, artifacts, code, or saved scripts" },
+        if cfg!(feature = "full-daemon") {
+            "Build editable Create canvases and UI wireframes from screenshots: creative.create then creative.propose with native frames, text, and shapes for preview/apply. Also write/delete/move vault notes, artifacts, code, or saved scripts"
+        } else {
+            "Write, delete, or move vault, artifacts, code, or saved scripts"
+        },
     ),
     (
         crate::public_api::COGNITION_CALENDAR_QUERY,
@@ -302,7 +312,11 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_image_generate",
-        if cfg!(feature = "full-daemon") { "Generate raster images, photos, or art assets. Editable UI designs/wireframes belong in Create via creative.create/propose, not a generated bitmap" } else { "Generate raster images, photos, or art assets. Editable UI wireframes require a Create-enabled workshop; a bitmap does not fulfill that request" },
+        if cfg!(feature = "full-daemon") {
+            "Generate raster images, photos, or art assets. Editable UI designs/wireframes belong in Create via creative.create/propose, not a generated bitmap"
+        } else {
+            "Generate raster images, photos, or art assets. Editable UI wireframes require a Create-enabled workshop; a bitmap does not fulfill that request"
+        },
     ),
     (
         "cognition_web_search",

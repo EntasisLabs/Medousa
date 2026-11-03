@@ -215,6 +215,59 @@ next model response, not as base64 or image data in tool JSON. This lets an agen
 explicitly; it does not make media from an unauthorized session or deleted media
 available.
 
+### Viewing image files from terminal work
+
+The full daemon exposes `cognition_image_view` in the `media` discover domain;
+Coder also exposes it through `workspace` discovery. After generating an image
+with a terminal tool, invoke the native tool with its path:
+
+```json
+{"path":"screenshots/result.png"}
+```
+
+In Coder, paths default to the admitted checkout. In an Assistant turn, supply
+`root` for an existing authorized coding root (the default is the scripts
+library). The same root checks as `code.read` apply: this does not grant arbitrary
+host filesystem access. Both relative paths and absolute paths beneath that root
+are accepted. Paths refer to the **workshop daemon's disk**, not a remote UI's
+local disk. Keep generated images under the authorized root rather than `/tmp`.
+There is no special terminal escape sequence or base64-printing requirement:
+the terminal creates the file; the native tool opens it for the model.
+
+Invoke `cognition_image_view` directly on externally supplied tool surfaces.
+Generic wrappers such as `multi_tool_use.parallel` may preserve the JSON receipt
+but drop binary image attachments. That wrapper is not a daemon tool or part of
+Medousa's native parallel tool dispatcher. Native dispatch hydrates each image
+against its originating call ID; an external wrapper must preserve equivalent
+multimodal delivery to claim support. If it returns metadata alone, retry the
+direct tool and report the limitation—do not treat `vision_available` as proof
+that the model saw pixels.
+
+On the ChatGPT Responses route, verified tool images use standard `input_image`
+message content, not images nested inside `function_call_output.output` arrays.
+The transient observation keeps its originating tool-call ID and untrusted-content
+label; it is not saved as a new principal chat turn. A successful receipt or an
+image in a mocked HTTP payload alone does not establish visual understanding.
+The opt-in `live_generated_image_transport_probe` exercises the native image tool,
+artifact hydration, and real provider response against generated pixels whose
+expected contents are absent from the prompt and receipt. It requires explicit
+live-test invocation and access to the signed-in account's native credential store.
+
+Supported sources are PNG, JPEG, WebP, and GIF (first frame), at most 25 MiB.
+The tool validates and decodes the file with bounded allocation, applies image
+orientation, and saves a PNG rendition of at most 4096 pixels per dimension and
+8 MiB. The source file is unchanged. A session-scoped snapshot and SHA-256
+receipt bind the actual pixels delivered through the same multimodal hydration
+pipeline used for attachment reopening. Changing or deleting the source after
+the call does not change the observation. Symlink/hard-link traversal and paths
+outside the root are refused; URLs and SVG are not supported.
+
+`vision_available` reports whether the active provider/model route supports
+images. Text-only models receive the receipt, not the pixels. Bound OCI/remote
+work-environment files are currently refused explicitly rather than silently
+opening a same-named host file; this tool currently accepts daemon-local files.
+It is not added to mobile-foreground or remote-delegation authority ceilings.
+
 ### Workshop execution placement
 
 `workshop.spawn` accepts an optional `execution_target`:

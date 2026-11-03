@@ -59,7 +59,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Desktop Spotlight](guides/desktop-spotlight.md) | Global launcher and reusable Chat, Create, and Code windows |
 | [Create](guides/create.md) | Editable creative projects, contextual AI proposals, and image exports |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
-| [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
+| [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, revisit images, and inspect terminal-produced files |
 | [Coding runtimes](guides/coding-runtimes.md) | Choose a preferred coder, ordered fallbacks, and follow assigned work |
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Saved artifacts](guides/artifacts.md) | Find and show earlier HTML artifacts in chat |
@@ -115,7 +115,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Work scopes and relationships](engine/work-units.md) | Durable user-domain intent, resource links, actor-bound inboxes, and correlated provider evidence through existing runtime tools |
 | [External agent conversations](engine/external-conversations.md) | Muse, Grok Bot, Instinct, and Dots bridges, authenticated work participation, and exact work callbacks |
 | [Coding engine](engine/coding-engine.md) | Language servers, project intelligence, safe edits |
-| [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains |
+| [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains, terminal image-file viewing |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |
 | [Extensions](engine/extensions.md) | Grapheme, Locus, workflows, media, STT |
 | [Architecture (deep)](../architecture/README.md) | Component boundaries; [daemon modules](architecture/daemon-modules.md), [turn runtime](../architecture/turn-runtime-and-lanes.md), [roadmap](../architecture/ROADMAP.md) |

@@ -242,7 +242,7 @@ impl LocalPeerDispatcher {
         if !principal.capabilities().contains(Capability::AdminExecute) {
             bail!("owner continuation approval requires an operator");
         }
-        self.local_request(principal, &grant.request)?;
+        self.local_request(principal, &grant.request).await?;
         let ttl = grant.expires_at - chrono::Utc::now();
         if ttl.num_seconds() <= 0 || ttl.num_seconds() > 86_400 {
             bail!("owner continuation approval expiry must be within 24 hours");

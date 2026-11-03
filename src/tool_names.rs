@@ -55,6 +55,8 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_identity_mutate",
     "cognition_identity_query",
     "cognition_image_generate",
+    #[cfg(feature = "full-daemon")]
+    "cognition_image_view",
     "cognition_intent_resolve",
     "cognition_layout_apply",
     "cognition_layout_get",

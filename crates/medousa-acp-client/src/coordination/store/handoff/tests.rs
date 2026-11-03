@@ -75,12 +75,17 @@ fn fixture_with_admission(
     let mut proposal = PeerAssignmentProposal {
         proposal_id: String::new(),
         request: request.clone(),
-        expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        expires_at: if admission == PeerHandoffAdmission::Propose {
+            chrono::Utc::now() - chrono::Duration::days(30)
+        } else {
+            chrono::Utc::now() + chrono::Duration::hours(1)
+        },
         continue_owner: false,
     };
     proposal.proposal_id = super::super::proposals::proposal_identity(&proposal).unwrap();
     store.record_proposal(&proposal).unwrap();
     let record = PeerHandoffRecord {
+        session_title: None,
         request: request.clone(),
         policy,
         admission,
@@ -106,7 +111,7 @@ fn fixture_with_admission(
         .decide_proposal(
             &channel,
             &PeerProposalDecision {
-                proposal_id: proposal.proposal_id,
+                proposal_id: proposal.proposal_id.clone(),
                 owner_principal_id: "owner".into(),
                 approved: true,
             },
@@ -115,7 +120,11 @@ fn fixture_with_admission(
     store
         .approve_assignment(&ExternalPeerAssignmentGrant {
             request: request.clone(),
-            expires_at: proposal.expires_at,
+            expires_at: if admission == PeerHandoffAdmission::Propose {
+                store.proposal_execution_deadline(&proposal).unwrap()
+            } else {
+                proposal.expires_at
+            },
         })
         .unwrap();
     if admission.dispatches_immediately() {
@@ -123,6 +132,26 @@ fn fixture_with_admission(
     }
     (store, record, binding)
 }
+#[test]
+fn aged_proposal_handoff_callbacks_use_the_fresh_approved_execution_window() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, record, binding) = fixture_with_admission(
+        root.path(),
+        PeerHandoffPolicy::default(),
+        PeerHandoffAdmission::Propose,
+    );
+    assert!(record.expires_at < chrono::Utc::now());
+    store.claim_assignment(&record.request).unwrap();
+    store.record_peer(&binding).unwrap();
+    store.record_handoff_acceptance(&binding).unwrap();
+    let event = store.handoff_acceptance(&record).unwrap().unwrap();
+    assert_eq!(store.require_handoff_event(&event).unwrap(), record);
+    store
+        .revoke_assignment_grant(&binding.channel, &record.request.execution_grant_id)
+        .unwrap();
+    assert!(store.require_handoff_event(&event).is_err());
+}
+
 #[test]
 fn staged_handoff_and_exact_grant_survive_reopen_without_dispatch_or_acceptance() {
     let root = tempfile::tempdir().unwrap();

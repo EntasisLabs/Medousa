@@ -59,7 +59,7 @@ impl LocalPeerDispatcher {
             .await??;
         // Review does not expose source bodies. Full visibility is rechecked at approval.
         for row in rows.iter().chain(tracked_proposal.iter()) {
-            self.local_request(principal, &row.proposal.request)?;
+            self.local_request(principal, &row.proposal.request).await?;
         }
         let next_cursor =
             (rows.len() == 8).then(|| rows.last().unwrap().proposal.proposal_id.clone());
@@ -87,11 +87,7 @@ impl LocalPeerDispatcher {
         continue_owner: bool,
         projected_source_session_ids: Vec<medousa_types::SessionId>,
     ) -> Result<PeerAssignmentProposal> {
-        self.local_request(principal, &request)?;
-        let ttl = expires_at - chrono::Utc::now();
-        if ttl.num_seconds() <= 0 || ttl.num_seconds() > 86_400 {
-            bail!("proposal expiry must be within 24 hours");
-        }
+        self.local_request(principal, &request).await?;
         self.hydrate(principal, &request, false).await?;
         let mut proposal = PeerAssignmentProposal {
             proposal_id: String::new(),
@@ -130,7 +126,7 @@ impl LocalPeerDispatcher {
                 })())
             })
             .await??;
-        self.local_request(principal, &proposal.request)?;
+        self.local_request(principal, &proposal.request).await?;
         Ok(proposal)
     }
 
@@ -158,18 +154,27 @@ impl LocalPeerDispatcher {
             approved,
         };
         let store = self.store.clone();
-        self.state
+        let snapshot = proposal.clone();
+        let expires_at = self
+            .state
             .forge_execution
             .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
-                Ok(store.decide_proposal(&channel, &decision))
+                Ok((|| -> Result<_> {
+                    store.decide_proposal(&channel, &decision)?;
+                    if approved {
+                        Ok(Some(store.proposal_execution_deadline(&snapshot)?))
+                    } else {
+                        Ok(None)
+                    }
+                })())
             })
             .await??;
-        if approved {
+        if let Some(expires_at) = expires_at {
             self.approve(
                 principal,
                 ExternalPeerAssignmentGrant {
                     request: proposal.request.clone(),
-                    expires_at: proposal.expires_at,
+                    expires_at,
                 },
             )
             .await?;
@@ -178,7 +183,7 @@ impl LocalPeerDispatcher {
                     principal,
                     PeerOwnerContinuationGrant {
                         request: proposal.request,
-                        expires_at: proposal.expires_at,
+                        expires_at,
                     },
                 )
                 .await?;

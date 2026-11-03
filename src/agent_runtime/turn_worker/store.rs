@@ -1103,16 +1103,57 @@ impl TurnWorkerStore {
         text: String,
         speaker_profile_id: Option<String>,
     ) -> Result<TurnWorkRecord, BoundWorkshopMutationError> {
+        self.push_local_steer(session_id, work_id, text, speaker_profile_id, false)
+    }
+
+    /// Tool control addresses an exact live local worker, not just the bound lane.
+    /// Remote delegated workers retain their separate authenticated control path.
+    pub fn push_worker_steer_exact(
+        &self,
+        session_id: &str,
+        work_id: &str,
+        text: String,
+        speaker_profile_id: Option<String>,
+    ) -> Result<TurnWorkRecord, BoundWorkshopMutationError> {
+        self.push_local_steer(session_id, work_id, text, speaker_profile_id, true)
+    }
+
+    fn push_local_steer(
+        &self,
+        session_id: &str,
+        work_id: &str,
+        text: String,
+        speaker_profile_id: Option<String>,
+        include_parallel: bool,
+    ) -> Result<TurnWorkRecord, BoundWorkshopMutationError> {
         let Ok((_session, _mutation)) =
             crate::session_deletion::acquire_mutation_for_str(session_id)
         else {
             return Err(BoundWorkshopMutationError::SessionDeleting);
         };
         let mut records = self.records.lock().expect("turn worker records");
-        let active_work_id = records
-            .values()
-            .find(|record| record.session_id == session_id && is_active_bound(record))
-            .map(|record| record.work_id.clone());
+        let active_work_id = if include_parallel {
+            records
+                .get(work_id)
+                .filter(|record| {
+                    record.session_id == session_id
+                        && !record.archived
+                        && matches!(
+                            record.disposition,
+                            TurnWorkDisposition::Bound | TurnWorkDisposition::Parallel
+                        )
+                        && matches!(
+                            record.status,
+                            TurnWorkStatus::Pending | TurnWorkStatus::Running
+                        )
+                })
+                .map(|record| record.work_id.clone())
+        } else {
+            records
+                .values()
+                .find(|record| record.session_id == session_id && is_active_bound(record))
+                .map(|record| record.work_id.clone())
+        };
         if active_work_id.as_deref() != Some(work_id) {
             return Err(BoundWorkshopMutationError::StaleGeneration { active_work_id });
         }
@@ -1829,6 +1870,77 @@ mod tests {
         assert!(ids.contains(&"work-f".to_string()));
         assert!(!ids.contains(&"work-bf".to_string()));
         assert!(!ids.contains(&"work-d".to_string()));
+    }
+
+    #[test]
+    fn local_worker_steering_selects_exact_owned_active_generation() {
+        let store = TurnWorkerStore::empty_for_tests();
+        seed(
+            &store,
+            test_record("peer-a", "sess-steer", 1, TurnWorkStatus::Running),
+        );
+        seed(
+            &store,
+            test_record("peer-b", "sess-steer", 1, TurnWorkStatus::Pending),
+        );
+        let mut bound = test_record("bound", "sess-steer", 1, TurnWorkStatus::Running);
+        bound.disposition = TurnWorkDisposition::Bound;
+        seed(&store, bound);
+        assert!(
+            store
+                .push_steer_exact("sess-steer", "peer-a", "wrong lane".into(), None)
+                .is_err()
+        );
+        let queued = store
+            .push_worker_steer_exact("sess-steer", "peer-b", "follow up".into(), None)
+            .unwrap();
+        assert_eq!(queued.steer_messages.len(), 1);
+        assert_eq!(store.drain_steer_messages("peer-b")[0].text, "follow up");
+        assert!(store.get("peer-a").unwrap().steer_history.is_empty());
+        assert!(store.get("bound").unwrap().steer_history.is_empty());
+        assert!(
+            store
+                .push_worker_steer_exact("foreign", "peer-a", "deny".into(), None)
+                .is_err()
+        );
+        assert!(
+            store
+                .push_worker_steer_exact("sess-steer", "missing", "deny".into(), None)
+                .is_err()
+        );
+        for status in [
+            TurnWorkStatus::Completed,
+            TurnWorkStatus::Failed,
+            TurnWorkStatus::Cancelled,
+        ] {
+            seed(&store, test_record("terminal", "sess-steer", 1, status));
+            assert!(
+                store
+                    .push_worker_steer_exact("sess-steer", "terminal", "deny".into(), None)
+                    .is_err()
+            );
+        }
+        let mut archived = test_record("archived", "sess-steer", 1, TurnWorkStatus::Running);
+        archived.archived = true;
+        seed(&store, archived);
+        assert!(
+            store
+                .push_worker_steer_exact("sess-steer", "archived", "deny".into(), None)
+                .is_err()
+        );
+        let mut remote = test_record("remote", "sess-steer", 1, TurnWorkStatus::Running);
+        remote.disposition = TurnWorkDisposition::Delegated;
+        seed(&store, remote);
+        assert!(
+            store
+                .push_worker_steer_exact("sess-steer", "remote", "deny".into(), None)
+                .is_err()
+        );
+        assert!(
+            store
+                .push_worker_steer_exact("sess-steer", "bound", "still bound".into(), None)
+                .is_ok()
+        );
     }
 
     #[test]

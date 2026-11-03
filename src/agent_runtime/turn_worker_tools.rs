@@ -481,9 +481,9 @@ impl CognitionWorkshopSteerTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WorkshopSteerInput {
-    /// Exact bound-workshop generation returned by begin-work.
+    /// Exact active local worker generation returned by workshop.spawn/status.
     pub(crate) work_id: String,
-    /// Steer text for the bound workshop
+    /// Steer text for the exact local worker
     pub(crate) message: String,
 }
 
@@ -510,7 +510,7 @@ impl WorkshopSteerOutput {
 
 #[medousa_tool(id = COGNITION_WORKSHOP_STEER_ID)]
 impl CognitionWorkshopSteerTool {
-    /// Forward a principal steer message into the active bound workshop for this session. Use when the operator adds guidance while workshop execution is in flight.
+    /// Forward guidance to an exact active worker owned by this session (parallel or bound). Terminal native Coder chats require a fresh peer handoff, not steering.
     pub(crate) async fn invoke_typed(
         &self,
         input: WorkshopSteerInput,
@@ -521,9 +521,7 @@ impl CognitionWorkshopSteerTool {
                 "cognition_workshop_steer: message required".to_string(),
             ));
         }
-        let session_id = self
-            .scheduler
-            .active_bus_session_id()
+        let session_id = active_control_session(&self.scheduler)
             .await
             .ok_or_else(|| {
                 StasisError::PortFailure(
@@ -531,7 +529,8 @@ impl CognitionWorkshopSteerTool {
                 )
             })?;
         let speaker = crate::user_profiles::resolve_workshop_identity_user_id();
-        steer_bound_workshop_for_session(&session_id, &input.work_id, message, Some(speaker)).await
+        steer_local_worker_for_session(&session_id, &input.work_id, message, Some(speaker), true)
+            .await
     }
 }
 
@@ -540,6 +539,16 @@ pub async fn steer_bound_workshop_for_session(
     work_id: &str,
     message: &str,
     speaker_profile_id: Option<String>,
+) -> stasis::prelude::Result<WorkshopSteerOutput> {
+    steer_local_worker_for_session(session_id, work_id, message, speaker_profile_id, false).await
+}
+
+async fn steer_local_worker_for_session(
+    session_id: &str,
+    work_id: &str,
+    message: &str,
+    speaker_profile_id: Option<String>,
+    include_parallel: bool,
 ) -> stasis::prelude::Result<WorkshopSteerOutput> {
     let store = turn_worker_store();
     let speaker = speaker_profile_id
@@ -555,22 +564,36 @@ pub async fn steer_bound_workshop_for_session(
         });
     }
 
-    let updated = match store.push_steer_exact(
-        session_id,
-        work_id.trim(),
-        message.to_string(),
-        speaker.clone(),
-    ) {
+    let mutation = if include_parallel {
+        store.push_worker_steer_exact(
+            session_id,
+            work_id.trim(),
+            message.to_string(),
+            speaker.clone(),
+        )
+    } else {
+        store.push_steer_exact(
+            session_id,
+            work_id.trim(),
+            message.to_string(),
+            speaker.clone(),
+        )
+    };
+    let updated = match mutation {
         Ok(updated) => updated,
         Err(crate::agent_runtime::turn_worker::BoundWorkshopMutationError::StaleGeneration {
             active_work_id,
         }) => {
             return Ok(WorkshopSteerOutput::Failure {
                 ok: false,
-                error: active_work_id.map_or_else(
-                    || "no active bound workshop for session".to_string(),
-                    |active| format!("stale workshop generation; active work_id is {active}"),
-                ),
+                error: if include_parallel {
+                    "work_id is not an active local worker owned by this session; use peer discovery/handoff for terminal native Coder chats".to_string()
+                } else {
+                    active_work_id.map_or_else(
+                        || "no active bound workshop for session".to_string(),
+                        |active| format!("stale workshop generation; active work_id is {active}"),
+                    )
+                },
             });
         }
         Err(error) => {
@@ -580,15 +603,18 @@ pub async fn steer_bound_workshop_for_session(
         }
     };
 
-    // Surface the steer in the shared transcript so Home can attribute the speaker.
-    let turn = crate::turn_parts::user_conversation_turn_with_media_and_speaker(
-        message,
-        &[],
-        speaker.as_deref(),
-    );
-    crate::session_writer::persist_turn(session_id, turn, None)
-        .await
-        .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+    // Bound work shares the host transcript. Parallel peer guidance stays in
+    // its durable steer history, rather than inventing a new principal turn.
+    if updated.disposition == super::turn_worker::TurnWorkDisposition::Bound {
+        let turn = crate::turn_parts::user_conversation_turn_with_media_and_speaker(
+            message,
+            &[],
+            speaker.as_deref(),
+        );
+        crate::session_writer::persist_turn(session_id, turn, None)
+            .await
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+    }
 
     Ok(WorkshopSteerOutput::Queued {
         ok: true,

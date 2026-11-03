@@ -46,12 +46,15 @@ pub enum PeerHandoffAdmission {
     #[default]
     Delegate,
     // Admit the exact requested stage now, but leave dispatch to a registered
-    // work.coordinate plan. Requires the same human authority as Delegate.
+    // work.coordinate plan. Requires the same native admission as Delegate:
+    // a human request or its verified owner callback in the authorized project.
     // Keep variants as a string enum in generated SDK schemas.
     Stage,
     Propose,
 }
 impl PeerHandoffAdmission {
+    /// Requires native admission from a human request or its scoped callback,
+    /// rather than an operator decision on a pending proposal.
     pub fn requires_human_admission(self) -> bool {
         !matches!(self, Self::Propose)
     }
@@ -70,6 +73,12 @@ pub struct PeerHandoffIntent {
     pub forge_work_id: String,
     pub after_entry_seq: u64,
     pub through_entry_seq: u64,
+    /// Exact reusable agent_session_id from peer discovery; omission creates fresh work.
+    #[serde(default)]
+    pub existing_agent_session_id: Option<String>,
+    /// Optional human-readable executor chat title. Names are not execution authority.
+    #[serde(default)]
+    pub session_title: Option<String>,
     #[serde(default)]
     pub runtime: Option<ExternalPeerRuntime>,
     #[serde(default)]
@@ -82,6 +91,9 @@ pub struct PeerHandoffIntent {
 #[serde(deny_unknown_fields)]
 pub struct PeerHandoffRecord {
     pub request: ExternalPeerAssignmentRequest,
+    /// Optional executor label, persisted with the exact handoff before dispatch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_title: Option<String>,
     pub policy: PeerHandoffPolicy,
     pub admission: PeerHandoffAdmission,
     pub source: TranscriptEntryRef,

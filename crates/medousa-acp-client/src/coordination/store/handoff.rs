@@ -271,7 +271,10 @@ impl CoordinationStore {
             }
             _ => unreachable!(),
         }
-        if record.expires_at <= chrono::Utc::now()
+        // A staged proposal's legacy snapshot date does not bound approval
+        // or callbacks. Its fresh execution grant was checked above. Direct
+        // delegation retains the original admitted handoff deadline as well.
+        if (record.admission.dispatches_immediately() && record.expires_at <= chrono::Utc::now())
             || if terminal {
                 !record.policy.wake_on_terminal
             } else {

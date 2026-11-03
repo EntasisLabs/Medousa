@@ -1916,7 +1916,18 @@ async fn run_worker_turn_inner(
                 Some(sink.clone()),
             ),
         ))
-        .with_delegation_control(delegation_control);
+        .with_delegation_control(delegation_control)
+        .with_optional_tool_observation_hydration(
+            crate::model_capability_registry::registry()
+                .supports_vision(&record.provider, &record.model)
+                .then(|| {
+                    Arc::new(
+                        super::super::tool_observation_hydration::DaemonToolObservationHydrationPort::new(
+                            &record.session_id,
+                        ),
+                    ) as Arc<dyn medousa_runtime::ToolObservationHydrationPort>
+                }),
+        );
     let runtime_ports = if let Some(coder) = &prepared_coder {
         runtime_ports.with_perception_evidence(Arc::new(
             super::super::perception_governor::DaemonPerceptionEvidencePort::for_coder_undertaking(

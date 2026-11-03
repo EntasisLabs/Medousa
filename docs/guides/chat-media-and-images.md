@@ -36,6 +36,40 @@ Image understanding requires a vision-capable provider and model. A text-only
 route cannot inspect the picture; switch to a vision-capable model when you
 want an image analyzed.
 
+## Inspect an image created through the terminal
+
+Medousa can inspect image files without you attaching them to a message. For
+example, ask: “Run the screenshot command, then inspect `screenshots/result.png`
+and tell me whether the layout is clipped.” It can create the file with its
+terminal tools, then open it with `cognition_image_view`.
+
+The file must be on the active **workshop daemon's disk**, inside an authorized
+coding folder. In Coder, this defaults to the admitted checkout. In an Assistant
+turn, the agent supplies an existing authorized coding root; the default is the
+scripts library. Save screenshots inside that folder rather than `/tmp`.
+A file on your phone or a remote UI device still needs to be attached or moved
+through an authorized transfer path first.
+
+PNG, JPEG, WebP, and GIF (first frame) are supported, up to 25 MiB. Large images
+are scaled for model input; the file itself is unchanged. The tool snapshots the
+image at the time it opens it, so a later overwrite does not change what the
+model saw. Image understanding still requires a vision-capable model.
+
+A successful file receipt or `vision_available: true` means the file was read
+and the selected route advertises vision; it is not a visual approval. Medousa
+must also attach verified image bytes to the next model request. Vision-capable
+workshop workers use this same hydration path. On the ChatGPT sign-in Responses
+route, those pixels are sent as image content in the originating tool's output,
+not as an extra user message. Other vision providers retain image-bearing model
+messages. If pixels are unavailable, the agent should report that limitation
+rather than infer a layout from filenames or metadata. On externally supplied
+tool surfaces, it should call `cognition_image_view` directly: generic parallel
+wrappers can return the receipt without forwarding the image attachment. If
+that happens, a direct retry is needed before visual approval.
+
+This is currently a daemon-local file tool. Bound container/remote coding
+work-environment paths are refused explicitly, rather than read from the host.
+
 ## Generate an image
 
 1. Open **Settings → Models**.

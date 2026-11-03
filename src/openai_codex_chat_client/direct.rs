@@ -32,6 +32,10 @@ pub(super) fn request_body(
 ) -> Result<Value, StreamOnceError> {
     let mut input = Vec::new();
     for message in request.messages {
+        // Keep hydrated tool images on the standard input_image message path.
+        // Do not rely on multimodal function-output support at the ChatGPT
+        // bridge. Runtime-only metadata retains call IDs and untrusted-content
+        // labels; this does not create a persisted user turn.
         let role = match message.role {
             ChatRole::System => "developer",
             ChatRole::User => "user",

@@ -159,14 +159,14 @@ impl LocalPeerDispatcher {
         principal: &RequestPrincipal,
         proposal: PeerAssignmentProposal,
     ) -> Result<serde_json::Value> {
-        let owner = self.local_request(principal, &proposal.request)?;
+        let owner = self.local_request(principal, &proposal.request).await?;
         let store = self.store.clone();
         self.state.forge_execution.run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
             Ok((|| -> Result<_> {
                 store.require_owner(&proposal.request.channel, &owner)?;
                 let decision = store.proposal_decision(&proposal)?;
                     let binding = store.peer_if_recorded(&proposal.request.channel, &proposal.request.assignment_id)?;
-                let status = proposal_status(decision.as_ref().map(|decision| decision.approved), binding.is_some(), proposal.expires_at <= Utc::now());
+                let status = proposal_status(decision.as_ref().map(|decision| decision.approved), binding.is_some());
                 let handoff = store.handoff_view(&proposal.request.channel, &proposal.request.assignment_id)?;
                 Ok(serde_json::json!({"status": status, "proposal": proposal, "decision": decision, "binding": binding, "started": binding.is_some(), "handoff": handoff}))
             })())
@@ -178,6 +178,7 @@ impl LocalPeerDispatcher {
         session: SessionId,
     ) -> Result<serde_json::Value> {
         let owner = actor(principal)?;
+        let discovery_session = session.clone();
         let owner_for_scope = owner.clone();
         let runtime = self.local_runtime_id.clone();
         let scope = self.state.forge_execution.run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
@@ -205,8 +206,34 @@ impl LocalPeerDispatcher {
             }
             None => Vec::new(),
         };
+        let authority = crate::workshop_authority::current()
+            .map_err(anyhow::Error::msg)?
+            .clone();
+        let reusable_sessions = self.stored(move |store| {
+            let mut rows = Vec::new();
+            let mut sessions = std::collections::HashSet::new();
+            let mut requests = store.native_coder_sessions(&authority, &owner)?;
+            requests.sort_by_key(|request| std::cmp::Reverse(request.context.created_at));
+            for request in requests {
+                if request.owner_session.session_id != discovery_session
+                    || !crate::session_catalog::session_visible_to_profile(request.execution_session.session_id.as_str(), &owner)
+                    || !sessions.insert(request.execution_session.clone()) {
+                    continue;
+                }
+                let terminal = store.receipt_if_recorded(&request.channel, &request.assignment_id)?.is_some();
+                rows.push(serde_json::json!({
+                    "agent_session_id": format!("medousa_coder_{}", request.assignment_id),
+                    "session_id": request.execution_session.session_id,
+                    "title": crate::session_history::display_name(request.execution_session.session_id.as_str()),
+                    "forge_work_id": request.forge_work_id,
+                    "runtime": "medousa", "terminal": terminal,
+                    "continuation_route": "peer_handoff.existing_agent_session_id"
+                }));
+            }
+            Ok(rows)
+        }).await?;
         Ok(
-            serde_json::json!({"peers": peers, "adoptable_sessions": adoptable, "scope": scope, "coding_runtime_preferences": self.coding_preferences().await?, "policy": "Local workshop only. Propose may name an owned Forge project independently of the source chat. Omit runtime to use saved preferences; set it only for an explicit runtime request. Proposal is not approval or execution. Adopt only an exact agent_session_id returned here."}),
+            serde_json::json!({"peers": peers, "adoptable_sessions": adoptable, "reusable_sessions": reusable_sessions, "scope": scope, "coding_runtime_preferences": self.coding_preferences().await?, "policy": "Local workshop only. Propose may name an owned Forge project independently of the source chat. Omit runtime to use saved preferences; set it only for an explicit runtime request. Proposal is not approval or execution. Adopt only an exact agent_session_id returned here."}),
         )
     }
 
@@ -376,6 +403,13 @@ impl LocalPeerDispatcher {
         let selected_runtime = match intent.runtime {
             Some(runtime) => runtime,
             None if previous.is_some() => previous.as_ref().unwrap().request.target.runtime,
+            None if intent
+                .existing_agent_session_id
+                .as_deref()
+                .is_some_and(|id| id.starts_with("medousa_coder_")) =>
+            {
+                ExternalPeerRuntime::Medousa
+            }
             None => {
                 let peers = LocalPeerCall {
                     host: self,
@@ -386,12 +420,9 @@ impl LocalPeerDispatcher {
                 self.coding_preferences().await?.select(&peers).ok_or_else(|| anyhow::anyhow!("none of the preferred coding runtimes are available; update coding runtime preferences or request an explicit runtime"))?
             }
         };
-        if selected_runtime == ExternalPeerRuntime::Medousa
-            && intent.existing_agent_session_id.is_some()
+        if let Some(agent_session_id) = intent.existing_agent_session_id.as_deref()
+            && selected_runtime != ExternalPeerRuntime::Medousa
         {
-            bail!("Medousa Coder assignments require a fresh execution session");
-        }
-        if let Some(agent_session_id) = intent.existing_agent_session_id.as_deref() {
             super::super::agents::require_adoptable_agent_session(
                 &owner,
                 &work_id,
@@ -403,7 +434,7 @@ impl LocalPeerDispatcher {
         let created_at = previous
             .as_ref()
             .map_or_else(Utc::now, |proposal| proposal.request.context.created_at);
-        let request = ExternalPeerAssignmentRequest {
+        let mut request = ExternalPeerAssignmentRequest {
             assignment_id,
             idempotency_key: format!("peer_command_{id}"),
             owner_principal_id: owner.clone(),
@@ -428,6 +459,18 @@ impl LocalPeerDispatcher {
             forge_work_id: work_id,
             existing_agent_session_id: intent.existing_agent_session_id,
         };
+        if request.target.runtime == ExternalPeerRuntime::Medousa
+            && let Some(previous_turn) = request.existing_agent_session_id.clone()
+        {
+            let candidate = request.clone();
+            request.execution_session = self
+                .stored(move |store| {
+                    Ok(store
+                        .native_coder_reuse(&candidate, &previous_turn)?
+                        .execution_session)
+                })
+                .await?;
+        }
         if let Some(proposal) = previous {
             if proposal.request != request || proposal.continue_owner != intent.continue_owner {
                 bail!("request key already belongs to a different immutable proposal");
@@ -483,13 +526,11 @@ fn proposal_work_id(
         .ok_or_else(|| anyhow::anyhow!("select an owned Forge project before proposing a coder"))
 }
 
-fn proposal_status(approved: Option<bool>, has_custody: bool, expired: bool) -> &'static str {
+fn proposal_status(approved: Option<bool>, has_custody: bool) -> &'static str {
     if has_custody {
         "peer_custody_recorded"
     } else if approved == Some(false) {
         "declined_requires_new_request_key"
-    } else if expired {
-        "expired_requires_new_request_key"
     } else if approved == Some(true) {
         "approved_requires_operator_start"
     } else {
@@ -518,27 +559,17 @@ mod tests {
         assert_eq!(intent.forge_work_id.as_deref(), Some("work-selected"));
     }
     #[test]
-    fn retries_report_custody_denial_expiry_and_pending_without_claiming_completion() {
+    fn retries_report_custody_denial_and_pending_without_claiming_completion() {
+        assert_eq!(proposal_status(None, false), "requires_operator_review");
         assert_eq!(
-            proposal_status(None, false, false),
-            "requires_operator_review"
-        );
-        assert_eq!(
-            proposal_status(Some(true), false, false),
+            proposal_status(Some(true), false),
             "approved_requires_operator_start"
         );
         assert_eq!(
-            proposal_status(Some(false), false, false),
+            proposal_status(Some(false), false),
             "declined_requires_new_request_key"
         );
-        assert_eq!(
-            proposal_status(Some(true), false, true),
-            "expired_requires_new_request_key"
-        );
-        assert_eq!(
-            proposal_status(Some(true), true, true),
-            "peer_custody_recorded"
-        );
+        assert_eq!(proposal_status(Some(true), true), "peer_custody_recorded");
     }
     #[test]
     fn model_intent_cannot_supply_execution_authority() {

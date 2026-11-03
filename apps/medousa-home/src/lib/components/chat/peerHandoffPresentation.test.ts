@@ -29,10 +29,12 @@ describe('sender-controlled handoff presentation', () => {
     expect(peerHandoffPresentation(row, Date.now()).status).toBe('Result returned');
   });
 
-  it('returns expired approval to the sender instead of counting a disabled human action', () => {
+  it('keeps legacy past-deadline proposals actionable until an explicit decision', () => {
     const row = work(); row.handoff = null;
     row.proposal.expires_at = '2020-01-01T00:00:00Z';
-    expect(peerHandoffPresentation(row, Date.now())).toMatchObject({ needsApproval: false, status: 'Approval expired', nextActor: 'Medousa' });
+    expect(peerHandoffPresentation(row, Date.now())).toMatchObject({ needsApproval: true, status: 'Needs your approval', nextActor: 'You' });
+    row.decision = { approved: true } as NonNullable<typeof row.decision>;
+    expect(peerHandoffPresentation(row, Date.now())).toMatchObject({ needsApproval: true, status: 'Approved · ready to start', nextActor: 'You' });
   });
 
   it('keeps the sender next on changes requested even when an old receipt is present', () => {

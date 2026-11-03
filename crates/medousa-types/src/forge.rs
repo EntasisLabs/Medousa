@@ -34,6 +34,19 @@ pub struct ProjectReviewQuery {
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
+pub struct ProjectRepairGitTargetInput {
+    pub work_id: String,
+    /// Exact current full-OID base_ref returned by work.project_review.
+    pub expected_old_ref: String,
+    pub expected_baseline_oid: String,
+    /// Existing local branch still pointing at the captured baseline.
+    pub branch: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ProjectPrepareMergeInput {
     pub work_id: String,
     /// Only acknowledge capture risks when explicitly authorized by the user.

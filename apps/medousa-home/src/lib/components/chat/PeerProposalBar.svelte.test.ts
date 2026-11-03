@@ -340,9 +340,10 @@ describe("grouped agent activity", () => {
     expect(api.list).toHaveBeenCalledWith('ses_owner', null, undefined, 'two');
   });
 
-  it("approves the clicked task and preserves approval when its startup fails", async () => {
+  it("approves a past-deadline task and preserves approval when its startup fails", async () => {
     const first = record('one'), second = record('two');
     first.binding = null; second.binding = null;
+    second.proposal.expires_at = '2020-01-01T00:00:00Z';
     api.list.mockResolvedValue({ proposals: [first, second] });
     api.act.mockImplementation(async (_proposal, action) => { if (action === 'dispatch') throw new Error('Startup unavailable'); return {}; });
     await render();
