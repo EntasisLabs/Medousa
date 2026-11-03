@@ -6163,6 +6163,10 @@ class PeerHandoffRecord(MedousaModel):
     policy: PeerHandoffPolicy
     request: ExternalPeerAssignmentRequest
     sender_bot_id: BotId | None = None
+    session_title: str | None = Field(
+        None,
+        description='Optional executor label, persisted with the exact handoff before dispatch.',
+    )
     source: TranscriptEntryRef
     source_digest: str
 
@@ -7129,6 +7133,11 @@ class PeerHandoffIntent(MedousaModel):
     )
     admission: PeerHandoffAdmission | None = 'delegate'
     after_entry_seq: int = Field(..., ge=0)
+    existing_agent_session_id: (
+        str | None
+    ) = (
+        Field(None, description='Exact reusable agent_session_id from peer discovery; omission creates fresh work.')
+    )
     forge_work_id: str
     handoff: PeerHandoffPolicy | None = Field(
         {'completion': 'sender_review', 'contact': {'kind': 'return_to_origin'}, 'responsibility': 'retain', 'wake_on_accepted': True, 'wake_on_terminal': True},
@@ -7137,6 +7146,10 @@ class PeerHandoffIntent(MedousaModel):
     instructions: str
     request_key: str
     runtime: ExternalPeerRuntime | None = None
+    session_title: str | None = Field(
+        None,
+        description='Optional human-readable executor chat title. Names are not execution authority.',
+    )
     through_entry_seq: int = Field(..., ge=0)
 
 

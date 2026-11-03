@@ -32795,6 +32795,14 @@
         "format": "uint64",
         "minimum": 0.0
       },
+      "existing_agent_session_id": {
+        "description": "Exact reusable agent_session_id from peer discovery; omission creates fresh work.",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "forge_work_id": {
         "type": "string"
       },
@@ -32829,6 +32837,14 @@
           {
             "type": "null"
           }
+        ]
+      },
+      "session_title": {
+        "description": "Optional human-readable executor chat title. Names are not execution authority.",
+        "default": null,
+        "type": [
+          "string",
+          "null"
         ]
       },
       "through_entry_seq": {
@@ -33475,6 +33491,13 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "session_title": {
+            "description": "Optional executor label, persisted with the exact handoff before dispatch.",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "source": {

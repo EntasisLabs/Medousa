@@ -118,7 +118,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains, terminal image-file viewing |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |
 | [Extensions](engine/extensions.md) | Grapheme, Locus, workflows, media, STT |
-| [Architecture (deep)](../architecture/README.md) | Component boundaries; [daemon modules](architecture/daemon-modules.md), [turn runtime](../architecture/turn-runtime-and-lanes.md), [roadmap](../architecture/ROADMAP.md) |
+| [Architecture (deep)](../architecture/README.md) | Component boundaries; [daemon modules](architecture/daemon-modules.md), [turn runtime](../architecture/turn-runtime-and-lanes.md), [app chat core](architecture/app-chat-core.md), [roadmap](../architecture/ROADMAP.md) |
 
 ### SDK — Rust & Python clients
 

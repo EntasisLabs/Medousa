@@ -13,20 +13,15 @@ import type { ChatMessage } from "$lib/types/chat";
 import type { SessionHistoryResponse } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askSessionId } from "$lib/types/askJob";
-import {
-  chatSegmentsFromParts,
-  hostContextFromParts,
-  modelReceiptFromParts,
-  reasoningFromParts,
-  progressFromParts,
-  toolRunsFromParts,
-  userMediaFromParts,
-  uiArtifactsFromParts,
-} from "$lib/types/turnParts";
-import { isRuntimeStartupText } from "$lib/utils/chatStreamDisplay";
 import { formatSessionLabel } from "$lib/utils/formatSession";
-import { dedupeMessagesById, mergeTranscript } from "$lib/utils/mergeTranscript";
-import { attachLiveTranscripts } from "$lib/liveTranscriptAttachments";
+import {
+  applyHistoryToSession,
+  applySnapshotToMessages,
+  openChatSession,
+  projectHistory,
+} from "$lib/appChat/client";
+import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
+import { dedupeMessagesById } from "$lib/utils/mergeTranscript";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
 import {
@@ -98,14 +93,11 @@ export function loadSessionId(workshopId?: string): string {
   return "";
 }
 
-function normalizeRole(role: string): ChatMessage["role"] {
-  if (role === "user" || role === "assistant" || role === "system") {
-    return role;
-  }
-  return "assistant";
-}
-
-export function mapTurns(
+/**
+ * Project daemon history through the Rust application core.
+ * Callers must not reimplement live↔persisted reconciliation in TypeScript.
+ */
+export async function mapTurns(
   turns: SessionHistoryResponse["turns"],
   options?: {
     lane?: ChatMessage["lane"];
@@ -113,67 +105,50 @@ export function mapTurns(
     sessionId?: string;
     authorityId?: string;
   },
-): ChatMessage[] {
-  const lane = options?.lane ?? "chat";
-  const askJobId = options?.askJobId ?? null;
+): Promise<ChatMessage[]> {
   const sessionId = options?.sessionId?.trim() || "session";
   const authorityId = options?.authorityId?.trim() || "";
-  return attachLiveTranscripts(turns.map((turn, index) => {
-    const modelReceipt = modelReceiptFromParts(turn.parts ?? null);
-    const entryId = turn.entry_id?.trim();
-    const livePart = turn.parts?.find((part) => part.kind === "handoff" && part.handoff_kind === "live_transcript");
-    const segments: ChatMessage["segments"] = livePart?.kind === "handoff" ? [{ kind: "handoff", handoffKind: "live_transcript", text: livePart.text, workId: livePart.work_id }]
-      : turn.role === "assistant" ? chatSegmentsFromParts(turn.parts ?? null) : undefined;
-    return {
-      id: entryId
-        ? `${sessionId}:${entryId}`
-        : `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
-      role: normalizeRole(turn.role),
-      createdAt: turn.timestamp,
-      turnId: turn.role === "assistant" ? turn.caused_by?.execution_id : undefined,
-      content: turn.role === "assistant" && isRuntimeStartupText(turn.content) ? "" : turn.content,
-      reactions: turn.reactions?.length ? turn.reactions : undefined,
-      lane,
-      askJobId,
-      turnIndex: turn.entry_seq || index + 1,
-      answerState: turn.answer_state ?? null,
-      failed: turn.answer_state === "failed",
-      errorLine: turn.answer_state === "failed"
-        ? turn.slice_summary?.failures[0] ?? "This turn stopped before it could finish."
-        : null,
-      tools: turn.tool_names?.length ? turn.tool_names : undefined,
-      toolRuns: toolRunsFromParts(turn.parts ?? null),
-      segments,
-      uiArtifacts: uiArtifactsFromParts(turn.parts ?? null),
-      reasoning: reasoningFromParts(turn.parts ?? null),
-      statusLine:
-        turn.role === "assistant" && segments === undefined
-          ? progressFromParts(turn.parts ?? null)
-          : null,
-      mediaAttachments: userMediaFromParts(turn.parts ?? null),
-      hostContext: hostContextFromParts(turn.parts ?? null),
-      speakerProfileId: turn.speaker_profile_id?.trim() || null,
-      responseProvider: modelReceipt?.provider ?? null,
-      responseModel: modelReceipt?.model ?? null,
-      transcript:
-        authorityId && turn.entry_id && turn.entry_seq
-          ? {
-              authorityId,
-              sessionId,
-              entryId: turn.entry_id,
-              entrySeq: turn.entry_seq,
-              source: turn.source
-                ? {
-                    authorityId: turn.source.session.authority_id,
-                    sessionId: turn.source.session.session_id,
-                    entryId: turn.source.entry_id,
-                    entrySeq: turn.source.entry_seq,
-                  }
-                : null,
-            }
-          : null,
-    };
-  }));
+  return projectHistory(
+    {
+      authority_id: authorityId,
+      session_id: sessionId,
+      turns,
+    },
+    {
+      lane: options?.lane ?? "chat",
+      askJobId: options?.askJobId ?? null,
+    },
+  );
+}
+
+async function ensureAppChatSession(sessionId: string, authorityId?: string | null) {
+  await openChatSession(sessionId, authorityId ?? "");
+}
+
+async function applyCanonicalHistory(
+  host: ChatStoreHost,
+  sessionId: string,
+  history: SessionHistoryResponse,
+  options?: { replace?: boolean; lane?: ChatMessage["lane"]; askJobId?: string | null },
+): Promise<void> {
+  await ensureAppChatSession(sessionId, history.authority_id);
+  const snapshot = await applyHistoryToSession({
+    sessionId,
+    history,
+    lane: options?.lane ?? "chat",
+    askJobId: options?.askJobId ?? null,
+    replace: options?.replace ?? false,
+    localItems:
+      options?.replace === true
+        ? null
+        : host.messages.map(chatMessageToItem),
+  });
+  const applied = applySnapshotToMessages(snapshot);
+  host.messages = applied.messages;
+  if (applied.activeTurnId) host.activeTurnId = applied.activeTurnId;
+  for (const [turnId, seq] of applied.lastSeqByTurn) {
+    host.lastSeqByTurn.set(turnId, seq);
+  }
 }
 function historyCursor(history: SessionHistoryResponse): string | null {
   return history.next_cursor?.trim() || null;
@@ -536,7 +511,7 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
     const current =
       host.sessionRuntimes.get(trimmed) ??
       emptySessionRuntime(trimmed, loadDraftForSession(trimmed, host.workshopScopeId));
-    current.messages = mapTurns(history.turns, {
+    current.messages = await mapTurns(history.turns, {
       sessionId: trimmed,
       authorityId: history.authority_id,
     });
@@ -714,7 +689,7 @@ export async function reconcileOnResume(
     // responsibilities. A daemon may commit one turn while another ticket is
     // still active, especially after a mobile client was suspended. Always
     // merge the durable projection so reconnecting clients see those commits;
-    // mergeTranscript preserves the live placeholder for the attached turn.
+    // the Rust app core preserves the live placeholder for the attached turn.
     const history = await recentHistoryForMerge(
       sessionId,
       host.messages,
@@ -722,11 +697,8 @@ export async function reconcileOnResume(
     );
     if (!stillSameSession()) return;
 
-    const daemonMessages = mapTurns(history.turns, {
-      sessionId,
-      authorityId: history.authority_id,
-    });
-    host.messages = mergeTranscript(host.messages, daemonMessages);
+    await applyCanonicalHistory(host, sessionId, history, { replace: false });
+    if (!stillSameSession()) return;
     host.sanitizeTranscript();
   } catch (err) {
     host.noteResumeFailure(err);
@@ -753,10 +725,8 @@ export async function reloadCurrentSession(
   try {
     const history = await getSessionHistory(sessionId, { limit: TRANSCRIPT_PAGE_SIZE });
     if (!stillSameSession()) return;
-    host.messages = mergeTranscript(host.messages, mapTurns(history.turns, {
-      sessionId,
-      authorityId: history.authority_id,
-    }));
+    await applyCanonicalHistory(host, sessionId, history, { replace: false });
+    if (!stillSameSession()) return;
     host.historyCursor = historyCursor(history);
     if (options?.notice !== false && history.turns.length > 0) {
       const count = history.turns.length;
@@ -863,10 +833,12 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
       host.sessionId !== trimmed ||
       switchEpoch !== host.transcriptEpoch
     ) return;
-    host.messages = mapTurns(history.turns, {
-      sessionId: trimmed,
-      authorityId: history.authority_id,
-    });
+    await applyCanonicalHistory(host, trimmed, history, { replace: true });
+    if (
+      host.workshopEpoch !== workshopEpoch ||
+      host.sessionId !== trimmed ||
+      switchEpoch !== host.transcriptEpoch
+    ) return;
     host.historyCursor = historyCursor(history);
     const { workshops } = await import("$lib/stores/workshops.svelte");
     void workshops.saveActiveSession(trimmed);
@@ -937,7 +909,7 @@ export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) 
           ) {
             return [] as ChatMessage[];
           }
-          return mapTurns(history.turns, {
+          return await mapTurns(history.turns, {
             lane: "ask",
             askJobId: card.id,
             sessionId,

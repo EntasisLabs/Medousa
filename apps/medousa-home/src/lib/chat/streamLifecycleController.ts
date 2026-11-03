@@ -19,16 +19,17 @@ import { isAskJobId, askSessionId } from "$lib/types/askJob";
 import type { MediaRef } from "$lib/types/media";
 import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
 import { isEngineTelemetryText } from "$lib/utils/chatStreamDisplay";
-import { mergeTranscript } from "$lib/utils/mergeTranscript";
 import { isReusableAgentStream, shouldReattachTurnRecord } from "$lib/utils/streamOwnership";
 import { streamPathWithSince } from "$lib/stream/reconnect";
 import { friendlyUserError } from "$lib/utils/normieErrors";
 import { randomUuid } from "$lib/utils/randomUuid";
 import { beginTurnMessages, turnStateFromTicket } from "$lib/chat/turnController";
-import { mapTurns, TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
+import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
 import { workerLinkForTurn } from "$lib/chat/workerLaneController";
 import { narration } from "$lib/stores/narration.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
+import { applyHistoryToSession, applySnapshotToMessages, openChatSession } from "$lib/appChat/client";
+import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
 
 const TERMINAL_RECONCILE_DELAY_MS = 2_000;
 const RECENTLY_SETTLED_TTL_MS = 30_000;
@@ -562,11 +563,16 @@ async function reconcileTurnFromHistory(host: ChatStoreHost, turnId: string) {
   try {
     const history = await getSessionHistory(sessionId, { limit: TRANSCRIPT_PAGE_SIZE });
     if (epoch !== host.transcriptEpoch) return;
-    const daemonMessages = mapTurns(history.turns, {
+    await openChatSession(sessionId, history.authority_id);
+    const snapshot = await applyHistoryToSession({
       sessionId,
-      authorityId: history.authority_id,
+      history,
+      replace: false,
+      localItems: host.messages.map(chatMessageToItem),
     });
-    host.messages = mergeTranscript(host.messages, daemonMessages);
+    if (epoch !== host.transcriptEpoch) return;
+    const applied = applySnapshotToMessages(snapshot);
+    host.messages = applied.messages;
     host.sanitizeTranscript();
   } catch {
     // Best-effort — manual reload still works.

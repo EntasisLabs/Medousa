@@ -238,17 +238,19 @@ describe("orphaned interactive turn lease", () => {
       },
     });
 
-    const assistant = store.messages.find(
-      (message) => message.role === "assistant" && message.turnId === ticket.turn_id,
-    );
-    expect(assistant?.segments).toEqual([
-      expect.objectContaining({
-        kind: "tool_group",
-        runs: [expect.objectContaining({ runId: "run-1", status: "running" })],
-      }),
-    ]);
-    expect(store.turns.get(ticket.turn_id)?.messageId).toBe(assistant?.id);
-    expect(store.assistantId).toBe(assistant?.id);
+    await vi.waitFor(() => {
+      const assistant = store.messages.find(
+        (message) => message.role === "assistant" && message.turnId === ticket.turn_id,
+      );
+      expect(assistant?.segments).toEqual([
+        expect.objectContaining({
+          kind: "tool_group",
+          runs: [expect.objectContaining({ runId: "run-1", status: "running" })],
+        }),
+      ]);
+      expect(store.turns.get(ticket.turn_id)?.messageId).toBe(assistant?.id);
+      expect(store.assistantId).toBe(assistant?.id);
+    });
   });
 
   it("fails and settles the assistant bubble for a non-recoverable stream error", async () => {
