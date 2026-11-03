@@ -42,5 +42,6 @@ cargo test -p medousa-app-core --tests
 
 Tauri commands: `app_chat_dispatch`, `app_chat_open_session`, `app_chat_snapshot`.
 
-Vitest / Node (no Tauri internals) drive the same `ChatCore` through the
-`app-chat-dispatch` stdio binary aliased in `browserCore.ts`.
+Vitest installs a Node stdio backend (`apps/medousa-home/vitest/`) that drives
+the same `ChatCore` via `app-chat-dispatch`. That harness stays outside `$lib`
+so the production Vite client never bundles Node builtins.

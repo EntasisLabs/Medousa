@@ -4,7 +4,7 @@
 //! accepts UI/test fixtures that carry the same fields as plain strings.
 
 use chrono::{DateTime, Utc};
-use medousa_types::{HostTurnContext, MessageReaction, TurnPart, TurnSliceSummary};
+use medousa_types::{HostTurnContext, MessageReaction, TurnPart};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -32,17 +32,34 @@ pub struct WireTranscriptEntry {
     pub answer_state: Option<String>,
     #[serde(default)]
     pub parts: Option<Vec<TurnPart>>,
+    /// Permissive summary: UI fixtures often send only `failures`.
     #[serde(default)]
-    pub slice_summary: Option<TurnSliceSummary>,
+    pub slice_summary: Option<WireSliceSummary>,
     #[serde(default)]
     pub speaker_profile_id: Option<String>,
     #[serde(default)]
     pub reactions: Vec<MessageReaction>,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct WireSliceSummary {
+    #[serde(default)]
+    pub goal: String,
+    #[serde(default)]
+    pub tool_rounds: usize,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default)]
+    pub outcomes: Vec<String>,
+    #[serde(default)]
+    pub failures: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct WireExecutionRef {
+    #[serde(default)]
     pub authority_id: String,
+    #[serde(default)]
     pub session_id: String,
     pub execution_id: String,
 }
