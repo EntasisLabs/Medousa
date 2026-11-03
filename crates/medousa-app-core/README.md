@@ -29,6 +29,10 @@ Canonical chat timeline:
 8. Worker-lane bubble lifecycle (`EnsureWorkerFollowUp`, `FinalizeWorkerHandoff`,
    `MarkWorkerSynthesisDelivered`, `DeliverWorkerSynthesis`) plus production
    `BeginTurn` / `SettleTurn` dual-write; snapshot `workers` carries synthesis links
+9. Ask-lane hydrate / promote (`HydrateAskThreads`, `PromoteAskToChat`) merges
+   ask ledger history into the focused session and flips lane identity on promote
+10. Painted visibility (`ProjectVisibleItems`) — empty handoff shells and exact
+    linked worker raw returns; beat grouping stays in the renderer
 
 ## Regenerate client types
 

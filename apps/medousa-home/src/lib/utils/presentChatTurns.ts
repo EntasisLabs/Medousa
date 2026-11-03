@@ -1,6 +1,11 @@
 /**
  * Presentation helpers for chat turns — hide empty worker/workshop handoff
  * shells so the UI shows one substance surface (synthesis / body), not an ack bubble.
+ *
+ * Painted-id authority for placement lives in Rust
+ * (`medousa_app_core::display::present_chat_items` / `ProjectVisibleItems`).
+ * This module stays as the sync paint path (and worker-panel collapse); keep
+ * `presentChatMessages` aligned with the Rust filter.
  */
 
 import type { ChatMessage } from "$lib/types/chat";

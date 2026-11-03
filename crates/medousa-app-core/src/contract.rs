@@ -381,6 +381,28 @@ pub struct WorkerLinkFact {
     pub synthesis_delivered: bool,
 }
 
+/// One ask-lane ledger page to merge into the focused chat session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub struct AskThreadBatch {
+    pub ask_job_id: String,
+    /// Ask ledger session id (`medousa-ask-{job_id}`) for transcript coordinates.
+    pub ask_session_id: String,
+    pub authority_id: String,
+    pub turns: Vec<serde_json::Value>,
+}
+
+/// Host-supplied worker return texts used to hide exact linked raw returns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub struct WorkerReturnFact {
+    pub work_id: String,
+    #[serde(default)]
+    pub returned_texts: Vec<String>,
+}
+
 /// One proposal or worker in mixed spawn order for a turn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(JsonSchema))]
@@ -603,6 +625,32 @@ pub enum ChatCommand {
         #[serde(default)]
         visible_item_ids: Vec<String>,
     },
+    /// Append ask-lane history batches into the focused chat session.
+    HydrateAskThreads {
+        session_id: String,
+        #[serde(default)]
+        batches: Vec<AskThreadBatch>,
+        /// Jobs the host has promoted; skip even if absent from items.
+        #[serde(default)]
+        promoted_ask_ids: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Flip ask-lane items for a job onto the main chat lane.
+    PromoteAskToChat {
+        session_id: String,
+        ask_job_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Pure visibility projection (painted ids). Beats stay in the renderer.
+    ProjectVisibleItems {
+        session_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        items: Option<Vec<ChatItem>>,
+        #[serde(default)]
+        worker_returns: Vec<WorkerReturnFact>,
+    },
     SwitchFocus {
         session_id: String,
     },
@@ -626,6 +674,9 @@ pub enum ChatUpdate {
     },
     AgentPlacement {
         groups: Vec<AgentPlacementGroup>,
+    },
+    VisibleItems {
+        item_ids: Vec<String>,
     },
     Rejected {
         session_id: String,
@@ -651,6 +702,8 @@ pub fn schema_export_names() -> &'static [&'static str] {
         "ProposalFact",
         "WorkerPlacementFact",
         "WorkerLinkFact",
+        "AskThreadBatch",
+        "WorkerReturnFact",
         "AgentPlacementEntry",
         "AgentPlacementGroup",
         "ChatSnapshot",

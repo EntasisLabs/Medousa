@@ -42,7 +42,6 @@ import {
   deleteSession as deleteSessionCtrl,
   ensureSessionHydrated,
   forkSessionFromEntry,
-  hydrateAskThreads,
   isPinned,
   loadOlderHistory,
   loadPinnedIds,
@@ -50,7 +49,6 @@ import {
   loadSessionId,
   newSession as newSessionCtrl,
   newSharedRoom,
-  promoteAskToChat,
   reconcileOnResume,
   refreshSessions,
   reloadCurrentSession,
@@ -60,6 +58,10 @@ import {
   togglePin,
   warmBackgroundSession,
 } from "$lib/chat/sessionController";
+import {
+  hydrateAskThreads,
+  promoteAskToChat,
+} from "$lib/chat/askLaneController";
 import {
   applyPumpedStreamEvent,
   applyStreamEventToMessage as applyStreamEventToMessageCtrl,

@@ -18,11 +18,12 @@ pub mod stream;
 pub mod wire_history;
 
 pub use contract::{
-    AgentPlacementEntry, AgentPlacementGroup, BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole,
-    ChatLane, ChatRelationship, ChatRevision, ChatSnapshot, ChatUpdate, ProposalFact,
-    TranscriptCoordinate, WorkerLinkFact, WorkerPlacementFact,
+    AgentPlacementEntry, AgentPlacementGroup, AskThreadBatch, BeginTurnRequest, ChatCommand,
+    ChatItem, ChatItemRole, ChatLane, ChatRelationship, ChatRevision, ChatSnapshot, ChatUpdate,
+    ProposalFact, TranscriptCoordinate, WorkerLinkFact, WorkerPlacementFact, WorkerReturnFact,
 };
 pub use agents::project_agent_placement;
+pub use display::{is_empty_handoff_shell, present_chat_item_ids, present_chat_items};
 pub use history::{project_history, ProjectHistoryOptions};
 pub use merge::{dedupe_messages_by_id, merge_transcript};
 pub use session::{guard_focused_session, ChatCore, ChatCoreError};
