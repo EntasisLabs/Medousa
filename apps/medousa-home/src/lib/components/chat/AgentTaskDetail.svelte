@@ -11,7 +11,6 @@
   const error = $derived(controls.actionErrors?.[row.proposal.proposal_id]);
   const executionWorkshop = $derived(workshops.workshops.find(workshop => workshop.pairing?.workshopDeviceId === row.proposal.request.target.execution_runtime_id));
   const local = $derived(row.proposal.request.target.authority_id === connection.health?.runtime?.authority_id || executionWorkshop?.id === workshops.activeWorkshopId);
-  const expired = $derived(Date.parse(row.proposal.expires_at) <= controls.now);
   const busy = $derived(controls.busyId === row.proposal.proposal_id);
   const needsApproval = $derived(!row.receipt && !row.binding && progress.needsApproval);
 </script>
@@ -33,13 +32,12 @@
   {#if needsApproval}
     <div class="actions">
       {#if row.decision?.approved}
-        <button type="button" disabled={controls.busy || expired || !controls.available} onclick={() => void controls.action(row, 'dispatch')}>{busy ? 'Starting…' : 'Start approved work'}</button>
+        <button type="button" disabled={controls.busy || !controls.available} onclick={() => void controls.action(row, 'dispatch')}>{busy ? 'Starting…' : 'Start approved work'}</button>
       {:else}
-        <button type="button" disabled={controls.busy || expired || !controls.available} onclick={() => void controls.action(row, 'approve_and_dispatch')}>{busy ? 'Starting…' : row.proposal.request.existing_agent_session_id ? 'Approve & adopt' : 'Approve & start'}</button>
+        <button type="button" disabled={controls.busy || !controls.available} onclick={() => void controls.action(row, 'approve_and_dispatch')}>{busy ? 'Starting…' : row.proposal.request.existing_agent_session_id ? 'Approve & adopt' : 'Approve & start'}</button>
         <button type="button" class="secondary" disabled={controls.busy || !controls.available} onclick={() => void controls.action(row, 'deny')}>Decline</button>
       {/if}
     </div>
-    {#if expired}<p role="status">This request has expired.</p>{/if}
   {/if}
   {#if local && row.binding}<button type="button" class="secondary" onclick={() => void controls.openExecution(row, 'chat')}>Open agent conversation ↗</button>
   {:else if executionWorkshop && !local}<button type="button" class="secondary" onclick={() => void controls.openExecution(row, 'workshop')}>Open {executionWorkshop.label} ↗</button>{/if}

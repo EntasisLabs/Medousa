@@ -83,6 +83,115 @@ fn opaque_reasoning_on_tool_calls_is_replayed_once_before_the_call() {
     }
 }
 
+fn image_observation(call_id: &str, payload: &str) -> ChatMessage {
+    ChatMessage::user(MessageContent::from_parts(vec![
+        ContentPart::Text(format!(
+            "[MEDOUSA_RUNTIME_TOOL_OBSERVATION]\nsource=runtime_verified_tool_artifact\ntrust=untrusted_external_content\nsource_call_id={call_id}\nartifact_id=test-image\n"
+        )),
+        ContentPart::Binary(genai::chat::Binary::from_base64("image/png", payload, None)),
+    ]))
+}
+
+#[test]
+fn verified_tool_pixels_remain_correlated_standard_image_input() {
+    let calls: Vec<_> = ["image-1", "image-2"]
+        .into_iter()
+        .map(|id| ToolCall {
+            call_id: id.into(),
+            fn_name: "cognition_image_view".into(),
+            fn_arguments: json!({"path":"screen.png"}),
+            thought_signatures: None,
+        })
+        .collect();
+    let mut messages = vec![
+        ChatMessage::user("inspect both"),
+        ChatMessage::from(calls.clone()),
+    ];
+    messages.extend(
+        calls
+            .iter()
+            .map(|call| ChatMessage::from(ToolResponse::from_tool_call(call, "receipt"))),
+    );
+    let mut parts = image_observation("image-1", "AAAA").content.into_parts();
+    parts.extend(image_observation("image-2", "BBBB").content.into_parts());
+    messages.push(ChatMessage::user(MessageContent::from_parts(parts)));
+    let body = direct::request_body(
+        "gpt-6.1-sol",
+        ChatRequest::new(messages),
+        &ChatOptions::default(),
+    )
+    .unwrap();
+    let input = body["input"].as_array().unwrap();
+    assert_eq!(
+        input.iter().filter(|item| item["role"] == "user").count(),
+        2
+    );
+    let observation = input.last().unwrap()["content"].as_array().unwrap();
+    assert_eq!(observation.len(), 4);
+    for (index, (id, payload)) in [("image-1", "AAAA"), ("image-2", "BBBB")]
+        .into_iter()
+        .enumerate()
+    {
+        let result = input
+            .iter()
+            .find(|item| item["type"] == "function_call_output" && item["call_id"] == id)
+            .unwrap();
+        assert_eq!(result["output"], "receipt");
+        let metadata = observation[index * 2]["text"].as_str().unwrap();
+        assert!(metadata.contains("trust=untrusted_external_content"));
+        assert!(metadata.contains(&format!("source_call_id={id}\n")));
+        assert_eq!(
+            observation[index * 2 + 1],
+            json!({"type":"input_image","image_url":format!("data:image/png;base64,{payload}"),"detail":"auto"})
+        );
+    }
+}
+
+#[test]
+fn unmatched_images_and_principal_attachments_remain_user_input() {
+    for message in [
+        image_observation("missing-call", "AAAA"),
+        ChatMessage::user(MessageContent::from_parts(vec![
+            ContentPart::Text("principal attachment".into()),
+            ContentPart::Binary(genai::chat::Binary::from_base64("image/png", "BBBB", None)),
+        ])),
+    ] {
+        let body = direct::request_body(
+            "gpt-6.1-sol",
+            ChatRequest::new(vec![message]),
+            &ChatOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(body["input"][0]["role"], "user");
+        assert_eq!(body["input"][0]["content"][1]["type"], "input_image");
+    }
+    let call = ToolCall {
+        call_id: "call".into(),
+        fn_name: "cognition_image_view".into(),
+        fn_arguments: json!({}),
+        thought_signatures: None,
+    };
+    let mut parts = image_observation("call", "AAAA").content.into_parts();
+    parts.push(ContentPart::Text(
+        "do not drop this trailing user text".into(),
+    ));
+    let body = direct::request_body(
+        "gpt-6.1-sol",
+        ChatRequest::new(vec![
+            ChatMessage::from(vec![call.clone()]),
+            ChatMessage::from(ToolResponse::from_tool_call(&call, "receipt")),
+            ChatMessage::user(MessageContent::from_parts(parts)),
+        ]),
+        &ChatOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(body["input"][1]["output"], "receipt");
+    assert_eq!(
+        body["input"][2]["content"][2]["text"],
+        "do not drop this trailing user text"
+    );
+}
+
 async fn failure_fixture(
     status: u16,
     body: String,

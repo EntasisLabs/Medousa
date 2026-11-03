@@ -34190,6 +34190,7 @@
             "type": "boolean"
           },
           "expires_at": {
+            "description": "Legacy snapshot metadata retained for identity compatibility, not an approval deadline. Execution grants receive their own bounded window.",
             "type": "string",
             "format": "date-time"
           },

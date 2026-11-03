@@ -24,6 +24,28 @@ pub struct StreamedDiffDigest {
     pub truncated: bool,
 }
 
+/// Hash only bytes successfully written; callers publish only on full success.
+fn copy_patch_and_hash(
+    reader: &mut impl std::io::Read,
+    writer: &mut impl std::io::Write,
+) -> std::io::Result<String> {
+    let mut hasher = Sha256::new();
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        let count = match reader.read(&mut chunk) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        if count == 0 {
+            break;
+        }
+        writer.write_all(&chunk[..count])?;
+        hasher.update(&chunk[..count]);
+    }
+    writer.flush()?;
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn format_git_spawn_error(args: &[&str], err: &impl std::fmt::Display) -> String {
     format!(
         "failed to spawn git {}: {err}",
@@ -829,6 +851,87 @@ impl GitEngine {
                 to.as_str(),
             ],
         )
+    }
+
+    /// Persist a complete exact-OID patch without the interactive capture cap.
+    /// Memory is bounded; failed Git/read/write/sync operations never publish a
+    /// partial artifact or replace an existing artifact. Temporary output lives
+    /// beside the destination so publication is an atomic rename.
+    pub fn diff_binary_to_file(
+        &self,
+        cwd: &Path,
+        from: &GitOid,
+        to: &GitOid,
+        destination: &Path,
+    ) -> Result<String> {
+        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+        let args = [
+            "diff",
+            "--binary",
+            "--full-index",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--no-relative",
+            from.as_str(),
+            to.as_str(),
+            "--",
+        ];
+        let mut child = self
+            .command()
+            .args(args)
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| ForgeError::Git(format_git_spawn_error(&args, &error)))?;
+        // Both pipes are guaranteed by the spawn configuration above.
+        let mut stdout = child.stdout.take().expect("piped git stdout");
+        let mut stderr = child.stderr.take().expect("piped git stderr");
+        let digest = std::thread::scope(|scope| -> Result<String> {
+            let stderr_reader = scope.spawn(move || -> std::io::Result<Vec<u8>> {
+                let mut prefix = Vec::new();
+                std::io::copy(&mut stderr.by_ref().take(64 * 1024), &mut prefix)?;
+                // Retain only a diagnostic prefix, but drain concurrently so
+                // arbitrarily verbose stderr cannot deadlock patch production.
+                std::io::copy(&mut stderr, &mut std::io::sink())?;
+                Ok(prefix)
+            });
+            let streamed = copy_patch_and_hash(&mut stdout, temporary.as_file_mut());
+            drop(stdout);
+            if streamed.is_err() {
+                // Disk/read failures must reap Git, not leave a writer behind.
+                let _ = child.kill();
+            }
+            let status = child.wait();
+            let diagnostics = stderr_reader.join();
+            let digest = streamed?;
+            let status = status?;
+            let diagnostics =
+                diagnostics.map_err(|_| ForgeError::Git("git stderr reader panicked".into()))??;
+            if !status.success() {
+                let detail = String::from_utf8_lossy(&diagnostics);
+                return Err(ForgeError::Git(format_git_command_error(
+                    &args,
+                    if detail.trim().is_empty() {
+                        status.to_string()
+                    } else {
+                        detail.trim().to_owned()
+                    },
+                )));
+            }
+            Ok(digest)
+        })?;
+        temporary.as_file_mut().sync_all()?;
+        temporary
+            .persist(destination)
+            .map_err(|error| ForgeError::Io(error.error))?;
+        Ok(digest)
     }
 
     /// Unified text diff for one normalized Git path between two exact
@@ -2741,6 +2844,142 @@ summary second
         assert!(digest.truncated);
         assert!(digest.bytes_hashed <= 128);
         assert_eq!(digest.digest.len(), 64);
+    }
+
+    #[test]
+    fn diff_binary_to_file_streams_large_text_and_binary_exactly() {
+        let (tmp, git, base) = init_repo();
+        fs::write(
+            tmp.path().join("large.txt"),
+            "large patch line\n".repeat(600_000),
+        )
+        .unwrap();
+        let mut state = 12345u32;
+        let binary: Vec<u8> = (0..1024 * 1024)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state as u8
+            })
+            .collect();
+        fs::write(tmp.path().join("binary.bin"), &binary).unwrap();
+        let head = git
+            .commit_checkpoint(tmp.path(), "large", &CheckpointAuthor::default())
+            .unwrap();
+        // The old in-memory route cannot seal this otherwise valid candidate.
+        assert!(git.diff_binary(tmp.path(), &base, &head).is_err());
+        let output = TempDir::new().unwrap();
+        let path = output.path().join("patch.diff");
+        let digest = git
+            .diff_binary_to_file(tmp.path(), &base, &head, &path)
+            .unwrap();
+        let patch = fs::read(&path).unwrap();
+        assert!(patch.len() > MAX_CAPTURE_BYTES);
+        assert_eq!(digest, format!("{:x}", Sha256::digest(&patch)));
+        let expected = git
+            .command()
+            .current_dir(tmp.path())
+            .args([
+                "diff",
+                "--binary",
+                "--full-index",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-color",
+                "--no-relative",
+                base.as_str(),
+                head.as_str(),
+                "--",
+            ])
+            .output()
+            .unwrap();
+        assert!(expected.status.success());
+        assert_eq!(patch, expected.stdout);
+        assert!(String::from_utf8_lossy(&patch).contains("GIT binary patch"));
+        git.run(
+            tmp.path(),
+            &["apply", "--reverse", "--check", path.to_str().unwrap()],
+        )
+        .unwrap();
+        // Empty diffs are still exact artifacts, not missing output.
+        let digest = git
+            .diff_binary_to_file(tmp.path(), &head, &head, &path)
+            .unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+        assert_eq!(digest, format!("{:x}", Sha256::digest(b"")));
+    }
+
+    #[test]
+    fn diff_binary_to_file_failures_preserve_destination_and_remove_temporary_output() {
+        let (tmp, git, base) = init_repo();
+        let output = TempDir::new().unwrap();
+        let path = output.path().join("patch.diff");
+        fs::write(&path, b"previous evidence").unwrap();
+        let missing = GitOid::new("0".repeat(40));
+        assert!(
+            git.diff_binary_to_file(tmp.path(), &base, &missing, &path)
+                .is_err()
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"previous evidence");
+        let unavailable = GitEngine::with_binary(output.path().join("missing-git"));
+        assert!(
+            unavailable
+                .diff_binary_to_file(tmp.path(), &base, &base, &path)
+                .is_err()
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"previous evidence");
+        let directory = output.path().join("directory");
+        fs::create_dir(&directory).unwrap();
+        assert!(
+            git.diff_binary_to_file(tmp.path(), &base, &base, &directory)
+                .is_err()
+        );
+        assert!(directory.is_dir());
+        assert_eq!(fs::read_dir(output.path()).unwrap().count(), 2);
+        assert!(
+            git.diff_binary_to_file(
+                tmp.path(),
+                &base,
+                &base,
+                &output.path().join("missing/patch.diff")
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read_dir(output.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn patch_stream_propagates_read_write_and_flush_errors() {
+        struct BrokenReader;
+        impl std::io::Read for BrokenReader {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("read failed"))
+            }
+        }
+        struct BrokenWriter {
+            fail_flush: bool,
+        }
+        impl std::io::Write for BrokenWriter {
+            fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+                if self.fail_flush {
+                    Ok(data.len())
+                } else {
+                    Err(std::io::Error::other("disk full"))
+                }
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::other("flush failed"))
+            }
+        }
+        assert!(copy_patch_and_hash(&mut BrokenReader, &mut Vec::new()).is_err());
+        let error =
+            copy_patch_and_hash(&mut &b"patch"[..], &mut BrokenWriter { fail_flush: false })
+                .unwrap_err();
+        assert_eq!(error.to_string(), "disk full");
+        let error = copy_patch_and_hash(&mut &b"patch"[..], &mut BrokenWriter { fail_flush: true })
+            .unwrap_err();
+        assert_eq!(error.to_string(), "flush failed");
     }
 
     #[test]

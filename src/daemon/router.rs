@@ -1464,7 +1464,7 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        // Includes the native-only legacy Forge target repair route.
+        // Includes chat stickies and the native-only legacy Forge target repair route.
         // Pairing still adds 19 routes.
         assert_eq!(without_pairing.entries().len(), 502);
         assert_eq!(with_pairing.entries().len(), 521);
@@ -1569,20 +1569,20 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 63);
+        assert_eq!(entries.len(), 65);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("workshop.read"))
                 .count(),
-            25
+            26
         );
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("workshop.interact"))
                 .count(),
-            30
+            31
         );
         assert_eq!(
             entries

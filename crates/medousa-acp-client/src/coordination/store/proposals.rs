@@ -360,9 +360,6 @@ impl CoordinationStore {
         if proposal.request.owner_principal_id != decision.owner_principal_id {
             bail!("proposal decision owner mismatch");
         }
-        if decision.approved && proposal.expires_at <= chrono::Utc::now() {
-            bail!("expired proposal cannot be approved");
-        }
         let created = self.create(
             &object_path(channel, "proposal-decision", &decision.proposal_id)?,
             decision,
@@ -406,6 +403,56 @@ impl CoordinationStore {
         Ok(created)
     }
 
+    /// Pin the execution window when approval is compiled, not when the
+    /// non-expiring proposal was submitted. Retries cannot extend this window.
+    pub fn proposal_execution_deadline(
+        &self,
+        proposal: &PeerAssignmentProposal,
+    ) -> Result<chrono::DateTime<chrono::Utc>> {
+        if self.require_approved_proposal(
+            &proposal.request.channel,
+            &proposal.proposal_id,
+            &proposal.request.owner_principal_id,
+        )? != *proposal
+        {
+            bail!("proposal execution deadline requires the exact approved snapshot");
+        }
+        let path = object_path(
+            &proposal.request.channel,
+            "proposal-execution-deadline",
+            &proposal.proposal_id,
+        )?;
+        match self.root.metadata(&path) {
+            Ok(_) => self.read(&path),
+            Err(error) if error.is_not_found() => {
+                // Preserve grants compiled by earlier versions as well: an
+                // operator retry must never silently renew existing authority.
+                let deadline = match self.assignment_grant(
+                    &proposal.request.channel,
+                    &proposal.request.execution_grant_id,
+                ) {
+                    Ok(grant) if grant.request == proposal.request => grant.expires_at,
+                    Ok(_) => bail!("proposal execution grant snapshot mismatch"),
+                    Err(error)
+                        if error
+                            .downcast_ref::<medousa_store::StoreRootError>()
+                            .is_some_and(|error| error.is_not_found()) =>
+                    {
+                        chrono::Utc::now() + chrono::Duration::hours(24)
+                    }
+                    Err(error) => return Err(error),
+                };
+                // Another compiler may win the immutable create. Read its exact
+                // value rather than renewing or replacing an existing grant.
+                if let Err(error) = self.create(&path, &deadline) {
+                    return self.read(&path).map_err(|_| error);
+                }
+                self.read(&path)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub fn require_approved_proposal(
         &self,
         channel: &CoordinationChannelRef,
@@ -420,7 +467,6 @@ impl CoordinationStore {
             || decision.proposal_id != proposal_id
             || decision.owner_principal_id != owner
             || proposal.request.owner_principal_id != owner
-            || proposal.expires_at <= chrono::Utc::now()
         {
             bail!("proposal has no current approval for this owner");
         }

@@ -927,6 +927,45 @@ impl StoreRoot {
         self.open_file(path, false, false).map(File::into_std)
     }
 
+    /// Open an untrusted user-selected source without blocking on special files.
+    /// Regular-file type and link count are checked on the opened handle.
+    pub fn open_regular_read_file(
+        &self,
+        path: &impl StoreRootPath,
+    ) -> Result<std::fs::File, StoreRootError> {
+        let (parent, leaf) = self.open_parent(path, false, "open_regular_read_file")?;
+        reject_symlink(&parent, leaf, "open_regular_read_file")?;
+        let mut options = OpenOptions::new();
+        options.read(true).follow(FollowSymlinks::No);
+        #[cfg(unix)]
+        {
+            use cap_std::fs::OpenOptionsExt as _;
+            options.custom_flags(libc::O_NONBLOCK);
+        }
+        let file = parent
+            .open_with(leaf, &options)
+            .map_err(|error| StoreRootError::io("open_regular_read_file", error))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| StoreRootError::io("open_regular_read_metadata", error))?;
+        if !metadata.is_file() {
+            return Err(StoreRootError::io(
+                "open_regular_read_file",
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "source is not a regular file",
+                ),
+            ));
+        }
+        if file_has_multiple_links(&metadata) {
+            return Err(StoreRootError::Confinement {
+                operation: "open_regular_read_file",
+                reason: ConfinementReason::HardLink,
+            });
+        }
+        Ok(file.into_std())
+    }
+
     pub fn rename(
         &self,
         from: &impl StoreRootPath,

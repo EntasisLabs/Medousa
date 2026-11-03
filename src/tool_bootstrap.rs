@@ -224,8 +224,16 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "media",
-                summary: if cfg!(feature = "full-daemon") { "Generate raster photos, illustrations, and bitmap assets. Editable UI wireframes/designs use Create via cognition_store_write creative.create|creative.propose" } else { "Generate raster photos, illustrations, and bitmap assets; editable wireframes require a Create-enabled workshop" },
-                tools: &["cognition_image_generate"],
+                summary: if cfg!(feature = "full-daemon") { if cfg!(feature = "full-daemon") {
+                    "View workshop image files with cognition_image_view; generate raster photos, illustrations, and bitmap assets. Editable UI wireframes/designs use Create via cognition_store_write creative.create|creative.propose"
+                } else {
+                    "Generate raster photos, illustrations, and bitmap assets. Editable UI wireframes/designs use Create via cognition_store_write creative.create|creative.propose"
+                } } else { "Generate raster photos, illustrations, and bitmap assets; editable wireframes require a Create-enabled workshop" },
+                tools: &[
+                    "cognition_image_generate",
+                    #[cfg(feature = "full-daemon")]
+                    "cognition_image_view",
+                ],
             },
             ToolDomainCatalogEntry {
                 domain: "history",

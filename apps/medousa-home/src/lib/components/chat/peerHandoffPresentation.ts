@@ -5,8 +5,7 @@ import { peerProgressPresentation } from "./peerProgress";
 export function peerHandoffPresentation(row: PeerProposalReviewRecord, now: number) {
   const progress = peerProgressPresentation(row, now);
   const handoff = row.handoff;
-  const expiredApproval = Date.parse(row.proposal.expires_at) <= now && !row.binding && !row.receipt && handoff?.admission !== "delegate";
-  const needsApproval = !expiredApproval && !row.binding && !row.receipt && handoff?.admission !== "delegate";
+  const needsApproval = !row.binding && !row.receipt && handoff?.admission !== "delegate";
   let status = progress.headline;
   if (row.receipt && row.receipt.outcome !== "completed") status = progress.headline;
   else if (handoff?.state === "awaiting_sender_review") status = "Awaiting sender review";
@@ -14,7 +13,6 @@ export function peerHandoffPresentation(row: PeerProposalReviewRecord, now: numb
   else if (handoff?.state === "failed") status = "Work failed";
   else if (handoff?.state === "accepted") status = handoff.review ? "Result accepted" : "Result returned";
   else if (row.receipt) status = "Result returned";
-  else if (expiredApproval) status = "Approval expired";
   else if (needsApproval) status = row.decision?.approved ? "Approved · ready to start" : "Needs your approval";
   else if (handoff?.state === "awaiting_acceptance") status = "Waiting for agent";
   else if (row.progress?.state === "blocked") status = "Needs attention";
@@ -31,7 +29,7 @@ export function peerHandoffPresentation(row: PeerProposalReviewRecord, now: numb
     : handoff.review?.verdict === "accept" ? "Reviewed and accepted"
     : (handoff.policy.completion ?? "sender_review") === "sender_review" ? "Will review the result"
     : "Worker result completes this request";
-  const attention = expiredApproval || handoff?.state === "failed" || handoff?.state === "changes_requested"
+  const attention = handoff?.state === "failed" || handoff?.state === "changes_requested"
     || (row.receipt ? row.receipt.outcome !== "completed" : row.progress?.state === "blocked");
   const responsibleActor = senderResponsible ? "Medousa" : "Responsible agent";
   const nextActor = needsApproval ? "You"

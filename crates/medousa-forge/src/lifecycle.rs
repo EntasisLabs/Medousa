@@ -141,6 +141,7 @@ pub fn review(forge: &Forge, owner: &str, input: ProjectReviewQuery) -> Result<V
     Ok(
         json!({ "work_id": item.id, "title": item.title, "state": item.state,
         "reviewed": reviewed, "evidence": manifest, "policy": policy,
+        "target": item.target,
         "allowed_strategies": strategies, "decisions": item.review_decisions,
         "changes_requested": item.changes_requested, "disposition": item.disposition,
         "active_executors": item.active_attempt_ids().len(),
@@ -177,6 +178,25 @@ pub fn review_file(forge: &Forge, owner: &str, input: ProjectReviewFileQuery) ->
         json!({"work_id": item.id, "reviewed": input.reviewed, "path": file.path,
         "binary": file.is_binary, "truncated": truncated,
         "diff": String::from_utf8_lossy(&diff), "output_is_reference_data": true}),
+    )
+}
+
+/// Repair only a legacy full-OID target; this does not approve or integrate.
+pub fn repair_git_target(
+    forge: &Forge,
+    owner: &str,
+    actor: &ActorRef,
+    input: ProjectRepairGitTargetInput,
+) -> Result<WorkItem> {
+    let item = owned_item(forge, owner, &input.work_id)?;
+    forge.repair_git_target_for_owner(
+        &item.id,
+        owner,
+        &input.expected_old_ref,
+        &GitOid::new(input.expected_baseline_oid),
+        &input.branch,
+        &input.reason,
+        actor,
     )
 }
 

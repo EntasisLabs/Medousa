@@ -2,6 +2,9 @@
 //!
 //! Keeps unbounded patch/command payloads out of `WorkItem` responses.
 
+#[path = "forge_projections/evidence_text.rs"]
+mod evidence_text;
+
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -480,8 +483,9 @@ pub fn build_review_for_attempt(
         if let Ok(meta) = std::fs::metadata(dir.join("patch.diff")) {
             patch_byte_size = meta.len();
         }
-        if let Ok(patch) = std::fs::read_to_string(dir.join("patch.diff")) {
-            patch_line_stats = count_patch_line_stats(&patch);
+        if let Ok(patch) = std::fs::File::open(dir.join("patch.diff")) {
+            patch_line_stats =
+                count_patch_line_stats(std::io::BufReader::new(patch)).unwrap_or_default();
         }
         if let Ok(commands) = std::fs::read_to_string(dir.join("commands.jsonl")) {
             command_log_lines = commands.lines().filter(|l| !l.trim().is_empty()).count();
@@ -1000,11 +1004,18 @@ fn collect_coder_intents_by_path(commands: &str) -> std::collections::HashMap<St
 }
 
 /// Count +/- lines per path from a unified `patch.diff` (best-effort skim stats).
-fn count_patch_line_stats(patch: &str) -> std::collections::HashMap<String, (u32, u32)> {
+fn count_patch_line_stats(
+    patch: impl std::io::BufRead,
+) -> std::io::Result<std::collections::HashMap<String, (u32, u32)>> {
     let mut stats: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new();
     let mut current: Option<String> = None;
-    for line in patch.lines() {
+    evidence_text::visit_line_prefixes(patch, evidence_text::PAGE_BYTES, |prefix, clipped| {
+        let line = String::from_utf8_lossy(prefix);
         if let Some(rest) = line.strip_prefix("diff --git ") {
+            if clipped {
+                current = None;
+                return;
+            }
             // `diff --git a/path b/path` — prefer b/ path
             let path = rest
                 .split_whitespace()
@@ -1023,21 +1034,23 @@ fn count_patch_line_stats(patch: &str) -> std::collections::HashMap<String, (u32
                 current = Some(path.clone());
                 stats.entry(path).or_insert((0, 0));
             }
-            continue;
+            return;
         }
         let Some(path) = current.as_ref() else {
-            continue;
+            return;
         };
         if line.starts_with("+++") || line.starts_with("---") || line.starts_with("@@") {
-            continue;
+            return;
         }
         if line.starts_with('+') {
-            stats.entry(path.clone()).or_default().0 += 1;
+            let count = &mut stats.entry(path.clone()).or_default().0;
+            *count = count.saturating_add(1);
         } else if line.starts_with('-') {
-            stats.entry(path.clone()).or_default().1 += 1;
+            let count = &mut stats.entry(path.clone()).or_default().1;
+            *count = count.saturating_add(1);
         }
-    }
-    stats
+    })?;
+    Ok(stats)
 }
 
 fn parse_verification(line: &str) -> Option<ReviewVerification> {
@@ -1204,20 +1217,16 @@ pub fn project_items(items: Vec<WorkItem>) -> Vec<ItemProjection> {
 /// Re-export for callers/tests; builds a revision brief from comments + summary.
 pub use medousa_forge::model::compose_revision_brief;
 
-/// Paginate a text file by line range (1-based inclusive end optional).
+/// Paginate evidence by zero-based line offset, retaining at most 64 KiB.
+/// `truncated` also reports clipped line/page content; the artifact is unchanged.
 pub fn read_lines_page(
     path: &std::path::Path,
     offset: usize,
     limit: usize,
 ) -> Result<(Vec<String>, usize, bool), String> {
-    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let all: Vec<&str> = text.lines().collect();
-    let total = all.len();
-    let start = offset.min(total);
-    let end = (start + limit).min(total);
-    let lines = all[start..end].iter().map(|s| (*s).to_owned()).collect();
-    let truncated = end < total;
-    Ok((lines, total, truncated))
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    evidence_text::read_page(std::io::BufReader::new(file), offset, limit)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -1348,8 +1357,31 @@ diff --git a/src/lib.rs b/src/lib.rs
 +new
 +also
 ";
-        let stats = count_patch_line_stats(patch);
+        let stats = count_patch_line_stats(patch.as_bytes()).unwrap();
         assert_eq!(stats.get("src/lib.rs"), Some(&(2, 1)));
+    }
+
+    #[test]
+    fn large_patch_review_stats_and_pages_stream_without_changing_evidence() {
+        let patch = format!(
+            "diff --git a/large.txt b/large.txt\n--- a/large.txt\n+++ b/large.txt\n@@ -1 +1 @@\n-{}\n+{}\n",
+            "x".repeat(5 * 1024 * 1024),
+            "y".repeat(5 * 1024 * 1024)
+        );
+        let stats = count_patch_line_stats(std::io::BufReader::with_capacity(37, patch.as_bytes()))
+            .unwrap();
+        assert_eq!(stats.get("large.txt"), Some(&(1, 1)));
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("patch.diff");
+        std::fs::write(&path, &patch).unwrap();
+        let (lines, total, truncated) = read_lines_page(&path, 4, 2000).unwrap();
+        assert_eq!(total, 6);
+        assert!(truncated);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with('-'));
+        assert!(lines[0].len() <= evidence_text::PAGE_BYTES);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), patch);
+        assert!(read_lines_page(&directory.path().join("missing"), 0, 2000).is_err());
     }
 
     #[test]

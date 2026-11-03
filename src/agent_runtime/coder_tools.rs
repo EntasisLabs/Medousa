@@ -120,6 +120,7 @@ const CODER_CAPABILITY_TOOLS: &[&str] = &["cognition_capability"];
 const CODER_WORKSPACE_TOOLS: &[&str] = &[
     crate::public_api::COGNITION_STORE_READ,
     crate::public_api::COGNITION_STORE_WRITE,
+    crate::image_view_tools::COGNITION_IMAGE_VIEW,
 ];
 
 const CODER_DISCOVERABLE_DOMAINS: &[&str] = &[
@@ -2242,6 +2243,17 @@ impl CoderBoundToolRegistry {
                 Value::String(self.memory_scope.session_id.clone()),
             );
         }
+        if tool_name == crate::image_view_tools::COGNITION_IMAGE_VIEW {
+            reject_mismatched_string(
+                map.get("root"),
+                &self.entry.worktree.to_string_lossy(),
+                "root",
+            )?;
+            map.insert(
+                "root".into(),
+                Value::String(self.entry.worktree.to_string_lossy().into_owned()),
+            );
+        }
         if crate::public_api::is_public_api_tool(tool_name) {
             if map
                 .get("action")
@@ -2768,7 +2780,13 @@ fn coder_domain_tool_ids(domain: ToolDomainId) -> Option<Vec<ToolId>> {
         ],
         "memory" => CODER_ADVANCED_MEMORY_TOOLS,
         "research" => CODER_RESEARCH_TOOLS,
-        "messages" => &[crate::agent_messaging::COGNITION_AGENT_MESSAGE],
+        "messages" => &[
+            crate::agent_messaging::COGNITION_AGENT_MESSAGE,
+            crate::coordination_tools::COGNITION_PEER_DISCOVER,
+            crate::coordination_tools::COGNITION_PEER_PROPOSE,
+            "cognition_peer_handoff",
+            "cognition_peer_review",
+        ],
         "capabilities" => CODER_CAPABILITY_TOOLS,
         "workspace" => CODER_WORKSPACE_TOOLS,
         _ => return None,
@@ -3404,6 +3422,7 @@ fn coder_initial_tool_ids() -> HashSet<ToolId> {
                 COGNITION_CODER_EVIDENCE_READ,
                 COGNITION_CODER_CONTEXT_READ,
                 super::coder_read_batch::TOOL_NAME,
+                crate::image_view_tools::COGNITION_IMAGE_VIEW,
             ]
             .iter(),
         )
@@ -5693,6 +5712,30 @@ mod tests {
                 .iter()
                 .all(|event| event["tool"] == crate::public_api::COGNITION_STORE_READ)
         }));
+    }
+
+    #[test]
+    fn coder_messages_expose_native_chat_continuation_without_bypassing_admission() {
+        let ids = coder_domain_tool_ids(ToolDomainId::new("messages")).unwrap();
+        let visible = coder_visible_tool_ids();
+        let placements = crate::tool_catalog::first_party_placement_index();
+        for name in [
+            "cognition_peer_discover",
+            "cognition_peer_propose",
+            "cognition_peer_handoff",
+            "cognition_peer_review",
+        ] {
+            let id = ToolId::new(name);
+            assert!(ids.contains(&id), "{name}");
+            assert!(visible.contains(&id), "{name}");
+            assert!(
+                placements
+                    .placement(id)
+                    .exposes_mode(crate::tool_catalog::CODER_MODE_ID),
+                "{name}"
+            );
+            assert!(coder_tool_allowed(id, &WorkPolicy::default()), "{name}");
+        }
     }
 
     #[test]

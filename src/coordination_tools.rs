@@ -34,7 +34,7 @@ struct PeerProposeTool;
 
 #[medousa_tool(id = PEER_DISCOVER_ID)]
 impl PeerDiscoverTool {
-    /// Discover local Medousa Coder/Codex/Cursor/Hermes peers and saved coding runtime preferences, exact adoptable agent sessions, and this chat's bound project/context range. Unavailable explicit targets must not be substituted; omitted runtime follows the saved fallback order. Use peer_handoff for work authorized by the current human request, or peer_propose for recommendations and adoption.
+    /// Discover local Medousa Coder/Codex/Cursor/Hermes peers and saved coding runtime preferences, exact adoptable agent sessions, durable reusable native Coder chats (including titles), and this chat's bound project/context range. Continue a terminal reusable chat with peer_handoff existing_agent_session_id; no new chat is needed. Unavailable explicit targets must not be substituted; omitted runtime follows the saved fallback order. Use peer_handoff for work authorized by the current human request, or peer_propose for recommendations and adoption.
     async fn invoke_typed(&self, _input: PeerDiscoverInput) -> Result<serde_json::Value> {
         let turn = admitted()?;
         let host = local_coordination_host()
@@ -71,6 +71,30 @@ impl PeerProposeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn handoff_accepts_named_continuation_and_preserves_fresh_defaults() {
+        let mut input = serde_json::json!({
+            "request_key": "correction-2", "forge_work_id": "work-1",
+            "instructions": "Continue the visual correction",
+            "after_entry_seq": 0, "through_entry_seq": 5
+        });
+        let fresh: medousa_types::work_handoff::PeerHandoffIntent =
+            serde_json::from_value(input.clone()).unwrap();
+        assert!(fresh.existing_agent_session_id.is_none());
+        assert!(fresh.session_title.is_none());
+        input["existing_agent_session_id"] = "medousa_coder_assignment-1".into();
+        input["session_title"] = "rndr-ui-correction".into();
+        let followup: medousa_types::work_handoff::PeerHandoffIntent =
+            serde_json::from_value(input).unwrap();
+        assert_eq!(
+            followup.existing_agent_session_id.as_deref(),
+            Some("medousa_coder_assignment-1")
+        );
+        assert_eq!(
+            followup.session_title.as_deref(),
+            Some("rndr-ui-correction")
+        );
+    }
     #[tokio::test]
     async fn discovery_requires_an_admitted_owner_turn() {
         assert!(
@@ -106,7 +130,7 @@ struct PeerHandoffTool;
 struct PeerReviewTool;
 #[medousa_tool(id = PEER_HANDOFF_ID)]
 impl PeerHandoffTool {
-    /// Delegate user-requested work in an owned Forge project through native admission without a second approval card. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage for each exact stage during this human turn, then register those proposal IDs with work.coordinate; staged admission issues the same bounded native approval without dispatch, allowing native coordination to advance without callback reauthorization. A callback cannot mint new stages. The current human request must be included in the committed context. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.
+    /// Delegate user-requested work in an owned Forge project through native admission without a second approval card. To continue a terminal native Coder chat, use existing_agent_session_id from peer discovery reusable_sessions; a fresh scoped assignment reuses its conversation, never its old grant. Optional session_title names the executor chat for future discovery. Omission creates fresh work. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage and work.coordinate when the stages are known ahead of time. Verified owner callbacks may also delegate or stage follow-on workers in the same already-authorized Forge project without another approval card; native admission checks the durable callback, original owner, source context and project. Callbacks are not operators and cannot use this to authorize new project scope. Human turns must include the current human request in committed context; callbacks inherit their saved human source. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.
     async fn invoke_typed(
         &self,
         input: medousa_types::work_handoff::PeerHandoffIntent,

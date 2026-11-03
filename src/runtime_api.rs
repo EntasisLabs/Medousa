@@ -58,7 +58,8 @@ use crate::workflow::WorkflowRegistry;
 #[cfg(feature = "full-daemon")]
 use medousa_types::forge::{
     ProjectApplyInput, ProjectApproveInput, ProjectDiscardInput, ProjectPrepareMergeInput,
-    ProjectRequestChangesInput, ProjectReviewFileQuery, ProjectReviewQuery,
+    ProjectRepairGitTargetInput, ProjectRequestChangesInput, ProjectReviewFileQuery,
+    ProjectReviewQuery,
 };
 #[cfg(feature = "full-daemon")]
 use medousa_types::work_coordination::{WorkCoordinationInput, WorkCoordinationQuery};
@@ -147,6 +148,9 @@ pub enum RuntimeMutateAction {
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.prepare_merge")]
     PrepareMerge(ProjectPrepareMergeInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.repair_git_target")]
+    RepairGitTarget(ProjectRepairGitTargetInput),
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.approve_project")]
     ApproveProject(ProjectApproveInput),
@@ -469,6 +473,7 @@ impl JsonSchema for RuntimeMutateAction {
             "ssh.run",
             "ssh.open_terminal",
             "ssh.terminal_input",
+            "work.repair_git_target",
             "work.prepare_merge",
             "work.approve_project",
             "work.apply_project",
@@ -604,6 +609,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
                 MUTATE_ID,
                 "work.prepare_merge",
                 "Seal an owned undertaking for native review. Captures the existing governed workspace; refuses active coders/providers. Does not approve, merge or close work",
+            ),
+            typed_action_schema::<ProjectRepairGitTargetInput>(
+                MUTATE_ID,
+                "work.repair_git_target",
+                "Bind an owned legacy full-OID target to an existing local branch still at its captured baseline. Copy expected_old_ref and expected_baseline_oid from work.project_review target. Requires awaiting review and no active executors; preserves evidence/history, invalidates old approvals. Inspect review again before fresh approval/application. Does not merge or retarget arbitrary revisions",
             ),
             typed_action_schema::<ProjectApproveInput>(
                 MUTATE_ID,
@@ -754,7 +764,7 @@ impl CognitionRuntimeQueryTool {
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Mutate durable runtime work. SSH: discover granted targets with runtime query ssh.targets; use ssh.run then poll ssh.execution, reusing request_key on retries. ssh.open_terminal/ssh.terminal_input provide interactive access. Do not replay changes with an unknown remote outcome. Native undertaking lifecycle: work.prepare_merge, work.approve_project, work.apply_project, work.request_project_changes, work.discard_project. First inspect exact sealed evidence with runtime query work.project_review and work.project_review_file. Use existing user intent; do not repeatedly ask for approval already given. Callbacks can continue the owner lifecycle, but delegated executors cannot approve or integrate work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
+    /// Mutate durable runtime work. SSH: discover granted targets with runtime query ssh.targets; use ssh.run then poll ssh.execution, reusing request_key on retries. ssh.open_terminal/ssh.terminal_input provide interactive access. Do not replay changes with an unknown remote outcome. Native undertaking lifecycle: work.prepare_merge, work.repair_git_target (legacy full-OID recovery only; invalidates approvals without merging), work.approve_project, work.apply_project, work.request_project_changes, work.discard_project. First inspect exact sealed evidence with runtime query work.project_review and work.project_review_file. Use existing user intent; do not repeatedly ask for approval already given. Callbacks can continue the owner lifecycle, but delegated executors cannot approve or integrate work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeMutateAction,
@@ -922,6 +932,13 @@ async fn dispatch_mutate(
                 .map_err(runtime_error)
         }
 
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::RepairGitTarget(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.mutate_project(&turn, ProjectLifecycleMutation::RepairGitTarget(params))
+                .await
+                .map_err(runtime_error)
+        }
         #[cfg(feature = "full-daemon")]
         RuntimeMutateAction::PrepareMerge(params) => {
             let (host, turn) = admitted_work_access()?;
@@ -1361,6 +1378,7 @@ mod tests {
         ];
         let mutations = [
             json!({"action":"work.prepare_merge", "work_id":"work-1"}),
+            json!({"action":"work.repair_git_target", "work_id":"work-1", "expected_old_ref":"b".repeat(40), "expected_baseline_oid":"b".repeat(40), "branch":"main", "reason":"Repair legacy target"}),
             json!({"action":"work.approve_project", "work_id":"work-1", "reviewed":pin, "strategy":"fast_forward_only", "rationale":"Reviewed the sealed changes"}),
             json!({"action":"work.apply_project", "work_id":"work-1", "decision_id":"decision-1"}),
             json!({"action":"work.request_project_changes", "work_id":"work-1", "reviewed":pin, "reason":"Missing verification"}),
@@ -1407,12 +1425,31 @@ mod tests {
                 }
             }
         }
-        for field in ["reviewed", "strategy", "rationale"] {
-            let mut missing = mutations[1].clone();
+        let repair = mutations
+            .iter()
+            .find(|input| input["action"] == "work.repair_git_target")
+            .unwrap();
+        for field in [
+            "work_id",
+            "expected_old_ref",
+            "expected_baseline_oid",
+            "branch",
+            "reason",
+        ] {
+            let mut missing = repair.clone();
             missing.as_object_mut().unwrap().remove(field);
             assert!(serde_json::from_value::<RuntimeMutateAction>(missing).is_err());
         }
-        let mut forged = mutations[1].clone();
+        let approval = mutations
+            .iter()
+            .find(|input| input["action"] == "work.approve_project")
+            .unwrap();
+        for field in ["reviewed", "strategy", "rationale"] {
+            let mut missing = approval.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(serde_json::from_value::<RuntimeMutateAction>(missing).is_err());
+        }
+        let mut forged = approval.clone();
         forged["reviewed"]["actor"] = json!("other");
         assert!(serde_json::from_value::<RuntimeMutateAction>(forged).is_err());
         assert!(admitted_work_access().is_err());
@@ -1674,6 +1711,7 @@ mod tests {
             "work.resolve_project",
             "work.resolve_content",
             "work.coordinate",
+            "work.repair_git_target",
             "work.prepare_merge",
             "work.approve_project",
             "work.apply_project",

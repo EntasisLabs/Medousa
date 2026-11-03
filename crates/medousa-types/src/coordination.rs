@@ -480,6 +480,8 @@ pub struct OwnerEventView {
 pub struct PeerAssignmentProposal {
     pub proposal_id: String,
     pub request: ExternalPeerAssignmentRequest,
+    /// Legacy snapshot metadata retained for identity compatibility, not an
+    /// approval deadline. Execution grants receive their own bounded window.
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub continue_owner: bool,
 }

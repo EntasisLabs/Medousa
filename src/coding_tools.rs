@@ -126,7 +126,18 @@ pub(crate) async fn with_coder_tool_root<T>(
     CODER_TOOL_ROOT.scope(root, invocation).await
 }
 
+pub(crate) fn admitted_coder_tool_root() -> Option<PathBuf> {
+    CODER_TOOL_ROOT.try_with(Clone::clone).ok()
+}
+
 fn resolve_root(root: Option<&str>) -> StasisResult<PathBuf> {
+    resolve_read_root(root, admitted_coder_tool_root())
+}
+
+pub(crate) fn resolve_read_root(
+    root: Option<&str>,
+    coder_root: Option<PathBuf>,
+) -> StasisResult<PathBuf> {
     let base = match root.map(str::trim).filter(|s| !s.is_empty()) {
         Some(raw) => PathBuf::from(raw),
         None => crate::grapheme_script::store::GraphemeScriptStore::root_dir(),
@@ -137,7 +148,7 @@ fn resolve_root(root: Option<&str>) -> StasisResult<PathBuf> {
             base.display()
         ))
     })?;
-    if let Ok(root) = CODER_TOOL_ROOT.try_with(Clone::clone) {
+    if let Some(root) = coder_root {
         let root = root.canonicalize().map_err(|err| {
             StasisError::PortFailure(format!("cannot resolve admitted Coder root: {err}"))
         })?;

@@ -125,9 +125,6 @@ impl LocalPeerDispatcher {
         request: &ExternalPeerAssignmentRequest,
         mut prompt: String,
     ) -> Result<ExternalPeerAssignmentBinding> {
-        if request.existing_agent_session_id.is_some() {
-            bail!("native Coder requires a fresh assignment");
-        }
         let binding = native_binding(request);
         let store = self.store.clone();
         let saved = request.clone();
@@ -150,7 +147,17 @@ impl LocalPeerDispatcher {
                     store.record_peer(&saved_binding)?;
                     crate::session_catalog::ensure_named_session_for_profile(
                         saved.execution_session.session_id.as_str(),
-                        Some("Medousa Coder".into()),
+                        Some(
+                            store
+                                .handoff(&saved.channel, &saved.assignment_id)?
+                                .and_then(|handoff| handoff.session_title)
+                                .or_else(|| {
+                                    crate::session_history::display_name(
+                                        saved.execution_session.session_id.as_str(),
+                                    )
+                                })
+                                .unwrap_or_else(|| "Medousa Coder".into()),
+                        ),
                         &saved.owner_principal_id,
                     )
                     .map_err(anyhow::Error::msg)?;

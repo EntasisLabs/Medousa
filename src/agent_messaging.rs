@@ -96,10 +96,11 @@ fn targets(profile: &str, query: Option<&str>) -> Result<Vec<Target>> {
         let binding = crate::bot_profiles::BotProfileStore::daemon_default()
             .resolve_session(profile, &session.session_id)
             .map_err(anyhow::Error::msg)?;
-        let can_message = binding
-            .bot
-            .as_ref()
-            .is_none_or(|bot| !bot.archived && bot.external_agent.is_none());
+        let can_message = !session.session_id.starts_with("ses_peer_")
+            && binding
+                .bot
+                .as_ref()
+                .is_none_or(|bot| !bot.archived && bot.external_agent.is_none());
         result.push(Target {
             target_id: session.session_id.clone(),
             session_id: Some(session.session_id.clone()),
@@ -115,6 +116,11 @@ fn resolve_target(profile: &str, selector: &str) -> Result<Target> {
     let selector = selector.trim();
     if selector.is_empty() || selector.len() > 160 {
         bail!("target name or ID is required (up to 160 bytes)");
+    }
+    if selector.starts_with("ses_peer_") {
+        bail!(
+            "delegated Coder chats retain assignment custody; use peer discovery reusable_sessions and peer_handoff with existing_agent_session_id for a scoped follow-up in the same chat"
+        );
     }
     if selector.starts_with("ses_handoff_")
         || selector.starts_with(medousa_types::work_coordinator::WORK_COORDINATOR_SESSION_PREFIX)
@@ -172,6 +178,15 @@ fn resolve_target(profile: &str, selector: &str) -> Result<Target> {
         0 => bail!("no visible agent chat or active Bot matches this target"),
         1 => {
             let target = matches.remove(0);
+            if target
+                .session_id
+                .as_deref()
+                .is_some_and(|id| id.starts_with("ses_peer_"))
+            {
+                bail!(
+                    "delegated Coder chats use peer discovery reusable_sessions and peer_handoff with existing_agent_session_id, not native inbox delivery"
+                );
+            }
             if !target.can_message {
                 bail!(
                     "target has no open native chat; external runtime Bots use their existing handoff/job route"
@@ -936,6 +951,12 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn delegated_coder_chat_requires_scoped_continuation_not_inbox_delivery() {
+        let error = resolve_target("owner", "ses_peer_owned_child").unwrap_err();
+        assert!(error.to_string().contains("existing_agent_session_id"));
+        assert!(error.to_string().contains("assignment custody"));
+    }
     fn message() -> Message {
         Message {
             id: "msg_test".into(),

@@ -26,6 +26,11 @@ Full-daemon assistant handoffs expose typed sender responsibility, completion,
 callback and contact policy. Direct admission is tied to the current human
 request; proposal admission remains available. Inbox records carry optional
 `PeerHandoffSummary` metadata, and sender review requires the exact terminal receipt.
+Pending peer proposals do not expire. Their `expires_at` field remains legacy
+snapshot metadata for identity compatibility; approving a proposal creates a
+bounded 24-hour execution window, and retries preserve that deadline. Verified
+owner callbacks can admit follow-on workers within the original owner and
+authorized project; they do not gain operator authority or authorize new scope.
 See [Sender-owned handoffs](../engine/coordination.md#sender-owned-local-handoffs).
 
 Remote handoffs export a recent immutable transcript range bounded by both entry

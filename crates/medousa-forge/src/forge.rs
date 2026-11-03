@@ -2198,10 +2198,12 @@ impl Forge {
             .join("evidence");
         std::fs::create_dir_all(&evidence_dir)?;
 
-        let patch = self
-            .git
-            .diff_binary(&env.worktree, &env.baseline_oid, sealed_head)?;
-        std::fs::write(evidence_dir.join("patch.diff"), &patch)?;
+        let patch_digest = self.git.diff_binary_to_file(
+            &env.worktree,
+            &env.baseline_oid,
+            sealed_head,
+            &evidence_dir.join("patch.diff"),
+        )?;
 
         // Adapters own command/transcript capture; Forge only guarantees the
         // files exist so digests are well-defined.
@@ -2275,7 +2277,7 @@ impl Forge {
             sealed_head_oid: sealed_head.clone(),
             current_base_oid: current_base_oid.clone(),
             base_advanced: current_base_oid != *evidence_base_oid,
-            patch_digest: Digest::sha256_hex(&patch),
+            patch_digest: Digest::from_hex(patch_digest),
             command_log_digest: Digest::sha256_hex(&commands),
             policy_report_digest: Digest::sha256_hex(&policy_json),
             compact_receipts_digest: Some(Digest::sha256_hex(&compact_receipts_json)),
@@ -2562,16 +2564,15 @@ impl Forge {
         let env = item
             .environment_for_attempt(&decision.attempt_id)
             .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
-        let patch = self.git.diff_binary(
-            &env.worktree,
-            &decision.baseline_oid,
-            &decision.reviewed_head_oid,
-        )?;
         let dir = self.store.item_dir(&item.id).join("dispositions");
         std::fs::create_dir_all(&dir)?;
         let path = dir.join(format!("patch-{}.diff", decision.id.storage_key()));
-        std::fs::write(&path, &patch)?;
-        let digest = Digest::sha256_hex(&patch);
+        let digest = Digest::from_hex(self.git.diff_binary_to_file(
+            &env.worktree,
+            &decision.baseline_oid,
+            &decision.reviewed_head_oid,
+            &path,
+        )?);
         self.commit_event(
             &item.id,
             actor,
@@ -2752,13 +2753,42 @@ impl Forge {
         reason: &str,
         actor: &ActorRef,
     ) -> Result<WorkItem> {
+        if actor.kind != ActorKind::User {
+            return Err(ForgeError::PolicyViolation(
+                "only the work owner may repair its target".into(),
+            ));
+        }
+        self.repair_git_target_for_owner(
+            work_id,
+            &actor.id,
+            expected_old_ref,
+            expected_baseline,
+            branch,
+            reason,
+            actor,
+        )
+    }
+
+    /// Native owner adapters supply authenticated ownership separately from
+    /// session/turn actor attribution. Never expose the owner as model input.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn repair_git_target_for_owner(
+        &self,
+        work_id: &WorkId,
+        owner: &str,
+        expected_old_ref: &str,
+        expected_baseline: &GitOid,
+        branch: &str,
+        reason: &str,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
         let probe = self.load(work_id)?;
         let _repo_lock = self
             .store
             .lock_repo(&self.repo_lock_key(&git_target(&probe)?.repo_path)?)?;
         let _item_lock = self.store.lock_item(work_id)?;
         let item = self.load(work_id)?;
-        if actor.kind != ActorKind::User || actor.id != item.owner {
+        if owner.is_empty() || owner != item.owner {
             return Err(ForgeError::PolicyViolation(
                 "only the work owner may repair its target".into(),
             ));
@@ -5919,6 +5949,60 @@ mod tests {
         // The forge branch still points at its sealed head.
         let env = forge.load(&item.id).unwrap().environment.unwrap();
         assert_eq!(fx.git.head_oid(&env.worktree).unwrap(), sealed_head);
+    }
+
+    #[test]
+    fn oversized_patch_seals_and_exports_with_exact_evidence_digest() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register("large patch", "b", &fx.repo, "main", "user-1", &actor())
+            .unwrap();
+        forge.provision(&item.id, &actor()).unwrap();
+        let (item, lease) = forge
+            .begin_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        let env = item.environment.clone().unwrap();
+        fs::write(
+            env.worktree.join("large.txt"),
+            "large patch line\n".repeat(600_000),
+        )
+        .unwrap();
+        fs::write(env.worktree.join("binary.bin"), [0, 1, 2, 255]).unwrap();
+        let item = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
+        assert_eq!(item.state, WorkState::AwaitingReview);
+        let head = fx.git.head_oid(&env.worktree).unwrap();
+        let evidence = forge.store().item_dir(&item.id).join("attempts/1/evidence");
+        let manifest: EvidenceManifest =
+            serde_json::from_slice(&fs::read(evidence.join("manifest.json")).unwrap()).unwrap();
+        let patch = fs::read(evidence.join("patch.diff")).unwrap();
+        assert!(patch.len() > crate::execution::MAX_CAPTURE_BYTES);
+        assert_eq!(manifest.patch_digest, Digest::sha256_hex(&patch));
+        assert!(!manifest.truncated);
+        assert_eq!(manifest.baseline_oid, env.baseline_oid);
+        assert_eq!(manifest.sealed_head_oid, head);
+        let decision = decision_for(
+            &item,
+            &head,
+            &manifest,
+            IntegrationStrategy::ExportPatch,
+            &fx,
+        );
+        let id = decision.id.clone();
+        forge.decide(&item.id, decision, &actor()).unwrap();
+        let item = forge.apply_decision(&item.id, &id, &actor()).unwrap();
+        assert_eq!(item.disposition, Some(AcceptedDisposition::PatchExported));
+        let path = forge
+            .store()
+            .item_dir(&item.id)
+            .join("dispositions")
+            .join(format!("patch-{}.diff", id.storage_key()));
+        let exported = fs::read(path).unwrap();
+        assert_eq!(exported, patch);
+        assert_eq!(Digest::sha256_hex(&exported), manifest.patch_digest);
+        assert_eq!(fx.git.ref_oid(&fx.repo, "main").unwrap(), fx.baseline);
     }
 
     #[test]

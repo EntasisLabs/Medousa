@@ -395,6 +395,57 @@ impl CoordinationStore {
         Ok(request)
     }
 
+    /// Resolve a live legacy peer callback from its durable native attempt, not
+    /// from model-supplied event data. Settled or rejected turns cannot delegate.
+    pub fn owner_request_for_wake(
+        &self,
+        session: &medousa_types::SessionRef,
+        turn_id: &str,
+    ) -> Result<ExternalPeerAssignmentRequest> {
+        let entries = self.root.list_root_utf8()?;
+        if entries.len() > 10_000 {
+            bail!("owner wake lookup budget exhausted");
+        }
+        for entry in entries {
+            if !entry.name.starts_with("r1-") {
+                continue;
+            }
+            let receipt: ExternalPeerAssignmentReceipt =
+                self.read(&StorePath::parse(&entry.name)?)?;
+            for attempt in 0..MAX_INTAKE_ATTEMPTS {
+                if turn_id != format!("{}-owner-{attempt}", receipt.receipt_id) {
+                    continue;
+                }
+                let request = self.require_owner_continuation(&receipt, chrono::Utc::now())?;
+                if request.owner_session != *session {
+                    bail!("owner callback session mismatch");
+                }
+                let intake: PeerOwnerIntakeAttempt = self.read(&object_path(
+                    &request.channel,
+                    "owner-attempt",
+                    &format!("{}:{attempt}", receipt.receipt_id),
+                )?)?;
+                if intake.turn_id != turn_id
+                    || intake.attempt != attempt
+                    || intake.receipt != receipt
+                {
+                    bail!("owner callback attempt mismatch");
+                }
+                self.validate_intake(&intake)?;
+                self.require_not_rejected(&intake)?;
+                let event = self.peer_owner_event(&receipt)?;
+                if self.owner_ack(&receipt)?.is_some()
+                    || self.owner_event_ack(&event)?.is_some()
+                    || self.owner_event_blocked(&event)?.is_some()
+                {
+                    bail!("owner callback admission already settled");
+                }
+                return Ok(request);
+            }
+        }
+        bail!("no native owner admission matches this callback turn")
+    }
+
     pub fn try_owner_intake_lease(
         &self,
         request: &ExternalPeerAssignmentRequest,

@@ -206,11 +206,7 @@ impl CoordinationStore {
         for round in &rounds {
             let executor = self.proposal(&input.channel, &round.input.executor_proposal_id)?;
             let reviewer = self.proposal(&input.channel, &round.input.reviewer_proposal_id)?;
-            if input.deadline <= now
-                || input.deadline > now + chrono::Duration::hours(24)
-                || input.deadline > executor.expires_at
-                || input.deadline > reviewer.expires_at
-            {
+            if input.deadline <= now || input.deadline > now + chrono::Duration::hours(24) {
                 bail!("work coordination deadline exceeds current approval bounds");
             }
             if executor.request.assignment_id != round.executor_assignment_id

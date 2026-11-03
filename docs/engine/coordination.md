@@ -87,7 +87,8 @@ or conflicting terminal marker fails closed.
 ## Sender-owned local handoffs
 
 On a full workshop daemon, `cognition_peer_handoff` delegates work already
-covered by the current authenticated human request. Its input contains
+covered by the current authenticated human request or a verified owner callback
+continuing that work in the same project. Its input contains
 `request_key`, `forge_work_id`, `instructions`, `after_entry_seq`,
 `through_entry_seq`, optional `runtime`, optional `admission` (`delegate` by
 default, `stage`, or `propose`), and optional `handoff` policy. Discover the owned project
@@ -106,20 +107,27 @@ The sender chooses four independent aspects of the handoff:
   participant/channel routes are retained for a separate contact adapter;
   these callbacks do not send messages or start voice calls on those routes.
 
-Direct admission requires operator execution capability and a committed user
+Human-turn admission requires operator execution capability and a committed user
 entry attributed to this exact human turn in the selected context. The host
 captures the sender session, Bot, source entry/digest, immutable assignment and
-24-hour expiry, then compiles the exact native grant. Worker, provider and
-continuation turns cannot mint direct admission by supplying model-written
-approval or authority fields. `admission: "propose"` stores the same sender
+24-hour expiry, then compiles the exact native grant. A continuation instead
+requires a durable, unsettled native callback matching the saved owner, project
+and source context, plus the originating Bot for sender-owned handoffs. Parallel
+workshop callbacks inherit their saved originating human execution, not a newer
+model-selected message. Rejected, acknowledged, cancelled or out-of-scope
+callbacks cannot admit work. Worker and provider turns cannot mint direct
+admission by supplying model-written approval or authority fields. The callback
+remains a member principal with no operator capabilities.
+`admission: "propose"` stores the same sender
 policy but waits for the existing native approval/start flow. The legacy
 `cognition_peer_propose` and portable remote `cognition_peer_delegate` contracts
 remain available; legacy proposals are not silently upgraded into handoffs.
 
 ### Admit the requested sequence once
 
-For an already-requested executor → independent reviewer sequence, use
-`admission: "stage"` for **each exact stage during the authenticated human turn**.
+For an already-requested executor → independent reviewer sequence known ahead of
+time, use `admission: "stage"` for each exact stage during the authenticated
+human turn.
 This captures the same immutable source, approval, exact assignment grant and
 expiry as `delegate`, but returns `status: "staged"` without dispatching a
 provider. Register the returned proposal IDs with `work.coordinate` (including
@@ -133,11 +141,11 @@ Do not use `delegate` for future reviewer/fix stages: it launches immediately,
 before the controller can pin the executor output or enforce dependencies.
 Unregistered staged grants do not launch themselves; registration failures must
 be reported with the saved proposal IDs, not described as running work. Their
-absolute expiry is not extended by a retry. Stage requests cannot be issued by
-worker/continuation principals, and callbacks cannot derive arbitrary new
-assignments from an earlier grant. Missing or out-of-scope stages require the
-proposal path or a concrete authorization blocker; never replay an old human
-entry as new authority.
+absolute expiry is not extended by a retry. Verified owner callbacks may also
+admit follow-on delegate or stage assignments within the same saved authorized
+project, including review and fixes; workers cannot. New project scope requires
+the proposal path or a concrete authorization blocker. A callback inherits its
+saved source; it cannot replay an arbitrary old human entry as new authority.
 
 Callbacks assess receipts against saved work and continue permitted verification,
 review and correction rather than treating a worker terminal or acknowledgment
@@ -216,6 +224,38 @@ from disk. External runtimes continue through the existing `/v1/agents` session
 interface: Codex uses its native app-server protocol, while Cursor and Hermes
 use ACP. Medousa is not sent to the external-agent session endpoint or Bot adapter.
 
+Peer discovery also returns durable `reusable_sessions` for native Medousa Coder
+chats created by the current sender, including the executor chat title, exact
+`agent_session_id`, `session_id`, Forge project, and terminal state. These survive
+daemon restart and do not require the sender chat to be project-bound. To send a
+follow-up after a terminal result, call `cognition_peer_handoff` with a new
+`request_key`, the same `forge_work_id`, current authorized instructions/context,
+and `existing_agent_session_id` copied from discovery. The conversation stays in
+the same executor chat; the runtime admits a new assignment, turn, grant, and
+receipt rather than recycling expired authority. Only the original sender,
+owner, project, and local runtime can continue it. An unresolved prior assignment
+or competing follow-up fails closed. This does not reopen accepted or discarded
+Forge work; normal project lifecycle checks still apply.
+
+Optional `session_title` on a handoff names the executor chat at creation (or
+renames it on a follow-up). Titles are cosmetic, not custody or execution
+authority; exact discovered IDs disambiguate duplicate names. Native Coder titles
+are preserved on launch. Use this scoped handoff route, not generic
+`cognition_agent_message`, for delegated Coder follow-ups. Coder exposes native
+peer discovery, proposal, handoff, and review in its `messages` domain. Exposure
+does not grant owner admission: direct handoff/review still requires the owning
+human turn or verified scoped owner callback; delegated executors cannot approve
+their own work.
+
+For guidance to an already active local worker, `workshop.steer` addresses the
+exact `work_id` returned by `workshop.status` or `workshop.spawn`, whether the
+worker is parallel or bound. The frozen calling session must own it; terminal,
+archived, foreign, and remotely delegated workers are refused. Parallel guidance
+is retained in the worker's steer history without inserting a synthetic user
+turn into the parent transcript. The UI's bound-workshop endpoint remains
+bound-generation-only. Steering does not resume a terminal reusable Coder chat:
+use the fresh scoped handoff described above for that.
+
 Discovery includes visible, unowned local external-agent sessions bound to the same Forge
 work. Adopting one never sends another prompt or restarts its provider. Approval
 records coordination custody and attaches the durable terminal observer to the
@@ -225,8 +265,12 @@ Cancelled, foreign-project, hidden, wrong-runtime, or already-owned sessions
 fail closed. The initial adoption seam is process-local; a provider absent from
 the live registry after daemon restart is not invented from Forge metadata.
 
-Proposals use a one-hour expiry and a stable owner/session/authority-scoped
-request key. Exact retries reuse the immutable snapshot and repair its index;
+Pending proposals do not expire and use a stable owner/session/authority-scoped
+request key. The legacy `expires_at` snapshot field remains part of their identity,
+not an approval deadline. Approval pins a fresh 24-hour execution window;
+retries preserve that deadline, including grants compiled by earlier versions.
+Execution-grant expiry and revocation still apply. Exact retries reuse the
+immutable snapshot and repair its index;
 changed intent under the same key fails closed. Local discovery and proposal
 tools do not approve or launch work. On desktop daemons and embedded mobile,
 `cognition_peer_delegate` accepts only an exact
@@ -388,8 +432,9 @@ is never rerun or acknowledged automatically.
 
 The daemon advertises `coordination.operator_proposals.v1` only when the local
 coordination host is composed. An unavailable host returns 503; scope, expiry,
-visibility, and immutable-write conflicts return 409. This increment exposes no
-model grant-issuance tool or autonomous follow-up authority. The signed mesh
+visibility, and immutable-write conflicts return 409. Proposal routes expose no
+model grant-issuance tool; scoped owner callbacks use native handoff admission
+described above. The signed mesh
 proposal route is peer-only and destination-policy-gated; it is not a native
 operator proposal-creation endpoint.
 
@@ -401,7 +446,9 @@ operator proposal-creation endpoint.
 insensitive); stable Bot/chat IDs disambiguate names. Visibility and Bot
 archival/executor policy are checked at send and delivery. Replies derive the
 destination from the received message and cannot substitute another return
-route. External-runtime Bots and internal coordination sessions are excluded.
+route. External-runtime Bots, internal coordination sessions, and delegated
+`ses_peer_…` Coder chats are excluded. Coder chats retain assignment custody;
+use peer discovery and scoped handoff continuation as described above.
 
 The workshop's `agent_messages.sqlite3` transactionally stores immutable sender,
 recipient, body, exchange root, retry key identity, and mutable delivery state.
