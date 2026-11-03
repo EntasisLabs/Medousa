@@ -28,17 +28,6 @@ function tauriInternalsPresent(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-export async function invoke<T>(
-  cmd: string,
-  args?: InvokeArgs,
-  options?: InvokeOptions,
-): Promise<T> {
-  if (!tauriInternalsPresent()) {
-    return browserCommand(cmd) as T;
-  }
-  return tauriInvoke<T>(cmd, args, options);
-}
-
 function browserCommand(cmd: string): unknown {
   switch (cmd) {
     case "daemon_url":
@@ -67,6 +56,57 @@ function browserCommand(cmd: string): unknown {
     default:
       return null;
   }
+}
+
+let nodeDispatch:
+  | (import("$lib/appChat/client").AppChatBackend & { dispose: () => void })
+  | null
+  | undefined;
+
+async function ensureNodeDispatch() {
+  if (nodeDispatch !== undefined) return nodeDispatch;
+  if (typeof process === "undefined" || !(process as { versions?: { node?: string } }).versions?.node) {
+    nodeDispatch = null;
+    return null;
+  }
+  const { createNodeDispatchBackend } = await import("$lib/appChat/nodeDispatchBackend");
+  nodeDispatch = createNodeDispatchBackend();
+  return nodeDispatch;
+}
+
+export async function invoke<T>(
+  cmd: string,
+  args?: InvokeArgs,
+  options?: InvokeOptions,
+): Promise<T> {
+  if (tauriInternalsPresent()) {
+    return tauriInvoke<T>(cmd, args, options);
+  }
+  if (
+    cmd === "app_chat_dispatch" ||
+    cmd === "app_chat_open_session" ||
+    cmd === "app_chat_snapshot"
+  ) {
+    const backend = await ensureNodeDispatch();
+    if (!backend) {
+      throw new Error("Application chat core requires the Tauri host or Node dispatch binary");
+    }
+    const command =
+      cmd === "app_chat_dispatch"
+        ? (args as { command: import("$lib/types/generated/app_api").ChatCommand }).command
+        : cmd === "app_chat_open_session"
+          ? {
+              type: "open_session" as const,
+              session_id: String((args as { sessionId?: string }).sessionId ?? ""),
+              authority_id: String((args as { authorityId?: string }).authorityId ?? ""),
+            }
+          : {
+              type: "snapshot" as const,
+              session_id: String((args as { sessionId?: string }).sessionId ?? ""),
+            };
+    return (await backend(command)) as T;
+  }
+  return browserCommand(cmd) as T;
 }
 
 export {

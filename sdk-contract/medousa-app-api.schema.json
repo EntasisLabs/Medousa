@@ -1,0 +1,6546 @@
+{
+  "BeginTurnRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BeginTurnRequest",
+    "type": "object",
+    "required": [
+      "assistantItemId",
+      "turnId",
+      "userItemId",
+      "userText"
+    ],
+    "properties": {
+      "askJobId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "assistantItemId": {
+        "type": "string"
+      },
+      "createdAt": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "lane": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ChatLane"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "turnId": {
+        "type": "string"
+      },
+      "userItemId": {
+        "type": "string"
+      },
+      "userText": {
+        "type": "string"
+      },
+      "workId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "ChatLane": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "ask",
+          "worker"
+        ]
+      }
+    }
+  },
+  "ChatCommand": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatCommand",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "authority_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "open_session"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Replace/merge durable history into the session projection.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id",
+          "turns",
+          "type"
+        ],
+        "properties": {
+          "ask_job_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authority_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "description": "When set, reject if the session revision does not match (stale async).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ChatLane"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local_items": {
+            "description": "Optional local base from the renderer (optimistic/streaming rows) when the host session has not yet been seeded via BeginTurn.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatItem"
+            }
+          },
+          "replace": {
+            "description": "When true, replace local durable rows instead of merging (cold load).",
+            "default": false,
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "turns": {
+            "type": "array",
+            "items": true
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "apply_history"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Pure projection helper — does not mutate session state.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id",
+          "turns",
+          "type"
+        ],
+        "properties": {
+          "ask_job_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authority_id": {
+            "type": "string"
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ChatLane"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "description": "Plain strings so clients can project before a durable authority id is known.",
+            "type": "string"
+          },
+          "turns": {
+            "description": "Accept daemon history JSON without requiring prefixed id validation at the application boundary (daemon responses already validate; UI fixtures may not).",
+            "type": "array",
+            "items": true
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "project_history"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "request",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "request": {
+            "$ref": "#/definitions/BeginTurnRequest"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "begin_turn"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "envelope",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "envelope": {
+            "$ref": "#/definitions/TurnStreamEnvelopeV3"
+          },
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "promote_item_id": {
+            "description": "When the turn has no shell yet, create one under this item id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "apply_stream_event"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "session_id",
+          "turn_id",
+          "type"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "reusable_stream": {
+            "description": "External agent streams keep reconnect cursors across prompts.",
+            "default": false,
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "settle_turn"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "session_id",
+          "type",
+          "work_id"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "parent_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reply_to_work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "link_worker"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "switch_focus"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "dispose_session"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "AgentPermissionOption": {
+        "description": "An agent's exact permission or selection option; IDs are opaque to clients.",
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "option_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "option_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BeginTurnRequest": {
+        "type": "object",
+        "required": [
+          "assistantItemId",
+          "turnId",
+          "userItemId",
+          "userText"
+        ],
+        "properties": {
+          "askJobId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assistantItemId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ChatLane"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "userItemId": {
+            "type": "string"
+          },
+          "userText": {
+            "type": "string"
+          },
+          "workId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ChatItem": {
+        "description": "One canonical timeline item. Identities come from durable entry ids / turn tickets — never from rendered text, timestamps alone, or array position.",
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "role"
+        ],
+        "properties": {
+          "answerState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "askJobId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "budgetRequestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errorDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errorLine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "hostContext": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostTurnContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ChatLane"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "liveTranscripts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LiveTranscriptAttachment"
+            }
+          },
+          "mediaAttachments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatMediaAttachment"
+            }
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reactions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/MessageReaction"
+            }
+          },
+          "reasoning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedRounds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "responseModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responseProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/definitions/ChatItemRole"
+          },
+          "segments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatSegment"
+            }
+          },
+          "speakerProfileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stageWhisper": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statusLine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streaming": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "toolRuns": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolRunState"
+            }
+          },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TranscriptCoordinate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turnId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turnIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "uiArtifacts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/UiArtifact"
+            }
+          },
+          "workId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ChatItemRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant",
+          "system"
+        ]
+      },
+      "ChatLane": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "ask",
+          "worker"
+        ]
+      },
+      "ChatMediaAttachment": {
+        "type": "object",
+        "required": [
+          "kind",
+          "mediaId",
+          "mime"
+        ],
+        "properties": {
+          "editableSourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mediaId": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentGenerationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "widthPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ChatSegment": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "committed",
+              "kind",
+              "markdown",
+              "segmentId"
+            ],
+            "properties": {
+              "committed": {
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              },
+              "modelRound": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "segmentId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown",
+              "progressId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              },
+              "progressId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "groupId",
+              "kind",
+              "runs",
+              "toolRound"
+            ],
+            "properties": {
+              "groupId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_group"
+                ]
+              },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolRunState"
+                }
+              },
+              "toolRound": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact",
+              "kind"
+            ],
+            "properties": {
+              "artifact": {
+                "$ref": "#/definitions/UiArtifact"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "artifact"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "handoffKind",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "handoffKind": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "handoff"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ContextUsageLayer": {
+        "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
+        "type": "object",
+        "required": [
+          "chars",
+          "id",
+          "label",
+          "tokens_estimate"
+        ],
+        "properties": {
+          "chars": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "id": {
+            "description": "Stable machine id, e.g. `system_prompt`, `tool_definitions`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human label for UI.",
+            "type": "string"
+          },
+          "tokens_estimate": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ContextUsageReport": {
+        "description": "Turn-start context composition sent once per interactive turn.",
+        "type": "object",
+        "required": [
+          "estimator",
+          "layers",
+          "tool_count",
+          "total_chars",
+          "total_tokens_estimate"
+        ],
+        "properties": {
+          "context_limit_tokens": {
+            "description": "Model context window when known from capability registry / route.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "estimator": {
+            "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ContextUsageLayer"
+            }
+          },
+          "tool_count": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total_chars": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total_tokens_estimate": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LiveTranscriptAttachment": {
+        "type": "object",
+        "required": [
+          "id",
+          "rows"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/LiveTranscriptRow"
+            }
+          }
+        }
+      },
+      "LiveTranscriptRow": {
+        "type": "object",
+        "required": [
+          "role",
+          "text"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/definitions/ChatItemRole"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "StreamToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "content_type",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamUiArtifact": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "height_px": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamUiScene": {
+        "description": "Liquid UI scene channel payload — a batch of model-authored scene ops for one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and validates them into typed `SceneOp`s); the daemon never inspects their shape.",
+        "type": "object",
+        "required": [
+          "ops"
+        ],
+        "properties": {
+          "ops": {
+            "description": "Ordered scene operations, opaque JSON validated client-side.",
+            "type": "array",
+            "items": true
+          },
+          "rev": {
+            "description": "Owning `plan_layout` revision for ordering (informational).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "surface_id": {
+            "description": "Scene surface id; the client defaults to `chat:{turn_id}` when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_id": {
+            "description": "Owning turn id (stamped by the stream event builder).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byteSize",
+          "contentType",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolRunState": {
+        "type": "object",
+        "required": [
+          "round",
+          "runId",
+          "status",
+          "toolName"
+        ],
+        "properties": {
+          "artifactRefs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolArtifactRef"
+            }
+          },
+          "inputParams": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolInputParam"
+            }
+          },
+          "inputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "runId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          }
+        }
+      },
+      "TranscriptCoordinate": {
+        "description": "Durable coordinate for a committed transcript entry.",
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TranscriptSourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TranscriptSourceRef": {
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnCompletionOutcomeV3": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "completed",
+              "needs_input",
+              "checkpointed",
+              "failed",
+              "cancelled",
+              "fuse_exhausted"
+            ]
+          },
+          {
+            "description": "An explicitly classified terminal loop failure. Unlike the broad `Failed` outcome, this is eligible for an unconditional operator alert.",
+            "type": "string",
+            "enum": [
+              "fatal"
+            ]
+          }
+        ]
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "TurnStreamEnvelopeV3": {
+        "description": "Segment-aware chronological stream envelope. V3 is introduced alongside V2 so producers and consumers can migrate without changing V2 semantics.",
+        "type": "object",
+        "required": [
+          "emitted_at_utc",
+          "event",
+          "schema_version",
+          "seq",
+          "turn_id"
+        ],
+        "properties": {
+          "emitted_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event": {
+            "$ref": "#/definitions/TurnStreamEventV3"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 3.0,
+            "minimum": 3.0
+          },
+          "seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          },
+          "turn_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TurnStreamEventV3": {
+        "description": "Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "reaction",
+              "type"
+            ],
+            "properties": {
+              "reaction": {
+                "$ref": "#/definitions/MessageReaction"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reaction"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "model_round",
+              "segment_id",
+              "type"
+            ],
+            "properties": {
+              "model_round": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "segment_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "assistant_text_started"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "segment_id",
+              "text",
+              "type"
+            ],
+            "properties": {
+              "segment_id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "content_append"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "segment_id",
+              "type"
+            ],
+            "properties": {
+              "segment_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "assistant_text_committed"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reasoning_append"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "phase",
+              "type"
+            ],
+            "properties": {
+              "debug_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operator_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "phase": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "status"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "type"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "model",
+              "provider",
+              "type"
+            ],
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "model_receipt"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ack_kind",
+              "text",
+              "type"
+            ],
+            "properties": {
+              "ack_kind": {
+                "$ref": "#/definitions/WorkerAckKind"
+              },
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "worker_ack"
+                ]
+              },
+              "work_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "worker_synthesis"
+                ]
+              },
+              "work_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "operator_message",
+              "type"
+            ],
+            "properties": {
+              "debug_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operator_message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "input_summary",
+              "tool_name",
+              "tool_round",
+              "tool_run_id",
+              "type"
+            ],
+            "properties": {
+              "input_params": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolInputParam"
+                }
+              },
+              "input_summary": {
+                "type": "string"
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "tool_round": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "tool_run_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_started"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "input_summary",
+              "status",
+              "tool_name",
+              "tool_round",
+              "tool_run_id",
+              "type"
+            ],
+            "properties": {
+              "artifact_refs": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/StreamToolArtifactRef"
+                }
+              },
+              "input_params": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolInputParam"
+                }
+              },
+              "input_summary": {
+                "type": "string"
+              },
+              "output_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "tool_round": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "tool_run_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_finished"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact",
+              "type"
+            ],
+            "properties": {
+              "artifact": {
+                "$ref": "#/definitions/StreamUiArtifact"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "artifact_presented"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact",
+              "previous_artifact_id",
+              "type"
+            ],
+            "properties": {
+              "artifact": {
+                "$ref": "#/definitions/StreamUiArtifact"
+              },
+              "previous_artifact_id": {
+                "type": "string"
+              },
+              "root_artifact_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "artifact_updated"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "scene",
+              "type"
+            ],
+            "properties": {
+              "scene": {
+                "$ref": "#/definitions/StreamUiScene"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ui_scene"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "max_tool_rounds",
+              "reason",
+              "request_id",
+              "requested_rounds",
+              "rounds_executed",
+              "type"
+            ],
+            "properties": {
+              "max_tool_rounds": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "progress_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "requested_rounds": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "rounds_executed": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "budget_approval_required"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "challenge_url",
+              "reason",
+              "session_id",
+              "type"
+            ],
+            "properties": {
+              "challenge_url": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "browser_challenge"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type",
+              "url"
+            ],
+            "properties": {
+              "opened_by_agent": {
+                "default": false,
+                "type": "boolean"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "browser_navigated"
+                ]
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "report",
+              "type"
+            ],
+            "properties": {
+              "operator_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "report": {
+                "$ref": "#/definitions/ContextUsageReport"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "context_usage"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "request_id",
+              "type"
+            ],
+            "properties": {
+              "agent_runtime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "agent_session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "permission_options": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/definitions/AgentPermissionOption"
+                }
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "permission_request"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Trusted UI prompt for credential material. This event carries request metadata only; the value travels over the dedicated fulfill endpoint.",
+            "type": "object",
+            "required": [
+              "backend",
+              "credential_key",
+              "label",
+              "provider_type",
+              "reason",
+              "request_id",
+              "type"
+            ],
+            "properties": {
+              "allowed_hosts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "backend": {
+                "type": "string"
+              },
+              "credential_key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "provider_type": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "secret_request"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "aggregate_text",
+              "outcome",
+              "type"
+            ],
+            "properties": {
+              "aggregate_text": {
+                "type": "string"
+              },
+              "debug_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operator_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "outcome": {
+                "$ref": "#/definitions/TurnCompletionOutcomeV3"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "turn_completed"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "UiArtifact": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "byteSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "$ref": "#/definitions/UiArtifactPresentation"
+          },
+          "rootArtifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UiArtifactPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      },
+      "WorkerAckKind": {
+        "type": "string",
+        "enum": [
+          "worker",
+          "workshop"
+        ]
+      }
+    }
+  },
+  "ChatItem": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatItem",
+    "description": "One canonical timeline item. Identities come from durable entry ids / turn tickets — never from rendered text, timestamps alone, or array position.",
+    "type": "object",
+    "required": [
+      "content",
+      "id",
+      "role"
+    ],
+    "properties": {
+      "answerState": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "askJobId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "budgetRequestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "content": {
+        "type": "string"
+      },
+      "createdAt": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "errorDetail": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "errorLine": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "failed": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "hostContext": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HostTurnContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "lane": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ChatLane"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "liveTranscripts": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/LiveTranscriptAttachment"
+        }
+      },
+      "mediaAttachments": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/ChatMediaAttachment"
+        }
+      },
+      "phase": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reactions": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/MessageReaction"
+        }
+      },
+      "reasoning": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "requestedRounds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "responseModel": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "responseProvider": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "role": {
+        "$ref": "#/definitions/ChatItemRole"
+      },
+      "segments": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/ChatSegment"
+        }
+      },
+      "speakerProfileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "stageWhisper": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "statusLine": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "streaming": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "toolRuns": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/ToolRunState"
+        }
+      },
+      "tools": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "transcript": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/TranscriptCoordinate"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "turnId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "turnIndex": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "uiArtifacts": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/UiArtifact"
+        }
+      },
+      "workId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "ChatItemRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant",
+          "system"
+        ]
+      },
+      "ChatLane": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "ask",
+          "worker"
+        ]
+      },
+      "ChatMediaAttachment": {
+        "type": "object",
+        "required": [
+          "kind",
+          "mediaId",
+          "mime"
+        ],
+        "properties": {
+          "editableSourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mediaId": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentGenerationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "widthPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ChatSegment": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "committed",
+              "kind",
+              "markdown",
+              "segmentId"
+            ],
+            "properties": {
+              "committed": {
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              },
+              "modelRound": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "segmentId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown",
+              "progressId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              },
+              "progressId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "groupId",
+              "kind",
+              "runs",
+              "toolRound"
+            ],
+            "properties": {
+              "groupId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_group"
+                ]
+              },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolRunState"
+                }
+              },
+              "toolRound": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact",
+              "kind"
+            ],
+            "properties": {
+              "artifact": {
+                "$ref": "#/definitions/UiArtifact"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "artifact"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "handoffKind",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "handoffKind": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "handoff"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LiveTranscriptAttachment": {
+        "type": "object",
+        "required": [
+          "id",
+          "rows"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/LiveTranscriptRow"
+            }
+          }
+        }
+      },
+      "LiveTranscriptRow": {
+        "type": "object",
+        "required": [
+          "role",
+          "text"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/definitions/ChatItemRole"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byteSize",
+          "contentType",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolRunState": {
+        "type": "object",
+        "required": [
+          "round",
+          "runId",
+          "status",
+          "toolName"
+        ],
+        "properties": {
+          "artifactRefs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolArtifactRef"
+            }
+          },
+          "inputParams": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolInputParam"
+            }
+          },
+          "inputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "runId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          }
+        }
+      },
+      "TranscriptCoordinate": {
+        "description": "Durable coordinate for a committed transcript entry.",
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TranscriptSourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TranscriptSourceRef": {
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "UiArtifact": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "byteSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "$ref": "#/definitions/UiArtifactPresentation"
+          },
+          "rootArtifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UiArtifactPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "ChatItemRole": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatItemRole",
+    "type": "string",
+    "enum": [
+      "user",
+      "assistant",
+      "system"
+    ]
+  },
+  "ChatLane": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatLane",
+    "type": "string",
+    "enum": [
+      "chat",
+      "ask",
+      "worker"
+    ]
+  },
+  "ChatRelationship": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatRelationship",
+    "description": "Explicit causal links the renderer must not reinvent.",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "item_id",
+          "kind",
+          "tool_run_id",
+          "turn_id"
+        ],
+        "properties": {
+          "item_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tool_belongs_to"
+            ]
+          },
+          "tool_run_id": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "work_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "agent_spawn"
+            ]
+          },
+          "parent_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "reply_to_work_id",
+          "work_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "agent_follow_up"
+            ]
+          },
+          "parent_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reply_to_work_id": {
+            "type": "string"
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "origin_proposal_id",
+          "proposal_id"
+        ],
+        "properties": {
+          "anchor_item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "proposal_anchored"
+            ]
+          },
+          "origin_proposal_id": {
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": "string"
+          }
+        }
+      }
+    ]
+  },
+  "ChatRevision": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "uint64",
+    "type": "integer",
+    "format": "uint64",
+    "minimum": 0.0
+  },
+  "ChatSegment": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatSegment",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "committed",
+          "kind",
+          "markdown",
+          "segmentId"
+        ],
+        "properties": {
+          "committed": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text"
+            ]
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "modelRound": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "segmentId": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "markdown",
+          "progressId"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "progress"
+            ]
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "progressId": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "groupId",
+          "kind",
+          "runs",
+          "toolRound"
+        ],
+        "properties": {
+          "groupId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tool_group"
+            ]
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ToolRunState"
+            }
+          },
+          "toolRound": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "artifact",
+          "kind"
+        ],
+        "properties": {
+          "artifact": {
+            "$ref": "#/definitions/UiArtifact"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "artifact"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "handoffKind",
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "handoffKind": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "handoff"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "workId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "ToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byteSize",
+          "contentType",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolRunState": {
+        "type": "object",
+        "required": [
+          "round",
+          "runId",
+          "status",
+          "toolName"
+        ],
+        "properties": {
+          "artifactRefs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolArtifactRef"
+            }
+          },
+          "inputParams": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolInputParam"
+            }
+          },
+          "inputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "runId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          }
+        }
+      },
+      "UiArtifact": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "byteSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "$ref": "#/definitions/UiArtifactPresentation"
+          },
+          "rootArtifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UiArtifactPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "ChatSnapshot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatSnapshot",
+    "type": "object",
+    "required": [
+      "authorityId",
+      "items",
+      "revision",
+      "sessionId"
+    ],
+    "properties": {
+      "activeTurnId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "authorityId": {
+        "type": "string"
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ChatItem"
+        }
+      },
+      "lastSeqByTurn": {
+        "description": "Reconnect/dedup cursors keyed by turn id. Never presentation identity.",
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "relationships": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ChatRelationship"
+        }
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "sessionId": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "ChatItem": {
+        "description": "One canonical timeline item. Identities come from durable entry ids / turn tickets — never from rendered text, timestamps alone, or array position.",
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "role"
+        ],
+        "properties": {
+          "answerState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "askJobId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "budgetRequestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errorDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errorLine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "hostContext": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostTurnContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ChatLane"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "liveTranscripts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LiveTranscriptAttachment"
+            }
+          },
+          "mediaAttachments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatMediaAttachment"
+            }
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reactions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/MessageReaction"
+            }
+          },
+          "reasoning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedRounds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "responseModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responseProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/definitions/ChatItemRole"
+          },
+          "segments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatSegment"
+            }
+          },
+          "speakerProfileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stageWhisper": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statusLine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streaming": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "toolRuns": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolRunState"
+            }
+          },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TranscriptCoordinate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turnId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turnIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "uiArtifacts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/UiArtifact"
+            }
+          },
+          "workId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ChatItemRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant",
+          "system"
+        ]
+      },
+      "ChatLane": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "ask",
+          "worker"
+        ]
+      },
+      "ChatMediaAttachment": {
+        "type": "object",
+        "required": [
+          "kind",
+          "mediaId",
+          "mime"
+        ],
+        "properties": {
+          "editableSourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mediaId": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentGenerationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "widthPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ChatRelationship": {
+        "description": "Explicit causal links the renderer must not reinvent.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "item_id",
+              "kind",
+              "tool_run_id",
+              "turn_id"
+            ],
+            "properties": {
+              "item_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_belongs_to"
+                ]
+              },
+              "tool_run_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent_spawn"
+                ]
+              },
+              "parent_item_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_turn_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "reply_to_work_id",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent_follow_up"
+                ]
+              },
+              "parent_item_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_turn_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reply_to_work_id": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "origin_proposal_id",
+              "proposal_id"
+            ],
+            "properties": {
+              "anchor_item_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proposal_anchored"
+                ]
+              },
+              "origin_proposal_id": {
+                "type": "string"
+              },
+              "proposal_id": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "ChatSegment": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "committed",
+              "kind",
+              "markdown",
+              "segmentId"
+            ],
+            "properties": {
+              "committed": {
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              },
+              "modelRound": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "segmentId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown",
+              "progressId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              },
+              "progressId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "groupId",
+              "kind",
+              "runs",
+              "toolRound"
+            ],
+            "properties": {
+              "groupId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_group"
+                ]
+              },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolRunState"
+                }
+              },
+              "toolRound": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact",
+              "kind"
+            ],
+            "properties": {
+              "artifact": {
+                "$ref": "#/definitions/UiArtifact"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "artifact"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "handoffKind",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "handoffKind": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "handoff"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LiveTranscriptAttachment": {
+        "type": "object",
+        "required": [
+          "id",
+          "rows"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/LiveTranscriptRow"
+            }
+          }
+        }
+      },
+      "LiveTranscriptRow": {
+        "type": "object",
+        "required": [
+          "role",
+          "text"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/definitions/ChatItemRole"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byteSize",
+          "contentType",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolRunState": {
+        "type": "object",
+        "required": [
+          "round",
+          "runId",
+          "status",
+          "toolName"
+        ],
+        "properties": {
+          "artifactRefs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolArtifactRef"
+            }
+          },
+          "inputParams": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolInputParam"
+            }
+          },
+          "inputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "runId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          }
+        }
+      },
+      "TranscriptCoordinate": {
+        "description": "Durable coordinate for a committed transcript entry.",
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TranscriptSourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TranscriptSourceRef": {
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "UiArtifact": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "byteSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "$ref": "#/definitions/UiArtifactPresentation"
+          },
+          "rootArtifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UiArtifactPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "ChatUpdate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ChatUpdate",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "snapshot",
+          "type"
+        ],
+        "properties": {
+          "snapshot": {
+            "$ref": "#/definitions/ChatSnapshot"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "items",
+          "type"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ChatItem"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "projected"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "reason",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "rejected"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "disposed"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "ChatItem": {
+        "description": "One canonical timeline item. Identities come from durable entry ids / turn tickets — never from rendered text, timestamps alone, or array position.",
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "role"
+        ],
+        "properties": {
+          "answerState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "askJobId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "budgetRequestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errorDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errorLine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "hostContext": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostTurnContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lane": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ChatLane"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "liveTranscripts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LiveTranscriptAttachment"
+            }
+          },
+          "mediaAttachments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatMediaAttachment"
+            }
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reactions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/MessageReaction"
+            }
+          },
+          "reasoning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedRounds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "responseModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responseProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/definitions/ChatItemRole"
+          },
+          "segments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ChatSegment"
+            }
+          },
+          "speakerProfileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stageWhisper": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statusLine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streaming": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "toolRuns": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolRunState"
+            }
+          },
+          "tools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TranscriptCoordinate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turnId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turnIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "uiArtifacts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/UiArtifact"
+            }
+          },
+          "workId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ChatItemRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant",
+          "system"
+        ]
+      },
+      "ChatLane": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "ask",
+          "worker"
+        ]
+      },
+      "ChatMediaAttachment": {
+        "type": "object",
+        "required": [
+          "kind",
+          "mediaId",
+          "mime"
+        ],
+        "properties": {
+          "editableSourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mediaId": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parentGenerationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "widthPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ChatRelationship": {
+        "description": "Explicit causal links the renderer must not reinvent.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "item_id",
+              "kind",
+              "tool_run_id",
+              "turn_id"
+            ],
+            "properties": {
+              "item_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_belongs_to"
+                ]
+              },
+              "tool_run_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent_spawn"
+                ]
+              },
+              "parent_item_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_turn_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "reply_to_work_id",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent_follow_up"
+                ]
+              },
+              "parent_item_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_turn_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reply_to_work_id": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "origin_proposal_id",
+              "proposal_id"
+            ],
+            "properties": {
+              "anchor_item_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proposal_anchored"
+                ]
+              },
+              "origin_proposal_id": {
+                "type": "string"
+              },
+              "proposal_id": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "ChatSegment": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "committed",
+              "kind",
+              "markdown",
+              "segmentId"
+            ],
+            "properties": {
+              "committed": {
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              },
+              "modelRound": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "segmentId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown",
+              "progressId"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              },
+              "progressId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "groupId",
+              "kind",
+              "runs",
+              "toolRound"
+            ],
+            "properties": {
+              "groupId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_group"
+                ]
+              },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolRunState"
+                }
+              },
+              "toolRound": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact",
+              "kind"
+            ],
+            "properties": {
+              "artifact": {
+                "$ref": "#/definitions/UiArtifact"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "artifact"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "handoffKind",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "handoffKind": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "handoff"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ChatSnapshot": {
+        "type": "object",
+        "required": [
+          "authorityId",
+          "items",
+          "revision",
+          "sessionId"
+        ],
+        "properties": {
+          "activeTurnId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authorityId": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ChatItem"
+            }
+          },
+          "lastSeqByTurn": {
+            "description": "Reconnect/dedup cursors keyed by turn id. Never presentation identity.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          },
+          "relationships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ChatRelationship"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnResourceReference"
+            }
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LiveTranscriptAttachment": {
+        "type": "object",
+        "required": [
+          "id",
+          "rows"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/LiveTranscriptRow"
+            }
+          }
+        }
+      },
+      "LiveTranscriptRow": {
+        "type": "object",
+        "required": [
+          "role",
+          "text"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/definitions/ChatItemRole"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byteSize",
+          "contentType",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "ToolRunState": {
+        "type": "object",
+        "required": [
+          "round",
+          "runId",
+          "status",
+          "toolName"
+        ],
+        "properties": {
+          "artifactRefs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolArtifactRef"
+            }
+          },
+          "inputParams": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/ToolInputParam"
+            }
+          },
+          "inputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "round": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "runId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          }
+        }
+      },
+      "TranscriptCoordinate": {
+        "description": "Durable coordinate for a committed transcript entry.",
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TranscriptSourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TranscriptSourceRef": {
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnResourceReference": {
+        "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "root_id",
+              "title"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vault_note"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "root_id": {
+                "type": "string"
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/HostContextSelection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "title",
+              "work_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "code_project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "document_id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "creative_selection"
+                ]
+              },
+              "selected_ids": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "snapshot_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "UiArtifact": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "byteSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "heightPx": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "$ref": "#/definitions/UiArtifactPresentation"
+          },
+          "rootArtifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UiArtifactPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "TranscriptCoordinate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TranscriptCoordinate",
+    "description": "Durable coordinate for a committed transcript entry.",
+    "type": "object",
+    "required": [
+      "authorityId",
+      "entryId",
+      "entrySeq",
+      "sessionId"
+    ],
+    "properties": {
+      "authorityId": {
+        "type": "string"
+      },
+      "entryId": {
+        "type": "string"
+      },
+      "entrySeq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "source": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/TranscriptSourceRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "TranscriptSourceRef": {
+        "type": "object",
+        "required": [
+          "authorityId",
+          "entryId",
+          "entrySeq",
+          "sessionId"
+        ],
+        "properties": {
+          "authorityId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entrySeq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

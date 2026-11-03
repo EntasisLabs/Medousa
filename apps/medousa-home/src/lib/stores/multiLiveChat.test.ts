@@ -157,7 +157,7 @@ describe("multi-live chat session runtimes", () => {
 
   it("maps committed transcript coordinates and derivation provenance into UI messages", async () => {
     const { mapTurns } = await import("$lib/chat/sessionController");
-    const messages = mapTurns(
+    const messages = await mapTurns(
       [
         {
           entry_id: "ent_cccccccccccccccccccccccccccccccc",
@@ -554,7 +554,7 @@ describe("multi-live chat session runtimes", () => {
     store.sessionId = "long-session";
     store.historyCursor = "289";
     store.historyLoading = false;
-    store.messages = mapTurns(pagedHistory(store.sessionId).turns as never, { sessionId: store.sessionId, authorityId: "authority" });
+    store.messages = await mapTurns(pagedHistory(store.sessionId).turns as never, { sessionId: store.sessionId, authorityId: "authority" });
     vi.mocked(getSessionHistory).mockImplementation(async (id, options) => pagedHistory(id, Number(options?.cursor ?? 313)) as never);
     for (let i = 0; i < 10; i++) await store.loadOlderHistory(store.sessionId);
     const displayed = store.history.messagesFor(store.sessionId);
@@ -615,7 +615,7 @@ describe("multi-live chat session runtimes", () => {
     const { mapTurns } = await import("$lib/chat/sessionController");
     store.sessionId = "two-panes";
     store.historyLoading = false; store.historyCursor = "289";
-    store.messages = mapTurns(pagedHistory(store.sessionId).turns as never, { sessionId: store.sessionId, authorityId: "authority" });
+    store.messages = await mapTurns(pagedHistory(store.sessionId).turns as never, { sessionId: store.sessionId, authorityId: "authority" });
     const left = store.history.retain(store.sessionId, "left");
     const right = store.history.retain(store.sessionId, "right");
     vi.mocked(getSessionHistory).mockImplementation(async (id, options) => pagedHistory(id, Number(options?.cursor ?? 313)) as never);

@@ -5659,6 +5659,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-app-core"
+version = "0.12.0"
+dependencies = [
+ "chrono",
+ "medousa-types",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "medousa-browser-bridge"
 version = "0.12.0"
 dependencies = [
@@ -5754,6 +5766,7 @@ dependencies = [
  "image",
  "libc",
  "medousa",
+ "medousa-app-core",
  "medousa-browser-bridge",
  "medousa-browser-lite",
  "medousa-forge",

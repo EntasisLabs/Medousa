@@ -13,14 +13,20 @@ import { applyStreamSeq } from "$lib/stream/reconnect";
 beforeEach(() => { vi.clearAllMocks(); vi.useFakeTimers(); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 function host(): ChatStoreHost {
-  return {
-    workshopScopeId: "studio", workshopEpoch: 1, sessionId: "chat", messages: [], turns: new Map(), workers: new Map(),
+  const state = {
+    workshopScopeId: "studio", workshopEpoch: 1, sessionId: "chat", messages: [] as ChatStoreHost["messages"], turns: new Map(), workers: new Map(),
     streamOwners: new Map(), lastSeqByTurn: new Map(), recentlySettledTurns: new Map(), terminalReconcileTimers: new Map(),
     activeTurnId: null, assistantId: null, backgroundActivity: 0, transcriptEpoch: 0,
     isRelevantSession: (id: string) => id === "chat", isDetachedWorkerTurnRecord: () => false,
     isComposerOpenDuringHandoff: () => false, noteResumeFailure: vi.fn(), promotedAskIds: new Set(),
     withSessionFields: (_: string, run: () => void) => run(),
+    messageIdForTurn: (turnId: string) => state.turns.get(turnId)?.messageId ?? null,
+    messageIdForToolStream: (turnId: string) => state.turns.get(turnId)?.messageId ?? null,
+    scheduleSessionsRefresh: vi.fn(),
+    replaceMessageAt: () => {},
+    appendMessage: () => {},
   } as unknown as ChatStoreHost;
+  return state;
 }
 function ticket(id: string, streamUrl: string): TurnTicketResponse {
   return { turn_id: id, session_id: "chat", mode: "interactive", phase: "accepted", accepted_at_utc: "2026-10-23T00:00:00Z", stream_url: streamUrl, stream_ready: true };

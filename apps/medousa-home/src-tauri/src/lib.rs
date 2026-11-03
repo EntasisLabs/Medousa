@@ -2,6 +2,7 @@
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod account_connections;
+mod app_chat;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod app_update;
 mod autostart;
@@ -189,6 +190,7 @@ fn run_home() {
         .plugin(tauri_plugin_mobile_push::init())
         .manage(DaemonState::new())
         .manage(EmbeddedDaemonState::new())
+        .manage(app_chat::AppChatState::default())
         .manage(daemon::local_inference::LocalInferenceStreamState::new())
         .manage(daemon::local_inference::LocalInferenceActivationState::new());
 
@@ -412,6 +414,9 @@ fn run_home() {
         .manage(TerminalRegistry::default())
         .invoke_handler({
             let commands: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+            app_chat::app_chat_dispatch,
+            app_chat::app_chat_open_session,
+            app_chat::app_chat_snapshot,
             code_lsp_transport::code_lsp_attach,
             code_lsp_transport::code_lsp_ready,
             code_lsp_transport::code_lsp_send,
