@@ -16,8 +16,13 @@ import { formatSessionLabel } from "$lib/utils/formatSession";
 import {
   applyHistoryToSession,
   applySnapshotToMessages,
+  applySnapshotToRuntime,
+  applySnapshotTurns,
+  applySnapshotWorkers,
+  focusChatSession,
   openChatSession,
   projectHistory,
+  switchChatFocus,
 } from "$lib/appChat/client";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
 import { dedupeMessagesById } from "$lib/utils/mergeTranscript";
@@ -144,10 +149,10 @@ async function applyCanonicalHistory(
   });
   const applied = applySnapshotToMessages(snapshot);
   host.messages = applied.messages;
-  if (applied.activeTurnId) host.activeTurnId = applied.activeTurnId;
-  for (const [turnId, seq] of applied.lastSeqByTurn) {
-    host.lastSeqByTurn.set(turnId, seq);
-  }
+  if (applied.activeTurnId !== undefined) host.activeTurnId = applied.activeTurnId;
+  host.lastSeqByTurn = applied.lastSeqByTurn;
+  host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
+  host.turns = applySnapshotTurns(snapshot, host.streamOwners ?? new Map());
 }
 function historyCursor(history: SessionHistoryResponse): string | null {
   return history.next_cursor?.trim() || null;
@@ -507,17 +512,27 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
     const history = await getSessionHistory(trimmed, { limit: TRANSCRIPT_PAGE_SIZE });
     if (host.workshopEpoch !== workshopEpoch || host.history?.isReleased(trimmed)) return;
     if (host.sessionId === trimmed) return;
+    // Seed ChatCore without stealing focus — OpenSession keeps the live focus.
+    await openChatSession(trimmed, history.authority_id);
+    const snapshot = await applyHistoryToSession({
+      sessionId: trimmed,
+      history,
+      replace: true,
+    });
+    if (host.workshopEpoch !== workshopEpoch || host.history?.isReleased(trimmed)) return;
+    if (host.sessionId === trimmed) return;
     const current =
       host.sessionRuntimes.get(trimmed) ??
       emptySessionRuntime(trimmed, loadDraftForSession(trimmed, host.workshopScopeId));
-    current.messages = await mapTurns(history.turns, {
-      sessionId: trimmed,
-      authorityId: history.authority_id,
-    });
-    current.historyCursor = historyCursor(history);
-    current.historyLoading = false;
-    current.streamError = null;
-    host.sessionRuntimes.set(trimmed, current);
+    const next = applySnapshotToRuntime(
+      current,
+      snapshot,
+      host.streamOwners ?? new Map(),
+    );
+    next.historyCursor = historyCursor(history);
+    next.historyLoading = false;
+    next.streamError = null;
+    host.sessionRuntimes.set(trimmed, next);
     host.messageIndexes.delete(trimmed);
     host.bumpRuntimeRevision();
   } catch (err) {
@@ -560,6 +575,11 @@ export async function newSession(
   host.contextUsage = null;
   host.contextUsagePanelOpen = false;
   chatStreamPool.acquire(id);
+  try {
+    await focusChatSession(id, "");
+  } catch {
+    /* core focus is best-effort until the first turn seeds authority */
+  }
   host.stashFocusedRuntime();
   if (host.workshopEpoch !== workshopEpoch) return;
   const shellContext = options?.shellContext;
@@ -747,6 +767,33 @@ export async function loadOlderHistory(host: ChatStoreHost, sessionId: string): 
   return host.history?.loadOlder(sessionId.trim()) ?? 0;
 }
 
+/** Move ChatCore focus and overlay core-owned fields onto a host runtime. */
+async function adoptCoreFocus(
+  host: ChatStoreHost,
+  sessionId: string,
+  runtime: ReturnType<typeof emptySessionRuntime>,
+  authorityId?: string | null,
+): Promise<ReturnType<typeof emptySessionRuntime>> {
+  try {
+    const snapshot = await focusChatSession(sessionId, authorityId);
+    if (
+      snapshot.items.length === 0 &&
+      (snapshot.turns?.length ?? 0) === 0 &&
+      runtime.messages.length > 0
+    ) {
+      // Core is empty but the host stash has paint — keep chrome/cache; focus still moved.
+      return runtime;
+    }
+    return applySnapshotToRuntime(
+      runtime,
+      snapshot,
+      host.streamOwners ?? new Map(),
+    );
+  } catch {
+    return runtime;
+  }
+}
+
 export async function switchSession(host: ChatStoreHost, sessionId: string) {
   const workshopEpoch = host.workshopEpoch;
   const sourceSessionId = host.sessionId.trim();
@@ -772,6 +819,11 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
   if (trimmed === host.sessionId) {
     await reloadCurrentSession(host, { notice: false });
     if (host.workshopEpoch !== workshopEpoch) return;
+    try {
+      await switchChatFocus(trimmed);
+    } catch {
+      // Session may not be open in core yet; reload path hydrates via history.
+    }
     host.stashFocusedRuntime();
     mirrorShellChat();
     return;
@@ -784,8 +836,13 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
 
   const cached = host.sessionRuntimes.get(trimmed);
   if (cached && cached.messages.length > 0) {
-    const runtime = cloneRuntime(cached);
+    let runtime = cloneRuntime(cached);
     runtime.transcriptEpoch = switchEpoch;
+    const authority =
+      runtime.messages.find((message) => message.transcript?.authorityId)?.transcript
+        ?.authorityId ?? null;
+    runtime = await adoptCoreFocus(host, trimmed, runtime, authority);
+    if (host.workshopEpoch !== workshopEpoch || switchEpoch !== host.transcriptEpoch) return;
     host.loadRuntimeIntoFocused(runtime);
     host.transcriptEpoch = switchEpoch;
     localStorage.setItem(
@@ -838,6 +895,12 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
       host.sessionId !== trimmed ||
       switchEpoch !== host.transcriptEpoch
     ) return;
+    // applyCanonicalHistory opens the session; pin core focus to match the host.
+    try {
+      await switchChatFocus(trimmed);
+    } catch {
+      /* ignore — history paint already applied */
+    }
     host.historyCursor = historyCursor(history);
     const { workshops } = await import("$lib/stores/workshops.svelte");
     void workshops.saveActiveSession(trimmed);
