@@ -21,17 +21,28 @@ import type { ChatMessage } from "$lib/types/chat";
 
 export type AppChatBackend = (command: ChatCommand) => Promise<ChatUpdate>;
 
-let testBackend: AppChatBackend | null = null;
+const TEST_BACKEND_KEY = "__medousaAppChatTestBackend";
 
-/** Vitest harnesses may install a backend; production uses Tauri / Node dispatch. */
+type GlobalBackendHost = typeof globalThis & {
+  [TEST_BACKEND_KEY]?: AppChatBackend | null;
+};
+
+function readTestBackend(): AppChatBackend | null {
+  return (globalThis as GlobalBackendHost)[TEST_BACKEND_KEY] ?? null;
+}
+
+/**
+ * Vitest harnesses install a backend (see `vitest/setupAppChat.ts`).
+ * Stored on `globalThis` so `vi.resetModules()` cannot drop the shared engine.
+ * Production uses the Tauri host.
+ */
 export function installAppChatTestBackend(backend: AppChatBackend | null) {
-  testBackend = backend;
+  (globalThis as GlobalBackendHost)[TEST_BACKEND_KEY] = backend;
 }
 
 export async function dispatchAppChat(command: ChatCommand): Promise<ChatUpdate> {
+  const testBackend = readTestBackend();
   if (testBackend) return testBackend(command);
-  // Tauri host in production; browserCore aliases app_chat_* to the Rust
-  // `app-chat-dispatch` binary under Vitest so there is still one engine.
   return invoke<ChatUpdate>("app_chat_dispatch", { command });
 }
 

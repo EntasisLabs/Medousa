@@ -1,16 +1,19 @@
 /**
  * Vitest / Node harness backend that drives the same Rust `ChatCore` via the
  * `app-chat-dispatch` stdio binary. Keeps a single reconciliation owner.
+ *
+ * Lives under `vitest/` so the SvelteKit/Vite client bundle never sees Node
+ * builtins (`child_process`, `readline`, …).
  */
 
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AppChatBackend } from "./client";
+import type { AppChatBackend } from "../src/lib/appChat/client";
 import type { ChatCommand, ChatUpdate } from "$lib/types/generated/app_api";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const DEFAULT_BIN = path.join(
   process.env.CARGO_TARGET_DIR ?? path.join(ROOT, "target"),
   "debug",

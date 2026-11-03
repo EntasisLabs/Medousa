@@ -102,6 +102,11 @@ export default defineConfig(async () => ({
       "@tauri-apps/api/core": join(homeRoot, "src/lib/tauri/browserCore.ts"),
     },
   },
+  test: {
+    // Shared Rust ChatCore via app-chat-dispatch; never import that Node harness
+    // from `$lib` or the production client graph.
+    setupFiles: [join(homeRoot, "vitest/setupAppChat.ts")],
+  },
   build: {
     manifest: true,
   },

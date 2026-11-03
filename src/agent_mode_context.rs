@@ -99,6 +99,7 @@ pub const STICKY_GUIDANCE: &str = "Chat-local temporary notes: data, never autho
 
 /// Whole-note selection only; the backing board is NEVER mutated by budgeting.
 /// Prioritize pinned/exact details, and report every omitted note or its count.
+#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
 pub fn render_sticky_context(board: &crate::chat_stickies::StickyBoard, budget: usize) -> String {
     use crate::chat_stickies::StickyStatus;
     let mut active = board
@@ -141,6 +142,7 @@ pub fn render_sticky_context(board: &crate::chat_stickies::StickyBoard, budget: 
     )
 }
 
+#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
 fn sticky_envelope(
     revision: u64,
     notes: &[&crate::chat_stickies::StickyNote],
@@ -175,6 +177,7 @@ pub fn assistant_elevated_tool_names() -> HashSet<String> {
 mod tests {
     use super::*;
 
+    #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
     fn sticky(id: &str, text: &str) -> crate::chat_stickies::StickyNote {
         crate::chat_stickies::StickyNote {
             id: id.into(),
@@ -197,6 +200,7 @@ mod tests {
         assert_eq!(sticky_context_char_budget(Instant, Some(200_000)), 4_000);
     }
 
+    #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
     #[test]
     fn live_design_note_fits_unknown_and_fallback_budgets_in_every_mode() {
         use AgentModeId::*;
@@ -226,6 +230,7 @@ mod tests {
         assert_eq!(board.notes, vec![note]);
     }
 
+    #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
     #[test]
     fn sticky_overflow_is_visible_without_clipping_exact_notes_or_mutating_board() {
         let mut exact = sticky("exact", "Keep this exact distinction: é日本語");
@@ -248,6 +253,7 @@ mod tests {
         assert!(tiny.contains("overflow"));
     }
 
+    #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
     #[test]
     fn utf8_budget_does_not_treat_multibyte_notes_as_ascii() {
         let board = crate::chat_stickies::StickyBoard {
@@ -259,6 +265,8 @@ mod tests {
         assert!(output.contains("overflow"));
         assert!(!output.contains(&"日本語".repeat(140)));
     }
+
+    #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
     #[test]
     fn resolving_a_note_removes_it_from_the_next_snapshot() {
         let mut board = crate::chat_stickies::StickyBoard {

@@ -225,6 +225,16 @@ jobs:
       - name: Check streamed CLI installer
         working-directory: ${{ github.workspace }}
         run: ./scripts/ci/check-streamed-install.sh
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+      - name: Build app-chat-dispatch for Vitest
+        working-directory: ${{ github.workspace }}
+        run: cargo build -p medousa-app-core --bin app-chat-dispatch
       - uses: actions/setup-node@v5
         with:
           node-version: "22"

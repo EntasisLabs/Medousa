@@ -5,6 +5,10 @@
  * and the real `invoke` throws `Cannot read properties of undefined (reading 'invoke')`.
  * Native commands resolve without calling into Tauri. Tauri webviews still use
  * the real IPC.
+ *
+ * Application chat commands (`app_chat_*`) require the Tauri host in production.
+ * Vitest installs a Node stdio backend via `installAppChatTestBackend` so tests
+ * never pull Node builtins into the client bundle.
  */
 import {
   invoke as tauriInvoke,
@@ -58,22 +62,6 @@ function browserCommand(cmd: string): unknown {
   }
 }
 
-let nodeDispatch:
-  | (import("$lib/appChat/client").AppChatBackend & { dispose: () => void })
-  | null
-  | undefined;
-
-async function ensureNodeDispatch() {
-  if (nodeDispatch !== undefined) return nodeDispatch;
-  if (typeof process === "undefined" || !(process as { versions?: { node?: string } }).versions?.node) {
-    nodeDispatch = null;
-    return null;
-  }
-  const { createNodeDispatchBackend } = await import("$lib/appChat/nodeDispatchBackend");
-  nodeDispatch = createNodeDispatchBackend();
-  return nodeDispatch;
-}
-
 export async function invoke<T>(
   cmd: string,
   args?: InvokeArgs,
@@ -87,24 +75,9 @@ export async function invoke<T>(
     cmd === "app_chat_open_session" ||
     cmd === "app_chat_snapshot"
   ) {
-    const backend = await ensureNodeDispatch();
-    if (!backend) {
-      throw new Error("Application chat core requires the Tauri host or Node dispatch binary");
-    }
-    const command =
-      cmd === "app_chat_dispatch"
-        ? (args as { command: import("$lib/types/generated/app_api").ChatCommand }).command
-        : cmd === "app_chat_open_session"
-          ? {
-              type: "open_session" as const,
-              session_id: String((args as { sessionId?: string }).sessionId ?? ""),
-              authority_id: String((args as { authorityId?: string }).authorityId ?? ""),
-            }
-          : {
-              type: "snapshot" as const,
-              session_id: String((args as { sessionId?: string }).sessionId ?? ""),
-            };
-    return (await backend(command)) as T;
+    throw new Error(
+      "Application chat core requires the Tauri host (Vitest: installAppChatTestBackend)",
+    );
   }
   return browserCommand(cmd) as T;
 }

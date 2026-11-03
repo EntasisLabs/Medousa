@@ -30,6 +30,13 @@ ignore = [
     { id = "RUSTSEC-2026-0369", reason = "zip extract applies Unix permissions through symlinks; same unfixed zip 7.2.0 (candle-core) and 8.6.0 (calamine) stacks as RUSTSEC-2026-0367." },
     { id = "RUSTSEC-2026-0381", reason = "webpki-roots emSign root; 1.x is 1.0.11. 0.25.4 remains via reqwest 0.11.27 -> websearch 0.1.1 with no patched 0.25 release. 0.26.11 re-exports the updated 1.x store." },
     { id = "RUSTSEC-2026-0382", reason = "rustls-webpki distrusted intermediates; patched in >=0.103.16. Workspace 0.103 is 0.103.16. 0.101.7 (rustls 0.21) and 0.102.8 (rustls 0.22) have no backport." },
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint timing variability; patched in >=0.7.6. Older lines remain via transitive crypto stacks with no backport yet." },
+    { id = "RUSTSEC-2026-0391", reason = "zstd abandoned-stream leak on reused context; upgrade path constrained by wasmer/object stacks." },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable length-beyond-capacity; same constrained zstd stack as RUSTSEC-2026-0391." },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe uninitialized memory on legacy frame failure; same constrained zstd stack as RUSTSEC-2026-0391." },
+    { id = "RUSTSEC-2026-0410", reason = "zstd-sys wasm allocator shim; same constrained zstd stack as RUSTSEC-2026-0391." },
+    { id = "RUSTSEC-2026-0429", reason = "zip extract abort on large symlink; direct medousa zip is patched. Older zip remains via candle-core / calamine." },
+    { id = "RUSTSEC-2026-0436", reason = "calamine CFB/OLE2 OOM on malformed input; patched only in >=0.38.0, workspace still on 0.36.1 until calamine consumers allow upgrade." },
 ]
 
 [licenses]
