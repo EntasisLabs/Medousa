@@ -298,3 +298,79 @@ fn settle_turn_clears_all_assistants_for_turn() {
         assert_eq!(item.streaming, Some(false));
     }
 }
+
+#[test]
+fn worker_ack_and_budget_paint_handoff_chrome() {
+    let mut core = ChatCore::new();
+    open(&mut core);
+    begin(&mut core);
+
+    let ChatUpdate::Snapshot { snapshot } = core
+        .dispatch(ChatCommand::ApplyStreamEvent {
+            session_id: "ses".into(),
+            envelope: TurnStreamEnvelopeV3 {
+                schema_version: TURN_STREAM_V3_SCHEMA_VERSION,
+                turn_id: "parent".into(),
+                seq: 1,
+                emitted_at_utc: Utc::now(),
+                event: TurnStreamEventV3::WorkerAck {
+                    ack_kind: medousa_types::WorkerAckKind::Worker,
+                    text: "Background worker started".into(),
+                    tool_names: vec![],
+                    work_id: Some("work".into()),
+                },
+            },
+            expected_revision: None,
+            promote_item_id: None,
+        })
+        .unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+    let handoff = snapshot.items.iter().find(|item| item.id == "a").unwrap();
+    assert_eq!(handoff.streaming, Some(false));
+    assert_eq!(handoff.content, "");
+    assert_eq!(
+        handoff.stage_whisper.as_deref(),
+        Some("Background worker started")
+    );
+    assert_eq!(handoff.work_id.as_deref(), Some("work"));
+    assert!(handoff.segments.as_ref().is_some_and(|segments| {
+        segments.iter().any(|segment| {
+            matches!(
+                segment,
+                medousa_app_core::contract::ChatSegment::Handoff { .. }
+            )
+        })
+    }));
+
+    let ChatUpdate::Snapshot { snapshot } = core
+        .dispatch(ChatCommand::ApplyStreamEvent {
+            session_id: "ses".into(),
+            envelope: TurnStreamEnvelopeV3 {
+                schema_version: TURN_STREAM_V3_SCHEMA_VERSION,
+                turn_id: "parent".into(),
+                seq: 2,
+                emitted_at_utc: Utc::now(),
+                event: TurnStreamEventV3::BudgetApprovalRequired {
+                    request_id: "budget-1".into(),
+                    rounds_executed: 3,
+                    max_tool_rounds: 3,
+                    requested_rounds: 5,
+                    reason: "Need more rounds".into(),
+                    progress_summary: None,
+                },
+            },
+            expected_revision: None,
+            promote_item_id: None,
+        })
+        .unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+    let blocked = snapshot.items.iter().find(|item| item.id == "a").unwrap();
+    assert_eq!(blocked.phase.as_deref(), Some("budget_blocked"));
+    assert_eq!(blocked.budget_request_id.as_deref(), Some("budget-1"));
+    assert_eq!(blocked.requested_rounds, Some(5));
+    assert_eq!(blocked.status_line.as_deref(), Some("Need more rounds"));
+}

@@ -1,6 +1,7 @@
 /**
- * Stream leftover apply: reducer remainder + orphan/handoff follow-ups.
- * Body mutations live in `$lib/stream/transcriptReducer`.
+ * Live stream apply: core folds V3 facts; host applies snapshots then runs
+ * side effects (alerts, narration, worker bookkeeping). Body authority is
+ * medousa-app-core — TS transcript reducers remain for orphan/legacy helpers.
  */
 
 import type {
@@ -18,7 +19,6 @@ import { shouldAcceptStreamEvent } from "$lib/utils/streamOwnership";
 import { applyStreamSeq } from "$lib/stream/reconnect";
 import type { StreamEventTarget } from "$lib/stream/eventPump";
 import {
-  applyFocusedStreamEvent,
   applyStreamEventToMessage as reduceStreamEventToMessage,
   type StreamMessageFollowUp,
 } from "$lib/stream/transcriptReducer";
@@ -196,17 +196,27 @@ async function applyStreamProjection(
     const authority =
       host.messages.find((message) => message.transcript?.authorityId)?.transcript
         ?.authorityId ?? `auth_${"0".repeat(64)}`;
-    await openChatSession(sessionId, authority);
-    await applyHistoryToSession({
-      sessionId,
-      history: {
-        authority_id: authority,
-        session_id: sessionId,
-        turns: [],
-      },
-      replace: false,
-      localItems: host.messages.map(chatMessageToItem),
-    });
+    // BeginTurn dual-write normally seeds the shell. Reseed from host paint only
+    // when core is missing that shell (race / reconnect), not on every event.
+    const opened = await openChatSession(sessionId, authority);
+    const hasTarget = knownMessageId
+      ? opened.items.some((item) => item.id === knownMessageId)
+      : opened.items.some(
+          (item) =>
+            item.role === "assistant" && item.turnId === envelope.turn_id,
+        );
+    if (!hasTarget && host.messages.length > 0) {
+      await applyHistoryToSession({
+        sessionId,
+        history: {
+          authority_id: authority,
+          session_id: sessionId,
+          turns: [],
+        },
+        replace: false,
+        localItems: host.messages.map(chatMessageToItem),
+      });
+    }
     const snapshot = await applyStreamEvent(sessionId, envelope, {
       promoteItemId: knownMessageId ?? randomUuid(),
     });
@@ -244,118 +254,6 @@ async function applyStreamProjection(
   } catch {
     // Stream projection failures fall through to terminal reconcile / reload.
   }
-}
-
-export function applyStreamEventOnFocusedFields(
-  host: ChatStoreHost,
-  event: InteractiveTurnStreamEvent,
-) {
-  if (!isRelevantStreamEvent(host, event)) return;
-  if (!applyStreamSeq(host.lastSeqByTurn, event)) return;
-
-  if (
-    event.event_type === "status" &&
-    event.phase === "permission_resolved" &&
-    host.permissionAlert?.turnId === event.turn_id
-  ) {
-    host.clearPermissionAlert();
-  }
-
-  if (
-    event.event_type !== "secret_request" &&
-    host.secretAlert?.turnId === event.turn_id
-  ) {
-    host.clearSecretAlert();
-  }
-
-  if (
-    event.event_type !== "error" &&
-    !(event.event_type === "context_usage" && event.context_usage) &&
-    !isWorkerSynthesisStreamEvent(event)
-  ) {
-    syncTurnFromEvent(host, event);
-  }
-
-  const workerLink = workerLinkForTurn(host.workers, event.turn_id);
-  const focused = applyFocusedStreamEvent(host.messages, event, {
-    messageIdForTurn: (turnId) => host.messageIdForTurn(turnId),
-    messageIdForToolStream: (turnId) => host.messageIdForToolStream(turnId),
-    messageIndexForId: (messageId) => host.messageIndexForId(messageId),
-    showEngineDetails: chatSettingsPort().showEngineDetailsInChat(),
-    workerSynthesisDelivered: workerLink?.synthesisDelivered,
-    replaceFinalTextFor: (messageId) => replaceFinalTextFor(host, messageId, event),
-  });
-
-  if (focused.messages !== host.messages) {
-    const idx = remainderMessageIndex(host, focused.remainder);
-    if (idx >= 0 && focused.messages[idx]) {
-      host.replaceMessageAt(idx, focused.messages[idx]);
-    } else {
-      host.messages = focused.messages;
-    }
-  }
-
-  const remainder = focused.remainder;
-  switch (remainder.type) {
-    case "error":
-      handleTurnError(host, event);
-      return;
-    case "context_usage":
-      host.contextUsage = remainder.usage;
-      return;
-    case "worker_synthesis":
-      handleWorkerSynthesisStreamEvent(host, event);
-      return;
-    case "browser_challenge":
-      host.handleBrowserChallenge(event);
-      return;
-    case "permission_request":
-      host.handlePermissionRequest(event);
-      return;
-    case "secret_request":
-      host.handleSecretRequest(event);
-      return;
-    case "browser_navigated":
-      host.handleBrowserNavigated(event);
-      return;
-    case "ui_scene":
-      if (event.ui_scene) {
-        chatScenes.applyWire(
-          remainder.messageId,
-          event.ui_scene.surface_id?.trim() || `chat:${event.turn_id}`,
-          event.ui_scene.ops ?? [],
-        );
-      }
-      return;
-    case "orphan":
-      attachOrphanStream(host, event);
-      return;
-    case "terminal_empty":
-      noteTurnTerminal(host, event);
-      finishAskLaneTurn(host, event.turn_id);
-      return;
-    case "settle_delivered":
-      runMessageFollowUp(host, event, "terminal");
-      settleTurn(host, event.turn_id);
-      host.scheduleSessionsRefresh();
-      return;
-    case "message":
-      runMessageFollowUp(host, event, remainder.followUp, remainder.messageId, remainder.revealContent);
-      return;
-    default:
-      return;
-  }
-}
-
-function remainderMessageIndex(
-  host: ChatStoreHost,
-  remainder: ReturnType<typeof applyFocusedStreamEvent>["remainder"],
-): number {
-  if (remainder.type === "message") return host.messageIndexForId(remainder.messageId);
-  if (remainder.type === "settle_delivered" && remainder.messageId) {
-    return host.messageIndexForId(remainder.messageId);
-  }
-  return -1;
 }
 
 function replaceFinalTextFor(

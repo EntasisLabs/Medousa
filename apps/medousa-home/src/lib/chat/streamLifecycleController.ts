@@ -98,7 +98,8 @@ export function beginTurn(
   host.streamError = null;
 
   // Seed the Rust app core with the same ids the host painted. Failures are
-  // non-fatal — stream projection still re-seeds via localItems.
+  // non-fatal — stream projection reseeds from host paint only when the shell
+  // is missing (BeginTurn race / reconnect), not on every event.
   const authority =
     host.messages.find((message) => message.transcript?.authorityId)?.transcript
       ?.authorityId ?? `auth_${"0".repeat(64)}`;

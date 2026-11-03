@@ -706,11 +706,23 @@ export function handleWorkerSynthesisStreamEvent(
     }
   }
 
+  // Live V3 pump already folded synthesis through app-core into host.messages.
+  // Only fall back to the TS reducer when the snapshot path left no target bubble.
   const messageId = host.messageIdForTurn(event.turn_id);
-  if (messageId) {
-    host.applyStreamEventToMessage(messageId, event);
-  } else {
-    host.attachOrphanStream(event);
+  const alreadyProjected =
+    Boolean(messageId) &&
+    host.messages.some(
+      (message) =>
+        message.id === messageId &&
+        message.lane === "worker" &&
+        message.content.trim() === content,
+    );
+  if (!alreadyProjected) {
+    if (messageId) {
+      host.applyStreamEventToMessage(messageId, event);
+    } else {
+      host.attachOrphanStream(event);
+    }
   }
 
   const link = host.workers.get(workId);
