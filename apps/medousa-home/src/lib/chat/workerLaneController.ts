@@ -12,7 +12,31 @@ import { randomUuid } from "$lib/utils/randomUuid";
 import type { WorkerLink } from "$lib/chat/chatSessionRuntime";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
-import { linkChatWorker } from "$lib/appChat/client";
+import {
+  deliverChatWorkerSynthesis,
+  ensureChatWorkerFollowUp,
+  finalizeChatWorkerHandoff,
+  linkChatWorker,
+  markChatWorkerSynthesisDelivered,
+} from "$lib/appChat/client";
+import { applySnapshotToMessages, applySnapshotWorkers } from "$lib/appChat/toChatMessage";
+
+/** Stable synthesis bubble id shared with medousa-app-core. */
+export function workerSynthesisItemId(workId: string): string {
+  return `worker-synth:${workId}`;
+}
+
+function syncHostFromSnapshot(
+  host: ChatStoreHost,
+  snapshot: import("$lib/types/generated/app_api").ChatSnapshot,
+) {
+  const applied = applySnapshotToMessages(snapshot);
+  host.messages = applied.messages;
+  for (const [turnId, seq] of applied.lastSeqByTurn) {
+    host.lastSeqByTurn.set(turnId, seq);
+  }
+  host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
+}
 
 export function workerLinkForTurn(
   workers: Map<string, WorkerLink>,
@@ -128,7 +152,11 @@ export function linkWorker(
   void linkChatWorker(params.sessionId, params.workId, {
     parentTurnId: link.parentTurnId,
     parentItemId: link.messageId,
-  }).catch(() => {});
+  })
+    .then((snapshot) => {
+      host.workers = applySnapshotWorkers(host.workers, snapshot, params.sessionId);
+    })
+    .catch(() => {});
 }
 
 export function linkWorkerFromStream(
@@ -355,6 +383,7 @@ export function finalizeWorkerHandoffBubble(host: ChatStoreHost, messageId: stri
     },
     ...host.messages.slice(idx + 1),
   ];
+  void finalizeChatWorkerHandoff(host.sessionId, messageId).catch(() => {});
 }
 
 export function ensureWorkerFollowUpBubble(
@@ -364,6 +393,7 @@ export function ensureWorkerFollowUpBubble(
   options?: { statusLine?: string | null; streaming?: boolean },
 ): string {
   const link = host.workers.get(workId);
+  const id = link?.synthesisMessageId ?? workerSynthesisItemId(workId);
 
   if (link?.synthesisMessageId) {
     const existingIdx = host.messages.findIndex(
@@ -380,11 +410,20 @@ export function ensureWorkerFollowUpBubble(
         },
         ...host.messages.slice(existingIdx + 1),
       ];
+      void ensureChatWorkerFollowUp(host.sessionId, workId, {
+        turnId,
+        itemId: link.synthesisMessageId,
+        statusLine: options?.statusLine,
+        streaming: options?.streaming ?? true,
+      })
+        .then((snapshot) => {
+          host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
+        })
+        .catch(() => {});
       return link.synthesisMessageId;
     }
   }
 
-  const id = randomUuid();
   host.messages = [
     ...host.messages,
     {
@@ -413,6 +452,17 @@ export function ensureWorkerFollowUpBubble(
       host.turns = nextTurns;
     }
   }
+
+  void ensureChatWorkerFollowUp(host.sessionId, workId, {
+    turnId,
+    itemId: id,
+    statusLine: options?.statusLine,
+    streaming: options?.streaming ?? true,
+  })
+    .then((snapshot) => {
+      host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
+    })
+    .catch(() => {});
 
   return id;
 }
@@ -483,6 +533,17 @@ export async function deliverWorkerSynthesis(
     return;
   }
 
+  try {
+    const snapshot = await deliverChatWorkerSynthesis(link.sessionId, workId, content, {
+      tools: detail?.tool_names?.length ? [...detail.tool_names] : null,
+    });
+    syncHostFromSnapshot(host, snapshot);
+    settleParentAfterWorkerSynthesis(host, link.parentTurnId);
+    return;
+  } catch {
+    // Fall back to local mutation when the core session is not open yet.
+  }
+
   const targetId =
     link.synthesisMessageId ??
     ensureWorkerFollowUpBubble(host, workId, link.parentTurnId, { streaming: false });
@@ -545,6 +606,7 @@ export function markWorkerSynthesisDelivered(host: ChatStoreHost, workId: string
   const nextWorkers = new Map(host.workers);
   nextWorkers.set(workId, { ...link, synthesisDelivered: true });
   host.workers = nextWorkers;
+  void markChatWorkerSynthesisDelivered(link.sessionId || host.sessionId, workId).catch(() => {});
 }
 
 function appendWorkerSynthesisMessage(
