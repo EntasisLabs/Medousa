@@ -169,6 +169,7 @@ export async function linkChatWorker(
     parentTurnId?: string | null;
     parentItemId?: string | null;
     replyToWorkId?: string | null;
+    workerSessionId?: string | null;
     expectedRevision?: number | null;
   },
 ): Promise<ChatSnapshot> {
@@ -180,7 +181,23 @@ export async function linkChatWorker(
       parent_turn_id: options?.parentTurnId ?? null,
       parent_item_id: options?.parentItemId ?? null,
       reply_to_work_id: options?.replyToWorkId ?? null,
+      worker_session_id: options?.workerSessionId ?? null,
       expected_revision: options?.expectedRevision ?? null,
+    }),
+  );
+}
+
+export async function registerChatTurn(
+  sessionId: string,
+  turn: import("$lib/types/generated/app_api").TurnFact,
+  expectedRevision?: number | null,
+): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({
+      type: "register_turn",
+      session_id: sessionId,
+      turn,
+      expected_revision: expectedRevision ?? null,
     }),
   );
 }

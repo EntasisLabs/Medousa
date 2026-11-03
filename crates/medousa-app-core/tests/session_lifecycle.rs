@@ -59,6 +59,9 @@ fn replay_does_not_duplicate_stream_content() {
             status_line: None,
             speaker_profile_id: None,
             media_attachments: None,
+                    mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
         },
         expected_revision: None,
     })
@@ -127,6 +130,9 @@ fn recovery_preserves_active_turn_when_history_merges() {
             status_line: None,
             speaker_profile_id: None,
             media_attachments: None,
+                    mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
         },
         expected_revision: None,
     })
@@ -196,7 +202,10 @@ fn session_switch_rejects_stale_revision() {
                 status_line: None,
                 speaker_profile_id: None,
                 media_attachments: None,
-            },
+                        mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
+        },
             expected_revision: None,
         })
         .unwrap()
@@ -253,6 +262,9 @@ fn tool_and_agent_relationships_retain_stable_placement() {
             status_line: None,
             speaker_profile_id: None,
             media_attachments: None,
+                    mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
         },
         expected_revision: None,
     })
@@ -284,7 +296,8 @@ fn tool_and_agent_relationships_retain_stable_placement() {
             parent_turn_id: Some("parent-turn".into()),
             parent_item_id: Some("a1".into()),
             reply_to_work_id: None,
-            expected_revision: None,
+            worker_session_id: None,
+        expected_revision: None,
         })
         .unwrap()
     else {
@@ -316,7 +329,8 @@ fn tool_and_agent_relationships_retain_stable_placement() {
             parent_turn_id: Some("other-turn".into()),
             parent_item_id: Some("wrong".into()),
             reply_to_work_id: Some("work-0".into()),
-            expected_revision: None,
+            worker_session_id: None,
+        expected_revision: None,
         })
         .unwrap()
     else {
@@ -376,7 +390,10 @@ fn begin_turn_user_appears_once() {
                 status_line: None,
                 speaker_profile_id: None,
                 media_attachments: None,
-            },
+                        mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
+        },
             expected_revision: None,
         })
         .unwrap()

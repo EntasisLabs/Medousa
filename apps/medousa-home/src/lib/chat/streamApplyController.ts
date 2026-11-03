@@ -53,6 +53,10 @@ import {
   applyStreamEvent,
   openChatSession,
 } from "$lib/appChat/client";
+import {
+  applySnapshotTurns,
+  applySnapshotWorkers,
+} from "$lib/appChat/toChatMessage";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
 
 const CONTENT_REVEAL_CHUNK_CHARS = 14;
@@ -230,19 +234,17 @@ async function applyStreamProjection(
     const applied = applySnapshotToMessages(snapshot);
     host.withSessionFields(sessionId, () => {
       host.messages = applied.messages;
-      for (const [turnId, seq] of applied.lastSeqByTurn) {
-        host.lastSeqByTurn.set(turnId, seq);
+      host.lastSeqByTurn = applied.lastSeqByTurn;
+      host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
+      host.turns = applySnapshotTurns(snapshot, host.streamOwners);
+      if (applied.activeTurnId !== undefined) {
+        host.activeTurnId = applied.activeTurnId;
       }
       const turn = host.turns.get(envelope.turn_id);
       const assistant = applied.messages.find(
         (message) =>
           message.role === "assistant" && message.turnId === envelope.turn_id,
       );
-      if (turn && assistant && turn.messageId !== assistant.id) {
-        const next = new Map(host.turns);
-        next.set(envelope.turn_id, { ...turn, messageId: assistant.id });
-        host.turns = next;
-      }
       if (
         turn?.mode === "interactive" &&
         envelope.event.type !== "turn_completed" &&

@@ -73,6 +73,9 @@ fn hydrate_appends_ask_lane_into_focused_session() {
             status_line: None,
             speaker_profile_id: None,
             media_attachments: None,
+                    mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
         },
         expected_revision: None,
     })

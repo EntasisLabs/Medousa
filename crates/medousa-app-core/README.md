@@ -35,6 +35,8 @@ Canonical chat timeline:
     linked worker raw returns; beat grouping stays in the renderer
 11. Core-first live stream apply — host reseeds shells only when missing;
     `WorkerAck` / `BudgetApprovalRequired` / terminal chrome land in the snapshot
+12. Snapshot-owned workers/turns — `WorkerLinkFact.session_id`, `TurnFact` on
+    `ChatSnapshot`, `RegisterTurn` for reattach; host overlays `streamAttached`
 
 ## Regenerate client types
 

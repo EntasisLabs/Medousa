@@ -168,23 +168,45 @@ export function applySnapshotToMessages(snapshot: ChatSnapshot): {
   };
 }
 
-/** Merge Rust worker-lane facts into the host WorkerLink map (preserves sessionId). */
+/** Replace the host WorkerLink map from snapshot facts (core is authoritative). */
 export function applySnapshotWorkers(
-  existing: Map<string, import("$lib/chat/chatSessionRuntime").WorkerLink>,
+  _existing: Map<string, import("$lib/chat/chatSessionRuntime").WorkerLink>,
   snapshot: ChatSnapshot,
   fallbackSessionId: string,
 ): Map<string, import("$lib/chat/chatSessionRuntime").WorkerLink> {
-  if (!snapshot.workers?.length) return existing;
-  const next = new Map(existing);
-  for (const fact of snapshot.workers) {
-    const prior = next.get(fact.workId);
+  const next = new Map<string, import("$lib/chat/chatSessionRuntime").WorkerLink>();
+  for (const fact of snapshot.workers ?? []) {
     next.set(fact.workId, {
       workId: fact.workId,
-      parentTurnId: fact.parentTurnId ?? prior?.parentTurnId ?? null,
-      messageId: fact.parentItemId ?? prior?.messageId ?? null,
-      synthesisMessageId: fact.synthesisItemId ?? prior?.synthesisMessageId ?? null,
-      sessionId: prior?.sessionId ?? fallbackSessionId,
-      synthesisDelivered: fact.synthesisDelivered || prior?.synthesisDelivered || false,
+      parentTurnId: fact.parentTurnId ?? null,
+      messageId: fact.parentItemId ?? null,
+      synthesisMessageId: fact.synthesisItemId ?? null,
+      sessionId: fact.sessionId?.trim() || fallbackSessionId,
+      synthesisDelivered: Boolean(fact.synthesisDelivered),
+    });
+  }
+  return next;
+}
+
+/** Replace logical turn tickets from snapshot; overlay streamAttached from streamOwners. */
+export function applySnapshotTurns(
+  snapshot: ChatSnapshot,
+  streamOwners: ReadonlyMap<string, unknown>,
+): Map<string, import("$lib/types/chat").TurnTicketState> {
+  const next = new Map<string, import("$lib/types/chat").TurnTicketState>();
+  for (const fact of snapshot.turns ?? []) {
+    const mode = fact.mode === "background" ? "background" : "interactive";
+    next.set(fact.turnId, {
+      turnId: fact.turnId,
+      mode,
+      phase: fact.phase || "streaming",
+      messageId: fact.messageId ?? null,
+      streamAttached: streamOwners.has(fact.turnId),
+      reusableStream: Boolean(fact.reusableStream),
+      terminal: false,
+      workspaceCardId: fact.workspaceCardId ?? null,
+      budgetRequestId: fact.budgetRequestId ?? null,
+      requestedRounds: fact.requestedRounds ?? null,
     });
   }
   return next;
