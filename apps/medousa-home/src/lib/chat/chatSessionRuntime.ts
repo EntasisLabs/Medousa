@@ -1,6 +1,13 @@
 import type { ChatMessage, PendingAgentSecret, TurnTicketState } from "$lib/types/chat";
 
-/** Per-session chat UI/stream state (kept when focus moves to another session). */
+/**
+ * Per-session chat UI/stream stash (kept when focus moves to another session).
+ *
+ * ChatCore owns messages/turns/workers/promoted asks. This map is a sync paint
+ * mirror for multi-session chrome — not a second transcript authority.
+ * Agent runtime *preferences* (Medousa vs ACP external) live in
+ * `$lib/utils/sessionAgentRuntime.ts` (host-local) and stay outside ChatCore.
+ */
 export type ChatSessionRuntime = {
   resourceRefs?: import("$lib/types/generated/daemon_api").TurnResourceReference[];
   noteContext?: import("$lib/utils/vaultNoteBridge").VaultNoteContextScope | null;

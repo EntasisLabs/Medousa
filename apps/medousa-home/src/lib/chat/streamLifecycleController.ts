@@ -58,11 +58,12 @@ export function registerTurn(
 ) {
   const sessionId = ticket.session_id?.trim() || host.sessionId;
   host.activeTurnId = ticket.mode === "interactive" ? ticket.turn_id : host.activeTurnId;
+  // Sync chrome only — paint from RegisterTurn is the turn-map authority.
+  // streamOwners stay host-local (SSE attach) and overlay streamAttached on paint.
   const next = new Map(host.turns);
   next.set(ticket.turn_id, turnStateFromTicket(ticket, messageId));
   host.turns = next;
 
-  // Core owns turn facts + reattach assistant shells; paint the snapshot.
   const authority =
     host.messages.find((message) => message.transcript?.authorityId)?.transcript
       ?.authorityId ?? `auth_${"0".repeat(64)}`;
@@ -87,9 +88,35 @@ export function registerTurn(
     .then((snapshot) => {
       host.withSessionFields(sessionId, () => {
         if (epoch !== host.transcriptEpoch) return;
+        const reset = options?.resetAssistantContent ?? false;
+        const existing =
+          (messageId
+            ? host.messages.find((message) => message.id === messageId)
+            : undefined) ??
+          host.messages.find(
+            (message) =>
+              message.role === "assistant" && message.turnId === ticket.turn_id,
+          );
+        const hasLiveBody = Boolean(
+          existing &&
+            (existing.content?.trim() ||
+              (existing.segments?.length ?? 0) > 0 ||
+              (existing.toolRuns?.length ?? 0) > 0 ||
+              existing.reasoning?.trim()),
+        );
+        if (hasLiveBody && !reset) {
+          // Live stream already projected body/tools — sync turn/worker facts only
+          // so a late RegisterTurn paint cannot wipe in-flight segments.
+          host.turns = applySnapshotTurns(snapshot, host.streamOwners);
+          host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
+          if (existing && ticket.mode === "interactive") {
+            host.assistantId = existing.id;
+          }
+          return;
+        }
         paintHostFromSnapshot(host, sessionId, snapshot, {
           liveTurnId: ticket.mode === "interactive" ? ticket.turn_id : null,
-          preferredAssistantId: messageId,
+          preferredAssistantId: messageId ?? existing?.id ?? null,
         });
       });
     })
