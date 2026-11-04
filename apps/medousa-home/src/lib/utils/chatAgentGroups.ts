@@ -8,7 +8,11 @@ import type {
 import type { PeerProposalReviewRecord, SessionRef } from "$lib/types/generated/daemon_api";
 import type { SubagentRow } from "./subagentRows";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
-import { projectAgentPlacement, projectVisibleItems } from "$lib/appChat/client";
+import {
+  applyChatVisibleItems,
+  projectAgentPlacement,
+  projectVisibleItems,
+} from "$lib/appChat/client";
 
 export type ChatAgentEntry =
   | { kind: "proposal"; row: PeerProposalReviewRecord; nodeId?: string }
@@ -119,9 +123,9 @@ export function joinAgentGroups(
 }
 
 /**
- * Project agent/task placement through the Rust application core, then join
- * full proposal/worker rows for painting. Visible ids come from core too;
- * `painted` remains a sync paint fallback when projection is unavailable.
+ * Commit painted ids into ChatCore when the session is open, read
+ * snapshot.agentGroups, then join full proposal/worker rows. Falls back to
+ * pure Project* when ApplyVisibleItems is unavailable.
  */
 export async function projectChatAgentGroups(
   messages: ChatMessage[],
@@ -141,6 +145,12 @@ export async function projectChatAgentGroups(
     });
   } catch {
     // Keep host-painted ids when the core path is unavailable.
+  }
+  try {
+    const snapshot = await applyChatVisibleItems(sessionId, visibleItemIds);
+    return joinAgentGroups(snapshot.agentGroups ?? [], proposals, workers);
+  } catch {
+    // Session may not be open yet.
   }
   const groups = await projectAgentPlacement({
     sessionId,
