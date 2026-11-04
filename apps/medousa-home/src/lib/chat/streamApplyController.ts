@@ -1,7 +1,7 @@
 /**
- * Live stream apply: core folds V3 facts; host applies snapshots then runs
- * side effects (alerts, narration, worker bookkeeping). Body authority is
- * medousa-app-core — TS transcript reducers remain for orphan/legacy helpers.
+ * Live stream apply: core folds V3 facts; host paints snapshots then runs
+ * side effects (alerts, narration, worker bookkeeping). Transcript body
+ * authority is medousa-app-core only.
  */
 
 import type {
@@ -18,10 +18,6 @@ import {
 import { shouldAcceptStreamEvent } from "$lib/utils/streamOwnership";
 import { applyStreamSeq } from "$lib/stream/reconnect";
 import type { StreamEventTarget } from "$lib/stream/eventPump";
-import {
-  applyStreamEventToMessage as reduceStreamEventToMessage,
-  type StreamMessageFollowUp,
-} from "$lib/stream/transcriptReducer";
 import { v3EventPromotesChatMessage } from "$lib/stream/v3TranscriptReducer";
 import { v3PresentationEvent } from "$lib/stream/v3PresentationAdapter";
 import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
@@ -54,6 +50,15 @@ import {
 } from "$lib/appChat/client";
 import { paintHostFromSnapshot } from "$lib/appChat/paintFromSnapshot";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
+
+type StreamMessageFollowUp =
+  | "none"
+  | "missing"
+  | "worker_ack"
+  | "workshop_ack"
+  | "budget_approval"
+  | "terminal"
+  | "checkpoint_terminal";
 
 const CONTENT_REVEAL_CHUNK_CHARS = 14;
 const CONTENT_REVEAL_INTERVAL_MS = 16;
@@ -243,38 +248,27 @@ async function applyStreamProjection(
   }
 }
 
-function replaceFinalTextFor(
-  host: ChatStoreHost,
-  messageId: string,
-  event: InteractiveTurnStreamEvent,
-): boolean {
-  const workerLink = workerLinkForTurn(host.workers, event.turn_id);
-  if (!workerLink) return false;
-  const terminal = Boolean(event.final_text?.trim());
-  const isWorkerSynthesisOnEnvelope =
-    messageId === workerLink.messageId && terminal && Boolean(event.final_text?.trim());
-  const isWorkerSynthesisTarget = messageId !== workerLink.messageId;
-  return isWorkerSynthesisTarget || isWorkerSynthesisOnEnvelope;
+function followUpFromEvent(event: InteractiveTurnStreamEvent): StreamMessageFollowUp {
+  if (isWorkerHandoffStreamEvent(event)) return "worker_ack";
+  if (isWorkshopHandoffStreamEvent(event)) return "workshop_ack";
+  if (isBudgetApprovalStreamEvent(event)) return "budget_approval";
+  if (event.terminal || event.event_type === "done" || event.event_type === "error") {
+    return "terminal";
+  }
+  return "none";
 }
 
+/** Side-effect follow-up only — body authority is ChatCore projection. */
 export function applyStreamEventToMessage(
   host: ChatStoreHost,
   messageId: string,
   event: InteractiveTurnStreamEvent,
 ) {
-  const idx = host.messageIndexForId(messageId);
-  const result = reduceStreamEventToMessage(host.messages, idx, event, {
-    showEngineDetails: chatSettingsPort().showEngineDetailsInChat(),
-    replaceFinalText: replaceFinalTextFor(host, messageId, event),
+  const followUp = followUpFromEvent(event);
+  if (followUp === "none") return;
+  runMessageFollowUp(host, event, followUp, messageId, undefined, true, {
+    bodyFromCore: true,
   });
-  if (result.followUp === "missing") {
-    if (event.terminal) noteTurnTerminal(host, event);
-    return;
-  }
-  if (idx >= 0 && result.messages[idx]) {
-    host.replaceMessageAt(idx, result.messages[idx]);
-  }
-  runMessageFollowUp(host, event, result.followUp, messageId, result.revealContent);
 }
 
 function runMessageFollowUp(
@@ -409,6 +403,10 @@ function noteTurnTerminal(host: ChatStoreHost, event: InteractiveTurnStreamEvent
   host.scheduleSessionsRefresh();
 }
 
+/**
+ * Orphan stream events without a known bubble: promote via ChatCore, then
+ * run host side effects. No TS transcript reducer.
+ */
 export function attachOrphanStream(host: ChatStoreHost, event: InteractiveTurnStreamEvent) {
   const workerLink = workerLinkForTurn(host.workers, event.turn_id);
   if (workerLink?.messageId) {
@@ -421,57 +419,54 @@ export function attachOrphanStream(host: ChatStoreHost, event: InteractiveTurnSt
     return;
   }
 
-  const id = randomUuid();
-  const turn = host.turns.get(event.turn_id);
-  host.appendMessage({
-    id,
-    role: "assistant",
-    content,
-    streaming: !event.terminal,
-    turnId: event.turn_id,
-    phase: event.phase || null,
-    statusLine: resolveStatusLine(event, null),
-    tools: event.tool_names?.length ? [...event.tool_names] : undefined,
-  });
-  if (turn) {
-    const next = new Map(host.turns);
-    next.set(event.turn_id, { ...turn, messageId: id });
-    host.turns = next;
-  }
-  if (workerLink && !workerLink.synthesisMessageId) {
-    const nextWorkers = new Map(host.workers);
-    nextWorkers.set(workerLink.workId, {
-      ...workerLink,
-      synthesisMessageId: id,
-    });
-    host.workers = nextWorkers;
-  }
-  if (turn?.mode === "interactive" && !event.terminal) {
-    host.assistantId = id;
-  }
-
-  if (isWorkerHandoffStreamEvent(event)) {
-    releaseComposerHandoff(host, id, "worker_ack", event);
-    host.scheduleSessionsRefresh();
-    return;
-  }
-  if (isWorkshopHandoffStreamEvent(event)) {
-    releaseComposerHandoff(host, id, "workshop_ack", event);
-    host.scheduleSessionsRefresh();
-    return;
-  }
-  if (isBudgetApprovalStreamEvent(event)) {
-    releaseComposerHandoff(host, id, "budget_approval", event);
-    return;
-  }
-  if (event.terminal) {
-    finishMessage(host, id);
-    finishAskLaneTurn(host, event.turn_id);
-    if (shouldSettleTurnFromStream(host, event.turn_id)) {
-      settleTurn(host, event.turn_id);
-      host.scheduleSessionsRefresh();
+  const promoteId = randomUuid();
+  const sessionId = host.sessionId;
+  void (async () => {
+    const authority =
+      host.messages.find((message) => message.transcript?.authorityId)?.transcript
+        ?.authorityId ?? `auth_${"0".repeat(64)}`;
+    try {
+      await openChatSession(sessionId, authority);
+      // Reuse the live pump projection path with a synthetic V3 envelope when
+      // callers only have the presentation event (worker synthesis fallback).
+      const envelope = {
+        schema_version: 3 as const,
+        turn_id: event.turn_id,
+        seq: (host.lastSeqByTurn.get(event.turn_id) ?? 0) + 1,
+        emitted_at_utc: new Date().toISOString(),
+        event: {
+          type: "content_append" as const,
+          text: content,
+          model_round: 1,
+        },
+      };
+      const snapshot = await applyStreamEvent(sessionId, envelope, {
+        promoteItemId: promoteId,
+      });
+      host.withSessionFields(sessionId, () => {
+        paintHostFromSnapshot(host, sessionId, snapshot, {
+          liveTurnId: event.terminal ? null : event.turn_id,
+          preferredAssistantId: promoteId,
+        });
+      });
+    } catch {
+      // Core unavailable — leave host unchanged; card delivery / reload recovers.
+      return;
     }
-  }
+    host.withSessionFields(sessionId, () => {
+      const id = host.messageIdForTurn(event.turn_id) ?? promoteId;
+      const followUp = followUpFromEvent(event);
+      if (followUp === "none" && event.terminal) {
+        noteTurnTerminal(host, event);
+        return;
+      }
+      if (followUp !== "none") {
+        runMessageFollowUp(host, event, followUp, id, undefined, true, {
+          bodyFromCore: true,
+        });
+      }
+    });
+  })();
 }
 
 function releaseComposerHandoff(

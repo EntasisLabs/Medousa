@@ -133,7 +133,7 @@ describe("code/work panels consume controllers", () => {
       "src/lib/chat/turnSideEffectsAdapter.ts",
       "src/lib/chat/mediaAttachController.ts",
       "src/lib/chat/chatStoreHost.ts",
-      "src/lib/stream/transcriptReducer.ts",
+      "src/lib/appChat/paintFromSnapshot.ts",
     ];
     for (const rel of files) {
       const src = source(rel);
