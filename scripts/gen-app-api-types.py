@@ -33,6 +33,21 @@ EXPORTED_TYPES = [
     "BeginTurnRequest",
     "ChatCommand",
     "ChatUpdate",
+    "ShellRevision",
+    "ShellTab",
+    "EditorGroup",
+    "SplitEdge",
+    "SplitNode",
+    "ShellDesktopLayout",
+    "ShellDesktop",
+    "ShellSnapshot",
+    "ShellCommand",
+    "ShellUpdate",
+    "VaultBufferRevision",
+    "NoteBufferFact",
+    "VaultBufferSnapshot",
+    "VaultBufferCommand",
+    "VaultBufferUpdate",
 ]
 
 

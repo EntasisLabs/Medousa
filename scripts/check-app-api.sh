@@ -21,7 +21,20 @@ root = pathlib.Path(".").resolve()
 schema = root / "sdk-contract" / "medousa-app-api.schema.json"
 # Ensure schema is non-empty and contains expected roots.
 data = json.loads(schema.read_text())
-for name in ("ChatSnapshot", "ChatCommand", "ChatUpdate", "ChatItem"):
+for name in (
+    "ChatSnapshot",
+    "ChatCommand",
+    "ChatUpdate",
+    "ChatItem",
+    "ShellSnapshot",
+    "ShellCommand",
+    "ShellUpdate",
+    "ShellTab",
+    "VaultBufferSnapshot",
+    "VaultBufferCommand",
+    "VaultBufferUpdate",
+    "NoteBufferFact",
+):
     if name not in data:
         print(f"missing schema root: {name}", file=sys.stderr)
         sys.exit(1)
