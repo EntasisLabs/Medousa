@@ -360,6 +360,7 @@ export function v3EventPromotesChatMessage(event: TurnStreamEventV3): boolean {
     case "artifact_updated":
     case "ui_scene":
     case "worker_ack":
+    case "worker_synthesis":
     case "budget_approval_required":
       return true;
     case "progress":
