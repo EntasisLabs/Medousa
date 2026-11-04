@@ -71,13 +71,14 @@ describe("orphaned interactive turn lease", () => {
       turn: null,
     } as never);
     const store = new ChatStore();
-    store.sessionId = "sess-test";
+    // Unique per test — ChatCore persists across ChatStore instances in vitest.
+    store.sessionId = `sess-${crypto.randomUUID()}`;
     return { store };
   }
 
   it("releases stale interactive lease when daemon has no active turn", async () => {
     const { store } = await loadStore();
-    store.beginTurn("hello", {
+    await store.beginTurn("hello", {
       turn_id: "turn-orphan",
       session_id: store.sessionId,
       mode: "interactive",
@@ -101,7 +102,7 @@ describe("orphaned interactive turn lease", () => {
   it("merges history on resume after orphan clear instead of staying live", async () => {
     const { store } = await loadStore();
     const { getSessionHistory } = await import("$lib/daemon");
-    store.beginTurn("hello", {
+    await store.beginTurn("hello", {
       turn_id: "turn-orphan-2",
       session_id: store.sessionId,
       mode: "interactive",
@@ -154,7 +155,7 @@ describe("orphaned interactive turn lease", () => {
       started_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    store.beginTurn("keep working", {
+    await store.beginTurn("keep working", {
       ...ticket,
       accepted_at_utc: ticket.started_at,
       stream_ready: true,
@@ -191,7 +192,7 @@ describe("orphaned interactive turn lease", () => {
 
   it("keeps the assistant bubble live across a recoverable stream failure", async () => {
     const { store } = await loadStore();
-    store.beginTurn("hello", {
+    await store.beginTurn("hello", {
       turn_id: "turn-recoverable",
       session_id: store.sessionId,
       mode: "interactive",
@@ -204,7 +205,9 @@ describe("orphaned interactive turn lease", () => {
 
     store.noteStreamFailure("read HTTP response", { recoverable: true });
 
-    const assistant = store.messages.find((message) => message.role === "assistant");
+    const assistant = store.messages.find(
+      (message) => message.role === "assistant" && message.turnId === "turn-recoverable",
+    );
     expect(assistant?.failed).not.toBe(true);
     expect(assistant?.streaming).toBe(true);
     expect(store.hasLiveInteractiveTurn()).toBe(true);
@@ -255,7 +258,7 @@ describe("orphaned interactive turn lease", () => {
 
   it("fails and settles the assistant bubble for a non-recoverable stream error", async () => {
     const { store } = await loadStore();
-    store.beginTurn("hello", {
+    await store.beginTurn("hello", {
       turn_id: "turn-non-recoverable",
       session_id: store.sessionId,
       mode: "interactive",
@@ -268,7 +271,9 @@ describe("orphaned interactive turn lease", () => {
 
     store.noteStreamFailure("invalid SSE JSON", { recoverable: false });
 
-    const assistant = store.messages.find((message) => message.role === "assistant");
+    const assistant = store.messages.find(
+      (message) => message.role === "assistant" && message.turnId === "turn-non-recoverable",
+    );
     expect(assistant?.failed).toBe(true);
     expect(assistant?.streaming).toBe(false);
     expect(store.hasLiveInteractiveTurn()).toBe(false);
