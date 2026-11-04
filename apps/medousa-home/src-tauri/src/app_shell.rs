@@ -51,9 +51,7 @@ mod tests {
                 activate: true,
             })
             .unwrap();
-        let ShellUpdate::Snapshot { snapshot } = update else {
-            panic!("expected snapshot");
-        };
+        let ShellUpdate::Snapshot { snapshot } = update;
         assert_eq!(snapshot.layout.tabs.len(), 1);
         assert_eq!(snapshot.layout.tabs[0].id(), "t1");
     }
