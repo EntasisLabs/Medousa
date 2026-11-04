@@ -790,10 +790,26 @@ impl ChatCore {
             None
         };
 
-        if let Some(message_id) = turn.message_id.as_ref().map(|id| id.trim()).filter(|id| !id.is_empty())
-        {
+        let incoming_message_id = turn
+            .message_id
+            .as_ref()
+            .map(|id| id.trim())
+            .filter(|id| !id.is_empty())
+            .map(str::to_string);
+        // Late RegisterTurn with null must not clobber a message_id already linked
+        // by stream promotion (tool-first orphan race).
+        let message_id = incoming_message_id.or_else(|| {
+            session
+                .turns
+                .get(&turn_id)
+                .and_then(|existing| existing.message_id.clone())
+                .map(|id| id.trim().to_string())
+                .filter(|id| !id.is_empty())
+        });
+
+        if let Some(message_id) = message_id.as_ref() {
             let existing = session.items.iter().position(|item| {
-                item.id == message_id || item.turn_id.as_deref() == Some(turn_id.as_str())
+                item.id == *message_id || item.turn_id.as_deref() == Some(turn_id.as_str())
             });
             if let Some(index) = existing {
                 let item = &mut session.items[index];
@@ -817,7 +833,7 @@ impl ChatCore {
                 }
             } else {
                 session.items.push(ChatItem {
-                    id: message_id.to_string(),
+                    id: message_id.clone(),
                     role: ChatItemRole::Assistant,
                     content: String::new(),
                     streaming: Some(true),
@@ -836,7 +852,7 @@ impl ChatCore {
                 turn_id: turn_id.clone(),
                 mode,
                 phase,
-                message_id: turn.message_id,
+                message_id,
                 workspace_card_id: turn.workspace_card_id,
                 reusable_stream: turn.reusable_stream,
                 budget_request_id: turn.budget_request_id,
