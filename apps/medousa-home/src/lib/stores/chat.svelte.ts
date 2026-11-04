@@ -430,6 +430,12 @@ export class ChatStore implements ChatStoreHost {
     this.runtimeRevision += 1;
   }
 
+  /**
+   * Sync paint helper for a (possibly background) session.
+   * ChatCore owns messages/turns/workers; this stash is the sync UI mirror
+   * because stream side-effects must remain synchronous. Prefer SwitchFocus +
+   * applySnapshotToRuntime on async session switches.
+   */
   withSessionFields(sessionId: string, fn: () => void) {
     const trimmed = sessionId.trim();
     if (!trimmed || trimmed === this.sessionId) {

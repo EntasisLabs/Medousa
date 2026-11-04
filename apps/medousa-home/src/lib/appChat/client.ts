@@ -21,8 +21,15 @@ import type {
 } from "$lib/types/generated/app_api";
 import type { SessionHistoryResponse } from "$lib/types/session";
 import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
-import { applySnapshotToMessages, chatItemToMessage, snapshotMessages } from "./toChatMessage";
+import {
+  applySnapshotToMessages,
+  applySnapshotTurns,
+  applySnapshotWorkers,
+  chatItemToMessage,
+  snapshotMessages,
+} from "./toChatMessage";
 import type { ChatMessage } from "$lib/types/chat";
+import type { ChatSessionRuntime } from "$lib/chat/chatSessionRuntime";
 
 export type AppChatBackend = (command: ChatCommand) => Promise<ChatUpdate>;
 
@@ -386,6 +393,12 @@ export async function projectVisibleItems(options: {
   return update.item_ids;
 }
 
+export async function switchChatFocus(sessionId: string): Promise<ChatSnapshot> {
+  return expectSnapshot(
+    await dispatchAppChat({ type: "switch_focus", session_id: sessionId }),
+  );
+}
+
 export async function disposeChatSession(sessionId: string): Promise<void> {
   await dispatchAppChat({ type: "dispose_session", session_id: sessionId });
 }
@@ -396,7 +409,52 @@ export async function readChatSnapshot(sessionId: string): Promise<ChatSnapshot>
   );
 }
 
-export { applySnapshotToMessages, snapshotMessages, chatItemToMessage };
+/** Apply core-owned session fields into a runtime stash entry (UI chrome preserved). */
+export function applySnapshotToRuntime(
+  runtime: ChatSessionRuntime,
+  snapshot: ChatSnapshot,
+  streamOwners: ReadonlyMap<string, unknown>,
+): ChatSessionRuntime {
+  const applied = applySnapshotToMessages(snapshot);
+  const sessionId = snapshot.sessionId || runtime.sessionId;
+  return {
+    ...runtime,
+    sessionId,
+    messages: applied.messages,
+    activeTurnId: applied.activeTurnId,
+    lastSeqByTurn: applied.lastSeqByTurn,
+    workers: applySnapshotWorkers(runtime.workers, snapshot, sessionId),
+    turns: applySnapshotTurns(snapshot, streamOwners),
+    assistantId:
+      applied.messages.find(
+        (message) =>
+          message.role === "assistant" &&
+          message.streaming &&
+          message.turnId === applied.activeTurnId,
+      )?.id ?? runtime.assistantId,
+  };
+}
+
+/**
+ * Ensure the session exists in ChatCore and move the focus pointer.
+ * Does not steal focus when only opening — callers that warm in the
+ * background should use openChatSession alone.
+ */
+export async function focusChatSession(
+  sessionId: string,
+  authorityId?: string | null,
+): Promise<ChatSnapshot> {
+  await openChatSession(sessionId, authorityId ?? "");
+  return switchChatFocus(sessionId);
+}
+
+export {
+  applySnapshotToMessages,
+  applySnapshotTurns,
+  applySnapshotWorkers,
+  snapshotMessages,
+  chatItemToMessage,
+};
 export type {
   AgentPlacementGroup,
   AskThreadBatch,

@@ -37,6 +37,8 @@ Canonical chat timeline:
     `WorkerAck` / `BudgetApprovalRequired` / terminal chrome land in the snapshot
 12. Snapshot-owned workers/turns — `WorkerLinkFact.session_id`, `TurnFact` on
     `ChatSnapshot`, `RegisterTurn` for reattach; host overlays `streamAttached`
+13. Multi-session focus — `OpenSession` does not steal focus from another live
+    session; `SwitchFocus` moves the pointer; host switch/warm loads core snapshots
 
 ## Regenerate client types
 

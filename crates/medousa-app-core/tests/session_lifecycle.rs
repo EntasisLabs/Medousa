@@ -368,6 +368,77 @@ fn dispose_cleans_up_session_subscriptions() {
 }
 
 #[test]
+fn open_session_does_not_steal_focus_switch_focus_moves_it() {
+    let mut core = ChatCore::new();
+    let auth = authority();
+    core.dispatch(ChatCommand::OpenSession {
+        session_id: "ses_a".into(),
+        authority_id: auth.as_str().into(),
+    })
+    .unwrap();
+    assert_eq!(core.focused_session_id(), Some("ses_a"));
+
+    core.dispatch(ChatCommand::BeginTurn {
+        session_id: "ses_a".into(),
+        request: BeginTurnRequest {
+            turn_id: "turn-a".into(),
+            user_item_id: "u-a".into(),
+            assistant_item_id: "a-a".into(),
+            user_text: "focused".into(),
+            created_at: None,
+            lane: Some(ChatLane::Chat),
+            ask_job_id: None,
+            work_id: None,
+            status_line: None,
+            speaker_profile_id: None,
+            media_attachments: None,
+            mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
+        },
+        expected_revision: None,
+    })
+    .unwrap();
+
+    // Background open must return ses_b's snapshot without moving focus.
+    let ChatUpdate::Snapshot { snapshot } = core
+        .dispatch(ChatCommand::OpenSession {
+            session_id: "ses_b".into(),
+            authority_id: auth.as_str().into(),
+        })
+        .unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+    assert_eq!(snapshot.session_id, "ses_b");
+    assert!(snapshot.items.is_empty());
+    assert_eq!(core.focused_session_id(), Some("ses_a"));
+    assert_eq!(
+        core.snapshot("ses_a").unwrap().items[0].content,
+        "focused"
+    );
+
+    let ChatUpdate::Snapshot { snapshot } = core
+        .dispatch(ChatCommand::SwitchFocus {
+            session_id: "ses_b".into(),
+        })
+        .unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+    assert_eq!(snapshot.session_id, "ses_b");
+    assert_eq!(core.focused_session_id(), Some("ses_b"));
+
+    // Re-opening the focused session keeps focus.
+    core.dispatch(ChatCommand::OpenSession {
+        session_id: "ses_b".into(),
+        authority_id: auth.as_str().into(),
+    })
+    .unwrap();
+    assert_eq!(core.focused_session_id(), Some("ses_b"));
+}
+
+#[test]
 fn begin_turn_user_appears_once() {
     let mut core = ChatCore::new();
     core.dispatch(ChatCommand::OpenSession {

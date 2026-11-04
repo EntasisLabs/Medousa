@@ -236,8 +236,9 @@ impl ChatCore {
                 session_id,
                 authority_id,
             } => {
-                self.open_session(session_id, authority_id);
-                let session_id = self.focused_session_id.clone().unwrap();
+                // Always return the opened session's snapshot — even when focus
+                // stays elsewhere (background stream apply / warm hydrate).
+                self.open_session(session_id.clone(), authority_id);
                 Ok(ChatUpdate::Snapshot {
                     snapshot: self.snapshot(&session_id)?,
                 })
@@ -443,7 +444,13 @@ impl ChatCore {
         {
             existing.authority_id = authority_id;
         }
-        self.focused_session_id = Some(session_id);
+        // Do not steal focus from another live session — background stream apply
+        // opens sessions constantly. Explicit SwitchFocus owns the focus pointer.
+        let should_focus = self.focused_session_id.is_none()
+            || self.focused_session_id.as_deref() == Some(session_id.as_str());
+        if should_focus {
+            self.focused_session_id = Some(session_id);
+        }
     }
 
     fn ensure_revision(
