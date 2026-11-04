@@ -1,6 +1,7 @@
 /**
  * Ask-lane hydrate / promote into the focused chat session.
- * Daemon fetch stays here; merge/lane identity live in medousa-app-core.
+ * Daemon fetch stays here; merge/lane identity + promoted ids live in medousa-app-core.
+ * Host localStorage seeds core on hydrate and mirrors snapshot.promotedAskIds.
  */
 
 import { getSessionHistory } from "$lib/daemon";
@@ -8,28 +9,27 @@ import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askSessionId } from "$lib/types/askJob";
 import type { AskThreadBatch } from "$lib/types/generated/app_api";
 import {
-  applySnapshotToMessages,
   hydrateAskThreadsInCore,
   openChatSession,
   promoteAskToChatInCore,
 } from "$lib/appChat/client";
+import { paintHostFromSnapshot } from "$lib/appChat/paintFromSnapshot";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { savePromotedAskIds, TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
 
 export function promoteAskToChat(host: ChatStoreHost, jobId: string) {
   const trimmed = jobId.trim();
   if (!trimmed) return;
+  // Optimistic host seed for same-tick filters; core is authority after paint.
   host.promotedAskIds.add(trimmed);
   savePromotedAskIds(host.promotedAskIds, host.workshopScopeId);
 
   const sessionId = host.sessionId.trim();
   if (!sessionId) return;
-  // Core owns lane identity; paint from the returned snapshot.
   void promoteAskToChatInCore(sessionId, trimmed)
     .then((snapshot) => {
       if (host.sessionId !== sessionId) return;
-      const applied = applySnapshotToMessages(snapshot);
-      host.messages = applied.messages;
+      paintHostFromSnapshot(host, sessionId, snapshot);
     })
     .catch(() => {
       // Core unavailable — leave host messages unchanged (promotedAskIds already recorded).
@@ -101,12 +101,7 @@ export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) 
       });
       if (workshopEpoch !== host.workshopEpoch || epoch !== host.transcriptEpoch) return;
       if (host.sessionId !== focusedSessionId) return;
-      const applied = applySnapshotToMessages(snapshot);
-      host.messages = applied.messages;
-      if (applied.activeTurnId) host.activeTurnId = applied.activeTurnId;
-      for (const [turnId, seq] of applied.lastSeqByTurn) {
-        host.lastSeqByTurn.set(turnId, seq);
-      }
+      paintHostFromSnapshot(host, focusedSessionId, snapshot);
     } catch {
       // Core owns ask hydrate — leave host unchanged when IPC is unavailable.
     }

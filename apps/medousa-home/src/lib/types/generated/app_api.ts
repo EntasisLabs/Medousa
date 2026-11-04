@@ -237,6 +237,7 @@ export interface ChatSnapshot {
   authorityId: string;
   items: ChatItem[];
   lastSeqByTurn?: Record<string, number>;
+  promotedAskIds?: string[];
   relationships?: ChatRelationship[];
   revision: number;
   sessionId: string;

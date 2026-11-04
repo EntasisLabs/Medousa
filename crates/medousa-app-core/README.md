@@ -30,7 +30,8 @@ Canonical chat timeline:
    `MarkWorkerSynthesisDelivered`, `DeliverWorkerSynthesis`) plus production
    `BeginTurn` / `SettleTurn` dual-write; snapshot `workers` carries synthesis links
 9. Ask-lane hydrate / promote (`HydrateAskThreads`, `PromoteAskToChat`) merges
-   ask ledger history into the focused session and flips lane identity on promote
+   ask ledger history into the focused session, flips lane identity on promote,
+   and records `promoted_ask_ids` on the session snapshot (host localStorage seeds)
 10. Painted visibility (`ProjectVisibleItems`) — empty handoff shells and exact
     linked worker raw returns; beat grouping stays in the renderer
 11. Core-first live stream apply — host reseeds shells only when missing;
