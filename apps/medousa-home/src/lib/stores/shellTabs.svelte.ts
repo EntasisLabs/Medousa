@@ -49,6 +49,13 @@ import {
   type ShellTabSearchHit,
 } from "$lib/utils/shellTabSearch";
 import type { HomeOnboardingLayout } from "$lib/utils/homeOnboarding";
+import {
+  dualWriteCloseShellTab,
+  dualWriteFocusShellTab,
+  dualWriteHydrateShell,
+  dualWriteOpenShellTab,
+  dualWriteSwitchShellDesktop,
+} from "$lib/appShell/dualWrite";
 
 const MAX_TABS = 16;
 const MAIN_GROUP_ID = "main";
@@ -634,6 +641,11 @@ export class ShellTabsStore {
           void this.activate(active.id, { rehydrate: true });
         }
         this.persist();
+        dualWriteHydrateShell({
+          workspaceScopeId: this.workspaceScopeId,
+          desktops: this.desktops,
+          activeDesktopId: this.activeDesktopId,
+        });
         return;
       }
     } else {
@@ -731,6 +743,11 @@ export class ShellTabsStore {
     }
     await this.resyncLiveStreams(previousChatIds);
     this.persist();
+    dualWriteHydrateShell({
+      workspaceScopeId: this.workspaceScopeId,
+      desktops: this.desktops,
+      activeDesktopId: this.activeDesktopId,
+    });
   }
 
   openChat(
@@ -778,6 +795,7 @@ export class ShellTabsStore {
       title,
     };
     this.insertTabIntoGroup(tab, groupId, false);
+    dualWriteOpenShellTab(tab, { groupId, activate });
     if (activate) void this.activate(tab.id);
     else this.persist();
     return tab.id;
@@ -1163,6 +1181,7 @@ export class ShellTabsStore {
     }
     this.syncLayoutHint(tab);
     this.persist();
+    dualWriteFocusShellTab(tabId);
 
     this.beginSuppressMirror();
     try {
@@ -1227,6 +1246,7 @@ export class ShellTabsStore {
     const wasActive = this.activeTabId === tabId && host?.id === this.activeGroupId;
     this.removeTabFromAllGroups(tabId);
     this.pruneNavStacks();
+    dualWriteCloseShellTab(tabId);
 
     this.beginSuppressMirror();
     try {
@@ -1827,6 +1847,7 @@ export class ShellTabsStore {
     this.applyLayout(target.layout);
     this.activeDesktopId = trimmed;
     this.persist();
+    dualWriteSwitchShellDesktop(trimmed);
 
     const active = this.activeTab;
     if (active) {

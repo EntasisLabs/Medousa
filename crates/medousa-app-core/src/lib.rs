@@ -4,8 +4,9 @@
 //! stable identities, and tool/agent causal relationships. Renderers consume
 //! [`contract::ChatSnapshot`] updates; they do not reimplement reconciliation.
 //!
-//! Daemon wire types and workshop authority stay in `medousa-types` / the
-//! daemon. This crate projects those facts into application state.
+//! Shell layout identity (desktops / tabs / panes) lives in [`shell`]. Vault
+//! note buffers live in [`vault_buffer`]. Daemon wire types and workshop
+//! authority stay in `medousa-types` / the daemon.
 
 pub mod agents;
 pub mod contract;
@@ -14,7 +15,9 @@ pub mod history;
 pub mod merge;
 pub mod parts;
 pub mod session;
+pub mod shell;
 pub mod stream;
+pub mod vault_buffer;
 pub mod wire_history;
 
 pub use contract::{
@@ -28,4 +31,11 @@ pub use display::{is_empty_handoff_shell, present_chat_item_ids, present_chat_it
 pub use history::{project_history, ProjectHistoryOptions};
 pub use merge::{dedupe_messages_by_id, merge_transcript};
 pub use session::{guard_focused_session, ChatCore, ChatCoreError};
+pub use shell::{
+    ShellCommand, ShellCore, ShellCoreError, ShellRevision, ShellSnapshot, ShellTab, ShellUpdate,
+};
 pub use stream::{apply_v3_envelope_to_item, fold_v3_envelopes, v3_event_promotes_chat_message};
+pub use vault_buffer::{
+    NoteBufferFact, VaultBufferCommand, VaultBufferCore, VaultBufferCoreError, VaultBufferRevision,
+    VaultBufferSnapshot, VaultBufferUpdate,
+};
