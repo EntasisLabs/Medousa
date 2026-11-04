@@ -36,5 +36,9 @@ path = "src/bin/app_shell_dispatch.rs"
 name = "app-vault-buffer-dispatch"
 path = "src/bin/app_vault_buffer_dispatch.rs"
 
+[[bin]]
+name = "app-undertaking-binding-dispatch"
+path = "src/bin/app_undertaking_binding_dispatch.rs"
+
 [dev-dependencies]
 serde_json = "1"
