@@ -311,8 +311,14 @@ impl ChatCore {
             ChatCommand::RegisterTurn {
                 session_id,
                 turn,
+                reset_assistant_content,
                 expected_revision,
-            } => self.register_turn(&session_id, turn, expected_revision),
+            } => self.register_turn(
+                &session_id,
+                turn,
+                reset_assistant_content,
+                expected_revision,
+            ),
             ChatCommand::EnsureWorkerFollowUp {
                 session_id,
                 work_id,
@@ -745,6 +751,7 @@ impl ChatCore {
         &mut self,
         session_id: &str,
         turn: TurnFact,
+        reset_assistant_content: bool,
         expected_revision: Option<ChatRevision>,
     ) -> Result<ChatUpdate, ChatCoreError> {
         let session = self
@@ -756,20 +763,75 @@ impl ChatCore {
         if turn_id.is_empty() {
             return Err(ChatCoreError::Rejected("turn_id must not be empty".into()));
         }
+        let mode = if turn.mode.trim().is_empty() {
+            "interactive".into()
+        } else {
+            turn.mode.clone()
+        };
+        let phase = if turn.phase.trim().is_empty() {
+            "streaming".into()
+        } else {
+            turn.phase.clone()
+        };
+        let lane = if mode == "background" {
+            Some(ChatLane::Ask)
+        } else {
+            Some(ChatLane::Chat)
+        };
+        let ask_job_id = if mode == "background" {
+            turn.workspace_card_id
+                .clone()
+                .or_else(|| Some(turn_id.clone()))
+        } else {
+            None
+        };
+
+        if let Some(message_id) = turn.message_id.as_ref().map(|id| id.trim()).filter(|id| !id.is_empty())
+        {
+            let existing = session.items.iter().position(|item| {
+                item.id == message_id || item.turn_id.as_deref() == Some(turn_id.as_str())
+            });
+            if let Some(index) = existing {
+                let item = &mut session.items[index];
+                item.streaming = Some(true);
+                item.failed = None;
+                item.error_line = None;
+                item.error_detail = None;
+                item.phase = Some(phase.clone());
+                item.turn_id = Some(turn_id.clone());
+                item.lane = lane;
+                if ask_job_id.is_some() {
+                    item.ask_job_id = ask_job_id.clone();
+                }
+                if reset_assistant_content {
+                    item.content.clear();
+                    item.segments = None;
+                    item.reasoning = None;
+                    item.tools = None;
+                    item.tool_runs = None;
+                    item.ui_artifacts = None;
+                }
+            } else {
+                session.items.push(ChatItem {
+                    id: message_id.to_string(),
+                    role: ChatItemRole::Assistant,
+                    content: String::new(),
+                    streaming: Some(true),
+                    turn_id: Some(turn_id.clone()),
+                    lane,
+                    ask_job_id: ask_job_id.clone(),
+                    phase: Some(phase.clone()),
+                    ..empty_item()
+                });
+            }
+        }
+
         session.turns.insert(
             turn_id.clone(),
             TurnRecord {
                 turn_id: turn_id.clone(),
-                mode: if turn.mode.trim().is_empty() {
-                    "interactive".into()
-                } else {
-                    turn.mode
-                },
-                phase: if turn.phase.trim().is_empty() {
-                    "streaming".into()
-                } else {
-                    turn.phase
-                },
+                mode,
+                phase,
                 message_id: turn.message_id,
                 workspace_card_id: turn.workspace_card_id,
                 reusable_stream: turn.reusable_stream,

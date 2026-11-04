@@ -197,14 +197,19 @@ export async function linkChatWorker(
 export async function registerChatTurn(
   sessionId: string,
   turn: import("$lib/types/generated/app_api").TurnFact,
-  expectedRevision?: number | null,
+  options?: {
+    expectedRevision?: number | null;
+    /** Clear assistant body before a from-zero stream replay. */
+    resetAssistantContent?: boolean;
+  },
 ): Promise<ChatSnapshot> {
   return expectSnapshot(
     await dispatchAppChat({
       type: "register_turn",
       session_id: sessionId,
       turn,
-      expected_revision: expectedRevision ?? null,
+      reset_assistant_content: options?.resetAssistantContent ?? false,
+      expected_revision: options?.expectedRevision ?? null,
     }),
   );
 }
