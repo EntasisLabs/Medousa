@@ -8,7 +8,6 @@ import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
 import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
-import { randomUuid } from "$lib/utils/randomUuid";
 import type { WorkerLink } from "$lib/chat/chatSessionRuntime";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
@@ -461,44 +460,10 @@ export async function deliverWorkerSynthesis(
     });
     syncHostFromSnapshot(host, snapshot);
     settleParentAfterWorkerSynthesis(host, link.parentTurnId);
-    return;
   } catch {
-    // Fall back to local mutation when the core session is not open yet.
+    // Core owns synthesis body — surface retry chrome when IPC is unavailable.
+    noteWorkerSynthesisFailure(host, workId, "Couldn't load worker result. Tap to retry.");
   }
-
-  const targetId =
-    link.synthesisMessageId ??
-    ensureWorkerFollowUpBubble(host, workId, link.parentTurnId, { streaming: false });
-  if (targetId) {
-    const idx = host.messages.findIndex((m) => m.id === targetId);
-    if (idx >= 0) {
-      host.messages = [
-        ...host.messages.slice(0, idx),
-        {
-          ...host.messages[idx],
-          content,
-          streaming: false,
-          failed: false,
-          errorLine: null,
-          answerState: null,
-          phase: null,
-          statusLine: null,
-          lane: "worker",
-          workId,
-          tools: detail?.tool_names?.length ? [...detail.tool_names] : host.messages[idx].tools,
-        },
-        ...host.messages.slice(idx + 1),
-      ];
-      finalizeWorkerHandoffBubble(host, link.messageId);
-      markWorkerSynthesisDelivered(host, workId);
-      settleParentAfterWorkerSynthesis(host, link.parentTurnId);
-      return;
-    }
-  }
-
-  appendWorkerSynthesisMessage(host, workId, link.parentTurnId, content, detail?.tool_names);
-  markWorkerSynthesisDelivered(host, workId);
-  settleParentAfterWorkerSynthesis(host, link.parentTurnId);
 }
 
 function settleParentAfterWorkerSynthesis(host: ChatStoreHost, parentTurnId: string | null) {
@@ -529,57 +494,6 @@ export function markWorkerSynthesisDelivered(host: ChatStoreHost, workId: string
   nextWorkers.set(workId, { ...link, synthesisDelivered: true });
   host.workers = nextWorkers;
   void markChatWorkerSynthesisDelivered(link.sessionId || host.sessionId, workId).catch(() => {});
-}
-
-function appendWorkerSynthesisMessage(
-  host: ChatStoreHost,
-  workId: string,
-  parentTurnId: string | null,
-  content: string,
-  toolNames?: string[] | null,
-) {
-  const link = host.workers.get(workId);
-  const targetId = link?.messageId;
-  if (targetId) {
-    const idx = host.messages.findIndex((m) => m.id === targetId);
-    if (idx >= 0) {
-      host.messages = [
-        ...host.messages.slice(0, idx),
-        {
-          ...host.messages[idx],
-          content,
-          streaming: false,
-          phase: null,
-          statusLine: null,
-          tools: toolNames?.length ? [...toolNames] : host.messages[idx].tools,
-        },
-        ...host.messages.slice(idx + 1),
-      ];
-      if (link) {
-        const nextWorkers = new Map(host.workers);
-        nextWorkers.set(workId, { ...link, synthesisMessageId: targetId });
-        host.workers = nextWorkers;
-      }
-      return;
-    }
-  }
-
-  const id = randomUuid();
-  host.messages = [
-    ...host.messages,
-    {
-      id,
-      role: "assistant",
-      content,
-      turnId: parentTurnId,
-      tools: toolNames?.length ? [...toolNames] : undefined,
-    },
-  ];
-  if (link) {
-    const nextWorkers = new Map(host.workers);
-    nextWorkers.set(workId, { ...link, synthesisMessageId: id });
-    host.workers = nextWorkers;
-  }
 }
 
 async function fetchLatestAssistantTurn(

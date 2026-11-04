@@ -25,6 +25,8 @@ import {
   setShellZoomedGroup,
   splitShellPane,
   switchShellDesktop,
+  moveShellTabToDesktop,
+  moveShellPaneToDesktop,
 } from "./client";
 
 export type ShellSnapshotPainter = (snapshot: ShellSnapshot) => void;
@@ -217,4 +219,18 @@ export function commitPatchShellTabTitle(
   options: { tabId: string; title: string },
 ) {
   commitShell(paint, () => patchShellTabTitle(options));
+}
+
+export function commitMoveShellTabToDesktop(
+  paint: ShellSnapshotPainter,
+  options: { tabId: string; desktopId: string },
+) {
+  commitShell(paint, () => moveShellTabToDesktop(options));
+}
+
+export function commitMoveShellPaneToDesktop(
+  paint: ShellSnapshotPainter,
+  options: { groupId: string; desktopId: string },
+) {
+  commitShell(paint, () => moveShellPaneToDesktop(options));
 }

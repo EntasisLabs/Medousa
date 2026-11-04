@@ -1,9 +1,11 @@
 /**
- * Dual-write peer proposal facts into ChatCore so snapshot.agentGroups can
- * include proposal anchors. Daemon inbox remains poll/approve authority.
+ * Commit peer proposal facts into ChatCore and paint the returned snapshot.
+ * Daemon inbox remains poll/approve authority; core owns proposal anchors on
+ * snapshot.agentGroups.
  */
 
 import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
+import type { ChatSnapshot } from "$lib/types/generated/app_api";
 import { applyChatProposals, openChatSession } from "$lib/appChat/client";
 import { proposalFactsFromRows } from "$lib/utils/chatAgentGroups";
 
@@ -13,14 +15,22 @@ function factsKey(sessionId: string, facts: ReturnType<typeof proposalFactsFromR
   return `${sessionId}:${JSON.stringify(facts)}`;
 }
 
+export type CommitChatProposalsPaint = (
+  sessionId: string,
+  snapshot: ChatSnapshot,
+) => void;
+
 /**
- * Best-effort ApplyProposals. Skips when the fact vector is unchanged.
+ * ApplyProposals then paint. Skips when the fact vector is unchanged.
  * Failures are non-fatal (pure-DOM vitest / session not open yet).
  */
-export function dualWriteChatProposals(
+export function commitChatProposals(
   sessionId: string | null | undefined,
   rows: PeerProposalReviewRecord[],
-  options?: { authorityId?: string | null },
+  options?: {
+    authorityId?: string | null;
+    paint?: CommitChatProposalsPaint;
+  },
 ): void {
   const trimmed = sessionId?.trim();
   if (!trimmed) return;
@@ -36,12 +46,21 @@ export function dualWriteChatProposals(
 
   void openChatSession(trimmed, authority)
     .then(() => applyChatProposals(trimmed, facts))
+    .then((snapshot) => {
+      options?.paint?.(trimmed, snapshot);
+    })
     .catch(() => {
       /* Core may be unavailable outside Tauri / without the stdio backend. */
     });
 }
 
-/** Test helper — drop memo so the next dual-write always dispatches. */
-export function resetDualWriteChatProposalsMemo() {
+/** @deprecated Prefer commitChatProposals — kept for a soft rename window. */
+export const dualWriteChatProposals = commitChatProposals;
+
+/** Test helper — drop memo so the next commit always dispatches. */
+export function resetCommitChatProposalsMemo() {
   lastFactsBySession.clear();
 }
+
+/** @deprecated Prefer resetCommitChatProposalsMemo. */
+export const resetDualWriteChatProposalsMemo = resetCommitChatProposalsMemo;
