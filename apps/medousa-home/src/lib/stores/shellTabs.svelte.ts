@@ -56,6 +56,8 @@ import {
   commitFocusShellGroup,
   commitFocusShellTab,
   commitHydrateShell,
+  commitMoveShellPaneToDesktop,
+  commitMoveShellTabToDesktop,
   commitOpenShellTab,
   commitPatchShellTabTitle,
   commitRemoveShellDesktop,
@@ -1840,6 +1842,10 @@ export class ShellTabsStore {
         : desktop,
     );
     this.persist();
+    commitMoveShellTabToDesktop(this.paintFromCoreSnapshot, {
+      tabId,
+      desktopId: trimmedDesktop,
+    });
     return true;
   }
 
@@ -1890,6 +1896,10 @@ export class ShellTabsStore {
       this.syncLayoutHint(null);
     }
     this.persist();
+    commitMoveShellPaneToDesktop(this.paintFromCoreSnapshot, {
+      groupId,
+      desktopId: trimmedDesktop,
+    });
     return true;
   }
 

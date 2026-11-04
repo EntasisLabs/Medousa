@@ -44,13 +44,6 @@ function expectSnapshot(update: ShellUpdate): ShellSnapshot {
   return update.snapshot;
 }
 
-/** Fire-and-forget dispatch — prefer commit* helpers that paint from snapshots. */
-export function dualWriteShell(command: ShellCommand): void {
-  void dispatchAppShell(command).catch(() => {
-    /* Core may be unavailable in pure-DOM vitest without the stdio backend. */
-  });
-}
-
 export async function hydrateShellLayout(options: {
   workspaceScopeId: string;
   desktops: ShellDesktop[];
@@ -202,6 +195,32 @@ export async function patchShellTabTitle(options: {
       type: "patch_tab_title",
       tab_id: options.tabId,
       title: options.title,
+    }),
+  );
+}
+
+export async function moveShellTabToDesktop(options: {
+  tabId: string;
+  desktopId: string;
+}): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({
+      type: "move_tab_to_desktop",
+      tab_id: options.tabId,
+      desktop_id: options.desktopId,
+    }),
+  );
+}
+
+export async function moveShellPaneToDesktop(options: {
+  groupId: string;
+  desktopId: string;
+}): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({
+      type: "move_pane_to_desktop",
+      group_id: options.groupId,
+      desktop_id: options.desktopId,
     }),
   );
 }

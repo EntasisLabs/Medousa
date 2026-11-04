@@ -44,13 +44,6 @@ function expectSnapshot(update: VaultBufferUpdate): VaultBufferSnapshot {
   return update.snapshot;
 }
 
-/** Fire-and-forget dispatch — prefer commit helpers that paint from snapshots. */
-export function dualWriteVaultBuffer(command: VaultBufferCommand): void {
-  void dispatchAppVaultBuffer(command).catch(() => {
-    /* Core may be unavailable outside Tauri / without the stdio backend. */
-  });
-}
-
 export function toNoteBufferFact(
   buffer: NoteBuffer,
   options?: { conflict?: boolean },

@@ -1,8 +1,8 @@
 //! Shell layout identity, focus, and pane-limit tests.
 
 use medousa_app_core::shell::{
-    ShellCommand, ShellCore, ShellCoreError, ShellTab, ShellUpdate, SplitEdge, MAX_SHELL_PANES,
-    MAX_SHELL_DESKTOPS,
+    ShellCommand, ShellCore, ShellCoreError, ShellTab, ShellUpdate, SplitEdge, SplitNode,
+    MAX_SHELL_DESKTOPS, MAX_SHELL_PANES,
 };
 
 fn chat(id: &str, session: &str) -> ShellTab {
@@ -170,4 +170,78 @@ fn hydrate_restores_workspace_scope_layout() {
         .unwrap();
     assert_eq!(snapshot.workspace_scope_id, "workshop-a");
     assert_eq!(snapshot.layout.tabs[0].id(), "t1");
+}
+
+#[test]
+fn move_tab_and_pane_to_desktop_preserve_active() {
+    let mut core = ShellCore::new("personal");
+    core.dispatch(ShellCommand::OpenTab {
+        tab: chat("t1", "ses_a"),
+        group_id: None,
+        activate: true,
+    })
+    .unwrap();
+    core.dispatch(ShellCommand::OpenTab {
+        tab: chat("t2", "ses_b"),
+        group_id: None,
+        activate: true,
+    })
+    .unwrap();
+    core.dispatch(ShellCommand::CreateDesktop {
+        desktop_id: "desk-b".into(),
+        name: "B".into(),
+    })
+    .unwrap();
+    // CreateDesktop activates desk-b — switch back so moves leave the active desk.
+    core.dispatch(ShellCommand::SwitchDesktop {
+        desktop_id: "desktop-main".into(),
+    })
+    .unwrap();
+
+    let ShellUpdate::Snapshot { snapshot } = core
+        .dispatch(ShellCommand::MoveTabToDesktop {
+            tab_id: "t1".into(),
+            desktop_id: "desk-b".into(),
+        })
+        .unwrap();
+    assert_eq!(snapshot.active_desktop_id, "desktop-main");
+    assert!(!snapshot.layout.tabs.iter().any(|t| t.id() == "t1"));
+    assert!(snapshot.layout.tabs.iter().any(|t| t.id() == "t2"));
+    let desk_b = snapshot
+        .desktops
+        .iter()
+        .find(|d| d.id == "desk-b")
+        .expect("desk-b");
+    assert!(desk_b.layout.tabs.iter().any(|t| t.id() == "t1"));
+
+    core.dispatch(ShellCommand::SplitPane {
+        group_id: snapshot.layout.active_group_id.clone(),
+        edge: SplitEdge::Right,
+        new_group_id: "g2".into(),
+        move_tab_id: Some("t2".into()),
+    })
+    .unwrap();
+
+    let ShellUpdate::Snapshot { snapshot } = core
+        .dispatch(ShellCommand::MovePaneToDesktop {
+            group_id: "g2".into(),
+            desktop_id: "desk-b".into(),
+        })
+        .unwrap();
+    assert_eq!(snapshot.active_desktop_id, "desktop-main");
+    assert_eq!(count_leaves_for_test(&snapshot.layout.split_root), 1);
+    assert!(!snapshot.layout.tabs.iter().any(|t| t.id() == "t2"));
+    let desk_b = snapshot
+        .desktops
+        .iter()
+        .find(|d| d.id == "desk-b")
+        .expect("desk-b");
+    assert!(desk_b.layout.tabs.iter().any(|t| t.id() == "t2"));
+}
+
+fn count_leaves_for_test(node: &SplitNode) -> usize {
+    match node {
+        SplitNode::Group { .. } => 1,
+        SplitNode::Branch { a, b, .. } => count_leaves_for_test(a) + count_leaves_for_test(b),
+    }
 }

@@ -15,7 +15,8 @@
   import { requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
   import { peerRuntimeLabel } from "./peerProgress";
   import { delegationRevision } from "$lib/utils/chatAgentGroups";
-  import { dualWriteChatProposals } from "$lib/appChat/dualWriteProposals";
+  import { commitChatProposals } from "$lib/appChat/dualWriteProposals";
+  import { paintHostFromSnapshot } from "$lib/appChat/paintFromSnapshot";
 
   let { sessionId, mobile = false, visible = true, children, onSnapshot, onInspect }: { sessionId: string | null; mobile?: boolean; visible?: boolean; children?: Snippet<[PeerProposalReviewRecord[], PeerProposalControls]>; onInspect?: (proposalId: string) => void; onSnapshot?: (sessionId: string | null, rows: PeerProposalReviewRecord[], controls: PeerProposalControls) => void } = $props();
   let rows = $state<PeerProposalReviewRecord[]>([]);
@@ -250,11 +251,16 @@
     hasMore: cursors.length > 0, loadMore: next, action, openExecution, inspect: onInspect });
   // History and the composer dock consume this same controller, never a second poller.
   $effect(() => { onSnapshot?.(sessionId, rows, controls); });
-  // Seed ChatCore proposal facts so snapshot.agentGroups can include anchors.
-  // Daemon inbox remains poll/approve authority; placement paint still uses props.
+  // Commit proposal facts into ChatCore and paint the focused session snapshot.
+  // Daemon inbox remains poll/approve authority; placement join still uses props.
   $effect(() => {
-    dualWriteChatProposals(sessionId, rows, {
+    commitChatProposals(sessionId, rows, {
       authorityId: connection.health?.runtime?.authority_id ?? null,
+      paint: (sid, snapshot) => {
+        chat.withSessionFields(sid, () => {
+          paintHostFromSnapshot(chat, sid, snapshot);
+        });
+      },
     });
   });
 </script>

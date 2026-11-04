@@ -3,7 +3,13 @@ import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
 
 const api = vi.hoisted(() => ({
   open: vi.fn(async () => ({ sessionId: "ses", authorityId: "auth", items: [], revision: 1 })),
-  apply: vi.fn(async () => ({ sessionId: "ses", authorityId: "auth", items: [], revision: 2 })),
+  apply: vi.fn(async () => ({
+    sessionId: "ses",
+    authorityId: "auth",
+    items: [],
+    revision: 2,
+    proposals: [{ proposal_id: "p1" }],
+  })),
 }));
 
 vi.mock("$lib/appChat/client", () => ({
@@ -12,8 +18,8 @@ vi.mock("$lib/appChat/client", () => ({
 }));
 
 import {
-  dualWriteChatProposals,
-  resetDualWriteChatProposalsMemo,
+  commitChatProposals,
+  resetCommitChatProposalsMemo,
 } from "./dualWriteProposals";
 
 function row(id: string): PeerProposalReviewRecord {
@@ -52,15 +58,17 @@ function row(id: string): PeerProposalReviewRecord {
   } as PeerProposalReviewRecord;
 }
 
-describe("dualWriteChatProposals", () => {
+describe("commitChatProposals", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetDualWriteChatProposalsMemo();
+    resetCommitChatProposalsMemo();
   });
 
-  it("opens the session and applies thin proposal facts", async () => {
-    dualWriteChatProposals("ses_owner", [row("p1")], {
+  it("opens the session, applies thin proposal facts, and paints", async () => {
+    const paint = vi.fn();
+    commitChatProposals("ses_owner", [row("p1")], {
       authorityId: `auth_${"a".repeat(64)}`,
+      paint,
     });
     await vi.waitFor(() => expect(api.apply).toHaveBeenCalled());
     expect(api.open).toHaveBeenCalledWith("ses_owner", `auth_${"a".repeat(64)}`);
@@ -73,26 +81,31 @@ describe("dualWriteChatProposals", () => {
         }),
       ],
     );
+    await vi.waitFor(() => expect(paint).toHaveBeenCalled());
+    expect(paint).toHaveBeenCalledWith(
+      "ses_owner",
+      expect.objectContaining({ revision: 2 }),
+    );
   });
 
   it("skips identical fact vectors", async () => {
-    dualWriteChatProposals("ses_owner", [row("p1")]);
+    commitChatProposals("ses_owner", [row("p1")]);
     await vi.waitFor(() => expect(api.apply).toHaveBeenCalledTimes(1));
-    dualWriteChatProposals("ses_owner", [row("p1")]);
+    commitChatProposals("ses_owner", [row("p1")]);
     await Promise.resolve();
     expect(api.apply).toHaveBeenCalledTimes(1);
   });
 
   it("clears core proposals when the inbox is empty", async () => {
-    dualWriteChatProposals("ses_owner", [row("p1")]);
+    commitChatProposals("ses_owner", [row("p1")]);
     await vi.waitFor(() => expect(api.apply).toHaveBeenCalledTimes(1));
-    dualWriteChatProposals("ses_owner", []);
+    commitChatProposals("ses_owner", []);
     await vi.waitFor(() => expect(api.apply).toHaveBeenCalledTimes(2));
     expect(api.apply).toHaveBeenLastCalledWith("ses_owner", []);
   });
 
   it("no-ops without a session id", () => {
-    dualWriteChatProposals(null, [row("p1")]);
+    commitChatProposals(null, [row("p1")]);
     expect(api.open).not.toHaveBeenCalled();
     expect(api.apply).not.toHaveBeenCalled();
   });

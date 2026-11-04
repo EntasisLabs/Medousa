@@ -23,7 +23,7 @@ import { isReusableAgentStream, shouldReattachTurnRecord } from "$lib/utils/stre
 import { streamPathWithSince } from "$lib/stream/reconnect";
 import { friendlyUserError } from "$lib/utils/normieErrors";
 import { randomUuid } from "$lib/utils/randomUuid";
-import { beginTurnMessages, turnStateFromTicket } from "$lib/chat/turnController";
+import { turnStateFromTicket } from "$lib/chat/turnController";
 import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
 import { workerLinkForTurn } from "$lib/chat/workerLaneController";
 import { narration } from "$lib/stores/narration.svelte";
@@ -157,27 +157,8 @@ export async function beginTurn(
       });
     });
   } catch {
-    // Core unavailable (pure-DOM harness / reconnect race): fall back to host paint.
-    host.withSessionFields(sessionId, () => {
-      host.messages = [
-        ...host.messages,
-        ...beginTurnMessages({
-          userContent,
-          ticket,
-          mediaRefs,
-          speakerProfileId,
-          userMessageId,
-          assistantId,
-        }),
-      ];
-      const next = new Map(host.turns);
-      next.set(ticket.turn_id, turnStateFromTicket(ticket, assistantId));
-      host.turns = next;
-      if (ticket.mode === "interactive") {
-        host.assistantId = assistantId;
-        host.activeTurnId = ticket.turn_id;
-      }
-    });
+    // Core owns transcript shells — leave host unchanged when IPC is unavailable.
+    // Vitest installs the app-chat dispatch backend; reconnect races retry via reattach.
   }
 }
 
@@ -489,7 +470,7 @@ async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord, c
             preferredAssistantId: messageId,
           });
         } else {
-          // Live projection already has body/cursor — only sync turn facts.
+          // Live projection already has body/cursor — sync turn/worker facts only.
           host.turns = applySnapshotTurns(snapshot, host.streamOwners);
           host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
           host.messages = host.messages.map((message) =>
@@ -508,52 +489,7 @@ async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord, c
         }
       });
     } catch {
-      // Core unavailable: keep a thin host shell so the stream can still attach.
-      if (seedShell && messageId) {
-        const lane = record.mode === "background" ? ("ask" as const) : ("chat" as const);
-        const askJobId =
-          record.mode === "background" ? (record.workspace_card_id ?? record.turn_id) : null;
-        host.messages = [
-          ...host.messages,
-          {
-            id: messageId,
-            role: "assistant",
-            content: "",
-            streaming: true,
-            turnId: record.turn_id,
-            lane,
-            askJobId,
-          },
-        ];
-        if (record.mode === "interactive") host.assistantId = messageId;
-      } else if (messageId) {
-        host.messages = host.messages.map((message) =>
-          message.id === messageId
-            ? {
-                ...message,
-                ...(replayFromStart
-                  ? {
-                      content: "",
-                      segments: undefined,
-                      reasoning: null,
-                      tools: undefined,
-                      toolRuns: undefined,
-                      uiArtifacts: undefined,
-                    }
-                  : {}),
-                streaming: true,
-                failed: false,
-                errorLine: null,
-                errorDetail: null,
-                phase: record.phase,
-              }
-            : message,
-        );
-        if (record.mode === "interactive") host.assistantId = messageId;
-      }
-      registerTurnFromRecord(host, record, messageId, {
-        resetAssistantContent: replayFromStart,
-      });
+      // Core owns assistant shells — leave host unchanged when IPC is unavailable.
     }
   } else {
     registerTurnFromRecord(host, record, messageId ?? null);

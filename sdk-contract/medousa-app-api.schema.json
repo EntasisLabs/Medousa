@@ -8352,6 +8352,52 @@
         }
       },
       {
+        "description": "Move a tab from the active desktop onto another desktop's focused pane. Does not switch the active desktop.",
+        "type": "object",
+        "required": [
+          "desktop_id",
+          "tab_id",
+          "type"
+        ],
+        "properties": {
+          "desktop_id": {
+            "type": "string"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "move_tab_to_desktop"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Move every tab in a pane onto another desktop, then drop the empty pane when more than one pane remains. Does not switch the active desktop.",
+        "type": "object",
+        "required": [
+          "desktop_id",
+          "group_id",
+          "type"
+        ],
+        "properties": {
+          "desktop_id": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "move_pane_to_desktop"
+            ]
+          }
+        }
+      },
+      {
         "type": "object",
         "required": [
           "type"
