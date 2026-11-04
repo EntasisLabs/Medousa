@@ -13,6 +13,10 @@ export function isReusableAgentStream(streamUrl: string): boolean {
   }
 }
 
+/**
+ * Process-local SSE attach ownership — intentionally outside ChatCore.
+ * Snapshot turns are logical tickets; `streamAttached` is overlaid from this map.
+ */
 export interface StreamOwner {
   turnId: string;
   sessionId: string;

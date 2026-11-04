@@ -58,11 +58,12 @@ export function registerTurn(
 ) {
   const sessionId = ticket.session_id?.trim() || host.sessionId;
   host.activeTurnId = ticket.mode === "interactive" ? ticket.turn_id : host.activeTurnId;
+  // Sync chrome only — paint from RegisterTurn is the turn-map authority.
+  // streamOwners stay host-local (SSE attach) and overlay streamAttached on paint.
   const next = new Map(host.turns);
   next.set(ticket.turn_id, turnStateFromTicket(ticket, messageId));
   host.turns = next;
 
-  // Core owns turn facts + reattach assistant shells; paint the snapshot.
   const authority =
     host.messages.find((message) => message.transcript?.authorityId)?.transcript
       ?.authorityId ?? `auth_${"0".repeat(64)}`;
