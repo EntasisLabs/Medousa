@@ -63,9 +63,7 @@ mod tests {
                 title: None,
             })
             .unwrap();
-        let VaultBufferUpdate::Snapshot { snapshot } = update else {
-            panic!("expected snapshot");
-        };
+        let VaultBufferUpdate::Snapshot { snapshot } = update;
         assert!(snapshot.buffers[0].dirty);
     }
 }

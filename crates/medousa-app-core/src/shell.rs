@@ -483,7 +483,7 @@ impl ShellCore {
                     .desktops
                     .iter_mut()
                     .find(|d| d.id == desktop_id)
-                    .ok_or_else(|| ShellCoreError::DesktopNotFound(desktop_id))?;
+                    .ok_or(ShellCoreError::DesktopNotFound(desktop_id))?;
                 desktop.name = name;
                 self.bump();
                 self.ok_snapshot()
