@@ -593,10 +593,15 @@ pub enum ChatCommand {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expected_revision: Option<ChatRevision>,
     },
-    /// Upsert a logical turn ticket without painting BeginTurn shells (reattach).
+    /// Upsert a logical turn ticket. When `turn.message_id` is set and no item
+    /// exists yet, seeds an empty assistant shell (reattach / resume).
     RegisterTurn {
         session_id: String,
         turn: TurnFact,
+        /// Clear assistant body/segments before resume when the stream will
+        /// replay from seq 0 onto a history-hydrated bubble.
+        #[serde(default)]
+        reset_assistant_content: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expected_revision: Option<ChatRevision>,
     },

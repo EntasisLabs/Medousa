@@ -632,7 +632,7 @@
         }
       },
       {
-        "description": "Upsert a logical turn ticket without painting BeginTurn shells (reattach).",
+        "description": "Upsert a logical turn ticket. When `turn.message_id` is set and no item exists yet, seeds an empty assistant shell (reattach / resume).",
         "type": "object",
         "required": [
           "session_id",
@@ -647,6 +647,11 @@
             ],
             "format": "uint64",
             "minimum": 0.0
+          },
+          "reset_assistant_content": {
+            "description": "Clear assistant body/segments before resume when the stream will replay from seq 0 onto a history-hydrated bubble.",
+            "default": false,
+            "type": "boolean"
           },
           "session_id": {
             "type": "string"
