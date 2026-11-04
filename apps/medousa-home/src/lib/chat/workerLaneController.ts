@@ -641,8 +641,8 @@ export function handleWorkerSynthesisStreamEvent(
     }
   }
 
-  // Live V3 pump already folded synthesis through app-core into host.messages.
-  // Only fall back to the TS reducer when the snapshot path left no target bubble.
+  // Live V3 pump projects worker_synthesis through ChatCore before this handler.
+  // If the bubble is still missing, deliver via the dedicated core command.
   const messageId = host.messageIdForTurn(event.turn_id);
   const alreadyProjected =
     Boolean(messageId) &&
@@ -653,11 +653,11 @@ export function handleWorkerSynthesisStreamEvent(
         message.content.trim() === content,
     );
   if (!alreadyProjected) {
-    if (messageId) {
-      host.applyStreamEventToMessage(messageId, event);
-    } else {
-      host.attachOrphanStream(event);
-    }
+    void deliverChatWorkerSynthesis(host.sessionId, workId, content)
+      .then((snapshot) => {
+        syncHostFromSnapshot(host, snapshot);
+      })
+      .catch(() => {});
   }
 
   const link = host.workers.get(workId);

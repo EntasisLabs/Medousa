@@ -64,9 +64,15 @@ import {
   type VaultSaveStatus,
 } from "$lib/utils/vaultSave";
 import {
-  dualWriteVaultBuffer,
-  toNoteBufferFact,
+  applyVaultBufferEdit,
+  disposeVaultBuffer,
+  markVaultBufferSaved,
+  reconcileVaultBufferFromDisk,
+  resetVaultBuffers,
+  seedVaultBuffer,
 } from "$lib/appVaultBuffer/client";
+import { paintVaultBuffersFromSnapshot } from "$lib/appVaultBuffer/paintFromSnapshot";
+import type { VaultBufferSnapshot } from "$lib/types/generated/app_api";
 
 export type VaultNotePlane = "live" | "build";
 export type VaultProposalSource = "agent" | "operator";
@@ -142,13 +148,43 @@ export class VaultEditorController {
     this.#saveQueue = new NoteSaveQueue((path, job) => this.runSaveJob(path, job));
   }
 
+  private paintFromVaultSnapshot(snapshot: VaultBufferSnapshot) {
+    paintVaultBuffersFromSnapshot(
+      {
+        buffers: this.buffers,
+        bumpNoteBuffers: () => this.#host.bumpNoteBuffers(),
+        focusedPath: this.#host.selectedPath,
+        syncFocusedFromBuffer: (buffer) => {
+          const host = this.#host;
+          if (!host.isFocusedPath(buffer.path)) return;
+          // Core owns dirty/hash/revision; keep CodeMirror body if it already matches.
+          host.baselineContent = buffer.baselineContent;
+          host.contentHash = buffer.contentHash;
+          host.title = buffer.title;
+          host.dirty = buffer.dirty;
+          host.contentRevision = buffer.contentRevision;
+          if (host.content !== buffer.content) {
+            host.content = buffer.content;
+            host.bumpContentSync();
+          }
+        },
+      },
+      snapshot,
+    );
+  }
+
+  private commitVault(run: () => Promise<VaultBufferSnapshot>) {
+    void run()
+      .then((snapshot) => this.paintFromVaultSnapshot(snapshot))
+      .catch(() => {
+        /* Core may be unavailable outside Tauri / without the stdio backend. */
+      });
+  }
+
   resetEditorBuffers() {
     this.buffers.clear();
     this.bufferWarmInFlight.clear();
-    dualWriteVaultBuffer({
-      type: "reset",
-      workshop_scope_id: String(this.#host.workshopEpoch),
-    });
+    this.commitVault(() => resetVaultBuffers(String(this.#host.workshopEpoch)));
   }
 
   async flushForVaultRootChange(): Promise<boolean> {
@@ -181,7 +217,7 @@ export class VaultEditorController {
     const key = this.bufferKey(path);
     if (key) {
       this.buffers.delete(key);
-      dualWriteVaultBuffer({ type: "dispose_buffer", path: key });
+      this.commitVault(() => disposeVaultBuffer(key));
     }
   }
 
@@ -190,7 +226,7 @@ export class VaultEditorController {
     const next = { ...buffer, path: key };
     this.buffers.set(key, next);
     this.#host.bumpNoteBuffers();
-    dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
+    this.commitVault(() => seedVaultBuffer(next));
   }
 
   contentFor(path: string): string {
@@ -257,7 +293,7 @@ export class VaultEditorController {
     };
     this.buffers.set(key, next);
     host.bumpNoteBuffers();
-    dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
+    this.commitVault(() => seedVaultBuffer(next));
   }
 
   writeAbsoluteBuffer(path: string, content: string, title: string) {
@@ -274,7 +310,7 @@ export class VaultEditorController {
     };
     this.buffers.set(key, next);
     this.#host.bumpNoteBuffers();
-    dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
+    this.commitVault(() => seedVaultBuffer(next));
   }
 
   writeBufferFromResponse(path: string, response: VaultNoteContentResponse) {
@@ -290,7 +326,7 @@ export class VaultEditorController {
     };
     this.buffers.set(key, next);
     this.#host.bumpNoteBuffers();
-    dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
+    this.commitVault(() => seedVaultBuffer(next));
   }
 
   restoreBufferIntoFocused(buffer: NoteBuffer) {
@@ -523,24 +559,26 @@ export class VaultEditorController {
         if (host.dirty && host.saveStatus !== "conflict") {
           host.saveStatus = "unsaved";
         }
-        dualWriteVaultBuffer({
-          type: "reconcile_from_disk",
-          path,
-          content: serverContent,
-          content_hash: vaultIfMatchToken(response),
-          title: response.note.title,
-        });
+        this.commitVault(() =>
+          reconcileVaultBufferFromDisk({
+            path,
+            content: serverContent,
+            contentHash: vaultIfMatchToken(response),
+            title: response.note.title,
+          }),
+        );
         return;
       }
 
       host.applyNote(response);
-      dualWriteVaultBuffer({
-        type: "reconcile_from_disk",
-        path,
-        content: serverContent,
-        content_hash: vaultIfMatchToken(response),
-        title: response.note.title,
-      });
+      this.commitVault(() =>
+        reconcileVaultBufferFromDisk({
+          path,
+          content: serverContent,
+          contentHash: vaultIfMatchToken(response),
+          title: response.note.title,
+        }),
+      );
     } catch (err) {
       if (epoch === host.workshopEpoch && path === host.selectedPath) {
         host.error = err instanceof Error ? err.message : String(err);
@@ -718,12 +756,13 @@ export class VaultEditorController {
     }
     const focusedPath = host.selectedPath?.trim();
     if (focusedPath) {
-      dualWriteVaultBuffer({
-        type: "apply_edit",
-        path: this.bufferKey(focusedPath) || focusedPath,
-        content: nextContent,
-        title: host.title,
-      });
+      this.commitVault(() =>
+        applyVaultBufferEdit({
+          path: this.bufferKey(focusedPath) || focusedPath,
+          content: nextContent,
+          title: host.title,
+        }),
+      );
     }
     this.scheduleAutosave();
   }
@@ -794,15 +833,16 @@ export class VaultEditorController {
     this.buffers.set(key, next);
     host.bumpNoteBuffers();
     if (next.dirty) {
-      dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
+      this.commitVault(() => seedVaultBuffer(next));
     } else {
-      dualWriteVaultBuffer({
-        type: "mark_saved",
-        path: key,
-        content: writtenContent,
-        content_hash: ifMatchToken,
-        title: note.title,
-      });
+      this.commitVault(() =>
+        markVaultBufferSaved({
+          path: key,
+          content: writtenContent,
+          contentHash: ifMatchToken,
+          title: note.title,
+        }),
+      );
     }
   }
 

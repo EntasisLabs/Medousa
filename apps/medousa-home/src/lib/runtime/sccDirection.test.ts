@@ -104,8 +104,8 @@ describe("former markdown-liquid-vault SCC stays acyclic", () => {
     expect(streamPath).toMatch(/TurnStreamEnvelopeV3/);
   });
 
-  it("transcript reducer does not import Svelte or the chat store", () => {
-    const src = source("src/lib/stream/transcriptReducer.ts");
+  it("stream apply controller does not import Svelte or the chat store", () => {
+    const src = source("src/lib/chat/streamApplyController.ts");
     expect(src).not.toMatch(/from ["']svelte/);
     expect(src).not.toMatch(/chat\.svelte/);
   });
