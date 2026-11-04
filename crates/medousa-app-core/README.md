@@ -36,16 +36,20 @@ Canonical chat timeline:
 11. Core-first live stream apply — host reseeds shells only when missing;
     `WorkerAck` / `BudgetApprovalRequired` / terminal chrome land in the snapshot
 12. Snapshot-owned workers/turns — `WorkerLinkFact.session_id`, `TurnFact` on
-    `ChatSnapshot`, `RegisterTurn` for reattach; host overlays `streamAttached`
+    `ChatSnapshot`, `RegisterTurn` for reattach (seeds/resets assistant shells);
+    host overlays `streamAttached`
 13. Multi-session focus — `OpenSession` does not steal focus from another live
     session; `SwitchFocus` moves the pointer; host switch/warm loads core snapshots
 14. Shell layout core — `ShellCore` owns desktop/tab/pane identity + focus;
-    Home dual-writes hydrate/open/focus/close/switch; persistence I/O stays in JS
+    Home commits hydrate/open/focus/close/switch plus split/close-pane/ratio/
+    zoom/create·rename·remove desktop/patch-title then paints; persistence I/O
+    stays in JS (cross-desktop tab moves still host-local)
 15. Vault note buffers — `VaultBufferCore` owns path-keyed dirty/baseline/conflict;
     daemon stays filesystem authority; Home dual-writes seed/edit/save/reconcile
 16. Undertaking pane bindings — `UndertakingBindingCore` owns group→undertaking
     context + move-not-duplicate chat/terminal session membership; Forge item
-    lists/leases stay daemon authority; Home dual-writes set/clear/bind/reset
+    lists/leases stay daemon authority; Home commits set/clear/bind/reset then
+    paints from the snapshot (selection chrome stays renderer-local)
 
 ## Regenerate client types
 

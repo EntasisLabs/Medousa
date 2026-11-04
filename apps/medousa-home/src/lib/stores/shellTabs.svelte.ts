@@ -50,10 +50,19 @@ import {
 } from "$lib/utils/shellTabSearch";
 import type { HomeOnboardingLayout } from "$lib/utils/homeOnboarding";
 import {
+  commitCloseShellPane,
   commitCloseShellTab,
+  commitCreateShellDesktop,
+  commitFocusShellGroup,
   commitFocusShellTab,
   commitHydrateShell,
   commitOpenShellTab,
+  commitPatchShellTabTitle,
+  commitRemoveShellDesktop,
+  commitRenameShellDesktop,
+  commitSetShellSplitRatio,
+  commitSetShellZoomedGroup,
+  commitSplitShellPane,
   commitSwitchShellDesktop,
 } from "$lib/appShell/dualWrite";
 import {
@@ -1404,13 +1413,21 @@ export class ShellTabsStore {
     const fromGroupId = this.activeGroupId;
     const seed = this.activeTab;
     const newGroupId = newSplitId("group");
+    const edge: SplitEdge = direction === "right" ? "right" : "bottom";
     const result = splitLeaf(this.splitRoot, fromGroupId, direction, newGroupId);
     if (!result) return false;
     this.splitRoot = result.root;
     this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
+    const moveTabId = mode === "move" && seed ? seed.id : null;
     if (!seed) {
       this.activeGroupId = newGroupId;
       this.persist();
+      commitSplitShellPane(this.paintFromCoreSnapshot, {
+        groupId: fromGroupId,
+        edge,
+        newGroupId,
+        moveTabId: null,
+      });
       return true;
     }
     if (mode === "move") {
@@ -1425,6 +1442,12 @@ export class ShellTabsStore {
       }
     }
     this.persist();
+    commitSplitShellPane(this.paintFromCoreSnapshot, {
+      groupId: fromGroupId,
+      edge,
+      newGroupId,
+      moveTabId,
+    });
     return true;
   }
 
@@ -1478,6 +1501,12 @@ export class ShellTabsStore {
     this.moveTab(tabId, newGroupId);
     void this.activate(tabId);
     this.persist();
+    commitSplitShellPane(this.paintFromCoreSnapshot, {
+      groupId: hostGroupId,
+      edge,
+      newGroupId,
+      moveTabId: tabId,
+    });
     return true;
   }
 
@@ -1491,6 +1520,7 @@ export class ShellTabsStore {
       this.syncLayoutHint(null);
       this.persist();
     }
+    commitFocusShellGroup(this.paintFromCoreSnapshot, groupId);
   }
 
   focusDirection(dir: FocusDir) {
@@ -1539,12 +1569,18 @@ export class ShellTabsStore {
       }
     }
     this.persist();
+    commitCloseShellPane(this.paintFromCoreSnapshot, closingId);
     return true;
   }
 
   setRatio(branchId: string, ratio: number) {
-    this.splitRoot = setBranchRatio(this.splitRoot, branchId, clampRatio(ratio));
+    const next = clampRatio(ratio);
+    this.splitRoot = setBranchRatio(this.splitRoot, branchId, next);
     this.persist();
+    commitSetShellSplitRatio(this.paintFromCoreSnapshot, {
+      branchId,
+      ratio: next,
+    });
   }
 
   zoomToggle() {
@@ -1554,12 +1590,14 @@ export class ShellTabsStore {
       this.zoomedGroupId = this.activeGroupId;
     }
     this.persist();
+    commitSetShellZoomedGroup(this.paintFromCoreSnapshot, this.zoomedGroupId);
   }
 
   clearZoom() {
     if (!this.zoomedGroupId) return;
     this.zoomedGroupId = null;
     this.persist();
+    commitSetShellZoomedGroup(this.paintFromCoreSnapshot, null);
   }
 
   nextTabInActiveGroup() {
@@ -1614,6 +1652,10 @@ export class ShellTabsStore {
       tab.id === tabId ? { ...tab, title: trimmed } : tab,
     );
     this.persist();
+    commitPatchShellTabTitle(this.paintFromCoreSnapshot, {
+      tabId,
+      title: trimmed,
+    });
   }
 
   syncTitlesFromStores() {
@@ -1759,6 +1801,7 @@ export class ShellTabsStore {
     this.ensureDesktopCatalog();
     if (this.desktops.length >= MAX_SHELL_DESKTOPS) return "";
     this.flushActiveDesktop();
+    const previousActive = this.activeDesktopId;
     const trimmed = name?.trim() || `Desktop ${this.desktops.length + 1}`;
     const id = newDesktopId();
     this.desktops = [
@@ -1766,7 +1809,13 @@ export class ShellTabsStore {
       { id, name: trimmed, layout: emptyLayout() },
     ];
     this.persist();
-    if (options?.activate !== false) {
+    const activate = options?.activate !== false;
+    commitCreateShellDesktop(this.paintFromCoreSnapshot, {
+      desktopId: id,
+      name: trimmed,
+      restoreDesktopId: activate ? null : previousActive,
+    });
+    if (activate) {
       void this.switchDesktop(id);
     }
     return id;
@@ -1889,6 +1938,10 @@ export class ShellTabsStore {
       desktop.id === trimmedId ? { ...desktop, name: trimmedName } : desktop,
     );
     this.persist();
+    commitRenameShellDesktop(this.paintFromCoreSnapshot, {
+      desktopId: trimmedId,
+      name: trimmedName,
+    });
     return true;
   }
 
@@ -1911,6 +1964,7 @@ export class ShellTabsStore {
       this.applyLayout(fallback.layout);
       this.activeDesktopId = fallback.id;
       this.persist();
+      commitRemoveShellDesktop(this.paintFromCoreSnapshot, trimmed);
       const active = this.activeTab;
       if (active) {
         await this.activate(active.id, { rehydrate: true });
@@ -1920,6 +1974,7 @@ export class ShellTabsStore {
       await this.resyncLiveStreams(previousIds);
     } else {
       this.persist();
+      commitRemoveShellDesktop(this.paintFromCoreSnapshot, trimmed);
     }
     return true;
   }

@@ -436,8 +436,8 @@ export function attachOrphanStream(host: ChatStoreHost, event: InteractiveTurnSt
         emitted_at_utc: new Date().toISOString(),
         event: {
           type: "content_append" as const,
+          segment_id: `synth_${promoteId}`,
           text: content,
-          model_round: 1,
         },
       };
       const snapshot = await applyStreamEvent(sessionId, envelope, {

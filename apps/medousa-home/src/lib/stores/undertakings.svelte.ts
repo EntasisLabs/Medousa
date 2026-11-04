@@ -2,8 +2,9 @@ import { isExternalRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * ActiveUndertakingContext — per Shell tab-group undertaking binding.
  *
- * Binding map dual-writes into UndertakingBindingCore; daemon Forge item
- * lists/leases stay workshop authority. Selection chrome stays local.
+ * Binding map commits into UndertakingBindingCore then paints from the
+ * snapshot; daemon Forge item lists/leases stay workshop authority.
+ * Selection chrome stays renderer-local across paints.
  */
 
 import type {
@@ -30,8 +31,19 @@ import {
   openDaemonEventStream,
   type DaemonEventConnection,
 } from "$lib/daemon/daemonEventStream";
-import { dualWriteUndertakingBinding } from "$lib/appUndertakingBinding/client";
-import { toUndertakingContextFact } from "$lib/appUndertakingBinding/paintFromSnapshot";
+import {
+  commitBindUndertakingChat,
+  commitBindUndertakingTerminal,
+  commitClearActiveUndertaking,
+  commitDetachUndertakingChat,
+  commitResetUndertakingBindings,
+  commitSetActiveUndertaking,
+} from "$lib/appUndertakingBinding/dualWrite";
+import {
+  paintUndertakingContextsFromSnapshot,
+  toUndertakingContextFact,
+} from "$lib/appUndertakingBinding/paintFromSnapshot";
+import type { UndertakingBindingSnapshot } from "$lib/types/generated/app_api";
 import { activeWorkshopId } from "$lib/utils/workshopLocality";
 
 export type ActiveUndertakingContext = {
@@ -133,6 +145,11 @@ function createUndertakingsStore() {
 
   const active = $derived(contexts[groupKey()] ?? null);
 
+  /** Core owns binding fields; selection chrome is preserved from previous host. */
+  const paintFromCoreSnapshot = (snapshot: UndertakingBindingSnapshot) => {
+    contexts = paintUndertakingContextsFromSnapshot(snapshot, contexts);
+  };
+
   function sameContext(
     left: ActiveUndertakingContext | null | undefined,
     right: ActiveUndertakingContext,
@@ -222,11 +239,11 @@ function createUndertakingsStore() {
       }
     }
     if (!sameContext(prev, next)) {
+      // Optimistic host paint; core snapshot reconciles binding fields.
       contexts = { ...contexts, [groupKey()]: next };
     }
-    dualWriteUndertakingBinding({
-      type: "set_active",
-      group_id: groupKey(),
+    commitSetActiveUndertaking(paintFromCoreSnapshot, {
+      groupId: groupKey(),
       context: toUndertakingContextFact(next),
     });
     setCoderExecutionTransport(next.executionTransportRuntimeId);
@@ -236,7 +253,7 @@ function createUndertakingsStore() {
   function clearActive() {
     const key = groupKey();
     contexts = { ...contexts, [key]: null };
-    dualWriteUndertakingBinding({ type: "clear_active", group_id: key });
+    commitClearActiveUndertaking(paintFromCoreSnapshot, key);
     setCoderExecutionTransport(null);
   }
 
@@ -245,16 +262,15 @@ function createUndertakingsStore() {
     const cur = contexts[key];
     if (!cur) return;
     contexts = updateChatUndertakingBinding(contexts, sessionId, key);
-    dualWriteUndertakingBinding({
-      type: "bind_chat",
-      session_id: sessionId,
-      group_id: key,
+    commitBindUndertakingChat(paintFromCoreSnapshot, {
+      sessionId,
+      groupId: key,
     });
   }
 
   function detachChat(sessionId: string) {
     contexts = updateChatUndertakingBinding(contexts, sessionId, null);
-    dualWriteUndertakingBinding({ type: "detach_chat", session_id: sessionId });
+    commitDetachUndertakingChat(paintFromCoreSnapshot, sessionId);
   }
 
   function forChat(sessionId: string): ActiveUndertakingContext | null {
@@ -273,10 +289,9 @@ function createUndertakingsStore() {
         boundTerminalSessionIds: [...cur.boundTerminalSessionIds, sessionId],
       },
     };
-    dualWriteUndertakingBinding({
-      type: "bind_terminal",
-      session_id: sessionId,
-      group_id: key,
+    commitBindUndertakingTerminal(paintFromCoreSnapshot, {
+      sessionId,
+      groupId: key,
     });
   }
 
@@ -382,9 +397,8 @@ function createUndertakingsStore() {
           if (cur) {
             const sealed = { ...cur, sealedOid: nextReview.sealed_head_oid };
             contexts = { ...contexts, [key]: sealed };
-            dualWriteUndertakingBinding({
-              type: "set_active",
-              group_id: key,
+            commitSetActiveUndertaking(paintFromCoreSnapshot, {
+              groupId: key,
               context: toUndertakingContextFact(sealed),
             });
           }
@@ -559,10 +573,7 @@ function createUndertakingsStore() {
     review = null;
     selectedReviewAttemptId = null;
     contexts = {};
-    dualWriteUndertakingBinding({
-      type: "reset",
-      workshop_scope_id: activeWorkshopId(),
-    });
+    commitResetUndertakingBindings(paintFromCoreSnapshot, activeWorkshopId());
     setCoderExecutionTransport(null);
   }
 

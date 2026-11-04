@@ -54,6 +54,7 @@ export function registerTurn(
   host: ChatStoreHost,
   ticket: TurnTicketResponse,
   messageId: string | null,
+  options?: { resetAssistantContent?: boolean },
 ) {
   const sessionId = ticket.session_id?.trim() || host.sessionId;
   host.activeTurnId = ticket.mode === "interactive" ? ticket.turn_id : host.activeTurnId;
@@ -61,42 +62,35 @@ export function registerTurn(
   next.set(ticket.turn_id, turnStateFromTicket(ticket, messageId));
   host.turns = next;
 
-  // Core owns turn facts; paint the returned snapshot (including messages).
+  // Core owns turn facts + reattach assistant shells; paint the snapshot.
   const authority =
     host.messages.find((message) => message.transcript?.authorityId)?.transcript
       ?.authorityId ?? `auth_${"0".repeat(64)}`;
   const epoch = host.transcriptEpoch;
   void openChatSession(sessionId, authority)
     .then(() =>
-      registerChatTurn(sessionId, {
-        turnId: ticket.turn_id,
-        mode: ticket.mode,
-        phase: ticket.phase || "streaming",
-        messageId,
-        workspaceCardId: ticket.workspace_card_id ?? null,
-        reusableStream: isReusableAgentStream(ticket.stream_url),
-        budgetRequestId: null,
-        requestedRounds: null,
-      }),
+      registerChatTurn(
+        sessionId,
+        {
+          turnId: ticket.turn_id,
+          mode: ticket.mode,
+          phase: ticket.phase || "streaming",
+          messageId,
+          workspaceCardId: ticket.workspace_card_id ?? null,
+          reusableStream: isReusableAgentStream(ticket.stream_url),
+          budgetRequestId: null,
+          requestedRounds: null,
+        },
+        { resetAssistantContent: options?.resetAssistantContent ?? false },
+      ),
     )
     .then((snapshot) => {
       host.withSessionFields(sessionId, () => {
         if (epoch !== host.transcriptEpoch) return;
-        // RegisterTurn upserts TurnFact only — never clobber transcript bodies
-        // that BeginTurn / stream projection already painted.
-        host.turns = applySnapshotTurns(snapshot, host.streamOwners);
-        host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
-        if (snapshot.activeTurnId !== undefined) {
-          host.activeTurnId = snapshot.activeTurnId ?? host.activeTurnId;
-        }
-        if (snapshot.lastSeqByTurn) {
-          host.lastSeqByTurn = new Map(
-            Object.entries(snapshot.lastSeqByTurn).map(([id, seq]) => [id, seq]),
-          );
-        }
-        if (messageId && ticket.mode === "interactive") {
-          host.assistantId = messageId;
-        }
+        paintHostFromSnapshot(host, sessionId, snapshot, {
+          liveTurnId: ticket.mode === "interactive" ? ticket.turn_id : null,
+          preferredAssistantId: messageId,
+        });
       });
     })
     .catch(() => {});
@@ -191,6 +185,7 @@ export function registerTurnFromRecord(
   host: ChatStoreHost,
   record: TurnTicketRecord,
   messageId: string | null,
+  options?: { resetAssistantContent?: boolean },
 ) {
   registerTurn(
     host,
@@ -205,6 +200,7 @@ export function registerTurnFromRecord(
       workspace_card_id: record.workspace_card_id ?? null,
     },
     messageId,
+    options,
   );
 }
 
@@ -442,49 +438,127 @@ async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord, c
     if (!current()) return false;
   }
 
-  let messageId = host.messages.find(
+  const existingMessageId = host.messages.find(
     (message) => message.turnId === record.turn_id && message.role === "assistant",
   )?.id;
+  let messageId = existingMessageId;
 
-  if (!messageId && !record.composer_handoff) {
+  // History has no SSE cursor; native streams replay from zero — clear the
+  // hydrated body in core before resume so replay does not double-append.
+  const replayFromStart =
+    Boolean(messageId) &&
+    !record.composer_handoff &&
+    !host.lastSeqByTurn.has(record.turn_id) &&
+    !isReusableAgentStream(record.stream_url);
+  const seedShell = !messageId && !record.composer_handoff;
+
+  if (seedShell) {
     messageId = randomUuid();
-    const lane = record.mode === "background" ? ("ask" as const) : ("chat" as const);
-    const askJobId =
-      record.mode === "background" ? (record.workspace_card_id ?? record.turn_id) : null;
-    host.messages = [
-      ...host.messages,
-      {
-        id: messageId,
-        role: "assistant",
-        content: "",
-        streaming: true,
-        turnId: record.turn_id,
-        lane,
-        askJobId,
-      },
-    ];
-    if (record.mode === "interactive") {
-      host.assistantId = messageId;
-    }
-  } else if (messageId && !record.composer_handoff) {
-    // A history snapshot has no SSE cursor. Native streams replay from zero;
-    // never append that replay onto text/tools hydrated from a later snapshot.
-    // An existing live projection with its cursor, however, resumes unchanged.
-    const replayFromStart = !host.lastSeqByTurn.has(record.turn_id) &&
-      !isReusableAgentStream(record.stream_url);
-    host.messages = host.messages.map(message => message.id === messageId ? {
-      ...message,
-      ...(replayFromStart ? {
-        content: "", segments: undefined, reasoning: null, tools: undefined,
-        toolRuns: undefined, uiArtifacts: undefined,
-      } : {}),
-      streaming: true, failed: false, errorLine: null, errorDetail: null,
-      phase: record.phase,
-    } : message);
-    if (record.mode === "interactive") host.assistantId = messageId;
   }
 
-  registerTurnFromRecord(host, record, messageId ?? null);
+  const sessionId = record.session_id?.trim() || host.sessionId;
+  const authority =
+    host.messages.find((message) => message.transcript?.authorityId)?.transcript
+      ?.authorityId ?? `auth_${"0".repeat(64)}`;
+  const epoch = host.transcriptEpoch;
+
+  if (messageId && !record.composer_handoff) {
+    try {
+      await openChatSession(sessionId, authority);
+      if (!current() || epoch !== host.transcriptEpoch) return false;
+      const snapshot = await registerChatTurn(
+        sessionId,
+        {
+          turnId: record.turn_id,
+          mode: record.mode,
+          phase: record.phase || "streaming",
+          messageId,
+          workspaceCardId: record.workspace_card_id ?? null,
+          reusableStream: isReusableAgentStream(record.stream_url),
+          budgetRequestId: null,
+          requestedRounds: null,
+        },
+        { resetAssistantContent: replayFromStart },
+      );
+      if (!current() || epoch !== host.transcriptEpoch) return false;
+      host.withSessionFields(sessionId, () => {
+        if (seedShell || replayFromStart) {
+          // Core just created or cleared the assistant shell — paint it.
+          paintHostFromSnapshot(host, sessionId, snapshot, {
+            liveTurnId: record.mode === "interactive" ? record.turn_id : null,
+            preferredAssistantId: messageId,
+          });
+        } else {
+          // Live projection already has body/cursor — only sync turn facts.
+          host.turns = applySnapshotTurns(snapshot, host.streamOwners);
+          host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
+          host.messages = host.messages.map((message) =>
+            message.id === messageId
+              ? {
+                  ...message,
+                  streaming: true,
+                  failed: false,
+                  errorLine: null,
+                  errorDetail: null,
+                  phase: record.phase,
+                }
+              : message,
+          );
+          if (record.mode === "interactive") host.assistantId = messageId;
+        }
+      });
+    } catch {
+      // Core unavailable: keep a thin host shell so the stream can still attach.
+      if (seedShell && messageId) {
+        const lane = record.mode === "background" ? ("ask" as const) : ("chat" as const);
+        const askJobId =
+          record.mode === "background" ? (record.workspace_card_id ?? record.turn_id) : null;
+        host.messages = [
+          ...host.messages,
+          {
+            id: messageId,
+            role: "assistant",
+            content: "",
+            streaming: true,
+            turnId: record.turn_id,
+            lane,
+            askJobId,
+          },
+        ];
+        if (record.mode === "interactive") host.assistantId = messageId;
+      } else if (messageId) {
+        host.messages = host.messages.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                ...(replayFromStart
+                  ? {
+                      content: "",
+                      segments: undefined,
+                      reasoning: null,
+                      tools: undefined,
+                      toolRuns: undefined,
+                      uiArtifacts: undefined,
+                    }
+                  : {}),
+                streaming: true,
+                failed: false,
+                errorLine: null,
+                errorDetail: null,
+                phase: record.phase,
+              }
+            : message,
+        );
+        if (record.mode === "interactive") host.assistantId = messageId;
+      }
+      registerTurnFromRecord(host, record, messageId, {
+        resetAssistantContent: replayFromStart,
+      });
+    }
+  } else {
+    registerTurnFromRecord(host, record, messageId ?? null);
+  }
+
   if (record.composer_handoff && record.mode === "interactive") {
     host.backgroundActivity = Math.max(host.backgroundActivity, 1);
   } else if (record.mode === "background") {
