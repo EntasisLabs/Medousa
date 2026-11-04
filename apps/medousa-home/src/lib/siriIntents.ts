@@ -124,7 +124,7 @@ export async function startPendingSiriAsk(requestId: string): Promise<void> {
     throw new Error("Workshop changed while the Siri request was being admitted");
   }
   registerSiriOwnedTurn(accepted.turn_id, SIRI_RESULT_WAIT_MS);
-  chat.beginTurn(pending.prompt, accepted);
+  await chat.beginTurn(pending.prompt, accepted);
   await chat.startTurnStream(accepted.turn_id, accepted.session_id, accepted.stream_url);
   void publishSiriResult(pending.requestId, accepted.turn_id);
 }

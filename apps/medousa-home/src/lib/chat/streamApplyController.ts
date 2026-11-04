@@ -49,14 +49,10 @@ import {
 } from "$lib/chat/streamLifecycleController";
 import {
   applyHistoryToSession,
-  applySnapshotToMessages,
   applyStreamEvent,
   openChatSession,
 } from "$lib/appChat/client";
-import {
-  applySnapshotTurns,
-  applySnapshotWorkers,
-} from "$lib/appChat/toChatMessage";
+import { paintHostFromSnapshot } from "$lib/appChat/paintFromSnapshot";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
 
 const CONTENT_REVEAL_CHUNK_CHARS = 14;
@@ -155,13 +151,16 @@ async function applyPumpedStreamEventAsync(host: ChatStoreHost, target: StreamEv
             messageId,
             event.ack_kind === "workshop" ? "workshop_ack" : "worker_ack",
             presentation,
+            { bodyFromCore: shouldProject },
           );
           host.scheduleSessionsRefresh();
         }
         return;
       case "budget_approval_required":
         if (messageId) {
-          releaseComposerHandoff(host, messageId, "budget_approval", presentation);
+          releaseComposerHandoff(host, messageId, "budget_approval", presentation, {
+            bodyFromCore: shouldProject,
+          });
         }
         return;
       case "turn_completed":
@@ -176,10 +175,11 @@ async function applyPumpedStreamEventAsync(host: ChatStoreHost, target: StreamEv
             messageId,
             undefined,
             event.outcome !== "cancelled",
+            { bodyFromCore: shouldProject },
           );
         } else {
           noteTurnTerminal(host, presentation);
-          finishAskLaneTurn(host, envelope.turn_id);
+          if (!shouldProject) finishAskLaneTurn(host, envelope.turn_id);
         }
         return;
       default:
@@ -231,27 +231,12 @@ async function applyStreamProjection(
     ) {
       return;
     }
-    const applied = applySnapshotToMessages(snapshot);
     host.withSessionFields(sessionId, () => {
-      host.messages = applied.messages;
-      host.lastSeqByTurn = applied.lastSeqByTurn;
-      host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
-      host.turns = applySnapshotTurns(snapshot, host.streamOwners);
-      if (applied.activeTurnId !== undefined) {
-        host.activeTurnId = applied.activeTurnId;
-      }
-      const turn = host.turns.get(envelope.turn_id);
-      const assistant = applied.messages.find(
-        (message) =>
-          message.role === "assistant" && message.turnId === envelope.turn_id,
-      );
-      if (
-        turn?.mode === "interactive" &&
-        envelope.event.type !== "turn_completed" &&
-        assistant
-      ) {
-        host.assistantId = assistant.id;
-      }
+      paintHostFromSnapshot(host, sessionId, snapshot, {
+        liveTurnId:
+          envelope.event.type === "turn_completed" ? null : envelope.turn_id,
+        preferredAssistantId: knownMessageId,
+      });
     });
   } catch {
     // Stream projection failures fall through to terminal reconcile / reload.
@@ -299,35 +284,46 @@ function runMessageFollowUp(
   messageId?: string,
   revealContent?: string,
   shouldNarrate = true,
+  options?: { bodyFromCore?: boolean },
 ) {
   const id = messageId ?? host.messageIdForTurn(event.turn_id);
+  const bodyFromCore = Boolean(options?.bodyFromCore);
   if (followUp === "missing") {
     if (event.terminal) noteTurnTerminal(host, event);
     return;
   }
   if (followUp === "worker_ack" && id) {
-    releaseComposerHandoff(host, id, "worker_ack", event);
+    releaseComposerHandoff(host, id, "worker_ack", event, { bodyFromCore });
     host.scheduleSessionsRefresh();
     return;
   }
   if (followUp === "workshop_ack" && id) {
-    releaseComposerHandoff(host, id, "workshop_ack", event);
+    releaseComposerHandoff(host, id, "workshop_ack", event, { bodyFromCore });
     host.scheduleSessionsRefresh();
     return;
   }
   if (followUp === "budget_approval" && id) {
-    releaseComposerHandoff(host, id, "budget_approval", event);
+    releaseComposerHandoff(host, id, "budget_approval", event, { bodyFromCore });
     return;
   }
   if (followUp === "checkpoint_terminal" && id) {
     if (shouldNarrate) maybeNarrateTerminal(host, event, id);
-    finishMessage(host, id);
-    finishAskLaneTurn(host, event.turn_id);
+    if (!bodyFromCore) {
+      finishMessage(host, id);
+      finishAskLaneTurn(host, event.turn_id);
+    } else if (host.assistantId === id) {
+      host.assistantId = null;
+    }
     noteTurnTerminal(host, event);
     return;
   }
   if (followUp === "terminal" && id) {
     if (shouldNarrate) maybeNarrateTerminal(host, event, id, revealContent);
+    if (bodyFromCore) {
+      if (host.assistantId === id) host.assistantId = null;
+      noteTurnTerminal(host, event, revealContent);
+      return;
+    }
     if (revealContent) {
       finishAskLaneTurn(host, event.turn_id);
       noteTurnTerminal(host, event, revealContent);
@@ -483,6 +479,7 @@ function releaseComposerHandoff(
   messageId: string,
   phase: "worker_ack" | "workshop_ack" | "budget_approval",
   event: InteractiveTurnStreamEvent,
+  options?: { bodyFromCore?: boolean },
 ) {
   const statusLine =
     event.message?.trim() ||
@@ -495,46 +492,50 @@ function releaseComposerHandoff(
   const budgetRequestId =
     phase === "budget_approval" ? budgetRequestIdFromStreamEvent(event) : null;
   const requestedRounds = phase === "budget_approval" ? (event.requested_rounds ?? null) : null;
+  const bodyFromCore = Boolean(options?.bodyFromCore);
 
-  const idx = host.messages.findIndex((m) => m.id === messageId);
-  if (idx >= 0) {
-    const current = host.messages[idx];
-    const ackText = current.content.trim() || event.final_text?.trim() || statusLine;
-    host.messages = [
-      ...host.messages.slice(0, idx),
-      {
-        ...current,
-        streaming: false,
-        phase: phase === "budget_approval" ? "budget_blocked" : null,
-        statusLine: phase === "budget_approval" ? statusLine : null,
-        stageWhisper:
-          phase === "worker_ack" || phase === "workshop_ack" ? ackText : current.stageWhisper,
-        content: phase === "budget_approval" ? ackText : "",
+  // When core already painted the handoff bubble, skip host body rewrites.
+  if (!bodyFromCore) {
+    const idx = host.messages.findIndex((m) => m.id === messageId);
+    if (idx >= 0) {
+      const current = host.messages[idx];
+      const ackText = current.content.trim() || event.final_text?.trim() || statusLine;
+      host.messages = [
+        ...host.messages.slice(0, idx),
+        {
+          ...current,
+          streaming: false,
+          phase: phase === "budget_approval" ? "budget_blocked" : null,
+          statusLine: phase === "budget_approval" ? statusLine : null,
+          stageWhisper:
+            phase === "worker_ack" || phase === "workshop_ack" ? ackText : current.stageWhisper,
+          content: phase === "budget_approval" ? ackText : "",
+          budgetRequestId,
+          requestedRounds,
+        },
+        ...host.messages.slice(idx + 1),
+      ];
+    }
+
+    const turn = host.turns.get(event.turn_id);
+    if (turn) {
+      const next = new Map(host.turns);
+      next.set(event.turn_id, {
+        ...turn,
+        phase:
+          phase === "worker_ack"
+            ? "worker_handoff"
+            : phase === "workshop_ack"
+              ? "workshop_handoff"
+              : "budget_blocked",
+        messageId: phase === "budget_approval" ? messageId : null,
+        workspaceCardId:
+          phase === "budget_approval" && budgetRequestId ? budgetRequestId : turn.workspaceCardId,
         budgetRequestId,
         requestedRounds,
-      },
-      ...host.messages.slice(idx + 1),
-    ];
-  }
-
-  const turn = host.turns.get(event.turn_id);
-  if (turn) {
-    const next = new Map(host.turns);
-    next.set(event.turn_id, {
-      ...turn,
-      phase:
-        phase === "worker_ack"
-          ? "worker_handoff"
-          : phase === "workshop_ack"
-            ? "workshop_handoff"
-            : "budget_blocked",
-      messageId: phase === "budget_approval" ? messageId : null,
-      workspaceCardId:
-        phase === "budget_approval" && budgetRequestId ? budgetRequestId : turn.workspaceCardId,
-      budgetRequestId,
-      requestedRounds,
-    });
-    host.turns = next;
+      });
+      host.turns = next;
+    }
   }
 
   if (host.assistantId === messageId) {

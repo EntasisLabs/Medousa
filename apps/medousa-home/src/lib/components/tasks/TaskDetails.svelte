@@ -310,7 +310,7 @@
         identityUserId: opts.identityUserId,
       });
       if (activeWorkshopId() !== scope || chat.sessionId !== sessionId) return;
-      chat.beginTurn(prompt, accepted, [], opts.identityUserId);
+      await chat.beginTurn(prompt, accepted, [], opts.identityUserId);
       await chat.startTurnStream(
         accepted.turn_id,
         accepted.session_id,

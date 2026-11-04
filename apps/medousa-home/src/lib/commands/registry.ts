@@ -687,7 +687,7 @@ export function buildAskCommands(): WorkshopCommand[] {
           selectedWorlds: opts.selectedWorlds,
           identityUserId: opts.identityUserId,
         });
-        ctx.chat.beginTurn(text, accepted, [], opts.identityUserId);
+        await ctx.chat.beginTurn(text, accepted, [], opts.identityUserId);
         await ctx.chat.startTurnStream(
           accepted.turn_id,
           accepted.session_id,
