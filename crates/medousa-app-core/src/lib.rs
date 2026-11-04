@@ -5,8 +5,9 @@
 //! [`contract::ChatSnapshot`] updates; they do not reimplement reconciliation.
 //!
 //! Shell layout identity (desktops / tabs / panes) lives in [`shell`]. Vault
-//! note buffers live in [`vault_buffer`]. Daemon wire types and workshop
-//! authority stay in `medousa-types` / the daemon.
+//! note buffers live in [`vault_buffer`]. Undertaking pane bindings live in
+//! [`undertaking_binding`]. Daemon wire types and workshop authority stay in
+//! `medousa-types` / the daemon.
 
 pub mod agents;
 pub mod contract;
@@ -17,6 +18,7 @@ pub mod parts;
 pub mod session;
 pub mod shell;
 pub mod stream;
+pub mod undertaking_binding;
 pub mod vault_buffer;
 pub mod wire_history;
 
@@ -35,6 +37,11 @@ pub use shell::{
     ShellCommand, ShellCore, ShellCoreError, ShellRevision, ShellSnapshot, ShellTab, ShellUpdate,
 };
 pub use stream::{apply_v3_envelope_to_item, fold_v3_envelopes, v3_event_promotes_chat_message};
+pub use undertaking_binding::{
+    UndertakingBindingCommand, UndertakingBindingCore, UndertakingBindingCoreError,
+    UndertakingBindingRevision, UndertakingBindingSnapshot, UndertakingBindingUpdate,
+    UndertakingContextFact, UndertakingGroupBinding,
+};
 pub use vault_buffer::{
     NoteBufferFact, VaultBufferCommand, VaultBufferCore, VaultBufferCoreError, VaultBufferRevision,
     VaultBufferSnapshot, VaultBufferUpdate,

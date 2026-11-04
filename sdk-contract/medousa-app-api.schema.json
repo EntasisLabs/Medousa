@@ -10501,6 +10501,804 @@
       }
     }
   },
+  "UndertakingBindingCommand": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UndertakingBindingCommand",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "type",
+          "workshop_scope_id"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "reset"
+            ]
+          },
+          "workshop_scope_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "context",
+          "group_id",
+          "type"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/definitions/UndertakingContextFact"
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "set_active"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "group_id",
+          "type"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "clear_active"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Move `session_id` into `group_id` (remove from every other group).",
+        "type": "object",
+        "required": [
+          "group_id",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bind_chat"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Detach `session_id` from every group.",
+        "type": "object",
+        "required": [
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "detach_chat"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "group_id",
+          "session_id",
+          "type"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bind_terminal"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "UndertakingContextFact": {
+        "description": "Active undertaking projection for one shell group (pane).",
+        "type": "object",
+        "required": [
+          "forgeState",
+          "humanPhase",
+          "title",
+          "workId"
+        ],
+        "properties": {
+          "attemptSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "baselineOid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boundChatSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "boundTerminalSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "executionRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executionTransportRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executorKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forgeState": {
+            "type": "string"
+          },
+          "humanPhase": {
+            "type": "string"
+          },
+          "leaseGeneration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "leaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repoId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sealedOid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "workId": {
+            "type": "string"
+          },
+          "worktree": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "UndertakingBindingRevision": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "uint64",
+    "type": "integer",
+    "format": "uint64",
+    "minimum": 0.0
+  },
+  "UndertakingBindingSnapshot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UndertakingBindingSnapshot",
+    "type": "object",
+    "required": [
+      "contexts",
+      "revision",
+      "workshopScopeId"
+    ],
+    "properties": {
+      "contexts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/UndertakingGroupBinding"
+        }
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "workshopScopeId": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "UndertakingContextFact": {
+        "description": "Active undertaking projection for one shell group (pane).",
+        "type": "object",
+        "required": [
+          "forgeState",
+          "humanPhase",
+          "title",
+          "workId"
+        ],
+        "properties": {
+          "attemptSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "baselineOid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boundChatSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "boundTerminalSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "executionRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executionTransportRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executorKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forgeState": {
+            "type": "string"
+          },
+          "humanPhase": {
+            "type": "string"
+          },
+          "leaseGeneration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "leaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repoId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sealedOid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "workId": {
+            "type": "string"
+          },
+          "worktree": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UndertakingGroupBinding": {
+        "type": "object",
+        "required": [
+          "groupId"
+        ],
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UndertakingContextFact"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "UndertakingBindingUpdate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UndertakingBindingUpdate",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "snapshot",
+          "type"
+        ],
+        "properties": {
+          "snapshot": {
+            "$ref": "#/definitions/UndertakingBindingSnapshot"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "UndertakingBindingSnapshot": {
+        "type": "object",
+        "required": [
+          "contexts",
+          "revision",
+          "workshopScopeId"
+        ],
+        "properties": {
+          "contexts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/UndertakingGroupBinding"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "workshopScopeId": {
+            "type": "string"
+          }
+        }
+      },
+      "UndertakingContextFact": {
+        "description": "Active undertaking projection for one shell group (pane).",
+        "type": "object",
+        "required": [
+          "forgeState",
+          "humanPhase",
+          "title",
+          "workId"
+        ],
+        "properties": {
+          "attemptSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "baselineOid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boundChatSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "boundTerminalSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "executionRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executionTransportRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executorKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forgeState": {
+            "type": "string"
+          },
+          "humanPhase": {
+            "type": "string"
+          },
+          "leaseGeneration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "leaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repoId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sealedOid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "workId": {
+            "type": "string"
+          },
+          "worktree": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UndertakingGroupBinding": {
+        "type": "object",
+        "required": [
+          "groupId"
+        ],
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UndertakingContextFact"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groupId": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "UndertakingContextFact": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UndertakingContextFact",
+    "description": "Active undertaking projection for one shell group (pane).",
+    "type": "object",
+    "required": [
+      "forgeState",
+      "humanPhase",
+      "title",
+      "workId"
+    ],
+    "properties": {
+      "attemptSeq": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "baselineOid": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "boundChatSessionIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "boundTerminalSessionIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "executionRuntimeId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "executionTransportRuntimeId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "executorKind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "forgeState": {
+        "type": "string"
+      },
+      "humanPhase": {
+        "type": "string"
+      },
+      "leaseGeneration": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "leaseId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "repoId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sealedOid": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "title": {
+        "type": "string"
+      },
+      "workId": {
+        "type": "string"
+      },
+      "worktree": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "UndertakingGroupBinding": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UndertakingGroupBinding",
+    "type": "object",
+    "required": [
+      "groupId"
+    ],
+    "properties": {
+      "context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/UndertakingContextFact"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "groupId": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "UndertakingContextFact": {
+        "description": "Active undertaking projection for one shell group (pane).",
+        "type": "object",
+        "required": [
+          "forgeState",
+          "humanPhase",
+          "title",
+          "workId"
+        ],
+        "properties": {
+          "attemptSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "baselineOid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boundChatSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "boundTerminalSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "executionRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executionTransportRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executorKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forgeState": {
+            "type": "string"
+          },
+          "humanPhase": {
+            "type": "string"
+          },
+          "leaseGeneration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "leaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repoId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sealedOid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "workId": {
+            "type": "string"
+          },
+          "worktree": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
   "VaultBufferCommand": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "VaultBufferCommand",
