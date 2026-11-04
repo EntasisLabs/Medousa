@@ -106,8 +106,15 @@ export function registerTurn(
         );
         if (hasLiveBody && !reset) {
           // Live stream already projected body/tools — sync turn/worker facts only
-          // so a late RegisterTurn paint cannot wipe in-flight segments.
-          host.turns = applySnapshotTurns(snapshot, host.streamOwners);
+          // so a late RegisterTurn paint cannot wipe in-flight segments / bindings.
+          const paintedTurns = applySnapshotTurns(snapshot, host.streamOwners);
+          for (const [turnId, prev] of host.turns) {
+            const next = paintedTurns.get(turnId);
+            if (!next || next.messageId || !prev.messageId) continue;
+            // Stale RegisterTurn snapshots may still carry null messageId.
+            paintedTurns.set(turnId, { ...next, messageId: prev.messageId });
+          }
+          host.turns = paintedTurns;
           host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
           if (existing && ticket.mode === "interactive") {
             host.assistantId = existing.id;

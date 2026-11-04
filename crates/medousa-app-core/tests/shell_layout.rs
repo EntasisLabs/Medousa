@@ -245,3 +245,45 @@ fn count_leaves_for_test(node: &SplitNode) -> usize {
         SplitNode::Branch { a, b, .. } => count_leaves_for_test(a) + count_leaves_for_test(b),
     }
 }
+
+#[test]
+fn move_tab_between_panes_on_active_desktop() {
+    let mut core = ShellCore::new("personal");
+    core.dispatch(ShellCommand::OpenTab {
+        tab: chat("t1", "ses_a"),
+        group_id: None,
+        activate: true,
+    })
+    .unwrap();
+    core.dispatch(ShellCommand::OpenTab {
+        tab: chat("t2", "ses_b"),
+        group_id: None,
+        activate: true,
+    })
+    .unwrap();
+    let ShellUpdate::Snapshot { snapshot } = core
+        .dispatch(ShellCommand::SplitPane {
+            group_id: "main".into(),
+            edge: SplitEdge::Right,
+            new_group_id: "g2".into(),
+            move_tab_id: Some("t2".into()),
+        })
+        .unwrap();
+    assert_eq!(count_leaves_for_test(&snapshot.layout.split_root), 2);
+
+    let ShellUpdate::Snapshot { snapshot } = core
+        .dispatch(ShellCommand::MoveTab {
+            tab_id: "t1".into(),
+            to_group_id: "g2".into(),
+        })
+        .unwrap();
+    let g2 = snapshot
+        .layout
+        .groups
+        .iter()
+        .find(|g| g.id == "g2")
+        .expect("g2");
+    assert!(g2.tab_ids.iter().any(|id| id == "t1"));
+    assert!(g2.tab_ids.iter().any(|id| id == "t2"));
+    assert_eq!(snapshot.layout.active_group_id, "g2");
+}

@@ -254,6 +254,16 @@ describe("orphaned interactive turn lease", () => {
       expect(store.turns.get(ticket.turn_id)?.messageId).toBe(assistant?.id);
       expect(store.assistantId).toBe(assistant?.id);
     });
+
+    // Late RegisterTurn paint (null messageId at call site) must not clobber the
+    // stream-promoted binding once the assistant body is live.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const assistant = store.messages.find(
+      (message) => message.role === "assistant" && message.turnId === ticket.turn_id,
+    );
+    expect(assistant?.segments?.length).toBeGreaterThan(0);
+    expect(store.turns.get(ticket.turn_id)?.messageId).toBe(assistant?.id);
+    expect(store.assistantId).toBe(assistant?.id);
   });
 
   it("fails and settles the assistant bubble for a non-recoverable stream error", async () => {
