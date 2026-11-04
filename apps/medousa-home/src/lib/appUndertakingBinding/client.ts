@@ -50,16 +50,6 @@ function expectSnapshot(update: UndertakingBindingUpdate): UndertakingBindingSna
   return update.snapshot;
 }
 
-/**
- * Fire-and-forget dispatch. Prefer commit* helpers in `./dualWrite` that paint
- * from the returned snapshot — core owns the binding map after paint.
- */
-export function dualWriteUndertakingBinding(command: UndertakingBindingCommand): void {
-  void dispatchAppUndertakingBinding(command).catch(() => {
-    /* Core may be unavailable outside Tauri / without the stdio backend. */
-  });
-}
-
 export async function resetUndertakingBindings(
   workshopScopeId: string,
 ): Promise<UndertakingBindingSnapshot> {
