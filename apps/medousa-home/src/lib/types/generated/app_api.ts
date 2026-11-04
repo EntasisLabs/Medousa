@@ -390,3 +390,39 @@ export interface VaultBufferSnapshot {
 export type VaultBufferCommand = { type: "reset"; workshop_scope_id: string } | { buffer: NoteBufferFact; type: "seed_buffer" } | { content: string; path: string; title?: string | null; type: "apply_edit" } | { content: string; content_hash?: string | null; path: string; title?: string | null; type: "mark_saved" } | { content: string; content_hash?: string | null; path: string; title?: string | null; type: "reconcile_from_disk" } | { path: string; type: "dispose_buffer" } | { path?: string | null; type: "snapshot" };
 
 export type VaultBufferUpdate = { snapshot: VaultBufferSnapshot; type: "snapshot" };
+
+export type UndertakingBindingRevision = number;
+
+export interface UndertakingContextFact {
+  attemptSeq?: number | null;
+  baselineOid?: string | null;
+  boundChatSessionIds?: string[];
+  boundTerminalSessionIds?: string[];
+  executionRuntimeId?: string | null;
+  executionTransportRuntimeId?: string | null;
+  executorKind?: string | null;
+  forgeState: string;
+  humanPhase: string;
+  leaseGeneration?: number | null;
+  leaseId?: string | null;
+  repoId?: string | null;
+  sealedOid?: string | null;
+  title: string;
+  workId: string;
+  worktree?: string | null;
+}
+
+export interface UndertakingGroupBinding {
+  context?: UndertakingContextFact | null;
+  groupId: string;
+}
+
+export interface UndertakingBindingSnapshot {
+  contexts: UndertakingGroupBinding[];
+  revision: number;
+  workshopScopeId: string;
+}
+
+export type UndertakingBindingCommand = { type: "reset"; workshop_scope_id: string } | { context: UndertakingContextFact; group_id: string; type: "set_active" } | { group_id: string; type: "clear_active" } | { group_id: string; session_id: string; type: "bind_chat" } | { session_id: string; type: "detach_chat" } | { group_id: string; session_id: string; type: "bind_terminal" } | { type: "snapshot" };
+
+export type UndertakingBindingUpdate = { snapshot: UndertakingBindingSnapshot; type: "snapshot" };
