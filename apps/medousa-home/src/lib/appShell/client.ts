@@ -44,7 +44,7 @@ function expectSnapshot(update: ShellUpdate): ShellSnapshot {
   return update.snapshot;
 }
 
-/** Best-effort dual-write — shell paint stays on the Svelte store for now. */
+/** Fire-and-forget dispatch — prefer commit* helpers that paint from snapshots. */
 export function dualWriteShell(command: ShellCommand): void {
   void dispatchAppShell(command).catch(() => {
     /* Core may be unavailable in pure-DOM vitest without the stdio backend. */
