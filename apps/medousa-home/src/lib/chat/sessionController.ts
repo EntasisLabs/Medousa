@@ -23,6 +23,7 @@ import {
   openChatSession,
   projectHistory,
   switchChatFocus,
+  type ChatSnapshot,
 } from "$lib/appChat/client";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
 import { dedupeMessagesById } from "$lib/utils/mergeTranscript";
@@ -74,6 +75,22 @@ export function savePromotedAskIds(ids: Set<string>, workshopId?: string) {
     workshopScopedStorageKey(PROMOTED_ASKS_KEY, workshopId),
     JSON.stringify(trimmed),
   );
+}
+
+/** Mirror core-owned promotions onto the host Set + localStorage seed. */
+export function mergePromotedAskIdsFromSnapshot(
+  host: ChatStoreHost,
+  snapshot: ChatSnapshot,
+) {
+  if (!snapshot.promotedAskIds?.length) return;
+  let grew = false;
+  for (const id of snapshot.promotedAskIds) {
+    const trimmed = id.trim();
+    if (!trimmed || host.promotedAskIds.has(trimmed)) continue;
+    host.promotedAskIds.add(trimmed);
+    grew = true;
+  }
+  if (grew) savePromotedAskIds(host.promotedAskIds, host.workshopScopeId);
 }
 
 export function loadPinnedIds(workshopId?: string): string[] {
@@ -534,6 +551,7 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
     next.streamError = null;
     host.sessionRuntimes.set(trimmed, next);
     host.messageIndexes.delete(trimmed);
+    mergePromotedAskIdsFromSnapshot(host, snapshot);
     host.bumpRuntimeRevision();
   } catch (err) {
     if (host.workshopEpoch !== workshopEpoch || host.history?.isReleased(trimmed)) return;
@@ -784,6 +802,7 @@ async function adoptCoreFocus(
       // Core is empty but the host stash has paint — keep chrome/cache; focus still moved.
       return runtime;
     }
+    mergePromotedAskIdsFromSnapshot(host, snapshot);
     return applySnapshotToRuntime(
       runtime,
       snapshot,

@@ -30,14 +30,15 @@ Canonical chat timeline:
    `MarkWorkerSynthesisDelivered`, `DeliverWorkerSynthesis`) plus production
    `BeginTurn` / `SettleTurn` dual-write; snapshot `workers` carries synthesis links
 9. Ask-lane hydrate / promote (`HydrateAskThreads`, `PromoteAskToChat`) merges
-   ask ledger history into the focused session and flips lane identity on promote
+   ask ledger history into the focused session, flips lane identity on promote,
+   and records `promoted_ask_ids` on the session snapshot (host localStorage seeds)
 10. Painted visibility (`ProjectVisibleItems`) — empty handoff shells and exact
     linked worker raw returns; beat grouping stays in the renderer
 11. Core-first live stream apply — host reseeds shells only when missing;
     `WorkerAck` / `BudgetApprovalRequired` / terminal chrome land in the snapshot
 12. Snapshot-owned workers/turns — `WorkerLinkFact.session_id`, `TurnFact` on
     `ChatSnapshot`, `RegisterTurn` for reattach (seeds/resets assistant shells);
-    host overlays `streamAttached`
+    host overlays `streamAttached` from process-local `streamOwners` (not core)
 13. Multi-session focus — `OpenSession` does not steal focus from another live
     session; `SwitchFocus` moves the pointer; host switch/warm loads core snapshots
 14. Shell layout core — `ShellCore` owns desktop/tab/pane identity + focus;

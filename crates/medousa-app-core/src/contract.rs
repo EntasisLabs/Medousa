@@ -482,6 +482,9 @@ pub struct ChatSnapshot {
     /// Reconnect/dedup cursors keyed by turn id. Never presentation identity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub last_seq_by_turn: BTreeMap<String, u64>,
+    /// Ask jobs promoted into chat — skip on subsequent hydrate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub promoted_ask_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

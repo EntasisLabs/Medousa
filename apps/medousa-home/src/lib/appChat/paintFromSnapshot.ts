@@ -10,6 +10,7 @@ import {
   applySnapshotTurns,
   applySnapshotWorkers,
 } from "$lib/appChat/toChatMessage";
+import { savePromotedAskIds } from "$lib/chat/sessionController";
 
 export type PaintFromSnapshotOptions = {
   /** Interactive turn whose live assistant bubble should become `assistantId`. */
@@ -35,6 +36,19 @@ export function paintHostFromSnapshot(
   host.turns = applySnapshotTurns(snapshot, host.streamOwners);
   if (applied.activeTurnId !== undefined) {
     host.activeTurnId = applied.activeTurnId;
+  }
+
+  if (snapshot.promotedAskIds?.length) {
+    let grew = false;
+    for (const id of snapshot.promotedAskIds) {
+      const trimmed = id.trim();
+      if (!trimmed || host.promotedAskIds.has(trimmed)) continue;
+      host.promotedAskIds.add(trimmed);
+      grew = true;
+    }
+    if (grew) {
+      savePromotedAskIds(host.promotedAskIds, host.workshopScopeId);
+    }
   }
 
   const liveTurnId = options?.liveTurnId?.trim();

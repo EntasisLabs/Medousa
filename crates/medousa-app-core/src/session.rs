@@ -120,6 +120,8 @@ struct SessionState {
     turns: BTreeMap<String, TurnRecord>,
     proposals: Vec<ProposalFact>,
     visible_item_ids: Vec<String>,
+    /// Ask jobs promoted into chat (ordered, unique).
+    promoted_ask_ids: Vec<String>,
 }
 
 impl SessionState {
@@ -199,6 +201,7 @@ impl SessionState {
             workers: self.worker_link_facts(),
             turns: self.turn_facts(),
             last_seq_by_turn: self.last_seq_by_turn.clone(),
+            promoted_ask_ids: self.promoted_ask_ids.clone(),
         }
     }
 
@@ -443,6 +446,7 @@ impl ChatCore {
                 turns: BTreeMap::new(),
                 proposals: Vec::new(),
                 visible_item_ids: Vec::new(),
+                promoted_ask_ids: Vec::new(),
             });
         if let Some(existing) = self.sessions.get_mut(&session_id)
             && existing.authority_id != authority_id
@@ -1162,8 +1166,22 @@ impl ChatCore {
             .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?;
         Self::ensure_revision(session, expected_revision)?;
 
-        let promoted: std::collections::HashSet<&str> =
-            promoted_ask_ids.iter().map(String::as_str).collect();
+        // Seed session-owned promotions from the host bootstrap param (localStorage).
+        for id in &promoted_ask_ids {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !session
+                .promoted_ask_ids
+                .iter()
+                .any(|existing| existing == trimmed)
+            {
+                session.promoted_ask_ids.push(trimmed.to_string());
+            }
+        }
+        let promoted: std::collections::HashSet<String> =
+            session.promoted_ask_ids.iter().cloned().collect();
         let mut already: std::collections::HashSet<String> = session
             .items
             .iter()
@@ -1181,7 +1199,7 @@ impl ChatCore {
             if job_id.is_empty() {
                 continue;
             }
-            if promoted.contains(job_id.as_str()) || already.contains(&job_id) {
+            if promoted.contains(&job_id) || already.contains(&job_id) {
                 continue;
             }
             if batch.turns.is_empty() {
@@ -1238,6 +1256,14 @@ impl ChatCore {
                 item.ask_job_id = None;
                 changed = true;
             }
+        }
+        if !session
+            .promoted_ask_ids
+            .iter()
+            .any(|existing| existing == trimmed)
+        {
+            session.promoted_ask_ids.push(trimmed.to_string());
+            changed = true;
         }
         if changed {
             session.bump();

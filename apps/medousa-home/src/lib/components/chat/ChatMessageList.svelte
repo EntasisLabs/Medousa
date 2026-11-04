@@ -15,7 +15,11 @@
     workerReturnFactsFromRows,
   } from "$lib/utils/chatAgentGroups";
   import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
-  import { projectAgentPlacement, projectVisibleItems } from "$lib/appChat/client";
+  import {
+    applyChatVisibleItems,
+    projectAgentPlacement,
+    projectVisibleItems,
+  } from "$lib/appChat/client";
   import type { AgentPlacementGroup } from "$lib/types/generated/app_api";
   import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
   import type { PeerProposalControls } from "./peerProposalControls";
@@ -92,16 +96,36 @@
     workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages, subagentRows),
   );
   const beats = $derived(groupChatTurnBeats(painted));
-  // Thin placement from Rust; join to live rows stays synchronous so card status
-  // updates do not wait on another projection round-trip.
+  // Commit painted ids into ChatCore, then join snapshot.agentGroups to live rows.
+  // Fall back to pure Project* when the session is not open yet.
   let projectedGroups = $state<AgentPlacementGroup[]>([]);
   let placementEpoch = 0;
   $effect(() => {
     const token = ++placementEpoch;
     const workers = subagentRows ?? new Map();
     const items = messages.map(chatMessageToItem);
+    const paintedIds = painted.map((message) => message.id);
     void (async () => {
-      let visibleItemIds = painted.map(message => message.id);
+      try {
+        let visibleItemIds = paintedIds;
+        try {
+          visibleItemIds = await projectVisibleItems({
+            sessionId,
+            items,
+            workerReturns: workerReturnFactsFromRows(workers),
+          });
+        } catch {
+          // Keep sync-painted ids when pure projection is unavailable.
+        }
+        if (token !== placementEpoch) return;
+        const snapshot = await applyChatVisibleItems(sessionId, visibleItemIds);
+        if (token !== placementEpoch) return;
+        projectedGroups = snapshot.agentGroups ?? [];
+        return;
+      } catch {
+        // Session may not be open — fall through to pure projection.
+      }
+      let visibleItemIds = paintedIds;
       try {
         visibleItemIds = await projectVisibleItems({
           sessionId,
@@ -109,7 +133,7 @@
           workerReturns: workerReturnFactsFromRows(workers),
         });
       } catch {
-        // Keep sync-painted ids when the core path is unavailable.
+        /* keep paintedIds */
       }
       if (token !== placementEpoch) return;
       const groups = await projectAgentPlacement({

@@ -198,4 +198,23 @@ fn promote_flips_lane_and_clears_ask_job_id() {
         .filter(|item| item.role == medousa_app_core::contract::ChatItemRole::User
             || item.role == medousa_app_core::contract::ChatItemRole::Assistant)
         .all(|item| item.lane == Some(ChatLane::Chat)));
+    assert_eq!(snapshot.promoted_ask_ids, vec![job.to_string()]);
+
+    // Session-owned promotions skip hydrate without a host param.
+    let before = snapshot.items.len();
+    let ChatUpdate::Snapshot { snapshot } = core
+        .dispatch(ChatCommand::HydrateAskThreads {
+            session_id: "ses".into(),
+            batches: vec![ask_batch(
+                job,
+                vec![entry(&"8".repeat(32), 1, "user", "again")],
+            )],
+            promoted_ask_ids: vec![],
+            expected_revision: None,
+        })
+        .unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+    assert_eq!(snapshot.items.len(), before);
 }

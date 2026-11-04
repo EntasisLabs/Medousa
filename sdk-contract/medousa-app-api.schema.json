@@ -4962,6 +4962,13 @@
           "minimum": 0.0
         }
       },
+      "promotedAskIds": {
+        "description": "Ask jobs promoted into chat — skip on subsequent hydrate.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
       "relationships": {
         "type": "array",
         "items": {
@@ -7149,6 +7156,13 @@
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
+            }
+          },
+          "promotedAskIds": {
+            "description": "Ask jobs promoted into chat — skip on subsequent hydrate.",
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
           "relationships": {
