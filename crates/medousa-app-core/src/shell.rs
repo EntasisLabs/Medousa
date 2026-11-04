@@ -289,6 +289,18 @@ pub enum ShellCommand {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         group_id: Option<String>,
     },
+    /// Move a tab from the active desktop onto another desktop's focused pane.
+    /// Does not switch the active desktop.
+    MoveTabToDesktop {
+        tab_id: String,
+        desktop_id: String,
+    },
+    /// Move every tab in a pane onto another desktop, then drop the empty pane
+    /// when more than one pane remains. Does not switch the active desktop.
+    MovePaneToDesktop {
+        group_id: String,
+        desktop_id: String,
+    },
     Snapshot,
 }
 
@@ -513,6 +525,20 @@ impl ShellCore {
                 }
                 layout.zoomed_group_id = group_id;
                 self.bump();
+                self.ok_snapshot()
+            }
+            ShellCommand::MoveTabToDesktop {
+                tab_id,
+                desktop_id,
+            } => {
+                self.move_tab_to_desktop(&tab_id, &desktop_id)?;
+                self.ok_snapshot()
+            }
+            ShellCommand::MovePaneToDesktop {
+                group_id,
+                desktop_id,
+            } => {
+                self.move_pane_to_desktop(&group_id, &desktop_id)?;
                 self.ok_snapshot()
             }
             ShellCommand::Snapshot => self.ok_snapshot(),
@@ -804,6 +830,102 @@ impl ShellCore {
         self.bump();
         Ok(())
     }
+
+    fn move_tab_to_desktop(
+        &mut self,
+        tab_id: &str,
+        desktop_id: &str,
+    ) -> Result<(), ShellCoreError> {
+        if desktop_id == self.active_desktop_id {
+            return Err(ShellCoreError::InvalidLayout(
+                "target desktop must differ from the active desktop".into(),
+            ));
+        }
+        if !self.desktops.iter().any(|d| d.id == desktop_id) {
+            return Err(ShellCoreError::DesktopNotFound(desktop_id.to_string()));
+        }
+
+        let tab = {
+            let layout = self.active_layout_mut()?;
+            let tab = layout
+                .tabs
+                .iter()
+                .find(|t| t.id() == tab_id)
+                .cloned()
+                .ok_or_else(|| ShellCoreError::TabNotFound(tab_id.to_string()))?;
+            remove_tab_from_layout(layout, tab_id);
+            tab
+        };
+
+        let target = self
+            .desktops
+            .iter_mut()
+            .find(|d| d.id == desktop_id)
+            .ok_or_else(|| ShellCoreError::DesktopNotFound(desktop_id.to_string()))?;
+        append_tabs_to_layout(&mut target.layout, vec![tab]);
+        self.bump();
+        Ok(())
+    }
+
+    fn move_pane_to_desktop(
+        &mut self,
+        group_id: &str,
+        desktop_id: &str,
+    ) -> Result<(), ShellCoreError> {
+        if desktop_id == self.active_desktop_id {
+            return Err(ShellCoreError::InvalidLayout(
+                "target desktop must differ from the active desktop".into(),
+            ));
+        }
+        if !self.desktops.iter().any(|d| d.id == desktop_id) {
+            return Err(ShellCoreError::DesktopNotFound(desktop_id.to_string()));
+        }
+
+        let moved = {
+            let layout = self.active_layout_mut()?;
+            let group = layout
+                .groups
+                .iter()
+                .find(|g| g.id == group_id)
+                .cloned()
+                .ok_or_else(|| ShellCoreError::GroupNotFound(group_id.to_string()))?;
+            let tabs: Vec<ShellTab> = group
+                .tab_ids
+                .iter()
+                .filter_map(|id| layout.tabs.iter().find(|t| t.id() == id).cloned())
+                .collect();
+            for tab in &tabs {
+                remove_tab_from_layout(layout, tab.id());
+            }
+
+            if count_leaves(&layout.split_root) > 1 {
+                let merge_target = merge_target_for_leaf(&layout.split_root, group_id)
+                    .ok_or_else(|| ShellCoreError::GroupNotFound(group_id.to_string()))?;
+                let (next_root, removed) = remove_leaf(layout.split_root.clone(), group_id);
+                if !removed {
+                    return Err(ShellCoreError::GroupNotFound(group_id.to_string()));
+                }
+                layout.split_root = next_root;
+                layout.groups.retain(|g| g.id != group_id);
+                if layout.active_group_id == group_id {
+                    layout.active_group_id = merge_target;
+                }
+                if layout.zoomed_group_id.as_deref() == Some(group_id) {
+                    layout.zoomed_group_id = None;
+                }
+            }
+            tabs
+        };
+
+        let target = self
+            .desktops
+            .iter_mut()
+            .find(|d| d.id == desktop_id)
+            .ok_or_else(|| ShellCoreError::DesktopNotFound(desktop_id.to_string()))?;
+        append_tabs_to_layout(&mut target.layout, moved);
+        self.bump();
+        Ok(())
+    }
 }
 
 fn empty_layout() -> ShellDesktopLayout {
@@ -866,6 +988,43 @@ fn remove_tab_from_layout(layout: &mut ShellDesktopLayout, tab_id: &str) {
             group.active_tab_id = group.tab_ids.last().cloned();
         }
     }
+}
+
+fn append_tabs_to_layout(layout: &mut ShellDesktopLayout, incoming: Vec<ShellTab>) {
+    if incoming.is_empty() {
+        return;
+    }
+    let dest_group_id = if layout
+        .groups
+        .iter()
+        .any(|g| g.id == layout.active_group_id)
+    {
+        layout.active_group_id.clone()
+    } else {
+        layout
+            .groups
+            .first()
+            .map(|g| g.id.clone())
+            .unwrap_or_else(|| MAIN_GROUP_ID.into())
+    };
+    let existing: std::collections::HashSet<String> =
+        layout.tabs.iter().map(|t| t.id().to_string()).collect();
+    let fresh: Vec<ShellTab> = incoming
+        .into_iter()
+        .filter(|t| !existing.contains(t.id()))
+        .collect();
+    if fresh.is_empty() {
+        return;
+    }
+    let fresh_ids: Vec<String> = fresh.iter().map(|t| t.id().to_string()).collect();
+    layout.tabs.extend(fresh);
+    for group in &mut layout.groups {
+        if group.id == dest_group_id {
+            group.tab_ids.extend(fresh_ids.iter().cloned());
+            group.active_tab_id = fresh_ids.last().cloned().or(group.active_tab_id.clone());
+        }
+    }
+    layout.active_group_id = dest_group_id;
 }
 
 fn move_tab_between_groups(
