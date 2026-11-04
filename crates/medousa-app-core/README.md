@@ -43,8 +43,8 @@ Canonical chat timeline:
     session; `SwitchFocus` moves the pointer; host switch/warm loads core snapshots
 14. Shell layout core — `ShellCore` owns desktop/tab/pane identity + focus;
     Home commits hydrate/open/focus/close/switch plus split/close-pane/ratio/
-    zoom/create·rename·remove desktop/patch-title/cross-desktop tab·pane moves
-    then paints; persistence I/O stays in JS
+    zoom/create·rename·remove desktop/patch-title/intra·cross-desktop tab moves
+    and onboarding hydrate, then paints; persistence I/O stays in JS
 15. Vault note buffers — `VaultBufferCore` owns path-keyed dirty/baseline/conflict;
     daemon stays filesystem authority; Home commits seed/edit/save/reconcile then paints
 16. Undertaking pane bindings — `UndertakingBindingCore` owns group→undertaking

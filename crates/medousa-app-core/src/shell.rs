@@ -289,6 +289,11 @@ pub enum ShellCommand {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         group_id: Option<String>,
     },
+    /// Move a tab between panes on the active desktop.
+    MoveTab {
+        tab_id: String,
+        to_group_id: String,
+    },
     /// Move a tab from the active desktop onto another desktop's focused pane.
     /// Does not switch the active desktop.
     MoveTabToDesktop {
@@ -525,6 +530,13 @@ impl ShellCore {
                 }
                 layout.zoomed_group_id = group_id;
                 self.bump();
+                self.ok_snapshot()
+            }
+            ShellCommand::MoveTab {
+                tab_id,
+                to_group_id,
+            } => {
+                self.move_tab(&tab_id, &to_group_id)?;
                 self.ok_snapshot()
             }
             ShellCommand::MoveTabToDesktop {
@@ -827,6 +839,26 @@ impl ShellCore {
         if layout.zoomed_group_id.as_deref() == Some(group_id) {
             layout.zoomed_group_id = None;
         }
+        self.bump();
+        Ok(())
+    }
+
+    fn move_tab(&mut self, tab_id: &str, to_group_id: &str) -> Result<(), ShellCoreError> {
+        let layout = self.active_layout_mut()?;
+        if !layout.groups.iter().any(|g| g.id == to_group_id) {
+            return Err(ShellCoreError::GroupNotFound(to_group_id.to_string()));
+        }
+        let from = layout
+            .groups
+            .iter()
+            .find(|g| g.tab_ids.iter().any(|id| id == tab_id))
+            .map(|g| g.id.clone())
+            .ok_or_else(|| ShellCoreError::TabNotFound(tab_id.to_string()))?;
+        if from == to_group_id {
+            return Ok(());
+        }
+        move_tab_between_groups(layout, tab_id, &from, to_group_id)?;
+        layout.active_group_id = to_group_id.to_string();
         self.bump();
         Ok(())
     }

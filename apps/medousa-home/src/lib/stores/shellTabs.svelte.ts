@@ -57,6 +57,7 @@ import {
   commitFocusShellTab,
   commitHydrateShell,
   commitMoveShellPaneToDesktop,
+  commitMoveShellTab,
   commitMoveShellTabToDesktop,
   commitOpenShellTab,
   commitPatchShellTabTitle,
@@ -1342,6 +1343,7 @@ export class ShellTabsStore {
     this.activeGroupId = toGroupId;
     this.syncLayoutHint(tab);
     this.persist();
+    commitMoveShellTab(this.paintFromCoreSnapshot, { tabId, toGroupId });
   }
 
   requestCheatSheet() {
@@ -1389,7 +1391,14 @@ export class ShellTabsStore {
       activeGroupId: groupIds[0]!,
       zoomedGroupId: null,
     });
+    this.ensureDesktopCatalog();
+    this.flushActiveDesktop();
     this.persist();
+    commitHydrateShell(this.paintFromCoreSnapshot, {
+      workspaceScopeId: this.workspaceScopeId,
+      desktops: this.desktops,
+      activeDesktopId: this.activeDesktopId,
+    });
   }
 
   /**
