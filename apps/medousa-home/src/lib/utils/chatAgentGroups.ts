@@ -123,9 +123,48 @@ export function joinAgentGroups(
 }
 
 /**
- * Commit painted ids into ChatCore when the session is open, read
- * snapshot.agentGroups, then join full proposal/worker rows. Falls back to
- * pure Project* when ApplyVisibleItems is unavailable.
+ * Resolve thin placement groups from ChatCore: project visible ids, commit
+ * them when the session is open, then return snapshot.agentGroups (or pure
+ * ProjectAgentPlacement as fallback).
+ */
+export async function resolveAgentPlacementGroups(options: {
+  messages: ChatMessage[];
+  painted: ChatMessage[];
+  proposals: PeerProposalReviewRecord[];
+  workers: Map<string, SubagentRow>;
+  sessionId: string;
+  authorityId?: string | null;
+}): Promise<AgentPlacementGroup[]> {
+  const items = options.messages.map(chatMessageToItem);
+  const sessionId = options.sessionId.trim();
+  let visibleItemIds = options.painted.map((message) => message.id);
+  try {
+    visibleItemIds = await projectVisibleItems({
+      sessionId,
+      items,
+      workerReturns: workerReturnFactsFromRows(options.workers),
+    });
+  } catch {
+    // Keep host-painted ids when the core path is unavailable.
+  }
+  try {
+    const snapshot = await applyChatVisibleItems(sessionId, visibleItemIds);
+    return snapshot.agentGroups ?? [];
+  } catch {
+    // Session may not be open yet.
+  }
+  return projectAgentPlacement({
+    sessionId,
+    authorityId: options.authorityId ?? "",
+    items,
+    proposals: proposalFactsFromRows(options.proposals),
+    workers: workerFactsFromRows(options.workers),
+    visibleItemIds,
+  });
+}
+
+/**
+ * Resolve placement groups then join full proposal/worker rows for painting.
  */
 export async function projectChatAgentGroups(
   messages: ChatMessage[],
@@ -134,31 +173,13 @@ export async function projectChatAgentGroups(
   workers: Map<string, SubagentRow>,
   scope?: SessionRef,
 ): Promise<Map<string | null, ChatAgentGroup>> {
-  const items = messages.map(chatMessageToItem);
-  const sessionId = scope?.session_id ?? "";
-  let visibleItemIds = painted.map((message) => message.id);
-  try {
-    visibleItemIds = await projectVisibleItems({
-      sessionId,
-      items,
-      workerReturns: workerReturnFactsFromRows(workers),
-    });
-  } catch {
-    // Keep host-painted ids when the core path is unavailable.
-  }
-  try {
-    const snapshot = await applyChatVisibleItems(sessionId, visibleItemIds);
-    return joinAgentGroups(snapshot.agentGroups ?? [], proposals, workers);
-  } catch {
-    // Session may not be open yet.
-  }
-  const groups = await projectAgentPlacement({
-    sessionId,
+  const groups = await resolveAgentPlacementGroups({
+    messages,
+    painted,
+    proposals,
+    workers,
+    sessionId: scope?.session_id ?? "",
     authorityId: scope?.authority_id ?? "",
-    items,
-    proposals: proposalFactsFromRows(proposals),
-    workers: workerFactsFromRows(workers),
-    visibleItemIds,
   });
   return joinAgentGroups(groups, proposals, workers);
 }
