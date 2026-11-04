@@ -379,6 +379,30 @@ pub struct WorkerLinkFact {
     pub synthesis_item_id: Option<String>,
     #[serde(default)]
     pub synthesis_delivered: bool,
+    /// Worker history / relevance session (may differ from the focused chat session).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+/// Open turn ticket projected on the snapshot (stream_url stays on the host).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct TurnFact {
+    pub turn_id: String,
+    /// `interactive` or `background`.
+    pub mode: String,
+    pub phase: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_card_id: Option<String>,
+    #[serde(default)]
+    pub reusable_stream: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_rounds: Option<u64>,
 }
 
 /// One ask-lane ledger page to merge into the focused chat session.
@@ -452,6 +476,9 @@ pub struct ChatSnapshot {
     /// Worker-lane spawn + synthesis links (thin facts for the host map).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workers: Vec<WorkerLinkFact>,
+    /// Open turn tickets (logical). Host overlays streamAttached from streamOwners.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub turns: Vec<TurnFact>,
     /// Reconnect/dedup cursors keyed by turn id. Never presentation identity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub last_seq_by_turn: BTreeMap<String, u64>,
@@ -479,6 +506,13 @@ pub struct BeginTurnRequest {
     pub speaker_profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_attachments: Option<Vec<ChatMediaAttachment>>,
+    /// `interactive` or `background`. Defaults from lane when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_card_id: Option<String>,
+    #[serde(default)]
+    pub reusable_stream: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -553,6 +587,16 @@ pub enum ChatCommand {
         parent_item_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply_to_work_id: Option<String>,
+        /// Worker ledger session when different from the focused chat session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker_session_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_revision: Option<ChatRevision>,
+    },
+    /// Upsert a logical turn ticket without painting BeginTurn shells (reattach).
+    RegisterTurn {
+        session_id: String,
+        turn: TurnFact,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expected_revision: Option<ChatRevision>,
     },
@@ -702,6 +746,7 @@ pub fn schema_export_names() -> &'static [&'static str] {
         "ProposalFact",
         "WorkerPlacementFact",
         "WorkerLinkFact",
+        "TurnFact",
         "AskThreadBatch",
         "WorkerReturnFact",
         "AgentPlacementEntry",

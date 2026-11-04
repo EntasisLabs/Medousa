@@ -118,6 +118,9 @@ fn project_visible_items_reads_open_session_when_items_omitted() {
             status_line: Some("Background worker started".into()),
             speaker_profile_id: None,
             media_attachments: None,
+                    mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
         },
         expected_revision: None,
     })
