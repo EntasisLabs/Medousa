@@ -7860,6 +7860,32 @@
       }
     }
   },
+  "EditorGroup": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EditorGroup",
+    "type": "object",
+    "required": [
+      "id",
+      "tabIds"
+    ],
+    "properties": {
+      "activeTabId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "tabIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
   "ProposalFact": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ProposalFact",
@@ -7939,6 +7965,2373 @@
             "minimum": 0.0
           }
         }
+      }
+    }
+  },
+  "ShellCommand": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ShellCommand",
+    "oneOf": [
+      {
+        "description": "Replace all layout state (bootstrap / workshop switch restore).",
+        "type": "object",
+        "required": [
+          "active_desktop_id",
+          "desktops",
+          "type",
+          "workspace_scope_id"
+        ],
+        "properties": {
+          "active_desktop_id": {
+            "type": "string"
+          },
+          "desktops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ShellDesktop"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "hydrate"
+            ]
+          },
+          "workspace_scope_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "description": "Empty shell for a workspace scope.",
+        "type": "object",
+        "required": [
+          "type",
+          "workspace_scope_id"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "reset"
+            ]
+          },
+          "workspace_scope_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "tab",
+          "type"
+        ],
+        "properties": {
+          "activate": {
+            "default": true,
+            "type": "boolean"
+          },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tab": {
+            "$ref": "#/definitions/ShellTab"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "open_tab"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "tab_id",
+          "type"
+        ],
+        "properties": {
+          "tab_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "close_tab"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "tab_id",
+          "type"
+        ],
+        "properties": {
+          "tab_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "focus_tab"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "group_id",
+          "type"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "focus_group"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "tab_id",
+          "title",
+          "type"
+        ],
+        "properties": {
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "patch_tab_title"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "edge",
+          "group_id",
+          "new_group_id",
+          "type"
+        ],
+        "properties": {
+          "edge": {
+            "$ref": "#/definitions/SplitEdge"
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "move_tab_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "new_group_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "split_pane"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "group_id",
+          "type"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "close_pane"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "branch_id",
+          "ratio",
+          "type"
+        ],
+        "properties": {
+          "branch_id": {
+            "type": "string"
+          },
+          "ratio": {
+            "type": "number",
+            "format": "double"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "set_split_ratio"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "desktop_id",
+          "type"
+        ],
+        "properties": {
+          "desktop_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "switch_desktop"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "desktop_id",
+          "name",
+          "type"
+        ],
+        "properties": {
+          "desktop_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "create_desktop"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "desktop_id",
+          "name",
+          "type"
+        ],
+        "properties": {
+          "desktop_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "rename_desktop"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "desktop_id",
+          "type"
+        ],
+        "properties": {
+          "desktop_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "remove_desktop"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "set_zoomed_group"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "EditorGroup": {
+        "type": "object",
+        "required": [
+          "id",
+          "tabIds"
+        ],
+        "properties": {
+          "activeTabId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "tabIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ShellDesktop": {
+        "type": "object",
+        "required": [
+          "id",
+          "layout",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/ShellDesktopLayout"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ShellDesktopLayout": {
+        "type": "object",
+        "required": [
+          "activeGroupId",
+          "groups",
+          "splitRoot",
+          "tabs"
+        ],
+        "properties": {
+          "activeGroupId": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/EditorGroup"
+            }
+          },
+          "splitRoot": {
+            "$ref": "#/definitions/SplitNode"
+          },
+          "tabs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ShellTab"
+            }
+          },
+          "zoomedGroupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ShellTab": {
+        "description": "First-class open work in the shell center host.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "documentId",
+              "id",
+              "kind",
+              "title",
+              "workshopId"
+            ],
+            "properties": {
+              "documentId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "workshopId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "lmeTabId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lme"
+                ]
+              },
+              "lmeTabId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "browserTabId",
+              "id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "browserTabId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "web"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "surfaceId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "surface"
+                ]
+              },
+              "surfaceId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "executionRuntimeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "terminal"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "SplitAxis": {
+        "type": "string",
+        "enum": [
+          "row",
+          "column"
+        ]
+      },
+      "SplitEdge": {
+        "type": "string",
+        "enum": [
+          "left",
+          "right",
+          "top",
+          "bottom"
+        ]
+      },
+      "SplitNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b",
+              "direction",
+              "id",
+              "ratio",
+              "type"
+            ],
+            "properties": {
+              "a": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "b": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "direction": {
+                "$ref": "#/definitions/SplitAxis"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ratio": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "branch"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "ShellDesktop": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ShellDesktop",
+    "type": "object",
+    "required": [
+      "id",
+      "layout",
+      "name"
+    ],
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "layout": {
+        "$ref": "#/definitions/ShellDesktopLayout"
+      },
+      "name": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "EditorGroup": {
+        "type": "object",
+        "required": [
+          "id",
+          "tabIds"
+        ],
+        "properties": {
+          "activeTabId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "tabIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ShellDesktopLayout": {
+        "type": "object",
+        "required": [
+          "activeGroupId",
+          "groups",
+          "splitRoot",
+          "tabs"
+        ],
+        "properties": {
+          "activeGroupId": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/EditorGroup"
+            }
+          },
+          "splitRoot": {
+            "$ref": "#/definitions/SplitNode"
+          },
+          "tabs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ShellTab"
+            }
+          },
+          "zoomedGroupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ShellTab": {
+        "description": "First-class open work in the shell center host.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "documentId",
+              "id",
+              "kind",
+              "title",
+              "workshopId"
+            ],
+            "properties": {
+              "documentId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "workshopId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "lmeTabId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lme"
+                ]
+              },
+              "lmeTabId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "browserTabId",
+              "id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "browserTabId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "web"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "surfaceId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "surface"
+                ]
+              },
+              "surfaceId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "executionRuntimeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "terminal"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "SplitAxis": {
+        "type": "string",
+        "enum": [
+          "row",
+          "column"
+        ]
+      },
+      "SplitNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b",
+              "direction",
+              "id",
+              "ratio",
+              "type"
+            ],
+            "properties": {
+              "a": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "b": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "direction": {
+                "$ref": "#/definitions/SplitAxis"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ratio": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "branch"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "ShellDesktopLayout": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ShellDesktopLayout",
+    "type": "object",
+    "required": [
+      "activeGroupId",
+      "groups",
+      "splitRoot",
+      "tabs"
+    ],
+    "properties": {
+      "activeGroupId": {
+        "type": "string"
+      },
+      "groups": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/EditorGroup"
+        }
+      },
+      "splitRoot": {
+        "$ref": "#/definitions/SplitNode"
+      },
+      "tabs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ShellTab"
+        }
+      },
+      "zoomedGroupId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "EditorGroup": {
+        "type": "object",
+        "required": [
+          "id",
+          "tabIds"
+        ],
+        "properties": {
+          "activeTabId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "tabIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ShellTab": {
+        "description": "First-class open work in the shell center host.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "documentId",
+              "id",
+              "kind",
+              "title",
+              "workshopId"
+            ],
+            "properties": {
+              "documentId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "workshopId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "lmeTabId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lme"
+                ]
+              },
+              "lmeTabId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "browserTabId",
+              "id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "browserTabId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "web"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "surfaceId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "surface"
+                ]
+              },
+              "surfaceId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "executionRuntimeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "terminal"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "SplitAxis": {
+        "type": "string",
+        "enum": [
+          "row",
+          "column"
+        ]
+      },
+      "SplitNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b",
+              "direction",
+              "id",
+              "ratio",
+              "type"
+            ],
+            "properties": {
+              "a": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "b": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "direction": {
+                "$ref": "#/definitions/SplitAxis"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ratio": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "branch"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "ShellRevision": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "uint64",
+    "type": "integer",
+    "format": "uint64",
+    "minimum": 0.0
+  },
+  "ShellSnapshot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ShellSnapshot",
+    "type": "object",
+    "required": [
+      "activeDesktopId",
+      "desktops",
+      "layout",
+      "revision",
+      "workspaceScopeId"
+    ],
+    "properties": {
+      "activeDesktopId": {
+        "type": "string"
+      },
+      "desktops": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ShellDesktop"
+        }
+      },
+      "layout": {
+        "description": "Focused desktop layout mirrored for paint convenience.",
+        "allOf": [
+          {
+            "$ref": "#/definitions/ShellDesktopLayout"
+          }
+        ]
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "workspaceScopeId": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "EditorGroup": {
+        "type": "object",
+        "required": [
+          "id",
+          "tabIds"
+        ],
+        "properties": {
+          "activeTabId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "tabIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ShellDesktop": {
+        "type": "object",
+        "required": [
+          "id",
+          "layout",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/ShellDesktopLayout"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ShellDesktopLayout": {
+        "type": "object",
+        "required": [
+          "activeGroupId",
+          "groups",
+          "splitRoot",
+          "tabs"
+        ],
+        "properties": {
+          "activeGroupId": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/EditorGroup"
+            }
+          },
+          "splitRoot": {
+            "$ref": "#/definitions/SplitNode"
+          },
+          "tabs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ShellTab"
+            }
+          },
+          "zoomedGroupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ShellTab": {
+        "description": "First-class open work in the shell center host.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "documentId",
+              "id",
+              "kind",
+              "title",
+              "workshopId"
+            ],
+            "properties": {
+              "documentId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "workshopId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "lmeTabId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lme"
+                ]
+              },
+              "lmeTabId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "browserTabId",
+              "id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "browserTabId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "web"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "surfaceId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "surface"
+                ]
+              },
+              "surfaceId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "executionRuntimeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "terminal"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "SplitAxis": {
+        "type": "string",
+        "enum": [
+          "row",
+          "column"
+        ]
+      },
+      "SplitNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b",
+              "direction",
+              "id",
+              "ratio",
+              "type"
+            ],
+            "properties": {
+              "a": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "b": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "direction": {
+                "$ref": "#/definitions/SplitAxis"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ratio": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "branch"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "ShellTab": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ShellTab",
+    "description": "First-class open work in the shell center host.",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "documentId",
+          "id",
+          "kind",
+          "title",
+          "workshopId"
+        ],
+        "properties": {
+          "documentId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "create"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "workshopId": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "sessionId",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chat"
+            ]
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "lmeTabId",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "lme"
+            ]
+          },
+          "lmeTabId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "browserTabId",
+          "id",
+          "kind",
+          "title"
+        ],
+        "properties": {
+          "browserTabId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "web"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "surfaceId",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "surface"
+            ]
+          },
+          "surfaceId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "sessionId",
+          "title"
+        ],
+        "properties": {
+          "executionRuntimeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "terminal"
+            ]
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "workId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "ShellUpdate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ShellUpdate",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "snapshot",
+          "type"
+        ],
+        "properties": {
+          "snapshot": {
+            "$ref": "#/definitions/ShellSnapshot"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "EditorGroup": {
+        "type": "object",
+        "required": [
+          "id",
+          "tabIds"
+        ],
+        "properties": {
+          "activeTabId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "tabIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ShellDesktop": {
+        "type": "object",
+        "required": [
+          "id",
+          "layout",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/ShellDesktopLayout"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ShellDesktopLayout": {
+        "type": "object",
+        "required": [
+          "activeGroupId",
+          "groups",
+          "splitRoot",
+          "tabs"
+        ],
+        "properties": {
+          "activeGroupId": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/EditorGroup"
+            }
+          },
+          "splitRoot": {
+            "$ref": "#/definitions/SplitNode"
+          },
+          "tabs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ShellTab"
+            }
+          },
+          "zoomedGroupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ShellSnapshot": {
+        "type": "object",
+        "required": [
+          "activeDesktopId",
+          "desktops",
+          "layout",
+          "revision",
+          "workspaceScopeId"
+        ],
+        "properties": {
+          "activeDesktopId": {
+            "type": "string"
+          },
+          "desktops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ShellDesktop"
+            }
+          },
+          "layout": {
+            "description": "Focused desktop layout mirrored for paint convenience.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ShellDesktopLayout"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "workspaceScopeId": {
+            "type": "string"
+          }
+        }
+      },
+      "ShellTab": {
+        "description": "First-class open work in the shell center host.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "documentId",
+              "id",
+              "kind",
+              "title",
+              "workshopId"
+            ],
+            "properties": {
+              "documentId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "create"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "workshopId": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "lmeTabId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lme"
+                ]
+              },
+              "lmeTabId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "browserTabId",
+              "id",
+              "kind",
+              "title"
+            ],
+            "properties": {
+              "browserTabId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "web"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "surfaceId",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "surface"
+                ]
+              },
+              "surfaceId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "sessionId",
+              "title"
+            ],
+            "properties": {
+              "executionRuntimeId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "terminal"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "workId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "SplitAxis": {
+        "type": "string",
+        "enum": [
+          "row",
+          "column"
+        ]
+      },
+      "SplitNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b",
+              "direction",
+              "id",
+              "ratio",
+              "type"
+            ],
+            "properties": {
+              "a": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "b": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "direction": {
+                "$ref": "#/definitions/SplitAxis"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ratio": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "branch"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "SplitEdge": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SplitEdge",
+    "type": "string",
+    "enum": [
+      "left",
+      "right",
+      "top",
+      "bottom"
+    ]
+  },
+  "SplitNode": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SplitNode",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "id",
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "group"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "a",
+          "b",
+          "direction",
+          "id",
+          "ratio",
+          "type"
+        ],
+        "properties": {
+          "a": {
+            "$ref": "#/definitions/SplitNode"
+          },
+          "b": {
+            "$ref": "#/definitions/SplitNode"
+          },
+          "direction": {
+            "$ref": "#/definitions/SplitAxis"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ratio": {
+            "type": "number",
+            "format": "double"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "branch"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "SplitAxis": {
+        "type": "string",
+        "enum": [
+          "row",
+          "column"
+        ]
+      },
+      "SplitNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b",
+              "direction",
+              "id",
+              "ratio",
+              "type"
+            ],
+            "properties": {
+              "a": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "b": {
+                "$ref": "#/definitions/SplitNode"
+              },
+              "direction": {
+                "$ref": "#/definitions/SplitAxis"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ratio": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "branch"
+                ]
+              }
+            }
+          }
+        ]
       }
     }
   },

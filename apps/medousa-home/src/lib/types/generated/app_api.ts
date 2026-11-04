@@ -325,3 +325,45 @@ export interface TurnStreamEnvelopeV3 {
 export type ChatCommand = { authority_id: string; session_id: string; type: "open_session" } | { ask_job_id?: string | null; authority_id: string; expected_revision?: number | null; lane?: ChatLane | null; local_items?: ChatItem[] | null; replace?: boolean; session_id: string; turns: unknown[]; type: "apply_history" } | { ask_job_id?: string | null; authority_id: string; lane?: ChatLane | null; session_id: string; turns: unknown[]; type: "project_history" } | { expected_revision?: number | null; request: BeginTurnRequest; session_id: string; type: "begin_turn" } | { envelope: TurnStreamEnvelopeV3; expected_revision?: number | null; promote_item_id?: string | null; session_id: string; type: "apply_stream_event" } | { expected_revision?: number | null; reusable_stream?: boolean; session_id: string; turn_id: string; type: "settle_turn" } | { expected_revision?: number | null; parent_item_id?: string | null; parent_turn_id?: string | null; reply_to_work_id?: string | null; session_id: string; type: "link_worker"; work_id: string; worker_session_id?: string | null } | { expected_revision?: number | null; session_id: string; turn: TurnFact; type: "register_turn" } | { expected_revision?: number | null; item_id?: string | null; session_id: string; status_line?: string | null; streaming?: boolean | null; turn_id?: string | null; type: "ensure_worker_follow_up"; work_id: string } | { expected_revision?: number | null; item_id: string; session_id: string; type: "finalize_worker_handoff" } | { expected_revision?: number | null; session_id: string; type: "mark_worker_synthesis_delivered"; work_id: string } | { content: string; expected_revision?: number | null; session_id: string; tools?: string[] | null; type: "deliver_worker_synthesis"; work_id: string } | { expected_revision?: number | null; proposals: ProposalFact[]; session_id: string; type: "apply_proposals"; visible_item_ids?: string[] | null } | { expected_revision?: number | null; session_id: string; type: "apply_visible_items"; visible_item_ids: string[] } | { authority_id: string; items?: ChatItem[] | null; proposals?: ProposalFact[]; session_id: string; type: "project_agent_placement"; visible_item_ids?: string[]; workers?: WorkerPlacementFact[] } | { batches?: AskThreadBatch[]; expected_revision?: number | null; promoted_ask_ids?: string[]; session_id: string; type: "hydrate_ask_threads" } | { ask_job_id: string; expected_revision?: number | null; session_id: string; type: "promote_ask_to_chat" } | { items?: ChatItem[] | null; session_id: string; type: "project_visible_items"; worker_returns?: WorkerReturnFact[] } | { session_id: string; type: "switch_focus" } | { session_id: string; type: "dispose_session" } | { session_id: string; type: "snapshot" };
 
 export type ChatUpdate = { snapshot: ChatSnapshot; type: "snapshot" } | { items: ChatItem[]; type: "projected" } | { groups: AgentPlacementGroup[]; type: "agent_placement" } | { item_ids: string[]; type: "visible_items" } | { reason: string; revision?: number | null; session_id: string; type: "rejected" } | { session_id: string; type: "disposed" };
+
+export type ShellRevision = number;
+
+export type ShellTab = { documentId: string; id: string; kind: "create"; title: string; workshopId: string } | { id: string; kind: "chat"; sessionId: string; title: string } | { id: string; kind: "lme"; lmeTabId: string; title: string } | { browserTabId: string; id: string; kind: "web"; title: string } | { id: string; kind: "surface"; surfaceId: string; title: string } | { executionRuntimeId?: string | null; id: string; kind: "terminal"; sessionId: string; title: string; workId?: string | null };
+
+export interface EditorGroup {
+  activeTabId?: string | null;
+  id: string;
+  tabIds: string[];
+}
+
+export type SplitEdge = "left" | "right" | "top" | "bottom";
+
+export type SplitAxis = "row" | "column";
+
+export type SplitNode = { id: string; type: "group" } | { a: SplitNode; b: SplitNode; direction: SplitAxis; id: string; ratio: number; type: "branch" };
+
+export interface ShellDesktopLayout {
+  activeGroupId: string;
+  groups: EditorGroup[];
+  splitRoot: SplitNode;
+  tabs: ShellTab[];
+  zoomedGroupId?: string | null;
+}
+
+export interface ShellDesktop {
+  id: string;
+  layout: ShellDesktopLayout;
+  name: string;
+}
+
+export interface ShellSnapshot {
+  activeDesktopId: string;
+  desktops: ShellDesktop[];
+  layout: ShellDesktopLayout;
+  revision: number;
+  workspaceScopeId: string;
+}
+
+export type ShellCommand = { active_desktop_id: string; desktops: ShellDesktop[]; type: "hydrate"; workspace_scope_id: string } | { type: "reset"; workspace_scope_id: string } | { activate?: boolean; group_id?: string | null; tab: ShellTab; type: "open_tab" } | { tab_id: string; type: "close_tab" } | { tab_id: string; type: "focus_tab" } | { group_id: string; type: "focus_group" } | { tab_id: string; title: string; type: "patch_tab_title" } | { edge: SplitEdge; group_id: string; move_tab_id?: string | null; new_group_id: string; type: "split_pane" } | { group_id: string; type: "close_pane" } | { branch_id: string; ratio: number; type: "set_split_ratio" } | { desktop_id: string; type: "switch_desktop" } | { desktop_id: string; name: string; type: "create_desktop" } | { desktop_id: string; name: string; type: "rename_desktop" } | { desktop_id: string; type: "remove_desktop" } | { group_id?: string | null; type: "set_zoomed_group" } | { type: "snapshot" };
+
+export type ShellUpdate = { snapshot: ShellSnapshot; type: "snapshot" };

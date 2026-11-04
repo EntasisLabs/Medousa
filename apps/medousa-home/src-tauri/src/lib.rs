@@ -3,6 +3,7 @@
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod account_connections;
 mod app_chat;
+mod app_shell;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod app_update;
 mod autostart;
@@ -191,6 +192,7 @@ fn run_home() {
         .manage(DaemonState::new())
         .manage(EmbeddedDaemonState::new())
         .manage(app_chat::AppChatState::default())
+        .manage(app_shell::AppShellState::default())
         .manage(daemon::local_inference::LocalInferenceStreamState::new())
         .manage(daemon::local_inference::LocalInferenceActivationState::new());
 
@@ -417,6 +419,8 @@ fn run_home() {
             app_chat::app_chat_dispatch,
             app_chat::app_chat_open_session,
             app_chat::app_chat_snapshot,
+            app_shell::app_shell_dispatch,
+            app_shell::app_shell_snapshot,
             code_lsp_transport::code_lsp_attach,
             code_lsp_transport::code_lsp_ready,
             code_lsp_transport::code_lsp_send,

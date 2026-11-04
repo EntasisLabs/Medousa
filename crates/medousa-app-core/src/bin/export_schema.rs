@@ -10,6 +10,10 @@ use medousa_app_core::contract::{
     ChatUpdate, ProposalFact, TranscriptCoordinate, TurnFact, WorkerLinkFact, WorkerPlacementFact,
     WorkerReturnFact,
 };
+use medousa_app_core::shell::{
+    EditorGroup, ShellCommand, ShellDesktop, ShellDesktopLayout, ShellRevision, ShellSnapshot,
+    ShellTab, ShellUpdate, SplitEdge, SplitNode,
+};
 use schemars::schema::RootSchema;
 use schemars::schema_for;
 
@@ -40,6 +44,16 @@ fn main() {
     export_type!(schemas, BeginTurnRequest, "BeginTurnRequest");
     export_type!(schemas, ChatCommand, "ChatCommand");
     export_type!(schemas, ChatUpdate, "ChatUpdate");
+    export_type!(schemas, ShellRevision, "ShellRevision");
+    export_type!(schemas, ShellTab, "ShellTab");
+    export_type!(schemas, EditorGroup, "EditorGroup");
+    export_type!(schemas, SplitEdge, "SplitEdge");
+    export_type!(schemas, SplitNode, "SplitNode");
+    export_type!(schemas, ShellDesktopLayout, "ShellDesktopLayout");
+    export_type!(schemas, ShellDesktop, "ShellDesktop");
+    export_type!(schemas, ShellSnapshot, "ShellSnapshot");
+    export_type!(schemas, ShellCommand, "ShellCommand");
+    export_type!(schemas, ShellUpdate, "ShellUpdate");
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
