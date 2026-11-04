@@ -8366,6 +8366,29 @@
         }
       },
       {
+        "description": "Move a tab between panes on the active desktop.",
+        "type": "object",
+        "required": [
+          "tab_id",
+          "to_group_id",
+          "type"
+        ],
+        "properties": {
+          "tab_id": {
+            "type": "string"
+          },
+          "to_group_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "move_tab"
+            ]
+          }
+        }
+      },
+      {
         "description": "Move a tab from the active desktop onto another desktop's focused pane. Does not switch the active desktop.",
         "type": "object",
         "required": [

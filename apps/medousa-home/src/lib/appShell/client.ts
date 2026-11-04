@@ -199,6 +199,19 @@ export async function patchShellTabTitle(options: {
   );
 }
 
+export async function moveShellTab(options: {
+  tabId: string;
+  toGroupId: string;
+}): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({
+      type: "move_tab",
+      tab_id: options.tabId,
+      to_group_id: options.toGroupId,
+    }),
+  );
+}
+
 export async function moveShellTabToDesktop(options: {
   tabId: string;
   desktopId: string;
