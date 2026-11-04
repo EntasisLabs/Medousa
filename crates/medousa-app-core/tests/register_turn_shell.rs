@@ -47,6 +47,59 @@ fn register_turn_seeds_assistant_shell_when_missing() {
 }
 
 #[test]
+fn register_turn_null_message_id_preserves_stream_linked_binding() {
+    let mut core = ChatCore::default();
+    open(&mut core, "ses_a");
+
+    core.dispatch(ChatCommand::RegisterTurn {
+        session_id: "ses_a".into(),
+        turn: TurnFact {
+            turn_id: "turn_1".into(),
+            mode: "interactive".into(),
+            phase: "streaming".into(),
+            message_id: Some("asst_1".into()),
+            workspace_card_id: None,
+            reusable_stream: false,
+            budget_request_id: None,
+            requested_rounds: None,
+        },
+        reset_assistant_content: false,
+        expected_revision: None,
+    })
+    .unwrap();
+
+    let ChatUpdate::Snapshot { snapshot } = core
+        .dispatch(ChatCommand::RegisterTurn {
+            session_id: "ses_a".into(),
+            turn: TurnFact {
+                turn_id: "turn_1".into(),
+                mode: "interactive".into(),
+                phase: "streaming".into(),
+                message_id: None,
+                workspace_card_id: None,
+                reusable_stream: false,
+                budget_request_id: None,
+                requested_rounds: None,
+            },
+            reset_assistant_content: false,
+            expected_revision: None,
+        })
+        .unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+
+    let turn = snapshot
+        .turns
+        .iter()
+        .find(|t| t.turn_id == "turn_1")
+        .expect("turn present");
+    assert_eq!(turn.message_id.as_deref(), Some("asst_1"));
+    assert_eq!(snapshot.items.len(), 1);
+    assert_eq!(snapshot.items[0].id, "asst_1");
+}
+
+#[test]
 fn register_turn_ask_mode_sets_ask_lane() {
     let mut core = ChatCore::default();
     open(&mut core, "ses_a");
