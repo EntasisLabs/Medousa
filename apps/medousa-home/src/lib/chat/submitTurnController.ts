@@ -105,7 +105,7 @@ export async function submitChatTurn(input: {
     if (!current()) {
       throw new Error("Conversation changed while the turn was being admitted");
     }
-    chat.withSessionFields(sessionId, () => chat.beginTurn(input.userContent, ticket, [], identityUserId));
+    await chat.beginTurn(input.userContent, ticket, [], identityUserId);
     input.onAccepted?.(ticket);
     if (!input.sessionId) chat.clearPendingMedia();
     input.scrollToLatest(true);
@@ -164,12 +164,12 @@ export async function submitChatTurn(input: {
   }
   chatInteractions.ack(sessionId, liquidInteractions.length);
   recordLiquidMetric("interactionsDelivered", liquidInteractions.length);
-  chat.withSessionFields(sessionId, () => chat.beginTurn(
+  await chat.beginTurn(
     input.userContent,
     accepted,
     mediaRefs,
     opts.identityUserId ?? identityUserId,
-  ));
+  );
   if (input.hostContext) chat.withSessionFields(sessionId, () => {
     const userMessage = chat.messagesFor(sessionId).findLast(message => message.role === "user");
     if (userMessage) userMessage.hostContext = input.hostContext;

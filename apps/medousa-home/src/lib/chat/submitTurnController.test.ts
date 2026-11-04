@@ -11,7 +11,7 @@ vi.mock("$lib/stores/chat.svelte", () => ({ chat: {
   get sessionId() { return state.sessionId; }, get focusedSessionId() { return state.sessionId; },
   workshopEpoch: 1, workshopScopeId: "workshop-a", get pendingMediaRefs() { return state.media; },
   messagesFor: () => [{ id: "old", role: "user", content: "Use Svelte 5" }],
-  withSessionFields: (id: string, run: () => void) => { api.fields(id); run(); }, beginTurn: api.begin, clearPendingMedia: api.clearMedia, startTurnStream: vi.fn(),
+  withSessionFields: (id: string, run: () => void) => { api.fields(id); run(); }, beginTurn: (...args: unknown[]) => api.begin(...args), clearPendingMedia: api.clearMedia, startTurnStream: vi.fn(),
 } }));
 vi.mock("$lib/stores/bots.svelte", () => ({ bots: { forSession: () => state.bot ? {bot_id:"ada",external_agent:state.external ? {runtime:"hermes"} : null} : null } }));
 vi.mock("$lib/stores/userProfiles.svelte", () => ({ userProfiles: { turnIdentityUserId: () => "owner" } }));
@@ -82,14 +82,14 @@ it("addresses another native session using its model context and leaves the focu
   expect(api.bot).toHaveBeenCalledWith("labbing");
   expect(api.options).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "labbing", workshopScopeId: "workshop-a" }));
   expect(api.ticket).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "labbing", mediaRefs: [] }));
-  expect(api.fields).toHaveBeenCalledWith("labbing"); expect(api.clearMedia).not.toHaveBeenCalled();
+  expect(api.begin).toHaveBeenCalled(); expect(api.clearMedia).not.toHaveBeenCalled();
   expect(state.sessionId).toBe("chat-a");
 });
 it("keeps an explicit agent destination when the visible chat changes during preparation", async () => {
   const synchronize = vi.fn(async () => { state.sessionId = "chat-b"; return prepared; });
   await submitChatTurn({ ...input(synchronize), sessionId: "labbing" });
   expect(synchronize).toHaveBeenCalledWith("labbing", "codex", expect.anything());
-  expect(api.fields).toHaveBeenCalledWith("labbing"); expect(api.prompt).toHaveBeenCalled();
+  expect(api.begin).toHaveBeenCalled(); expect(api.prompt).toHaveBeenCalled();
 });
 
 it.each(["claude", "devin", "pi", "muse_code", "hades"])("sends %s through the existing agent session API", async runtime => {

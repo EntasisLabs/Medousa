@@ -19,11 +19,7 @@ import {
   linkChatWorker,
   markChatWorkerSynthesisDelivered,
 } from "$lib/appChat/client";
-import {
-  applySnapshotToMessages,
-  applySnapshotTurns,
-  applySnapshotWorkers,
-} from "$lib/appChat/toChatMessage";
+import { paintHostFromSnapshot } from "$lib/appChat/paintFromSnapshot";
 
 /** Stable synthesis bubble id shared with medousa-app-core. */
 export function workerSynthesisItemId(workId: string): string {
@@ -34,14 +30,7 @@ function syncHostFromSnapshot(
   host: ChatStoreHost,
   snapshot: import("$lib/types/generated/app_api").ChatSnapshot,
 ) {
-  const applied = applySnapshotToMessages(snapshot);
-  host.messages = applied.messages;
-  if (applied.activeTurnId !== undefined) {
-    host.activeTurnId = applied.activeTurnId;
-  }
-  host.lastSeqByTurn = applied.lastSeqByTurn;
-  host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
-  host.turns = applySnapshotTurns(snapshot, host.streamOwners);
+  paintHostFromSnapshot(host, host.sessionId, snapshot);
 }
 
 export function workerLinkForTurn(
@@ -388,64 +377,17 @@ export function ensureWorkerFollowUpBubble(
   const link = host.workers.get(workId);
   const id = link?.synthesisMessageId ?? workerSynthesisItemId(workId);
 
-  if (link?.synthesisMessageId) {
-    const existingIdx = host.messages.findIndex(
-      (message) => message.id === link.synthesisMessageId,
-    );
-    if (existingIdx >= 0) {
-      const current = host.messages[existingIdx];
-      host.messages = [
-        ...host.messages.slice(0, existingIdx),
-        {
-          ...current,
-          streaming: options?.streaming ?? true,
-          statusLine: options?.statusLine ?? current.statusLine,
-        },
-        ...host.messages.slice(existingIdx + 1),
-      ];
-      void ensureChatWorkerFollowUp(host.sessionId, workId, {
-        turnId,
-        itemId: link.synthesisMessageId,
-        statusLine: options?.statusLine,
-        streaming: options?.streaming ?? true,
-      })
-        .then((snapshot) => {
-          syncHostFromSnapshot(host, snapshot);
-        })
-        .catch(() => {});
-      return link.synthesisMessageId;
-    }
-  }
-
-  host.messages = [
-    ...host.messages,
-    {
-      id,
-      role: "assistant",
-      content: "",
-      streaming: options?.streaming ?? true,
-      turnId,
-      lane: "worker",
-      workId,
-      statusLine: options?.statusLine ?? null,
-    },
-  ];
-
-  if (link) {
+  if (link && link.synthesisMessageId !== id) {
+    const nextWorkers = new Map(host.workers);
+    nextWorkers.set(workId, { ...link, synthesisMessageId: id });
+    host.workers = nextWorkers;
+  } else if (link && !link.synthesisMessageId) {
     const nextWorkers = new Map(host.workers);
     nextWorkers.set(workId, { ...link, synthesisMessageId: id });
     host.workers = nextWorkers;
   }
 
-  if (turnId) {
-    const activeTurn = host.turns.get(turnId);
-    if (activeTurn) {
-      const nextTurns = new Map(host.turns);
-      nextTurns.set(turnId, { ...activeTurn, messageId: id });
-      host.turns = nextTurns;
-    }
-  }
-
+  // Core owns the follow-up bubble; paint from snapshot only (no optimistic append).
   void ensureChatWorkerFollowUp(host.sessionId, workId, {
     turnId,
     itemId: id,

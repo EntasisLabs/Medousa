@@ -25,25 +25,33 @@ import {
 export function promoteAskToChat(host: ChatStoreHost, jobId: string) {
   const trimmed = jobId.trim();
   if (!trimmed) return;
-  host.messages = dedupeMessagesById(
-    host.messages.map((message) =>
-      message.askJobId === trimmed ? { ...message, lane: "chat", askJobId: null } : message,
-    ),
-  );
   host.promotedAskIds.add(trimmed);
   savePromotedAskIds(host.promotedAskIds, host.workshopScopeId);
 
   const sessionId = host.sessionId.trim();
-  if (!sessionId) return;
-  // Dual-write lane flip into the focused Rust session. Failures are non-fatal —
-  // host messages and promotedAskIds remain the live index.
+  if (!sessionId) {
+    host.messages = dedupeMessagesById(
+      host.messages.map((message) =>
+        message.askJobId === trimmed ? { ...message, lane: "chat", askJobId: null } : message,
+      ),
+    );
+    return;
+  }
+  // Core owns lane identity; paint from the returned snapshot.
   void promoteAskToChatInCore(sessionId, trimmed)
     .then((snapshot) => {
       if (host.sessionId !== sessionId) return;
       const applied = applySnapshotToMessages(snapshot);
       host.messages = applied.messages;
     })
-    .catch(() => {});
+    .catch(() => {
+      if (host.sessionId !== sessionId) return;
+      host.messages = dedupeMessagesById(
+        host.messages.map((message) =>
+          message.askJobId === trimmed ? { ...message, lane: "chat", askJobId: null } : message,
+        ),
+      );
+    });
 }
 
 export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) {

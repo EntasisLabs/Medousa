@@ -653,13 +653,13 @@ export class ChatStore implements ChatStoreHost {
     registerTurn(this, ticket, messageId);
   }
 
-  beginTurn(
+  async beginTurn(
     userContent: string,
     ticket: TurnTicketResponse,
     mediaRefs: MediaRef[] = [],
     speakerProfileId?: string | null,
-  ) {
-    beginTurnCtrl(this, userContent, ticket, mediaRefs, speakerProfileId);
+  ): Promise<void> {
+    await beginTurnCtrl(this, userContent, ticket, mediaRefs, speakerProfileId);
   }
 
   registerTurnFromRecord(record: TurnTicketRecord, messageId: string | null) {

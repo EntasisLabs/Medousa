@@ -1,7 +1,7 @@
 /**
  * One owner for interactive stream attach: start / stop / reattach / cancel.
  * ChatPanel still calls ChatStore.beginTurn + startTurnStream; those façades
- * land here. Transcript body apply goes through `$lib/stream/transcriptReducer`.
+ * land here. Transcript body authority is ChatCore (snapshot → paint).
  */
 
 import { externalConversationBinding } from "$lib/utils/externalConversationSession";
@@ -30,12 +30,12 @@ import { narration } from "$lib/stores/narration.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import {
   applyHistoryToSession,
-  applySnapshotToMessages,
   beginChatTurn,
   openChatSession,
   registerChatTurn,
   settleChatTurn,
 } from "$lib/appChat/client";
+import { paintHostFromSnapshot } from "$lib/appChat/paintFromSnapshot";
 import {
   applySnapshotTurns,
   applySnapshotWorkers,
@@ -55,19 +55,20 @@ export function registerTurn(
   ticket: TurnTicketResponse,
   messageId: string | null,
 ) {
+  const sessionId = ticket.session_id?.trim() || host.sessionId;
   host.activeTurnId = ticket.mode === "interactive" ? ticket.turn_id : host.activeTurnId;
   const next = new Map(host.turns);
   next.set(ticket.turn_id, turnStateFromTicket(ticket, messageId));
   host.turns = next;
 
-  // Dual-write logical ticket into core (no shells). Failures are non-fatal —
-  // BeginTurn / stream projection also upsert TurnFact.
+  // Core owns turn facts; paint the returned snapshot (including messages).
   const authority =
     host.messages.find((message) => message.transcript?.authorityId)?.transcript
       ?.authorityId ?? `auth_${"0".repeat(64)}`;
-  void openChatSession(host.sessionId, authority)
+  const epoch = host.transcriptEpoch;
+  void openChatSession(sessionId, authority)
     .then(() =>
-      registerChatTurn(host.sessionId, {
+      registerChatTurn(sessionId, {
         turnId: ticket.turn_id,
         mode: ticket.mode,
         phase: ticket.phase || "streaming",
@@ -79,27 +80,36 @@ export function registerTurn(
       }),
     )
     .then((snapshot) => {
-      host.turns = applySnapshotTurns(snapshot, host.streamOwners);
-      host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
-      if (snapshot.activeTurnId !== undefined) {
-        host.activeTurnId = snapshot.activeTurnId ?? host.activeTurnId;
-      }
+      host.withSessionFields(sessionId, () => {
+        if (epoch !== host.transcriptEpoch) return;
+        // RegisterTurn upserts TurnFact only — never clobber transcript bodies
+        // that BeginTurn / stream projection already painted.
+        host.turns = applySnapshotTurns(snapshot, host.streamOwners);
+        host.workers = applySnapshotWorkers(host.workers, snapshot, sessionId);
+        if (snapshot.activeTurnId !== undefined) {
+          host.activeTurnId = snapshot.activeTurnId ?? host.activeTurnId;
+        }
+        if (snapshot.lastSeqByTurn) {
+          host.lastSeqByTurn = new Map(
+            Object.entries(snapshot.lastSeqByTurn).map(([id, seq]) => [id, seq]),
+          );
+        }
+        if (messageId && ticket.mode === "interactive") {
+          host.assistantId = messageId;
+        }
+      });
     })
     .catch(() => {});
 }
 
-export function beginTurn(
+export async function beginTurn(
   host: ChatStoreHost,
   userContent: string,
   ticket: TurnTicketResponse,
   mediaRefs: MediaRef[] = [],
   speakerProfileId?: string | null,
-) {
-  narration.stop();
-  host.sessionPristine = false;
-  host.transcriptEpoch += 1;
-  host.historyNotice = null;
-  host.askHandoffNotice = null;
+): Promise<void> {
+  const sessionId = ticket.session_id?.trim() || host.sessionId;
   const userMessageId = randomUuid();
   const assistantId = randomUuid();
   const isAsk = ticket.mode === "background";
@@ -108,52 +118,73 @@ export function beginTurn(
   const statusLine = ticket.mode === "background" ? "Background turn started" : null;
   const mediaAttachments =
     mediaRefs.length > 0 ? chatMediaAttachmentsFromRefs(mediaRefs) : null;
-  host.messages = [
-    ...host.messages,
-    ...beginTurnMessages({
-      userContent,
-      ticket,
-      mediaRefs,
-      speakerProfileId,
-      userMessageId,
-      assistantId,
-    }),
-  ];
-  registerTurn(host, ticket, assistantId);
-  if (ticket.mode === "interactive") {
-    host.assistantId = assistantId;
-    host.activeTurnId = ticket.turn_id;
-  } else {
-    host.backgroundActivity += 1;
-    host.askHandoffNotice = "Ask started";
-  }
-  host.streamError = null;
 
-  // Seed the Rust app core with the same ids the host painted. Failures are
-  // non-fatal — stream projection reseeds from host paint only when the shell
-  // is missing (BeginTurn race / reconnect), not on every event.
-  const authority =
-    host.messages.find((message) => message.transcript?.authorityId)?.transcript
-      ?.authorityId ?? `auth_${"0".repeat(64)}`;
-  void openChatSession(host.sessionId, authority)
-    .then(() =>
-      beginChatTurn(host.sessionId, {
-        turnId: ticket.turn_id,
-        userItemId: userMessageId,
-        assistantItemId: assistantId,
-        userText: userContent,
-        createdAt: ticket.accepted_at_utc ?? null,
-        lane,
-        askJobId: isAsk ? askJobId : null,
-        statusLine,
-        speakerProfileId: speakerProfileId?.trim() || null,
-        mediaAttachments,
-        mode: ticket.mode,
-        workspaceCardId: ticket.workspace_card_id ?? (isAsk ? askJobId : null),
-        reusableStream: isReusableAgentStream(ticket.stream_url),
-      }),
-    )
-    .catch(() => {});
+  let authority = `auth_${"0".repeat(64)}`;
+  host.withSessionFields(sessionId, () => {
+    narration.stop();
+    host.sessionPristine = false;
+    host.transcriptEpoch += 1;
+    host.historyNotice = null;
+    host.askHandoffNotice = null;
+    host.streamError = null;
+    authority =
+      host.messages.find((message) => message.transcript?.authorityId)?.transcript
+        ?.authorityId ?? authority;
+    if (ticket.mode === "interactive") {
+      host.assistantId = assistantId;
+      host.activeTurnId = ticket.turn_id;
+    } else {
+      host.backgroundActivity += 1;
+      host.askHandoffNotice = "Ask started";
+    }
+  });
+
+  try {
+    await openChatSession(sessionId, authority);
+    const snapshot = await beginChatTurn(sessionId, {
+      turnId: ticket.turn_id,
+      userItemId: userMessageId,
+      assistantItemId: assistantId,
+      userText: userContent,
+      createdAt: ticket.accepted_at_utc ?? null,
+      lane,
+      askJobId: isAsk ? askJobId : null,
+      statusLine,
+      speakerProfileId: speakerProfileId?.trim() || null,
+      mediaAttachments,
+      mode: ticket.mode,
+      workspaceCardId: ticket.workspace_card_id ?? (isAsk ? askJobId : null),
+      reusableStream: isReusableAgentStream(ticket.stream_url),
+    });
+    host.withSessionFields(sessionId, () => {
+      paintHostFromSnapshot(host, sessionId, snapshot, {
+        liveTurnId: ticket.mode === "interactive" ? ticket.turn_id : null,
+        preferredAssistantId: assistantId,
+      });
+    });
+  } catch {
+    // Core unavailable (pure-DOM harness / reconnect race): fall back to host paint.
+    host.withSessionFields(sessionId, () => {
+      host.messages = [
+        ...host.messages,
+        ...beginTurnMessages({
+          userContent,
+          ticket,
+          mediaRefs,
+          speakerProfileId,
+          userMessageId,
+          assistantId,
+        }),
+      ];
+      const next = new Map(host.turns);
+      next.set(ticket.turn_id, turnStateFromTicket(ticket, assistantId));
+      host.turns = next;
+      if (ticket.mode === "interactive") {
+        host.assistantId = assistantId;
+        host.activeTurnId = ticket.turn_id;
+      }
+    });
+  }
 }
 
 export function registerTurnFromRecord(
@@ -547,6 +578,8 @@ export function shouldSettleTurnFromStream(host: ChatStoreHost, turnId: string):
 export function settleTurn(host: ChatStoreHost, turnId: string) {
   const turn = host.turns.get(turnId);
   if (!turn) return;
+  const sessionId = host.sessionId;
+  const reusableStream = turn.reusableStream;
   if (turn.mode === "background" || host.backgroundActivity > 0) {
     host.backgroundActivity = Math.max(0, host.backgroundActivity - 1);
   }
@@ -561,22 +594,19 @@ export function settleTurn(host: ChatStoreHost, turnId: string) {
   host.turns = next;
   // Agent-session IDs and their sequence persist across prompts. Keep the
   // cursor so the next subscription cannot replay the previous terminal event.
-  if (!turn.reusableStream) host.lastSeqByTurn.delete(turnId);
+  if (!reusableStream) host.lastSeqByTurn.delete(turnId);
   markRecentlySettled(host, turnId);
   scheduleTerminalHistoryReconcile(host, turnId);
   void detachStreamOwner(host, turnId);
-  void settleChatTurn(host.sessionId, turnId, {
-    reusableStream: turn.reusableStream,
+  const epoch = host.transcriptEpoch;
+  void settleChatTurn(sessionId, turnId, {
+    reusableStream,
   })
     .then((snapshot) => {
-      host.turns = applySnapshotTurns(snapshot, host.streamOwners);
-      host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
-      host.lastSeqByTurn = new Map(
-        Object.entries(snapshot.lastSeqByTurn ?? {}).map(([id, seq]) => [id, seq]),
-      );
-      if (snapshot.activeTurnId !== undefined) {
-        host.activeTurnId = snapshot.activeTurnId ?? null;
-      }
+      host.withSessionFields(sessionId, () => {
+        if (epoch !== host.transcriptEpoch) return;
+        paintHostFromSnapshot(host, sessionId, snapshot);
+      });
     })
     .catch(() => {});
 }
@@ -657,8 +687,7 @@ async function reconcileTurnFromHistory(host: ChatStoreHost, turnId: string) {
       localItems: host.messages.map(chatMessageToItem),
     });
     if (epoch !== host.transcriptEpoch) return;
-    const applied = applySnapshotToMessages(snapshot);
-    host.messages = applied.messages;
+    paintHostFromSnapshot(host, sessionId, snapshot);
     host.sanitizeTranscript();
   } catch {
     // Best-effort — manual reload still works.
