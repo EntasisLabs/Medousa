@@ -32,5 +32,9 @@ path = "src/bin/app_chat_dispatch.rs"
 name = "app-shell-dispatch"
 path = "src/bin/app_shell_dispatch.rs"
 
+[[bin]]
+name = "app-vault-buffer-dispatch"
+path = "src/bin/app_vault_buffer_dispatch.rs"
+
 [dev-dependencies]
 serde_json = "1"

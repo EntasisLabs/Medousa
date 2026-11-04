@@ -5,7 +5,7 @@
 //! [`contract::ChatSnapshot`] updates; they do not reimplement reconciliation.
 //!
 //! Shell layout identity (desktops / tabs / panes) lives in [`shell`]. Vault
-//! note buffers land as a sibling domain. Daemon wire types and workshop
+//! note buffers live in [`vault_buffer`]. Daemon wire types and workshop
 //! authority stay in `medousa-types` / the daemon.
 
 pub mod agents;
@@ -17,6 +17,7 @@ pub mod parts;
 pub mod session;
 pub mod shell;
 pub mod stream;
+pub mod vault_buffer;
 pub mod wire_history;
 
 pub use contract::{
@@ -34,3 +35,7 @@ pub use shell::{
     ShellCommand, ShellCore, ShellCoreError, ShellRevision, ShellSnapshot, ShellTab, ShellUpdate,
 };
 pub use stream::{apply_v3_envelope_to_item, fold_v3_envelopes, v3_event_promotes_chat_message};
+pub use vault_buffer::{
+    NoteBufferFact, VaultBufferCommand, VaultBufferCore, VaultBufferCoreError, VaultBufferRevision,
+    VaultBufferSnapshot, VaultBufferUpdate,
+};

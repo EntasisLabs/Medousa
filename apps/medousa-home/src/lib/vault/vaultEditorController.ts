@@ -63,6 +63,10 @@ import {
   VAULT_SAVED_WHISPER_MS,
   type VaultSaveStatus,
 } from "$lib/utils/vaultSave";
+import {
+  dualWriteVaultBuffer,
+  toNoteBufferFact,
+} from "$lib/appVaultBuffer/client";
 
 export type VaultNotePlane = "live" | "build";
 export type VaultProposalSource = "agent" | "operator";
@@ -141,6 +145,10 @@ export class VaultEditorController {
   resetEditorBuffers() {
     this.buffers.clear();
     this.bufferWarmInFlight.clear();
+    dualWriteVaultBuffer({
+      type: "reset",
+      workshop_scope_id: String(this.#host.workshopEpoch),
+    });
   }
 
   async flushForVaultRootChange(): Promise<boolean> {
@@ -171,13 +179,18 @@ export class VaultEditorController {
 
   deleteBuffer(path: string) {
     const key = this.bufferKey(path);
-    if (key) this.buffers.delete(key);
+    if (key) {
+      this.buffers.delete(key);
+      dualWriteVaultBuffer({ type: "dispose_buffer", path: key });
+    }
   }
 
   seedBuffer(buffer: NoteBuffer) {
     const key = this.bufferKey(buffer.path);
-    this.buffers.set(key, { ...buffer, path: key });
+    const next = { ...buffer, path: key };
+    this.buffers.set(key, next);
     this.#host.bumpNoteBuffers();
+    dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
   }
 
   contentFor(path: string): string {
@@ -233,7 +246,7 @@ export class VaultEditorController {
     if (!host.dirty && host.contentHash == null && !host.content.trim()) return;
     const key = this.bufferKey(path);
     if (!key) return;
-    this.buffers.set(key, {
+    const next: NoteBuffer = {
       path: key,
       content: host.content,
       baselineContent: host.baselineContent,
@@ -241,14 +254,16 @@ export class VaultEditorController {
       title: host.title,
       dirty: host.dirty,
       contentRevision: host.contentRevision,
-    });
+    };
+    this.buffers.set(key, next);
     host.bumpNoteBuffers();
+    dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
   }
 
   writeAbsoluteBuffer(path: string, content: string, title: string) {
     const key = this.bufferKey(path);
     if (!key) return;
-    this.buffers.set(key, {
+    const next: NoteBuffer = {
       path: key,
       content,
       baselineContent: content,
@@ -256,13 +271,15 @@ export class VaultEditorController {
       title,
       dirty: false,
       contentRevision: (this.buffers.get(key)?.contentRevision ?? 0) + 1,
-    });
+    };
+    this.buffers.set(key, next);
     this.#host.bumpNoteBuffers();
+    dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
   }
 
   writeBufferFromResponse(path: string, response: VaultNoteContentResponse) {
     const key = normalizeVaultNotePath(path.trim()) || path.trim();
-    this.buffers.set(key, {
+    const next: NoteBuffer = {
       path: key,
       content: response.content,
       baselineContent: response.content,
@@ -270,8 +287,10 @@ export class VaultEditorController {
       title: response.note.title,
       dirty: false,
       contentRevision: (this.buffers.get(key)?.contentRevision ?? 0) + 1,
-    });
+    };
+    this.buffers.set(key, next);
     this.#host.bumpNoteBuffers();
+    dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
   }
 
   restoreBufferIntoFocused(buffer: NoteBuffer) {
@@ -504,10 +523,24 @@ export class VaultEditorController {
         if (host.dirty && host.saveStatus !== "conflict") {
           host.saveStatus = "unsaved";
         }
+        dualWriteVaultBuffer({
+          type: "reconcile_from_disk",
+          path,
+          content: serverContent,
+          content_hash: vaultIfMatchToken(response),
+          title: response.note.title,
+        });
         return;
       }
 
       host.applyNote(response);
+      dualWriteVaultBuffer({
+        type: "reconcile_from_disk",
+        path,
+        content: serverContent,
+        content_hash: vaultIfMatchToken(response),
+        title: response.note.title,
+      });
     } catch (err) {
       if (epoch === host.workshopEpoch && path === host.selectedPath) {
         host.error = err instanceof Error ? err.message : String(err);
@@ -683,6 +716,15 @@ export class VaultEditorController {
     if (host.saveStatus !== "saving") {
       host.saveStatus = "unsaved";
     }
+    const focusedPath = host.selectedPath?.trim();
+    if (focusedPath) {
+      dualWriteVaultBuffer({
+        type: "apply_edit",
+        path: this.bufferKey(focusedPath) || focusedPath,
+        content: nextContent,
+        title: host.title,
+      });
+    }
     this.scheduleAutosave();
   }
 
@@ -726,8 +768,9 @@ export class VaultEditorController {
     const host = this.#host;
     const key = normalizeVaultNotePath(path.trim()) || path.trim();
     const prior = this.buffers.get(key);
+    let next: NoteBuffer;
     if (host.isFocusedPath(key)) {
-      this.buffers.set(key, {
+      next = {
         path: key,
         content: host.content,
         baselineContent: writtenContent,
@@ -735,10 +778,10 @@ export class VaultEditorController {
         title: note.title,
         dirty: host.dirty,
         contentRevision: host.contentRevision,
-      });
+      };
     } else {
       const content = prior?.content ?? writtenContent;
-      this.buffers.set(key, {
+      next = {
         path: key,
         content,
         baselineContent: writtenContent,
@@ -746,9 +789,21 @@ export class VaultEditorController {
         title: note.title,
         dirty: content !== writtenContent,
         contentRevision: prior?.contentRevision ?? 0,
+      };
+    }
+    this.buffers.set(key, next);
+    host.bumpNoteBuffers();
+    if (next.dirty) {
+      dualWriteVaultBuffer({ type: "seed_buffer", buffer: toNoteBufferFact(next) });
+    } else {
+      dualWriteVaultBuffer({
+        type: "mark_saved",
+        path: key,
+        content: writtenContent,
+        content_hash: ifMatchToken,
+        title: note.title,
       });
     }
-    host.bumpNoteBuffers();
   }
 
   private async runSaveJob(path: string, job: NoteSaveJob): Promise<NoteSaveResult> {

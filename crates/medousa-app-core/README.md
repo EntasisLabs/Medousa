@@ -41,6 +41,8 @@ Canonical chat timeline:
     session; `SwitchFocus` moves the pointer; host switch/warm loads core snapshots
 14. Shell layout core — `ShellCore` owns desktop/tab/pane identity + focus;
     Home dual-writes hydrate/open/focus/close/switch; persistence I/O stays in JS
+15. Vault note buffers — `VaultBufferCore` owns path-keyed dirty/baseline/conflict;
+    daemon stays filesystem authority; Home dual-writes seed/edit/save/reconcile
 
 ## Regenerate client types
 
@@ -59,9 +61,10 @@ cargo test -p medousa-app-core --tests
 ## Host integration
 
 Tauri commands: `app_chat_dispatch`, `app_chat_open_session`, `app_chat_snapshot`,
-`app_shell_dispatch`, `app_shell_snapshot`.
+`app_shell_dispatch`, `app_shell_snapshot`, `app_vault_buffer_dispatch`,
+`app_vault_buffer_snapshot`.
 
 Vitest installs a Node stdio backend (`apps/medousa-home/vitest/`) that drives
 the same `ChatCore` via `app-chat-dispatch`. That harness stays outside `$lib`
 so the production Vite client never bundles Node builtins. Shell layout uses
-`app-shell-dispatch` the same way.
+`app-shell-dispatch`; vault buffers use `app-vault-buffer-dispatch`.

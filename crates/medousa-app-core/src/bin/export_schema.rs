@@ -14,6 +14,9 @@ use medousa_app_core::shell::{
     EditorGroup, ShellCommand, ShellDesktop, ShellDesktopLayout, ShellRevision, ShellSnapshot,
     ShellTab, ShellUpdate, SplitEdge, SplitNode,
 };
+use medousa_app_core::vault_buffer::{
+    NoteBufferFact, VaultBufferCommand, VaultBufferRevision, VaultBufferSnapshot, VaultBufferUpdate,
+};
 use schemars::schema::RootSchema;
 use schemars::schema_for;
 
@@ -54,6 +57,11 @@ fn main() {
     export_type!(schemas, ShellSnapshot, "ShellSnapshot");
     export_type!(schemas, ShellCommand, "ShellCommand");
     export_type!(schemas, ShellUpdate, "ShellUpdate");
+    export_type!(schemas, VaultBufferRevision, "VaultBufferRevision");
+    export_type!(schemas, NoteBufferFact, "NoteBufferFact");
+    export_type!(schemas, VaultBufferSnapshot, "VaultBufferSnapshot");
+    export_type!(schemas, VaultBufferCommand, "VaultBufferCommand");
+    export_type!(schemas, VaultBufferUpdate, "VaultBufferUpdate");
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
