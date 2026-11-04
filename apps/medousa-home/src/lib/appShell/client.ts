@@ -125,9 +125,84 @@ export async function splitShellPane(options: {
   );
 }
 
+export async function closeShellPane(groupId: string): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({ type: "close_pane", group_id: groupId }),
+  );
+}
+
+export async function setShellSplitRatio(options: {
+  branchId: string;
+  ratio: number;
+}): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({
+      type: "set_split_ratio",
+      branch_id: options.branchId,
+      ratio: options.ratio,
+    }),
+  );
+}
+
 export async function switchShellDesktop(desktopId: string): Promise<ShellSnapshot> {
   return expectSnapshot(
     await dispatchAppShell({ type: "switch_desktop", desktop_id: desktopId }),
+  );
+}
+
+export async function createShellDesktop(options: {
+  desktopId: string;
+  name: string;
+}): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({
+      type: "create_desktop",
+      desktop_id: options.desktopId,
+      name: options.name,
+    }),
+  );
+}
+
+export async function renameShellDesktop(options: {
+  desktopId: string;
+  name: string;
+}): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({
+      type: "rename_desktop",
+      desktop_id: options.desktopId,
+      name: options.name,
+    }),
+  );
+}
+
+export async function removeShellDesktop(desktopId: string): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({ type: "remove_desktop", desktop_id: desktopId }),
+  );
+}
+
+export async function setShellZoomedGroup(
+  groupId?: string | null,
+): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({
+      type: "set_zoomed_group",
+      group_id: groupId ?? null,
+    }),
+  );
+}
+
+export async function patchShellTabTitle(options: {
+  tabId: string;
+  title: string;
+}): Promise<ShellSnapshot> {
+  return expectSnapshot(
+    await dispatchAppShell({
+      type: "patch_tab_title",
+      tab_id: options.tabId,
+      title: options.title,
+    }),
   );
 }
 

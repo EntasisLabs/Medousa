@@ -40,7 +40,9 @@ Canonical chat timeline:
 13. Multi-session focus — `OpenSession` does not steal focus from another live
     session; `SwitchFocus` moves the pointer; host switch/warm loads core snapshots
 14. Shell layout core — `ShellCore` owns desktop/tab/pane identity + focus;
-    Home dual-writes hydrate/open/focus/close/switch; persistence I/O stays in JS
+    Home commits hydrate/open/focus/close/switch plus split/close-pane/ratio/
+    zoom/create·rename·remove desktop/patch-title then paints; persistence I/O
+    stays in JS (cross-desktop tab moves still host-local)
 15. Vault note buffers — `VaultBufferCore` owns path-keyed dirty/baseline/conflict;
     daemon stays filesystem authority; Home dual-writes seed/edit/save/reconcile
 16. Undertaking pane bindings — `UndertakingBindingCore` owns group→undertaking

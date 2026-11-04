@@ -9,11 +9,21 @@ import type {
   ShellSnapshot,
   ShellTab as AppShellTab,
 } from "$lib/types/generated/app_api";
+import type { SplitEdge } from "$lib/types/generated/app_api";
 import {
+  closeShellPane,
   closeShellTab,
+  createShellDesktop,
+  focusShellGroup,
   focusShellTab,
   hydrateShellLayout,
   openShellTab,
+  patchShellTabTitle,
+  removeShellDesktop,
+  renameShellDesktop,
+  setShellSplitRatio,
+  setShellZoomedGroup,
+  splitShellPane,
   switchShellDesktop,
 } from "./client";
 
@@ -125,4 +135,86 @@ export function commitSwitchShellDesktop(
   desktopId: string,
 ) {
   commitShell(paint, () => switchShellDesktop(desktopId));
+}
+
+export function commitSplitShellPane(
+  paint: ShellSnapshotPainter,
+  options: {
+    groupId: string;
+    edge: SplitEdge;
+    newGroupId: string;
+    moveTabId?: string | null;
+  },
+) {
+  commitShell(paint, () =>
+    splitShellPane({
+      groupId: options.groupId,
+      edge: options.edge,
+      newGroupId: options.newGroupId,
+      moveTabId: options.moveTabId ?? null,
+    }),
+  );
+}
+
+export function commitCloseShellPane(paint: ShellSnapshotPainter, groupId: string) {
+  commitShell(paint, () => closeShellPane(groupId));
+}
+
+export function commitSetShellSplitRatio(
+  paint: ShellSnapshotPainter,
+  options: { branchId: string; ratio: number },
+) {
+  commitShell(paint, () => setShellSplitRatio(options));
+}
+
+export function commitFocusShellGroup(paint: ShellSnapshotPainter, groupId: string) {
+  commitShell(paint, () => focusShellGroup(groupId));
+}
+
+export function commitCreateShellDesktop(
+  paint: ShellSnapshotPainter,
+  options: {
+    desktopId: string;
+    name: string;
+    /** When set, restore this desktop after create (core CreateDesktop activates). */
+    restoreDesktopId?: string | null;
+  },
+) {
+  commitShell(paint, async () => {
+    const snapshot = await createShellDesktop({
+      desktopId: options.desktopId,
+      name: options.name,
+    });
+    const restore = options.restoreDesktopId?.trim();
+    if (!restore || restore === options.desktopId) return snapshot;
+    return switchShellDesktop(restore);
+  });
+}
+
+export function commitRenameShellDesktop(
+  paint: ShellSnapshotPainter,
+  options: { desktopId: string; name: string },
+) {
+  commitShell(paint, () => renameShellDesktop(options));
+}
+
+export function commitRemoveShellDesktop(
+  paint: ShellSnapshotPainter,
+  desktopId: string,
+) {
+  commitShell(paint, () => removeShellDesktop(desktopId));
+}
+
+export function commitSetShellZoomedGroup(
+  paint: ShellSnapshotPainter,
+  groupId?: string | null,
+) {
+  commitShell(paint, () => setShellZoomedGroup(groupId));
+}
+
+export function commitPatchShellTabTitle(
+  paint: ShellSnapshotPainter,
+  options: { tabId: string; title: string },
+) {
+  commitShell(paint, () => patchShellTabTitle(options));
 }
