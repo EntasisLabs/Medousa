@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use medousa_app_core::contract::{
     AgentPlacementEntry, AgentPlacementGroup, AskThreadBatch, BeginTurnRequest, ChatCommand,
     ChatItem, ChatItemRole, ChatLane, ChatRelationship, ChatRevision, ChatSegment, ChatSnapshot,
-    ChatUpdate, ProposalFact, TranscriptCoordinate, WorkerLinkFact, WorkerPlacementFact,
+    ChatUpdate, ProposalFact, TranscriptCoordinate, TurnFact, WorkerLinkFact, WorkerPlacementFact,
     WorkerReturnFact,
 };
 use schemars::schema::RootSchema;
@@ -31,6 +31,7 @@ fn main() {
     export_type!(schemas, ProposalFact, "ProposalFact");
     export_type!(schemas, WorkerPlacementFact, "WorkerPlacementFact");
     export_type!(schemas, WorkerLinkFact, "WorkerLinkFact");
+    export_type!(schemas, TurnFact, "TurnFact");
     export_type!(schemas, AskThreadBatch, "AskThreadBatch");
     export_type!(schemas, WorkerReturnFact, "WorkerReturnFact");
     export_type!(schemas, AgentPlacementEntry, "AgentPlacementEntry");

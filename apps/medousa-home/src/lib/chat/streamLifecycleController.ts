@@ -33,8 +33,13 @@ import {
   applySnapshotToMessages,
   beginChatTurn,
   openChatSession,
+  registerChatTurn,
   settleChatTurn,
 } from "$lib/appChat/client";
+import {
+  applySnapshotTurns,
+  applySnapshotWorkers,
+} from "$lib/appChat/toChatMessage";
 import { chatMessageToItem } from "$lib/appChat/fromChatMessage";
 import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 
@@ -54,6 +59,33 @@ export function registerTurn(
   const next = new Map(host.turns);
   next.set(ticket.turn_id, turnStateFromTicket(ticket, messageId));
   host.turns = next;
+
+  // Dual-write logical ticket into core (no shells). Failures are non-fatal —
+  // BeginTurn / stream projection also upsert TurnFact.
+  const authority =
+    host.messages.find((message) => message.transcript?.authorityId)?.transcript
+      ?.authorityId ?? `auth_${"0".repeat(64)}`;
+  void openChatSession(host.sessionId, authority)
+    .then(() =>
+      registerChatTurn(host.sessionId, {
+        turnId: ticket.turn_id,
+        mode: ticket.mode,
+        phase: ticket.phase || "streaming",
+        messageId,
+        workspaceCardId: ticket.workspace_card_id ?? null,
+        reusableStream: isReusableAgentStream(ticket.stream_url),
+        budgetRequestId: null,
+        requestedRounds: null,
+      }),
+    )
+    .then((snapshot) => {
+      host.turns = applySnapshotTurns(snapshot, host.streamOwners);
+      host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
+      if (snapshot.activeTurnId !== undefined) {
+        host.activeTurnId = snapshot.activeTurnId ?? host.activeTurnId;
+      }
+    })
+    .catch(() => {});
 }
 
 export function beginTurn(
@@ -98,7 +130,8 @@ export function beginTurn(
   host.streamError = null;
 
   // Seed the Rust app core with the same ids the host painted. Failures are
-  // non-fatal — stream projection still re-seeds via localItems.
+  // non-fatal — stream projection reseeds from host paint only when the shell
+  // is missing (BeginTurn race / reconnect), not on every event.
   const authority =
     host.messages.find((message) => message.transcript?.authorityId)?.transcript
       ?.authorityId ?? `auth_${"0".repeat(64)}`;
@@ -115,6 +148,9 @@ export function beginTurn(
         statusLine,
         speakerProfileId: speakerProfileId?.trim() || null,
         mediaAttachments,
+        mode: ticket.mode,
+        workspaceCardId: ticket.workspace_card_id ?? (isAsk ? askJobId : null),
+        reusableStream: isReusableAgentStream(ticket.stream_url),
       }),
     )
     .catch(() => {});
@@ -531,7 +567,18 @@ export function settleTurn(host: ChatStoreHost, turnId: string) {
   void detachStreamOwner(host, turnId);
   void settleChatTurn(host.sessionId, turnId, {
     reusableStream: turn.reusableStream,
-  }).catch(() => {});
+  })
+    .then((snapshot) => {
+      host.turns = applySnapshotTurns(snapshot, host.streamOwners);
+      host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
+      host.lastSeqByTurn = new Map(
+        Object.entries(snapshot.lastSeqByTurn ?? {}).map(([id, seq]) => [id, seq]),
+      );
+      if (snapshot.activeTurnId !== undefined) {
+        host.activeTurnId = snapshot.activeTurnId ?? null;
+      }
+    })
+    .catch(() => {});
 }
 
 function markRecentlySettled(host: ChatStoreHost, turnId: string) {

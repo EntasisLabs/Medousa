@@ -333,8 +333,13 @@ struct PartialChrome {
     error_line: Option<String>,
     error_detail: Option<String>,
     reasoning: Option<String>,
-    phase: Option<String>,
+    phase: Option<Option<String>>,
     status_line: Option<Option<String>>,
+    stage_whisper: Option<Option<String>>,
+    content: Option<String>,
+    budget_request_id: Option<Option<String>>,
+    requested_rounds: Option<Option<u64>>,
+    work_id: Option<String>,
     response_provider: Option<String>,
     response_model: Option<String>,
     reactions: Option<Vec<medousa_types::MessageReaction>>,
@@ -389,11 +394,54 @@ pub fn apply_v3_envelope_to_item(message: ChatItem, envelope: &TurnStreamEnvelop
                 WorkerAckKind::Worker => "worker",
                 WorkerAckKind::Workshop => "workshop",
             };
+            let whisper = {
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    match ack_kind {
+                        WorkerAckKind::Worker => "Background worker started",
+                        WorkerAckKind::Workshop => "Medousa is in the workshop",
+                    }
+                } else {
+                    trimmed
+                }
+            };
             segments.push(ChatSegment::Handoff {
                 handoff_kind: handoff_kind.into(),
-                text: text.clone(),
+                text: whisper.to_string(),
                 work_id: work_id.clone(),
             });
+            // Empty handoff shell: whisper-only ack, no painted body.
+            chrome.streaming = Some(false);
+            chrome.phase = Some(None);
+            chrome.status_line = Some(None);
+            chrome.stage_whisper = Some(Some(whisper.to_string()));
+            chrome.content = Some(String::new());
+            if let Some(work_id) = work_id.clone() {
+                chrome.work_id = Some(work_id);
+            }
+        }
+        TurnStreamEventV3::BudgetApprovalRequired {
+            request_id,
+            requested_rounds,
+            reason,
+            ..
+        } => {
+            let status = {
+                let trimmed = reason.trim();
+                if trimmed.is_empty() {
+                    "Waiting for operator approval"
+                } else {
+                    trimmed
+                }
+            };
+            chrome.streaming = Some(false);
+            chrome.phase = Some(Some("budget_blocked".into()));
+            chrome.status_line = Some(Some(status.to_string()));
+            chrome.budget_request_id = Some(Some(request_id.clone()));
+            chrome.requested_rounds = Some(Some(*requested_rounds as u64));
+            if message.content.trim().is_empty() {
+                chrome.content = Some(status.to_string());
+            }
         }
         TurnStreamEventV3::WorkerSynthesis { .. } => {
             chrome.streaming = Some(false);
@@ -407,7 +455,7 @@ pub fn apply_v3_envelope_to_item(message: ChatItem, envelope: &TurnStreamEnvelop
             operator_message,
             ..
         } => {
-            chrome.phase = Some(phase.clone());
+            chrome.phase = Some(Some(phase.clone()));
             chrome.status_line = Some(if phase == "accepted" {
                 None
             } else {
@@ -465,6 +513,8 @@ pub fn apply_v3_envelope_to_item(message: ChatItem, envelope: &TurnStreamEnvelop
             chrome.streaming = Some(false);
             chrome.answer_state = Some(outcome_string(outcome));
             chrome.failed = Some(failed);
+            chrome.phase = Some(None);
+            chrome.status_line = Some(None);
             chrome.error_line = if failed {
                 operator_message
                     .clone()
@@ -520,10 +570,25 @@ pub fn apply_v3_envelope_to_item(message: ChatItem, envelope: &TurnStreamEnvelop
         next.reasoning = Some(value);
     }
     if let Some(value) = chrome.phase {
-        next.phase = Some(value);
+        next.phase = value;
     }
     if let Some(value) = chrome.status_line {
         next.status_line = value;
+    }
+    if let Some(value) = chrome.stage_whisper {
+        next.stage_whisper = value;
+    }
+    if let Some(value) = chrome.content {
+        next.content = value;
+    }
+    if let Some(value) = chrome.budget_request_id {
+        next.budget_request_id = value;
+    }
+    if let Some(value) = chrome.requested_rounds {
+        next.requested_rounds = value;
+    }
+    if let Some(value) = chrome.work_id {
+        next.work_id = Some(value);
     }
     if let Some(value) = chrome.response_provider {
         next.response_provider = Some(value);
