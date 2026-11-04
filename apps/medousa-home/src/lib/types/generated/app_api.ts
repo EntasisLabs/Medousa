@@ -367,3 +367,26 @@ export interface ShellSnapshot {
 export type ShellCommand = { active_desktop_id: string; desktops: ShellDesktop[]; type: "hydrate"; workspace_scope_id: string } | { type: "reset"; workspace_scope_id: string } | { activate?: boolean; group_id?: string | null; tab: ShellTab; type: "open_tab" } | { tab_id: string; type: "close_tab" } | { tab_id: string; type: "focus_tab" } | { group_id: string; type: "focus_group" } | { tab_id: string; title: string; type: "patch_tab_title" } | { edge: SplitEdge; group_id: string; move_tab_id?: string | null; new_group_id: string; type: "split_pane" } | { group_id: string; type: "close_pane" } | { branch_id: string; ratio: number; type: "set_split_ratio" } | { desktop_id: string; type: "switch_desktop" } | { desktop_id: string; name: string; type: "create_desktop" } | { desktop_id: string; name: string; type: "rename_desktop" } | { desktop_id: string; type: "remove_desktop" } | { group_id?: string | null; type: "set_zoomed_group" } | { type: "snapshot" };
 
 export type ShellUpdate = { snapshot: ShellSnapshot; type: "snapshot" };
+
+export type VaultBufferRevision = number;
+
+export interface NoteBufferFact {
+  baselineContent: string;
+  conflict?: boolean;
+  content: string;
+  contentHash?: string | null;
+  contentRevision: number;
+  dirty: boolean;
+  path: string;
+  title: string;
+}
+
+export interface VaultBufferSnapshot {
+  buffers: NoteBufferFact[];
+  revision: number;
+  workshopScopeId: string;
+}
+
+export type VaultBufferCommand = { type: "reset"; workshop_scope_id: string } | { buffer: NoteBufferFact; type: "seed_buffer" } | { content: string; path: string; title?: string | null; type: "apply_edit" } | { content: string; content_hash?: string | null; path: string; title?: string | null; type: "mark_saved" } | { content: string; content_hash?: string | null; path: string; title?: string | null; type: "reconcile_from_disk" } | { path: string; type: "dispose_buffer" } | { path?: string | null; type: "snapshot" };
+
+export type VaultBufferUpdate = { snapshot: VaultBufferSnapshot; type: "snapshot" };

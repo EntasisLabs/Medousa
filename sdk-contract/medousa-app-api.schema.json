@@ -7886,6 +7886,54 @@
       }
     }
   },
+  "NoteBufferFact": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "NoteBufferFact",
+    "description": "Path-keyed note buffer (chat sessionRuntime analogue for vault panes).",
+    "type": "object",
+    "required": [
+      "baselineContent",
+      "content",
+      "contentRevision",
+      "dirty",
+      "path",
+      "title"
+    ],
+    "properties": {
+      "baselineContent": {
+        "type": "string"
+      },
+      "conflict": {
+        "description": "Disk changed under a dirty local edit — host should surface conflict UI.",
+        "default": false,
+        "type": "boolean"
+      },
+      "content": {
+        "type": "string"
+      },
+      "contentHash": {
+        "description": "If-Match token: opaque note_version when available, else digest hash.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "contentRevision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "dirty": {
+        "type": "boolean"
+      },
+      "path": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      }
+    }
+  },
   "ProposalFact": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ProposalFact",
@@ -10450,6 +10498,411 @@
           "string",
           "null"
         ]
+      }
+    }
+  },
+  "VaultBufferCommand": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultBufferCommand",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "type",
+          "workshop_scope_id"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "reset"
+            ]
+          },
+          "workshop_scope_id": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "description": "Insert or replace a buffer from disk / absolute file / test seed.",
+        "type": "object",
+        "required": [
+          "buffer",
+          "type"
+        ],
+        "properties": {
+          "buffer": {
+            "$ref": "#/definitions/NoteBufferFact"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "seed_buffer"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Apply an editor edit. Marks dirty when content ≠ baseline.",
+        "type": "object",
+        "required": [
+          "content",
+          "path",
+          "type"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "apply_edit"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Successful save — content becomes the new baseline.",
+        "type": "object",
+        "required": [
+          "content",
+          "path",
+          "type"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "content_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "mark_saved"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Disk/agent bytes arrived. Clean buffers adopt; dirty buffers conflict.",
+        "type": "object",
+        "required": [
+          "content",
+          "path",
+          "type"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "content_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "reconcile_from_disk"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "path",
+          "type"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "dispose_buffer"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "NoteBufferFact": {
+        "description": "Path-keyed note buffer (chat sessionRuntime analogue for vault panes).",
+        "type": "object",
+        "required": [
+          "baselineContent",
+          "content",
+          "contentRevision",
+          "dirty",
+          "path",
+          "title"
+        ],
+        "properties": {
+          "baselineContent": {
+            "type": "string"
+          },
+          "conflict": {
+            "description": "Disk changed under a dirty local edit — host should surface conflict UI.",
+            "default": false,
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string"
+          },
+          "contentHash": {
+            "description": "If-Match token: opaque note_version when available, else digest hash.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contentRevision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "dirty": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "VaultBufferRevision": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "uint64",
+    "type": "integer",
+    "format": "uint64",
+    "minimum": 0.0
+  },
+  "VaultBufferSnapshot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultBufferSnapshot",
+    "type": "object",
+    "required": [
+      "buffers",
+      "revision",
+      "workshopScopeId"
+    ],
+    "properties": {
+      "buffers": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/NoteBufferFact"
+        }
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "workshopScopeId": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "NoteBufferFact": {
+        "description": "Path-keyed note buffer (chat sessionRuntime analogue for vault panes).",
+        "type": "object",
+        "required": [
+          "baselineContent",
+          "content",
+          "contentRevision",
+          "dirty",
+          "path",
+          "title"
+        ],
+        "properties": {
+          "baselineContent": {
+            "type": "string"
+          },
+          "conflict": {
+            "description": "Disk changed under a dirty local edit — host should surface conflict UI.",
+            "default": false,
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string"
+          },
+          "contentHash": {
+            "description": "If-Match token: opaque note_version when available, else digest hash.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contentRevision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "dirty": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "VaultBufferUpdate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultBufferUpdate",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "snapshot",
+          "type"
+        ],
+        "properties": {
+          "snapshot": {
+            "$ref": "#/definitions/VaultBufferSnapshot"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          }
+        }
+      }
+    ],
+    "definitions": {
+      "NoteBufferFact": {
+        "description": "Path-keyed note buffer (chat sessionRuntime analogue for vault panes).",
+        "type": "object",
+        "required": [
+          "baselineContent",
+          "content",
+          "contentRevision",
+          "dirty",
+          "path",
+          "title"
+        ],
+        "properties": {
+          "baselineContent": {
+            "type": "string"
+          },
+          "conflict": {
+            "description": "Disk changed under a dirty local edit — host should surface conflict UI.",
+            "default": false,
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string"
+          },
+          "contentHash": {
+            "description": "If-Match token: opaque note_version when available, else digest hash.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contentRevision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "dirty": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "VaultBufferSnapshot": {
+        "type": "object",
+        "required": [
+          "buffers",
+          "revision",
+          "workshopScopeId"
+        ],
+        "properties": {
+          "buffers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/NoteBufferFact"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "workshopScopeId": {
+            "type": "string"
+          }
+        }
       }
     }
   },

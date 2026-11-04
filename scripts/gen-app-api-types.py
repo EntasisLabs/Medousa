@@ -43,6 +43,11 @@ EXPORTED_TYPES = [
     "ShellSnapshot",
     "ShellCommand",
     "ShellUpdate",
+    "VaultBufferRevision",
+    "NoteBufferFact",
+    "VaultBufferSnapshot",
+    "VaultBufferCommand",
+    "VaultBufferUpdate",
 ]
 
 

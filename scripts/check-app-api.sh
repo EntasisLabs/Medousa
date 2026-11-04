@@ -30,6 +30,10 @@ for name in (
     "ShellCommand",
     "ShellUpdate",
     "ShellTab",
+    "VaultBufferSnapshot",
+    "VaultBufferCommand",
+    "VaultBufferUpdate",
+    "NoteBufferFact",
 ):
     if name not in data:
         print(f"missing schema root: {name}", file=sys.stderr)
