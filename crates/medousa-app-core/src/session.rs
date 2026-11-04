@@ -11,7 +11,8 @@ use crate::agents::{
 };
 use crate::contract::{
     AskThreadBatch, BeginTurnRequest, ChatCommand, ChatItem, ChatItemRole, ChatLane, ChatRevision,
-    ChatSnapshot, ChatUpdate, ProposalFact, WorkerLinkFact, WorkerPlacementFact, WorkerReturnFact,
+    ChatSnapshot, ChatUpdate, ProposalFact, TurnFact, WorkerLinkFact, WorkerPlacementFact,
+    WorkerReturnFact,
 };
 use crate::display::present_chat_item_ids;
 use crate::merge::{dedupe_messages_by_id, merge_transcript};
@@ -43,6 +44,16 @@ struct ApplyHistoryArgs<'a> {
     local_items: Option<Vec<ChatItem>>,
 }
 
+struct LinkWorkerArgs<'a> {
+    session_id: &'a str,
+    work_id: String,
+    parent_turn_id: Option<String>,
+    parent_item_id: Option<String>,
+    reply_to_work_id: Option<String>,
+    worker_session_id: Option<String>,
+    expected_revision: Option<ChatRevision>,
+}
+
 #[derive(Debug, Clone)]
 struct WorkerLink {
     work_id: String,
@@ -51,10 +62,48 @@ struct WorkerLink {
     reply_to_work_id: Option<String>,
     synthesis_item_id: Option<String>,
     synthesis_delivered: bool,
+    session_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TurnRecord {
+    turn_id: String,
+    mode: String,
+    phase: String,
+    message_id: Option<String>,
+    workspace_card_id: Option<String>,
+    reusable_stream: bool,
+    budget_request_id: Option<String>,
+    requested_rounds: Option<u64>,
+}
+
+impl TurnRecord {
+    fn to_fact(&self) -> TurnFact {
+        TurnFact {
+            turn_id: self.turn_id.clone(),
+            mode: self.mode.clone(),
+            phase: self.phase.clone(),
+            message_id: self.message_id.clone(),
+            workspace_card_id: self.workspace_card_id.clone(),
+            reusable_stream: self.reusable_stream,
+            budget_request_id: self.budget_request_id.clone(),
+            requested_rounds: self.requested_rounds,
+        }
+    }
 }
 
 fn synthesis_item_id_for(work_id: &str) -> String {
     format!("worker-synth:{work_id}")
+}
+
+fn turn_mode_from_request(request: &BeginTurnRequest) -> String {
+    if let Some(mode) = request.mode.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+        return mode.to_string();
+    }
+    match request.lane {
+        Some(ChatLane::Ask) | Some(ChatLane::Worker) => "background".into(),
+        _ => "interactive".into(),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +117,7 @@ struct SessionState {
     workers: HashMap<String, WorkerLink>,
     /// Insertion order for placement when segment coordinates are missing.
     worker_order: Vec<String>,
+    turns: BTreeMap<String, TurnRecord>,
     proposals: Vec<ProposalFact>,
     visible_item_ids: Vec<String>,
 }
@@ -112,8 +162,13 @@ impl SessionState {
                 reply_to_work_id: link.reply_to_work_id.clone(),
                 synthesis_item_id: link.synthesis_item_id.clone(),
                 synthesis_delivered: link.synthesis_delivered,
+                session_id: link.session_id.clone(),
             })
             .collect()
+    }
+
+    fn turn_facts(&self) -> Vec<TurnFact> {
+        self.turns.values().map(TurnRecord::to_fact).collect()
     }
 
     fn snapshot(&self) -> ChatSnapshot {
@@ -142,6 +197,7 @@ impl SessionState {
             relationships,
             agent_groups,
             workers: self.worker_link_facts(),
+            turns: self.turn_facts(),
             last_seq_by_turn: self.last_seq_by_turn.clone(),
         }
     }
@@ -180,8 +236,9 @@ impl ChatCore {
                 session_id,
                 authority_id,
             } => {
-                self.open_session(session_id, authority_id);
-                let session_id = self.focused_session_id.clone().unwrap();
+                // Always return the opened session's snapshot — even when focus
+                // stays elsewhere (background stream apply / warm hydrate).
+                self.open_session(session_id.clone(), authority_id);
                 Ok(ChatUpdate::Snapshot {
                     snapshot: self.snapshot(&session_id)?,
                 })
@@ -240,15 +297,22 @@ impl ChatCore {
                 parent_turn_id,
                 parent_item_id,
                 reply_to_work_id,
+                worker_session_id,
                 expected_revision,
-            } => self.link_worker(
-                &session_id,
+            } => self.link_worker(LinkWorkerArgs {
+                session_id: &session_id,
                 work_id,
                 parent_turn_id,
                 parent_item_id,
                 reply_to_work_id,
+                worker_session_id,
                 expected_revision,
-            ),
+            }),
+            ChatCommand::RegisterTurn {
+                session_id,
+                turn,
+                expected_revision,
+            } => self.register_turn(&session_id, turn, expected_revision),
             ChatCommand::EnsureWorkerFollowUp {
                 session_id,
                 work_id,
@@ -370,6 +434,7 @@ impl ChatCore {
                 last_seq_by_turn: BTreeMap::new(),
                 workers: HashMap::new(),
                 worker_order: Vec::new(),
+                turns: BTreeMap::new(),
                 proposals: Vec::new(),
                 visible_item_ids: Vec::new(),
             });
@@ -379,7 +444,13 @@ impl ChatCore {
         {
             existing.authority_id = authority_id;
         }
-        self.focused_session_id = Some(session_id);
+        // Do not steal focus from another live session — background stream apply
+        // opens sessions constantly. Explicit SwitchFocus owns the focus pointer.
+        let should_focus = self.focused_session_id.is_none()
+            || self.focused_session_id.as_deref() == Some(session_id.as_str());
+        if should_focus {
+            self.focused_session_id = Some(session_id);
+        }
     }
 
     fn ensure_revision(
@@ -446,13 +517,22 @@ impl ChatCore {
         Self::ensure_revision(session, expected_revision)?;
 
         let lane = request.lane.or(Some(ChatLane::Chat));
+        let mode = turn_mode_from_request(&request);
+        let workspace_card_id = request
+            .workspace_card_id
+            .clone()
+            .or_else(|| request.ask_job_id.clone())
+            .or_else(|| request.work_id.clone());
+        let assistant_item_id = request.assistant_item_id.clone();
+        let turn_id = request.turn_id.clone();
+        let reusable_stream = request.reusable_stream;
         session.items.push(ChatItem {
             id: request.user_item_id,
             role: ChatItemRole::User,
             content: request.user_text,
             created_at: request.created_at.clone(),
             streaming: None,
-            turn_id: Some(request.turn_id.clone()),
+            turn_id: Some(turn_id.clone()),
             lane,
             ask_job_id: request.ask_job_id.clone(),
             work_id: request.work_id.clone(),
@@ -461,12 +541,12 @@ impl ChatCore {
             ..empty_item()
         });
         session.items.push(ChatItem {
-            id: request.assistant_item_id,
+            id: assistant_item_id.clone(),
             role: ChatItemRole::Assistant,
             content: String::new(),
             created_at: request.created_at,
             streaming: Some(true),
-            turn_id: Some(request.turn_id.clone()),
+            turn_id: Some(turn_id.clone()),
             lane,
             ask_job_id: request.ask_job_id,
             work_id: request.work_id,
@@ -474,7 +554,20 @@ impl ChatCore {
             segments: Some(Vec::new()),
             ..empty_item()
         });
-        session.active_turn_id = Some(request.turn_id);
+        session.turns.insert(
+            turn_id.clone(),
+            TurnRecord {
+                turn_id: turn_id.clone(),
+                mode,
+                phase: "streaming".into(),
+                message_id: Some(assistant_item_id),
+                workspace_card_id,
+                reusable_stream,
+                budget_request_id: None,
+                requested_rounds: None,
+            },
+        );
+        session.active_turn_id = Some(turn_id);
         session.bump();
         Ok(ChatUpdate::Snapshot {
             snapshot: session.snapshot(),
@@ -509,12 +602,14 @@ impl ChatCore {
 
         let index = resolve_stream_target_index(session, &turn_id, &envelope.event);
 
-        if let Some(index) = index {
+        let target_item_id = if let Some(index) = index {
             session.items[index] =
                 apply_v3_envelope_to_item(session.items[index].clone(), &envelope);
+            Some(session.items[index].id.clone())
         } else if v3_event_promotes_chat_message(&envelope.event) {
+            let id = promote_item_id.unwrap_or_else(|| format!("orphan:{turn_id}"));
             let mut shell = ChatItem {
-                id: promote_item_id.unwrap_or_else(|| format!("orphan:{turn_id}")),
+                id: id.clone(),
                 role: ChatItemRole::Assistant,
                 content: String::new(),
                 streaming: Some(true),
@@ -525,7 +620,14 @@ impl ChatCore {
             };
             shell = apply_v3_envelope_to_item(shell, &envelope);
             session.items.push(shell);
+            Some(id)
         } else {
+            None
+        };
+
+        if target_item_id.is_some() || session.turns.contains_key(&turn_id) {
+            update_turn_from_stream(session, &turn_id, &envelope.event, target_item_id.as_deref());
+        } else if target_item_id.is_none() {
             return Ok(ChatUpdate::Snapshot {
                 snapshot: session.snapshot(),
             });
@@ -561,7 +663,13 @@ impl ChatCore {
         if session.active_turn_id.as_deref() == Some(turn_id) {
             session.active_turn_id = None;
         }
-        if !reusable_stream {
+        let keep_seq = reusable_stream
+            || session
+                .turns
+                .get(turn_id)
+                .is_some_and(|turn| turn.reusable_stream);
+        session.turns.remove(turn_id);
+        if !keep_seq {
             session.last_seq_by_turn.remove(turn_id);
         }
         session.bump();
@@ -570,13 +678,73 @@ impl ChatCore {
         })
     }
 
-    fn link_worker(
+    fn link_worker(&mut self, args: LinkWorkerArgs<'_>) -> Result<ChatUpdate, ChatCoreError> {
+        let session = self
+            .sessions
+            .get_mut(args.session_id)
+            .ok_or_else(|| ChatCoreError::SessionNotOpen(args.session_id.to_string()))?;
+        Self::ensure_revision(session, args.expected_revision)?;
+
+        let resolved_parent = resolve_worker_parent_item_id(
+            &session.items,
+            args.parent_item_id.as_deref(),
+            args.parent_turn_id.as_deref(),
+            Some(args.work_id.as_str()),
+        )
+        .map(str::to_string)
+        .or(args.parent_item_id);
+
+        match session.workers.get_mut(&args.work_id) {
+            Some(existing) => {
+                // Spawn parent is immutable once set.
+                if existing.parent_turn_id.is_none() {
+                    existing.parent_turn_id = args.parent_turn_id;
+                }
+                if existing.parent_item_id.is_none() {
+                    existing.parent_item_id = resolved_parent;
+                }
+                if let Some(reply) = args.reply_to_work_id {
+                    existing.reply_to_work_id = Some(reply);
+                }
+                if existing.session_id.is_none() {
+                    existing.session_id = args.worker_session_id;
+                }
+            }
+            None => {
+                session.worker_order.push(args.work_id.clone());
+                session.workers.insert(
+                    args.work_id.clone(),
+                    WorkerLink {
+                        work_id: args.work_id.clone(),
+                        parent_turn_id: args.parent_turn_id,
+                        parent_item_id: resolved_parent,
+                        reply_to_work_id: args.reply_to_work_id,
+                        synthesis_item_id: None,
+                        synthesis_delivered: false,
+                        session_id: args.worker_session_id,
+                    },
+                );
+            }
+        }
+        if let Some(parent_turn) = session
+            .workers
+            .get(&args.work_id)
+            .and_then(|link| link.parent_turn_id.clone())
+            && let Some(turn) = session.turns.get_mut(&parent_turn)
+            && turn.workspace_card_id.is_none()
+        {
+            turn.workspace_card_id = Some(args.work_id);
+        }
+        session.bump();
+        Ok(ChatUpdate::Snapshot {
+            snapshot: session.snapshot(),
+        })
+    }
+
+    fn register_turn(
         &mut self,
         session_id: &str,
-        work_id: String,
-        parent_turn_id: Option<String>,
-        parent_item_id: Option<String>,
-        reply_to_work_id: Option<String>,
+        turn: TurnFact,
         expected_revision: Option<ChatRevision>,
     ) -> Result<ChatUpdate, ChatCoreError> {
         let session = self
@@ -584,43 +752,33 @@ impl ChatCore {
             .get_mut(session_id)
             .ok_or_else(|| ChatCoreError::SessionNotOpen(session_id.to_string()))?;
         Self::ensure_revision(session, expected_revision)?;
-
-        let resolved_parent = resolve_worker_parent_item_id(
-            &session.items,
-            parent_item_id.as_deref(),
-            parent_turn_id.as_deref(),
-            Some(work_id.as_str()),
-        )
-        .map(str::to_string)
-        .or(parent_item_id);
-
-        match session.workers.get_mut(&work_id) {
-            Some(existing) => {
-                // Spawn parent is immutable once set.
-                if existing.parent_turn_id.is_none() {
-                    existing.parent_turn_id = parent_turn_id;
-                }
-                if existing.parent_item_id.is_none() {
-                    existing.parent_item_id = resolved_parent;
-                }
-                if let Some(reply) = reply_to_work_id {
-                    existing.reply_to_work_id = Some(reply);
-                }
-            }
-            None => {
-                session.worker_order.push(work_id.clone());
-                session.workers.insert(
-                    work_id.clone(),
-                    WorkerLink {
-                        work_id,
-                        parent_turn_id,
-                        parent_item_id: resolved_parent,
-                        reply_to_work_id,
-                        synthesis_item_id: None,
-                        synthesis_delivered: false,
-                    },
-                );
-            }
+        let turn_id = turn.turn_id.trim().to_string();
+        if turn_id.is_empty() {
+            return Err(ChatCoreError::Rejected("turn_id must not be empty".into()));
+        }
+        session.turns.insert(
+            turn_id.clone(),
+            TurnRecord {
+                turn_id: turn_id.clone(),
+                mode: if turn.mode.trim().is_empty() {
+                    "interactive".into()
+                } else {
+                    turn.mode
+                },
+                phase: if turn.phase.trim().is_empty() {
+                    "streaming".into()
+                } else {
+                    turn.phase
+                },
+                message_id: turn.message_id,
+                workspace_card_id: turn.workspace_card_id,
+                reusable_stream: turn.reusable_stream,
+                budget_request_id: turn.budget_request_id,
+                requested_rounds: turn.requested_rounds,
+            },
+        );
+        if session.active_turn_id.is_none() {
+            session.active_turn_id = Some(turn_id);
         }
         session.bump();
         Ok(ChatUpdate::Snapshot {
@@ -656,6 +814,7 @@ impl ChatCore {
                     reply_to_work_id: None,
                     synthesis_item_id: None,
                     synthesis_delivered: false,
+                    session_id: None,
                 },
             );
         }
@@ -1043,6 +1202,84 @@ impl ChatCore {
         Ok(ChatUpdate::VisibleItems {
             item_ids: present_chat_item_ids(&items, &worker_returns),
         })
+    }
+}
+
+fn update_turn_from_stream(
+    session: &mut SessionState,
+    turn_id: &str,
+    event: &medousa_types::TurnStreamEventV3,
+    target_item_id: Option<&str>,
+) {
+    use medousa_types::{TurnStreamEventV3, WorkerAckKind};
+
+    let Some(turn) = session.turns.get_mut(turn_id) else {
+        return;
+    };
+    match event {
+        TurnStreamEventV3::WorkerAck { ack_kind, work_id, .. } => {
+            turn.phase = match ack_kind {
+                WorkerAckKind::Workshop => "workshop_handoff",
+                WorkerAckKind::Worker => "worker_handoff",
+            }
+            .into();
+            // Handoff releases the live assistant binding.
+            turn.message_id = None;
+            if let Some(work_id) = work_id.clone() {
+                turn.workspace_card_id = Some(work_id);
+            }
+        }
+        TurnStreamEventV3::BudgetApprovalRequired {
+            request_id,
+            requested_rounds,
+            ..
+        } => {
+            turn.phase = "budget_blocked".into();
+            turn.message_id = target_item_id.map(str::to_string);
+            turn.budget_request_id = Some(request_id.clone());
+            turn.requested_rounds = Some(*requested_rounds as u64);
+            turn.workspace_card_id = Some(request_id.clone());
+        }
+        TurnStreamEventV3::Status { phase, .. } => {
+            if turn.phase != "worker_handoff"
+                && turn.phase != "workshop_handoff"
+                && turn.phase != "budget_blocked"
+            {
+                turn.phase = phase.clone();
+            }
+            if let Some(item_id) = target_item_id
+                && turn.message_id.is_none()
+            {
+                turn.message_id = Some(item_id.to_string());
+            }
+        }
+        TurnStreamEventV3::WorkerSynthesis { work_id, .. } => {
+            if let Some(work_id) = work_id.clone() {
+                turn.workspace_card_id = Some(work_id);
+            }
+            if let Some(item_id) = target_item_id {
+                turn.message_id = Some(item_id.to_string());
+            }
+            turn.phase = "streaming".into();
+        }
+        TurnStreamEventV3::TurnCompleted { .. } => {
+            if turn.mode == "background"
+                && (turn.phase == "worker_handoff" || turn.phase == "workshop_handoff")
+            {
+                // Keep handoff phase until synthesis settles.
+            } else {
+                turn.phase = "done".into();
+            }
+        }
+        _ => {
+            if let Some(item_id) = target_item_id
+                && turn.message_id.is_none()
+                && turn.phase != "worker_handoff"
+                && turn.phase != "workshop_handoff"
+            {
+                turn.message_id = Some(item_id.to_string());
+            }
+        }
     }
 }
 

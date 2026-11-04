@@ -32,6 +32,9 @@ fn begin(core: &mut ChatCore) {
             status_line: Some("Background turn started".into()),
             speaker_profile_id: Some("profile".into()),
             media_attachments: None,
+                    mode: None,
+            workspace_card_id: None,
+            reusable_stream: false,
         },
         expected_revision: None,
     })
@@ -63,6 +66,7 @@ fn ensure_follow_up_is_idempotent_and_stable() {
         parent_turn_id: Some("parent".into()),
         parent_item_id: Some("a".into()),
         reply_to_work_id: None,
+        worker_session_id: None,
         expected_revision: None,
     })
     .unwrap();
@@ -96,6 +100,7 @@ fn ensure_follow_up_is_idempotent_and_stable() {
             parent_item_id: Some("a".into()),
             reply_to_work_id: None,
             synthesis_item_id: Some("worker-synth:work".into()),
+            session_id: None,
             synthesis_delivered: false,
         }]
     );
@@ -135,6 +140,7 @@ fn deliver_synthesis_finalizes_handoff_and_unlocks_settle() {
         parent_turn_id: Some("parent".into()),
         parent_item_id: Some("a".into()),
         reply_to_work_id: None,
+        worker_session_id: None,
         expected_revision: None,
     })
     .unwrap();
@@ -208,6 +214,7 @@ fn worker_synthesis_stream_targets_follow_up_not_handoff() {
         parent_turn_id: Some("parent".into()),
         parent_item_id: Some("a".into()),
         reply_to_work_id: None,
+        worker_session_id: None,
         expected_revision: None,
     })
     .unwrap();
@@ -269,6 +276,7 @@ fn settle_turn_clears_all_assistants_for_turn() {
         parent_turn_id: Some("parent".into()),
         parent_item_id: Some("a".into()),
         reply_to_work_id: None,
+        worker_session_id: None,
         expected_revision: None,
     })
     .unwrap();
@@ -297,4 +305,101 @@ fn settle_turn_clears_all_assistants_for_turn() {
     for item in snapshot.items.iter().filter(|item| item.role == ChatItemRole::Assistant) {
         assert_eq!(item.streaming, Some(false));
     }
+}
+
+#[test]
+fn worker_ack_and_budget_paint_handoff_chrome() {
+    let mut core = ChatCore::new();
+    open(&mut core);
+    begin(&mut core);
+
+    let ChatUpdate::Snapshot { snapshot } = core
+        .dispatch(ChatCommand::ApplyStreamEvent {
+            session_id: "ses".into(),
+            envelope: TurnStreamEnvelopeV3 {
+                schema_version: TURN_STREAM_V3_SCHEMA_VERSION,
+                turn_id: "parent".into(),
+                seq: 1,
+                emitted_at_utc: Utc::now(),
+                event: TurnStreamEventV3::WorkerAck {
+                    ack_kind: medousa_types::WorkerAckKind::Worker,
+                    text: "Background worker started".into(),
+                    tool_names: vec![],
+                    work_id: Some("work".into()),
+                },
+            },
+            expected_revision: None,
+            promote_item_id: None,
+        })
+        .unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+    let handoff = snapshot.items.iter().find(|item| item.id == "a").unwrap();
+    assert_eq!(handoff.streaming, Some(false));
+    assert_eq!(handoff.content, "");
+    assert_eq!(
+        handoff.stage_whisper.as_deref(),
+        Some("Background worker started")
+    );
+    assert_eq!(handoff.work_id.as_deref(), Some("work"));
+    assert!(handoff.segments.as_ref().is_some_and(|segments| {
+        segments.iter().any(|segment| {
+            matches!(
+                segment,
+                medousa_app_core::contract::ChatSegment::Handoff { .. }
+            )
+        })
+    }));
+
+    let ChatUpdate::Snapshot { snapshot } = core
+        .dispatch(ChatCommand::ApplyStreamEvent {
+            session_id: "ses".into(),
+            envelope: TurnStreamEnvelopeV3 {
+                schema_version: TURN_STREAM_V3_SCHEMA_VERSION,
+                turn_id: "parent".into(),
+                seq: 2,
+                emitted_at_utc: Utc::now(),
+                event: TurnStreamEventV3::BudgetApprovalRequired {
+                    request_id: "budget-1".into(),
+                    rounds_executed: 3,
+                    max_tool_rounds: 3,
+                    requested_rounds: 5,
+                    reason: "Need more rounds".into(),
+                    progress_summary: None,
+                },
+            },
+            expected_revision: None,
+            promote_item_id: None,
+        })
+        .unwrap()
+    else {
+        panic!("expected snapshot");
+    };
+    let blocked = snapshot.items.iter().find(|item| item.id == "a").unwrap();
+    assert_eq!(blocked.phase.as_deref(), Some("budget_blocked"));
+    assert_eq!(blocked.budget_request_id.as_deref(), Some("budget-1"));
+    assert_eq!(blocked.requested_rounds, Some(5));
+    assert_eq!(blocked.status_line.as_deref(), Some("Need more rounds"));
+}
+
+#[test]
+fn begin_turn_seeds_turn_fact_and_settle_clears_it() {
+    let mut core = ChatCore::new();
+    open(&mut core);
+    begin(&mut core);
+    let snapshot = core.snapshot("ses").unwrap();
+    assert_eq!(snapshot.turns.len(), 1);
+    assert_eq!(snapshot.turns[0].turn_id, "parent");
+    assert_eq!(snapshot.turns[0].mode, "interactive");
+    assert_eq!(snapshot.turns[0].message_id.as_deref(), Some("a"));
+
+    core.dispatch(ChatCommand::SettleTurn {
+        session_id: "ses".into(),
+        turn_id: "parent".into(),
+        expected_revision: None,
+        reusable_stream: false,
+    })
+    .unwrap();
+    assert!(core.snapshot("ses").unwrap().turns.is_empty());
 }

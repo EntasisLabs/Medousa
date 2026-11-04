@@ -19,7 +19,11 @@ import {
   linkChatWorker,
   markChatWorkerSynthesisDelivered,
 } from "$lib/appChat/client";
-import { applySnapshotToMessages, applySnapshotWorkers } from "$lib/appChat/toChatMessage";
+import {
+  applySnapshotToMessages,
+  applySnapshotTurns,
+  applySnapshotWorkers,
+} from "$lib/appChat/toChatMessage";
 
 /** Stable synthesis bubble id shared with medousa-app-core. */
 export function workerSynthesisItemId(workId: string): string {
@@ -32,10 +36,12 @@ function syncHostFromSnapshot(
 ) {
   const applied = applySnapshotToMessages(snapshot);
   host.messages = applied.messages;
-  for (const [turnId, seq] of applied.lastSeqByTurn) {
-    host.lastSeqByTurn.set(turnId, seq);
+  if (applied.activeTurnId !== undefined) {
+    host.activeTurnId = applied.activeTurnId;
   }
+  host.lastSeqByTurn = applied.lastSeqByTurn;
   host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
+  host.turns = applySnapshotTurns(snapshot, host.streamOwners);
 }
 
 export function workerLinkForTurn(
@@ -121,10 +127,9 @@ export function linkWorker(
   },
 ) {
   const existing = host.workers.get(params.workId);
+  // Optimistic host index until the snapshot lands; spawn coords stay immutable.
   const link: WorkerLink = {
     workId: params.workId,
-    // Card refreshes can resolve the turn to its later synthesis bubble.
-    // Spawn coordinates are immutable once linked; only hydrate missing ones.
     parentTurnId: existing?.parentTurnId ?? params.parentTurnId ?? null,
     messageId: existing?.messageId ?? params.messageId ?? null,
     synthesisMessageId: existing?.synthesisMessageId ?? null,
@@ -135,26 +140,14 @@ export function linkWorker(
   nextWorkers.set(params.workId, link);
   host.workers = nextWorkers;
 
-  if (link.parentTurnId) {
-    const turn = host.turns.get(link.parentTurnId);
-    if (turn) {
-      const nextTurns = new Map(host.turns);
-      nextTurns.set(link.parentTurnId, {
-        ...turn,
-        workspaceCardId: params.workId,
-      });
-      host.turns = nextTurns;
-    }
-  }
-
-  // Keep the Rust app core's placement/relationship projection in sync. Failures
-  // are non-fatal — the host map remains the live card index.
-  void linkChatWorker(params.sessionId, params.workId, {
+  // Core owns the durable worker/turn facts; snapshot replace is authoritative.
+  void linkChatWorker(host.sessionId, params.workId, {
     parentTurnId: link.parentTurnId,
     parentItemId: link.messageId,
+    workerSessionId: params.sessionId,
   })
     .then((snapshot) => {
-      host.workers = applySnapshotWorkers(host.workers, snapshot, params.sessionId);
+      syncHostFromSnapshot(host, snapshot);
     })
     .catch(() => {});
 }
@@ -417,7 +410,7 @@ export function ensureWorkerFollowUpBubble(
         streaming: options?.streaming ?? true,
       })
         .then((snapshot) => {
-          host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
+          syncHostFromSnapshot(host, snapshot);
         })
         .catch(() => {});
       return link.synthesisMessageId;
@@ -460,7 +453,7 @@ export function ensureWorkerFollowUpBubble(
     streaming: options?.streaming ?? true,
   })
     .then((snapshot) => {
-      host.workers = applySnapshotWorkers(host.workers, snapshot, host.sessionId);
+      syncHostFromSnapshot(host, snapshot);
     })
     .catch(() => {});
 
@@ -706,11 +699,23 @@ export function handleWorkerSynthesisStreamEvent(
     }
   }
 
+  // Live V3 pump already folded synthesis through app-core into host.messages.
+  // Only fall back to the TS reducer when the snapshot path left no target bubble.
   const messageId = host.messageIdForTurn(event.turn_id);
-  if (messageId) {
-    host.applyStreamEventToMessage(messageId, event);
-  } else {
-    host.attachOrphanStream(event);
+  const alreadyProjected =
+    Boolean(messageId) &&
+    host.messages.some(
+      (message) =>
+        message.id === messageId &&
+        message.lane === "worker" &&
+        message.content.trim() === content,
+    );
+  if (!alreadyProjected) {
+    if (messageId) {
+      host.applyStreamEventToMessage(messageId, event);
+    } else {
+      host.attachOrphanStream(event);
+    }
   }
 
   const link = host.workers.get(workId);

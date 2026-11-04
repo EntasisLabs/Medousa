@@ -33,6 +33,12 @@ Canonical chat timeline:
    ask ledger history into the focused session and flips lane identity on promote
 10. Painted visibility (`ProjectVisibleItems`) — empty handoff shells and exact
     linked worker raw returns; beat grouping stays in the renderer
+11. Core-first live stream apply — host reseeds shells only when missing;
+    `WorkerAck` / `BudgetApprovalRequired` / terminal chrome land in the snapshot
+12. Snapshot-owned workers/turns — `WorkerLinkFact.session_id`, `TurnFact` on
+    `ChatSnapshot`, `RegisterTurn` for reattach; host overlays `streamAttached`
+13. Multi-session focus — `OpenSession` does not steal focus from another live
+    session; `SwitchFocus` moves the pointer; host switch/warm loads core snapshots
 
 ## Regenerate client types
 

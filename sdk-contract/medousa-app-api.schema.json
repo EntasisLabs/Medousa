@@ -213,6 +213,17 @@
           "$ref": "#/definitions/ChatMediaAttachment"
         }
       },
+      "mode": {
+        "description": "`interactive` or `background`. Defaults from lane when omitted.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reusableStream": {
+        "default": false,
+        "type": "boolean"
+      },
       "speakerProfileId": {
         "type": [
           "string",
@@ -235,6 +246,12 @@
         "type": "string"
       },
       "workId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "workspaceCardId": {
         "type": [
           "string",
           "null"
@@ -604,6 +621,44 @@
           },
           "work_id": {
             "type": "string"
+          },
+          "worker_session_id": {
+            "description": "Worker ledger session when different from the focused chat session.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      {
+        "description": "Upsert a logical turn ticket without painting BeginTurn shells (reattach).",
+        "type": "object",
+        "required": [
+          "session_id",
+          "turn",
+          "type"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "turn": {
+            "$ref": "#/definitions/TurnFact"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "register_turn"
+            ]
           }
         }
       },
@@ -1152,6 +1207,17 @@
               "$ref": "#/definitions/ChatMediaAttachment"
             }
           },
+          "mode": {
+            "description": "`interactive` or `background`. Defaults from lane when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reusableStream": {
+            "default": false,
+            "type": "boolean"
+          },
           "speakerProfileId": {
             "type": [
               "string",
@@ -1174,6 +1240,12 @@
             "type": "string"
           },
           "workId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspaceCardId": {
             "type": [
               "string",
               "null"
@@ -2351,6 +2423,57 @@
             ]
           }
         ]
+      },
+      "TurnFact": {
+        "description": "Open turn ticket projected on the snapshot (stream_url stays on the host).",
+        "type": "object",
+        "required": [
+          "mode",
+          "phase",
+          "turnId"
+        ],
+        "properties": {
+          "budgetRequestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "description": "`interactive` or `background`.",
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "requestedRounds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "reusableStream": {
+            "default": false,
+            "type": "boolean"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "workspaceCardId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       },
       "TurnResourceReference": {
         "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
@@ -4848,6 +4971,13 @@
       "sessionId": {
         "type": "string"
       },
+      "turns": {
+        "description": "Open turn tickets (logical). Host overlays streamAttached from streamOwners.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/TurnFact"
+        }
+      },
       "workers": {
         "description": "Worker-lane spawn + synthesis links (thin facts for the host map).",
         "type": "array",
@@ -5940,6 +6070,57 @@
           }
         }
       },
+      "TurnFact": {
+        "description": "Open turn ticket projected on the snapshot (stream_url stays on the host).",
+        "type": "object",
+        "required": [
+          "mode",
+          "phase",
+          "turnId"
+        ],
+        "properties": {
+          "budgetRequestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "description": "`interactive` or `background`.",
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "requestedRounds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "reusableStream": {
+            "default": false,
+            "type": "boolean"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "workspaceCardId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "TurnResourceReference": {
         "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
         "oneOf": [
@@ -6111,6 +6292,13 @@
             ]
           },
           "replyToWorkId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionId": {
+            "description": "Worker history / relevance session (may differ from the focused chat session).",
             "type": [
               "string",
               "null"
@@ -6972,6 +7160,13 @@
           "sessionId": {
             "type": "string"
           },
+          "turns": {
+            "description": "Open turn tickets (logical). Host overlays streamAttached from streamOwners.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnFact"
+            }
+          },
           "workers": {
             "description": "Worker-lane spawn + synthesis links (thin facts for the host map).",
             "type": "array",
@@ -7414,6 +7609,57 @@
           }
         }
       },
+      "TurnFact": {
+        "description": "Open turn ticket projected on the snapshot (stream_url stays on the host).",
+        "type": "object",
+        "required": [
+          "mode",
+          "phase",
+          "turnId"
+        ],
+        "properties": {
+          "budgetRequestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "description": "`interactive` or `background`.",
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "requestedRounds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "reusableStream": {
+            "default": false,
+            "type": "boolean"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "workspaceCardId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "TurnResourceReference": {
         "description": "A resource selected by the user. Identity is workshop-local; references never grant access or change a session's execution binding.",
         "oneOf": [
@@ -7590,6 +7836,13 @@
               "null"
             ]
           },
+          "sessionId": {
+            "description": "Worker history / relevance session (may differ from the focused chat session).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "synthesisDelivered": {
             "default": false,
             "type": "boolean"
@@ -7754,6 +8007,59 @@
       }
     }
   },
+  "TurnFact": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnFact",
+    "description": "Open turn ticket projected on the snapshot (stream_url stays on the host).",
+    "type": "object",
+    "required": [
+      "mode",
+      "phase",
+      "turnId"
+    ],
+    "properties": {
+      "budgetRequestId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "messageId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "mode": {
+        "description": "`interactive` or `background`.",
+        "type": "string"
+      },
+      "phase": {
+        "type": "string"
+      },
+      "requestedRounds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "reusableStream": {
+        "default": false,
+        "type": "boolean"
+      },
+      "turnId": {
+        "type": "string"
+      },
+      "workspaceCardId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
   "WorkerLinkFact": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "WorkerLinkFact",
@@ -7776,6 +8082,13 @@
         ]
       },
       "replyToWorkId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sessionId": {
+        "description": "Worker history / relevance session (may differ from the focused chat session).",
         "type": [
           "string",
           "null"
