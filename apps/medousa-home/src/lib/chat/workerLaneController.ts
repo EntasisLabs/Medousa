@@ -307,65 +307,52 @@ export function syncWorkerLaneFromCards(
   }
 }
 
+/** Card status → ChatCore EnsureWorkerFollowUp → paint (no host body dual-write). */
 function updateWorkerLaneBubble(
   host: ChatStoreHost,
   workId: string,
   options: { statusLine: string; streaming: boolean },
 ) {
   const link = host.workers.get(workId);
-  const targetId = link?.synthesisMessageId;
-  if (!targetId) return;
-  const idx = host.messages.findIndex((message) => message.id === targetId);
-  if (idx < 0) return;
-  const current = host.messages[idx];
-  host.messages = [
-    ...host.messages.slice(0, idx),
-    {
-      ...current,
-      lane: "worker",
-      workId,
-      statusLine: options.statusLine,
-      streaming: options.streaming && !current.content.trim(),
-    },
-    ...host.messages.slice(idx + 1),
-  ];
+  if (!link) return;
+  const itemId = link.synthesisMessageId ?? workerSynthesisItemId(workId);
+  const existing = host.messages.find((message) => message.id === itemId);
+  const streaming = options.streaming && !existing?.content.trim();
+  void ensureChatWorkerFollowUp(host.sessionId, workId, {
+    turnId: link.parentTurnId,
+    itemId,
+    statusLine: options.statusLine,
+    streaming,
+  })
+    .then((snapshot) => {
+      syncHostFromSnapshot(host, snapshot);
+    })
+    .catch(() => {});
 }
 
 function noteWorkerSynthesizing(host: ChatStoreHost, workId: string) {
   const link = host.workers.get(workId);
-  if (!link?.messageId) return;
-
-  const idx = host.messages.findIndex((m) => m.id === link.messageId);
-  if (idx < 0) return;
-
-  const current = host.messages[idx];
-  host.messages = [
-    ...host.messages.slice(0, idx),
-    {
-      ...current,
-      streaming: true,
-      statusLine: "Pulling that together…",
-    },
-    ...host.messages.slice(idx + 1),
-  ];
+  if (!link) return;
+  const itemId = link.synthesisMessageId ?? workerSynthesisItemId(workId);
+  void ensureChatWorkerFollowUp(host.sessionId, workId, {
+    turnId: link.parentTurnId,
+    itemId,
+    statusLine: "Pulling that together…",
+    streaming: true,
+  })
+    .then((snapshot) => {
+      syncHostFromSnapshot(host, snapshot);
+    })
+    .catch(() => {});
 }
 
 export function finalizeWorkerHandoffBubble(host: ChatStoreHost, messageId: string | null) {
   if (!messageId) return;
-  const idx = host.messages.findIndex((m) => m.id === messageId);
-  if (idx < 0) return;
-  const current = host.messages[idx];
-  host.messages = [
-    ...host.messages.slice(0, idx),
-    {
-      ...current,
-      streaming: false,
-      phase: null,
-      statusLine: null,
-    },
-    ...host.messages.slice(idx + 1),
-  ];
-  void finalizeChatWorkerHandoff(host.sessionId, messageId).catch(() => {});
+  void finalizeChatWorkerHandoff(host.sessionId, messageId)
+    .then((snapshot) => {
+      syncHostFromSnapshot(host, snapshot);
+    })
+    .catch(() => {});
 }
 
 export function ensureWorkerFollowUpBubble(
