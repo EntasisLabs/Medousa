@@ -44,6 +44,7 @@ function expectSnapshot(update: VaultBufferUpdate): VaultBufferSnapshot {
   return update.snapshot;
 }
 
+/** Fire-and-forget dispatch — prefer commit helpers that paint from snapshots. */
 export function dualWriteVaultBuffer(command: VaultBufferCommand): void {
   void dispatchAppVaultBuffer(command).catch(() => {
     /* Core may be unavailable outside Tauri / without the stdio backend. */
@@ -64,6 +65,17 @@ export function toNoteBufferFact(
     contentRevision: buffer.contentRevision,
     conflict: options?.conflict ?? false,
   };
+}
+
+export async function resetVaultBuffers(
+  workshopScopeId: string,
+): Promise<VaultBufferSnapshot> {
+  return expectSnapshot(
+    await dispatchAppVaultBuffer({
+      type: "reset",
+      workshop_scope_id: workshopScopeId,
+    }),
+  );
 }
 
 export async function seedVaultBuffer(buffer: NoteBuffer): Promise<VaultBufferSnapshot> {

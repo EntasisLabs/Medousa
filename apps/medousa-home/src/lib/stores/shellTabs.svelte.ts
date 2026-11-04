@@ -50,12 +50,18 @@ import {
 } from "$lib/utils/shellTabSearch";
 import type { HomeOnboardingLayout } from "$lib/utils/homeOnboarding";
 import {
-  dualWriteCloseShellTab,
-  dualWriteFocusShellTab,
-  dualWriteHydrateShell,
-  dualWriteOpenShellTab,
-  dualWriteSwitchShellDesktop,
+  commitCloseShellTab,
+  commitFocusShellTab,
+  commitHydrateShell,
+  commitOpenShellTab,
+  commitSwitchShellDesktop,
 } from "$lib/appShell/dualWrite";
+import {
+  shellSnapshotMatchesScope,
+  toHostShellDesktops,
+  toHostShellLayout,
+} from "$lib/appShell/paintFromSnapshot";
+import type { ShellSnapshot } from "$lib/types/generated/app_api";
 
 const MAX_TABS = 16;
 const MAIN_GROUP_ID = "main";
@@ -435,6 +441,15 @@ export class ShellTabsStore {
     this.zoomedGroupId = layout.zoomedGroupId ?? null;
   }
 
+  /** Paint host layout from ShellCore — core is authority after commit. */
+  private paintFromCoreSnapshot = (snapshot: ShellSnapshot) => {
+    if (!shellSnapshotMatchesScope(snapshot, this.workspaceScopeId)) return;
+    this.desktops = toHostShellDesktops(snapshot.desktops);
+    this.activeDesktopId = snapshot.activeDesktopId;
+    this.applyLayout(toHostShellLayout(snapshot.layout));
+    this.persist();
+  };
+
   /**
    * Write the live layout into the active desktop slot.
    * Only call when switching / renaming / removing — not on every persist.
@@ -641,7 +656,7 @@ export class ShellTabsStore {
           void this.activate(active.id, { rehydrate: true });
         }
         this.persist();
-        dualWriteHydrateShell({
+        commitHydrateShell(this.paintFromCoreSnapshot, {
           workspaceScopeId: this.workspaceScopeId,
           desktops: this.desktops,
           activeDesktopId: this.activeDesktopId,
@@ -743,7 +758,7 @@ export class ShellTabsStore {
     }
     await this.resyncLiveStreams(previousChatIds);
     this.persist();
-    dualWriteHydrateShell({
+    commitHydrateShell(this.paintFromCoreSnapshot, {
       workspaceScopeId: this.workspaceScopeId,
       desktops: this.desktops,
       activeDesktopId: this.activeDesktopId,
@@ -795,7 +810,7 @@ export class ShellTabsStore {
       title,
     };
     this.insertTabIntoGroup(tab, groupId, false);
-    dualWriteOpenShellTab(tab, { groupId, activate });
+    commitOpenShellTab(this.paintFromCoreSnapshot, tab, { groupId, activate });
     if (activate) void this.activate(tab.id);
     else this.persist();
     return tab.id;
@@ -851,6 +866,7 @@ export class ShellTabsStore {
       title,
     };
     this.insertTabIntoGroup(tab, groupId, false);
+    commitOpenShellTab(this.paintFromCoreSnapshot, tab, { groupId, activate });
     if (activate) void this.activate(tab.id);
     else this.persist();
     return tab.id;
@@ -899,6 +915,7 @@ export class ShellTabsStore {
       title,
     };
     this.insertTabIntoGroup(tab, groupId, false);
+    commitOpenShellTab(this.paintFromCoreSnapshot, tab, { groupId, activate });
     if (activate) void this.activate(tab.id);
     else this.persist();
     return tab.id;
@@ -915,6 +932,7 @@ export class ShellTabsStore {
     }
     const tab: ShellTab = {id: newTabId("create"), kind: "create", documentId, workshopId, title: options?.title?.trim() || "Canvas"};
     this.insertTabIntoGroup(tab, groupId, false);
+    commitOpenShellTab(this.paintFromCoreSnapshot, tab, { groupId, activate: true });
     void this.activate(tab.id);
     return tab.id;
   }
@@ -953,6 +971,7 @@ export class ShellTabsStore {
       title: options?.title?.trim() || "Terminal",
     };
     this.insertTabIntoGroup(tab, groupId, false);
+    commitOpenShellTab(this.paintFromCoreSnapshot, tab, { groupId, activate });
     if (activate) void this.activate(tab.id);
     else this.persist();
     return tab.id;
@@ -1036,6 +1055,7 @@ export class ShellTabsStore {
       title: surfaceTitle(next),
     };
     this.insertTabIntoGroup(tab, groupId, false);
+    commitOpenShellTab(this.paintFromCoreSnapshot, tab, { groupId, activate });
     if (activate) void this.activate(tab.id);
     else this.persist();
     return tab.id;
@@ -1181,7 +1201,7 @@ export class ShellTabsStore {
     }
     this.syncLayoutHint(tab);
     this.persist();
-    dualWriteFocusShellTab(tabId);
+    commitFocusShellTab(this.paintFromCoreSnapshot, tabId);
 
     this.beginSuppressMirror();
     try {
@@ -1246,7 +1266,7 @@ export class ShellTabsStore {
     const wasActive = this.activeTabId === tabId && host?.id === this.activeGroupId;
     this.removeTabFromAllGroups(tabId);
     this.pruneNavStacks();
-    dualWriteCloseShellTab(tabId);
+    commitCloseShellTab(this.paintFromCoreSnapshot, tabId);
 
     this.beginSuppressMirror();
     try {
@@ -1847,7 +1867,7 @@ export class ShellTabsStore {
     this.applyLayout(target.layout);
     this.activeDesktopId = trimmed;
     this.persist();
-    dualWriteSwitchShellDesktop(trimmed);
+    commitSwitchShellDesktop(this.paintFromCoreSnapshot, trimmed);
 
     const active = this.activeTab;
     if (active) {
