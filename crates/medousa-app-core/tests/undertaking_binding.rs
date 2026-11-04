@@ -29,12 +29,12 @@ fn bind_chat_moves_not_duplicates() {
     let mut core = UndertakingBindingCore::new("personal");
     core.dispatch(UndertakingBindingCommand::SetActive {
         group_id: "codePane".into(),
-        context: ctx("project-a", &["chat-a"]),
+        context: Box::new(ctx("project-a", &["chat-a"])),
     })
     .unwrap();
     core.dispatch(UndertakingBindingCommand::SetActive {
         group_id: "chatPane".into(),
-        context: ctx("project-a", &[]),
+        context: Box::new(ctx("project-a", &[])),
     })
     .unwrap();
 
@@ -66,7 +66,7 @@ fn detach_chat_clears_all_groups() {
     let mut core = UndertakingBindingCore::new("personal");
     core.dispatch(UndertakingBindingCommand::SetActive {
         group_id: "codePane".into(),
-        context: ctx("project-a", &["chat-a"]),
+        context: Box::new(ctx("project-a", &["chat-a"])),
     })
     .unwrap();
     let UndertakingBindingUpdate::Snapshot { snapshot } = core
@@ -88,13 +88,13 @@ fn set_active_preserves_bindings_for_same_work() {
     let mut core = UndertakingBindingCore::new("personal");
     core.dispatch(UndertakingBindingCommand::SetActive {
         group_id: "main".into(),
-        context: ctx("project-a", &["chat-a"]),
+        context: Box::new(ctx("project-a", &["chat-a"])),
     })
     .unwrap();
     let UndertakingBindingUpdate::Snapshot { snapshot } = core
         .dispatch(UndertakingBindingCommand::SetActive {
             group_id: "main".into(),
-            context: ctx("project-a", &[]),
+            context: Box::new(ctx("project-a", &[])),
         })
         .unwrap();
     let main = snapshot

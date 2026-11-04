@@ -85,7 +85,7 @@ pub enum UndertakingBindingCommand {
     },
     SetActive {
         group_id: String,
-        context: UndertakingContextFact,
+        context: Box<UndertakingContextFact>,
     },
     ClearActive {
         group_id: String,
@@ -173,35 +173,35 @@ impl UndertakingBindingCore {
             UndertakingBindingCommand::SetActive { group_id, context } => {
                 let group_id = normalize_id(&group_id)
                     .ok_or(UndertakingBindingCoreError::InvalidGroupId)?;
-                let mut next = context;
-                if let Some(Some(prev)) = self.contexts.get(&group_id) {
-                    if prev.work_id == next.work_id {
-                        if next.execution_runtime_id.is_none() {
-                            next.execution_runtime_id = prev.execution_runtime_id.clone();
-                        }
-                        if next.execution_transport_runtime_id.is_none() {
-                            next.execution_transport_runtime_id =
-                                prev.execution_transport_runtime_id.clone();
-                        }
-                        if next.repo_id.is_none() {
-                            next.repo_id = prev.repo_id.clone();
-                        }
-                        if next.bound_chat_session_ids.is_empty() {
-                            next.bound_chat_session_ids = prev.bound_chat_session_ids.clone();
-                        }
-                        if next.bound_terminal_session_ids.is_empty() {
-                            next.bound_terminal_session_ids =
-                                prev.bound_terminal_session_ids.clone();
-                        }
-                        if next.sealed_oid.is_none() {
-                            next.sealed_oid = prev.sealed_oid.clone();
-                        }
-                        if next.executor_kind.is_none()
-                            && next.lease_id.is_some()
-                            && prev.executor_kind.is_some()
-                        {
-                            next.executor_kind = prev.executor_kind.clone();
-                        }
+                let mut next = *context;
+                if let Some(Some(prev)) = self.contexts.get(&group_id)
+                    && prev.work_id == next.work_id
+                {
+                    if next.execution_runtime_id.is_none() {
+                        next.execution_runtime_id = prev.execution_runtime_id.clone();
+                    }
+                    if next.execution_transport_runtime_id.is_none() {
+                        next.execution_transport_runtime_id =
+                            prev.execution_transport_runtime_id.clone();
+                    }
+                    if next.repo_id.is_none() {
+                        next.repo_id = prev.repo_id.clone();
+                    }
+                    if next.bound_chat_session_ids.is_empty() {
+                        next.bound_chat_session_ids = prev.bound_chat_session_ids.clone();
+                    }
+                    if next.bound_terminal_session_ids.is_empty() {
+                        next.bound_terminal_session_ids =
+                            prev.bound_terminal_session_ids.clone();
+                    }
+                    if next.sealed_oid.is_none() {
+                        next.sealed_oid = prev.sealed_oid.clone();
+                    }
+                    if next.executor_kind.is_none()
+                        && next.lease_id.is_some()
+                        && prev.executor_kind.is_some()
+                    {
+                        next.executor_kind = prev.executor_kind.clone();
                     }
                 }
                 self.contexts.insert(group_id, Some(next));
@@ -245,7 +245,7 @@ impl UndertakingBindingCore {
                     .contexts
                     .get_mut(&group_id)
                     .and_then(|c| c.as_mut())
-                    .ok_or_else(|| UndertakingBindingCoreError::GroupInactive(group_id))?;
+                    .ok_or(UndertakingBindingCoreError::GroupInactive(group_id))?;
                 if !entry.bound_terminal_session_ids.iter().any(|id| id == &session_id) {
                     entry.bound_terminal_session_ids.push(session_id);
                 }
