@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { UndertakingBindingCommand, UndertakingBindingUpdate } from "$lib/types/generated/app_api";
 import {
-  dualWriteUndertakingBinding,
+  dispatchAppUndertakingBinding,
   installAppUndertakingBindingTestBackend,
 } from "./client";
 
@@ -9,7 +9,7 @@ afterEach(() => {
   installAppUndertakingBindingTestBackend(null);
 });
 
-describe("dualWriteUndertakingBinding", () => {
+describe("dispatchAppUndertakingBinding", () => {
   it("dispatches through the installed test backend", async () => {
     const seen: UndertakingBindingCommand[] = [];
     installAppUndertakingBindingTestBackend(async (command) => {
@@ -25,26 +25,17 @@ describe("dualWriteUndertakingBinding", () => {
       return update;
     });
 
-    dualWriteUndertakingBinding({
+    await dispatchAppUndertakingBinding({
       type: "bind_chat",
       session_id: "chat-a",
       group_id: "codePane",
     });
 
-    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen).toHaveLength(1);
     expect(seen[0]).toEqual({
       type: "bind_chat",
       session_id: "chat-a",
       group_id: "codePane",
     });
-  });
-
-  it("swallows backend failures", () => {
-    installAppUndertakingBindingTestBackend(async () => {
-      throw new Error("core unavailable");
-    });
-    expect(() =>
-      dualWriteUndertakingBinding({ type: "clear_active", group_id: "main" }),
-    ).not.toThrow();
   });
 });

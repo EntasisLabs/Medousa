@@ -54,13 +54,7 @@ export function commitChatProposals(
     });
 }
 
-/** @deprecated Prefer commitChatProposals — kept for a soft rename window. */
-export const dualWriteChatProposals = commitChatProposals;
-
 /** Test helper — drop memo so the next commit always dispatches. */
 export function resetCommitChatProposalsMemo() {
   lastFactsBySession.clear();
 }
-
-/** @deprecated Prefer resetCommitChatProposalsMemo. */
-export const resetDualWriteChatProposalsMemo = resetCommitChatProposalsMemo;
