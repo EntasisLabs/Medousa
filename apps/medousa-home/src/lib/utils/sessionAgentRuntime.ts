@@ -3,6 +3,9 @@ import type { ExternalAgentRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * Per-session agent runtime preference (Medousa native vs ACP external).
  *
+ * Host-local only — not ChatCore. Preferences and provider session bindings live
+ * in workshop-scoped localStorage; the daemon/ACP bridge consumes them.
+ *
  * External runtimes (Cursor / Codex / Hermes) use the daemon agents SDK façade.
  * Stasis 0.8 can also park `workflow.stasis.agent_turn.waitable` jobs on the
  * process-local TurnWaitStore until ACP completion feeds AgentEventIngress.
