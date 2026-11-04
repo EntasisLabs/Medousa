@@ -14,6 +14,10 @@ use medousa_app_core::shell::{
     EditorGroup, ShellCommand, ShellDesktop, ShellDesktopLayout, ShellRevision, ShellSnapshot,
     ShellTab, ShellUpdate, SplitEdge, SplitNode,
 };
+use medousa_app_core::undertaking_binding::{
+    UndertakingBindingCommand, UndertakingBindingRevision, UndertakingBindingSnapshot,
+    UndertakingBindingUpdate, UndertakingContextFact, UndertakingGroupBinding,
+};
 use medousa_app_core::vault_buffer::{
     NoteBufferFact, VaultBufferCommand, VaultBufferRevision, VaultBufferSnapshot, VaultBufferUpdate,
 };
@@ -62,6 +66,12 @@ fn main() {
     export_type!(schemas, VaultBufferSnapshot, "VaultBufferSnapshot");
     export_type!(schemas, VaultBufferCommand, "VaultBufferCommand");
     export_type!(schemas, VaultBufferUpdate, "VaultBufferUpdate");
+    export_type!(schemas, UndertakingBindingRevision, "UndertakingBindingRevision");
+    export_type!(schemas, UndertakingContextFact, "UndertakingContextFact");
+    export_type!(schemas, UndertakingGroupBinding, "UndertakingGroupBinding");
+    export_type!(schemas, UndertakingBindingSnapshot, "UndertakingBindingSnapshot");
+    export_type!(schemas, UndertakingBindingCommand, "UndertakingBindingCommand");
+    export_type!(schemas, UndertakingBindingUpdate, "UndertakingBindingUpdate");
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

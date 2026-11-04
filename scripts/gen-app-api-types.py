@@ -48,6 +48,12 @@ EXPORTED_TYPES = [
     "VaultBufferSnapshot",
     "VaultBufferCommand",
     "VaultBufferUpdate",
+    "UndertakingBindingRevision",
+    "UndertakingContextFact",
+    "UndertakingGroupBinding",
+    "UndertakingBindingSnapshot",
+    "UndertakingBindingCommand",
+    "UndertakingBindingUpdate",
 ]
 
 
