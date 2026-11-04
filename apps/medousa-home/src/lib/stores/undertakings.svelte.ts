@@ -1,6 +1,9 @@
 import { isExternalRuntime } from "$lib/utils/externalAgentCatalog";
 /**
  * ActiveUndertakingContext — per Shell tab-group undertaking binding.
+ *
+ * Binding map dual-writes into UndertakingBindingCore; daemon Forge item
+ * lists/leases stay workshop authority. Selection chrome stays local.
  */
 
 import type {
@@ -27,6 +30,9 @@ import {
   openDaemonEventStream,
   type DaemonEventConnection,
 } from "$lib/daemon/daemonEventStream";
+import { dualWriteUndertakingBinding } from "$lib/appUndertakingBinding/client";
+import { toUndertakingContextFact } from "$lib/appUndertakingBinding/paintFromSnapshot";
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
 
 export type ActiveUndertakingContext = {
   workId: string;
@@ -218,12 +224,19 @@ function createUndertakingsStore() {
     if (!sameContext(prev, next)) {
       contexts = { ...contexts, [groupKey()]: next };
     }
+    dualWriteUndertakingBinding({
+      type: "set_active",
+      group_id: groupKey(),
+      context: toUndertakingContextFact(next),
+    });
     setCoderExecutionTransport(next.executionTransportRuntimeId);
     void ensureEventStream();
   }
 
   function clearActive() {
-    contexts = { ...contexts, [groupKey()]: null };
+    const key = groupKey();
+    contexts = { ...contexts, [key]: null };
+    dualWriteUndertakingBinding({ type: "clear_active", group_id: key });
     setCoderExecutionTransport(null);
   }
 
@@ -232,10 +245,16 @@ function createUndertakingsStore() {
     const cur = contexts[key];
     if (!cur) return;
     contexts = updateChatUndertakingBinding(contexts, sessionId, key);
+    dualWriteUndertakingBinding({
+      type: "bind_chat",
+      session_id: sessionId,
+      group_id: key,
+    });
   }
 
   function detachChat(sessionId: string) {
     contexts = updateChatUndertakingBinding(contexts, sessionId, null);
+    dualWriteUndertakingBinding({ type: "detach_chat", session_id: sessionId });
   }
 
   function forChat(sessionId: string): ActiveUndertakingContext | null {
@@ -243,16 +262,22 @@ function createUndertakingsStore() {
   }
 
   function bindTerminal(sessionId: string) {
-    const cur = contexts[groupKey()];
+    const key = groupKey();
+    const cur = contexts[key];
     if (!cur) return;
     if (cur.boundTerminalSessionIds.includes(sessionId)) return;
     contexts = {
       ...contexts,
-      [groupKey()]: {
+      [key]: {
         ...cur,
         boundTerminalSessionIds: [...cur.boundTerminalSessionIds, sessionId],
       },
     };
+    dualWriteUndertakingBinding({
+      type: "bind_terminal",
+      session_id: sessionId,
+      group_id: key,
+    });
   }
 
   function setSelection(selection: {
@@ -352,12 +377,16 @@ function createUndertakingsStore() {
         if (request !== selectionRequest) return;
         if (JSON.stringify(nextReview) !== JSON.stringify(review)) review = nextReview;
         if (nextReview.sealed_head_oid) {
-          const cur = contexts[groupKey()];
+          const key = groupKey();
+          const cur = contexts[key];
           if (cur) {
-            contexts = {
-              ...contexts,
-              [groupKey()]: { ...cur, sealedOid: nextReview.sealed_head_oid },
-            };
+            const sealed = { ...cur, sealedOid: nextReview.sealed_head_oid };
+            contexts = { ...contexts, [key]: sealed };
+            dualWriteUndertakingBinding({
+              type: "set_active",
+              group_id: key,
+              context: toUndertakingContextFact(sealed),
+            });
           }
         }
       } else {
@@ -530,6 +559,10 @@ function createUndertakingsStore() {
     review = null;
     selectedReviewAttemptId = null;
     contexts = {};
+    dualWriteUndertakingBinding({
+      type: "reset",
+      workshop_scope_id: activeWorkshopId(),
+    });
     setCoderExecutionTransport(null);
   }
 
