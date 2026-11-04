@@ -1,14 +1,23 @@
 /**
- * Dual-write helpers: Home shell store remains the live paint owner while
- * `ShellCore` records the same layout mutations for headless / future apply.
+ * ShellCore commit helpers: await the mutation, then paint the returned
+ * snapshot onto the Svelte shell host. localStorage persist runs from paint.
  */
 
 import type { ShellDesktop, ShellTab } from "$lib/types/shellTabs";
 import type {
   ShellDesktop as AppShellDesktop,
+  ShellSnapshot,
   ShellTab as AppShellTab,
 } from "$lib/types/generated/app_api";
-import { dualWriteShell } from "./client";
+import {
+  closeShellTab,
+  focusShellTab,
+  hydrateShellLayout,
+  openShellTab,
+  switchShellDesktop,
+} from "./client";
+
+export type ShellSnapshotPainter = (snapshot: ShellSnapshot) => void;
 
 export function toAppShellTab(tab: ShellTab): AppShellTab {
   switch (tab.kind) {
@@ -64,39 +73,56 @@ export function toAppShellDesktops(desktops: ShellDesktop[]): AppShellDesktop[] 
   return desktops as unknown as AppShellDesktop[];
 }
 
-export function dualWriteHydrateShell(options: {
-  workspaceScopeId: string;
-  desktops: ShellDesktop[];
-  activeDesktopId: string;
-}) {
-  dualWriteShell({
-    type: "hydrate",
-    workspace_scope_id: options.workspaceScopeId,
-    desktops: toAppShellDesktops(options.desktops),
-    active_desktop_id: options.activeDesktopId,
-  });
+function commitShell(paint: ShellSnapshotPainter, run: () => Promise<ShellSnapshot>) {
+  void run()
+    .then((snapshot) => paint(snapshot))
+    .catch(() => {
+      /* Core may be unavailable in pure-DOM vitest without the stdio backend. */
+    });
 }
 
-export function dualWriteOpenShellTab(
+export function commitHydrateShell(
+  paint: ShellSnapshotPainter,
+  options: {
+    workspaceScopeId: string;
+    desktops: ShellDesktop[];
+    activeDesktopId: string;
+  },
+) {
+  commitShell(paint, () =>
+    hydrateShellLayout({
+      workspaceScopeId: options.workspaceScopeId,
+      desktops: toAppShellDesktops(options.desktops),
+      activeDesktopId: options.activeDesktopId,
+    }),
+  );
+}
+
+export function commitOpenShellTab(
+  paint: ShellSnapshotPainter,
   tab: ShellTab,
   options?: { groupId?: string; activate?: boolean },
 ) {
-  dualWriteShell({
-    type: "open_tab",
-    tab: toAppShellTab(tab),
-    group_id: options?.groupId ?? null,
-    activate: options?.activate ?? true,
-  });
+  commitShell(paint, () =>
+    openShellTab({
+      tab: toAppShellTab(tab),
+      groupId: options?.groupId ?? null,
+      activate: options?.activate ?? true,
+    }),
+  );
 }
 
-export function dualWriteFocusShellTab(tabId: string) {
-  dualWriteShell({ type: "focus_tab", tab_id: tabId });
+export function commitFocusShellTab(paint: ShellSnapshotPainter, tabId: string) {
+  commitShell(paint, () => focusShellTab(tabId));
 }
 
-export function dualWriteCloseShellTab(tabId: string) {
-  dualWriteShell({ type: "close_tab", tab_id: tabId });
+export function commitCloseShellTab(paint: ShellSnapshotPainter, tabId: string) {
+  commitShell(paint, () => closeShellTab(tabId));
 }
 
-export function dualWriteSwitchShellDesktop(desktopId: string) {
-  dualWriteShell({ type: "switch_desktop", desktop_id: desktopId });
+export function commitSwitchShellDesktop(
+  paint: ShellSnapshotPainter,
+  desktopId: string,
+) {
+  commitShell(paint, () => switchShellDesktop(desktopId));
 }
