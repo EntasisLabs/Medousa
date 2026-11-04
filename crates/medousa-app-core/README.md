@@ -45,7 +45,8 @@ Canonical chat timeline:
     daemon stays filesystem authority; Home dual-writes seed/edit/save/reconcile
 16. Undertaking pane bindings — `UndertakingBindingCore` owns group→undertaking
     context + move-not-duplicate chat/terminal session membership; Forge item
-    lists/leases stay daemon authority; Home dual-writes set/clear/bind/reset
+    lists/leases stay daemon authority; Home commits set/clear/bind/reset then
+    paints from the snapshot (selection chrome stays renderer-local)
 
 ## Regenerate client types
 
