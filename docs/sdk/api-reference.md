@@ -377,12 +377,18 @@ The generated operations expose the native-only, service-admin account surface:
 | `GET /v1/auth/chatgpt/models` | `ChatGptModelListResponse` |
 | `DELETE /v1/auth/chatgpt` | `DisconnectChatGptOAuthResponse` |
 
-A native host starts its `127.0.0.1` listener at `/oauth/callback`, passes the
-exact `redirect_uri` to `begin`, opens the authorization URL in the system
+A native host chooses `auth_method`: `codex_legacy` (the app's default for new
+connections) or `registered`. Omission preserves a saved connection's method,
+or registered OAuth for existing HTTP clients. Legacy requires a listener at
+`http://127.0.0.1:1455/auth/callback` or port 1457; registered OAuth uses
+`127.0.0.1` with an explicit port and `/oauth/callback`. Pass the
+exact `redirect_uri` to `begin`, open the authorization URL in the system
 browser, and submits the callback URL to `complete` once. Keep URLs out of logs
 and browser JavaScript. The daemon owns PKCE, verified identity, protected
-credentials, and serialized token refresh. Select saved accounts by issued client
-ID; display metadata contains no tokens. Check `plan_usage_enabled` before using
+credentials, and serialized token refresh. Select saved connections by their
+opaque `client_id`; each retains its `auth_method`, and metadata contains no
+tokens. Existing registered connections stay registered. To use legacy, create
+another connection instead of reusing a registered token. Check `plan_usage_enabled` before using
 account models. See [HTTP authentication details](../engine/http-api.md#native-chatgpt-account-authentication)
 for recovery, retained registrations, and migration behavior.
 

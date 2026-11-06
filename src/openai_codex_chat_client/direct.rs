@@ -1,4 +1,4 @@
-//! Public Responses wire format for the Sign in with ChatGPT OSS preview.
+//! Responses wire formats for legacy Codex and registered ChatGPT connections.
 use super::*;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
@@ -134,16 +134,51 @@ pub(super) fn request_body(
     Ok(body)
 }
 
+// The legacy backend requires instructions and flat function tools. Keep the
+// public wire format intact for saved registered-OAuth connections.
+pub(super) fn legacy_request_body(body: &mut Value) {
+    if body.get("instructions").is_none() {
+        body["instructions"] = "".into();
+    }
+    if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
+        *tools = std::mem::take(tools)
+            .into_iter()
+            .flat_map(|tool| {
+                if tool["type"] == "namespace" {
+                    tool["tools"].as_array().cloned().unwrap_or_default()
+                } else {
+                    vec![tool]
+                }
+            })
+            .collect();
+    }
+    if let Some(input) = body["input"].as_array_mut() {
+        for item in input {
+            if item["type"] == "function_call" {
+                item.as_object_mut()
+                    .expect("function call")
+                    .remove("namespace");
+            }
+        }
+    }
+    if let Some(choice) = body.get_mut("tool_choice").and_then(Value::as_object_mut) {
+        choice.remove("namespace");
+    }
+}
+
 pub(super) async fn stream_once(
     client: &OpenAiCodexChatClient,
-    credentials: &(String, String),
+    credentials: &RequestCredentials,
     request: ChatRequest,
     options: Option<&ChatOptions>,
     chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
 ) -> Result<ChatResponse, StreamOnceError> {
     let options = client.stream_options(options);
     let (_, model) = ReasoningEffort::from_model_name(client.model.trim());
-    let body = request_body(model, request, &options)?;
+    let mut body = request_body(model, request, &options)?;
+    if credentials.2 == ChatGptAuthMethod::CodexLegacy {
+        legacy_request_body(&mut body);
+    }
     let model_iden = genai::ModelIden::new(genai::adapter::AdapterKind::OpenAIResp, model);
     let transport_error =
         |error: genai_reqwest::Error, observable_output_delivered| StreamOnceError::Transport {
@@ -154,16 +189,31 @@ pub(super) async fn stream_once(
             },
             observable_output_delivered,
         };
-    let response = genai_reqwest::Client::builder()
+    let url = client
+        .responses_url
+        .as_deref()
+        .unwrap_or(match credentials.2 {
+            ChatGptAuthMethod::CodexLegacy => LEGACY_RESPONSES_URL,
+            ChatGptAuthMethod::Registered => DEFAULT_RESPONSES_URL,
+        });
+    let mut request = genai_reqwest::Client::builder()
         .connect_timeout(RESPONSES_CONNECT_TIMEOUT)
         .read_timeout(RESPONSES_READ_IDLE_TIMEOUT)
         .redirect(genai_reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| transport_error(e, false))?
-        .post(&client.responses_url)
+        .post(url)
         .bearer_auth(&credentials.0)
         .header("Accept", "text/event-stream")
-        .json(&body)
+        .json(&body);
+    if credentials.2 == ChatGptAuthMethod::CodexLegacy {
+        request = request
+            .header("ChatGPT-Account-ID", &credentials.1)
+            .header("Originator", CODEX_COMPAT_ORIGINATOR)
+            .header("Version", CODEX_COMPAT_VERSION)
+            .header("User-Agent", codex_compat_user_agent());
+    }
+    let response = request
         .send()
         .await
         .map_err(|e| transport_error(e, false))?;

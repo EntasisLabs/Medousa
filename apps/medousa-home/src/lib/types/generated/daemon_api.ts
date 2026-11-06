@@ -517,8 +517,11 @@ export interface ReviewProviderResponse {
   protocol_version: number;
 }
 
+export type ChatGptAuthMethod = "codex_legacy" | "registered";
+
 export interface ChatGptAccountProfile {
   account_id?: string | null;
+  auth_method?: ChatGptAuthMethod;
   client_id: string;
   connected: boolean;
   email?: string | null;
@@ -527,6 +530,7 @@ export interface ChatGptAccountProfile {
 
 export interface ChatGptOAuthStatusResponse {
   account_id?: string | null;
+  auth_method?: ChatGptAuthMethod | null;
   client_id?: string | null;
   connected: boolean;
   email?: string | null;
@@ -537,6 +541,7 @@ export interface ChatGptOAuthStatusResponse {
 }
 
 export interface BeginChatGptOAuthRequest {
+  auth_method?: ChatGptAuthMethod | null;
   client_id?: string | null;
   enable_plan_usage?: boolean;
   redirect_uri: string;
@@ -735,11 +740,13 @@ export interface PeerHandoffPolicy {
 export interface PeerHandoffIntent {
   admission?: PeerHandoffAdmission;
   after_entry_seq: number;
+  existing_agent_session_id?: string | null;
   forge_work_id: string;
   handoff?: PeerHandoffPolicy;
   instructions: string;
   request_key: string;
   runtime?: ExternalPeerRuntime | null;
+  session_title?: string | null;
   through_entry_seq: number;
 }
 
@@ -840,6 +847,7 @@ export interface PeerHandoffRecord {
   policy: PeerHandoffPolicy;
   request: ExternalPeerAssignmentRequest;
   sender_bot_id?: BotId | null;
+  session_title?: string | null;
   source: TranscriptEntryRef;
   source_digest: string;
 }

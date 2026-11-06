@@ -11,9 +11,19 @@ use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta, send_st
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::chatgpt_oauth::ChatGptOAuthBroker;
+use crate::chatgpt_oauth::{ChatGptOAuthBroker, RequestCredentials};
+use crate::daemon_api::ChatGptAuthMethod;
 
 const DEFAULT_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
+const LEGACY_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+// Keep the catalog query and Responses headers on the same supported contract.
+// https://github.com/openai/codex/releases/tag/rust-v0.166.0
+pub(crate) const CODEX_COMPAT_VERSION: &str = "0.166.0";
+pub(crate) const CODEX_COMPAT_ORIGINATOR: &str = "codex_cli_rs";
+
+pub(crate) fn codex_compat_user_agent() -> String {
+    format!("{CODEX_COMPAT_ORIGINATOR}/{CODEX_COMPAT_VERSION}")
+}
 const RESPONSES_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const RESPONSES_READ_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const RESPONSES_MAX_ATTEMPTS: usize = 3;
@@ -98,7 +108,7 @@ impl StreamOnceError {
 #[derive(Clone)]
 pub struct OpenAiCodexChatClient {
     model: String,
-    responses_url: String,
+    responses_url: Option<String>,
     credentials: ChatGptCredentialSource,
 }
 
@@ -114,7 +124,7 @@ impl OpenAiCodexChatClient {
     pub fn new(model: impl Into<String>) -> Self {
         Self {
             model: model.into(),
-            responses_url: DEFAULT_RESPONSES_URL.to_string(),
+            responses_url: None,
             credentials: ChatGptCredentialSource::Daemon,
         }
     }
@@ -125,7 +135,7 @@ impl OpenAiCodexChatClient {
     ) -> Self {
         Self {
             model: model.into(),
-            responses_url: DEFAULT_RESPONSES_URL.to_string(),
+            responses_url: None,
             credentials: ChatGptCredentialSource::Broker(broker),
         }
     }
@@ -144,7 +154,7 @@ impl OpenAiCodexChatClient {
         }
         Self {
             model: model.into(),
-            responses_url: responses_url.into(),
+            responses_url: Some(responses_url.into()),
             credentials: ChatGptCredentialSource::Broker(std::sync::Arc::new(
                 ChatGptOAuthBroker::new(std::sync::Arc::new(EmptyStore)),
             )),
@@ -182,7 +192,7 @@ impl OpenAiCodexChatClient {
             .with_normalize_reasoning_content(true)
     }
 
-    async fn credentials(&self) -> StasisResult<(String, String)> {
+    async fn credentials(&self) -> StasisResult<RequestCredentials> {
         let result = match &self.credentials {
             #[cfg(feature = "full-daemon")]
             ChatGptCredentialSource::Daemon => crate::chatgpt_oauth::request_credentials().await,
@@ -194,7 +204,7 @@ impl OpenAiCodexChatClient {
     async fn refreshed_credentials(
         &self,
         rejected_access_token: &str,
-    ) -> StasisResult<(String, String)> {
+    ) -> StasisResult<RequestCredentials> {
         let result = match &self.credentials {
             #[cfg(feature = "full-daemon")]
             ChatGptCredentialSource::Daemon => {
@@ -211,7 +221,7 @@ impl OpenAiCodexChatClient {
 
     async fn stream_once(
         &self,
-        credentials: &(String, String),
+        credentials: &RequestCredentials,
         request: ChatRequest,
         options: Option<&ChatOptions>,
         chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
@@ -221,7 +231,7 @@ impl OpenAiCodexChatClient {
 
     async fn stream_with_retries(
         &self,
-        credentials: &(String, String),
+        credentials: &RequestCredentials,
         request: ChatRequest,
         options: Option<&ChatOptions>,
         chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
@@ -517,7 +527,59 @@ mod tests {
     fn client_uses_responses_adapter_and_exact_transport_url() {
         let client = OpenAiCodexChatClient::with_url("gpt-5.6-sol", "http://localhost/responses");
         assert_eq!(client.model_target(), "openai_resp::gpt-5.6-sol");
-        assert_eq!(client.responses_url, "http://localhost/responses");
+        assert_eq!(
+            client.responses_url.as_deref(),
+            Some("http://localhost/responses")
+        );
+    }
+
+    /// Explicit opt-in: use the workshop's saved legacy session for one short
+    /// inference request. Never falls back to registered OAuth or API billing.
+    #[cfg(feature = "full-daemon")]
+    #[tokio::test]
+    #[ignore = "requires a connected legacy ChatGPT account; consumes live inference"]
+    async fn live_legacy_sol_transport_probe() {
+        assert!(
+            !crate::test_env::hermetic(),
+            "live probe requires a non-hermetic process"
+        );
+        let broker = tokio::task::spawn_blocking(crate::chatgpt_oauth::broker)
+            .await
+            .expect("load workshop ChatGPT connection");
+        let connection = broker.status();
+        assert_eq!(
+            connection.auth_method,
+            Some(ChatGptAuthMethod::CodexLegacy),
+            "select a saved legacy connection before running the live probe"
+        );
+        assert_eq!(
+            connection.status, "connected",
+            "the live probe needs a fresh connected legacy session"
+        );
+        tokio::time::timeout(Duration::from_secs(90), async {
+            let catalog = broker
+                .list_models()
+                .await
+                .expect("read live legacy model catalog");
+            eprintln!(
+                "legacy protocol {CODEX_COMPAT_VERSION}; catalog lists gpt-6.1-sol: {}",
+                catalog.models.iter().any(|model| model == "gpt-6.1-sol")
+            );
+            let response = OpenAiCodexChatClient::new("gpt-6.1-sol")
+                .complete(
+                    ChatRequest::new(vec![genai::chat::ChatMessage::user("Reply with only OK.")]),
+                    Some(&ChatOptions::default().with_reasoning_effort(ReasoningEffort::Low)),
+                )
+                .await
+                .expect("complete gpt-6.1-sol through legacy ChatGPT transport");
+            assert!(
+                !response.first_text().unwrap_or_default().trim().is_empty(),
+                "the completed live response should contain text"
+            );
+            eprintln!("gpt-6.1-sol completed successfully through legacy ChatGPT transport");
+        })
+        .await
+        .expect("legacy Sol probe timed out");
     }
 
     #[test]
@@ -582,7 +644,12 @@ mod tests {
 
     #[tokio::test]
     async fn sse_fixture_normalizes_text_reasoning_tools_and_usage() {
-        assert_sse_fixture("gpt-5.6-sol", None, "gpt-5.6-sol", None).await;
+        for method in [
+            ChatGptAuthMethod::CodexLegacy,
+            ChatGptAuthMethod::Registered,
+        ] {
+            assert_sse_fixture("gpt-5.6-sol", None, "gpt-5.6-sol", None, method).await;
+        }
     }
 
     #[tokio::test]
@@ -643,7 +710,19 @@ mod tests {
                 .strip_suffix("-minimal")
                 .or_else(|| model.strip_suffix("-max"))
                 .unwrap_or(model);
-            assert_sse_fixture(model, Some(options), expected_model, expected_effort).await;
+            for method in [
+                ChatGptAuthMethod::CodexLegacy,
+                ChatGptAuthMethod::Registered,
+            ] {
+                assert_sse_fixture(
+                    model,
+                    Some(options.clone()),
+                    expected_model,
+                    expected_effort,
+                    method,
+                )
+                .await;
+            }
         }
     }
 
@@ -652,6 +731,7 @@ mod tests {
         options: Option<ChatOptions>,
         expected_model: &str,
         expected_effort: Option<&str>,
+        method: ChatGptAuthMethod,
     ) {
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Option<(HeaderMap, serde_json::Value)>>>);
@@ -714,7 +794,7 @@ mod tests {
         .with_system("use tools");
         let response = client
             .stream_once(
-                &("oauth-secret".to_string(), "acct_123".to_string()),
+                &("oauth-secret".to_string(), "acct_123".to_string(), method),
                 request,
                 options.as_ref(),
                 Some(&tx),
@@ -734,9 +814,16 @@ mod tests {
 
         let (headers, body) = capture.0.lock().unwrap().take().unwrap();
         assert_eq!(headers.get("authorization").unwrap(), "Bearer oauth-secret");
-        assert!(headers.get("chatgpt-account-id").is_none());
-        assert!(headers.get("version").is_none());
-        assert!(headers.get("originator").is_none());
+        if method == ChatGptAuthMethod::CodexLegacy {
+            assert_eq!(headers["chatgpt-account-id"], "acct_123");
+            assert_eq!(headers["version"], CODEX_COMPAT_VERSION);
+            assert_eq!(headers["originator"], CODEX_COMPAT_ORIGINATOR);
+            assert_eq!(headers["user-agent"], codex_compat_user_agent());
+        } else {
+            assert!(headers.get("chatgpt-account-id").is_none());
+            assert!(headers.get("version").is_none());
+            assert!(headers.get("originator").is_none());
+        }
         assert_eq!(body["model"], expected_model);
         assert_eq!(body["reasoning"]["effort"].as_str(), expected_effort);
         assert!(body.get("temperature").is_none());
@@ -835,7 +922,11 @@ mod tests {
         let account = "mock-account".to_string();
         let response = client
             .stream_with_retries(
-                &(token.clone(), account.clone()),
+                &(
+                    token.clone(),
+                    account.clone(),
+                    ChatGptAuthMethod::Registered,
+                ),
                 test_request(),
                 None,
                 None,
@@ -881,7 +972,11 @@ mod tests {
             OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
         let error = client
             .stream_with_retries(
-                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                &(
+                    "mock-oauth-secret".to_string(),
+                    "mock-account".to_string(),
+                    ChatGptAuthMethod::Registered,
+                ),
                 test_request(),
                 None,
                 None,
@@ -919,7 +1014,11 @@ mod tests {
             OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
         let error = client
             .stream_with_retries(
-                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                &(
+                    "mock-oauth-secret".to_string(),
+                    "mock-account".to_string(),
+                    ChatGptAuthMethod::Registered,
+                ),
                 test_request(),
                 None,
                 None,
@@ -967,7 +1066,11 @@ mod tests {
             OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
         let response = client
             .stream_with_retries(
-                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                &(
+                    "mock-oauth-secret".to_string(),
+                    "mock-account".to_string(),
+                    ChatGptAuthMethod::Registered,
+                ),
                 test_request(),
                 None,
                 None,
@@ -1005,7 +1108,11 @@ mod tests {
             OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
         let error = client
             .stream_with_retries(
-                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                &(
+                    "mock-oauth-secret".to_string(),
+                    "mock-account".to_string(),
+                    ChatGptAuthMethod::Registered,
+                ),
                 test_request(),
                 None,
                 None,
@@ -1056,7 +1163,11 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(8);
         let error = client
             .stream_with_retries(
-                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                &(
+                    "mock-oauth-secret".to_string(),
+                    "mock-account".to_string(),
+                    ChatGptAuthMethod::Registered,
+                ),
                 test_request(),
                 None,
                 Some(&tx),

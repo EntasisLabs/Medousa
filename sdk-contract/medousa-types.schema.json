@@ -2164,6 +2164,18 @@
       "redirect_uri"
     ],
     "properties": {
+      "auth_method": {
+        "description": "Native apps recommend codex_legacy. Omission retains the saved method, or registered for compatibility with existing HTTP clients.",
+        "default": null,
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ChatGptAuthMethod"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "client_id": {
         "default": null,
         "type": [
@@ -2178,6 +2190,15 @@
       "redirect_uri": {
         "description": "Native host's already-bound HTTP loopback listener.",
         "type": "string"
+      }
+    },
+    "definitions": {
+      "ChatGptAuthMethod": {
+        "type": "string",
+        "enum": [
+          "codex_legacy",
+          "registered"
+        ]
       }
     }
   },
@@ -6332,7 +6353,16 @@
           "null"
         ]
       },
+      "auth_method": {
+        "default": "registered",
+        "allOf": [
+          {
+            "$ref": "#/definitions/ChatGptAuthMethod"
+          }
+        ]
+      },
       "client_id": {
+        "description": "Opaque saved connection identifier, also used by the select endpoint.",
         "type": "string"
       },
       "connected": {
@@ -6346,6 +6376,15 @@
       },
       "plan_usage_enabled": {
         "type": "boolean"
+      }
+    },
+    "definitions": {
+      "ChatGptAuthMethod": {
+        "type": "string",
+        "enum": [
+          "codex_legacy",
+          "registered"
+        ]
       }
     }
   },
@@ -6388,6 +6427,17 @@
         "type": [
           "string",
           "null"
+        ]
+      },
+      "auth_method": {
+        "default": null,
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ChatGptAuthMethod"
+          },
+          {
+            "type": "null"
+          }
         ]
       },
       "client_id": {
@@ -6441,7 +6491,16 @@
               "null"
             ]
           },
+          "auth_method": {
+            "default": "registered",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ChatGptAuthMethod"
+              }
+            ]
+          },
           "client_id": {
+            "description": "Opaque saved connection identifier, also used by the select endpoint.",
             "type": "string"
           },
           "connected": {
@@ -6457,6 +6516,13 @@
             "type": "boolean"
           }
         }
+      },
+      "ChatGptAuthMethod": {
+        "type": "string",
+        "enum": [
+          "codex_legacy",
+          "registered"
+        ]
       }
     }
   },
@@ -6560,7 +6626,16 @@
               "null"
             ]
           },
+          "auth_method": {
+            "default": "registered",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ChatGptAuthMethod"
+              }
+            ]
+          },
           "client_id": {
+            "description": "Opaque saved connection identifier, also used by the select endpoint.",
             "type": "string"
           },
           "connected": {
@@ -6577,6 +6652,13 @@
           }
         }
       },
+      "ChatGptAuthMethod": {
+        "type": "string",
+        "enum": [
+          "codex_legacy",
+          "registered"
+        ]
+      },
       "ChatGptOAuthStatusResponse": {
         "type": "object",
         "required": [
@@ -6590,6 +6672,17 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "auth_method": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ChatGptAuthMethod"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "client_id": {

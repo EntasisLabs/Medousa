@@ -1,8 +1,8 @@
 //! Native browser callback and authenticated workshop handoff. No OAuth codes or tokens enter JS.
 use super::{window_request::WorkshopRequest, workshop_http};
 use crate::daemon::types::{
-    BeginChatGptOAuthRequest, BeginChatGptOAuthResponse, CompleteChatGptOAuthRequest,
-    SelectChatGptAccountRequest,
+    BeginChatGptOAuthRequest, BeginChatGptOAuthResponse, ChatGptAuthMethod,
+    ChatGptOAuthStatusResponse, CompleteChatGptOAuthRequest, SelectChatGptAccountRequest,
 };
 use crate::embedded_daemon::EmbeddedDaemonState;
 use serde::Deserialize;
@@ -28,12 +28,36 @@ pub async fn chatgpt_oauth_request(
     operation: ChatGptOperation,
     client_id: Option<String>,
     enable_plan_usage: Option<bool>,
+    auth_method: Option<ChatGptAuthMethod>,
 ) -> Result<Value, String> {
     if matches!(operation, ChatGptOperation::SignIn) {
-        let browser = crate::oauth_browser::OAuthBrowserSession::bind().await?;
+        let auth_method = if let Some(method) = auth_method {
+            method
+        } else if let Some(id) = &client_id {
+            let status: ChatGptOAuthStatusResponse =
+                serde_json::from_value(dispatch(&state, &embedded_state, "status", None).await?)
+                    .map_err(|_| "Invalid ChatGPT account response")?;
+            status
+                .profiles
+                .iter()
+                .find(|profile| &profile.client_id == id)
+                .ok_or("ChatGPT account was not found")?
+                .auth_method
+        } else {
+            ChatGptAuthMethod::CodexLegacy
+        };
+        let browser = match auth_method {
+            ChatGptAuthMethod::CodexLegacy => {
+                crate::oauth_browser::OAuthBrowserSession::bind_codex().await?
+            }
+            ChatGptAuthMethod::Registered => {
+                crate::oauth_browser::OAuthBrowserSession::bind().await?
+            }
+        };
         let request = BeginChatGptOAuthRequest {
             redirect_uri: browser.redirect_uri().to_string(),
             client_id,
+            auth_method: Some(auth_method),
             enable_plan_usage: enable_plan_usage.unwrap_or(false),
         };
         let begin: BeginChatGptOAuthResponse = serde_json::from_value(

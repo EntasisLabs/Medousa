@@ -25,7 +25,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
-| [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
+| [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, legacy or registered ChatGPT sign-in, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |
 | [Spotlight Activity](guides/spotlight-activity.md) | Follow workshop tasks, agents, code commands, and scheduled runs |
 | [Spotlight conversations](guides/spotlight-conversations.md) | Address conversations, attach screenshots and resources, and make wireframes without leaving Spotlight |

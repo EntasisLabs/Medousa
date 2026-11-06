@@ -55,6 +55,52 @@ fn public_request_namespaces_tools_replays_history_and_omits_preview_fields() {
 }
 
 #[test]
+fn legacy_request_uses_flat_tools_and_replays_calls_without_namespaces() {
+    let call = ToolCall {
+        call_id: "call_legacy".into(),
+        fn_name: "code_read".into(),
+        fn_arguments: json!({"path": "src/lib.rs"}),
+        thought_signatures: None,
+    };
+    let request = ChatRequest::new(vec![
+        ChatMessage::user("read code"),
+        ChatMessage::from(vec![call.clone()]),
+        ChatMessage::from(ToolResponse::from_tool_call(&call, "contents")),
+    ])
+    .with_tools(vec![Tool::new("code_read")]);
+    let mut body = direct::request_body(
+        "gpt-6.1-sol",
+        request,
+        &ChatOptions::default().with_tool_choice(genai::chat::ToolChoice::Tool {
+            name: "code_read".into(),
+        }),
+    )
+    .unwrap();
+    direct::legacy_request_body(&mut body);
+    assert_eq!(body["instructions"], "");
+    assert_eq!(body["store"], false);
+    assert_eq!(body["stream"], true);
+    assert_eq!(body["tools"][0]["type"], "function");
+    assert_eq!(body["tools"][0]["name"], "code_read");
+    assert_eq!(
+        body["tool_choice"],
+        json!({"type":"function", "name":"code_read"})
+    );
+    assert!(body["input"][1].get("namespace").is_none());
+    assert_eq!(body["input"][1]["call_id"], "call_legacy");
+    assert_eq!(body["input"][2]["output"], "contents");
+    let mut no_tools = direct::request_body(
+        "gpt-6.1-sol",
+        ChatRequest::new(vec![ChatMessage::user("hello")]),
+        &ChatOptions::default(),
+    )
+    .unwrap();
+    direct::legacy_request_body(&mut no_tools);
+    assert!(no_tools.get("tools").is_none());
+    assert!(no_tools.get("tool_choice").is_none());
+}
+
+#[test]
 fn opaque_reasoning_on_tool_calls_is_replayed_once_before_the_call() {
     let call = ToolCall {
         call_id: "call_opaque".into(),
@@ -244,7 +290,11 @@ async fn failure_fixture_with_cooldown(
     let (tx, mut rx) = mpsc::channel(8);
     let error = client
         .stream_with_retries(
-            &("oauth-fixture".into(), "oaiapp_fixture".into()),
+            &(
+                "oauth-fixture".into(),
+                "oaiapp_fixture".into(),
+                ChatGptAuthMethod::Registered,
+            ),
             ChatRequest::new(vec![ChatMessage::user("hello")]),
             None,
             if with_deltas { Some(&tx) } else { None },

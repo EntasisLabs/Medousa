@@ -3762,10 +3762,23 @@ pub struct AgentRuntimeListResponse {
 
 // --- Native ChatGPT account connection (`/v1/auth/chatgpt`) ---
 
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatGptAuthMethod {
+    CodexLegacy,
+    // Connections saved before this field existed used registered OAuth.
+    #[default]
+    Registered,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ChatGptAccountProfile {
+    /// Opaque saved connection identifier, also used by the select endpoint.
     pub client_id: String,
+    #[serde(default)]
+    pub auth_method: ChatGptAuthMethod,
     pub account_id: Option<String>,
     pub email: Option<String>,
     pub connected: bool,
@@ -3781,6 +3794,8 @@ pub struct ChatGptOAuthStatusResponse {
     pub account_id: Option<String>,
     pub expires_at_utc: Option<DateTime<Utc>>,
     pub client_id: Option<String>,
+    #[serde(default)]
+    pub auth_method: Option<ChatGptAuthMethod>,
     pub email: Option<String>,
     pub plan_usage_enabled: bool,
     pub profiles: Vec<ChatGptAccountProfile>,
@@ -3793,6 +3808,10 @@ pub struct BeginChatGptOAuthRequest {
     pub redirect_uri: String,
     #[serde(default)]
     pub client_id: Option<String>,
+    /// Native apps recommend codex_legacy. Omission retains the saved method,
+    /// or registered for compatibility with existing HTTP clients.
+    #[serde(default)]
+    pub auth_method: Option<ChatGptAuthMethod>,
     #[serde(default)]
     pub enable_plan_usage: bool,
 }

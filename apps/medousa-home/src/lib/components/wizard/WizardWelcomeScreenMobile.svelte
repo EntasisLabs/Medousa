@@ -86,15 +86,14 @@
     try {
       let connection: ChatGptOAuthConnection = await getChatGptOAuthConnection();
       if (!chatGptOAuthReady(connection)) {
-        const result = await signInChatGptOAuth(connection.client_id ?? undefined,
-          connection.status === "plan_usage_disabled");
+        const result = await signInChatGptOAuth();
         connection = result.connection;
         chatGptWelcome = result.first_connection;
       }
 
       if (chatGptLoginCancelled) return;
       if (!chatGptOAuthReady(connection)) {
-        throw new Error("ChatGPT plan usage is not enabled. Enable it in ChatGPT account settings, or choose another provider.");
+        throw new Error("ChatGPT is not connected. Reconnect in Settings, or choose another provider.");
       }
 
       if (!chatGptWelcome) await finishWithChatGpt();
@@ -228,7 +227,7 @@
       {#if chatGptWelcome}
         <div class="mt-3 rounded-lg border border-surface-500/30 p-3" role="status">
           <p class="font-semibold">You're using your ChatGPT plan</p>
-          <p class="mt-2 text-sm">Medousa requests count toward your ChatGPT plan and any credits you allow.</p>
+          <p class="mt-2 text-sm">Medousa requests count toward your ChatGPT plan. Your account's access and usage limits apply.</p>
           <button type="button" class="btn variant-filled-primary btn-sm mt-2" onclick={() => { chatGptWelcome = false; void finishWithChatGpt(); }}>Got it</button>
           <button type="button" class="btn variant-ghost-surface btn-sm mt-2" onclick={() => void openUrlInDefaultBrowser(CHATGPT_USAGE_URL)}>Manage usage</button>
         </div>
