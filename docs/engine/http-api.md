@@ -633,9 +633,12 @@ See [vault.md](vault.md).
 
 ## Native ChatGPT account authentication
 
-These native-only, service-admin endpoints connect a ChatGPT registration to the
-workshop's Medousa runtime. The native app must bind an HTTP listener on
-`127.0.0.1` with path `/oauth/callback` before calling `begin`. The app presents
+These native-only, service-admin endpoints connect a ChatGPT account to the
+workshop's Medousa runtime. Both `codex_legacy` and `registered` authentication
+are supported. Before calling `begin`, the native app must bind an HTTP listener:
+legacy uses `http://127.0.0.1:1455/auth/callback` (or registered fallback port 1457),
+while registered OAuth uses `127.0.0.1` with an explicit port and path
+`/oauth/callback`. The app presents
 the returned authorization URL in the system browser, then forwards the callback
 to `complete` through the authenticated workshop connection. Do not pass either
 URL into browser JavaScript or logs; they may contain credentials or a one-time
@@ -651,27 +654,50 @@ code. Access and refresh tokens remain in the workshop's protected secret store.
 | GET | `/v1/auth/chatgpt/models` | `ChatGptModelListResponse`; slugs in server order and display names |
 | DELETE | `/v1/auth/chatgpt` | Revoke selected session and clear its tokens → `DisconnectChatGptOAuthResponse` |
 
-`begin` takes `redirect_uri`, an optional saved `client_id`, and explicit
-`enable_plan_usage` to request consent again. `complete` takes `login_id` and the
+`begin` takes `redirect_uri`, an optional saved `client_id`, optional
+`auth_method` (`codex_legacy` or `registered`), and explicit `enable_plan_usage`
+to request registered-OAuth consent again. The native app defaults new connections
+to legacy and passes the method explicitly. Omitting `auth_method` retains a
+saved connection's method, or defaults to registered OAuth for compatibility
+with existing HTTP clients. A saved
+connection cannot change methods: create another connection instead.
+`client_id` is the opaque saved connection identifier used by `select`; for
+registered OAuth it is also the issued OAuth client ID. Status and profile
+metadata include `auth_method`. `complete` takes `login_id` and the
 native callback URL, consumes the pending attempt once, validates state, exchanges
-PKCE using the issued client ID, and validates the ID-token signature, issuer,
+PKCE using the method's OAuth client ID, and validates the ID-token signature, issuer,
 audience, expiry, and nonce before activating the registration. Registration and
 host identifiers survive sign-out; sessions remain separate per client and
 verified identity. Returning sign-in must match that identity.
 
-`plan_usage_disabled` means identity sign-in succeeded without the direct-use
-scope. It cannot authorize model discovery or inference. Refreshes are serialized,
+For registered OAuth, `plan_usage_disabled` means identity sign-in succeeded
+without the direct-use scope. It cannot authorize model discovery or inference.
+Legacy connections use the verified `chatgpt_account_id` claim and do not request
+the public direct-use scope. Refreshes are serialized,
 and unusable refresh-token errors clear tokens while retaining registration for
 reauthorization. Temporary failures preserve credentials. `revoked: false` on
 sign-out means remote revocation was not confirmed; tell the user to disconnect
-the app in ChatGPT Settings. Old Codex-compatible credentials require a new sign-in.
+the registered app in ChatGPT Settings. Existing registered credentials retain
+their method. Complete stored credentials from the earlier Codex-compatible
+flow are imported as legacy connections; otherwise, complete a new legacy sign-in.
 
 The legacy configuration provider ID `openai-codex` continues to identify native
-ChatGPT account inference. It now uses `GET https://api.openai.com/v1/models` and
-`POST https://api.openai.com/v1/responses`, without Codex identity headers.
-Requests carry full history, `store: false`, `stream: true`, and namespaced local
-tools. Only `response.completed` succeeds; failures retain their status, body,
+ChatGPT account inference. Legacy connections use
+`GET https://chatgpt.com/backend-api/codex/models` and
+`POST https://chatgpt.com/backend-api/codex/responses`, with Codex compatibility
+headers, the verified account ID, and flat function tools. Registered connections
+use `GET https://api.openai.com/v1/models` and
+`POST https://api.openai.com/v1/responses`, without Codex identity headers, with
+namespaced local tools. Tokens are never reused across methods. Requests carry
+full history, `store: false`, and `stream: true`.
+Only `response.completed` succeeds; failures retain their status, body,
 code/param, and request ID and never silently fall back to API-key billing.
+
+Legacy catalog discovery sends `client_version` aligned with the `Version` and
+`User-Agent` headers on inference requests. The adapter follows the pinned
+[Codex 0.166.0 contract](https://github.com/openai/codex/releases/tag/rust-v0.166.0);
+older compatibility versions can omit or reject newer models even when the
+account has access. The selected connection's live catalog remains authoritative.
 
 ---
 

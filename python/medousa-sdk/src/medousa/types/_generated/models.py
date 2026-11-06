@@ -266,6 +266,11 @@ class ArtifactSummary(MedousaModel):
     supersedes_artifact_id: str | None = None
 
 
+class ChatGptAuthMethod(Enum):
+    codex_legacy = 'codex_legacy'
+    registered = 'registered'
+
+
 class BotId(RootModel[str]):
     root: str = Field(
         ..., description='Stable daemon-issued identity for one durable Bot profile.', title='BotId'
@@ -553,7 +558,10 @@ class CapabilityRecommendation(MedousaModel):
 
 class ChatGptAccountProfile(MedousaModel):
     account_id: str | None = None
-    client_id: str
+    auth_method: ChatGptAuthMethod | None = 'registered'
+    client_id: str = Field(
+        ..., description='Opaque saved connection identifier, also used by the select endpoint.'
+    )
     connected: bool
     email: str | None = None
     plan_usage_enabled: bool
@@ -561,6 +569,7 @@ class ChatGptAccountProfile(MedousaModel):
 
 class ChatGptOAuthStatusResponse(MedousaModel):
     account_id: str | None = None
+    auth_method: ChatGptAuthMethod | None = None
     client_id: str | None = None
     connected: bool
     email: str | None = None
@@ -4400,6 +4409,10 @@ class AskJobCompleteActionsResponse(MedousaModel):
 
 
 class BeginChatGptOAuthRequest(MedousaModel):
+    auth_method: ChatGptAuthMethod | None = Field(
+        None,
+        description='Native apps recommend codex_legacy. Omission retains the saved method, or registered for compatibility with existing HTTP clients.',
+    )
     client_id: str | None = None
     enable_plan_usage: bool | None = False
     redirect_uri: str = Field(

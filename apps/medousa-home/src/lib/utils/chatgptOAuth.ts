@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "$lib/window";
+import type { ChatGptAuthMethod } from "$lib/types/generated/daemon_api";
+
+export type { ChatGptAuthMethod };
 
 export type ChatGptOAuthStatus =
   | "signed_out"
@@ -14,6 +17,7 @@ export interface ChatGptOAuthConnection {
   account_id?: string | null;
   expires_at_utc?: string | null;
   client_id?: string | null;
+  auth_method?: ChatGptAuthMethod | null;
   email?: string | null;
   plan_usage_enabled?: boolean;
   profiles?: ChatGptAccountProfile[];
@@ -21,6 +25,7 @@ export interface ChatGptOAuthConnection {
 
 export interface ChatGptAccountProfile {
   client_id: string;
+  auth_method?: ChatGptAuthMethod;
   account_id?: string | null;
   email?: string | null;
   connected: boolean;
@@ -52,8 +57,9 @@ async function chatGptOAuthRequest<T>(
   operation: "status" | "sign_in" | "select" | "refresh" | "disconnect" | "models",
   clientId?: string,
   enablePlanUsage = false,
+  authMethod?: ChatGptAuthMethod,
 ): Promise<T> {
-  const result = await invoke<T>("chatgpt_oauth_request", { operation, clientId: clientId ?? null, enablePlanUsage });
+  const result = await invoke<T>("chatgpt_oauth_request", { operation, clientId: clientId ?? null, enablePlanUsage, authMethod: authMethod ?? null });
   if (["sign_in", "select", "disconnect", "refresh"].includes(operation) && typeof window !== "undefined") {
     window.dispatchEvent(new Event("medousa:chatgpt-account-changed"));
   }
@@ -65,8 +71,8 @@ export async function getChatGptOAuthConnection(): Promise<ChatGptOAuthConnectio
   return chatGptOAuthRequest<ChatGptOAuthConnection>("status");
 }
 
-export async function signInChatGptOAuth(clientId?: string, enablePlanUsage = false): Promise<CompleteChatGptOAuthResponse> {
-  return chatGptOAuthRequest<CompleteChatGptOAuthResponse>("sign_in", clientId, enablePlanUsage);
+export async function signInChatGptOAuth(clientId?: string, enablePlanUsage = false, authMethod?: ChatGptAuthMethod): Promise<CompleteChatGptOAuthResponse> {
+  return chatGptOAuthRequest<CompleteChatGptOAuthResponse>("sign_in", clientId, enablePlanUsage, authMethod);
 }
 
 export async function selectChatGptAccount(clientId: string): Promise<ChatGptOAuthConnection> {

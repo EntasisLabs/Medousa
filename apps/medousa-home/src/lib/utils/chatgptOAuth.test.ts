@@ -13,17 +13,28 @@ describe("ChatGPT OAuth connection", () => {
   it("keeps the entire callback flow in one native command", async () => {
     await signInChatGptOAuth("oaiapp_saved", true);
     expect(invoke).toHaveBeenLastCalledWith("chatgpt_oauth_request", {
-      operation: "sign_in", clientId: "oaiapp_saved", enablePlanUsage: true,
+      operation: "sign_in", clientId: "oaiapp_saved", enablePlanUsage: true, authMethod: null,
     });
     await selectChatGptAccount("oaiapp_other");
     expect(invoke).toHaveBeenLastCalledWith("chatgpt_oauth_request", {
-      operation: "select", clientId: "oaiapp_other", enablePlanUsage: false,
+      operation: "select", clientId: "oaiapp_other", enablePlanUsage: false, authMethod: null,
     });
   });
 
   it("allows connected and refreshable accounts", () => {
     expect(chatGptOAuthReady(connection("connected"))).toBe(true);
     expect(chatGptOAuthReady(connection("refresh_required"))).toBe(true);
+  });
+
+  it("supports both sign-in methods without transferring a saved registration", async () => {
+    await signInChatGptOAuth(undefined, false, "codex_legacy");
+    expect(invoke).toHaveBeenLastCalledWith("chatgpt_oauth_request", {
+      operation: "sign_in", clientId: null, enablePlanUsage: false, authMethod: "codex_legacy",
+    });
+    await signInChatGptOAuth("oaiapp_saved", true, "registered");
+    expect(invoke).toHaveBeenLastCalledWith("chatgpt_oauth_request", {
+      operation: "sign_in", clientId: "oaiapp_saved", enablePlanUsage: true, authMethod: "registered",
+    });
   });
 
   it("blocks identity-only grants and old unverified connection states", () => {

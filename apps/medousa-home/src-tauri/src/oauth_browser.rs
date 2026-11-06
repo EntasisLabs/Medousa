@@ -34,6 +34,7 @@ const MAX_REQUEST_BYTES: usize = 16 * 1024;
 pub struct OAuthBrowserSession {
     listener: TcpListener,
     redirect_uri: String,
+    callback_path: &'static str,
 }
 
 pub struct OAuthBrowserCallback {
@@ -43,7 +44,20 @@ pub struct OAuthBrowserCallback {
 
 impl OAuthBrowserSession {
     pub async fn bind() -> Result<Self, String> {
-        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        Self::bind_at(0, CALLBACK_PATH).await
+    }
+
+    pub async fn bind_codex() -> Result<Self, String> {
+        for port in [1455, 1457] {
+            if let Ok(session) = Self::bind_at(port, "/auth/callback").await {
+                return Ok(session);
+            }
+        }
+        Err("ChatGPT sign-in needs local port 1455 or 1457. Finish any other Codex sign-in and try again.".into())
+    }
+
+    async fn bind_at(port: u16, callback_path: &'static str) -> Result<Self, String> {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
             .await
             .map_err(|error| format!("start OAuth callback listener: {error}"))?;
         let port = listener
@@ -52,7 +66,8 @@ impl OAuthBrowserSession {
             .port();
         Ok(Self {
             listener,
-            redirect_uri: format!("http://127.0.0.1:{port}{CALLBACK_PATH}"),
+            redirect_uri: format!("http://127.0.0.1:{port}{callback_path}"),
+            callback_path,
         })
     }
 
@@ -66,7 +81,8 @@ impl OAuthBrowserSession {
         authorization_url: &str,
     ) -> Result<OAuthBrowserCallback, String> {
         open(app, authorization_url)?;
-        let callback = wait_for_callback(self.listener, &self.redirect_uri).await;
+        let callback =
+            wait_for_callback(self.listener, &self.redirect_uri, self.callback_path).await;
         if callback.is_err() {
             dismiss(app);
         }
@@ -85,7 +101,10 @@ impl OAuthBrowserCallback {
     }
 }
 
-async fn read_callback_request(stream: &mut TcpStream) -> Result<Option<String>, String> {
+async fn read_callback_request(
+    stream: &mut TcpStream,
+    callback_path: &str,
+) -> Result<Option<String>, String> {
     let mut request = Vec::with_capacity(1024);
     let mut chunk = [0_u8; 1024];
     loop {
@@ -114,7 +133,7 @@ async fn read_callback_request(stream: &mut TcpStream) -> Result<Option<String>,
     let method = parts.next().unwrap_or_default();
     let target = parts.next().unwrap_or_default();
     if method != "GET"
-        || !(target == CALLBACK_PATH || target.starts_with(&format!("{CALLBACK_PATH}?")))
+        || !(target == callback_path || target.starts_with(&format!("{callback_path}?")))
     {
         return Ok(None);
     }
@@ -124,6 +143,7 @@ async fn read_callback_request(stream: &mut TcpStream) -> Result<Option<String>,
 async fn wait_for_callback(
     listener: TcpListener,
     redirect_uri: &str,
+    callback_path: &str,
 ) -> Result<OAuthBrowserCallback, String> {
     let redirect_uri = redirect_uri.to_string();
     let wait = async move {
@@ -132,9 +152,9 @@ async fn wait_for_callback(
                 .accept()
                 .await
                 .map_err(|error| format!("accept OAuth callback: {error}"))?;
-            match read_callback_request(&mut stream).await? {
+            match read_callback_request(&mut stream, callback_path).await? {
                 Some(target) => {
-                    let suffix = target.strip_prefix(CALLBACK_PATH).unwrap_or_default();
+                    let suffix = target.strip_prefix(callback_path).unwrap_or_default();
                     return Ok(OAuthBrowserCallback {
                         stream,
                         url: format!("{redirect_uri}{suffix}"),

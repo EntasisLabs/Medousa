@@ -103,12 +103,25 @@ model access and keeps Medousa's agent loop. The ChatGPT-account route appears
 as ready only when the workshop daemon has a connected native account. Medousa
 never silently moves credentials between these routes.
 
-To connect the native route, open **Settings → Medousa Agent → Providers**, select
-**ChatGPT account**, and choose **Continue with ChatGPT**. Finish sign-in in your
-system browser and approve ChatGPT plan usage. Medousa confirms **You're using
-your ChatGPT plan**; choose **Got it**. Identity sign-in alone does not enable AI
-requests. If plan permission was declined, choose **Enable ChatGPT plan usage**
-in the account sheet to request it again.
+To connect the native route, open **Settings → Medousa Agent → Providers** and
+select **ChatGPT account**. **Sign-in method** offers two connections:
+
+- **Codex (legacy, recommended)** is the temporary default. It uses the earlier
+  Codex-compatible subscription connection.
+- **Sign in with ChatGPT (preview)** keeps registered OAuth and OpenAI's public
+  Responses endpoint available. Approve ChatGPT plan usage during sign-in. If
+  permission was declined, choose **Enable ChatGPT plan usage** to request it again.
+
+Choose **Continue with ChatGPT**, finish sign-in in your system browser, and
+return to Medousa. When Medousa confirms **You're using your ChatGPT plan**, choose
+**Got it**. Both methods keep Medousa's agent loop and use your subscription's
+account access and usage limits.
+
+Legacy is recommended while the subscription-sharing errors reported in
+[Codex issue #51043](https://github.com/openai/codex/issues/51043) remain unresolved.
+If a registered connection is blocked, choose **Codex (legacy, recommended)** and
+**Connect with selected method**, then complete a fresh sign-in. Existing
+registered connections remain saved; their tokens cannot authorize the legacy route.
 
 The native app receives the browser callback, and the workshop daemon exchanges,
 protects, and refreshes the credentials—including Embedded Personal on phone.
@@ -116,27 +129,31 @@ This works with a self-hosted remote workshop through the authenticated native
 connection. Tokens and callback codes never enter the webview. The connection
 is separate from the desktop-only **Codex runtime** card.
 
-Use the account picker to switch saved registrations, or **Add account** to connect
-another account or workspace. Separate registrations remain separate even when
-their emails match. **Sign out** clears the selected session's tokens and attempts
-remote revocation; its registration is retained for reconnecting. If revocation
-cannot be confirmed, disconnect Medousa in ChatGPT Settings. Existing connections
-from the older Codex-compatible flow need one new sign-in after this upgrade.
+Use the account picker to switch saved connections, which show their sign-in
+method, or **Add account** to connect another account or workspace. Separate
+methods remain separate even when their emails match. **Sign out** clears the
+selected session's tokens and attempts remote revocation; its connection record
+is retained for reconnecting. If registered-OAuth revocation cannot be confirmed,
+disconnect Medousa in ChatGPT Settings. Sign-in and refresh always use the selected
+connection's method; requests do not automatically switch methods.
 
-The picker uses the selected account's current public model catalog, including
+The picker uses the selected connection's current model catalog, including
 its display names and ordering. Switching workshops reloads account status and
 models from that workshop's daemon. The ChatGPT provider stays visible while
 discovery is pending or unavailable. If discovery fails, its composer panel
 shows the error and offers **Refresh models**. Models vary with account access.
+After updating Medousa, choose **Refresh models** to discover models newly
+available to the selected connection.
 Text, image, and file input
 are supported when the selected model accepts them. Medousa executes its own
 tools; hosted image generation, computer use, speech, and transcription are not
-supported by this preview. Requests use OpenAI's public Responses endpoint and
-succeed only after a completed response.
+supported by this transport. Legacy connections use the Codex backend; registered
+connections use OpenAI's public Responses endpoint. Both succeed only after a
+completed response.
 
 **Using ChatGPT plan** identifies this route. **Manage usage** opens
-[ChatGPT Settings → Usage](https://chatgpt.com/settings/usage) to manage app access,
-plan limits, and permitted credits. A plan-usage limit pauses the request and
+[ChatGPT Settings → Usage](https://chatgpt.com/settings/usage) to review plan limits
+and, for registered connections, app access and permitted credits. A plan-usage limit pauses the request and
 shows that link. Medousa does not automatically move a failed ChatGPT request to
 API-key billing. See OpenAI's [Sign in with ChatGPT guide](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
 and [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).

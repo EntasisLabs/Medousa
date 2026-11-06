@@ -10,6 +10,7 @@
     getChatGptOAuthConnection,
     listChatGptOAuthModels,
     type ChatGptOAuthConnection,
+    type ChatGptAuthMethod,
   } from "$lib/utils/chatgptOAuth";
 
   interface Props {
@@ -29,9 +30,11 @@
   let accountModels = $state<string[]>([]);
   let modelsLoading = $state(false);
   let sheetOpen = $state(false);
+  let authMethod = $state<ChatGptAuthMethod>("codex_legacy");
   let loginCancelled = false;
 
   const ready = $derived(chatGptOAuthReady(connection));
+  const needsPlanConsent = $derived(authMethod === "registered" && connection?.auth_method === "registered" && connection.status === "plan_usage_disabled");
   const rowValue = $derived.by(() => {
     if (!enabled) return "On workshop host";
     if (actionBusy === "login") return "Waiting…";
@@ -115,14 +118,16 @@
   async function signIn(newAccount = false) {
     await withAction("login", async () => {
       loginCancelled = false;
-      const result = await signInChatGptOAuth(newAccount ? undefined : connection?.client_id ?? undefined,
-        connection?.status === "plan_usage_disabled");
+      const clientId = !newAccount && (connection?.auth_method ?? "registered") === authMethod
+        ? connection?.client_id ?? undefined : undefined;
+      const result = await signInChatGptOAuth(clientId,
+        authMethod === "registered" && connection?.status === "plan_usage_disabled", authMethod);
       if (loginCancelled) return null;
       connection = result.connection;
       welcome = result.first_connection;
       if (chatGptOAuthReady(connection)) await refreshAccountModels();
       else accountModels = [];
-      return connection.plan_usage_enabled ? "ChatGPT plan usage is enabled." : "Signed in. Enable ChatGPT plan usage to use account models.";
+      return connection.plan_usage_enabled ? "ChatGPT account connected." : "Signed in. Enable ChatGPT plan usage to use account models.";
     });
   }
 
@@ -130,6 +135,7 @@
     await withAction("select", async () => {
       accountModels = [];
       connection = await selectChatGptAccount(clientId);
+      authMethod = connection.auth_method ?? "registered";
       if (chatGptOAuthReady(connection)) await refreshAccountModels();
       return null;
     });
@@ -142,6 +148,7 @@
       connection = await getChatGptOAuthConnection();
       accountModels = [];
       return result.revoked ? "Signed out from ChatGPT on this workshop." :
+        connection.auth_method === "codex_legacy" ? "Signed out locally. Remote revocation was not confirmed." :
         "Signed out locally. Remote revocation was not confirmed; disconnect Medousa in ChatGPT Settings.";
     });
   }
@@ -205,10 +212,18 @@
         {#if welcome}
           <div role="status" class="chatgpt-account-copy">
             <strong>You're using your ChatGPT plan</strong>
-            <p>Medousa requests will count toward your ChatGPT plan and any credits you allow in ChatGPT Settings.</p>
+            <p>Medousa requests count toward your ChatGPT plan. Your account's access and usage limits apply.</p>
             <button type="button" class="btn variant-filled-primary btn-sm" onclick={() => (welcome = false)}>Got it</button>
           </div>
         {/if}
+
+        <label class="chatgpt-account-copy">
+          Sign-in method
+          <select bind:value={authMethod} disabled={actionBusy != null}>
+            <option value="codex_legacy">Codex (legacy, recommended)</option>
+            <option value="registered">Sign in with ChatGPT (preview)</option>
+          </select>
+        </label>
 
         {#if connection?.profiles?.length}
           <label class="chatgpt-account-copy">
@@ -216,11 +231,11 @@
             <select value={connection.client_id ?? ""} disabled={actionBusy != null}
               onchange={(event) => void selectAccount(event.currentTarget.value)}>
               {#each connection.profiles as profile (profile.client_id)}
-                <option value={profile.client_id}>{profile.email ?? profile.account_id ?? "Registration"} · {profile.client_id.slice(-8)}</option>
+                <option value={profile.client_id}>{profile.email ?? profile.account_id ?? "Account"} · {profile.auth_method === "codex_legacy" ? "Codex legacy" : "ChatGPT preview"} · {profile.client_id.slice(-8)}</option>
               {/each}
             </select>
           </label>
-          <button type="button" class="btn variant-ghost-surface btn-sm" disabled={actionBusy != null} onclick={() => void signIn(true)}>Add account</button>
+          <button type="button" class="btn variant-ghost-surface btn-sm" disabled={actionBusy != null} onclick={() => void signIn(true)}>{(connection.auth_method ?? "registered") !== authMethod ? "Connect with selected method" : "Add account"}</button>
         {/if}
 
         {#if actionBusy === "login"}
@@ -257,7 +272,7 @@
           </div>
         {:else}
           <p class="chatgpt-account-copy">
-            {connection?.status === "plan_usage_disabled" ? "Signed in. Enable ChatGPT plan usage to use account models." : connection?.status === "reauth_required"
+            {needsPlanConsent ? "Signed in. Enable ChatGPT plan usage to use account models." : connection?.status === "reauth_required"
               ? "The saved session can no longer refresh. Sign in again to restore account models."
               : "Sign in to make your ChatGPT subscription models available under Model roles."}
           </p>
@@ -268,7 +283,7 @@
             onclick={() => void signIn()}
           >
             <img src="/brand/external-agents/openai-blossom-white.svg" alt="" width="18" height="18" />
-            {connection?.status === "plan_usage_disabled" ? "Enable ChatGPT plan usage" : "Continue with ChatGPT"}
+            {needsPlanConsent ? "Enable ChatGPT plan usage" : "Continue with ChatGPT"}
           </button>
         {/if}
 

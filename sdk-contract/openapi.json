@@ -427,6 +427,18 @@
       },
       "BeginChatGptOAuthRequest": {
         "properties": {
+          "auth_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatGptAuthMethod"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Native apps recommend codex_legacy. Omission retains the saved method, or registered for compatibility with existing HTTP clients."
+          },
           "client_id": {
             "default": null,
             "type": [
@@ -1470,7 +1482,16 @@
               "null"
             ]
           },
+          "auth_method": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatGptAuthMethod"
+              }
+            ],
+            "default": "registered"
+          },
           "client_id": {
+            "description": "Opaque saved connection identifier, also used by the select endpoint.",
             "type": "string"
           },
           "connected": {
@@ -1492,6 +1513,13 @@
           "plan_usage_enabled"
         ],
         "type": "object"
+      },
+      "ChatGptAuthMethod": {
+        "enum": [
+          "codex_legacy",
+          "registered"
+        ],
+        "type": "string"
       },
       "ChatGptModelListResponse": {
         "properties": {
@@ -1523,6 +1551,17 @@
               "string",
               "null"
             ]
+          },
+          "auth_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatGptAuthMethod"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "client_id": {
             "type": [
