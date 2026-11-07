@@ -1,0 +1,33 @@
+[package]
+name = "medousa-rndr-home"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Deliberately standalone like the Tauri shell; no renderer changes or vendoring.
+[workspace]
+
+[features]
+# Read-only observation is only enabled by the synthetic offline launcher.
+observe = ["rndr_render/observe"]
+
+[dependencies]
+rndr_core = { path = "/Users/theelevators/rndr/crates/rndr_core" }
+rndr_app = { path = "/Users/theelevators/rndr/crates/rndr_app" }
+rndr_paint = { path = "/Users/theelevators/rndr/crates/rndr_paint" }
+rndr_render = { path = "/Users/theelevators/rndr/crates/rndr_render", default-features = false, features = ["parley", "accesskit"] }
+medousa-sdk = { path = "../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
+medousa-types = { path = "../../crates/medousa-types" }
+medousa-local-credential = { path = "../../crates/medousa-local-credential" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+futures-util = "0.3"
+serde_json = "1"
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false
