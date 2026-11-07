@@ -26,7 +26,13 @@ with the owner's configured daemon/provider remains an owner smoke test; the
 protocol verification below uses real SDK calls against synthetic loopback
 fixtures. Offline launches never invoke the credential loader.
 
-## Executed verification
+## Initial candidate verification (historical)
+
+The following 15/14-test results describe candidate `a1fa6305`, not the
+follow-on correction. They did **not** cover the prompt-loss or active-resume
+races below. Current independent checks supersede these counts.
+
+## Initial executed verification
 
 All Cargo commands used `--manifest-path apps/rndr-home/Cargo.toml` and at most
 `-j 2`; dev/test debug information and incremental output are disabled. Rust
@@ -82,12 +88,19 @@ it does **not** prove OS-compositor display, OS chrome, color management, or
 physical-device presentation. The separate headless fixtures are explicitly
 labeled; their assistant text is synthetic and says so.
 
-Actual generated image pixels were opened with the image viewer, including the
-native empty state and the narrow formatted transcript. Visual review was not
-inferred from a file/capture receipt. The original reference attachment could be
-located by history (`usr:ses_012d:8e0599a3a70a44d492e763d8475fe95c`), but no stable
-on-disk export was returned; the detailed reference supplied in the assignment
-was the implementation baseline rather than a pixel-diff input.
+The initial implementer's pixel-review claim was not independently established
+by the sender: their image viewer returned metadata without visible pixels.
+During this follow-on audit, actual pixels **were delivered and reviewed** for
+the headless narrow fixture and a fresh corrected native empty capture, along
+with the original human attachment reopened through chat history
+(`usr:ses_012d:8e0599a3a70a44d492e763d8475fe95c`). This is visual inspection,
+not a pixel-diff/parity certification. The fresh ignored capture is
+`apps/rndr-home/evidence/audit-native.png` with matching JSON, frame 3,
+1120×820, PNG SHA-256
+`7d1c63a5841c2c00cde5afcdbede5377cd64a69c3feb2f66f31fb01afd0cdabe`.
+It matches the committed native PNG bytes, but is from the corrected executable.
+The real desktop runner exited normally and removed its observation descriptor.
+No OS compositor screenshot or connected/paid inference surface was captured.
 
 Compared to that reference: near-black rounded bordered shell, compact
 Today/add strip, Today secondary header, centered empty question/underlined
@@ -107,6 +120,83 @@ listener. The audited empty frame alone is public; entering any draft text or
 introducing transcript/connected state denies observation. The harness only
 imports the existing rndr observation client and waits for normal 15-second
 shutdown; it does not drive other apps or request OS permissions.
+
+## Follow-on independent audit and correction
+
+A fresh corrector audited all candidate source/tests, standalone manifest/lock,
+capture script, screenshots/metadata and documentation against the original
+first-slice scope. Only this app was changed. Relevant real daemon contracts
+were rechecked: `daemon_interactive_turn.rs` stamps user and assistant entries
+with `execution_ref(session, turn_id)` and waits for durable assistant persistence
+before terminal publication; persistence failure can yield **fatal** settlement.
+`daemon_handlers.rs::get_session_history` reads the runtime timeline separately
+from active-ticket lookup. `TranscriptEntry.caused_by` is an execution identity,
+not a text/timestamp heuristic or a shared per-segment transcript entry ID.
+
+### Findings and regression reproductions
+
+1. **Prompt loss (blocking):** send a unique prompt → rejected/unknown admission
+   → Reload empty history previously erased both composer and optimistic text.
+   Recovery now lives independently of `Chat`, **in memory only**. The real UI
+   send/failure/reload sequence covers both 401 and pre-persistence network-error
+   replies, empty/newer multiline drafts, visibly retained recovery text, disabled
+   Restore when a newer draft exists, lossless explicit Restore and zero implicit
+   submissions. Confirmed admission removes that request's recovery copy without
+   touching newer composer edits. The SDK has a separate real loopback 401 fixture.
+2. **Stale history on settlement (blocking):** active-before → history →
+   active-after is retried up to three times if the execution changes. The
+   completion-between-reads fixture requires refreshed user **and** assistant
+   prose exactly once. Exhausted churn yields an explicit uncertain failure,
+   not stale history presented as settled.
+3. **Replay overlap (blocking):** active execution's persisted assistant entries
+   are omitted by complete `caused_by` identity before full v3 replay; user and
+   other-execution entries remain canonical. Fixtures exercise active reattach,
+   replayed duplicate sequence, terminal replacement, and user persistence both
+   before and after initial loading. They assert neither missing nor duplicated
+   user/assistant prose. A full real UI Reload → backend `serve` → SDK active
+   reattach → feed → terminal → canonical history fixture verifies the actual
+   integration path, not just the projection helper.
+4. **Settlement gating:** Send stays blocked until terminal history reconciliation
+   finishes. Ticket cleanup is retried at most three history operations (25/50 ms
+   delays; each operation itself has the three-bracket bound above). A persistent
+   active ticket/handoff requires explicit Reload instead of pretending a stream
+   was reattached. Cancellation's terminal status remains visible after history
+   replacement. Fatal persistence failure preserves live in-memory prose and
+   reports incomplete durability instead of replacing it with missing history.
+5. **Idle Cancel:** the generic enabled-button fallback had enabled hidden idle
+   Stop. Its enabled state and action guard now require a busy/uncertain session;
+   a cancel request never fakes terminal completion. UI and real SDK route tests
+   cover cancellation, including continued busy state until settlement.
+
+No additional first-slice blocker was found in model catalog/request routing,
+read-only local credential transport, generation fencing, multiline input or
+unsupported-control behavior. Added catalog-wire and shared all-stage routing
+assertions. Existing ambiguous Enter-batch, Shift+Enter, idle IME-enabled Enter,
+Tab, stale reply, disconnected-worker and observer-privacy checks still pass.
+
+### Current bounded checks
+
+Disk checked before builds/tests/lint: ~16 GiB available; no cleanup performed.
+All Cargo invocations are standalone, offline and `-j 2`.
+
+| Independent correction check | Result |
+|---|---|
+| `cargo test --all-features --offline -j 2` | PASS: **25** (4 library + 21 application) |
+| Default `cargo test --offline -j 2` | PASS: **24** (observer test excluded) |
+| Native default and all-feature `cargo build --offline -j 2` | PASS |
+| `cargo clippy --all-targets --all-features --offline -j 2 -- -D warnings` | PASS |
+| `cargo fmt -- --check`, `git diff --check` | PASS |
+| `bash scripts/verify-docs.sh --strict` | PASS |
+| Corrected native `capture_native.py` | PASS: submitted surface, timed normal exit, descriptor cleanup |
+| Actual pixel review | Human reference, corrected native empty and headless narrow; **not OS compositor**, connected UI, or live inference |
+
+These are app-side **non-atomic** reconciliation reads, not a snapshot guarantee.
+Another client can act after the final observation; an ABA transition entirely
+between observations cannot be ruled out without a stronger daemon contract.
+No admission retry was introduced. Recovery copies intentionally do not survive
+app exit. Fatal unsaved streamed prose is retained until explicit history reload,
+not durably rescued. Still-active handoffs require Reload; no approval/secret
+fulfillment or broader engine change is implied.
 
 ## Residual gaps and next review
 

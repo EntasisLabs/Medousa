@@ -16,6 +16,129 @@ fn reply(app: &mut App, generation: u64, update: Update) {
     app.update();
 }
 #[test]
+fn failed_admission_reload_preserves_visible_recovery_and_newer_draft() {
+    for failure in ["401 unauthorized", "network failure before persistence"] {
+        for newer in ["", "newer draft\nnever overwrite 👋"] {
+            let (mut app, mut rx) = ready();
+            let ui = *app.world().resource::<Ui>().unwrap();
+            reset_prompt(app.world_mut(), ui.composer, "unique original prompt");
+            app.update();
+            try_activate(app.world_mut(), ui.send);
+            app.update();
+            assert!(matches!(rx.try_recv().unwrap().command, Command::Send(_)));
+            reset_prompt(app.world_mut(), ui.composer, newer);
+            reply(&mut app, 1, Update::Failure(failure.into()));
+            assert!(!app.world().get::<Button>(ui.send).unwrap().enabled);
+            let reload = app
+                .world()
+                .entities_with::<Button>()
+                .into_iter()
+                .find(|e| app.world().get::<Button>(*e).unwrap().action == "reload")
+                .unwrap();
+            try_activate(app.world_mut(), reload);
+            app.update();
+            let request = rx.try_recv().unwrap();
+            assert!(matches!(request.command, Command::Open(_)));
+            reply(
+                &mut app,
+                request.generation,
+                Update::History("s".into(), String::new(), None),
+            );
+            assert_eq!(app.world().get::<Label>(ui.composer).unwrap().text, newer);
+            let visible = app.world().get::<MarkdownView>(ui.view).unwrap().source();
+            assert!(visible.contains("Recoverable prompt"));
+            assert!(visible.contains("unique original prompt"));
+            assert!(rx.try_recv().is_err(), "reload must never resubmit");
+            assert_eq!(
+                app.world().get::<Button>(ui.recover).unwrap().enabled,
+                newer.is_empty()
+            );
+            try_activate(app.world_mut(), ui.recover);
+            app.update();
+            assert_eq!(
+                app.world().get::<Label>(ui.composer).unwrap().text,
+                if newer.is_empty() {
+                    "unique original prompt"
+                } else {
+                    newer
+                }
+            );
+            assert!(rx.try_recv().is_err(), "restoring must not send");
+        }
+    }
+}
+#[test]
+fn terminal_waits_for_history_and_cancel_does_not_fake_settlement() {
+    let (mut app, mut rx) = ready();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    assert!(!app.world().get::<Button>(ui.cancel).unwrap().enabled);
+    reset_prompt(app.world_mut(), ui.composer, "hi");
+    app.update();
+    try_activate(app.world_mut(), ui.send);
+    app.update();
+    rx.try_recv().unwrap();
+    reply(&mut app, 1, Update::Admitted("t".into()));
+    try_activate(app.world_mut(), ui.cancel);
+    app.update();
+    assert!(matches!(rx.try_recv().unwrap().command, Command::Cancel(id) if id == "s"));
+    reply(&mut app, 1, Update::Notice("cancel requested".into()));
+    assert!(app.world().resource::<Model>().unwrap().chat.busy);
+    let terminal = serde_json::from_value(serde_json::json!({"schema_version":3,"turn_id":"t","seq":1,"emitted_at_utc":"2026-11-07T00:00:00Z","event":{"type":"turn_completed","outcome":"cancelled","aggregate_text":""}})).unwrap();
+    reply(&mut app, 1, Update::Stream(terminal));
+    reset_prompt(app.world_mut(), ui.composer, "new draft");
+    app.update();
+    assert!(app.world().resource::<Model>().unwrap().chat.uncertain);
+    assert!(!app.world().get::<Button>(ui.send).unwrap().enabled);
+    reply(
+        &mut app,
+        1,
+        Update::SettledHistory("s".into(), "### You\n\nhi".into()),
+    );
+    assert!(app.world().get::<Button>(ui.send).unwrap().enabled);
+    assert!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .chat
+            .status
+            .contains("Cancelled")
+    );
+    assert_eq!(
+        app.world().get::<Label>(ui.composer).unwrap().text,
+        "new draft"
+    );
+}
+#[test]
+fn confirmed_admission_retires_recovery_without_touching_newer_draft() {
+    let (mut app, mut rx) = ready();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    reset_prompt(app.world_mut(), ui.composer, "admitted original");
+    app.update();
+    try_activate(app.world_mut(), ui.send);
+    app.update();
+    rx.try_recv().unwrap();
+    reset_prompt(app.world_mut(), ui.composer, "next draft");
+    reply(&mut app, 1, Update::Admitted("t".into()));
+    assert!(app.world().resource::<Model>().unwrap().recovery.is_empty());
+    reply(
+        &mut app,
+        1,
+        Update::History("s".into(), "admitted original".into(), None),
+    );
+    assert_eq!(
+        app.world().get::<Label>(ui.composer).unwrap().text,
+        "next draft"
+    );
+    assert!(
+        !app.world()
+            .get::<MarkdownView>(ui.view)
+            .unwrap()
+            .source()
+            .contains("Recoverable prompt")
+    );
+    assert!(rx.try_recv().is_err());
+}
+#[test]
 fn offline_controls_are_honest_and_resize_preserves_draft() {
     let mut app = app();
     app.update();

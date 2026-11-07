@@ -56,7 +56,14 @@ launch; offline/export launches never load it.
   no full chat browser yet; use `--session` for a specific older chat.
 - **Today / Reload history** reloads the current session. Its full ID appears
   in the bottom status strip. An active turn reattaches using its daemon-issued
-  stream URL and replays v3 events, without submitting another turn.
+  stream URL and replays v3 events, without submitting another turn. History is
+  bracketed by active-turn reads (up to three attempts), not an atomic snapshot.
+  The active execution's persisted assistant entries are excluded by `caused_by`
+  identity while its complete replay owns that prose; persisted user entries stay.
+  A terminal stream triggers canonical history reconciliation before another send.
+  Ticket cleanup gets at most three read attempts (25/50 ms delays); persistent
+  activity/handoffs or read failure remain visibly uncertain and require Reload.
+  A newly persisted user prompt may appear only after terminal reconciliation.
 - Click **Select model** to cycle the read-only `/v1/models/catalog` choices.
   Provider and model are displayed together. Nothing is preselected; a selection
   is required. This intentionally small picker is not the production search UI.
@@ -74,7 +81,17 @@ launch; offline/export launches never load it.
   daemon's terminal event settles the UI. After stream/admission failure the
   outcome is unknown: sending is blocked until **Reload history** reconciles it.
   There is never an automatic admission retry. Stop is also available in an
-  unknown state. Reload is explicit, not a second inference request.
+  unknown state, but disabled for an idle settled chat. Reload is explicit,
+  not a second inference request. On fatal settlement, history may be incomplete:
+  live in-memory text is retained instead of silently replaced; copy/inspect it
+  before explicitly reloading.
+- An unconfirmed prompt is retained **in memory only**, separately from history.
+  After admission failure/unknown outcome it remains visibly labeled **Recoverable
+  prompt**, even after Reload or session navigation. **Restore last unconfirmed
+  prompt** moves the exact text into an **empty** composer; it never overwrites
+  newer edits or submits. Check history before manually sending it again. Confirmed
+  admission retires its recovery copy. Closing the app loses these memory-only
+  copies; there is no draft/secret/plaintext persistence or automatic retry.
 - Permission, budget, and secret requests direct you to the existing Medousa
   app. This preview cannot approve/fulfill them. Never paste secrets into chat.
 
@@ -117,7 +134,12 @@ The tests use test-only loopback HTTP fixtures, not a daemon/provider, keychain,
 or inference API. They exercise create/history, strict response identity, turn
 admission, v3 Accept/replay/dedup/terminal handling, cancellation, unauthorized
 admission, state/error guards, UI send-once/draft reset/resize/Tab/multiline,
-stale responses, startup auth failure, and ambiguous queued submissions.
+stale responses, startup auth failure, and ambiguous queued submissions. Follow-on
+regressions cover failed admission → newer edits → Reload → explicit restore,
+confirmed admission, active reattachment/full replay, completion between reads,
+bounded activity/ticket cleanup, fatal unsaved prose, catalog wire shape and all
+stage-routing targets. UI tests run the real rndr app state/input/update systems
+with synthetic worker replies; backend fixtures use the real SDK over loopback.
 See [verification evidence](docs/VERIFICATION.md) for exact executed outcomes.
 Full engine/Tauri CI is not a substitute for this suite, nor claimed here.
 

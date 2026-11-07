@@ -24,6 +24,7 @@ pub struct Request {
 #[derive(Clone)]
 pub enum Update {
     History(String, String, Option<ActiveSessionTurn>),
+    SettledHistory(String, String),
     Admitted(String),
     Stream(TurnStreamEnvelopeV3),
     Models(Vec<(String, String)>),
@@ -67,25 +68,65 @@ pub fn client(origin: &str, data_dir: &std::path::Path) -> Result<MedousaClient,
 }
 
 async fn history(client: &MedousaClient, id: &str) -> Result<Update, medousa_sdk::SdkError> {
-    let history = client.sessions().history(id).await?;
-    let active = client.sessions().active_turn(id).await?;
-    let transcript = history
-        .turns
-        .iter()
-        .map(|entry| {
-            format!(
-                "### {}\n\n{}",
-                if entry.turn.role == "user" {
-                    "You"
-                } else {
-                    "Medousa"
-                },
-                entry.turn.content
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    Ok(Update::History(id.into(), transcript, active.turn))
+    // These routes are not an atomic snapshot. Bracket the read and retry only
+    // a bounded number of times if the observed execution changes/settles.
+    for _ in 0..3 {
+        let before = client.sessions().active_turn(id).await?;
+        let history = client.sessions().history(id).await?;
+        let active = client.sessions().active_turn(id).await?;
+        if before.turn.as_ref().map(|t| &t.turn_id) != active.turn.as_ref().map(|t| &t.turn_id) {
+            continue;
+        }
+        // The daemon persists user and finalized assistant entries with caused_by
+        // = execution_ref(session, turn_id). Replay owns ALL assistant prose for
+        // this active execution; committed users remain in canonical history.
+        // Never deduplicate by text, timestamp, or segment-id guesses.
+        let transcript = history
+            .turns
+            .iter()
+            .filter(|entry| {
+                !(entry.turn.role == "assistant"
+                    && active.turn.as_ref().is_some_and(|turn| {
+                        entry.caused_by.as_ref().is_some_and(|cause| {
+                            cause.authority_id == history.authority_id
+                                && cause.session_id.as_str() == id
+                                && cause.execution_id.as_str() == turn.turn_id
+                        })
+                    }))
+            })
+            .map(|entry| {
+                format!(
+                    "### {}\n\n{}",
+                    if entry.turn.role == "user" {
+                        "You"
+                    } else {
+                        "Medousa"
+                    },
+                    entry.turn.content
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        return Ok(Update::History(id.into(), transcript, active.turn));
+    }
+    Ok(Update::Failure("History changed during three reconciliation attempts. Reload again; sending remains blocked. No atomic snapshot is available.".into()))
+}
+
+async fn settled_history(client: &MedousaClient, session: &str) -> Update {
+    // Settlement may precede active-ticket cleanup (handoffs can remain active).
+    // Retry reads only, never admission, and do not claim the ticket has cleared.
+    for attempt in 0..3 {
+        match history(client, session).await {
+            Ok(Update::History(id, text, None)) => return Update::SettledHistory(id, text),
+            Ok(Update::History(_, _, Some(_))) if attempt < 2 => {
+                tokio::time::sleep(std::time::Duration::from_millis(25 << attempt)).await;
+            }
+            Ok(Update::History(_, _, Some(_))) => return Update::Failure("Stream settled but daemon still reports an active turn after bounded reads (possibly a handoff). Reload to reconcile/reattach; no automatic submission.".into()),
+            Ok(other) => return other,
+            Err(_) => return Update::Failure("Turn settled, but history reconciliation failed. Live in-memory text retained; reload before sending.".into()),
+        }
+    }
+    unreachable!("bounded settlement reads return an update")
 }
 
 async fn follow(
@@ -93,6 +134,7 @@ async fn follow(
     path: String,
     tx: feed::Sender<Reply>,
     generation: u64,
+    session: String,
 ) {
     if medousa_rndr_home::stream_path(&path).is_err() {
         emit(
@@ -108,7 +150,28 @@ async fn follow(
         match event {
             Ok(e) => {
                 let terminal = e.event.is_terminal();
-                if !emit(&tx, generation, Update::Stream(e)) || terminal {
+                let fatal = matches!(
+                    &e.event,
+                    medousa_types::TurnStreamEventV3::TurnCompleted {
+                        outcome: medousa_types::TurnCompletionOutcomeV3::Fatal,
+                        ..
+                    }
+                );
+                if !emit(&tx, generation, Update::Stream(e)) {
+                    return;
+                }
+                if terminal {
+                    // User persistence can occur after the initial history read.
+                    // Settlement is published after durable assistant persistence;
+                    // replace replay with canonical history, including that user.
+                    let update = if fatal {
+                        // Persistence failure is itself fatal: replacing live text
+                        // with incomplete history here would silently erase it.
+                        Update::Failure("Fatal turn: durable history may be incomplete. Live in-memory text retained; inspect/copy it before explicitly reloading.".into())
+                    } else {
+                        settled_history(&client, &session).await
+                    };
+                    emit(&tx, generation, update);
                     return;
                 }
             }
@@ -240,7 +303,14 @@ async fn serve(
                     if let Some(notice) = response.daemon_notice {
                         emit(&out, generation, Update::Notice(notice));
                     }
-                    follow(c, response.stream_url, out, generation).await;
+                    follow(
+                        c,
+                        response.stream_url,
+                        out,
+                        generation,
+                        request.session_id.clone(),
+                    )
+                    .await;
                 }));
                 continue;
             }
@@ -248,18 +318,19 @@ async fn serve(
         // Avoid raw server response bodies: they can carry sensitive diagnostics.
         let update = result.unwrap_or_else(|_| Update::Failure("Daemon request failed. Check local URL, data directory, authentication and runtime in existing Medousa app.".into()));
         let resume = match &update {
-            Update::History(_, _, Some(turn)) => Some(turn.clone()),
+            Update::History(id, _, Some(turn)) => Some((id.clone(), turn.clone())),
             _ => None,
         };
         if !emit(&tx, generation, update) {
             break;
         }
-        if let Some(turn) = resume {
+        if let Some((session, turn)) = resume {
             stream_task = Some(tokio::spawn(follow(
                 client.clone(),
                 turn.stream_url,
                 tx.clone(),
                 generation,
+                session,
             )));
         }
     }

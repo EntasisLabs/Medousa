@@ -28,7 +28,7 @@ impl Chat {
             status: if active {
                 "Reattaching active turn…".into()
             } else {
-                "Connected · history loaded".into()
+                "History reconciled · non-atomic daemon reads; reload if activity changes".into()
             },
             ..Self::default()
         }
@@ -204,6 +204,13 @@ mod tests {
         assert!(r.persist_user_turn);
         assert!(!r.code_project_setup_authorized);
         assert!(r.wake.is_none());
+        let wire = serde_json::to_value(r).unwrap();
+        assert_eq!(wire["provider"], "provider");
+        assert_eq!(wire["model"], "model");
+        for role in medousa_types::StageRoutingMatrix::roles() {
+            assert_eq!(wire["stage_routing"][role]["provider"], "provider");
+            assert_eq!(wire["stage_routing"][role]["model"], "model");
+        }
     }
     #[test]
     fn stream_dedup_chronology_terminal() {

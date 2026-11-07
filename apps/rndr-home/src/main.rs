@@ -22,6 +22,9 @@ struct Model {
     selection: Option<usize>,
     loading: bool,
     generation: u64,
+    // Memory only. Never reconcile by matching prose: identical prompts are valid.
+    recovery: Vec<(String, String)>,
+    pending_recovery: Option<usize>,
 }
 #[derive(Clone, Copy)]
 struct Ui {
@@ -34,6 +37,7 @@ struct Ui {
     center: Entity,
     send: Entity,
     cancel: Entity,
+    recover: Entity,
 }
 const MUTED: Color = Color::rgb(0.53, 0.53, 0.55);
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -183,6 +187,8 @@ fn app() -> App {
         selection: None,
         loading: false,
         generation: 0,
+        recovery: Vec::new(),
+        pending_recovery: None,
     });
     app.add_plugin(rndr_app::FormNavigation);
     app.add_plugin(MarkdownPlugin);
@@ -379,6 +385,13 @@ fn setup(world: &mut World) {
         ..Layout::column()
     },));
     child(world, root, bottom_space);
+    let recover = button(
+        world,
+        root,
+        "recover",
+        "Restore last unconfirmed prompt · empty composer only",
+    );
+    world.insert(recover, Hidden);
     let status = muted(world, root, "Offline preview");
     world.insert_resource(Ui {
         content,
@@ -390,6 +403,7 @@ fn setup(world: &mut World) {
         center,
         send,
         cancel,
+        recover,
     });
     request_focus(world, composer);
 }
@@ -462,8 +476,33 @@ fn update(world: &mut World) {
                 }
                 model.loading = false;
             }
-            Update::Admitted(turn) => model.chat.admitted(turn),
-            Update::Stream(e) => model.chat.apply(e),
+            Update::SettledHistory(session, transcript) => {
+                let status = model
+                    .chat
+                    .status
+                    .trim_end_matches(" · reconciling durable history…")
+                    .to_string();
+                model.chat = Chat::history(session, transcript, false);
+                model.chat.status = format!("{status} · history reconciled (non-atomic reads)");
+                model.loading = false;
+            }
+            Update::Admitted(turn) => {
+                model.chat.admitted(turn);
+                if let Some(index) = model.pending_recovery.take() {
+                    model.recovery.remove(index);
+                }
+            }
+            Update::Stream(e) => {
+                let terminal = e.event.is_terminal();
+                model.chat.apply(e);
+                if terminal {
+                    model.chat.uncertain = true;
+                    model
+                        .chat
+                        .status
+                        .push_str(" · reconciling durable history…");
+                }
+            }
             Update::Models(models) => {
                 model.models = models;
                 model.chat.status =
@@ -549,6 +588,9 @@ fn update(world: &mut World) {
                 match m.chat.begin(&prompt) {
                     Ok(()) => {
                         m.generation += 1;
+                        m.pending_recovery = Some(m.recovery.len());
+                        m.recovery
+                            .push((m.chat.session.clone().unwrap(), prompt.clone()));
                         let request = turn_request(
                             m.chat.session.as_deref().unwrap(),
                             &prompt,
@@ -568,7 +610,19 @@ fn update(world: &mut World) {
                     Err(e) => m.chat.status = e.into(),
                 }
             }
-            "cancel" => {
+            "recover"
+                if !busy
+                    && !loading
+                    && world.get::<Label>(ui.composer).unwrap().text.is_empty() =>
+            {
+                let m = world.resource_mut::<Model>().unwrap();
+                if let Some((_, prompt)) = m.recovery.pop() {
+                    m.pending_recovery = None;
+                    reset_prompt(world, ui.composer, &prompt);
+                    request_focus(world, ui.composer);
+                }
+            }
+            "cancel" if !loading && (busy || world.resource::<Model>().unwrap().chat.uncertain) => {
                 if let Some(id) = world.resource::<Model>().unwrap().chat.session.clone() {
                     dispatch(world, Command::Cancel(id));
                 }
@@ -577,7 +631,12 @@ fn update(world: &mut World) {
         }
     }
     let m = world.resource::<Model>().unwrap();
-    let text = m.chat.transcript.clone();
+    let mut text = m.chat.transcript.clone();
+    if !m.chat.busy {
+        for (session, prompt) in &m.recovery {
+            text.push_str(&format!("\n\n### Recoverable prompt · {session}\n\nAdmission was not confirmed. Memory only; not automatically resubmitted. Copy into the composer only after checking history.\n\n{prompt}"));
+        }
+    }
     let status = if m.loading {
         "Loading history…".into()
     } else {
@@ -635,6 +694,17 @@ fn update(world: &mut World) {
             .is_empty();
     let can_navigate = connected && !busy && !m.loading;
     let can_select = !busy && !m.models.is_empty();
+    let can_cancel = connected && !m.loading && has_session && (busy || uncertain);
+    let has_recovery = !m.recovery.is_empty();
+    let can_recover = has_recovery
+        && !busy
+        && !m.loading
+        && world.get::<Label>(ui.composer).unwrap().text.is_empty();
+    if has_recovery {
+        world.remove::<Hidden>(ui.recover);
+    } else {
+        world.insert(ui.recover, Hidden);
+    }
     for e in world.entities_with::<Button>() {
         let b = world.get_mut::<Button>(e).unwrap();
         b.enabled = match b.action.as_str() {
@@ -642,6 +712,8 @@ fn update(world: &mut World) {
             "model" => can_select,
             "new" | "recent" => can_navigate,
             "reload" => can_navigate && has_session,
+            "cancel" => can_cancel,
+            "recover" => can_recover,
             _ => true,
         };
     }
@@ -654,6 +726,7 @@ fn update(world: &mut World) {
         let m = world.resource::<Model>().unwrap();
         let public = m.commands.is_none()
             && m.chat.transcript.is_empty()
+            && m.recovery.is_empty()
             && world.get::<Label>(ui.composer).unwrap().text.is_empty();
         world.insert_resource(if public {
             ObservationContent::Public
