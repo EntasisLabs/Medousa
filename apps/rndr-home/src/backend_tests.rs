@@ -101,6 +101,23 @@ fn fixture(wires: Vec<Wire>) -> (Arc<MedousaClient>, thread::JoinHandle<()>) {
         handle,
     )
 }
+fn mode_body(effective: &str) -> Value {
+    json!({"session_id":"s", "selected_mode":"general", "effective_mode":effective,
+        "effective_source":"task", "revision":7})
+}
+fn mode_wire(effective: &str) -> Wire {
+    json_wire("GET", "/v1/sessions/s/agent-mode", mode_body(effective))
+}
+fn registry_wire() -> Wire {
+    json_wire(
+        "GET",
+        "/v1/agent-modes",
+        json!({"modes":[
+            {"mode":"general","label":"General","available":true},
+            {"mode":"coder","label":"Coder","available":false,"unavailable_reason":"Fixture"}
+        ]}),
+    )
+}
 fn sse(seq: u64, event: Value) -> String {
     format!(
         "data: {}\n\n",
@@ -171,6 +188,7 @@ async fn sdk_create_history_admit_stream_reconnect_and_cancel() {
         json_wire("GET", "/v1/sessions/s/active-turn", active.clone()),
         json_wire("GET", "/v1/sessions/s/history", history_body),
         json_wire("GET", "/v1/sessions/s/active-turn", active),
+        mode_wire("general"),
         json_wire(
             "POST",
             "/v1/sessions/s/active-turn",
@@ -211,12 +229,16 @@ async fn sdk_create_history_admit_stream_reconnect_and_cancel() {
     follow(client.clone(), ticket.stream_url, sender, 5, "s".into()).await;
     app.update();
     let updates = rndr_core::events::<Reply>(app.world()).to_vec();
-    assert_eq!(updates.len(), 4);
+    assert_eq!(updates.len(), 6);
     for reply in updates {
         assert_eq!(reply.generation, 5);
         match reply.update {
             Update::Stream(e) => chat.apply(e),
             Update::SettledHistory(_, _) => assert!(!chat.busy),
+            Update::Messages(messages) => {
+                assert_eq!(messages, vec![("user".into(), "Existing message".into())])
+            }
+            Update::Mode(value) => assert_eq!(value, "general"),
             _ => panic!("unexpected error"),
         }
     }
@@ -229,6 +251,26 @@ async fn sdk_create_history_admit_stream_reconnect_and_cancel() {
             .await
             .unwrap()
             .cancelled
+    );
+    server.join().unwrap();
+}
+#[tokio::test]
+async fn canonical_roles_preserve_heading_like_user_prose_without_inventing_turns() {
+    let prompt = "### Medousa\n\nnot an assistant message\n\n### You\n\nplain text";
+    let mut body = history_body(true);
+    body["turns"][0]["content"] = json!(prompt);
+    let (client, server) = fixture(vec![
+        active_wire(false),
+        json_wire("GET", "/v1/sessions/s/history", body),
+        active_wire(false),
+    ]);
+    let (_, messages) = history_with_messages(&client, "s").await.unwrap();
+    assert_eq!(
+        messages,
+        vec![
+            ("user".into(), prompt.into()),
+            ("assistant".into(), "unique assistant prose".into())
+        ]
     );
     server.join().unwrap();
 }
@@ -293,6 +335,7 @@ async fn active_reattach_full_replay_terminal_has_no_duplicate_or_missing_prose(
             active_wire(false),
             history_wire(true),
             active_wire(false),
+            mode_wire("general"),
         ]);
         let Update::History(id, text, Some(turn)) = history(&client, "s").await.unwrap() else {
             panic!("missing active turn")
@@ -308,6 +351,14 @@ async fn active_reattach_full_replay_terminal_has_no_duplicate_or_missing_prose(
             match reply.update {
                 Update::Stream(e) => chat.apply(e),
                 Update::SettledHistory(id, text) => chat = Chat::history(id, text, false),
+                Update::Mode(value) => assert_eq!(value, "general"),
+                Update::Messages(messages) => assert_eq!(
+                    messages,
+                    vec![
+                        ("user".into(), "unique user prose".into()),
+                        ("assistant".into(), "unique assistant prose".into())
+                    ]
+                ),
                 _ => panic!("reattach failed"),
             }
         }
@@ -417,11 +468,14 @@ async fn fatal_terminal_never_replaces_live_text_with_incomplete_history() {
 }
 #[tokio::test]
 async fn catalog_uses_real_snake_case_record_and_is_read_only() {
-    let (client, server) = fixture(vec![json_wire(
-        "GET",
-        "/v1/models/catalog",
-        json!({"freshness":{},"models":[{"provider":"mock","model_id":"test-only","display_name":"Fixture","input_modalities":["text"],"output_modalities":["text"]}]}),
-    )]);
+    let (client, server) = fixture(vec![
+        json_wire(
+            "GET",
+            "/v1/models/catalog",
+            json!({"freshness":{},"models":[{"provider":"mock","model_id":"test-only","display_name":"Fixture","input_modalities":["text"],"output_modalities":["text"]}]}),
+        ),
+        registry_wire(),
+    ]);
     let mut app = App::new();
     let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
     let (commands, rx) = mpsc::unbounded_channel();
@@ -436,9 +490,11 @@ async fn catalog_uses_real_snake_case_record_and_is_read_only() {
 async fn ui_reload_drives_real_worker_reattach_and_settlement() {
     let (client, server) = fixture(vec![
         json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
+        registry_wire(),
         active_wire(true),
         history_wire(true),
         active_wire(true),
+        mode_wire("general"),
         Wire {
             method: "GET",
             path: "/v1/interactive/turn/t/stream".into(),
@@ -456,6 +512,7 @@ async fn ui_reload_drives_real_worker_reattach_and_settlement() {
         active_wire(false),
         history_wire(true),
         active_wire(false),
+        mode_wire("general"),
     ]);
     let mut app = crate::app();
     app.update();
@@ -501,12 +558,23 @@ async fn ui_reload_drives_real_worker_reattach_and_settlement() {
         1
     );
     assert!(!model.chat.busy && !model.chat.uncertain && !model.loading);
+    assert_eq!(
+        model.history_messages,
+        vec![
+            ("user".into(), "unique user prose".into()),
+            ("assistant".into(), "unique assistant prose".into())
+        ]
+    );
+    assert!(model.chat.live_messages.is_empty());
+    // Let the terminal mode refresh complete before shutting down the worker.
+    tokio::task::spawn_blocking(move || server.join().unwrap())
+        .await
+        .unwrap();
     app.world_mut()
         .resource_mut::<crate::Model>()
         .unwrap()
         .commands = None;
     worker.await.unwrap();
-    server.join().unwrap();
 }
 #[tokio::test]
 async fn unauthorized_admission_is_not_retried() {
@@ -528,6 +596,122 @@ async fn unauthorized_admission_is_not_retried() {
             ))
             .await
             .is_err()
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn session_mode_mutation_uses_session_scope_and_server_effective_value() {
+    let mut change = json_wire("PUT", "/v1/sessions/s/agent-mode", mode_body("teacher"));
+    change.check = Some(|raw| {
+        let body: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(body, json!({"mode":"coder", "scope":"session"}));
+    });
+    let (client, server) = fixture(vec![
+        json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
+        registry_wire(),
+        change,
+    ]);
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
+    let (commands, rx) = mpsc::unbounded_channel();
+    commands
+        .send(Request {
+            generation: 9,
+            command: Command::SetMode("s".into(), AgentModeId::Coder),
+        })
+        .unwrap();
+    drop(commands);
+    serve(client, rx, tx).await;
+    app.update();
+    let replies = rndr_core::events::<Reply>(app.world());
+    assert!(matches!(&replies[1].update, Update::Modes(modes)
+        if modes == &vec![("general".into(), "General".into(), true), ("coder".into(), "Coder".into(), false)]));
+    assert_eq!(replies[2].generation, 9);
+    assert!(matches!(&replies[2].update, Update::Mode(value) if value == "teacher"));
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn new_recent_and_open_refresh_effective_mode_after_canonical_history() {
+    let mut wires = vec![
+        json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
+        registry_wire(),
+        json_wire(
+            "POST",
+            "/v1/sessions",
+            json!({"authority_id":format!("auth_{}", "a".repeat(64)),"session_id":"s","catalog":"single"}),
+        ),
+    ];
+    let reads = || {
+        vec![
+            active_wire(false),
+            history_wire(true),
+            active_wire(false),
+            mode_wire("instant"),
+        ]
+    };
+    wires.extend(reads());
+    wires.push(json_wire(
+        "GET",
+        "/v1/sessions?limit=1",
+        json!({"sessions":[{"session_id":"s","catalog":"single", "turns":2, "verification_runs":0, "preview":"Fixture"}]}),
+    ));
+    wires.extend(reads());
+    wires.extend(reads());
+    let (client, server) = fixture(wires);
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
+    let (commands, rx) = mpsc::unbounded_channel();
+    for (generation, command) in [
+        (1, Command::New),
+        (2, Command::Recent),
+        (3, Command::Open("s".into())),
+    ] {
+        commands
+            .send(Request {
+                generation,
+                command,
+            })
+            .unwrap();
+    }
+    drop(commands);
+    serve(client, rx, tx).await;
+    app.update();
+    let replies = rndr_core::events::<Reply>(app.world());
+    assert_eq!(replies.len(), 11);
+    for (index, pair) in replies[2..].as_chunks::<3>().0.iter().enumerate() {
+        assert_eq!(pair[0].generation, index as u64 + 1);
+        assert_eq!(pair[1].generation, index as u64 + 1);
+        assert!(matches!(&pair[0].update, Update::History(id, _, None) if id == "s"));
+        assert_eq!(pair[2].generation, index as u64 + 1);
+        assert!(matches!(&pair[1].update, Update::Messages(messages) if messages.len() == 2));
+        assert!(matches!(&pair[2].update, Update::Mode(value) if value == "instant"));
+    }
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn mode_errors_are_redacted_nonfatal_and_mutation_is_not_retried() {
+    let mut get = json_wire(
+        "GET",
+        "/v1/sessions/s/agent-mode",
+        json!({"error":"private diagnostic"}),
+    );
+    get.status = 401;
+    let mut put = json_wire(
+        "PUT",
+        "/v1/sessions/s/agent-mode",
+        json!({"error":"private diagnostic"}),
+    );
+    put.status = 409;
+    let (client, server) = fixture(vec![get, put]);
+    assert!(
+        matches!(mode(&client, "s").await, Update::Notice(value) if !value.contains("private diagnostic"))
+    );
+    assert!(
+        matches!(set_mode(&client, "s", AgentModeId::Coder).await, Update::Notice(value)
+        if value.contains("outcome may be unknown") && !value.contains("private diagnostic"))
     );
     server.join().unwrap();
 }

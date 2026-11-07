@@ -1,4 +1,8 @@
 mod backend;
+mod conversation;
+#[cfg(test)]
+mod interaction_tests;
+mod menus;
 #[cfg(test)]
 mod ui_tests;
 use backend::{Command, Reply, Request, Update};
@@ -25,11 +29,13 @@ struct Model {
     // Memory only. Never reconcile by matching prose: identical prompts are valid.
     recovery: Vec<(String, String)>,
     pending_recovery: Option<usize>,
+    history_messages: Vec<(String, String)>,
+    mode: Option<String>,
+    modes: Vec<(String, String, bool)>,
+    depth: String,
 }
 #[derive(Clone, Copy)]
 struct Ui {
-    content: Entity,
-    view: Entity,
     empty: Entity,
     composer: Entity,
     status: Entity,
@@ -38,6 +44,10 @@ struct Ui {
     send: Entity,
     cancel: Entity,
     recover: Entity,
+    runtime: Entity,
+    mode: Entity,
+    behavior: Entity,
+    conversation: Entity,
 }
 const MUTED: Color = Color::rgb(0.53, 0.53, 0.55);
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -135,16 +145,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ("empty", 1120., 820., false),
             ("chat", 1120., 820., true),
             ("narrow", 520., 760., true),
+            ("draft", 1120., 820., true),
+            ("models", 1120., 820., true),
+            ("behavior", 1120., 820., true),
+            ("depth", 1120., 820., true),
+            ("runtime", 1120., 820., true),
         ] {
             app.world_mut()
                 .insert_resource(Viewport::new(width, height));
             app.update();
+            menus::close(app.world_mut());
+            let ui = *app.world().resource::<Ui>().unwrap();
+            reset_prompt(app.world_mut(), ui.composer, "");
+            {
+                let m = app.world_mut().resource_mut::<Model>().unwrap();
+                m.models = vec![
+                    ("ChatGPT · synthetic".into(), "GPT-6.1 Sol".into()),
+                    ("Anthropic · synthetic".into(), "Claude · example".into()),
+                    ("Local · synthetic".into(), "Local model · example".into()),
+                ];
+                m.selection = Some(0);
+            }
             if transcript {
                 let model = app.world_mut().resource_mut::<Model>().unwrap();
                 model.chat.transcript = "### You\n\nCan we make this a native chat?\n\n### Medousa\n\nYes — this is **rndr**, not a webview.\n\n- Real session history\n- Streaming chronological text\n- `Shift+Enter` for a new line\n\nThis is an offline visual fixture; no inference was sent.".into();
             }
-            app.update();
-            app.update();
+            if transcript {
+                app.world_mut().resource_mut::<Model>().unwrap().history_messages = vec![
+                    ("user".into(), "Can we make this feel more like the current chat?".into()),
+                    ("assistant".into(), "Yes — a conversation, not a document.\n\nThe composer now **grows with your draft**, and the model button opens a searchable menu instead of cycling.\n\n```sh\ncargo run --manifest-path apps/rndr-home/Cargo.toml -- --offline\n```\n\nMode changes use the same daemon contract as the Svelte app. Behavior supports next-turn response depth; external runtimes and the remaining controls are explicitly marked as not ported.\n\nThis is synthetic offline visual evidence. **No inference was sent.**".into()),
+                ];
+            }
+            if name == "draft" {
+                reset_prompt(
+                    app.world_mut(),
+                    ui.composer,
+                    "A longer draft should grow naturally.\nShift+Enter adds another line.\nThe transcript keeps the remaining space.\nAnd the editor is capped at six visual lines.\nFive\nSix\nSeven — internally scrollable",
+                );
+            }
+            for _ in 0..5 {
+                app.update();
+            }
+            match name {
+                "models" => menus::open(app.world_mut(), menus::Kind::Model, ui.model),
+                "behavior" => menus::open(app.world_mut(), menus::Kind::Behavior, ui.behavior),
+                "runtime" => menus::open(app.world_mut(), menus::Kind::Runtime, ui.runtime),
+                "depth" => menus::open(app.world_mut(), menus::Kind::Depth, ui.behavior),
+                _ => {}
+            }
+            for _ in 0..4 {
+                app.update();
+            }
             let frame = rndr_paint::frame(&mut app);
             let image = exporter.render_frame(
                 Some(app.world()),
@@ -189,10 +240,15 @@ fn app() -> App {
         generation: 0,
         recovery: Vec::new(),
         pending_recovery: None,
+        history_messages: Vec::new(),
+        mode: None,
+        modes: Vec::new(),
+        depth: "standard".into(),
     });
     app.add_plugin(rndr_app::FormNavigation);
     app.add_plugin(MarkdownPlugin);
     app.world_mut().insert_resource(SubmitBoundary::default());
+    app.world_mut().insert_resource(menus::Menus::default());
     app.add_system_front(Schedule::Input, guard_submit_boundary);
     app.add_system(Schedule::Startup, setup);
     app.add_system(Schedule::Update, update);
@@ -237,10 +293,15 @@ fn setup(world: &mut World) {
     let add = button(world, tabs, "new", "+");
     world.get_mut::<Layout>(add).unwrap().width = Size::Px(42.);
     muted(world, tabs, "Medousa · native preview");
-    let header = row(world, root, Size::Px(34.));
-    label(world, header, "Today", false);
-    let reload = button(world, header, "reload", "Reload history");
-    world.get_mut::<Layout>(reload).unwrap().width = Size::Px(150.);
+    let reload = button(world, tabs, "reload", "↻");
+    world.get_mut::<Layout>(reload).unwrap().width = Size::Px(36.);
+    world.insert(
+        reload,
+        Semantics {
+            name: Some("Reload history".into()),
+            ..Default::default()
+        },
+    );
     let content = world.spawn((Layout {
         gap: 0.,
         ..column(Size::Fill)
@@ -283,9 +344,8 @@ fn setup(world: &mut World) {
     );
     let spacer = world.spawn((column(Size::Fill),));
     child(world, empty, spacer);
-    let view = markdown_view(world, "");
-    child(world, content, view);
-    world.insert(view, Hidden);
+    let conversation = conversation::setup(world, content);
+    world.insert(conversation, Hidden);
     let centered = row(world, root, Size::Hug);
     let left = world.spawn((Layout {
         width: Size::Fill,
@@ -296,7 +356,7 @@ fn setup(world: &mut World) {
     let center = world.spawn((Layout {
         width: Size::Px(670.),
         height: Size::Hug,
-        gap: 10.,
+        gap: 5.,
         ..Layout::column()
     },));
     child(world, centered, center);
@@ -306,12 +366,12 @@ fn setup(world: &mut World) {
         ..Layout::column()
     },));
     child(world, centered, right);
-    let stickies = muted(world, center, "Sticky notes · unavailable");
+    let stickies = muted(world, center, "Sticky notes · not ported");
     world.get_mut::<TextStyle>(stickies).unwrap().align = TextAlign::End;
     let box_ = world.spawn((
         Layout {
-            padding: 14.,
-            gap: 8.,
+            padding: 10.,
+            gap: 4.,
             ..column(Size::Hug)
         },
         theme.pane,
@@ -325,7 +385,8 @@ fn setup(world: &mut World) {
     let composer = world.spawn((
         Layout {
             width: Size::Fill,
-            height: Size::Px(72.),
+            height: Size::Hug,
+            min_height: 28.,
             ..Layout::column()
         },
         Label::new(""),
@@ -333,7 +394,7 @@ fn setup(world: &mut World) {
         TextField,
         Focusable,
     ));
-    world.insert(composer, Placeholder::new("Ask anything…"));
+    world.insert(composer, Placeholder::new("Message Medousa…"));
     world.insert(
         composer,
         TextStyle {
@@ -350,13 +411,29 @@ fn setup(world: &mut World) {
         },
     );
     child(world, box_, composer);
-    let controls = row(world, box_, Size::Hug);
+    let controls = row(world, box_, Size::Px(34.));
+    let plus = button(world, controls, "attachments", "+");
+    world.get_mut::<Layout>(plus).unwrap().width = Size::Px(28.);
+    world.insert(plus, Color::rgba(0., 0., 0., 0.));
+    world.insert(
+        plus,
+        Semantics {
+            name: Some("Attachments · not ported".into()),
+            ..Default::default()
+        },
+    );
     let model = button(world, controls, "model", "Select model");
     world.get_mut::<Layout>(model).unwrap().width = Size::Fill;
     world.insert(model, Color::rgba(0., 0., 0., 0.));
     world.get_mut::<TextStyle>(model).unwrap().size = 13.;
+    let model_air = world.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Px(1.),
+        ..Layout::column()
+    },));
+    child(world, controls, model_air);
     let send = button(world, controls, "send", "↑");
-    world.get_mut::<Layout>(send).unwrap().width = Size::Px(44.);
+    world.get_mut::<Layout>(send).unwrap().width = Size::Px(32.);
     world.insert(
         send,
         Semantics {
@@ -366,22 +443,37 @@ fn setup(world: &mut World) {
     );
     world.insert(send, Color::rgb(0.85, 0.84, 0.82));
     world.get_mut::<Label>(send).unwrap().color = Some(theme.canvas);
-    world.insert(send, Radius(22.));
+    world.insert(send, Radius(16.));
     let cancel = button(world, controls, "cancel", "Stop");
-    world.get_mut::<Layout>(cancel).unwrap().width = Size::Px(70.);
-    muted(
-        world,
-        center,
-        "+ Attachments / Mic — unavailable · Enter sends · Shift+Enter newline",
-    );
-    muted(
-        world,
-        center,
-        "Medousa / Assistant / Behavior — defaults; editing not ported",
-    );
+    world.get_mut::<Layout>(cancel).unwrap().width = Size::Px(58.);
+    for e in [model, plus, send, cancel] {
+        let layout = world.get_mut::<Layout>(e).unwrap();
+        layout.min_height = 0.;
+        layout.height = Size::Px(32.);
+    }
+    world.get_mut::<TextStyle>(send).unwrap().align = TextAlign::Center;
+    world.get_mut::<Label>(model).unwrap().overflow = TextOverflow::Ellipsis;
+    let settings = row(world, center, Size::Px(28.));
+    let runtime = button(world, settings, "runtime", "Medousa v");
+    let mode = button(world, settings, "mode", "Mode v");
+    let air = world.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Px(1.),
+        ..Layout::column()
+    },));
+    child(world, settings, air);
+    let behavior = button(world, settings, "behavior", "Behavior v");
+    for (e, width) in [(runtime, 110.), (mode, 110.), (behavior, 105.)] {
+        world.get_mut::<Layout>(e).unwrap().min_height = 0.;
+        world.get_mut::<Layout>(e).unwrap().height = Size::Px(28.);
+        world.insert(e, Color::rgba(0., 0., 0., 0.));
+        world.get_mut::<Layout>(e).unwrap().width = Size::Px(width);
+        world.get_mut::<TextStyle>(e).unwrap().size = 12.;
+        world.get_mut::<Label>(e).unwrap().color = Some(MUTED);
+    }
     let bottom_space = world.spawn((Layout {
         width: Size::Fill,
-        height: Size::Px(50.),
+        height: Size::Px(4.),
         ..Layout::column()
     },));
     child(world, root, bottom_space);
@@ -394,8 +486,6 @@ fn setup(world: &mut World) {
     world.insert(recover, Hidden);
     let status = muted(world, root, "Offline preview");
     world.insert_resource(Ui {
-        content,
-        view,
         empty,
         composer,
         status,
@@ -404,6 +494,10 @@ fn setup(world: &mut World) {
         send,
         cancel,
         recover,
+        runtime,
+        mode,
+        behavior,
+        conversation,
     });
     request_focus(world, composer);
 }
@@ -464,7 +558,10 @@ fn update(world: &mut World) {
     for reply in replies {
         let model = world.resource_mut::<Model>().unwrap();
         if reply.generation != model.generation
-            && !matches!(reply.update, Update::Models(_) | Update::Unavailable(_))
+            && !matches!(
+                reply.update,
+                Update::Models(_) | Update::Modes(_) | Update::Unavailable(_)
+            )
         {
             continue;
         }
@@ -485,6 +582,16 @@ fn update(world: &mut World) {
                 model.chat = Chat::history(session, transcript, false);
                 model.chat.status = format!("{status} · history reconciled (non-atomic reads)");
                 model.loading = false;
+            }
+            Update::Messages(messages) => {
+                model.history_messages = messages;
+            }
+            Update::Mode(mode) => {
+                model.mode = Some(mode);
+                model.loading = false;
+            }
+            Update::Modes(modes) => {
+                model.modes = modes;
             }
             Update::Admitted(turn) => {
                 model.chat.admitted(turn);
@@ -561,13 +668,49 @@ fn update(world: &mut World) {
                 };
                 let m = world.resource_mut::<Model>().unwrap();
                 m.loading = true;
+                m.mode = None;
                 m.generation += 1;
+                menus::close(world);
                 dispatch(world, command);
             }
-            "model" if !busy => {
-                let m = world.resource_mut::<Model>().unwrap();
-                if !m.models.is_empty() {
-                    m.selection = Some(m.selection.map_or(0, |i| (i + 1) % m.models.len()));
+            "model" if !busy => menus::open(world, menus::Kind::Model, ui.model),
+            "runtime" if !busy => menus::open(world, menus::Kind::Runtime, ui.runtime),
+            "mode" if !busy && !loading => menus::open(world, menus::Kind::Mode, ui.mode),
+            "behavior" if !busy => menus::open(world, menus::Kind::Behavior, ui.behavior),
+            _ if action.starts_with("copy-message:") => {
+                conversation::copy_message(world, ui.conversation, &action);
+            }
+            "menu:close" => menus::close(world),
+            "behavior:depth" if !busy => menus::open(world, menus::Kind::Depth, ui.behavior),
+            "behavior:main" if !busy => menus::open(world, menus::Kind::Behavior, ui.behavior),
+            _ if action.starts_with("pick:") && !busy => {
+                if let Ok(index) = action[5..].parse::<usize>() {
+                    let m = world.resource_mut::<Model>().unwrap();
+                    if index < m.models.len() {
+                        m.selection = Some(index);
+                    }
+                }
+                menus::close(world);
+            }
+            _ if action.starts_with("depth:") && !busy => {
+                let depth = &action[6..];
+                if ["concise", "standard", "deep"].contains(&depth) {
+                    world.resource_mut::<Model>().unwrap().depth = depth.into();
+                }
+                menus::open(world, menus::Kind::Behavior, ui.behavior);
+            }
+            _ if action.starts_with("mode:") && !busy && !loading => {
+                let id = &action[5..];
+                let m = world.resource::<Model>().unwrap();
+                if m.modes.iter().any(|(mode, _, ok)| mode == id && *ok)
+                    && let (Some(session), Ok(mode)) = (
+                        m.chat.session.clone(),
+                        serde_json::from_value(serde_json::Value::String(id.into())),
+                    )
+                {
+                    menus::close(world);
+                    world.resource_mut::<Model>().unwrap().loading = true;
+                    dispatch(world, Command::SetMode(session, mode));
                 }
             }
             "send" if !loading => {
@@ -580,8 +723,7 @@ fn update(world: &mut World) {
                 }
                 let Some(index) = m.selection else {
                     m.chat.status =
-                        "Select a model first (button cycles catalog); sending may incur charges"
-                            .into();
+                        "Choose a model from the menu first; sending may incur charges".into();
                     continue;
                 };
                 let (provider, model) = m.models[index].clone();
@@ -591,12 +733,14 @@ fn update(world: &mut World) {
                         m.pending_recovery = Some(m.recovery.len());
                         m.recovery
                             .push((m.chat.session.clone().unwrap(), prompt.clone()));
-                        let request = turn_request(
+                        let mut request = turn_request(
                             m.chat.session.as_deref().unwrap(),
                             &prompt,
                             &provider,
                             &model,
                         );
+                        request.response_depth_mode = m.depth.clone();
+                        menus::close(world);
                         dispatch(world, Command::Send(Box::new(request)));
                         // Prompt emits a snapshot, not a synchronous owner callback.
                         // Never erase edits queued after that submission boundary.
@@ -631,12 +775,6 @@ fn update(world: &mut World) {
         }
     }
     let m = world.resource::<Model>().unwrap();
-    let mut text = m.chat.transcript.clone();
-    if !m.chat.busy {
-        for (session, prompt) in &m.recovery {
-            text.push_str(&format!("\n\n### Recoverable prompt · {session}\n\nAdmission was not confirmed. Memory only; not automatically resubmitted. Copy into the composer only after checking history.\n\n{prompt}"));
-        }
-    }
     let status = if m.loading {
         "Loading history…".into()
     } else {
@@ -649,24 +787,35 @@ fn update(world: &mut World) {
         .map_or_else(|| status.clone(), |id| format!("Local · {id} · {status}"));
     let selected = m
         .selection
-        .map(|i| format!("{} / {} ▾", m.models[i].0, m.models[i].1))
-        .unwrap_or_else(|| "Select model · click to cycle".into());
+        .filter(|i| *i < m.models.len())
+        .map(|i| format!("{} · {} v", m.models[i].1, m.models[i].0))
+        .unwrap_or_else(|| "Select model v".into());
+    let mode_label = m
+        .mode
+        .as_ref()
+        .and_then(|id| m.modes.iter().find(|(value, _, _)| value == id))
+        .map(|(_, label, _)| format!("{label} v"))
+        .unwrap_or_else(|| "Mode v".into());
+    let mut messages = m.history_messages.clone();
+    messages.extend(m.chat.live_messages.clone());
+    if !m.chat.busy {
+        for (session, prompt) in &m.recovery {
+            messages.push(("notice".into(), format!("Recoverable prompt · {session}\n\nAdmission not confirmed. Check history before restoring.\n\n{prompt}")));
+        }
+    }
     let busy = m.chat.busy;
     let uncertain = m.chat.uncertain;
     let connected = m.commands.is_some();
-    if text.is_empty() {
-        world.insert(ui.view, Hidden);
+    if messages.is_empty() {
+        world.insert(ui.conversation, Hidden);
         world.remove::<Hidden>(ui.empty);
     } else {
-        world.remove::<Hidden>(ui.view);
+        world.remove::<Hidden>(ui.conversation);
         world.insert(ui.empty, Hidden);
     }
-    if world.get::<MarkdownView>(ui.view).unwrap().source() != text {
-        world
-            .get_mut::<MarkdownView>(ui.view)
-            .unwrap()
-            .set_markdown(text);
-    }
+    conversation::sync(world, ui.conversation, &messages);
+    menus::update(world);
+    world.get_mut::<Label>(ui.mode).unwrap().text = mode_label;
     world.get_mut::<Label>(ui.status).unwrap().text = status;
     world.get_mut::<Label>(ui.model).unwrap().text = selected;
     world.get_mut::<Label>(ui.send).unwrap().text = if busy { "…" } else { "↑" }.into();
@@ -677,7 +826,10 @@ fn update(world: &mut World) {
     }
     // Keep composition below ~670 px and shrink with the actual viewport.
     let width = world.resource::<Viewport>().unwrap().width;
-    world.get_mut::<Layout>(ui.center).unwrap().width = Size::Px((width - 48.).clamp(250., 670.));
+    let center_width = (width - 48.).clamp(250., 670.);
+    world.get_mut::<Layout>(ui.center).unwrap().width = Size::Px(center_width);
+    world.get_mut::<Layout>(ui.model).unwrap().width =
+        Size::Px((center_width - 136.).clamp(100., 340.));
     let m = world.resource::<Model>().unwrap();
     let has_session = m.chat.session.is_some();
     let can_send = connected
@@ -693,6 +845,7 @@ fn update(world: &mut World) {
             .trim()
             .is_empty();
     let can_navigate = connected && !busy && !m.loading;
+    let can_settings = !busy && !m.loading;
     let can_select = !busy && !m.models.is_empty();
     let can_cancel = connected && !m.loading && has_session && (busy || uncertain);
     let has_recovery = !m.recovery.is_empty();
@@ -709,15 +862,29 @@ fn update(world: &mut World) {
         let b = world.get_mut::<Button>(e).unwrap();
         b.enabled = match b.action.as_str() {
             "send" => can_send,
-            "model" => can_select,
+            "model" => !busy,
+            "runtime" | "behavior" => can_settings,
+            "mode" => can_settings && has_session && connected,
+            "attachments" => false,
+            _ if b.action.starts_with("pick:") => can_select,
             "new" | "recent" => can_navigate,
             "reload" => can_navigate && has_session,
             "cancel" => can_cancel,
             "recover" => can_recover,
-            _ => true,
+            _ => b.enabled,
         };
     }
-    let _ = ui.content;
+    let theme = theme_of(world);
+    world.insert(
+        ui.send,
+        if can_send {
+            Color::rgb(0.85, 0.84, 0.82)
+        } else {
+            theme.pane
+        },
+    );
+    world.get_mut::<Label>(ui.send).unwrap().color =
+        Some(if can_send { theme.canvas } else { MUTED });
     #[cfg(feature = "observe")]
     if world.has_resource::<FixtureObservation>() {
         use rndr_render::observe::ObservationContent;
@@ -726,6 +893,8 @@ fn update(world: &mut World) {
         let m = world.resource::<Model>().unwrap();
         let public = m.commands.is_none()
             && m.chat.transcript.is_empty()
+            && m.history_messages.is_empty()
+            && m.chat.live_messages.is_empty()
             && m.recovery.is_empty()
             && world.get::<Label>(ui.composer).unwrap().text.is_empty();
         world.insert_resource(if public {

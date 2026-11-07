@@ -1,5 +1,5 @@
 use super::*;
-fn ready() -> (App, mpsc::UnboundedReceiver<Request>) {
+pub(super) fn ready() -> (App, mpsc::UnboundedReceiver<Request>) {
     let mut app = app();
     app.update();
     let (tx, rx) = mpsc::unbounded_channel();
@@ -11,7 +11,7 @@ fn ready() -> (App, mpsc::UnboundedReceiver<Request>) {
     app.update();
     (app, rx)
 }
-fn reply(app: &mut App, generation: u64, update: Update) {
+pub(super) fn reply(app: &mut App, generation: u64, update: Update) {
     rndr_core::send(app.world_mut(), Reply { generation, update });
     app.update();
 }
@@ -45,7 +45,13 @@ fn failed_admission_reload_preserves_visible_recovery_and_newer_draft() {
                 Update::History("s".into(), String::new(), None),
             );
             assert_eq!(app.world().get::<Label>(ui.composer).unwrap().text, newer);
-            let visible = app.world().get::<MarkdownView>(ui.view).unwrap().source();
+            let visible = app
+                .world()
+                .entities_with::<MarkdownView>()
+                .into_iter()
+                .map(|e| app.world().get::<MarkdownView>(e).unwrap().source())
+                .collect::<Vec<_>>()
+                .join("\n");
             assert!(visible.contains("Recoverable prompt"));
             assert!(visible.contains("unique original prompt"));
             assert!(rx.try_recv().is_err(), "reload must never resubmit");
@@ -130,11 +136,15 @@ fn confirmed_admission_retires_recovery_without_touching_newer_draft() {
         "next draft"
     );
     assert!(
-        !app.world()
-            .get::<MarkdownView>(ui.view)
-            .unwrap()
-            .source()
-            .contains("Recoverable prompt")
+        app.world()
+            .entities_with::<MarkdownView>()
+            .into_iter()
+            .all(|e| !app
+                .world()
+                .get::<MarkdownView>(e)
+                .unwrap()
+                .source()
+                .contains("Recoverable prompt"))
     );
     assert!(rx.try_recv().is_err());
 }
@@ -144,7 +154,10 @@ fn offline_controls_are_honest_and_resize_preserves_draft() {
     app.update();
     let ui = *app.world().resource::<Ui>().unwrap();
     assert!(!app.world().get::<Button>(ui.send).unwrap().enabled);
-    assert!(!app.world().get::<Button>(ui.model).unwrap().enabled);
+    assert!(
+        app.world().get::<Button>(ui.model).unwrap().enabled,
+        "offline menu explains missing catalog"
+    );
     reset_prompt(app.world_mut(), ui.composer, "draft 👋\nnext line");
     app.world_mut().insert_resource(Viewport::new(520., 760.));
     app.update();

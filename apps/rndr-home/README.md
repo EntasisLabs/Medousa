@@ -64,10 +64,27 @@ launch; offline/export launches never load it.
   Ticket cleanup gets at most three read attempts (25/50 ms delays); persistent
   activity/handoffs or read failure remain visibly uncertain and require Reload.
   A newly persisted user prompt may appear only after terminal reconciliation.
-- Click **Select model** to cycle the read-only `/v1/models/catalog` choices.
-  Provider and model are displayed together. Nothing is preselected; a selection
-  is required. This intentionally small picker is not the production search UI.
-  Catalog entries may require provider setup in the existing app.
+- Click **Select model** for a searchable, provider-grouped menu of read-only
+  `/v1/models/catalog` choices. Nothing is selected merely by opening it; choose
+  an exact provider/model before sending. Escape, outside click, or the close
+  button dismisses without changing your draft. Catalog entries may still require
+  provider setup in the existing app.
+- **Mode** loads the daemon's mode registry and effective session mode. Selecting
+  an available mode uses the same session-scoped SDK mutation as the Svelte app;
+  the display waits for the server's effective value (a task override can win).
+  It does not grant project setup permission. Unavailable modes remain disabled.
+- **Behavior → Response depth** selects Concise, Standard, or Deep for the next
+  turn in this window. This preview deliberately does **not** persist shared
+  workshop defaults like the Tauri app. Style, reasoning, and narration are
+  visibly marked not ported. **Runtime** shows Medousa selected and external
+  agents disabled: their ACP/provider-conversation session flows are not wired.
+- The composer hugs its draft and wrapped text, caps at six visual lines with
+  internal scrolling, and shrinks again after clearing. The transcript uses
+  right-aligned literal user bubbles and transparent assistant Markdown, with
+  one scrollport. Scrolling up unpins automatic following; returning to the
+  bottom resumes it. **Copy** copies an assistant message as Markdown using the
+  native clipboard. Cross-message selection and per-code-block Copy are not
+  ported; Markdown link opening is not wired yet.
 - Compose with native text editing, clipboard, IME, selection, and Tab traversal.
   **Enter sends; Shift+Enter inserts a newline.** Send ↑ also sends. Sending can
   incur inference charges. No prompt is sent automatically on launch/resume.

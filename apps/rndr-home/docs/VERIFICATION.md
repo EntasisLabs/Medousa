@@ -1,5 +1,11 @@
 # First rndr chat port — verification and review evidence
 
+> **Follow-on UI work:** See [interaction parity](INTERACTION_PARITY.md) for the
+> 2026-11-07 Svelte-reference polish, current menu/composer/message-row behavior,
+> new regression evidence, screenshots, and remaining app-versus-rndr gaps.
+> The first-port candidate evidence below is historical, not a claim that the
+> current preview still cycles models or has a fixed-height document layout.
+
 Date: 2026-11-07. Scope: isolated Forge undertaking
 `work-5583a611afd630a6ff92f9f2e1fccaab`, branch
 `worktree/rndr-home-first-native-chat-port`, baseline

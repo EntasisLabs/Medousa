@@ -4,7 +4,8 @@ mod tests;
 use futures_util::StreamExt;
 use medousa_sdk::{HttpTransport, MedousaClient};
 use medousa_types::{
-    ActiveSessionTurn, CreateSessionRequest, InteractiveTurnRequest, TurnStreamEnvelopeV3,
+    ActiveSessionTurn, AgentModeId, AgentModeScope, CreateSessionRequest, InteractiveTurnRequest,
+    SetSessionAgentModeRequest, TurnStreamEnvelopeV3,
 };
 use rndr_core::{Event, feed};
 use std::{path::PathBuf, sync::Arc};
@@ -16,6 +17,7 @@ pub enum Command {
     Open(String),
     Send(Box<InteractiveTurnRequest>),
     Cancel(String),
+    SetMode(String, AgentModeId),
 }
 pub struct Request {
     pub generation: u64,
@@ -28,6 +30,9 @@ pub enum Update {
     Admitted(String),
     Stream(TurnStreamEnvelopeV3),
     Models(Vec<(String, String)>),
+    Messages(Vec<(String, String)>),
+    Mode(String),
+    Modes(Vec<(String, String, bool)>),
     Notice(String),
     Failure(String),
     Unavailable(String),
@@ -67,7 +72,16 @@ pub fn client(origin: &str, data_dir: &std::path::Path) -> Result<MedousaClient,
     ))
 }
 
+#[cfg(test)]
 async fn history(client: &MedousaClient, id: &str) -> Result<Update, medousa_sdk::SdkError> {
+    history_with_messages(client, id)
+        .await
+        .map(|(update, _)| update)
+}
+async fn history_with_messages(
+    client: &MedousaClient,
+    id: &str,
+) -> Result<(Update, Vec<(String, String)>), medousa_sdk::SdkError> {
     // These routes are not an atomic snapshot. Bracket the read and retry only
     // a bounded number of times if the observed execution changes/settles.
     for _ in 0..3 {
@@ -81,7 +95,7 @@ async fn history(client: &MedousaClient, id: &str) -> Result<Update, medousa_sdk
         // = execution_ref(session, turn_id). Replay owns ALL assistant prose for
         // this active execution; committed users remain in canonical history.
         // Never deduplicate by text, timestamp, or segment-id guesses.
-        let transcript = history
+        let messages = history
             .turns
             .iter()
             .filter(|entry| {
@@ -94,36 +108,79 @@ async fn history(client: &MedousaClient, id: &str) -> Result<Update, medousa_sdk
                         })
                     }))
             })
-            .map(|entry| {
+            .map(|entry| (entry.turn.role.clone(), entry.turn.content.clone()))
+            .collect::<Vec<_>>();
+        let transcript = messages
+            .iter()
+            .map(|(role, content)| {
                 format!(
                     "### {}\n\n{}",
-                    if entry.turn.role == "user" {
-                        "You"
-                    } else {
-                        "Medousa"
-                    },
-                    entry.turn.content
+                    if role == "user" { "You" } else { "Medousa" },
+                    content
                 )
             })
             .collect::<Vec<_>>()
             .join("\n\n");
-        return Ok(Update::History(id.into(), transcript, active.turn));
+        return Ok((
+            Update::History(id.into(), transcript, active.turn),
+            messages,
+        ));
     }
-    Ok(Update::Failure("History changed during three reconciliation attempts. Reload again; sending remains blocked. No atomic snapshot is available.".into()))
+    Ok((Update::Failure("History changed during three reconciliation attempts. Reload again; sending remains blocked. No atomic snapshot is available.".into()), Vec::new()))
 }
 
+// Mode metadata is independent of transcript reconciliation. A failed read must
+// not make a successfully loaded chat uncertain or replace its live prose.
+async fn mode(client: &MedousaClient, session: &str) -> Update {
+    match client.sessions().agent_mode(session).await {
+        Ok(state) => Update::Mode(state.effective_mode.as_str().into()),
+        Err(_) => Update::Notice("Session mode unavailable; reload to retry.".into()),
+    }
+}
+
+async fn set_mode(client: &MedousaClient, session: &str, mode: AgentModeId) -> Update {
+    match client
+        .sessions()
+        .set_agent_mode(
+            session,
+            &SetSessionAgentModeRequest {
+                mode,
+                scope: AgentModeScope::Session,
+                task_id: None,
+                expires_at_utc: None,
+            },
+        )
+        .await
+    {
+        // A task lease may override the selected session mode. Always report
+        // the server's effective value rather than optimistically echoing input.
+        Ok(state) => Update::Mode(state.effective_mode.as_str().into()),
+        Err(_) => Update::Notice(
+            "Mode change failed; outcome may be unknown. Reload to reconcile before retrying."
+                .into(),
+        ),
+    }
+}
+
+#[cfg(test)]
 async fn settled_history(client: &MedousaClient, session: &str) -> Update {
+    settled_history_with_messages(client, session).await.0
+}
+async fn settled_history_with_messages(
+    client: &MedousaClient,
+    session: &str,
+) -> (Update, Vec<(String, String)>) {
     // Settlement may precede active-ticket cleanup (handoffs can remain active).
     // Retry reads only, never admission, and do not claim the ticket has cleared.
     for attempt in 0..3 {
-        match history(client, session).await {
-            Ok(Update::History(id, text, None)) => return Update::SettledHistory(id, text),
-            Ok(Update::History(_, _, Some(_))) if attempt < 2 => {
+        match history_with_messages(client, session).await {
+            Ok((Update::History(id, text, None), messages)) => return (Update::SettledHistory(id, text), messages),
+            Ok((Update::History(_, _, Some(_)), _)) if attempt < 2 => {
                 tokio::time::sleep(std::time::Duration::from_millis(25 << attempt)).await;
             }
-            Ok(Update::History(_, _, Some(_))) => return Update::Failure("Stream settled but daemon still reports an active turn after bounded reads (possibly a handoff). Reload to reconcile/reattach; no automatic submission.".into()),
+            Ok((Update::History(_, _, Some(_)), _)) => return (Update::Failure("Stream settled but daemon still reports an active turn after bounded reads (possibly a handoff). Reload to reconcile/reattach; no automatic submission.".into()), Vec::new()),
             Ok(other) => return other,
-            Err(_) => return Update::Failure("Turn settled, but history reconciliation failed. Live in-memory text retained; reload before sending.".into()),
+            Err(_) => return (Update::Failure("Turn settled, but history reconciliation failed. Live in-memory text retained; reload before sending.".into()), Vec::new()),
         }
     }
     unreachable!("bounded settlement reads return an update")
@@ -164,14 +221,21 @@ async fn follow(
                     // User persistence can occur after the initial history read.
                     // Settlement is published after durable assistant persistence;
                     // replace replay with canonical history, including that user.
-                    let update = if fatal {
+                    let (update, messages) = if fatal {
                         // Persistence failure is itself fatal: replacing live text
                         // with incomplete history here would silently erase it.
-                        Update::Failure("Fatal turn: durable history may be incomplete. Live in-memory text retained; inspect/copy it before explicitly reloading.".into())
+                        (Update::Failure("Fatal turn: durable history may be incomplete. Live in-memory text retained; inspect/copy it before explicitly reloading.".into()), Vec::new())
                     } else {
-                        settled_history(&client, &session).await
+                        settled_history_with_messages(&client, &session).await
                     };
-                    emit(&tx, generation, update);
+                    let reconciled = matches!(update, Update::SettledHistory(_, _));
+                    if !emit(&tx, generation, update) {
+                        return;
+                    }
+                    if reconciled {
+                        emit(&tx, generation, Update::Messages(messages));
+                        emit(&tx, generation, mode(&client, &session).await);
+                    }
                     return;
                 }
             }
@@ -243,6 +307,25 @@ async fn serve(
             emit(&tx, 0, Update::Notice("Model catalog unavailable; no inference until a model is selected. Check Connection in existing app.".into()));
         }
     }
+    match client.runtime().agent_modes().await {
+        Ok(registry) => {
+            let modes = registry
+                .modes
+                .into_iter()
+                .map(|m| (m.mode.as_str().into(), m.label, m.available))
+                .collect();
+            emit(&tx, 0, Update::Modes(modes));
+        }
+        Err(_) => {
+            emit(
+                &tx,
+                0,
+                Update::Notice(
+                    "Mode registry unavailable; mode availability could not be confirmed.".into(),
+                ),
+            );
+        }
+    }
     let mut stream_task: Option<tokio::task::JoinHandle<()>> = None;
     while let Some(Request {
         generation,
@@ -267,27 +350,31 @@ async fn serve(
                 })
                 .await
             {
-                Ok(s) => history(&client, &s.session_id).await,
+                Ok(s) => history_with_messages(&client, &s.session_id).await,
                 Err(e) => Err(e),
             },
             Command::Recent => match client.sessions().list(1).await {
                 Ok(list) => {
                     if let Some(s) = list.sessions.first() {
-                        history(&client, &s.session_id).await
+                        history_with_messages(&client, &s.session_id).await
                     } else {
-                        Ok(Update::Notice(
-                            "No recent chats. Use + to create one.".into(),
+                        Ok((
+                            Update::Notice("No recent chats. Use + to create one.".into()),
+                            Vec::new(),
                         ))
                     }
                 }
                 Err(e) => Err(e),
             },
-            Command::Open(id) => history(&client, &id).await,
+            Command::Open(id) => history_with_messages(&client, &id).await,
+            Command::SetMode(id, selected) => {
+                Ok((set_mode(&client, &id, selected).await, Vec::new()))
+            }
             Command::Cancel(id) => client
                 .sessions()
                 .cancel_active_turn(&id)
                 .await
-                .map(|r| Update::Notice(r.message)),
+                .map(|r| (Update::Notice(r.message), Vec::new())),
             Command::Send(request) => {
                 let c = client.clone();
                 let out = tx.clone();
@@ -316,13 +403,25 @@ async fn serve(
             }
         };
         // Avoid raw server response bodies: they can carry sensitive diagnostics.
-        let update = result.unwrap_or_else(|_| Update::Failure("Daemon request failed. Check local URL, data directory, authentication and runtime in existing Medousa app.".into()));
+        let (update, messages) = result.unwrap_or_else(|_| (Update::Failure("Daemon request failed. Check local URL, data directory, authentication and runtime in existing Medousa app.".into()), Vec::new()));
+        let mode_session = match &update {
+            Update::History(id, _, _) => Some(id.clone()),
+            _ => None,
+        };
         let resume = match &update {
             Update::History(id, _, Some(turn)) => Some((id.clone(), turn.clone())),
             _ => None,
         };
         if !emit(&tx, generation, update) {
             break;
+        }
+        if let Some(session) = mode_session {
+            if !emit(&tx, generation, Update::Messages(messages)) {
+                break;
+            }
+            if !emit(&tx, generation, mode(&client, &session).await) {
+                break;
+            }
         }
         if let Some((session, turn)) = resume {
             stream_task = Some(tokio::spawn(follow(

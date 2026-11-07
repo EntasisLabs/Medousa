@@ -5,6 +5,8 @@ use medousa_types::{InteractiveTurnRequest, TurnStreamEnvelopeV3, TurnStreamEven
 pub struct Chat {
     pub session: Option<String>,
     pub transcript: String,
+    /// Structured pending execution text; never inferred by splitting Markdown.
+    pub live_messages: Vec<(String, String)>,
     pub status: String,
     pub busy: bool,
     pub uncertain: bool,
@@ -35,6 +37,7 @@ impl Chat {
     }
     pub fn resume(&mut self, turn: String) {
         self.busy = true;
+        self.live_messages = vec![("assistant".into(), String::new())];
         self.uncertain = false;
         self.turn = Some(turn);
         self.seq = 0;
@@ -52,6 +55,10 @@ impl Chat {
             return Err("Write a message first");
         }
         self.busy = true;
+        self.live_messages = vec![
+            ("user".into(), prompt.into()),
+            ("assistant".into(), String::new()),
+        ];
         self.seq = 0;
         self.turn = None;
         self.segments.clear();
@@ -99,6 +106,14 @@ impl Chat {
                         .map(|s| s.1.as_str())
                         .collect::<Vec<_>>()
                         .join("\n\n");
+                if let Some(last) = self.live_messages.last_mut() {
+                    last.1 = self
+                        .segments
+                        .iter()
+                        .map(|s| s.1.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                }
             }
             Status {
                 phase,
