@@ -34,6 +34,16 @@ runtime; external agent choices are visibly disabled, not silently substituted.
 This app always sends native turns and does not import Svelte's local runtime
 preferences or external-session bindings.
 
+**Behavior → Window appearance** offers light/dark appearance and a high-contrast
+toggle using rndr's semantic controls. These settings affect this window only;
+they are not saved, do not follow the OS, and never submit a prompt or change
+workshop defaults. The default is dark. Launch with `--light` and/or
+`--high-contrast` to choose an explicit initial appearance, including with
+`--offline` or `--export`. The composer and transcript share rndr's bounded
+reading measure; theme changes retain the draft, focus, and mounted messages.
+High contrast is a palette option, not a claim of full native accessibility
+certification.
+
 Attachments, voice, stickies, approval/secret fulfillment, remote workshops,
 external runtimes, remaining Behavior controls, full tabs/chat browsing, and other
 studio surfaces are not ported. Use the existing app for those functions. The preview never provides

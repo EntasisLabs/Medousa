@@ -8,6 +8,7 @@ pub enum Kind {
     Mode,
     Behavior,
     Depth,
+    Appearance,
 }
 #[derive(Default)]
 pub struct Menus {
@@ -56,17 +57,18 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
     }
     let root = world.spawn((
         Layout {
-            width: Size::Px(340.),
+            // AnchoredPopup chooses its viewport from the anchor (at least
+            // 240pt). A fixed wider content width creates horizontal overflow.
+            width: Size::Fill,
             height: Size::Hug,
             padding: 10.,
             gap: 5.,
             ..Layout::column()
         },
-        theme_of(world).pane,
-        Radius(12.),
-        Border {
-            color: Color::rgb(0.25, 0.25, 0.27),
-            width: 1.,
+        rndr_ui::UiStyle {
+            background: Some(Token::Overlay.into()),
+            corner: Some(rndr_ui::Corner::Overlay),
+            ..Default::default()
         },
         Scroll::default(),
         AnchoredPopup {
@@ -75,6 +77,7 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
             closed,
         },
     ));
+    presentation::outline(world, root);
     world.insert(root, Hidden);
     let header = row(world, root, Size::Px(30.));
     let title = label(
@@ -86,6 +89,7 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
             Kind::Mode => "Agent mode",
             Kind::Behavior => "Behavior",
             Kind::Depth => "Response depth",
+            Kind::Appearance => "Window appearance",
         },
         true,
     );
@@ -105,10 +109,7 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
             Label::new(""),
             TextField,
             Focusable,
-            TextStyle {
-                size: 13.,
-                ..Default::default()
-            },
+            presentation::theme(world).typography(Typography::Label),
             Placeholder::new("Search provider or model…"),
         ));
         world.insert(
@@ -211,6 +212,12 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
                 false,
             );
             muted(world, body, "Next-turn overrides in this window only");
+            item(world, body, "appearance:open", "Window appearance  >", true);
+        }
+        Kind::Appearance => {
+            item(world, body, "behavior:main", "< Back to behavior", true);
+            muted(world, body, "Local to this window · not saved");
+            presentation::appearance_controls(world, body);
         }
         Kind::Depth => {
             item(world, body, "behavior:main", "< Back to behavior", true);

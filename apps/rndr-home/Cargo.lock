@@ -2111,6 +2111,7 @@ dependencies = [
  "rndr_core",
  "rndr_paint",
  "rndr_render",
+ "rndr_ui",
  "serde_json",
  "tokio",
 ]
@@ -3427,6 +3428,13 @@ dependencies = [
  "windows-sys 0.59.0",
  "winit",
  "xkbcommon",
+]
+
+[[package]]
+name = "rndr_ui"
+version = "0.4.0"
+dependencies = [
+ "rndr_core",
 ]
 
 [[package]]

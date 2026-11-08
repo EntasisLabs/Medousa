@@ -25,12 +25,11 @@ pub struct Request {
 }
 #[derive(Clone)]
 pub enum Update {
-    History(String, String, Option<ActiveSessionTurn>),
-    SettledHistory(String, String),
+    History(String, Vec<(String, String)>, Option<ActiveSessionTurn>),
+    SettledHistory(String, Vec<(String, String)>),
     Admitted(String),
     Stream(TurnStreamEnvelopeV3),
     Models(Vec<(String, String)>),
-    Messages(Vec<(String, String)>),
     Mode(String),
     Modes(Vec<(String, String, bool)>),
     Notice(String),
@@ -72,16 +71,7 @@ pub fn client(origin: &str, data_dir: &std::path::Path) -> Result<MedousaClient,
     ))
 }
 
-#[cfg(test)]
 async fn history(client: &MedousaClient, id: &str) -> Result<Update, medousa_sdk::SdkError> {
-    history_with_messages(client, id)
-        .await
-        .map(|(update, _)| update)
-}
-async fn history_with_messages(
-    client: &MedousaClient,
-    id: &str,
-) -> Result<(Update, Vec<(String, String)>), medousa_sdk::SdkError> {
     // These routes are not an atomic snapshot. Bracket the read and retry only
     // a bounded number of times if the observed execution changes/settles.
     for _ in 0..3 {
@@ -97,7 +87,7 @@ async fn history_with_messages(
         // Never deduplicate by text, timestamp, or segment-id guesses.
         let messages = history
             .turns
-            .iter()
+            .into_iter()
             .filter(|entry| {
                 !(entry.turn.role == "assistant"
                     && active.turn.as_ref().is_some_and(|turn| {
@@ -108,25 +98,11 @@ async fn history_with_messages(
                         })
                     }))
             })
-            .map(|entry| (entry.turn.role.clone(), entry.turn.content.clone()))
+            .map(|entry| (entry.turn.role, entry.turn.content))
             .collect::<Vec<_>>();
-        let transcript = messages
-            .iter()
-            .map(|(role, content)| {
-                format!(
-                    "### {}\n\n{}",
-                    if role == "user" { "You" } else { "Medousa" },
-                    content
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        return Ok((
-            Update::History(id.into(), transcript, active.turn),
-            messages,
-        ));
+        return Ok(Update::History(id.into(), messages, active.turn));
     }
-    Ok((Update::Failure("History changed during three reconciliation attempts. Reload again; sending remains blocked. No atomic snapshot is available.".into()), Vec::new()))
+    Ok(Update::Failure("History changed during three reconciliation attempts. Reload again; sending remains blocked. No atomic snapshot is available.".into()))
 }
 
 // Mode metadata is independent of transcript reconciliation. A failed read must
@@ -162,25 +138,18 @@ async fn set_mode(client: &MedousaClient, session: &str, mode: AgentModeId) -> U
     }
 }
 
-#[cfg(test)]
 async fn settled_history(client: &MedousaClient, session: &str) -> Update {
-    settled_history_with_messages(client, session).await.0
-}
-async fn settled_history_with_messages(
-    client: &MedousaClient,
-    session: &str,
-) -> (Update, Vec<(String, String)>) {
     // Settlement may precede active-ticket cleanup (handoffs can remain active).
     // Retry reads only, never admission, and do not claim the ticket has cleared.
     for attempt in 0..3 {
-        match history_with_messages(client, session).await {
-            Ok((Update::History(id, text, None), messages)) => return (Update::SettledHistory(id, text), messages),
-            Ok((Update::History(_, _, Some(_)), _)) if attempt < 2 => {
+        match history(client, session).await {
+            Ok(Update::History(id, messages, None)) => return Update::SettledHistory(id, messages),
+            Ok(Update::History(_, _, Some(_))) if attempt < 2 => {
                 tokio::time::sleep(std::time::Duration::from_millis(25 << attempt)).await;
             }
-            Ok((Update::History(_, _, Some(_)), _)) => return (Update::Failure("Stream settled but daemon still reports an active turn after bounded reads (possibly a handoff). Reload to reconcile/reattach; no automatic submission.".into()), Vec::new()),
+            Ok(Update::History(_, _, Some(_))) => return Update::Failure("Stream settled but daemon still reports an active turn after bounded reads (possibly a handoff). Reload to reconcile/reattach; no automatic submission.".into()),
             Ok(other) => return other,
-            Err(_) => return (Update::Failure("Turn settled, but history reconciliation failed. Live in-memory text retained; reload before sending.".into()), Vec::new()),
+            Err(_) => return Update::Failure("Turn settled, but history reconciliation failed. Live in-memory text retained; reload before sending.".into()),
         }
     }
     unreachable!("bounded settlement reads return an update")
@@ -221,19 +190,18 @@ async fn follow(
                     // User persistence can occur after the initial history read.
                     // Settlement is published after durable assistant persistence;
                     // replace replay with canonical history, including that user.
-                    let (update, messages) = if fatal {
+                    let update = if fatal {
                         // Persistence failure is itself fatal: replacing live text
                         // with incomplete history here would silently erase it.
-                        (Update::Failure("Fatal turn: durable history may be incomplete. Live in-memory text retained; inspect/copy it before explicitly reloading.".into()), Vec::new())
+                        Update::Failure("Fatal turn: durable history may be incomplete. Live in-memory text retained; inspect/copy it before explicitly reloading.".into())
                     } else {
-                        settled_history_with_messages(&client, &session).await
+                        settled_history(&client, &session).await
                     };
                     let reconciled = matches!(update, Update::SettledHistory(_, _));
                     if !emit(&tx, generation, update) {
                         return;
                     }
                     if reconciled {
-                        emit(&tx, generation, Update::Messages(messages));
                         emit(&tx, generation, mode(&client, &session).await);
                     }
                     return;
@@ -350,31 +318,28 @@ async fn serve(
                 })
                 .await
             {
-                Ok(s) => history_with_messages(&client, &s.session_id).await,
+                Ok(s) => history(&client, &s.session_id).await,
                 Err(e) => Err(e),
             },
             Command::Recent => match client.sessions().list(1).await {
                 Ok(list) => {
                     if let Some(s) = list.sessions.first() {
-                        history_with_messages(&client, &s.session_id).await
+                        history(&client, &s.session_id).await
                     } else {
-                        Ok((
-                            Update::Notice("No recent chats. Use + to create one.".into()),
-                            Vec::new(),
+                        Ok(Update::Notice(
+                            "No recent chats. Use + to create one.".into(),
                         ))
                     }
                 }
                 Err(e) => Err(e),
             },
-            Command::Open(id) => history_with_messages(&client, &id).await,
-            Command::SetMode(id, selected) => {
-                Ok((set_mode(&client, &id, selected).await, Vec::new()))
-            }
+            Command::Open(id) => history(&client, &id).await,
+            Command::SetMode(id, selected) => Ok(set_mode(&client, &id, selected).await),
             Command::Cancel(id) => client
                 .sessions()
                 .cancel_active_turn(&id)
                 .await
-                .map(|r| (Update::Notice(r.message), Vec::new())),
+                .map(|r| Update::Notice(r.message)),
             Command::Send(request) => {
                 let c = client.clone();
                 let out = tx.clone();
@@ -403,7 +368,7 @@ async fn serve(
             }
         };
         // Avoid raw server response bodies: they can carry sensitive diagnostics.
-        let (update, messages) = result.unwrap_or_else(|_| (Update::Failure("Daemon request failed. Check local URL, data directory, authentication and runtime in existing Medousa app.".into()), Vec::new()));
+        let update = result.unwrap_or_else(|_| Update::Failure("Daemon request failed. Check local URL, data directory, authentication and runtime in existing Medousa app.".into()));
         let mode_session = match &update {
             Update::History(id, _, _) => Some(id.clone()),
             _ => None,
@@ -415,13 +380,10 @@ async fn serve(
         if !emit(&tx, generation, update) {
             break;
         }
-        if let Some(session) = mode_session {
-            if !emit(&tx, generation, Update::Messages(messages)) {
-                break;
-            }
-            if !emit(&tx, generation, mode(&client, &session).await) {
-                break;
-            }
+        if let Some(session) = mode_session
+            && !emit(&tx, generation, mode(&client, &session).await)
+        {
+            break;
         }
         if let Some((session, turn)) = resume {
             stream_task = Some(tokio::spawn(follow(

@@ -5,7 +5,7 @@ pub(super) fn ready() -> (App, mpsc::UnboundedReceiver<Request>) {
     let (tx, rx) = mpsc::unbounded_channel();
     let m = app.world_mut().resource_mut::<Model>().unwrap();
     m.commands = Some(tx);
-    m.chat = Chat::history("s".into(), String::new(), false);
+    m.chat = Chat::history("s".into(), false);
     m.models = vec![("mock".into(), "test-only".into())];
     m.selection = Some(0);
     app.update();
@@ -42,7 +42,7 @@ fn failed_admission_reload_preserves_visible_recovery_and_newer_draft() {
             reply(
                 &mut app,
                 request.generation,
-                Update::History("s".into(), String::new(), None),
+                Update::History("s".into(), Vec::new(), None),
             );
             assert_eq!(app.world().get::<Label>(ui.composer).unwrap().text, newer);
             let visible = app
@@ -98,7 +98,7 @@ fn terminal_waits_for_history_and_cancel_does_not_fake_settlement() {
     reply(
         &mut app,
         1,
-        Update::SettledHistory("s".into(), "### You\n\nhi".into()),
+        Update::SettledHistory("s".into(), vec![("user".into(), "hi".into())]),
     );
     assert!(app.world().get::<Button>(ui.send).unwrap().enabled);
     assert!(
@@ -129,7 +129,11 @@ fn confirmed_admission_retires_recovery_without_touching_newer_draft() {
     reply(
         &mut app,
         1,
-        Update::History("s".into(), "admitted original".into(), None),
+        Update::History(
+            "s".into(),
+            vec![("user".into(), "admitted original".into())],
+            None,
+        ),
     );
     assert_eq!(
         app.world().get::<Label>(ui.composer).unwrap().text,
@@ -229,7 +233,7 @@ fn stale_reply_and_startup_auth_failure() {
     reply(
         &mut app,
         1,
-        Update::History("wrong".into(), "wrong".into(), None),
+        Update::History("wrong".into(), vec![("user".into(), "wrong".into())], None),
     );
     reply(&mut app, 1, Update::Failure("old stream".into()));
     assert_eq!(
@@ -334,9 +338,231 @@ fn offline_observer_denies_any_user_draft() {
     ));
 }
 #[test]
+fn semantic_theme_and_surface_updates_preserve_editor_popup_and_messages() {
+    let (mut app, mut rx) = ready();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    reset_prompt(
+        app.world_mut(),
+        ui.composer,
+        "private draft 👋\nnever submit on restyle",
+    );
+    app.world_mut()
+        .resource_mut::<Model>()
+        .unwrap()
+        .history_messages = vec![
+        ("user".into(), "literal **prompt**".into()),
+        (
+            "assistant".into(),
+            "The **same** source.\n\n```rust\nlet x = 1;\n```".into(),
+        ),
+    ];
+    for _ in 0..5 {
+        app.update();
+    }
+    let views = app.world().entities_with::<MarkdownView>();
+    menus::open(app.world_mut(), menus::Kind::Model, ui.model);
+    app.update();
+    let popup = app
+        .world()
+        .resource::<menus::Menus>()
+        .unwrap()
+        .root
+        .unwrap();
+    let focus = app.world().resource::<Focus>().unwrap().entity;
+    let original_count = app.world().entities_with::<Layout>().len();
+    for (appearance, contrast) in [
+        (Appearance::Light, Contrast::Standard),
+        (Appearance::Dark, Contrast::High),
+        (Appearance::Dark, Contrast::Standard),
+    ] {
+        let theme = UiTheme {
+            appearance,
+            contrast,
+            ..Default::default()
+        };
+        presentation::apply_theme(app.world_mut(), theme.clone());
+        // Same retained surface/key, not a replacement editor subtree.
+        let surface = rndr_ui::Surface::Raised
+            .mount(app.world_mut(), ui.center, rndr_ui::UiId(1))
+            .unwrap();
+        surface.validate(app.world()).unwrap();
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_eq!(
+            app.world().get::<Label>(ui.composer).unwrap().text,
+            "private draft 👋\nnever submit on restyle"
+        );
+        assert_eq!(app.world().resource::<Focus>().unwrap().entity, focus);
+        assert!(!app.world().has::<Hidden>(popup));
+        assert_eq!(app.world().entities_with::<MarkdownView>(), views);
+        assert_eq!(app.world().entities_with::<Layout>().len(), original_count);
+        assert_eq!(
+            *app.world().get::<Color>(surface.root).unwrap(),
+            theme.color(Token::Raised)
+        );
+        assert_eq!(
+            app.world().get::<Border>(popup).unwrap().color,
+            theme.color(Token::SubtleStroke)
+        );
+        assert_eq!(
+            app.world().resource::<MarkdownTheme>().unwrap().surface,
+            Color::rgba(0., 0., 0., 0.)
+        );
+        assert_eq!(
+            app.world().resource::<Theme>().unwrap().text,
+            theme.color(Token::Text)
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "restyling cannot dispatch inference or settings"
+        );
+    }
+    assert!(conversation::copy_message(
+        app.world_mut(),
+        ui.conversation,
+        "copy-message:1"
+    ));
+    assert_eq!(
+        app.world().resource::<Clipboard>().unwrap().text,
+        "The **same** source.\n\n```rust\nlet x = 1;\n```"
+    );
+}
+
+#[test]
+fn semantic_appearance_actions_use_one_fifo_and_never_send() {
+    let (mut app, mut rx) = ready();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    reset_prompt(app.world_mut(), ui.composer, "do not send me");
+    menus::open(app.world_mut(), menus::Kind::Behavior, ui.behavior);
+    app.update();
+    let appearance = app
+        .world()
+        .entities_with::<Button>()
+        .into_iter()
+        .find(|e| app.world().get::<Button>(*e).unwrap().action == "appearance:open")
+        .unwrap();
+    try_activate(app.world_mut(), appearance);
+    app.update();
+    let control = |app: &App, id| {
+        app.world()
+            .entities_with::<Button>()
+            .into_iter()
+            .find(|e| rndr_ui::identity(app.world(), *e) == Some(rndr_ui::UiId(id)))
+            .unwrap()
+    };
+    let light = control(&app, presentation::LIGHT);
+    let contrast = control(&app, presentation::CONTRAST);
+    assert_eq!(
+        try_activate(app.world_mut(), light),
+        ActivationResult::Accepted
+    );
+    assert_eq!(
+        try_activate(app.world_mut(), contrast),
+        ActivationResult::Accepted
+    );
+    app.update();
+    assert_eq!(
+        presentation::theme(app.world()).appearance,
+        Appearance::Light
+    );
+    assert_eq!(presentation::theme(app.world()).contrast, Contrast::High);
+    // Multiplicity is meaningful: two toggles must not be deduplicated.
+    assert_eq!(
+        try_activate(app.world_mut(), contrast),
+        ActivationResult::Accepted
+    );
+    assert_eq!(
+        try_activate(app.world_mut(), contrast),
+        ActivationResult::Accepted
+    );
+    app.update();
+    assert_eq!(presentation::theme(app.world()).contrast, Contrast::High);
+    assert_eq!(
+        app.world().get::<Label>(ui.composer).unwrap().text,
+        "do not send me"
+    );
+    assert!(rx.try_recv().is_err());
+    // A queued request from a replaced popup cannot act on its new generation.
+    assert_eq!(
+        try_activate(app.world_mut(), light),
+        ActivationResult::Accepted
+    );
+    menus::open(app.world_mut(), menus::Kind::Model, ui.model);
+    let before = presentation::theme(app.world());
+    app.update();
+    assert_eq!(presentation::theme(app.world()), before);
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn popup_content_follows_anchor_width_without_horizontal_overflow() {
+    let mut app = app();
+    app.world_mut()
+        .insert_resource(Arc::new(rndr_render::ParleyText::new()) as Arc<dyn TextEngine>);
+    for width in [520., 1120.] {
+        app.world_mut().insert_resource(Viewport::new(width, 820.));
+        app.update();
+        let ui = *app.world().resource::<Ui>().unwrap();
+        for kind in [
+            menus::Kind::Appearance,
+            menus::Kind::Behavior,
+            menus::Kind::Depth,
+            menus::Kind::Runtime,
+            menus::Kind::Model,
+        ] {
+            menus::open(app.world_mut(), kind, ui.behavior);
+            for _ in 0..4 {
+                app.update();
+            }
+            let root = app
+                .world()
+                .resource::<menus::Menus>()
+                .unwrap()
+                .root
+                .unwrap();
+            let rect = app.world().get::<Rect>(root).unwrap();
+            let scroll = app.world().get::<Scroll>(root).unwrap();
+            assert!(
+                scroll.content[0] <= rect.w + 1.,
+                "popup content={} viewport={}",
+                scroll.content[0],
+                rect.w
+            );
+            assert!(rect.x >= 0. && rect.x + rect.w <= width + 1.);
+            menus::close(app.world_mut());
+        }
+    }
+}
+
+#[test]
+fn semantic_reading_measure_resizes_without_losing_draft() {
+    let mut app = app();
+    app.update();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    reset_prompt(app.world_mut(), ui.composer, "retained draft");
+    for width in [1120., 520., 480., 1600.] {
+        app.world_mut().insert_resource(Viewport::new(width, 820.));
+        for _ in 0..3 {
+            app.update();
+        }
+        let expected = presentation::reading_width(width - 48., &presentation::theme(app.world()));
+        assert_eq!(
+            app.world().get::<Layout>(ui.center).unwrap().width,
+            Size::Px(expected)
+        );
+        assert!(expected <= width - 48.);
+        assert_eq!(
+            app.world().get::<Label>(ui.composer).unwrap().text,
+            "retained draft"
+        );
+    }
+}
+
+#[test]
 fn permissions_are_not_actionable_ui_approvals() {
     let (mut app, _) = ready();
-    let mut chat = Chat::history("s".into(), String::new(), false);
+    let mut chat = Chat::history("s".into(), false);
     chat.begin("hi").unwrap();
     chat.admitted("t".into());
     let e = serde_json::from_value(serde_json::json!({"schema_version":3,"turn_id":"t","seq":1,"emitted_at_utc":"2026-11-07T00:00:00Z","event":{"type":"permission_request","request_id":"r","message":"Allow tool?"}})).unwrap();

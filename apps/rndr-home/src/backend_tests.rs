@@ -207,11 +207,11 @@ async fn sdk_create_history_admit_stream_reconnect_and_cancel() {
         .await
         .unwrap();
     let loaded = history(&client, &session.session_id).await.unwrap();
-    let Update::History(id, transcript, None) = loaded else {
+    let Update::History(id, messages, None) = loaded else {
         panic!("unexpected history")
     };
-    assert!(transcript.contains("Existing message"));
-    let mut chat = medousa_rndr_home::Chat::history(id, transcript, false);
+    assert_eq!(messages, vec![("user".into(), "Existing message".into())]);
+    let mut chat = medousa_rndr_home::Chat::history(id, false);
     chat.begin("hello").unwrap();
     let ticket = client
         .interactive()
@@ -229,20 +229,20 @@ async fn sdk_create_history_admit_stream_reconnect_and_cancel() {
     follow(client.clone(), ticket.stream_url, sender, 5, "s".into()).await;
     app.update();
     let updates = rndr_core::events::<Reply>(app.world()).to_vec();
-    assert_eq!(updates.len(), 6);
+    assert_eq!(updates.len(), 5);
     for reply in updates {
         assert_eq!(reply.generation, 5);
         match reply.update {
             Update::Stream(e) => chat.apply(e),
-            Update::SettledHistory(_, _) => assert!(!chat.busy),
-            Update::Messages(messages) => {
-                assert_eq!(messages, vec![("user".into(), "Existing message".into())])
+            Update::SettledHistory(_, messages) => {
+                assert!(!chat.busy);
+                assert_eq!(messages, vec![("user".into(), "Existing message".into())]);
             }
             Update::Mode(value) => assert_eq!(value, "general"),
             _ => panic!("unexpected error"),
         }
     }
-    assert!(chat.transcript.ends_with("Hello world"));
+    assert_eq!(chat.live_messages.last().unwrap().1, "Hello world");
     assert!(!chat.busy);
     assert!(
         client
@@ -264,7 +264,9 @@ async fn canonical_roles_preserve_heading_like_user_prose_without_inventing_turn
         json_wire("GET", "/v1/sessions/s/history", body),
         active_wire(false),
     ]);
-    let (_, messages) = history_with_messages(&client, "s").await.unwrap();
+    let Update::History(_, messages, None) = history(&client, "s").await.unwrap() else {
+        panic!("missing history")
+    };
     assert_eq!(
         messages,
         vec![
@@ -337,11 +339,16 @@ async fn active_reattach_full_replay_terminal_has_no_duplicate_or_missing_prose(
             active_wire(false),
             mode_wire("general"),
         ]);
-        let Update::History(id, text, Some(turn)) = history(&client, "s").await.unwrap() else {
+        let Update::History(id, mut messages, Some(turn)) = history(&client, "s").await.unwrap()
+        else {
             panic!("missing active turn")
         };
-        assert!(!text.contains("unique assistant prose"));
-        let mut chat = Chat::history(id, text, true);
+        assert!(
+            messages
+                .iter()
+                .all(|(_, text)| text != "unique assistant prose")
+        );
+        let mut chat = Chat::history(id, true);
         chat.resume(turn.turn_id);
         let mut app = App::new();
         let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
@@ -350,21 +357,22 @@ async fn active_reattach_full_replay_terminal_has_no_duplicate_or_missing_prose(
         for reply in rndr_core::events::<Reply>(app.world()).to_vec() {
             match reply.update {
                 Update::Stream(e) => chat.apply(e),
-                Update::SettledHistory(id, text) => chat = Chat::history(id, text, false),
+                Update::SettledHistory(id, settled) => {
+                    messages = settled;
+                    chat = Chat::history(id, false);
+                }
                 Update::Mode(value) => assert_eq!(value, "general"),
-                Update::Messages(messages) => assert_eq!(
-                    messages,
-                    vec![
-                        ("user".into(), "unique user prose".into()),
-                        ("assistant".into(), "unique assistant prose".into())
-                    ]
-                ),
                 _ => panic!("reattach failed"),
             }
         }
-        assert_eq!(chat.transcript.matches("unique user prose").count(), 1);
-        assert_eq!(chat.transcript.matches("unique assistant prose").count(), 1);
-        assert!(!chat.transcript.contains("duplicate"));
+        assert_eq!(
+            messages,
+            vec![
+                ("user".into(), "unique user prose".into()),
+                ("assistant".into(), "unique assistant prose".into()),
+            ]
+        );
+        assert!(chat.live_messages.is_empty());
         assert!(!chat.busy && !chat.uncertain);
         server.join().unwrap();
     }
@@ -379,11 +387,16 @@ async fn completion_between_history_and_active_reads_retries_fresh_history() {
         history_wire(true),
         active_wire(false),
     ]);
-    let Update::History(_, text, None) = history(&client, "s").await.unwrap() else {
+    let Update::History(_, messages, None) = history(&client, "s").await.unwrap() else {
         panic!("stale history")
     };
-    assert_eq!(text.matches("unique user prose").count(), 1);
-    assert_eq!(text.matches("unique assistant prose").count(), 1);
+    assert_eq!(
+        messages,
+        vec![
+            ("user".into(), "unique user prose".into()),
+            ("assistant".into(), "unique assistant prose".into()),
+        ]
+    );
     server.join().unwrap();
 }
 #[tokio::test]
@@ -451,7 +464,7 @@ async fn fatal_terminal_never_replaces_live_text_with_incomplete_history() {
     )
     .await;
     app.update();
-    let mut chat = Chat::history("s".into(), String::new(), false);
+    let mut chat = Chat::history("s".into(), false);
     chat.begin("original user prose").unwrap();
     chat.admitted("t".into());
     for reply in rndr_core::events::<Reply>(app.world()).to_vec() {
@@ -461,8 +474,8 @@ async fn fatal_terminal_never_replaces_live_text_with_incomplete_history() {
             _ => panic!("must not reconcile away fatal unsaved text"),
         }
     }
-    assert!(chat.transcript.contains("original user prose"));
-    assert!(chat.transcript.contains("unsaved assistant prose"));
+    assert_eq!(chat.live_messages[0].1, "original user prose");
+    assert_eq!(chat.live_messages[1].1, "unsaved assistant prose");
     assert!(chat.uncertain);
     server.join().unwrap();
 }
@@ -520,7 +533,7 @@ async fn ui_reload_drives_real_worker_reattach_and_settlement() {
     let (commands, rx) = mpsc::unbounded_channel();
     let model = app.world_mut().resource_mut::<crate::Model>().unwrap();
     model.commands = Some(commands);
-    model.chat = Chat::history("s".into(), String::new(), false);
+    model.chat = Chat::history("s".into(), false);
     let worker = tokio::spawn(serve(client, rx, tx));
     app.update();
     let reload = app
@@ -545,18 +558,6 @@ async fn ui_reload_drives_real_worker_reattach_and_settlement() {
     .unwrap();
     let model = app.world().resource::<crate::Model>().unwrap();
     assert_eq!(model.generation, 1);
-    assert_eq!(
-        model.chat.transcript.matches("unique user prose").count(),
-        1
-    );
-    assert_eq!(
-        model
-            .chat
-            .transcript
-            .matches("unique assistant prose")
-            .count(),
-        1
-    );
     assert!(!model.chat.busy && !model.chat.uncertain && !model.loading);
     assert_eq!(
         model.history_messages,
@@ -679,14 +680,15 @@ async fn new_recent_and_open_refresh_effective_mode_after_canonical_history() {
     serve(client, rx, tx).await;
     app.update();
     let replies = rndr_core::events::<Reply>(app.world());
-    assert_eq!(replies.len(), 11);
-    for (index, pair) in replies[2..].as_chunks::<3>().0.iter().enumerate() {
+    assert_eq!(replies.len(), 8);
+    for (index, pair) in replies[2..].as_chunks::<2>().0.iter().enumerate() {
         assert_eq!(pair[0].generation, index as u64 + 1);
         assert_eq!(pair[1].generation, index as u64 + 1);
-        assert!(matches!(&pair[0].update, Update::History(id, _, None) if id == "s"));
-        assert_eq!(pair[2].generation, index as u64 + 1);
-        assert!(matches!(&pair[1].update, Update::Messages(messages) if messages.len() == 2));
-        assert!(matches!(&pair[2].update, Update::Mode(value) if value == "instant"));
+        assert!(
+            matches!(&pair[0].update, Update::History(id, messages, None)
+            if id == "s" && messages.len() == 2)
+        );
+        assert!(matches!(&pair[1].update, Update::Mode(value) if value == "instant"));
     }
     server.join().unwrap();
 }

@@ -14,7 +14,8 @@ observe = ["rndr_render/observe"]
 [dependencies]
 rndr_core = { path = "/Users/theelevators/rndr/crates/rndr_core" }
 rndr_app = { path = "/Users/theelevators/rndr/crates/rndr_app" }
-rndr_paint = { path = "/Users/theelevators/rndr/crates/rndr_paint" }
+rndr_ui = { path = "/Users/theelevators/rndr/crates/rndr_ui" }
+rndr_paint = { path = "/Users/theelevators/rndr/crates/rndr_paint", features = ["highlight"] }
 rndr_render = { path = "/Users/theelevators/rndr/crates/rndr_render", default-features = false, features = ["parley", "accesskit"] }
 medousa-sdk = { path = "../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-types = { path = "../../crates/medousa-types" }

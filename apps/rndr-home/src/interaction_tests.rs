@@ -238,6 +238,142 @@ fn copy_click_uses_current_assistant_text_and_cannot_copy_user_as_assistant() {
     assert!(rx.try_recv().is_err());
 }
 #[test]
+fn transcript_scrollbar_drag_preserves_draft_and_virtualization() {
+    let (mut app, mut rx) = ready();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    app.world_mut()
+        .resource_mut::<Model>()
+        .unwrap()
+        .history_messages = (0..1000)
+        .map(|i| {
+            (
+                "assistant".into(),
+                format!("Message {i}\n\n{}", "Paragraph.\n\n".repeat(8)),
+            )
+        })
+        .collect();
+    reset_prompt(app.world_mut(), ui.composer, "unsent draft 👋");
+    for _ in 0..8 {
+        app.update();
+    }
+    let bar = app
+        .world()
+        .entities_with::<Scrollbar>()
+        .into_iter()
+        .find(|e| app.world().get::<Scrollbar>(*e).unwrap().target == ui.conversation)
+        .unwrap();
+    let geometry = scrollbar_geometry(app.world(), bar).unwrap();
+    assert!(geometry.max > geometry.page);
+    assert!(geometry.track.w >= 24.0);
+    assert!(geometry.thumb.h >= 24.0);
+    let focus = app.world().resource::<Focus>().unwrap().entity;
+    let start = [
+        geometry.thumb.x + 12.0,
+        geometry.thumb.y + geometry.thumb.h * 0.5,
+    ];
+    app.world_mut().resource_mut::<Input>().unwrap().pointer = Pointer {
+        position: start,
+        press_at: Some(start),
+        pressed: true,
+        down: true,
+        ..Default::default()
+    };
+    app.update();
+    assert!(scrollbar_dragging(app.world(), bar));
+    let end = [start[0], geometry.track.y];
+    app.world_mut().resource_mut::<Input>().unwrap().pointer = Pointer {
+        position: end,
+        down: true,
+        ..Default::default()
+    };
+    app.update();
+    app.world_mut().resource_mut::<Input>().unwrap().pointer = Pointer {
+        position: end,
+        released: true,
+        ..Default::default()
+    };
+    app.update();
+    for _ in 0..8 {
+        app.update();
+    }
+    assert!(!scrollbar_dragging(app.world(), bar));
+    assert!(app.world().get::<Scroll>(ui.conversation).unwrap().offset[1].abs() < 2.0);
+    assert_eq!(app.world().resource::<Focus>().unwrap().entity, focus);
+    assert_eq!(
+        app.world().get::<Label>(ui.composer).unwrap().text,
+        "unsent draft 👋"
+    );
+    assert!(app.world().entities_with::<MarkdownView>().len() < 20);
+    app.world_mut()
+        .resource_mut::<Model>()
+        .unwrap()
+        .history_messages[999]
+        .1
+        .push_str(" tail");
+    app.update();
+    assert!(app.world().get::<Scroll>(ui.conversation).unwrap().offset[1].abs() < 2.0);
+    assert!(request_focus(app.world_mut(), bar));
+    app.world_mut().resource_mut::<Input>().unwrap().keys =
+        vec![KeyEvent::named(NamedKey::End, Modifiers::new())];
+    for _ in 0..8 {
+        app.update();
+    }
+    let geometry = scrollbar_geometry(app.world(), bar).unwrap();
+    assert!((geometry.value - geometry.max).abs() < 2.0);
+    assert!(app.world().entities_with::<MarkdownView>().len() < 20);
+    app.world_mut()
+        .resource_mut::<Model>()
+        .unwrap()
+        .history_messages
+        .clear();
+    for _ in 0..4 {
+        app.update();
+    }
+    assert!(app.world().has::<Hidden>(bar));
+    assert!(scrollbar_geometry(app.world(), bar).is_none());
+    assert_ne!(app.world().resource::<Focus>().unwrap().entity, Some(bar));
+    assert_eq!(
+        app.world().get::<Label>(ui.composer).unwrap().text,
+        "unsent draft 👋"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "scrolling never submits or mutates session state"
+    );
+}
+
+#[test]
+fn fenced_code_has_token_colors_but_copy_remains_source() {
+    let (mut app, mut rx) = ready();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    let source = "```rust\nfn main() { let n = 42; println!(\"hello\"); }\n```";
+    let blocks = parse_markdown(source);
+    let code = blocks
+        .iter()
+        .find(|b| b.kind == MarkdownKind::Code)
+        .unwrap();
+    assert_eq!(code.language, "rust");
+    assert!(
+        code.spans.len() >= 3,
+        "highlight feature must produce token spans"
+    );
+    app.world_mut()
+        .resource_mut::<Model>()
+        .unwrap()
+        .history_messages = vec![("assistant".into(), source.into())];
+    for _ in 0..4 {
+        app.update();
+    }
+    assert!(conversation::copy_message(
+        app.world_mut(),
+        ui.conversation,
+        "copy-message:0"
+    ));
+    assert_eq!(app.world().resource::<Clipboard>().unwrap().text, source);
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
 fn escape_closes_popup_and_restores_focus_without_sending() {
     let (mut app, mut rx) = ready();
     let ui = *app.world().resource::<Ui>().unwrap();

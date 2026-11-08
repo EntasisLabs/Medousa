@@ -3,12 +3,15 @@ mod conversation;
 #[cfg(test)]
 mod interaction_tests;
 mod menus;
+mod presentation;
 #[cfg(test)]
 mod ui_tests;
 use backend::{Command, Reply, Request, Update};
 use medousa_rndr_home::{Chat, turn_request};
-use rndr_app::{button, child, column, label};
+use presentation::{button, label};
+use rndr_app::{child, column};
 use rndr_core::*;
+use rndr_ui::{Appearance, Contrast, Token, Typography, UiStyle, UiTheme};
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::mpsc;
 
@@ -49,7 +52,6 @@ struct Ui {
     behavior: Entity,
     conversation: Entity,
 }
-const MUTED: Color = Color::rgb(0.53, 0.53, 0.55);
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut origin = "http://127.0.0.1:9777".to_string();
     let mut data_dir: Option<PathBuf> = None;
@@ -57,6 +59,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut export: Option<PathBuf> = None;
     let mut offline = false;
     let mut observe_offline = false;
+    let mut theme = UiTheme {
+        appearance: Appearance::Dark,
+        ..Default::default()
+    };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -70,13 +76,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 offline = true;
             }
             "--offline" => offline = true,
+            "--light" => theme.appearance = Appearance::Light,
+            "--high-contrast" => theme.contrast = Contrast::High,
             "--observe-offline" => {
                 offline = true;
                 observe_offline = true;
             }
             "--help" | "-h" => {
                 println!(
-                    "Medousa (rndr)\n  --data-dir PATH [--daemon http://127.0.0.1:9777] [--session ID]\n  --offline  No credentials or network\n  --export DIRECTORY  Offline GPU PNG evidence; no network\n  --observe-offline  Synthetic live window capture, 15s normal exit (requires feature observe)\nUse the existing app to start/configure the daemon. Sending can incur inference charges."
+                    "Medousa (rndr)\n  --data-dir PATH [--daemon http://127.0.0.1:9777] [--session ID]\n  --offline  No credentials or network\n  --light / --high-contrast  Explicit window appearance (default: dark)\n  --export DIRECTORY  Offline GPU PNG evidence; no network\n  --observe-offline  Synthetic live window capture, 15s normal exit (requires feature observe)\nUse the existing app to start/configure the daemon. Sending can incur inference charges."
                 );
                 return Ok(());
             }
@@ -85,6 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let mut app = app();
+    presentation::apply_theme(app.world_mut(), theme);
     let mut _feed = None;
     if !offline {
         medousa_rndr_home::local_url(&origin)?;
@@ -113,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.world_mut().insert_resource(ObservationContent::Deny);
         let descriptor = ObservationSession::enable(
             app.world_mut(),
-            "Medousa offline empty fixture · dark · parley",
+            "Medousa offline empty fixture · explicit theme · parley",
         )?;
         eprintln!("observation descriptor: {}", descriptor.display());
         #[derive(Clone)]
@@ -148,6 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ("draft", 1120., 820., true),
             ("models", 1120., 820., true),
             ("behavior", 1120., 820., true),
+            ("appearance", 1120., 820., true),
             ("depth", 1120., 820., true),
             ("runtime", 1120., 820., true),
         ] {
@@ -165,10 +175,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ("Local · synthetic".into(), "Local model · example".into()),
                 ];
                 m.selection = Some(0);
-            }
-            if transcript {
-                let model = app.world_mut().resource_mut::<Model>().unwrap();
-                model.chat.transcript = "### You\n\nCan we make this a native chat?\n\n### Medousa\n\nYes — this is **rndr**, not a webview.\n\n- Real session history\n- Streaming chronological text\n- `Shift+Enter` for a new line\n\nThis is an offline visual fixture; no inference was sent.".into();
             }
             if transcript {
                 app.world_mut().resource_mut::<Model>().unwrap().history_messages = vec![
@@ -189,6 +195,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match name {
                 "models" => menus::open(app.world_mut(), menus::Kind::Model, ui.model),
                 "behavior" => menus::open(app.world_mut(), menus::Kind::Behavior, ui.behavior),
+                "appearance" => menus::open(app.world_mut(), menus::Kind::Appearance, ui.behavior),
                 "runtime" => menus::open(app.world_mut(), menus::Kind::Runtime, ui.runtime),
                 "depth" => menus::open(app.world_mut(), menus::Kind::Depth, ui.behavior),
                 _ => {}
@@ -222,15 +229,13 @@ fn app() -> App {
         min_size: Some(LogicalSize::new(480., 650.)),
         ..Default::default()
     });
-    app.world_mut().insert_resource(Theme {
-        canvas: Color::rgb(0.055, 0.055, 0.06),
-        pane: Color::rgb(0.12, 0.12, 0.13),
-        title: Color::rgb(0.15, 0.15, 0.16),
-        body: Color::rgb(0.09, 0.09, 0.10),
-        text: Color::rgb(0.9, 0.89, 0.87),
-        radius: 14.,
-        ..Default::default()
-    });
+    presentation::apply_theme(
+        app.world_mut(),
+        UiTheme {
+            appearance: Appearance::Dark,
+            ..Default::default()
+        },
+    );
     app.world_mut().insert_resource(Model {
         chat: Chat::offline(),
         commands: None,
@@ -245,7 +250,7 @@ fn app() -> App {
         modes: Vec::new(),
         depth: "standard".into(),
     });
-    app.add_plugin(rndr_app::FormNavigation);
+    app.add_plugin(rndr_ui::UiPlugin);
     app.add_plugin(MarkdownPlugin);
     app.world_mut().insert_resource(SubmitBoundary::default());
     app.world_mut().insert_resource(menus::Menus::default());
@@ -265,28 +270,22 @@ fn row(world: &mut World, parent: Entity, height: Size) -> Entity {
 }
 fn muted(world: &mut World, parent: Entity, text: &str) -> Entity {
     let e = label(world, parent, text, false);
-    world.get_mut::<Label>(e).unwrap().color = Some(MUTED);
-    world.get_mut::<TextStyle>(e).unwrap().size = 12.;
+    presentation::secondary(world, e);
+    world.insert(
+        e,
+        presentation::theme(world).typography(Typography::Secondary),
+    );
     e
 }
 fn setup(world: &mut World) {
-    let theme = theme_of(world);
-    let root = world.spawn((
-        Layout {
-            padding: 12.,
-            gap: 8.,
-            ..column(Size::Fill)
-        },
-        theme.canvas,
-    ));
-    world.insert(root, Radius(14.));
-    world.insert(
-        root,
-        Border {
-            color: Color::rgb(0.2, 0.2, 0.21),
-            width: 1.,
-        },
-    );
+    let theme = presentation::theme(world);
+    let root = world.spawn((Layout {
+        padding: 12.,
+        gap: 8.,
+        ..column(Size::Fill)
+    },));
+    presentation::surface(world, root, Token::Canvas, None);
+    presentation::outline(world, root);
     let tabs = row(world, root, Size::Px(38.));
     let tab = button(world, tabs, "reload", "Today");
     world.get_mut::<Layout>(tab).unwrap().width = Size::Px(125.);
@@ -333,15 +332,7 @@ fn setup(world: &mut World) {
     world.insert(recent, Color::rgba(0., 0., 0., 0.));
     world.get_mut::<TextStyle>(recent).unwrap().align = TextAlign::Center;
     world.get_mut::<TextStyle>(recent).unwrap().size = 14.;
-    world.get_mut::<Label>(recent).unwrap().color = Some(MUTED);
-    let mut underline = TextSpan::new(0, "Continue where we left off".len(), MUTED);
-    underline.underline = true;
-    world.insert(
-        recent,
-        Spans {
-            runs: vec![underline],
-        },
-    );
+    presentation::secondary(world, recent);
     let spacer = world.spawn((column(Size::Fill),));
     child(world, empty, spacer);
     let conversation = conversation::setup(world, content);
@@ -368,20 +359,19 @@ fn setup(world: &mut World) {
     child(world, centered, right);
     let stickies = muted(world, center, "Sticky notes · not ported");
     world.get_mut::<TextStyle>(stickies).unwrap().align = TextAlign::End;
-    let box_ = world.spawn((
-        Layout {
-            padding: 10.,
-            gap: 4.,
-            ..column(Size::Hug)
-        },
-        theme.pane,
-        Radius(18.),
-        Border {
-            color: Color::rgb(0.2, 0.2, 0.21),
-            width: 1.,
-        },
-    ));
-    child(world, center, box_);
+    // Semantic surface owns its chrome; the content slot retains our Prompt
+    // and controls. Neither theme changes nor remounts replace editor state.
+    let composer_surface = rndr_ui::Surface::Raised
+        .mount(world, center, rndr_ui::UiId(1))
+        .expect("live composer parent and unique component key");
+    let box_ = composer_surface.content;
+    world.insert(composer_surface.root, Radius(18.));
+    presentation::outline(world, composer_surface.root);
+    world
+        .get_mut::<Layout>(composer_surface.root)
+        .unwrap()
+        .padding = 10.;
+    world.get_mut::<Layout>(box_).unwrap().gap = 4.;
     let composer = world.spawn((
         Layout {
             width: Size::Fill,
@@ -395,14 +385,7 @@ fn setup(world: &mut World) {
         Focusable,
     ));
     world.insert(composer, Placeholder::new("Message Medousa…"));
-    world.insert(
-        composer,
-        TextStyle {
-            family: "sans-serif".into(),
-            size: 16.,
-            ..Default::default()
-        },
-    );
+    world.insert(composer, theme.typography(Typography::Reading));
     world.insert(
         composer,
         Semantics {
@@ -441,8 +424,6 @@ fn setup(world: &mut World) {
             ..Default::default()
         },
     );
-    world.insert(send, Color::rgb(0.85, 0.84, 0.82));
-    world.get_mut::<Label>(send).unwrap().color = Some(theme.canvas);
     world.insert(send, Radius(16.));
     let cancel = button(world, controls, "cancel", "Stop");
     world.get_mut::<Layout>(cancel).unwrap().width = Size::Px(58.);
@@ -469,7 +450,7 @@ fn setup(world: &mut World) {
         world.insert(e, Color::rgba(0., 0., 0., 0.));
         world.get_mut::<Layout>(e).unwrap().width = Size::Px(width);
         world.get_mut::<TextStyle>(e).unwrap().size = 12.;
-        world.get_mut::<Label>(e).unwrap().color = Some(MUTED);
+        presentation::secondary(world, e);
     }
     let bottom_space = world.spawn((Layout {
         width: Size::Fill,
@@ -566,25 +547,24 @@ fn update(world: &mut World) {
             continue;
         }
         match reply.update {
-            Update::History(session, transcript, active) => {
-                model.chat = Chat::history(session, transcript, active.is_some());
+            Update::History(session, messages, active) => {
+                model.chat = Chat::history(session, active.is_some());
+                model.history_messages = messages;
                 if let Some(turn) = active {
                     model.chat.resume(turn.turn_id);
                 }
                 model.loading = false;
             }
-            Update::SettledHistory(session, transcript) => {
+            Update::SettledHistory(session, messages) => {
                 let status = model
                     .chat
                     .status
                     .trim_end_matches(" · reconciling durable history…")
                     .to_string();
-                model.chat = Chat::history(session, transcript, false);
+                model.chat = Chat::history(session, false);
+                model.history_messages = messages;
                 model.chat.status = format!("{status} · history reconciled (non-atomic reads)");
                 model.loading = false;
-            }
-            Update::Messages(messages) => {
-                model.history_messages = messages;
             }
             Update::Mode(mode) => {
                 model.mode = Some(mode);
@@ -633,7 +613,12 @@ fn update(world: &mut World) {
     }
     let mut actions = take_action_intents(world)
         .into_iter()
-        .map(|a| (a.name, None))
+        .map(|a| {
+            let action = presentation::appearance_action(world, &a)
+                .map(str::to_owned)
+                .unwrap_or(a.name);
+            (action, None)
+        })
         .collect::<Vec<_>>();
     if world.resource::<SubmitBoundary>().unwrap().safe {
         actions.extend(
@@ -681,6 +666,22 @@ fn update(world: &mut World) {
                 conversation::copy_message(world, ui.conversation, &action);
             }
             "menu:close" => menus::close(world),
+            "appearance:open" if !busy => menus::open(world, menus::Kind::Appearance, ui.behavior),
+            "appearance:light" | "appearance:dark" | "appearance:contrast" => {
+                let mut theme = presentation::theme(world);
+                match action.as_str() {
+                    "appearance:light" => theme.appearance = Appearance::Light,
+                    "appearance:dark" => theme.appearance = Appearance::Dark,
+                    _ => {
+                        theme.contrast = if theme.contrast == Contrast::High {
+                            Contrast::Standard
+                        } else {
+                            Contrast::High
+                        }
+                    }
+                }
+                presentation::apply_theme(world, theme);
+            }
             "behavior:depth" if !busy => menus::open(world, menus::Kind::Depth, ui.behavior),
             "behavior:main" if !busy => menus::open(world, menus::Kind::Behavior, ui.behavior),
             _ if action.starts_with("pick:") && !busy => {
@@ -796,24 +797,39 @@ fn update(world: &mut World) {
         .and_then(|id| m.modes.iter().find(|(value, _, _)| value == id))
         .map(|(_, label, _)| format!("{label} v"))
         .unwrap_or_else(|| "Mode v".into());
-    let mut messages = m.history_messages.clone();
-    messages.extend(m.chat.live_messages.clone());
+    let mut notices = Vec::new();
     if !m.chat.busy {
         for (session, prompt) in &m.recovery {
-            messages.push(("notice".into(), format!("Recoverable prompt · {session}\n\nAdmission not confirmed. Check history before restoring.\n\n{prompt}")));
+            notices.push(("notice".into(), format!("Recoverable prompt · {session}\n\nAdmission not confirmed. Check history before restoring.\n\n{prompt}")));
         }
     }
     let busy = m.chat.busy;
     let uncertain = m.chat.uncertain;
     let connected = m.commands.is_some();
-    if messages.is_empty() {
+    // Temporarily move ownership out of the resource so ECS mutation can borrow
+    // canonical strings. No full-history/live-text clones on an idle frame.
+    let m = world.resource_mut::<Model>().unwrap();
+    let history = std::mem::take(&mut m.history_messages);
+    let live = std::mem::take(&mut m.chat.live_messages);
+    if history.is_empty() && live.is_empty() && notices.is_empty() {
         world.insert(ui.conversation, Hidden);
         world.remove::<Hidden>(ui.empty);
     } else {
         world.remove::<Hidden>(ui.conversation);
         world.insert(ui.empty, Hidden);
     }
-    conversation::sync(world, ui.conversation, &messages);
+    conversation::sync_iter(
+        world,
+        ui.conversation,
+        history
+            .iter()
+            .chain(&live)
+            .chain(&notices)
+            .map(|(role, text)| (role.as_str(), text.as_str())),
+    );
+    let m = world.resource_mut::<Model>().unwrap();
+    m.history_messages = history;
+    m.chat.live_messages = live;
     menus::update(world);
     world.get_mut::<Label>(ui.mode).unwrap().text = mode_label;
     world.get_mut::<Label>(ui.status).unwrap().text = status;
@@ -824,9 +840,10 @@ fn update(world: &mut World) {
     } else {
         world.insert(ui.cancel, Hidden);
     }
-    // Keep composition below ~670 px and shrink with the actual viewport.
+    // Use rndr's reading measure rather than a second fixed-width policy.
     let width = world.resource::<Viewport>().unwrap().width;
-    let center_width = (width - 48.).clamp(250., 670.);
+    let center_width =
+        presentation::reading_width((width - 48.).max(0.), &presentation::theme(world));
     world.get_mut::<Layout>(ui.center).unwrap().width = Size::Px(center_width);
     world.get_mut::<Layout>(ui.model).unwrap().width =
         Size::Px((center_width - 136.).clamp(100., 340.));
@@ -874,17 +891,16 @@ fn update(world: &mut World) {
             _ => b.enabled,
         };
     }
-    let theme = theme_of(world);
-    world.insert(
-        ui.send,
+    let style = world.get_mut::<UiStyle>(ui.send).unwrap();
+    style.background = Some(if can_send { Token::Text } else { Token::Raised }.into());
+    style.foreground = Some(
         if can_send {
-            Color::rgb(0.85, 0.84, 0.82)
+            Token::Canvas
         } else {
-            theme.pane
-        },
+            Token::Disabled
+        }
+        .into(),
     );
-    world.get_mut::<Label>(ui.send).unwrap().color =
-        Some(if can_send { theme.canvas } else { MUTED });
     #[cfg(feature = "observe")]
     if world.has_resource::<FixtureObservation>() {
         use rndr_render::observe::ObservationContent;
@@ -892,7 +908,6 @@ fn update(world: &mut World) {
         // native window while a read-only observer is attached.
         let m = world.resource::<Model>().unwrap();
         let public = m.commands.is_none()
-            && m.chat.transcript.is_empty()
             && m.history_messages.is_empty()
             && m.chat.live_messages.is_empty()
             && m.recovery.is_empty()

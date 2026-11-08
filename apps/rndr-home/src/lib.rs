@@ -4,7 +4,6 @@ use medousa_types::{InteractiveTurnRequest, TurnStreamEnvelopeV3, TurnStreamEven
 #[derive(Clone, Debug, Default)]
 pub struct Chat {
     pub session: Option<String>,
-    pub transcript: String,
     /// Structured pending execution text; never inferred by splitting Markdown.
     pub live_messages: Vec<(String, String)>,
     pub status: String,
@@ -12,8 +11,9 @@ pub struct Chat {
     pub uncertain: bool,
     turn: Option<String>,
     seq: u64,
-    segments: Vec<(String, String)>,
-    prefix: String,
+    // Segment IDs and byte lengths only; prose lives solely in live_messages.
+    segments: Vec<(String, usize)>,
+    rendered_segments: usize,
 }
 impl Chat {
     pub fn offline() -> Self {
@@ -22,10 +22,9 @@ impl Chat {
             ..Self::default()
         }
     }
-    pub fn history(session: String, transcript: String, active: bool) -> Self {
+    pub fn history(session: String, active: bool) -> Self {
         Self {
             session: Some(session),
-            transcript,
             uncertain: active,
             status: if active {
                 "Reattaching active turn…".into()
@@ -42,7 +41,7 @@ impl Chat {
         self.turn = Some(turn);
         self.seq = 0;
         self.segments.clear();
-        self.prefix = self.transcript.clone() + "\n\n### Medousa · active turn\n\n";
+        self.rendered_segments = 0;
     }
     pub fn begin(&mut self, prompt: &str) -> Result<(), &'static str> {
         if self.busy || self.uncertain {
@@ -62,11 +61,7 @@ impl Chat {
         self.seq = 0;
         self.turn = None;
         self.segments.clear();
-        self.prefix = format!(
-            "{}\n\n### You\n\n{}\n\n### Medousa\n\n",
-            self.transcript, prompt
-        );
-        self.transcript = self.prefix.clone();
+        self.rendered_segments = 0;
         self.status = "Starting turn…".into();
         Ok(())
     }
@@ -90,29 +85,31 @@ impl Chat {
         match envelope.event {
             AssistantTextStarted { segment_id, .. } => {
                 if !self.segments.iter().any(|s| s.0 == segment_id) {
-                    self.segments.push((segment_id, String::new()));
+                    self.segments.push((segment_id, 0));
                 }
             }
             ContentAppend { segment_id, text } => {
-                if let Some(segment) = self.segments.iter_mut().find(|s| s.0 == segment_id) {
-                    segment.1.push_str(&text);
-                } else {
-                    self.segments.push((segment_id, text));
-                }
-                self.transcript = self.prefix.clone()
-                    + &self
-                        .segments
-                        .iter()
-                        .map(|s| s.1.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
-                if let Some(last) = self.live_messages.last_mut() {
-                    last.1 = self
-                        .segments
-                        .iter()
-                        .map(|s| s.1.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
+                let index = self
+                    .segments
+                    .iter()
+                    .position(|s| s.0 == segment_id)
+                    .unwrap_or_else(|| {
+                        self.segments.push((segment_id, 0));
+                        self.segments.len() - 1
+                    });
+                if let Some((_, body)) = self.live_messages.last_mut() {
+                    // Materialize separators only when content arrives, matching
+                    // chronological segment joining even for empty segments.
+                    for _ in self.rendered_segments.max(1)..self.segments.len() {
+                        body.push_str("\n\n");
+                    }
+                    self.rendered_segments = self.segments.len();
+                    let offset =
+                        self.segments[..=index].iter().map(|s| s.1).sum::<usize>() + 2 * index;
+                    // The common case appends in place. Interleaved earlier
+                    // segments shift only the live suffix, never chat history.
+                    body.insert_str(offset, &text);
+                    self.segments[index].1 += text.len();
                 }
             }
             Status {
@@ -246,9 +243,73 @@ mod tests {
             serde_json::json!({"type":"content_append","segment_id":"b","text":"two"}),
         ));
         c.apply(event(3, serde_json::json!({"type":"turn_completed","outcome":"cancelled","aggregate_text":"not a replacement"})));
-        assert!(c.transcript.ends_with("one\n\ntwo"));
+        assert_eq!(c.live_messages.last().unwrap().1, "one\n\ntwo");
         assert!(!c.busy);
         assert_eq!(c.status, "Cancelled");
+    }
+    #[test]
+    fn interleaved_unicode_segments_use_one_in_place_body() {
+        let mut c = Chat::history("s".into(), false);
+        c.begin("prompt").unwrap();
+        c.admitted("t".into());
+        let body = &mut c.live_messages.last_mut().unwrap().1;
+        body.reserve(4096);
+        let allocation = body.as_ptr();
+        for (seq, segment_id, text) in [
+            (1, "a", "α"),
+            (2, "b", "世界"),
+            (3, "a", "β"),
+            (4, "c", ""),
+            (5, "b", "!"),
+            (6, "c", "🙂"),
+        ] {
+            c.apply(event(
+                seq,
+                serde_json::json!({
+                    "type":"content_append", "segment_id":segment_id, "text":text
+                }),
+            ));
+            assert_eq!(c.live_messages.last().unwrap().1.as_ptr(), allocation);
+        }
+        assert_eq!(c.live_messages.last().unwrap().1, "αβ\n\n世界!\n\n🙂");
+        assert_eq!(
+            c.segments.iter().map(|s| s.1).sum::<usize>(),
+            "αβ世界!🙂".len()
+        );
+        assert_eq!(c.live_messages[0].1, "prompt");
+    }
+    #[test]
+    fn empty_started_segments_match_chronological_join_and_resume_resets() {
+        let mut c = Chat::history("s".into(), true);
+        assert!(c.begin("blocked").is_err());
+        c.resume("t".into());
+        for (seq, id) in [(1, "a"), (2, "b"), (3, "c")] {
+            c.apply(event(
+                seq,
+                serde_json::json!({
+                    "type":"assistant_text_started", "segment_id":id, "model_round":1
+                }),
+            ));
+        }
+        assert_eq!(c.live_messages.last().unwrap().1, "");
+        c.apply(event(
+            4,
+            serde_json::json!({"type":"content_append", "segment_id":"b", "text":"middle"}),
+        ));
+        assert_eq!(c.live_messages.last().unwrap().1, "\n\nmiddle\n\n");
+        c.apply(event(
+            5,
+            serde_json::json!({"type":"content_append", "segment_id":"a", "text":"first"}),
+        ));
+        assert_eq!(c.live_messages.last().unwrap().1, "first\n\nmiddle\n\n");
+        c.resume("other".into());
+        assert!(c.segments.is_empty());
+        assert_eq!(c.rendered_segments, 0);
+        c.apply(event(
+            6,
+            serde_json::json!({"type":"content_append", "segment_id":"a", "text":"wrong turn"}),
+        ));
+        assert_eq!(c.live_messages.last().unwrap().1, "");
     }
     #[test]
     fn error_blocks_resubmit() {
@@ -259,7 +320,7 @@ mod tests {
         c.begin("hi").unwrap();
         c.fail("Disconnected".into());
         assert!(c.begin("retry").is_err());
-        assert!(c.transcript.contains("hi"));
+        assert_eq!(c.live_messages[0], ("user".into(), "hi".into()));
     }
     #[test]
     fn credentials_stay_local() {
