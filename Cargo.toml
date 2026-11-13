@@ -234,7 +234,20 @@ web-sys = { version = "0.3", features = [
 [features]
 default = ["full-daemon"]
 # Terminal presentation is opt-in for daemon-only builds.
-tui = ["full-daemon", "dep:ratatui", "dep:ratatui-image", "dep:crossterm"]
+tui = ["full-daemon", "grapheme-extended", "dep:ratatui", "dep:ratatui-image", "dep:crossterm"]
+# The default native daemon uses the same Grapheme host surface as embedded-daemon.
+# Opt in to the previous heavy execution modules and in-process editor LSP.
+grapheme-extended = [
+    "full-daemon",
+    "grapheme-sdk/data",
+    "grapheme-sdk/pdf",
+    "grapheme-sdk/image",
+    "grapheme-sdk/plot",
+    "grapheme-sdk/media",
+    "grapheme-sdk/stage-b",
+    "grapheme-sdk/wasix-runtime",
+    "dep:grapheme-lsp",
+]
 full-daemon = [
     "medousa-types/json-schema",
     "stasis-rs/llm-genai",
@@ -251,13 +264,6 @@ full-daemon = [
     "stasis-rs/locus-persist",
     "stasis-rs/otel",
     "stasis-rs/grapheme-host",
-    "grapheme-sdk/data",
-    "grapheme-sdk/pdf",
-    "grapheme-sdk/image",
-    "grapheme-sdk/plot",
-    "grapheme-sdk/media",
-    "grapheme-sdk/stage-b",
-    "grapheme-sdk/wasix-runtime",
     "surrealdb/kv-mem",
     "surrealdb/protocol-ws",
     "dep:medousa-api-contract",
@@ -298,7 +304,6 @@ full-daemon = [
     "dep:grapheme-sdk",
     "dep:grapheme-compiler",
     "dep:grapheme-runtime",
-    "dep:grapheme-lsp",
     "dep:schemars",
     "dep:keyring",
     "dep:toml",

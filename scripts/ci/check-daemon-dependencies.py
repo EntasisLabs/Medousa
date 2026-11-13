@@ -26,6 +26,15 @@ def reject_terminal(names):
         raise AssertionError(f"daemon pulls terminal-only dependencies: {forbidden}")
 
 
+def feature_map(tree):
+    effective = {}
+    for line in tree.splitlines():
+        match = re.match(r"^(grapheme-[a-z-]+) v\S+ FEATURES=\[([^\]]*)\]", line)
+        if match:
+            effective[match[1]] = set(filter(None, match[2].split(",")))
+    return effective
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true")
@@ -61,31 +70,28 @@ def main():
     def graph(extra):
         return packages(cargo_tree(extra))
 
+    def grapheme_features(flags):
+        tree = cargo_tree(flags + ["--format", "{p} FEATURES=[{f}]"])
+        return feature_map(tree)
+
+    slim = grapheme_features(["--no-default-features", "--features", "embedded-daemon"])
+    assert slim["grapheme-sdk"] == {"host"}
+    assert slim["grapheme-runtime"] == set()
     for label, flags in (
         ("default daemon", []),
         ("explicit daemon", ["--no-default-features", "--features", "full-daemon"]),
         ("release daemon + iroh", ["--no-default-features", "--features", "full-daemon,iroh-transport"]),
     ):
         names = graph(flags)
-        # Retained shared capability: Grapheme data -> Polars fmt -> comfy-table tty.
-        # Only this exact immediate parent may bring Crossterm into a daemon build.
-        # Adding a direct dependency (even the same version) must fail the guard.
-        inverse = cargo_tree(flags + ["--invert", "crossterm", "--depth", "1"])
-        assert packages(inverse) == {"crossterm", "comfy-table"}, inverse
-        assert "crossterm v0.29.0" in inverse, inverse
-        assert "crossterm v0.28." not in cargo_tree(flags)
-        reject_terminal(names - {"crossterm"})
+        reject_terminal(names)
         assert "medousa" in names and "stasis-rs" in names
-        print(f"{label}: {len(names)} unique package names, no TUI-only deps; shared Crossterm only via comfy-table")
+        assert not {"grapheme-lsp", "grapheme-aot-container", "wasmer-wasix"} & names
+        assert grapheme_features(flags) == slim, (label, grapheme_features(flags), slim)
+        print(f"{label}: {len(names)} unique package names; no terminal deps; embedded Grapheme match")
     # Module signatures alone are not proof that execution implementations survived.
     # Check the effective feature closure for all currently supported heavy modules.
-    capability_flags = ["--no-default-features", "--features", "full-daemon"]
-    feature_tree = cargo_tree(capability_flags + ["--format", "{p} FEATURES=[{f}]"])
-    effective = {}
-    for line in feature_tree.splitlines():
-        match = re.match(r"^(grapheme-[a-z-]+) v\S+ FEATURES=\[([^\]]*)\]", line)
-        if match:
-            effective[match[1]] = set(match[2].split(","))
+    capability_flags = ["--no-default-features", "--features", "grapheme-extended"]
+    effective = grapheme_features(capability_flags)
     modules = {"data", "pdf", "image", "plot", "media"}
     for package, required in {
         "grapheme-sdk": modules | {"host", "stage-b", "wasix-runtime"},
@@ -95,7 +101,8 @@ def main():
         "grapheme-signatures": modules,
     }.items():
         assert required <= effective.get(package, set()), (package, required, effective.get(package))
-    print("Grapheme capability closure: implementations, signatures, AOT and WASIX retained")
+    assert grapheme_features(["--no-default-features", "--features", "tui"]) == effective
+    print("Extended/TUI Grapheme closure: implementations, signatures, AOT, WASIX and LSP retained")
     terminal = graph(["--no-default-features", "--features", "tui"])
     assert {"ratatui", "ratatui-image", "crossterm"} <= terminal
     print("terminal positive control: rendering dependencies present")

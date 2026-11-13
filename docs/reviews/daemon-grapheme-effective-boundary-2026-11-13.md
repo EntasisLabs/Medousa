@@ -1,4 +1,15 @@
-# Grapheme effective compiled-surface boundary: blocked in this repository
+# Historical Grapheme boundary assessment — superseded acceptance scope
+
+> **Scope changed by the principal on 2026-11-13.** This report records the
+> preserve-all-capabilities assessment committed in `4e85141b32d6c74a25427e7506758b38c8683739`.
+> Its upstream blocker and proposed follow-ups are **not current acceptance
+> gates**. The principal now authorizes the native daemon to use the existing
+> `embedded-daemon` Grapheme host surface, excluding its heavier capabilities.
+> See [the bounded implementation report](daemon-grapheme-slim-profile-2026-11-13.md)
+> for the new configuration, resolved comparisons and fresh qualification.
+> No upstream packaging changes are pursued. The historical evidence directory
+> remains unchanged and its tests are not relabeled as qualification of the new
+> candidate. All statements below describe the former scope and revision only.
 
 Date: 2026-11-13. Evidence-only continuation of the same pre-migration
 ownership/dependency undertaking. **No effective slimming implemented or claimed.**

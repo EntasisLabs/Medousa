@@ -1,13 +1,18 @@
 //! WebSocket bridge between Home CodeMirror LSP client and in-process `grapheme-lsp`.
 
 use axum::Json;
+#[cfg(feature = "grapheme-extended")]
 use axum::extract::Extension;
+#[cfg(feature = "grapheme-extended")]
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::IntoResponse;
+#[cfg(feature = "grapheme-extended")]
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
+#[cfg(feature = "grapheme-extended")]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[cfg(feature = "grapheme-extended")]
 use crate::credential_lifecycle::CredentialLease;
 use crate::grapheme_script::store::GraphemeScriptStore;
 
@@ -33,6 +38,17 @@ pub async fn get_lsp_workspace() -> Json<GraphemeLspWorkspaceResponse> {
     Json(lsp_workspace_response())
 }
 
+/// The slim daemon retains the declared route and its admission policy, but
+/// never upgrades or starts a server for a capability excluded at build time.
+#[cfg(not(feature = "grapheme-extended"))]
+pub async fn grapheme_lsp_ws() -> impl IntoResponse {
+    (
+        axum::http::StatusCode::NOT_IMPLEMENTED,
+        "Grapheme editor LSP is excluded from this build; enable grapheme-extended",
+    )
+}
+
+#[cfg(feature = "grapheme-extended")]
 pub async fn grapheme_lsp_ws(
     ws: WebSocketUpgrade,
     lease: Option<Extension<CredentialLease>>,
@@ -40,6 +56,7 @@ pub async fn grapheme_lsp_ws(
     ws.on_upgrade(move |socket| handle_lsp_socket(socket, lease.map(|Extension(lease)| lease)))
 }
 
+#[cfg(feature = "grapheme-extended")]
 async fn handle_lsp_socket(socket: WebSocket, lease: Option<CredentialLease>) {
     let (client_to_lsp, lsp_stdin) = tokio::io::duplex(1024 * 1024);
     let (lsp_stdout, lsp_to_client) = tokio::io::duplex(1024 * 1024);
@@ -98,6 +115,7 @@ async fn handle_lsp_socket(socket: WebSocket, lease: Option<CredentialLease>) {
     read_lsp.abort();
 }
 
+#[cfg(feature = "grapheme-extended")]
 async fn wait_for_revocation(
     watcher: &mut Option<crate::credential_lifecycle::CredentialRevocationWatcher>,
 ) {
@@ -107,6 +125,7 @@ async fn wait_for_revocation(
     }
 }
 
+#[cfg(feature = "grapheme-extended")]
 async fn read_lsp_message(
     reader: &mut tokio::io::ReadHalf<tokio::io::DuplexStream>,
 ) -> std::io::Result<Option<String>> {
@@ -142,6 +161,7 @@ async fn read_lsp_message(
     })?))
 }
 
+#[cfg(feature = "grapheme-extended")]
 async fn write_lsp_message(
     writer: &mut tokio::io::WriteHalf<tokio::io::DuplexStream>,
     body: &str,
@@ -159,4 +179,41 @@ pub fn path_to_file_uri(path: &std::path::Path) -> String {
         normalized = format!("/{normalized}");
     }
     format!("file://{normalized}")
+}
+
+#[cfg(all(test, not(feature = "grapheme-extended")))]
+mod slim_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn excluded_editor_returns_explicit_not_implemented() {
+        let response = grapheme_lsp_ws().await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        assert!(
+            std::str::from_utf8(&body)
+                .unwrap()
+                .contains("grapheme-extended")
+        );
+    }
+
+    #[test]
+    fn slim_interpreter_executes_core_and_rejects_heavy_import() {
+        let engine = grapheme_sdk::GraphemeEngine::builder().build();
+        let result = engine.execute_source_with_initial_state(
+            "import core from \"grapheme/core\"\nquery Echo { core.echo(message: \"ready\") { message } }",
+            None,
+        );
+        assert!(result.is_ok(), "{result:?}");
+        let result = engine.execute_source_with_initial_state(
+            "import data from \"grapheme/data\"\nquery Heavy { data.read_csv(path: \"never-read.csv\") { rows } }",
+            None,
+        );
+        assert!(
+            result.is_err(),
+            "heavy module must not execute in the slim build"
+        );
+    }
 }
