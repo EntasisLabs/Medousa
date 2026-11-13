@@ -6,6 +6,11 @@ accepts independent reviews and alone owns native integration. Native merge is
 deferred until this preparation and its two review lanes pass. Later feature
 packets below are proposals, not work executed by this candidate.
 
+Closure/dispatch addendum: see `PREPARATION_CLOSURE.md` for accepted review
+identities, immutable evidence and the final contract-first P1/A packet. That
+addendum supersedes the proposed packet sequence below where more specific;
+sender still owns preparation closure assessment and all dispatch decisions.
+
 ## Baseline and deliberately small change
 
 Starting clean HEAD: `431ccab3affe24725eaff7d39176661b3398a17f`, the independent
@@ -118,9 +123,11 @@ Critical gates:
   early-return path. Reset scroll to zero; keep editor identity on theme changes.
 - Refuse Enter batches with later pressed keys or IME commit/preedit ambiguity.
   Do not convert end-of-batch Submitted into a claimed Enter-time snapshot.
-- A successful local enqueue is not server admission. Recovery entries are
-  removed only on matching-generation Admitted. Failures remain uncertain;
-  never auto-resend. Restore only by explicit action into an empty composer.
+- A successful local enqueue is not server admission. Automatic retirement of
+  pending recovery requires matching-generation Admitted. Failures remain
+  uncertain; never auto-resend. Explicit Restore transfers the last recovery
+  entry into an empty composer, removes that entry and clears its pending pointer
+  without enqueueing Send. Restore is not admission.
 - Never reconcile by prose equality. Keep session/execution authority, stream
   turn identity/sequence, generation fences and non-atomic-history notices.
 - Validate loopback before loading credentials; no automatic discovery/provision,

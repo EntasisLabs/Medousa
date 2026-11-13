@@ -1,0 +1,9 @@
+{
+  "head": "bdef72eb7fbf8014067603f50bb15cfe0a3745f5",
+  "tracked_diff": "",
+  "status": "?? apps/rndr-home/docs/review-prep-correctness-20261113-1304/",
+  "rndr_head": "44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139",
+  "rndr_status": "",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)"
+}

@@ -31,9 +31,12 @@ paid inference, framework edits, push, deployment or remote mutation.
    same-batch ambiguity/IME guards and text-equality protection against clearing
    newer edits. Read qualification and app regression assertions; native Prompt
    still snapshots end-of-batch, not an Enter boundary.
-4. Matching-generation Admitted alone removes pending recovery. Errors remain
-   uncertain, navigation/reload does not imply successful admission, and no
-   automatic Send retry occurs. Do not infer execution identity from prose.
+4. Automatic retirement of pending recovery requires matching-generation
+   Admitted. Explicit Restore into an empty composer transfers the last recovery
+   entry to the composer, removes that entry and clears its pending pointer
+   without enqueueing Send; it is not admission. Errors remain uncertain,
+   navigation/reload does not imply successful admission, and no automatic Send
+   retry occurs. Do not infer execution identity from prose.
    Existing non-atomic history and server-effective mode contracts must remain.
 5. Backend/lib should have no behavioral diff. Validate loopback before secret
    loading, no proxy/redirect/fallback, sensitive auth header, stream path and

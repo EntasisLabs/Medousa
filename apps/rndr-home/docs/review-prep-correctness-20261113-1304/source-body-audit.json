@@ -1,0 +1,109 @@
+[
+  {
+    "name": "Model fields",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "19c718b6a432fcf07d8c8cd49bf9cb049d27531913136478e1bc43bc60c6e718"
+  },
+  {
+    "name": "Ui fields",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "f63cef4d31bd3b12c041e422863d3075c5b710a158ef9c11cfd29cec34276017"
+  },
+  {
+    "name": "layout helpers",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "8ca98b2e51fec22f5be73fc4e3ee11607c94a80f0c745af4eaa28fcc5c40bf8f"
+  },
+  {
+    "name": "reset adapter",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "55572e8c45c4f049d85002e231a46afa80765236c2d6c1570b48121b25e7a46c"
+  },
+  {
+    "name": "input guard",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "ea06a706c1afe6426c261dc4e34b312c27e920b8fc3ebc69c530d4d4c17e8a78"
+  },
+  {
+    "name": "dispatch",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "d6896ec73d3e07405133811c41f8d43aa606434bf42da230e76d5457493a6f5b"
+  },
+  {
+    "name": "reply and action handling in identical order",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "07136d7b538fd2223eb01e5d0b503e74811b17e346f106d012b34850f5613799"
+  },
+  {
+    "name": "state projection",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "893b85693fd0c81224333839462bc1a08b2335067df4d630b266430dc50b67fb"
+  },
+  {
+    "name": "observation predicate",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "4616485d78993d513ad5323ba9154fa0907a5f5cfb197ef60f46ea341ab406ca"
+  },
+  {
+    "name": "export fixture loop",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "753b3db2da6d77ada3559845574af307725a4ee4c6a515e35f38a9ffc6fd99a5"
+  },
+  {
+    "name": "assembly spawn and parent order",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "0ce86c1fe30663b123b56c5b1da08bbb3a5d35cbf5be9316506e68fd789a519f"
+  },
+  {
+    "name": "backend.rs",
+    "byte_identical_to_baseline": true
+  },
+  {
+    "name": "backend_tests.rs",
+    "byte_identical_to_baseline": true
+  },
+  {
+    "name": "lib.rs",
+    "byte_identical_to_baseline": true
+  },
+  {
+    "name": "conversation.rs",
+    "byte_identical_to_baseline": true
+  },
+  {
+    "name": "presentation.rs",
+    "byte_identical_to_baseline": true
+  },
+  {
+    "name": "ui_tests.rs",
+    "byte_identical_to_baseline": true
+  },
+  {
+    "name": "interaction_tests.rs",
+    "byte_identical_to_baseline": true
+  },
+  {
+    "name": "qualification_tests.rs",
+    "byte_identical_to_baseline": true
+  },
+  {
+    "name": "app plugin/resource/system order",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "ad89e6f2754d044be7ccc346baa2947079664ba103de02fae2ec0103833d1a42"
+  },
+  {
+    "name": "entrypoint authority and native/export order",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "1b8b4ff7f92a717266e166b8d110236ecd4f8a038aae67090dc72b88fe5aebf8"
+  },
+  {
+    "name": "SubmitBoundary data",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "d39651c142c1809ed134066321d358ce780418d11dceb1f7d4892001f490af09"
+  },
+  {
+    "name": "FixtureObservation marker",
+    "equal_preserving_literals_ignoring_formatting_and_private_visibility": true,
+    "normalized_sha256": "c9387f7afd69381fd3962220a7a574f49401dc1a5bb2b00134273efd3767a422"
+  }
+]

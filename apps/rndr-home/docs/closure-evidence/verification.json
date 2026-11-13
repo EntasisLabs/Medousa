@@ -1,0 +1,52 @@
+{
+  "kind": "docs-only closure checks; no Cargo/build/app/test/export/native execution",
+  "base_and_reviewed_candidate": "bdef72eb7fbf8014067603f50bb15cfe0a3745f5",
+  "closure_identity": "commit containing this record; exact OID returned in handback",
+  "changed_paths": 62,
+  "all_paths_under": "apps/rndr-home/docs/",
+  "review_seal_entries_verified": 55,
+  "original_correctness_manifest_entries_verified": 53,
+  "candidate_source_manifest_entries_verified": 18,
+  "architect_evidence_entries_verified": 150,
+  "historical_source_bindings": {
+    "before": {
+      "source_commit": "431ccab3affe24725eaff7d39176661b3398a17f",
+      "entries_verified": 12
+    },
+    "after": {
+      "source_commit": "08839824203c57588607f3ad66496e1bd81d8cba",
+      "entries_verified": 17
+    },
+    "final": {
+      "source_commit": "b9ee1f1b55fd984231dcb8082fddd745444d5986",
+      "entries_verified": 18
+    }
+  },
+  "reports_sha256": {
+    "review-prep-correctness-20261113-1304/REPORT.md": "d04c7ded00300286d981c3eefc383bf34d6f2de498b345acace63d68c293e4b6",
+    "review-prep-ux-20261113-0bdc05e3/REPORT.md": "4ef4fffc33e9ad19d766a47d90010efefeebc41c6a0ef20a92455026a775bdd3"
+  },
+  "production_and_test_source_changes": 0,
+  "non_docs_git_diff_empty": true,
+  "strict_docs": {
+    "command": "bash scripts/verify-docs.sh --strict",
+    "exit_code": 0,
+    "output": "verify-docs: OK"
+  },
+  "whitespace_policy": "Changed authored contracts pass git diff --check. Original review bytes retained, including terminal blank lines; any full-diff warnings in immutable receipts are documented, not normalized.",
+  "external_rndr": "not accessed; saved read-only pin 44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139; no fresh cleanliness claim",
+  "execution_claim_boundary": "Correctness fresh54/60 +27 exports on bdef72eb candidate; UX read-only originals/hash review; closure documentation/hash/diff only",
+  "full_diff_whitespace": {
+    "exit_code": 2,
+    "output": "apps/rndr-home/docs/review-prep-correctness-20261113-1304/default.log:140: new blank line at EOF.\napps/rndr-home/docs/review-prep-correctness-20261113-1304/observe.log:146: new blank line at EOF.\n",
+    "interpretation": "Immutable original review receipts only; preserve bytes/digests, do not normalize."
+  },
+  "closure_command_note": "An attempted whitespace-output redirection outside the worktree was refused read-only before writing; rerun captured in memory here. No outside file written.",
+  "non_docs_tree_proof": {
+    "method": "git ls-tree -r -z base versus staged tree, excluding only apps/rndr-home/docs/; byte-identical entries incl mode/OID/path",
+    "base": "bdef72eb7fbf8014067603f50bb15cfe0a3745f5",
+    "entry_count": 7917,
+    "sha256_both": "de428dd0ea439d400111b90133f1d71152feb45b49987f4012dbe2394a635e25",
+    "identical": true
+  }
+}

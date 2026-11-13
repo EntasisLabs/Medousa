@@ -1,0 +1,1 @@
+cargo fmt --manifest-path apps/rndr-home/Cargo.toml -- --check

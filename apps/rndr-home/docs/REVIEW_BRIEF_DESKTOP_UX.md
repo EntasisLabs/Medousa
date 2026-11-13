@@ -25,6 +25,9 @@ review. Do not edit source or launch workers.
 - Read interaction assertions for Enter/Shift+Enter, same-batch ambiguity,
   composition, model search selection/index, Escape/focus return, theme preserving
   draft/message entities, exact-source copy, scroll anchoring and recovery visibility.
+  Explicit Restore transfers recovery into an empty composer and removes its
+  recovery entry/pending pointer without Send; only matching-generation Admitted
+  automatically retires pending recovery. Restore is not admission.
   Tests synthesize framework input; they are not physical-device certification.
 - App capabilities not ported must remain visibly unavailable. Permission,
   secret and budget notices do not authorize this port to approve anything.
