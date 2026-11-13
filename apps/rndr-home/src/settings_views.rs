@@ -69,7 +69,9 @@ pub fn render(world: &mut World, h: &Handles, route: Route, narrow: bool) {
         }
         settings(world, h.body, index);
     } else if route == Route::Data(Resource::Activity) {
-        label(world, h.section_nav, "Activity", true);
+        if !narrow {
+            label(world, h.section_nav, "Activity", true);
+        }
         nav_button(
             world,
             h.section_nav,
@@ -79,12 +81,7 @@ pub fn render(world: &mut World, h: &Handles, route: Route, narrow: bool) {
         muted(
             world,
             h.body,
-            "Latest 100 workspace work cards, including terminal cards. Not the complete durable job ledger or global Activity feed. Board state is not execution success; blocked items may need the existing app.",
-        );
-        muted(
-            world,
-            h.body,
-            "Select a row for metadata from this same snapshot. Prompt-derived titles, raw status, output and diagnostics are withheld. No cancel, retry, approve, archive or execution controls.",
+            "Workspace cards: latest 100 including terminal. Not the full job ledger. Titles/output withheld; board state is not execution-success proof.",
         );
     } else if let Route::Data(_) = route {
         if narrow {

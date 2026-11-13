@@ -139,6 +139,41 @@ fn chooser_keyboard_current_name_escape_and_selection_preserve_chat() {
     }
 }
 #[test]
+fn activity_first_detail_metadata_is_visible_at_minimum_size() {
+    let mut a = app();
+    a.update();
+    a.world_mut().insert_resource(
+        std::sync::Arc::new(rndr_render::ParleyText::new()) as std::sync::Arc<dyn TextEngine>
+    );
+    a.world_mut().insert_resource(Viewport::new(480., 650.));
+    a.world_mut()
+        .insert_resource(desktop_fixtures::SyntheticDesktop);
+    a.world_mut()
+        .resource_mut::<Desktop>()
+        .unwrap()
+        .reads
+        .insert(Resource::Activity, ReadState::Ready(rows()));
+    desktop::navigate(a.world_mut(), Route::Data(Resource::Activity));
+    let d = a.world_mut().resource_mut::<Desktop>().unwrap();
+    d.selected = Some(0);
+    d.dirty = true;
+    settle(&mut a);
+    let h = a.world().resource::<Handles>().unwrap();
+    let state = a
+        .world()
+        .entities_with::<Label>()
+        .into_iter()
+        .find(|e| a.world().get::<Label>(*e).unwrap().text == "In flight")
+        .unwrap();
+    let r = a.world().get::<Rect>(state).unwrap();
+    let port = a.world().get::<Rect>(h.body).unwrap();
+    let offset = a.world().get::<Scroll>(h.body).unwrap().offset[1];
+    assert!(
+        r.y + offset >= port.y && r.y + offset + r.h <= port.y + port.h,
+        "metadata below fold: {r:?} {port:?}"
+    );
+}
+#[test]
 fn narrow_settings_header_contains_wrapped_fixture_title() {
     let mut a = app();
     a.update();

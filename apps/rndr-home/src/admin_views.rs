@@ -22,7 +22,16 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
     };
     let connected = world.resource::<Connection>().unwrap().sender.is_some();
     let header = row(world, parent, Size::Px(34.));
-    label(world, header, resource.title(), true);
+    label(
+        world,
+        header,
+        if resource == Resource::Activity {
+            "Jobs snapshot"
+        } else {
+            resource.title()
+        },
+        true,
+    );
     let refresh = nav_button(world, header, "admin:refresh", "Refresh read");
     world.get_mut::<Layout>(refresh).unwrap().width = Size::Px(112.);
     world.get_mut::<Button>(refresh).unwrap().enabled =

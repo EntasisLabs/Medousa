@@ -32,6 +32,9 @@ async fn response(
                 Err(e) => panic!("fixture request missing: {e}"),
             }
         };
+        // Accept polling is nonblocking; header reads use a bounded blocking
+        // socket so a readiness race cannot be mistaken for a missing request.
+        socket.set_nonblocking(false).unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(15)))
             .unwrap();
