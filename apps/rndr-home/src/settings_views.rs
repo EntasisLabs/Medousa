@@ -83,6 +83,16 @@ pub fn render(world: &mut World, h: &Handles, route: Route, narrow: bool) {
             h.body,
             "Workspace cards: latest 100 including terminal. Not the full job ledger. Titles/output withheld; board state is not execution-success proof.",
         );
+    } else if route == Route::Data(Resource::Notes) {
+        if !narrow {
+            label(world, h.section_nav, "Library / Notes", true);
+        }
+        muted(world, h.section_nav, "Current daemon vault only");
+        muted(
+            world,
+            h.body,
+            "Summary browser only. No note bodies, attachments, editing, root switching or filesystem access.",
+        );
     } else if let Route::Data(_) = route {
         if narrow {
             let r = row(world, h.section_nav, Size::Px(34.));
@@ -93,7 +103,9 @@ pub fn render(world: &mut World, h: &Handles, route: Route, narrow: bool) {
             nav_button(world, h.section_nav, "settings:3", "Runtime Controls");
             nav_button(world, h.section_nav, "settings:8", "Connection");
             for resource in Resource::ALL {
-                resource_link(world, h.section_nav, resource);
+                if resource != Resource::Notes {
+                    resource_link(world, h.section_nav, resource);
+                }
             }
         }
     } else if let Route::Deferred(name) = route {

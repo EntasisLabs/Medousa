@@ -78,6 +78,16 @@ fn yes(value: bool) -> String {
 
 pub async fn read(client: &MedousaClient, resource: Resource) -> Result<Vec<Record>, SdkError> {
     let rows = match resource {
+        Resource::Notes => {
+            let page = client
+                .vault()
+                .list_notes(&medousa_types::VaultNotesQuery {
+                    limit: Some(100),
+                    ..Default::default()
+                })
+                .await?;
+            crate::content::notes(page)?
+        }
         Resource::Activity => {
             // Production Activity consumes workspace work cards. Titles may be
             // prompt excerpts; never retain those or raw status/diagnostic prose.

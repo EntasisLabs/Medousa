@@ -14,9 +14,10 @@ pub enum Resource {
     Capacity,
     ReviewProviders,
     Activity,
+    Notes,
 }
 impl Resource {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Health,
         Self::Models,
         Self::Runtimes,
@@ -28,6 +29,7 @@ impl Resource {
         Self::Capacity,
         Self::ReviewProviders,
         Self::Activity,
+        Self::Notes,
     ];
     pub fn title(self) -> &'static str {
         match self {
@@ -42,6 +44,7 @@ impl Resource {
             Self::Capacity => "Worker capacity",
             Self::ReviewProviders => "Hosted review providers",
             Self::Activity => "Activity · jobs snapshot",
+            Self::Notes => "Notes",
         }
     }
 }

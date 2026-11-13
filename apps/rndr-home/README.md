@@ -1,10 +1,12 @@
 # Medousa — rndr desktop preview
 
-> **Current desktop slice:** [updated parity / coverage matrix](docs/SHELL_ACTIVITY_PARITY.md)
-> and [checks / pixel evidence](docs/shell-activity-evidence/REPORT.md).
-> Direct Settings chooser, grouped scrolling rail with fixed Activity/Settings/You
-> dock, and a bounded read-only Activity jobs snapshot extend the prior increment.
-> Eleven existing read models have filter/list/detail/refresh; the nine Settings
+> **Current desktop slice:** [18-destination matrix](docs/CONTENT_SURFACES.md)
+> and [Notes checks / pixel evidence](docs/content-evidence/REPORT.md).
+> Notes now has a bounded first-page summary browser: title, inert relative path,
+> modified UTC, local filter, details/Back and explicit refresh. No bodies, tags,
+> pagination, root switching or content writes. This extends the integrated shell,
+> Settings and Activity; it is not full Library/Notes completion.
+> Twelve existing read models have filter/list/detail/refresh; the nine Settings
 > routes remain read-only/local-preview, not editable production panels.
 > No real workshop was contacted. No production-readiness claim.
 > [Previous increment report](docs/DESKTOP_IMPLEMENTATION.md) is preserved.
@@ -17,7 +19,10 @@
 >
 > Generate clearly labeled synthetic non-chat GPU evidence (no network):
 > `cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- --export-desktop ./desktop-renders`
+> Notes-only synthetic matrix: `cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- --export-notes ./notes-renders`
 > See the updated [user guide](../../docs/guides/rndr-native-preview.md).
+> [Prior shell/Activity matrix](docs/SHELL_ACTIVITY_PARITY.md) and
+> [prior evidence](docs/shell-activity-evidence/REPORT.md) are preserved.
 
 > **Prior qualification (preserved, before this non-chat increment):** [rndr 0.6.0 at `44f5dc7c`](docs/QUALIFICATION_0_6_0.md)
 > passes 54 default / 55 observe-feature tests, strict scoped clippy and native

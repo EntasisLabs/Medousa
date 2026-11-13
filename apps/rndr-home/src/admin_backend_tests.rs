@@ -65,7 +65,7 @@ async fn response(
     result
 }
 #[tokio::test]
-async fn all_eleven_admin_models_use_existing_get_contracts_and_safe_projections() {
+async fn all_twelve_models_use_existing_get_contracts_and_safe_projections() {
     let cases = vec![
         (
             Resource::Health,
@@ -123,6 +123,12 @@ async fn all_eleven_admin_models_use_existing_get_contracts_and_safe_projections
             json!({"workspace_revision":42,"cards":[{"id":"job-fixture", "column":"in_flight", "title":"NEVER-RENDER prompt excerpt", "status_label":"NEVER-RENDER diagnostics", "created_at_utc":"2026-11-13T00:00:00Z", "updated_at_utc":"2026-11-13T01:00:00Z", "output":"NEVER-RENDER"}]}),
         ),
     ];
+    let mut cases = cases;
+    cases.push((
+        Resource::Notes,
+        "/v1/vault/notes?limit=100",
+        json!({"notes":[{"path":"journal/today.md", "title":"Today", "modified_at_utc":"2026-11-13T00:00:00Z", "tags":["NEVER-RENDER"], "content":"NEVER-RENDER"}], "next_cursor":"NEVER-RENDER", "truncated":true}),
+    ));
     assert_eq!(cases.len(), Resource::ALL.len());
     for (resource, path, body) in cases {
         let rows = response(resource, path, 200, body)
@@ -228,6 +234,52 @@ async fn activity_caps_rows_and_does_not_guess_empty_or_permission_success() {
         .await
         .unwrap()
         .is_empty()
+    );
+}
+#[tokio::test]
+async fn notes_errors_reset_and_malformed_inventory_never_fake_empty_success() {
+    let path = "/v1/vault/notes?limit=100";
+    for status in [401, 403, 404, 500] {
+        let error = response(
+            Resource::Notes,
+            path,
+            status,
+            json!({"error":"NEVER-RENDER"}),
+        )
+        .await
+        .unwrap_err();
+        let kind = classify(error);
+        assert_eq!(
+            kind,
+            if status == 401 || status == 403 {
+                ReadError::Permission
+            } else {
+                ReadError::Unavailable
+            }
+        );
+        assert!(!kind.message().contains("NEVER-RENDER"));
+    }
+    for body in [
+        json!({}),
+        json!({"notes":[{"path":"a.md"}]}),
+        json!({"notes":{}}),
+        json!({"notes":[], "reset_required":true}),
+        json!({"notes":[{"path":"../NEVER-RENDER.md", "title":"NEVER-RENDER", "modified_at_utc":"2026-11-13T00:00:00Z"}]}),
+    ] {
+        assert_eq!(
+            classify(
+                response(Resource::Notes, path, 200, body)
+                    .await
+                    .unwrap_err()
+            ),
+            ReadError::Incompatible
+        );
+    }
+    assert!(
+        response(Resource::Notes, path, 200, json!({"notes":[]}))
+            .await
+            .unwrap()
+            .is_empty()
     );
 }
 #[test]

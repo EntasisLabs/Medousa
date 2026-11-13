@@ -298,6 +298,7 @@ pub fn action(world: &mut World, action: &str) -> bool {
             "chat" => Route::Chat,
             "settings" => Route::Settings(world.resource::<Desktop>().unwrap().last_settings),
             "history" => Route::Data(Resource::Activity),
+            "notes" => Route::Data(Resource::Notes),
             "runtime" => Route::Data(Resource::Health),
             "schedules" => Route::Data(Resource::Schedules),
             _ => match DOORS.iter().find(|(key, _)| *key == id) {
@@ -409,6 +410,7 @@ pub fn sync(world: &mut World) {
             Route::Settings(_) => *name == "Settings",
             Route::Data(Resource::Schedules) => *name == "Schedules",
             Route::Data(Resource::Activity) => *name == "Activity",
+            Route::Data(Resource::Notes) => *name == "Notes",
             Route::Data(_) => *name == "Settings",
             Route::Deferred(n) => *name == n,
         };
@@ -576,6 +578,7 @@ fn rail_target(h: &Handles, route: Route) -> Entity {
         Route::Settings(_) => "Settings",
         Route::Data(Resource::Schedules) => "Schedules",
         Route::Data(Resource::Activity) => "Activity",
+        Route::Data(Resource::Notes) => "Notes",
         Route::Data(_) => "Settings",
         Route::Deferred(name) => name,
     };

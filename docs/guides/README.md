@@ -9,7 +9,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](getting-started.md) | Download → welcome → first chat |
-| [Native rndr desktop preview](rndr-native-preview.md) | Try the separate settings, connections and read-only administration preview |
+| [Native rndr desktop preview](rndr-native-preview.md) | Try the separate shell, Settings, read-only Activity and bounded Notes summary browser |
 | [Models and agent sources](models-and-agent-sources.md) | Choose runtimes, models, modes, and reply narration in chat |
 | [Bots](bots.md) | Create durable named teammates with their own memory and conversation |
 | [Spotlight Activity](spotlight-activity.md) | Follow workshop execution and open its chat, project, or run output |

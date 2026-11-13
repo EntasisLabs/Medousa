@@ -8,6 +8,16 @@ use std::{path::PathBuf, sync::Arc};
 
 pub struct SyntheticDesktop;
 pub fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    export_cases(app, dir, false)
+}
+pub fn export_notes(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    export_cases(app, dir, true)
+}
+fn export_cases(
+    app: &mut App,
+    dir: PathBuf,
+    only_notes: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     assert!(app.world().resource::<Model>().unwrap().commands.is_none());
     assert!(
         app.world()
@@ -44,6 +54,9 @@ pub fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::error::Err
             app.world_mut()
                 .insert_resource(Viewport::new(width, height));
             for (name, route, resource, state, detail) in cases() {
+                if only_notes && resource != Some(Resource::Notes) {
+                    continue;
+                }
                 let d = app.world_mut().resource_mut::<Desktop>().unwrap();
                 d.reads.clear();
                 if let Some(resource) = resource {
@@ -51,6 +64,10 @@ pub fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::error::Err
                 }
                 crate::desktop::navigate(app.world_mut(), route);
                 app.world_mut().resource_mut::<Desktop>().unwrap().selected = detail;
+                if name == "notes-no-match" {
+                    let search = app.world().resource::<Handles>().unwrap().search;
+                    crate::composer::reset_prompt(app.world_mut(), search, "no matching fixture");
+                }
                 for _ in 0..8 {
                     app.update();
                 }
@@ -252,6 +269,43 @@ fn cases() -> Vec<Case> {
             name,
             Route::Data(Resource::Activity),
             Some(Resource::Activity),
+            state,
+            detail,
+        ));
+    }
+    let notes = crate::content::notes(serde_json::from_value(serde_json::json!({
+        "notes": [
+            {"path":"journal/today.md", "title":"Today · synthetic journal", "modified_at_utc":"2026-11-13T00:00:00Z"},
+            {"path":"projects/desktop.md", "title":"Desktop ideas · synthetic", "modified_at_utc":"2026-11-12T00:00:00Z"}
+        ], "truncated": true
+    })).unwrap()).unwrap();
+    for (name, state, detail) in [
+        ("notes-list", ReadState::Ready(notes.clone()), None),
+        ("notes-detail", ReadState::Ready(notes.clone()), Some(0)),
+        ("notes-no-match", ReadState::Ready(notes), None),
+        ("notes-empty", ReadState::Ready(vec![]), None),
+        ("notes-offline", ReadState::NotLoaded, None),
+        ("notes-loading", ReadState::Loading(1), None),
+        (
+            "notes-error",
+            ReadState::Error(ReadError::Unavailable),
+            None,
+        ),
+        (
+            "notes-permission",
+            ReadState::Error(ReadError::Permission),
+            None,
+        ),
+        (
+            "notes-unsupported",
+            ReadState::Error(ReadError::Incompatible),
+            None,
+        ),
+    ] {
+        cases.push((
+            name,
+            Route::Data(Resource::Notes),
+            Some(Resource::Notes),
             state,
             detail,
         ));

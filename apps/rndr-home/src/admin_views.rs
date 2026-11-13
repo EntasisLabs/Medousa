@@ -39,7 +39,9 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
     muted(
         world,
         parent,
-        if resource == Resource::Activity {
+        if resource == Resource::Notes {
+            "First page only · up to 100 summaries before exclusions · not the whole vault · refresh explicitly"
+        } else if resource == Resource::Activity {
             "Read-only snapshot · refresh explicitly · maximum 100 work cards · no operations executed"
         } else {
             "Read-only snapshot · refresh explicitly · maximum 500 entries · no operations executed"
@@ -89,7 +91,11 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
                 muted(
                     world,
                     parent,
-                    "Details are from the last completed read, not a live subscription. Effectful controls remain in the existing Medousa app.",
+                    if resource == Resource::Notes {
+                        "Summary from the last read only. Paths are inert labels, never opened. Bodies, tags, links and private/system notes are withheld. Use the existing app to read or edit content."
+                    } else {
+                        "Details are from the last completed read, not a live subscription. Effectful controls remain in the existing Medousa app."
+                    },
                 );
             } else {
                 let filtered: Vec<_> = rows
@@ -106,7 +112,11 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
                     muted(
                         world,
                         parent,
-                        "No entries returned by this service. This is a successful empty result, not a disconnected state.",
+                        if resource == Resource::Notes {
+                            "No visible notes in this first page. Private/system or unsafe entries are not displayed; this does not prove the vault is empty."
+                        } else {
+                            "No entries returned by this service. This is a successful empty result, not a disconnected state."
+                        },
                     );
                 } else if filtered.is_empty() {
                     muted(

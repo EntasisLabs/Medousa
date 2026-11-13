@@ -3,6 +3,9 @@ mod admin_model;
 mod admin_views;
 mod backend;
 mod composer;
+mod content;
+#[cfg(test)]
+mod content_tests;
 mod controller;
 mod conversation;
 mod desktop;
@@ -54,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut session = None;
     let mut export: Option<PathBuf> = None;
     let mut desktop_export: Option<PathBuf> = None;
+    let mut notes_export: Option<PathBuf> = None;
     let mut offline = false;
     let mut observe_offline = false;
     let mut theme = UiTheme {
@@ -73,6 +77,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 offline = true;
             }
             "--offline" => offline = true,
+            "--export-notes" => {
+                notes_export = Some(
+                    args.next()
+                        .ok_or("--export-notes needs a directory")?
+                        .into(),
+                );
+                offline = true;
+            }
             "--export-desktop" => {
                 desktop_export = Some(
                     args.next()
@@ -89,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" | "-h" => {
                 println!(
-                    "Medousa (rndr)\n  --data-dir PATH [--daemon http://127.0.0.1:9777] [--session ID]\n  --offline  No credentials or network\n  --light / --high-contrast  Explicit window appearance (default: dark)\n  --export DIRECTORY  Offline chat GPU PNG evidence; no network\n  --export-desktop DIRECTORY  Synthetic settings/admin GPU matrix (all themes/widths); no network\n  --observe-offline  Synthetic live window capture, 15s normal exit (requires feature observe)\nUse the existing app to start/configure the daemon. Sending can incur inference charges."
+                    "Medousa (rndr)\n  --data-dir PATH [--daemon http://127.0.0.1:9777] [--session ID]\n  --offline  No credentials or network\n  --light / --high-contrast  Explicit window appearance (default: dark)\n  --export DIRECTORY  Offline chat GPU PNG evidence; no network\n  --export-notes DIRECTORY  Synthetic Notes GPU matrix (all themes/widths); no network\n  --export-desktop DIRECTORY  Synthetic settings/admin GPU matrix (all themes/widths); no network\n  --observe-offline  Synthetic live window capture, 15s normal exit (requires feature observe)\nUse the existing app to start/configure the daemon. Sending can incur inference charges."
                 );
                 return Ok(());
             }
@@ -163,7 +175,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if observe_offline {
         return Err("--observe-offline requires --features observe".into());
     }
-    if let Some(dir) = desktop_export {
+    if let Some(dir) = notes_export {
+        desktop_fixtures::export_notes(&mut app, dir)?;
+    } else if let Some(dir) = desktop_export {
         desktop_fixtures::export(&mut app, dir)?;
     } else if let Some(dir) = export {
         fixtures::export(&mut app, dir)?;
