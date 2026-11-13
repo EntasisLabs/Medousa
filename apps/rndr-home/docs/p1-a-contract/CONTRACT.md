@@ -10,7 +10,21 @@ app-private shapes, not existing SDK/protocol APIs or permission to expand scope
 
 ## 1. Binding, scope and verified existing contracts
 
-- Narrow rereview-correction entry: clean `50fd60ae7ed5d097b77fbe49e325656077332102`,
+- Current acceptance-mechanism correction entry: clean
+  `1863288c18288db650c0197b2eeaa3642010a876`, parent
+  `50fd60ae7ed5d097b77fbe49e325656077332102`; sole parent diff CONTRACT 215+/48-,
+  690 lines, SHA-256 `545f65696198aa45ab2f79fb13306a10edbb1eb9ebd9c6e652f06525cecab550`.
+  Recovered the FULL principal architect reconciliation, same architect session
+  below, turn8: 16,595 characters, digest
+  `sha256:61a425675c97c0a83a0a51f2b89d8988662272dbce726a2836de36eba960d74a`,
+  digest-fenced pagination through end. Assignment
+  `peer_assignment_d8f52adf0a2f15394a3c4a4089c0afe3577e5d0a60c9b4f48efc282f1d85c4a1`,
+  receipt `peer_terminal_946ff88aecb048f8b13d3db4c3f22dd63e371ae5a821bb11ff284fad5c2cb92b`.
+  It reconciles C's complete 15,132-character turn3 report in the C session below:
+  architect concurs with C, preserves A–D/finite retirement, and selects explicit
+  controller-issued activation/settlement, NOT speculative destination follow.
+  Sender accepted that reconciliation DELIVERABLE, not this contract or freeze.
+- Prior A–D rereview-correction entry: clean `50fd60ae7ed5d097b77fbe49e325656077332102`,
   parent `9960e0d89ec00acaf61a397485e29d48d3a54219`; input CONTRACT was 523 lines,
   SHA-256 `a7e95f826ef453497ed4173696a3fb87f4d409b62bddd3755476a25789788965`.
   Both completed rereviews were read IN FULL: architect session
@@ -50,6 +64,14 @@ only `limit: usize`; shared SessionHistoryListResponse has sessions/next_cursor.
 Summary IDs, optional display_name, last_timestamp and turns suffice. Cursor output
 is NOT an admitted cursor input. No raw HTTP, new endpoint, arbitrary-ID UI,
 history_page substitution, limit-growth pseudo-pagination or SDK edit.
+
+Current worker behavior is specifically NOT proof of controller acceptance:
+`backend.rs:297–308,370–395` aborts old follow on navigation receipt and emits
+History then reads mode/starts follow without controller feedback. Its `177–207`
+uses raw terminality for settlement and a subsequent mode read. `lib.rs:78–84`
+returns unit after validation; `controller.rs:77–85` separately tests terminality.
+Sections 6.1–6.3 propose replacing these acceptance edges with app-private controls,
+not new daemon/SDK APIs. None of those changes exists in this docs pass.
 
 Historical preparation references remain PREPARATION_CLOSURE.md, TEAM_PREPARATION.md,
 INDEPENDENT_REVIEW_0_6_0.md and the original review-prep correctness/UX REPORT.md
@@ -418,36 +440,123 @@ assertion that existing code or the prior global rule already permits it.
 | State / owner | Lifetime and allowed outcomes |
 |---|---|
 | pending_ui_operation | Navigation{op,generation,from,target,purpose,reservation}, List{op,generation}, or Mode{op,generation,session,mode_owner}; loading iff Some. Allocate only from None; no draft clone/overwrite. Own typed completion, commit-refusal cleanup or Unavailable releases it, never unrelated result. |
-| projection/follow owner | {op,generation,session,phase: Following / AwaitingSettlement / Settled} for committed navigation/accepted Send; survives clearing loading OR pending admission. Do not orphan mode/follow/history replies when those pointers disappear. New accepted navigation/Send replaces it, not arbitrary notices. |
+| projection/follow owner | ProjectionId{generation,operation,session}, exact expected active turn/stream descriptor or None, phase Following / AwaitingSettlement / Settled / FatalHold / Unresolved; at most one accepted-terminal identity and settlement decision. Committed idle History is Settled; accepted active History/Admitted is Following. Survives clearing loading/admission pointer, not retirement/replacement. Unresolved is a nonbusy transport hold requiring explicit Reload, never Send permission. FatalHold is the accepted fatal stop below, not AwaitingSettlement. |
 | mode owner / watermark | Independent per active projection metadata authority. Follow mode read captures watermark at launch. Explicit SetMode advances owner before dispatch and supersedes earlier follow mode metadata, even if it arrives later. No global max-op rejection of valid stream/settlement. Matching Mode success or ModeFailure ends only its own pending Mode operation; older follow mode never clears it. Failure keeps last known mode marked honest, never rolls watermark backward. |
 | pending admission | Per Stable ID {RecoveryId,generation,send_op}; only matching Admitted or explicit Restore removes its referenced entry. Reload keeps pointer and entry; later deliberate accepted Send can supersede pointer, NOT delete old recovery. |
 | recovery / creation outcome / reservations | Memory ledgers separate from loading; recovery lifetime is not history lifetime. Outcome survives typed failure as section 3. Reservation ends on commit/failure/disconnect; release never deletes text. |
+
+#### Required app-private controls and bounded worker context
+
+- `ProjectionId { generation, operation, session }` is the exact committed
+  navigation or accepted Send owner; checked operations never wrap/reuse.
+- `ActivateProjection { owner, mode_watermark, active: None | { turn_id, stream_path } }`
+  permits projection mode read and, only when active, existing SDK follow. Descriptor
+  is from THAT accepted History/Admitted, never an older cached active snapshot.
+- `RevokeProjection { owner }` retires only the exact local worker owner. It is
+  distinct from remote `Cancel`; stopping observation proves neither cancellation
+  nor non-admission.
+- `ReconcileTerminal { owner, turn_id, terminal_seq }` permits exactly one existing
+  bounded settlement operation, only after actual accepted nonfatal terminal.
+- `StreamApplyResult = Rejected | AcceptedNonterminal | AcceptedTerminal { turn_id,
+  seq, outcome }` MUST be returned by Chat's single validation/application path.
+  A second dry run, optional helper or separate raw is_terminal test is insufficient.
+
+Dispatcher services controls independently of network reads using owned cancellable
+I/O tasks and tagged completions; never await controller acknowledgement or block
+its command loop in history/mode/follow/settlement I/O. Read/create/list operations
+end after emitting correlated result/failure, retaining no rejected History payload.
+Bound command I/O to current authorized pending operation/admission; no unbounded
+per-reply tasks, task archive or retained inactive payloads. Controls retain controller
+enqueue order on the app-local route; closure terminates that worker context rather
+than replaying queued permission into a replacement worker.
+Keep at most one active projection task group: exact owner/active descriptor,
+activation-consumed state and settlement-consumed state. An activation-only checked
+operation high-water mark suppresses duplicate/retired activation replay, including
+activation queued before retirement is serviced. Ordered activation then exact
+revocation cannot later restart that owner; disconnect/shutdown closes its context.
+This is NOT a global reply maximum:
+newer List/explicit Mode operations do not invalidate valid stream/settlement.
+Wrong-owner Revoke/Reconcile controls are inert and cannot replace/cancel current
+work. Only a valid fresh higher-operation Activate may replace the worker owner;
+retired/duplicate Activate is inert, not a new permission.
+
+Controller retirement/replacement, generation-changing local navigation, disconnect
+and shutdown revoke exact old owner; worker aborts owned mode/follow/settlement
+work and drops late task results. A newer accepted activation replaces old work;
+retired/duplicate activation never restarts it. Already-launched I/O may finish
+before revoke is serviced, so controller also fences EVERY late result; no claim
+of instantaneous remote cancellation. New/Open dispatch can retire the old generation
+without erasing source text/history or granting destination authority. Failed
+navigation never resurrects old follow; a deliberate fresh read is required.
+List, explicit Mode, catalog updates and pending-admission removal do not revoke
+projection. Worker/feed/control closure ends tasks with no activation/reconciliation
+replay: preserve drafts/recovery/creation outcomes, release only affected pending
+reservation/loading, mark affected execution uncertain and keep honest failed context
+for explicit Reload. Local lifecycle controls do not allocate/steal pending UI ops.
 
 ### 6.2 Exhaustive reply routing / terminal effects
 
 | Reply class | Acceptance and effect / what it cannot finish |
 |---|---|
 | CreationOutcome, standalone or attached to creation History/NavigationFailure | Section3.2 exact live token/create_op/dispatch generation/New key only; narrow stale-generation outcome exception. Retain known ID despite lost pending/current selection. Retired or newer token: no effect. Cannot navigate, release pending, mutate editor/projection or enable Send. |
-| History for pending navigation (Open/New/Recent/CreatedRetry/Reload/startup) | First extract any separately authorized creation receipt, then require current generation/exact pending op/source/target, collision/outcome/capacity/editor safety. Success installs projection owner before clearing own Navigation. Composition-refused ownership commit FAILS as section6.3, releases own loading/reservation, never defers. No recovery retirement. |
-| SettledHistory | Exact selected session, projection/follow op+generation, phase AwaitingSettlement only. Consume once -> Settled, update canonical active history/chat projection, clear selected uncertainty after valid idle reconciliation; NEVER Prompt reset or unrelated loading clear. Duplicate, wrong-phase and old settlement ignored. |
-| Mode | Either exact pending explicit Mode owner success (finish that Mode only), or exact projection/follow metadata op/session plus unchanged mode watermark; latter does not finish any pending UI operation. Late older metadata cannot overwrite later explicit SetMode. |
+| History for pending navigation (Open/New/Recent/CreatedRetry/Reload/startup) | Receipt FIRST, then current generation/exact pending op/source/target, collision/outcome/capacity/editor/native safety. Synchronous successful commit installs owner/expected active descriptor before clearing OWN Navigation/reservation; only THEN issue ActivateProjection with current mode watermark. Refused commit FAILS, never defers/activates. History emission itself grants no mode/follow authority or recovery retirement. |
+| SettledHistory / SettlementFailure | Exact selected session/generation/ProjectionId AND accepted terminal turn_id/terminal_seq, AwaitingSettlement only, with matching dispatched reconciliation. Success consumes once -> Settled and updates canonical history; only valid idle reconciliation clears selected uncertainty. Exhaustion/error consumes result opportunity -> Unresolved, keeps uncertainty/live text, no automatic retry. NEVER Prompt reset or unrelated loading/recovery clear. Duplicates, wrong identity/phase and late results are inert. |
+| Mode | Either exact pending explicit Mode owner success (finish that Mode only), or exact unrevoked projection metadata owner/session plus unchanged mode watermark; latter does not finish any pending UI operation. Late older metadata cannot overwrite later explicit SetMode. |
 | ModeFailure | New typed matching mode failure finishes its OWN Mode only; follow metadata failure affects scoped metadata/status only, not navigation/history rollback or busy settlement. Generic Notice is not mode completion. |
 | SessionsListed / SessionsListFailed | Exact pending List op, generation, session=None; replace rows/revision on success, preserve last good rows on typed failure; finish that List only. |
 | RecentEmpty / NavigationFailure{created_id?,creation_outcome?} | First demultiplex exact creation receipt under section3.2, EVEN without pending context; known ID survives SDK error/exhaustion/pending loss. Navigation cleanup separately requires exact current pending op/generation: release OWN reservation/loading, preserve source editor/history/mode/live. No-ID dispatched create -> Unknown only from matching Creating/Unknown, NEVER downgrades KnownCreated. Non-create Open failure never calls Chat.fail on idle source. |
-| Admitted | Exact selected send session/generation/op AND pending admission ID; update admitted turn, retire only matching entry/pointer once. No editor reset or loading clear. Wrong/stale/duplicate or restored pointer cannot remove another entry. |
-| Stream | Exact projection/follow owner plus Chat turn and increasing sequence/busy validation BEFORE terminal side effects. Only ACCEPTED terminal transitions phase AwaitingSettlement, marks uncertainty and requests/accepts existing bounded reconciliation. `event.is_terminal()` alone is never authority. Wrong turn, duplicate/out-of-order or already-terminal event changes nothing. |
-| send/follow Failure | Exact pending send or active follow owner, scoped to that session/phase; mark failure/uncertainty, retain recovery, no unrelated pending UI clear. Settlement read exhaustion stays uncertain; no inference replay. |
+| Admitted | Exact selected send session/generation/op AND pending admission ID; install expected admitted turn/stream descriptor and projection owner, retire only matching recovery entry/pointer once, THEN ActivateProjection. No editor reset/loading clear. Worker emits admission but cannot follow before this acceptance. Rejected/stale/duplicate/restored-pointer result neither follows nor retires other recovery; remote execution may nevertheless exist, never automatic resubmit. |
+| Stream | Exact selected session/generation/ProjectionId and Following phase, THEN actual Chat.apply validation/application result below. Rejected has zero mutation/terminal effects/settlement. AcceptedNonterminal applies once only. AcceptedTerminal alone records identity, phase, uncertainty/status and settlement decision; no raw is_terminal authority. |
+| send/follow Failure or scoped EOF | Exact pending send or active ProjectionId/session/generation and applicable phase. Following transport failure/EOF -> nonbusy Unresolved/uncertain, live text/recovery retained; NOT accepted terminal or settlement. Once terminal phase advances, late follow error/EOF cannot override it. No unrelated pending clear or inference replay. |
 | Notice / cancel acknowledgement | Valid existing generation and applicable contextual owner for scoped status; informational bootstrap None cannot finish command. Not settlement, admission, uncertainty clear, mode completion or arbitrary loading clear. |
 | Models / Modes | Existing stale-generation catalog exceptions only; replace catalog, not session/projection/uncertainty/recovery or pending loading. Captured catalog actions must still validate. |
 | Unavailable | Existing global stale-generation exception: disconnect, busy/loading false, release pending navigation reservation, preserve editor/history/recovery/pending admission. KnownCreated/Unknown remain; dispatched Creating with no known ID becomes Unknown under its same token (never silently resolved). Mark affected selected in-flight execution uncertain, retain honest failed follow context for explicit reconciliation; no fabricated admission or successful settlement. |
 
 All Update variants must be classified by this table; new typed variants include
 SessionsListed, SessionsListFailed, RecentEmpty, NavigationFailure, ModeFailure and
-the proposed app-local CreationOutcome receipt/envelope (section3.2 exception).
-Adapter may need an app-local accepted-event result/helper around Chat validation:
-Chat.apply currently returns unit, so controller cannot safely infer acceptance
-from event.is_terminal. Architect must serialize this acceptance contract without
-weakening existing turn/sequence checks or claiming the current code already fixes it.
+the proposed app-local CreationOutcome receipt/envelope (section3.2 exception),
+SettlementFailure, scoped EOF and owner-scoped activation/control failure outcomes.
+The latter never masquerade as navigation failure after commit or accepted terminal.
+All stream replies carry ProjectionId; settlement success/failure additionally
+carries accepted turn/terminal sequence. Activated Mode replies carry owner and
+launch watermark. Scoped activation/control failures require exact owner and phase;
+post-commit activation failure is section6.3, never NavigationFailure/rollback.
+No new stale-generation exception is granted for any control/stream/failure.
+
+After controller session/generation/owner/Following checks, actual Chat.apply MUST
+return Rejected without mutation for !busy, wrong turn or nonincreasing sequence.
+Otherwise it applies ONCE and returns AcceptedNonterminal or AcceptedTerminal with
+accepted identity/outcome. Only AcceptedTerminal permits terminal status/uncertainty/
+phase effects. Atomically record that identity, mirror uncertainty and consume the
+one settlement-dispatch opportunity. Nonfatal Following -> AwaitingSettlement emits
+exactly one ReconcileTerminal; there is no automatic retry on dispatch failure.
+Wrong-owner/turn/sequence/generation, duplicate or terminal-after-idle yields zero
+phase/status/uncertainty effects and zero settlement requests.
+
+Worker MUST NOT call settled_history or stop an otherwise valid follow merely on
+raw/rejected terminality. Follow ends on accepted-terminal control, exact revocation
+or genuine transport completion/failure. ReconcileTerminal is honored once for exact
+active owner AND active turn, stops its follow and invokes existing bounded reader
+(three attempts, existing delays/filtering/non-atomic notices retained). No new
+admission/inference. Duplicate controls do nothing; matching result consumes once.
+Control enqueue/closure/exhaustion/failure retains uncertainty/live text with honest
+Unresolved status, no automatic second reader. No unrelated loading/owner is cleared.
+
+Accepted Fatal instead consumes terminal decision into FatalHold (not awaiting a
+reader), sets busy=false/uncertainty and preserves live text/history/recovery. Send
+remains blocked; explicit Reload is required with inspect/copy warning. Issue exact
+RevokeProjection to stop that worker group, NOT remote Cancel or ReconcileTerminal;
+Controller retains FatalHold identity/terminal decision but retires worker authority,
+so all later worker mode/follow/settlement outputs are fenced, not merely Stream.
+If revoke cannot enqueue, FatalHold still fences them and worker closure stops tasks. Duplicates cannot upgrade this hold to settlement.
+This is the architect's fatal-hold policy expressed as a phase/stop proposal for
+rereview, not a new automatic fatal recovery decision.
+
+Remove existing automatic post-settlement mode read. Only committed-projection
+activation and explicit SetMode read/change mode here; any future refresh needs
+separate reviewed correlation. Explicit SetMode advances watermark BEFORE dispatch;
+older activated metadata cannot overwrite it or finish its pending Mode. Never use
+a global maximum to reject independently valid follow/settlement.
 
 ### 6.3 Transactional navigation and uncertainty authority
 
@@ -482,22 +591,48 @@ composition may begin after dispatch, hence reply safety is independently requir
 Reload has no ownership/editor replacement and preserves native composition; it
 must not smuggle a reset through projection installation.
 
-Destination Mode/Stream/terminal/settlement outputs bundled with or following an
-UNCOMMITTED History have no accepted projection owner and are suppressed (including
-mode follow metadata); cannot mutate source or set uncertainty/loading on it.
-Backend must not install/start accepted follow authority before commit; if it has
-already queued destination outputs, routing rejects them. A later deliberate Open
-gets fresh history AND fresh follow correlation/watermark; no stale active snapshot
-or metadata replay. The only surviving portion may be B's exact creation receipt.
+**Chosen non-speculative History -> activation edge:** navigation worker does ONLY
+existing bounded read/create/list work, emits correlated History/typed failure and
+ENDS that read operation. It neither reads destination mode nor starts destination
+follow, and never waits for acceptance acknowledgement. Apply uniformly to New,
+Open, Recent, CreatedRetry, Reload and connected startup. Sending History is NOT
+acceptance; rejected History yields NO activation or waiting worker.
+
+Controller first demultiplexes exact receipt, validates current generation/pending
+operation/source/target/reservation/collision/native safety, then commits the complete
+transaction synchronously: install ProjectionId and expected active turn, mirror
+uncertainty, release ONLY own Navigation/loading/reservation. Only after this commit
+enqueue ActivateProjection with exact accepted descriptor and CURRENT mode watermark.
+No await/shell/observer-visible half-transfer. Idle History activates metadata only;
+active descriptor authorizes existing SDK follow. Reload uses same activation edge
+without editor reset or recovery/pending-admission retirement. Send likewise emits
+Admitted with exact descriptor, but only accepted controller admission activates
+follow; remote admission and local follow permission remain distinct.
+
+Refusal has no activation, map take/reset or destination authority. Defensive
+routing also rejects any uncommitted destination Mode/Stream/terminal/settlement;
+only B's exact creation receipt may survive. Deliberate later Open/Retry gets fresh
+operation/History/descriptor/watermark, never cached History or replayed New.
+
+Activation enqueue failure AFTER commit is post-commit transport failure: retain
+COMMITTED owner/editor/text/history/identity and recovery, not source rollback.
+Mark follow/metadata unavailable, affected active execution nonbusy but uncertain
+(Unresolved), blocking Send pending explicit Reload. No recreate/resend/rollback
+or Send escape. This differs from pre-commit dispatch refusal/WorkerClosed in
+section5. Exact retirement/revocation follows section6.1; failed navigation cannot
+resurrect retired old-generation follow.
 
 `uncertain_sessions` is authoritative per stable ID; active chat.uncertain MUST
 mirror selected membership after EVERY relevant Chat replacement/resume/apply/fail.
 History(no active) or valid AwaitingSettlement -> Settled clears selected membership;
 History(active) inserts/preserves membership through Chat.resume (which currently
-clears its local bool), busy=true and follow owner installed. This intentionally
+clears its local bool), busy=true and expected owner installed; follow START still
+requires explicit activation. Post-commit activation failure becomes nonbusy
+Unresolved without clearing membership. This intentionally
 keeps reattached execution uncertain until durable settlement; busy also blocks
-Send. Matching admission does not itself reconcile uncertainty. Accepted terminal
-sets membership until settled read; failed bounded settlement retains it. Local
+Send. Matching admission does not itself reconcile uncertainty. Accepted nonfatal
+terminal sets membership until valid settled read; FatalHold and failed bounded settlement
+retain it and live text, with no automatic read/retry. Local
 retrieval sets it. List, Notice, Mode, Cancel ack, Restore, catalog or mere enqueue
 never clears it. Do not clear a different session's uncertainty on selection.
 
@@ -527,6 +662,9 @@ or rendered private message projection/status; no inactive snapshots (including
 identity-bearing empty ones), recovery entries/maps or pending admission; no
 uncertain IDs; no KnownCreated/Unknown/Creating outcome or retry/created ID metadata;
 no session-bearing pending UI/projection/follow/mode-owner context or reservation;
+no identity-bearing ActivateProjection/RevokeProjection/ReconcileTerminal controls,
+queued envelopes, exact active turn/stream descriptors, accepted-terminal tokens,
+settlement decisions, worker task/completion context or retired-owner metadata;
 no retained keys/rows/revisions with private metadata, no remote list IDs/rows/error
 payload metadata; no other private identity/text in shell/menus/handles/events.
 Catalog/theme data may remain only as explicitly audited synthetic fixture values,
@@ -558,7 +696,7 @@ and SDK test transport conventions only, no live daemon/provider/credentials.
 | Creation | SDK create succeeds/history SDK error and bounded-history exhaustion retain ID. New(D)->S failure->ordinary Open S rejected with Retry->type E->Retry preserves ownership/no selected-map entry. Both live and inactive Stable collisions, inactive-origin retry after navigation, repeated retry, abandon with retained text, Unknown acknowledgement then only later separately captured New; no hidden replay/deletion claim. |
 | Capture matrix | For EVERY section5 row: capture eligible/ineligible then reply switches owner, New->Stable unchanged text, changes pending op, idle/busy/uncertain, catalog/list/retained revision, recovery ID or creation token. No revival/retargeting. Intent multiplicity/order retained; native submissions separately appended, no global FIFO/Enter-time assertion. Reply-before-actions preserved. New/Open before Send blocks Send; Restore invalidates later captured Send. |
 | Replies/lifetimes | Each section6 class: old generation, wrong op/session, duplicate/phase. Existing Models/Modes/Unavailable exceptions PLUS narrowly scoped B creation-outcome-only exception; all navigation remains fenced. Explicit Mode success AND typed failure finish own Mode; late follow Mode after newer SetMode cannot overwrite; stream/settlement still accepted under older independent projection owner. Clear loading/admission pointer then valid follow outputs still route. |
-| Terminal/settlement | Wrong-turn terminal, duplicate/nonincreasing seq, terminal after idle do NOTHING; accepted terminal marks AwaitingSettlement exactly once. SettledHistory only matching selected awaiting owner consumes once, never Prompt reset or unrelated List/Mode loading clear. Notice/cancel/catalog never settles; bounded read failure retains uncertainty; execution-owned assistant filtering remains. |
+| Terminal/settlement | Wrong-turn terminal, duplicate/nonincreasing seq, terminal after idle do NOTHING; accepted nonfatal terminal marks AwaitingSettlement exactly once; accepted fatal enters FatalHold with no settlement. SettledHistory only matching selected awaiting owner consumes once, never Prompt reset or unrelated List/Mode loading clear. Notice/cancel/catalog never settles; bounded read failure retains uncertainty; execution-owned assistant filtering remains. |
 | Recovery/uncertainty | Fail admission -> newer draft -> Reload idle keeps recovery/pending, no editor change; Reload active mirrors ledger through resume and blocks Send until settlement. Later deliberate Send supersedes pointer not recovery; old admitted generation rejected, matching admitted retires own ID only. Restore exact move offline/uncertain; nonempty draft refusal; no command or admission inference. |
 | Startup/offline | Connected --session actual pending startup context accepts only matching History and fails to intact New. No worker remote actions zero enqueue/state movement; closed worker preserves drafts/recovery/outcome and releases reservation, no automatic reconnect/resubmit. |
 | Privacy isolated | Every section7 state alone Deny, default/missing state Deny; explicitly opted-in empty audited fixture only Public. Gate and registered cases precede first new state under observe. No actual capture/private data needed. |
@@ -596,12 +734,44 @@ P2/P4 480pt/real-trigger popup evidence and P3 physical input remain deferred.
 Keyboard/IME/clipboard/accessibility/compositor, huge messages, live daemon/provider
 and full parity remain unverified. No test count or physical certification implied.
 
+Additional architect/C acceptance-edge assertions — ALL UNEXECUTED:
+
+- Every New/Open/Recent/CreatedRetry/Reload/startup read emits no destination mode/
+  follow before accepted activation; delayed/stale/refused History starts none and
+  leaves no acknowledgement waiter. Exact descriptor from accepted result only.
+- Composition/collision refusal preserves source native composition/text/caret/
+  scroll/identity/history and exact target/origin snapshots, releases only own
+  pending/reservation, retains receipt-first KnownCreated; no cache/create replay.
+- Successful commit then activation enqueue failure preserves committed text/identity/
+  history/recovery and honest unresolved state; no rollback/resend/Send escape.
+- Duplicate activation/revoke, retired activation replay, wrong-owner controls,
+  local navigation, disconnect at EACH edge, shutdown and late task outputs never
+  revive owners. Activation-only high-water never invalidates stream/settlement on
+  newer List/Mode; unrelated List/Mode and admission-pointer removal do not kill work.
+- Accepted vs rejected Admitted gates follow independently of remote admission and
+  retires exact recovery only; stale remote execution is not non-admission proof.
+- Actual single Chat.apply returns Rejected for wrong turn/owner/generation/phase,
+  nonincreasing/duplicate/idle terminal: no effects and ZERO settlement calls.
+  Accepted nonfatal gives ONE command/ONE bounded reader; raw terminality gives none.
+  Rejected candidate alone cannot stop follow; genuine EOF is scoped transport only.
+- Fatal -> FatalHold/nonbusy/uncertain plus exact local revoke, zero reconciliation,
+  no live-text erasure; late EOF/error/duplicate cannot change terminal decision.
+- Settlement controls/results duplicate, wrong terminal identity, exhaustion,
+  activation/control channel closure and late success after replacement never clear
+  unrelated uncertainty/loading; no automatic reader retry or post-settlement mode
+  read. Explicit SetMode watermark races remain fenced independently of projection.
+- EACH new control envelope, stream descriptor, terminal token and worker/completion/
+  retirement context independently forces Deny before observation, all else empty.
+  Unknown private native state stays Deny; no intermediate Public frame.
+
 ## 9. Dependency / ownership sequence — no dispatch authorization
 
 First sender must separately authorize the smallest pinned-source read-only
 composition investigation in section4; if unresolved, hold affected runtime work.
 This contract itself authorizes no such external access. After original principal
-architect + independent C rereview of A–D AND sender checkpoint:
+architect + independent C rereview of the exact corrected binding (A–D PLUS explicit
+activation, revocation, Chat result, terminal/fatal/settlement lifecycle) AND sender
+checkpoint; this document launches no reviewer/worker:
 
 1. Architect serializes/finalizes Model/Ui/Handles/action/backend/acceptance-result
    shapes, defaults, operation/phase/mode-watermark contracts and test registration
@@ -615,7 +785,9 @@ architect + independent C rereview of A–D AND sender checkpoint:
 4. A implements reviewed transitions/ledgers/capacity/typed backend routes and
    packet-local tests against serialized shapes, not competing editor ownership.
 5. Architect wires startup --session, schedule/capture ordering, initialization,
-   active accepted-stream helper and shared regression/module registration.
+   required single Chat.apply result, explicit post-commit/post-admission controls,
+   independently serviced cancellable worker context and shared regression/module
+   registration; no raw terminal-triggered settlement or post-settlement mode read.
 6. Subsequent B/C UI composition exposes BOTH recent50 and retained local/remote
    paths, unsent/retry/acknowledgement, selected-only recovery and honest errors.
    UI projection move/restore stays synchronous and does not write ownership.
@@ -641,6 +813,7 @@ Sender retains orchestration, reviews, terminal callback and native integration.
 | architect rereview B + C interruption | 3.2/6 exact single-slot receipt protocol, explicit outcome-only stale-generation proposal, known ID independent of pending, disclosed acknowledgement retirement/late-known tradeoff, no navigation authority. |
 | architect rereview C + C composition lifecycle | 4/6.3 FAIL without transfer, own reservation/loading cleanup, source preservation, no uncommitted follow leakage/cache replay; KnownCreated Retry-Open only. Detector remains BLOCKED. |
 | architect rereview D | 2.3/5 selected-key retained-local strict NO-OP; Restore separate/nonempty refusal. |
+| architect turn8 + C acceptance-edge reconciliation | 1 exact input/full report recovery; 6.1 control/result/descriptor shapes and bounded lifecycle; 6.2 actual Chat result gates once-only nonfatal settlement/fatal hold; 6.3 non-speculative post-commit/post-admission activation and failure; 7/8 early Deny and unexecuted assertions; 9 exact rereview/checkpoint. |
 | both rereviews assertions/dependency boundary | 4 narrow pinned-source investigation recommendation only; 8 additional unexecuted assertions; 7 unknown native state stays Deny; 9 no dispatch authority. |
 
 Proposed core preserved: transactional history commit for remote navigation; one
@@ -662,9 +835,12 @@ New local retained retrieval is explicitly unreconciled (not history success).
    under verified app APIs (section4). No detector/framework API is invented and no
    runtime promise of safe ownership transfer can bypass it. Verify existing input
    contracts in later authorized pass or explicitly hold implementation blocked.
-4. Architect must serialize accepted-stream validation result/helper, pending UI vs
-   follow phases, independent mode watermark and typed ModeFailure/creation outcomes;
-   startup --session needs actual pending context. No global max-op filtering.
+4. Architect must serialize required single Chat.apply result, ProjectionId,
+   Activate/Revoke/Reconcile controls, exact descriptor/terminal tokens, independent
+   mode watermark, bounded task lifecycle and typed outcomes in section6. Current
+   backend behavior does NOT supply acceptance. Rereview FatalHold/exact local stop
+   and Unresolved failure phases explicitly; no automatic fatal settlement choice.
+   Startup --session needs actual pending context; no global max-op filtering.
 5. Explicitly approve/revise A–D DESIGN PROPOSALS, especially B's outcome-only
    stale-generation exception and finite receipt-retirement disclosure (late known
    IDs intentionally ignored AFTER exact acknowledgement/abandon), C's fail-not-defer
@@ -674,7 +850,8 @@ New local retained retrieval is explicitly unreconciled (not history success).
 6. Architect + D must audit ALL private state including native composition and
    session-only metadata; absence of a safe query stays Deny. Early isolated gate
    cases and registration are a prerequisite, not deferred visual qualification.
-7. Revised contract MUST return through principal architect + independent C and
+7. This exact corrected contract MUST return through ORIGINAL principal architect
+   + independent C rereview (including selected acceptance mechanism), then
    sender checkpoint before implementation dispatch. Sender specifies refreshed
    exact base and serialized owners/test registration. Report acceptance != freeze.
    Existing docs-verifier discrepancy/physical certification remain outside this pass.
