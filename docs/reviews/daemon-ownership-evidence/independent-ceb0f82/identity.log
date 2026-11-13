@@ -1,0 +1,7 @@
+
+running 2 tests
+test agent_runtime::runtime::ownership_tests::compatibility_handle_is_the_same_runtime_not_another_authority ... ok
+test agent_runtime::runtime::ownership_tests::terminal_event_compatibility_name_is_the_shared_contract ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2200 filtered out; finished in 0.00s
+

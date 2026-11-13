@@ -1,0 +1,9 @@
+
+running 4 tests
+test runtime::event_delivery::tests::cancelled_construction_drops_its_drain ... ok
+test runtime::event_delivery::tests::failed_construction_does_not_detach_drain ... ok
+test runtime::event_delivery::tests::owner_drop_stops_drain_with_live_producer ... ok
+test runtime::event_delivery::tests::producer_completion_finishes_drain_naturally ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2198 filtered out; finished in 0.00s
+

@@ -1,0 +1,8 @@
+PASS current full package/version/features inventory daemon 730
+PASS current full package/version/features inventory embedded 624
+PASS current full package/version/features inventory tui 955
+PASS current full package/version/features inventory extended 917
+PASS current full package/version/features inventory iroh 830
+PASS all source fingerprints bound to exact candidate Git; 185 historical files bound to parent and unchanged; reviewer docs/evidence preserved; source-free prior reviewer commits; archived old native/Iroh/TUI trees match independent prior capture
+PASS source patch equals exact parent-to-candidate implementation delta; lockfile unchanged
+PASS earlier qualified ownership/packaging source unchanged from 9026f46d through candidate parent

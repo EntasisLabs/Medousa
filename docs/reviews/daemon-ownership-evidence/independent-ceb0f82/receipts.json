@@ -1,0 +1,691 @@
+[
+  {
+    "label": "provenance",
+    "command": [
+      "sh",
+      "-c",
+      "git rev-parse HEAD; git status --short; rustc -Vv; df -k ."
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566456832,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11566456832
+      },
+      {
+        "elapsed_seconds": 2.006,
+        "free_bytes": 11566485504
+      }
+    ],
+    "seconds": 2.006,
+    "summaries": []
+  },
+  {
+    "label": "slim",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_lsp_bridge::slim_tests::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566469120,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11566477312
+      },
+      {
+        "elapsed_seconds": 2.015,
+        "free_bytes": 11566469120
+      }
+    ],
+    "seconds": 2.015,
+    "summaries": [
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2200 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "symlink",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "runtime::platform::lifetime_tests::fixture_root_resolves_symlink_ancestor_and_retains_owner",
+      "--test-threads=1",
+      "--exact"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566465024,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11566465024
+      },
+      {
+        "elapsed_seconds": 2.01,
+        "free_bytes": 11566477312
+      }
+    ],
+    "seconds": 2.011,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "drain",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "runtime::event_delivery::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566473216,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11566473216
+      },
+      {
+        "elapsed_seconds": 2.007,
+        "free_bytes": 11566477312
+      }
+    ],
+    "seconds": 2.008,
+    "summaries": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2198 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "identity",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "ownership_tests::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566432256,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11566473216
+      },
+      {
+        "elapsed_seconds": 2.014,
+        "free_bytes": 11566432256
+      }
+    ],
+    "seconds": 2.014,
+    "summaries": [
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2200 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "settings",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "runtime::settings::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566379008,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11566428160
+      },
+      {
+        "elapsed_seconds": 2.015,
+        "free_bytes": 11566379008
+      }
+    ],
+    "seconds": 2.015,
+    "summaries": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2197 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "contracts",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "tool_contract_baseline::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566280704,
+    "samples": [
+      {
+        "elapsed_seconds": 0.006,
+        "free_bytes": 11566366720
+      },
+      {
+        "elapsed_seconds": 2.016,
+        "free_bytes": 11566280704
+      }
+    ],
+    "seconds": 2.016,
+    "summaries": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2198 filtered out; finished in 0.06s"
+    ]
+  },
+  {
+    "label": "spine",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "agent_runtime::spine_byte_parity::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566059520,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11566276608
+      },
+      {
+        "elapsed_seconds": 2.015,
+        "free_bytes": 11566059520
+      }
+    ],
+    "seconds": 2.015,
+    "summaries": [
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 2195 filtered out; finished in 0.03s"
+    ]
+  },
+  {
+    "label": "catalog",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_host_catalog::tests::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566051328,
+    "samples": [
+      {
+        "elapsed_seconds": 0.006,
+        "free_bytes": 11566051328
+      },
+      {
+        "elapsed_seconds": 2.007,
+        "free_bytes": 11566059520
+      }
+    ],
+    "seconds": 2.007,
+    "summaries": [
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2198 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "grapheme",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_runtime::tests::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11566051328,
+    "samples": [
+      {
+        "elapsed_seconds": 0.006,
+        "free_bytes": 11566051328
+      },
+      {
+        "elapsed_seconds": 2.013,
+        "free_bytes": 11566055424
+      }
+    ],
+    "seconds": 2.018,
+    "summaries": [
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 2191 filtered out; finished in 0.74s"
+    ]
+  },
+  {
+    "label": "shell-workflow",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_medousa_bridge::tests::workflow_shell_can_run_past_the_former_two_second_default",
+      "--test-threads=1",
+      "--exact"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565539328,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11566047232
+      },
+      {
+        "elapsed_seconds": 2.015,
+        "free_bytes": 11565539328
+      },
+      {
+        "elapsed_seconds": 4.019,
+        "free_bytes": 11565539328
+      }
+    ],
+    "seconds": 4.02,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 2.14s"
+    ]
+  },
+  {
+    "label": "worker-cancellation",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_medousa_bridge::tests::dropped_engine_future_cancels_its_blocking_worker_but_completion_does_not",
+      "--test-threads=1",
+      "--exact"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565469696,
+    "samples": [
+      {
+        "elapsed_seconds": 0.006,
+        "free_bytes": 11565522944
+      },
+      {
+        "elapsed_seconds": 2.016,
+        "free_bytes": 11565469696
+      }
+    ],
+    "seconds": 2.016,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "secret-dispatch",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_secret_bridge::tests::configured_grapheme_engine_dispatches_secrets_to_the_host_scope",
+      "--test-threads=1",
+      "--exact"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565375488,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11565461504
+      },
+      {
+        "elapsed_seconds": 2.015,
+        "free_bytes": 11565375488
+      }
+    ],
+    "seconds": 2.015,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "secret-workflow",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_secret_bridge::tests::workflow_engine_consumes_internal_token_and_hides_secret_state",
+      "--test-threads=1",
+      "--exact"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565367296,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11565367296
+      },
+      {
+        "elapsed_seconds": 2.009,
+        "free_bytes": 11565387776
+      }
+    ],
+    "seconds": 2.01,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "http-authority",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_secret_bridge::tests::authenticated_http_is_denied_before_network_for_unapproved_hosts",
+      "--test-threads=1",
+      "--exact"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565379584,
+    "samples": [
+      {
+        "elapsed_seconds": 0.006,
+        "free_bytes": 11565379584
+      },
+      {
+        "elapsed_seconds": 2.016,
+        "free_bytes": 11565387776
+      }
+    ],
+    "seconds": 2.017,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "http-engine-authority",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "grapheme_secret_bridge::tests::configured_engine_denies_unapproved_authorized_http_before_network",
+      "--test-threads=1",
+      "--exact"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565375488,
+    "samples": [
+      {
+        "elapsed_seconds": 0.007,
+        "free_bytes": 11565375488
+      },
+      {
+        "elapsed_seconds": 2.017,
+        "free_bytes": 11565379584
+      }
+    ],
+    "seconds": 2.017,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "recovery",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "engine_recovery::tests::recovery_replays_uncommitted_journal_and_marks_committed",
+      "--test-threads=1",
+      "--exact"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565371392,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11565371392
+      },
+      {
+        "elapsed_seconds": 2.015,
+        "free_bytes": 11565375488
+      }
+    ],
+    "seconds": 2.015,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.01s"
+    ]
+  },
+  {
+    "label": "boundary",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "daemon::request_boundary::tests::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565346816,
+    "samples": [
+      {
+        "elapsed_seconds": 0.006,
+        "free_bytes": 11565367296
+      },
+      {
+        "elapsed_seconds": 2.016,
+        "free_bytes": 11565346816
+      }
+    ],
+    "seconds": 2.016,
+    "summaries": [
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 2193 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "lifetime-0",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "runtime::platform::lifetime_tests::retained_agent_survives_final_platform_drop_without_observation_failure",
+      "--ignored",
+      "--exact",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565334528,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11565334528
+      },
+      {
+        "elapsed_seconds": 2.016,
+        "free_bytes": 11565363200
+      }
+    ],
+    "seconds": 2.016,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.06s"
+    ]
+  },
+  {
+    "label": "lifetime-1",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "runtime::platform::lifetime_tests::late_actual_constructor_failure_closes_observations_after_handler_registration",
+      "--ignored",
+      "--exact",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11565355008,
+    "samples": [
+      {
+        "elapsed_seconds": 0.007,
+        "free_bytes": 11565355008
+      },
+      {
+        "elapsed_seconds": 2.018,
+        "free_bytes": 11565363200
+      }
+    ],
+    "seconds": 2.018,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.05s"
+    ]
+  },
+  {
+    "label": "lifetime-2",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "runtime::platform::lifetime_tests::polled_actual_constructor_cancellation_closes_observations_after_handler_registration",
+      "--ignored",
+      "--exact",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11564294144,
+    "samples": [
+      {
+        "elapsed_seconds": 0.006,
+        "free_bytes": 11565350912
+      },
+      {
+        "elapsed_seconds": 2.007,
+        "free_bytes": 11564294144
+      }
+    ],
+    "seconds": 2.007,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.05s"
+    ]
+  },
+  {
+    "label": "route-policy",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "daemon::route_policy::tests::",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11564285952,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11564285952
+      },
+      {
+        "elapsed_seconds": 2.009,
+        "free_bytes": 11564285952
+      }
+    ],
+    "seconds": 2.009,
+    "summaries": [
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 2190 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "route-inventory",
+    "command": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/d491739d9134e650/out/medousa-d491739d9134e650",
+      "daemon::router::tests::workflow_and_grapheme_inventory_separates_execution_from_authoring",
+      "--exact",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11564224512,
+    "samples": [
+      {
+        "elapsed_seconds": 0.005,
+        "free_bytes": 11564277760
+      },
+      {
+        "elapsed_seconds": 2.015,
+        "free_bytes": 11564224512
+      }
+    ],
+    "seconds": 2.016,
+    "summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.00s"
+    ]
+  },
+  {
+    "label": "packaging",
+    "command": [
+      "python3",
+      "scripts/ci/test-daemon-packaging.py"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11564216320,
+    "samples": [
+      {
+        "elapsed_seconds": 0.002,
+        "free_bytes": 11564216320
+      },
+      {
+        "elapsed_seconds": 2.005,
+        "free_bytes": 11564412928
+      }
+    ],
+    "seconds": 2.006,
+    "summaries": []
+  },
+  {
+    "label": "graph-guard",
+    "command": [
+      "python3",
+      "scripts/ci/check-daemon-dependencies.py",
+      "--offline"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11564236800,
+    "samples": [
+      {
+        "elapsed_seconds": 0.002,
+        "free_bytes": 11564404736
+      },
+      {
+        "elapsed_seconds": 2.012,
+        "free_bytes": 11564412928
+      },
+      {
+        "elapsed_seconds": 4.022,
+        "free_bytes": 11564236800
+      }
+    ],
+    "seconds": 4.022,
+    "summaries": []
+  },
+  {
+    "label": "source-binding",
+    "command": [
+      "python3",
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/docs/reviews/daemon-ownership-evidence/slim-grapheme-2026-11-13/verify.py"
+    ],
+    "exit_code": 0,
+    "expected_exit_code": 0,
+    "stopped_at_8GiB": false,
+    "min_free_bytes": 11564220416,
+    "samples": [
+      {
+        "elapsed_seconds": 0.002,
+        "free_bytes": 11564220416
+      },
+      {
+        "elapsed_seconds": 2.008,
+        "free_bytes": 11564236800
+      }
+    ],
+    "seconds": 2.008,
+    "summaries": []
+  }
+]

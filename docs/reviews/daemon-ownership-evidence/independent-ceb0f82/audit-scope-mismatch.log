@@ -1,0 +1,11 @@
+PASS current full package/version/features inventory daemon 730
+PASS current full package/version/features inventory embedded 624
+PASS current full package/version/features inventory tui 955
+PASS current full package/version/features inventory extended 917
+PASS current full package/version/features inventory iroh 830
+PASS all source fingerprints bound to exact candidate Git; 185 historical files bound to parent and unchanged; reviewer docs/evidence preserved; source-free prior reviewer commits; archived old native/Iroh/TUI trees match independent prior capture
+Traceback (most recent call last):
+  File "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/docs/reviews/daemon-ownership-evidence/independent-ceb0f82/audit.py", line 33, in <module>
+    assert patch==git('diff',parent,head,'--',*paths)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

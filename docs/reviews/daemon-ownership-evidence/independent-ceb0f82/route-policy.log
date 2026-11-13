@@ -1,0 +1,17 @@
+
+running 12 tests
+test daemon::route_policy::tests::bootstrap_visibility_is_group_owned ... ok
+test daemon::route_policy::tests::contract_router_operation_registers_inventory ... ok
+test daemon::route_policy::tests::declared_capability_allows_matching_principal ... ok
+test daemon::route_policy::tests::declared_capability_denies_before_handler ... ok
+test daemon::route_policy::tests::duplicate_method_and_path_is_rejected ... ok
+test daemon::route_policy::tests::inventory_exports_stable_wire_names ... ok
+test daemon::route_policy::tests::inventory_merge_rejects_cross_surface_duplicates ... ok
+test daemon::route_policy::tests::native_only_route_allows_originless_native_client ... ok
+test daemon::route_policy::tests::native_only_route_rejects_browser_origin_before_handler ... ok
+test daemon::route_policy::tests::operation_preserves_supplied_schema_bindings ... ok
+test daemon::route_policy::tests::preview_routes_are_token_owned_not_capability_owned ... ok
+test daemon::route_policy::tests::protected_routes_require_capabilities ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 2190 filtered out; finished in 0.00s
+

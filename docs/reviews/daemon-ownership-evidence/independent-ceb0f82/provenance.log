@@ -1,0 +1,11 @@
+ceb0f82b45bad269271d0598eb3232a58fc6f32c
+?? docs/reviews/daemon-ownership-evidence/independent-ceb0f82/
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+binary: rustc
+commit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a
+commit-date: 2026-11-09
+host: aarch64-apple-darwin
+release: 1.100.0
+LLVM version: 23.1.5
+Filesystem   1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on
+/dev/disk3s5   239362496 202477052  11295380    95% 1892528 112953800    2%   /System/Volumes/Data

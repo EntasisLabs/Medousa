@@ -1,0 +1,7 @@
+
+running 2 tests
+test grapheme_lsp_bridge::slim_tests::excluded_editor_returns_explicit_not_implemented ... ok
+test grapheme_lsp_bridge::slim_tests::slim_interpreter_executes_core_and_rejects_heavy_import ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2200 filtered out; finished in 0.00s
+

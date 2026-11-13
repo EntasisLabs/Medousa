@@ -1,0 +1,6 @@
+
+running 1 test
+test runtime::platform::lifetime_tests::retained_agent_survives_final_platform_drop_without_observation_failure ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2201 filtered out; finished in 0.06s
+

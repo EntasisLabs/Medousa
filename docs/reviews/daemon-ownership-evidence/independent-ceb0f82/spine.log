@@ -1,0 +1,12 @@
+
+running 7 tests
+test agent_runtime::spine_byte_parity::tests::fold_byte_matches_chronological_segment_turn ... ok
+test agent_runtime::spine_byte_parity::tests::fold_byte_matches_legacy_checkpoint_turn ... ok
+test agent_runtime::spine_byte_parity::tests::fold_byte_matches_legacy_interim_prose_turn ... ok
+test agent_runtime::spine_byte_parity::tests::fold_byte_matches_legacy_needs_input_turn ... ok
+test agent_runtime::spine_byte_parity::tests::fold_byte_matches_legacy_plain_turn ... ok
+test agent_runtime::spine_byte_parity::tests::fold_byte_matches_legacy_tool_turn ... ok
+test agent_runtime::spine_byte_parity::tests::fold_byte_matches_legacy_worker_ack_turn ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 2195 filtered out; finished in 0.03s
+

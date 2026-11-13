@@ -1,0 +1,14 @@
+
+running 9 tests
+test daemon::request_boundary::tests::attacker_preflight_gets_no_cors_authority_or_handler_work ... ok
+test daemon::request_boundary::tests::configured_hosts_are_names_only ... ok
+test daemon::request_boundary::tests::declared_public_route_still_requires_an_exact_browser_origin ... ok
+test daemon::request_boundary::tests::exact_origin_boundary_rejects_attacker_and_duplicate_origins ... ok
+test daemon::request_boundary::tests::host_boundary_rejects_rebinding_wrong_ports_and_remote_iroh_spoofing ... ok
+test daemon::request_boundary::tests::host_middleware_rejects_rebinding_before_handler ... ok
+test daemon::request_boundary::tests::native_only_allows_the_home_origin_and_rejects_other_browsers ... ok
+test daemon::request_boundary::tests::origin_configuration_rejects_wildcards_null_and_paths ... ok
+test daemon::request_boundary::tests::post_only_route_preflight_answers_before_method_not_allowed ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 2193 filtered out; finished in 0.00s
+

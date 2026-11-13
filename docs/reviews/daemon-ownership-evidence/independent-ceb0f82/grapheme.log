@@ -1,0 +1,16 @@
+
+running 11 tests
+test grapheme_runtime::tests::actual_failure_keeps_its_receipt_and_deferred_work_is_not_terminal ... ok
+test grapheme_runtime::tests::an_earlier_retry_receipt_cannot_satisfy_a_later_terminal_failure ... ok
+test grapheme_runtime::tests::another_worker_can_claim_the_submission_without_duplicate_execution ... ok
+test grapheme_runtime::tests::canceled_jobs_without_attempts_are_terminal ... ok
+test grapheme_runtime::tests::dropping_the_waiter_does_not_abort_its_queue_pass ... ok
+test grapheme_runtime::tests::named_import_from_foreign_namespace_is_rejected_by_preflight ... ok
+test grapheme_runtime::tests::scheduling_preflight_compiles_without_enqueuing_or_executing_source ... ok
+test grapheme_runtime::tests::shared_queue_work_does_not_become_a_false_preflight_failure ... ok
+test grapheme_runtime::tests::terminal_state_waits_for_the_attempt_persistence_barrier ... ok
+test grapheme_runtime::tests::timeout_does_not_abort_unrelated_work_selected_by_the_queue_pass ... ok
+test grapheme_runtime::tests::timeout_preserves_job_identity_and_does_not_abort_inflight_execution ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 2191 filtered out; finished in 0.74s
+
