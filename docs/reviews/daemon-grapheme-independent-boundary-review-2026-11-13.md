@@ -126,8 +126,11 @@ or claimed in this review.
 New evidence: `docs/reviews/daemon-ownership-evidence/independent-4e85141/`.
 `review.py` records exact commands and two-second disk samples; commands are
 serialized, offline/locked where relevant, jobs capped at 2, active interrupt
-threshold 8 GiB protecting the 6 GiB floor. Minimum sampled free space during
-the initial checks: **16.3317 GiB**. No disk stop occurred.
+threshold 8 GiB protecting the 6 GiB floor. Minimum sampled free space across
+all recorded commands: **14.9760 GiB** (during the documentation scan; initial
+graph/provenance checks stayed above 16.3317 GiB). No disk stop occurred. The
+documentation script does not compile; the shared-volume free-space change is
+not attributed to this review or used as a performance measurement.
 
 1. Verified exact clean entry HEAD. Candidate diff over prior review is **69
    additions only**, exclusively the worker report/evidence. Independent Git
@@ -191,3 +194,24 @@ Sealed evidence can be checked without compilation:
 Strict documentation validation passed independently; the exact monitored
 command and output are retained. New review/evidence files also pass staged
 whitespace validation. These are review-deliverable gates, not extra product tests.
+
+### Concurrent handback qualification
+
+After the successful immutable-source recheck and initial evidence sealing,
+a separate native worker started the next slim-daemon assignment in this same
+checkout. It created `slim-grapheme-2026-11-13` evidence and modified `Cargo.toml`.
+Runtime observation identifies that worker's manifest write at 01:38:39 UTC.
+The final scoped staging attempt encountered an existing Git index lock; the
+subsequent commit captured the previously staged review at `fa74520a`, leaving
+the last three review/disk-minimum seal corrections unstaged. A follow-up
+review-only commit preserves those corrections and this qualification.
+
+**There is no globally clean checkout handback while that worker is active.**
+No other worker's files were reset, deleted or committed by this reviewer.
+The 7,811-file immutable checks and graph/provenance observations precede that
+later source edit; the review applies only to exact `4e85141`, not the new slim
+candidate. The sender has been notified of the collision. The default auditor
+intentionally rejects current source drift; `--git-only` audits the preserved
+candidate Git binding without claiming current working bytes still match.
+The next candidate needs its own review and qualification. Do not apply this
+review's integration recommendation to unreviewed follow-on changes.
