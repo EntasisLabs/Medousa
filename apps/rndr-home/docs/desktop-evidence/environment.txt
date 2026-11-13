@@ -1,0 +1,16 @@
+Fri Nov 13 17:43:52 UTC 2026
+a42c5236cd2239864d27aa9c151c3acd3e8191a0
+apps/rndr-home/README.md
+apps/rndr-home/src/controller.rs
+apps/rndr-home/src/fixtures.rs
+apps/rndr-home/src/main.rs
+apps/rndr-home/src/qualification_tests.rs
+apps/rndr-home/src/shell.rs
+apps/rndr-home/src/ui_tests.rs
+docs/README.md
+docs/guides/README.md
+docs/guides/rndr-native-preview.md
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+cargo 1.100.0 (3acc79c0c 2026-11-05)
+Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s5   228Gi   192Gi    12Gi    95%    1.9M  126M    2%   /System/Volumes/Data
