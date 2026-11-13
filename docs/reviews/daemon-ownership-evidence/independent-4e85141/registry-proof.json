@@ -1,0 +1,20 @@
+{
+  "checked_files": {
+    "comfy-table-7.2.2": 1,
+    "grapheme-aot-container-0.7.1": 6,
+    "grapheme-compiler-0.7.1": 10,
+    "grapheme-lsp-0.7.1": 3,
+    "grapheme-runtime-0.7.1": 14,
+    "grapheme-sdk-0.7.1": 2,
+    "grapheme-signatures-0.7.1": 2,
+    "grapheme-stdlib-0.7.1": 24,
+    "grapheme-wasm-0.7.1": 4,
+    "polars-0.46.0": 1,
+    "polars-core-0.46.0": 1,
+    "stasis-rs-0.13.0": 273
+  },
+  "extra_source_sha256": {
+    "polars-core-0.46.0/src/fmt.rs": "2ea0053a0d632b972dd8a16bd287e78a33de7d2e8647b8373b4e8ef74caf46b4",
+    "comfy-table-7.2.2/src/table.rs": "c1045e966b5ff1df0aa615a2f0c3a35f5fbf0206af5c948bbe65622124e69c54"
+  }
+}

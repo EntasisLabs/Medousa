@@ -1,0 +1,435 @@
+[
+  {
+    "label": "environment",
+    "command": [
+      "sh",
+      "-c",
+      "rustc -Vv; cargo -V; uname -a; df -k .; command -v rg || true"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533663.464843,
+        "free_bytes": 17536512000
+      },
+      {
+        "time": 1794533665.4702332,
+        "free_bytes": 17536569344
+      }
+    ],
+    "min_free_bytes": 17536512000,
+    "stopped": false,
+    "sha256": "cc7afd3b1e4d7d6835b6319614f09e34d67759adc3f24d91319c779bdfdcdbba"
+  },
+  {
+    "label": "worker-auditor",
+    "command": [
+      "/opt/homebrew/bin/python3.11",
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/docs/reviews/daemon-ownership-evidence/grapheme-boundary-2026-11-13/verify.py"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533665.4801788,
+        "free_bytes": 17536536576
+      },
+      {
+        "time": 1794533667.4855628,
+        "free_bytes": 17536532480
+      }
+    ],
+    "min_free_bytes": 17536532480,
+    "stopped": false,
+    "sha256": "5cbdf617d11bfb0505b6428f4ad7e4bf935bd6c8f49d03b8c8d3fa8bdac039a6"
+  },
+  {
+    "label": "graph-full-daemon",
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "-e",
+      "normal,build",
+      "--prefix",
+      "none",
+      "--format",
+      "{p} FEATURES=[{f}]"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533667.49514,
+        "free_bytes": 17536516096
+      },
+      {
+        "time": 1794533669.500433,
+        "free_bytes": 17536294912
+      }
+    ],
+    "min_free_bytes": 17536294912,
+    "stopped": false,
+    "sha256": "d50764ef343c94bedda5b52d5de83c1946576857f8fe6c45e54c42f17d4c869a"
+  },
+  {
+    "label": "graph-tui",
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "tui",
+      "-e",
+      "normal,build",
+      "--prefix",
+      "none",
+      "--format",
+      "{p} FEATURES=[{f}]"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533669.519676,
+        "free_bytes": 17536397312
+      },
+      {
+        "time": 1794533671.524821,
+        "free_bytes": 17536208896
+      }
+    ],
+    "min_free_bytes": 17536208896,
+    "stopped": false,
+    "sha256": "270236519bb6b811a742e62fcbff2ab822818f746a6cd6108803a3c33a08db38"
+  },
+  {
+    "label": "graph-full-daemon-iroh-transport",
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon,iroh-transport",
+      "-e",
+      "normal,build",
+      "--prefix",
+      "none",
+      "--format",
+      "{p} FEATURES=[{f}]"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533671.5361128,
+        "free_bytes": 17536417792
+      },
+      {
+        "time": 1794533673.5413802,
+        "free_bytes": 17536184320
+      }
+    ],
+    "min_free_bytes": 17536184320,
+    "stopped": false,
+    "sha256": "094200fda4a67583acf1cfc03605ee76cf81181b7d32eb2f8eb2b329b6a2d4c0"
+  },
+  {
+    "label": "inverse-crossterm-0-29-0",
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "-e",
+      "features,no-dev",
+      "-i",
+      "crossterm@0.29.0"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533673.557236,
+        "free_bytes": 17536368640
+      },
+      {
+        "time": 1794533675.5621471,
+        "free_bytes": 17536372736
+      }
+    ],
+    "min_free_bytes": 17536368640,
+    "stopped": false,
+    "sha256": "5dad4ed490b27ab0413b6cff76b24006eb4c299f34399b309dcb07d326cbcfe9"
+  },
+  {
+    "label": "inverse-grapheme-wasm",
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "-e",
+      "features,no-dev",
+      "-i",
+      "grapheme-wasm"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533675.574501,
+        "free_bytes": 17536360448
+      },
+      {
+        "time": 1794533677.579638,
+        "free_bytes": 17536380928
+      }
+    ],
+    "min_free_bytes": 17536360448,
+    "stopped": false,
+    "sha256": "f862caecc84c22b46c3cd3001b17df78d6ad0fb46af9273d53de78efc6c3f0a0"
+  },
+  {
+    "label": "inverse-grapheme-compiler",
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "-e",
+      "features,no-dev",
+      "-i",
+      "grapheme-compiler"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533677.583959,
+        "free_bytes": 17536344064
+      },
+      {
+        "time": 1794533679.589088,
+        "free_bytes": 17536090112
+      }
+    ],
+    "min_free_bytes": 17536090112,
+    "stopped": false,
+    "sha256": "5e2572428039c0b4b2477d911c2394950e8c2ae659f94761ef4e1d9626058d73"
+  },
+  {
+    "label": "inverse-wasmer-wasix",
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "-e",
+      "features,no-dev",
+      "-i",
+      "wasmer-wasix"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533679.593756,
+        "free_bytes": 17536077824
+      },
+      {
+        "time": 1794533681.5960739,
+        "free_bytes": 17536106496
+      }
+    ],
+    "min_free_bytes": 17536077824,
+    "stopped": false,
+    "sha256": "bd784226e421ca937d61eedaa8c8926e6031f06425c077613fff8de9ae26e222"
+  },
+  {
+    "label": "packaging",
+    "command": [
+      "/opt/homebrew/bin/python3.11",
+      "scripts/ci/test-daemon-packaging.py"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533682.282711,
+        "free_bytes": 17536049152
+      },
+      {
+        "time": 1794533684.288162,
+        "free_bytes": 17536069632
+      }
+    ],
+    "min_free_bytes": 17536049152,
+    "stopped": false,
+    "sha256": "5b62e7faea9dda17b62234278c8788a3dc527d69ebb5be0a87af90ee112a72f5"
+  },
+  {
+    "label": "ownership-equivalent",
+    "command": [
+      "/opt/homebrew/bin/python3.11",
+      "docs/reviews/daemon-ownership-evidence/harness-correction-2026-11-13/check-runtime-ownership.py"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533684.298814,
+        "free_bytes": 17536053248
+      },
+      {
+        "time": 1794533686.304162,
+        "free_bytes": 17536102400
+      }
+    ],
+    "min_free_bytes": 17536053248,
+    "stopped": false,
+    "sha256": "d87366dc66c720051517c092ba1a01ebb2166a5f7b676ca17a43837a6f54ba84"
+  },
+  {
+    "label": "docs",
+    "command": [
+      "bash",
+      "scripts/verify-docs.sh",
+      "--strict"
+    ],
+    "exit_code": 0,
+    "samples": [
+      {
+        "time": 1794533800.615297,
+        "free_bytes": 17406504960
+      },
+      {
+        "time": 1794533802.617217,
+        "free_bytes": 17186295808
+      },
+      {
+        "time": 1794533804.617894,
+        "free_bytes": 16976330752
+      },
+      {
+        "time": 1794533806.618915,
+        "free_bytes": 16745492480
+      },
+      {
+        "time": 1794533808.6215522,
+        "free_bytes": 16556036096
+      },
+      {
+        "time": 1794533810.6266649,
+        "free_bytes": 16080371712
+      },
+      {
+        "time": 1794533812.631735,
+        "free_bytes": 17514684416
+      },
+      {
+        "time": 1794533814.633224,
+        "free_bytes": 17413820416
+      },
+      {
+        "time": 1794533816.634271,
+        "free_bytes": 16996024320
+      },
+      {
+        "time": 1794533818.639338,
+        "free_bytes": 16996069376
+      },
+      {
+        "time": 1794533820.639477,
+        "free_bytes": 16996073472
+      },
+      {
+        "time": 1794533822.644188,
+        "free_bytes": 16995975168
+      },
+      {
+        "time": 1794533824.646589,
+        "free_bytes": 16995794944
+      },
+      {
+        "time": 1794533826.649229,
+        "free_bytes": 16995995648
+      },
+      {
+        "time": 1794533828.651503,
+        "free_bytes": 16995635200
+      },
+      {
+        "time": 1794533830.651906,
+        "free_bytes": 16995561472
+      },
+      {
+        "time": 1794533832.656969,
+        "free_bytes": 16995176448
+      },
+      {
+        "time": 1794533834.657311,
+        "free_bytes": 16995184640
+      },
+      {
+        "time": 1794533836.658251,
+        "free_bytes": 16995373056
+      },
+      {
+        "time": 1794533838.659948,
+        "free_bytes": 16995168256
+      },
+      {
+        "time": 1794533840.665063,
+        "free_bytes": 16995176448
+      },
+      {
+        "time": 1794533842.670134,
+        "free_bytes": 16992616448
+      },
+      {
+        "time": 1794533844.675195,
+        "free_bytes": 16993153024
+      },
+      {
+        "time": 1794533846.6802611,
+        "free_bytes": 16993132544
+      },
+      {
+        "time": 1794533848.681279,
+        "free_bytes": 16993456128
+      },
+      {
+        "time": 1794533850.686507,
+        "free_bytes": 16993136640
+      }
+    ],
+    "min_free_bytes": 16080371712,
+    "stopped": false,
+    "sha256": "4c4813d86353443ea5b5c00c36b49336b103503a94108f203e0507830d90bfdb"
+  }
+]
