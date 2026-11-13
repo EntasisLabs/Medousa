@@ -19,6 +19,7 @@ pub(super) struct Ui {
     pub(super) mode: Entity,
     pub(super) behavior: Entity,
     pub(super) conversation: Entity,
+    pub(super) latest: Entity,
 }
 pub(super) fn row(world: &mut World, parent: Entity, height: Size) -> Entity {
     let e = world.spawn((Layout {
@@ -97,6 +98,20 @@ pub(super) fn setup(world: &mut World) {
     child(world, empty, spacer);
     let conversation = conversation::setup(world, content);
     world.insert(conversation, Hidden);
+    // Reserve the small control lane so hiding the button does not resize the
+    // virtualized scrollport in the same frame as its explicit End operation.
+    let latest_lane = row(world, root, Size::Px(28.));
+    let latest = button(world, latest_lane, "history:latest", "↓ Jump to latest");
+    world.get_mut::<Layout>(latest).unwrap().height = Size::Px(28.);
+    world.get_mut::<Layout>(latest).unwrap().min_height = 0.;
+    world.insert(
+        latest,
+        Semantics {
+            name: Some("Jump to latest conversation message".into()),
+            ..Default::default()
+        },
+    );
+    world.insert(latest, Hidden);
     let centered = row(world, root, Size::Hug);
     let left = world.spawn((Layout {
         width: Size::Fill,
@@ -153,6 +168,7 @@ pub(super) fn setup(world: &mut World) {
         mode,
         behavior,
         conversation,
+        latest,
     });
     request_focus(world, composer);
 }
@@ -170,6 +186,12 @@ pub(super) fn sync(world: &mut World) {
         .session
         .as_ref()
         .map_or_else(|| status.clone(), |id| format!("Local · {id} · {status}"));
+    let input_ready = crate::composer::native_input_ready(world);
+    let status = if input_ready {
+        status
+    } else {
+        format!("{status} · Input safety pending: Send, Restore and navigation disabled")
+    };
     let selected = m
         .selection
         .filter(|i| *i < m.models.len())
@@ -214,6 +236,13 @@ pub(super) fn sync(world: &mut World) {
     let m = world.resource_mut::<Model>().unwrap();
     m.history_messages = history;
     m.chat.live_messages = live;
+    let away = conversation::away_from_latest(world, ui.conversation);
+    world.get_mut::<Button>(ui.latest).unwrap().enabled = away;
+    if away {
+        world.remove::<Hidden>(ui.latest);
+    } else {
+        world.insert(ui.latest, Hidden);
+    }
     menus::update(world);
     world.get_mut::<Label>(ui.mode).unwrap().text = mode_label;
     world.get_mut::<Label>(ui.status).unwrap().text = status;
@@ -233,7 +262,8 @@ pub(super) fn sync(world: &mut World) {
         Size::Px((center_width - 136.).clamp(100., 340.));
     let m = world.resource::<Model>().unwrap();
     let has_session = m.chat.session.is_some();
-    let can_send = connected
+    let can_send = input_ready
+        && connected
         && !busy
         && !uncertain
         && !m.loading
@@ -245,12 +275,13 @@ pub(super) fn sync(world: &mut World) {
             .text
             .trim()
             .is_empty();
-    let can_navigate = connected && !busy && !m.loading;
+    let can_navigate = input_ready && connected && !busy && !m.loading;
     let can_settings = !busy && !m.loading;
     let can_select = !busy && !m.models.is_empty();
     let can_cancel = connected && !m.loading && has_session && (busy || uncertain);
     let has_recovery = !m.recovery.is_empty();
-    let can_recover = has_recovery
+    let can_recover = input_ready
+        && has_recovery
         && !busy
         && !m.loading
         && world.get::<Label>(ui.composer).unwrap().text.is_empty();

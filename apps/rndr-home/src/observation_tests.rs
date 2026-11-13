@@ -5,6 +5,8 @@ use rndr_render::observe::ObservationContent;
 
 fn assert_branch_denied(setup: impl FnOnce(&mut World)) {
     let mut app = crate::app();
+    app.world_mut()
+        .insert_resource(crate::composer::SyntheticEditor);
     app.update();
     app.world_mut().insert_resource(FixtureObservation);
     app.world_mut().insert_resource(ObservationContent::Deny);
@@ -25,6 +27,20 @@ fn assert_branch_denied(setup: impl FnOnce(&mut World)) {
         app.world().resource::<ObservationContent>(),
         Some(ObservationContent::Deny)
     ));
+}
+
+#[test]
+fn unknown_native_state_denies_even_empty_opted_in_fixture() {
+    let mut app = crate::app();
+    app.update();
+    app.world_mut().insert_resource(FixtureObservation);
+    for _ in 0..3 {
+        app.update();
+        assert!(matches!(
+            app.world().resource::<ObservationContent>(),
+            Some(ObservationContent::Deny)
+        ));
+    }
 }
 
 #[test]

@@ -21,6 +21,9 @@ struct Message {
 struct Conversation {
     messages: Vec<Message>,
     last_bottom: f32,
+    following: bool,
+    last_layout_offset: f32,
+    layout_samples: u8,
 }
 impl Component for Conversation {}
 struct HistoryTrack(Entity, Entity);
@@ -57,7 +60,11 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
         Conversation {
             messages: Vec::new(),
             last_bottom: 0.0,
+            following: false,
+            last_layout_offset: 0.0,
+            layout_samples: 0,
         },
+        ViewportRows(remember_layout_offset),
     ));
     set_parent(world, root, frame);
     // Reserve the hit lane even when no scrolling is needed; hiding the
@@ -142,7 +149,12 @@ pub fn sync_iter<'a>(
             world.insert(track, Hidden);
         }
     }
-    let follow = follows(scroll.offset[1], state.last_bottom, bottom);
+    let follow = follows(scroll.offset[1], state.last_bottom, bottom)
+        || (state.following && scroll.offset[1] <= state.last_layout_offset + 1.5);
+    state.following = follow;
+    // ViewportRows is called before and after the next hierarchy pass. Capture
+    // its post-layout offset once, never later Input-time scroll refreshes.
+    state.layout_samples = 2;
     state.last_bottom = bottom;
     // Cache the last completed layout before evicting any subtree. Preserve the
     // viewport's anchor when an estimated row above it acquires a real height.
@@ -297,6 +309,60 @@ pub fn copy_message(world: &mut World, root: Entity, action: &str) -> bool {
         });
     }
     true
+}
+
+/// Presentation-only capability: no message copies, editor access, focus change,
+/// session mutation, or runtime commands. Empty/hidden history is a strict no-op.
+pub(super) fn away_from_latest(world: &World, root: Entity) -> bool {
+    let Some(state) = world.get::<Conversation>(root) else {
+        return false;
+    };
+    let Some(scroll) = world.get::<Scroll>(root) else {
+        return false;
+    };
+    let Some(rect) = world.get::<Rect>(root) else {
+        return false;
+    };
+    let bottom = (scroll.content[1] - rect.h).max(0.);
+    !state.messages.is_empty()
+        && !world.has::<Hidden>(root)
+        && bottom > 1.5
+        && scroll.offset[1] > -bottom + 1.5
+}
+
+/// Keep keyboard ownership on a stable, non-scrolling history control when
+/// the latest trigger disappears. Never return focus to or reset the composer.
+pub(super) fn focus_history(world: &mut World, root: Entity) {
+    if let Some(&HistoryTrack(track, _)) = world.get::<HistoryTrack>(root) {
+        request_focus(world, track);
+    }
+}
+
+pub(super) fn jump_to_latest(world: &mut World, root: Entity) -> bool {
+    if !away_from_latest(world, root) {
+        return false;
+    }
+    // Use the same follow sentinel as sync_iter. Layout clamps after mounting
+    // the tail; subsequent frames keep following while estimated heights settle.
+    world.get_mut::<Scroll>(root).unwrap().offset[1] = f32::MIN;
+    true
+}
+
+// Canonical layout may clamp against estimated row heights before Markdown
+// refinement. Remember the completed layout's actual offset, not an assumed
+// bottom. Next Input's wheel/drag/key movement away from it cancels following.
+// This callback only observes geometry; no recursive layout, focus or scrolling.
+fn remember_layout_offset(world: &mut World, root: Entity) -> bool {
+    let offset = world.get::<Scroll>(root).map(|s| s.offset[1]);
+    if let (Some(offset), Some(state)) = (offset, world.get_mut::<Conversation>(root))
+        && state.layout_samples > 0
+    {
+        state.layout_samples -= 1;
+        if state.layout_samples == 0 && state.following {
+            state.last_layout_offset = offset;
+        }
+    }
+    false
 }
 
 fn follows(offset: f32, previous_bottom: f32, bottom: f32) -> bool {

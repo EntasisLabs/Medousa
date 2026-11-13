@@ -1,5 +1,13 @@
 use super::*;
 pub(super) fn ready() -> (App, mpsc::UnboundedReceiver<Request>) {
+    let (mut app, rx) = ready_unverified();
+    // Legacy transition tests use only a synthetic editor and mock command sink.
+    // This marker is absent from production builds and is not native IME proof.
+    app.world_mut().insert_resource(composer::SyntheticEditor);
+    app.update();
+    (app, rx)
+}
+pub(super) fn ready_unverified() -> (App, mpsc::UnboundedReceiver<Request>) {
     let mut app = app();
     app.update();
     let (tx, rx) = mpsc::unbounded_channel();
@@ -322,6 +330,7 @@ fn tab_leaves_composer_using_canonical_focus_policy() {
 fn offline_observer_denies_any_user_draft() {
     use rndr_render::observe::ObservationContent;
     let mut app = app();
+    app.world_mut().insert_resource(composer::SyntheticEditor);
     app.update();
     let ui = *app.world().resource::<Ui>().unwrap();
     app.world_mut().insert_resource(FixtureObservation);

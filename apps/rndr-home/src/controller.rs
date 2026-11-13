@@ -133,7 +133,24 @@ pub(super) fn update(world: &mut World) {
             let m = world.resource::<Model>().unwrap();
             (m.chat.busy, m.loading)
         };
+        // UI disabling is not admission control: reject forged/queued intents too.
+        if matches!(
+            action.as_str(),
+            "send" | "recover" | "new" | "recent" | "reload"
+        ) && !crate::composer::native_input_ready(world)
+        {
+            world.resource_mut::<Model>().unwrap().chat.status =
+                "Native input safety pending · draft preserved; action disabled".into();
+            continue;
+        }
         match action.as_str() {
+            "history:latest" => {
+                if conversation::jump_to_latest(world, ui.conversation)
+                    && world.resource::<Focus>().and_then(|f| f.entity) == Some(ui.latest)
+                {
+                    conversation::focus_history(world, ui.conversation);
+                }
+            }
             "new" | "recent" | "reload" if !busy && !loading => {
                 let command = match action.as_str() {
                     "new" => Command::New,

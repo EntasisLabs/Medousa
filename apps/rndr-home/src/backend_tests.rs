@@ -528,6 +528,8 @@ async fn ui_reload_drives_real_worker_reattach_and_settlement() {
         mode_wire("general"),
     ]);
     let mut app = crate::app();
+    app.world_mut()
+        .insert_resource(crate::composer::SyntheticEditor);
     app.update();
     let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
     let (commands, rx) = mpsc::unbounded_channel();

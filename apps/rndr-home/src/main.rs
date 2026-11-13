@@ -4,6 +4,8 @@ mod controller;
 mod conversation;
 mod fixtures;
 #[cfg(test)]
+mod history_tests;
+#[cfg(test)]
 mod interaction_tests;
 mod menus;
 mod presentation;

@@ -5,6 +5,19 @@ use rndr_app::child;
 use rndr_core::*;
 use rndr_ui::Typography;
 
+/// No production proof of persistent native composition/reset safety exists yet.
+/// Do not infer it from a quiet batch, Label, or ime_enabled. Only unit tests
+/// may opt into a synthetic editor with no native state; no CLI/runtime bypass.
+pub(super) fn native_input_ready(_world: &World) -> bool {
+    #[cfg(test)]
+    return _world.has_resource::<SyntheticEditor>();
+    #[cfg(not(test))]
+    false
+}
+
+#[cfg(test)]
+pub(super) struct SyntheticEditor;
+
 #[derive(Default)]
 pub(super) struct SubmitBoundary {
     pub(super) safe: bool,

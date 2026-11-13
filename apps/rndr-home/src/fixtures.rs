@@ -26,6 +26,9 @@ pub(super) fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::err
         ("appearance", 1120., 820., true),
         ("depth", 1120., 820., true),
         ("runtime", 1120., 820., true),
+        ("history-away", 1120., 820., true),
+        ("history-away-narrow", 480., 760., true),
+        ("history-latest", 480., 760., true),
     ] {
         app.world_mut()
             .insert_resource(Viewport::new(width, height));
@@ -48,6 +51,16 @@ pub(super) fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::err
                     ("assistant".into(), "Yes — a conversation, not a document.\n\nThe composer now **grows with your draft**, and the model button opens a searchable menu instead of cycling.\n\n```sh\ncargo run --manifest-path apps/rndr-home/Cargo.toml -- --offline\n```\n\nMode changes use the same daemon contract as the Svelte app. Behavior supports next-turn response depth; external runtimes and the remaining controls are explicitly marked as not ported.\n\nThis is synthetic offline visual evidence. **No inference was sent.**".into()),
                 ];
         }
+        if name.starts_with("history-") {
+            app.world_mut().resource_mut::<Model>().unwrap().history_messages = (0..40)
+                .map(|i| ("assistant".into(), format!("Synthetic message {i}\n\nRead earlier history without losing your place. New replies do not pull you away.\n\n{}", "A bounded offline transcript paragraph. ".repeat(8))))
+                .collect();
+            reset_prompt(
+                app.world_mut(),
+                ui.composer,
+                "Unsent synthetic draft · preserved",
+            );
+        }
         if name == "draft" {
             reset_prompt(
                 app.world_mut(),
@@ -69,6 +82,29 @@ pub(super) fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::err
         for _ in 0..4 {
             app.update();
         }
+        if name.starts_with("history-") {
+            app.world_mut()
+                .get_mut::<Scroll>(ui.conversation)
+                .unwrap()
+                .offset[1] = 0.;
+            for _ in 0..8 {
+                app.update();
+            }
+            if name == "history-latest" {
+                assert!(crate::conversation::jump_to_latest(
+                    app.world_mut(),
+                    ui.conversation
+                ));
+                for _ in 0..8 {
+                    app.update();
+                }
+            }
+            assert_eq!(
+                app.world().get::<Label>(ui.composer).unwrap().text,
+                "Unsent synthetic draft · preserved"
+            );
+            assert!(app.world().resource::<Model>().unwrap().commands.is_none());
+        }
         let frame = rndr_paint::frame(app);
         let image =
             exporter.render_frame(Some(app.world()), &frame, width as u32, height as u32, 1.)?;
@@ -88,7 +124,8 @@ pub(super) fn sync_observation(world: &mut World) {
         // Explicit fixture opt-in must not expose text someone types into the
         // native window while a read-only observer is attached.
         let m = world.resource::<Model>().unwrap();
-        let public = m.commands.is_none()
+        let public = crate::composer::native_input_ready(world)
+            && m.commands.is_none()
             && m.history_messages.is_empty()
             && m.chat.live_messages.is_empty()
             && m.recovery.is_empty()
