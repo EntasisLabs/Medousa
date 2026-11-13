@@ -1,0 +1,67 @@
+{
+  "baseline": "a4ea4400482a27183340f738f0d961d571b94157",
+  "source_commit": "8b51ed79f569dc6bf35587c41749ab8125c3e22e",
+  "source_tree": "b24c479d7eabee57870c7ce88c66e70926ee6db6",
+  "files": [
+    {
+      "path": "apps/rndr-home/README.md",
+      "sha256": "4558c55b7120f4ebe67091ca902199954f18b2934d200afae97faef42cd7eae0"
+    },
+    {
+      "path": "apps/rndr-home/docs/CONTENT_SURFACES.md",
+      "sha256": "49e895feef4cc0553b7ff8168064fcd41bb5c4ab67c3c6fe43ce1fc14cabaae3"
+    },
+    {
+      "path": "apps/rndr-home/src/admin_backend.rs",
+      "sha256": "f18283e5d04956f9e16bf833c5d423a2b2c88b326f2f6081c4eae611fe6dbced"
+    },
+    {
+      "path": "apps/rndr-home/src/admin_backend_tests.rs",
+      "sha256": "373960019782d587c88feba7cadd34828df1f86a74dd30b23caeb23db55ff447"
+    },
+    {
+      "path": "apps/rndr-home/src/admin_model.rs",
+      "sha256": "8097a24ccefca14b1cf7af82252066af063f4582d46ceac3d85154acb85017df"
+    },
+    {
+      "path": "apps/rndr-home/src/admin_views.rs",
+      "sha256": "1ac8624045c2b8a74fbd6f5bc94965b9736ae5698e0116fdee8a9e20351704bb"
+    },
+    {
+      "path": "apps/rndr-home/src/content.rs",
+      "sha256": "70b4b664885fc91649e619dd31be70e420c4c67640b3d284744036a2a031917d"
+    },
+    {
+      "path": "apps/rndr-home/src/content_tests.rs",
+      "sha256": "8e7a5a72e120b75002e427e07837c4ba3f93624313b4d47a1039c6ccf9705630"
+    },
+    {
+      "path": "apps/rndr-home/src/desktop.rs",
+      "sha256": "1ecba8f691a9f1c93df56f0b0c3b3dd423ea41b6c9a78d41c691b1306617a24b"
+    },
+    {
+      "path": "apps/rndr-home/src/desktop_fixtures.rs",
+      "sha256": "2e1e972c5f93d79f69635a3d51569299927a9b998447e3fb39b7997036540155"
+    },
+    {
+      "path": "apps/rndr-home/src/main.rs",
+      "sha256": "c7c0a4ca2e25c1d6332cc28f74ebc22b19d15f09119cc84783cfbc4dc5c4ce5c"
+    },
+    {
+      "path": "apps/rndr-home/src/settings_views.rs",
+      "sha256": "7fbbe03479166cf9abe74f1f22e1cc9818cead2876735d4bd215a91f5d72806d"
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "61ce91eda0d5d082a9cda8d89fca339ea79cd6ec59744799b606d01699f8493b"
+    },
+    {
+      "path": "docs/guides/README.md",
+      "sha256": "383944dd9303f4c5c42eee83adc47fdd98e249ace06373aa9ae491c140a12816"
+    },
+    {
+      "path": "docs/guides/rndr-native-preview.md",
+      "sha256": "13a7277e45ad476363e4023401f9187732bea4319602ff9d0bc974b1a3501ba0"
+    }
+  ]
+}

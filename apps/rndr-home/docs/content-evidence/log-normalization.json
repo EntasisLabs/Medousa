@@ -1,0 +1,16 @@
+[
+  {
+    "path": "test-default.log",
+    "operation": "remove redundant final LF only, retaining one final LF",
+    "original_sha256": "feddd7862607bb2811234475a08c10aec5381ecb631a78d0d137ef4fefe954b0",
+    "normalized_sha256": "fcc8e3186ba382f0f2f41e0ed172d0ec0e24f94f8dacdba4ee4acd8bec44237e",
+    "removed_bytes": 1
+  },
+  {
+    "path": "test-observe.log",
+    "operation": "remove redundant final LF only, retaining one final LF",
+    "original_sha256": "fefb952e67fe5231f8f5975b1de7f2e341fb2d293ee717e8cc13700d428e8635",
+    "normalized_sha256": "42bfefced6ee029c28c25ae6c08f0123e36553e6725d7622d7603d02b19dfad3",
+    "removed_bytes": 1
+  }
+]

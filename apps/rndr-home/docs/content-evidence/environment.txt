@@ -1,0 +1,14 @@
+UTC 2026-11-13T20:57:14Z
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+binary: rustc
+commit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a
+commit-date: 2026-11-09
+host: aarch64-apple-darwin
+release: 1.100.0
+LLVM version: 23.1.5
+cargo 1.100.0 (3acc79c0c 2026-11-05)
+ProductName:		macOS
+ProductVersion:		27.0.1
+BuildVersion:		26A434
+1.9G	target/rndr-content
+5.7M	apps/rndr-home/docs/content-evidence

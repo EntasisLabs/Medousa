@@ -1,0 +1,70 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_paint/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_paint` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_app/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_app` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_core/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_core` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_render/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_render` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-content-surfaces-on-integrated-shell/Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_ui/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_ui` (manifest) generated 1 warning
+    Checking getrandom v0.3.4
+    Checking rndr_render v0.6.0 (/Users/theelevators/rndr/crates/rndr_render)
+    Checking medousa-rndr-home v0.1.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-content-surfaces-on-integrated-shell/apps/rndr-home)
+    Finished `dev` profile [unoptimized] target(s) in 1.58s
