@@ -35,7 +35,12 @@ pub fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::error::Err
                 ..Default::default()
             },
         );
-        for (width_name, width, height) in [("wide", 1120., 820.), ("narrow", 480., 760.)] {
+        for (width_name, width, height) in [
+            ("wide", 1120., 820.),
+            ("narrow", 480., 760.),
+            ("wide-650", 1120., 650.),
+            ("narrow-650", 480., 650.),
+        ] {
             app.world_mut()
                 .insert_resource(Viewport::new(width, height));
             for (name, route, resource, state, detail) in cases() {

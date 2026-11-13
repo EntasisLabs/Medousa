@@ -214,3 +214,6 @@ fn app() -> App {
     app.add_system(Schedule::Update, update);
     app
 }
+
+#[cfg(test)]
+mod desktop_preservation_tests;

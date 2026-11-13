@@ -167,6 +167,8 @@ pub struct Desktop {
     pub query: String,
     pub dirty: bool,
     pub narrow: bool,
+    /// Explicit navigation/filter/detail changes start at the top; rebuilds do not.
+    pub reset_scroll: bool,
 }
 impl Default for Desktop {
     fn default() -> Self {
@@ -178,12 +180,14 @@ impl Default for Desktop {
             query: String::new(),
             dirty: true,
             narrow: false,
+            reset_scroll: true,
         }
     }
 }
 impl Desktop {
     pub fn navigate(&mut self, route: Route) {
         self.route = route;
+        self.reset_scroll = true;
         self.query.clear();
         self.selected = None;
         self.dirty = true;
@@ -194,8 +198,11 @@ impl Desktop {
         }
         self.serial += 1;
         self.reads.insert(resource, ReadState::Loading(self.serial));
-        self.selected = None;
-        self.dirty = true;
+        if self.route.resource() == Some(resource) {
+            // A refresh returns to results, not an index that may identify a new row.
+            self.reset_scroll |= self.selected.take().is_some();
+            self.dirty = true;
+        }
         Some(self.serial)
     }
     pub fn settle(
@@ -214,6 +221,8 @@ impl Desktop {
                 Err(e) => ReadState::Error(e),
             },
         );
-        self.dirty = true;
+        if self.route.resource() == Some(resource) {
+            self.dirty = true;
+        }
     }
 }

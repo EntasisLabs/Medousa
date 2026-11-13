@@ -27,8 +27,9 @@ fn settings_and_admin_viewports_fit_both_widths_and_all_supported_themes() {
                 ..Default::default()
             },
         );
-        for width in [480., 1120.] {
-            app.world_mut().insert_resource(Viewport::new(width, 820.));
+        for (width, height) in [(480., 820.), (1120., 820.), (480., 650.), (1120., 650.)] {
+            app.world_mut()
+                .insert_resource(Viewport::new(width, height));
             let routes: Vec<_> = (0..9)
                 .map(Route::Settings)
                 .chain(Resource::ALL.into_iter().map(Route::Data))
@@ -59,7 +60,7 @@ fn settings_and_admin_viewports_fit_both_widths_and_all_supported_themes() {
                         "{route:?} {width}: {r:?}"
                     );
                     assert!(
-                        r.y >= -0.5 && r.y + r.h <= 820.5,
+                        r.y >= -0.5 && r.y + r.h <= height + 0.5,
                         "{route:?} {width}: {r:?}"
                     );
                 }

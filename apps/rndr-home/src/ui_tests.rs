@@ -179,7 +179,7 @@ fn offline_controls_are_honest_and_resize_preserves_draft() {
     );
     assert_eq!(
         app.world().get::<Layout>(ui.center).unwrap().width,
-        Size::Px(414.)
+        Size::Px(396.)
     );
     assert!(!app.world().has::<FieldTransactions>(ui.composer));
 }

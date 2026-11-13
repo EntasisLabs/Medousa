@@ -28,6 +28,25 @@ export evidence only. **Blocked** identifies a genuinely effectful or missing-ho
 boundary. **Deferred** is a port not implemented in this coherent pass; it is not
 an IME blocker. Unsupported views explain their status instead of rendering fake lists.
 
+## Bounded correction status
+
+The nine settings routes below are **read-only/local-preview settings**, not
+nine editable production panels. Only Chat, Settings and Schedules map to
+implemented shell views: **15 of 18 rail destinations remain deferred**.
+Native pane/tab/workspace fidelity remains follow-on scope, independent of the
+separately denied input-sensitive actions.
+
+The app-local correction pass preserves dynamic control focus by action and
+region through responsive rebuilds (visible fallback if no equivalent exists),
+keeps off-route completions from rebuilding the active dataset, and retains
+same-view scroll through resize/refresh with measured-content clamping.
+Navigation/filter/detail transitions deliberately start at the top. Refresh
+from detail clears its positional selection rather than applying it to new data.
+The narrow text rail is now 76px/10px; this is a readability adjustment, not a
+claim of production icon-rail fidelity or completed visual/device qualification.
+Fresh bounded evidence and remaining checks are in
+`desktop-correction-evidence/REPORT.md`; all earlier evidence is retained.
+
 ## Shell and settings destinations
 
 | Reference destination | Status in this increment | Working behavior / remaining limitation |

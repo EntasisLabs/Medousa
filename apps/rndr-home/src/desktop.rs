@@ -23,6 +23,8 @@ pub struct Handles {
     pub body: Entity,
     pub search: Entity,
     pub footer: Entity,
+    /// Offset retained across the temporary Loading placeholder, never across navigation.
+    pub loading_offset: Option<[f32; 2]>,
     pub nav: Vec<(Entity, &'static str)>,
 }
 pub const DOORS: [(&str, &str); 18] = [
@@ -47,7 +49,7 @@ pub const DOORS: [(&str, &str); 18] = [
 ];
 pub fn rail_width(world: &World) -> f32 {
     if world.resource::<Viewport>().is_some_and(|v| v.width < 800.) {
-        58.
+        76.
     } else {
         132.
     }
@@ -160,6 +162,7 @@ pub fn mount(world: &mut World, chat: Entity) {
         search,
         footer,
         nav,
+        loading_offset: None,
     });
 }
 pub fn nav_button(world: &mut World, parent: Entity, action: &str, text: &str) -> Entity {
@@ -266,6 +269,7 @@ pub fn action(world: &mut World, action: &str) -> bool {
         "admin:back" => {
             let d = world.resource_mut::<Desktop>().unwrap();
             d.selected = None;
+            d.reset_scroll = true;
             d.dirty = true;
         }
         _ if action.starts_with("record:") => {
@@ -273,7 +277,7 @@ pub fn action(world: &mut World, action: &str) -> bool {
                 let d = world.resource_mut::<Desktop>().unwrap();
                 if d.route.resource().and_then(|r| d.reads.get(&r)).is_some_and(|s|
                     matches!(s, ReadState::Ready(rows) if rows.get(index).is_some_and(|r| r.matches(&d.query)))) {
-                    d.selected = Some(index); d.dirty = true;
+                    d.selected = Some(index); d.reset_scroll = true; d.dirty = true;
                 }
             }
         }
@@ -298,6 +302,7 @@ pub fn sync(world: &mut World) {
     let query = world.get::<Label>(h.search).unwrap().text.clone();
     let d = world.resource_mut::<Desktop>().unwrap();
     if d.query != query {
+        d.reset_scroll = true;
         d.query = query;
         d.selected = None;
         d.dirty = true;
@@ -308,6 +313,11 @@ pub fn sync(world: &mut World) {
     }
     let route = d.route;
     let dirty = std::mem::take(&mut d.dirty);
+    let reset_scroll = std::mem::take(&mut d.reset_scroll);
+    let loading = route
+        .resource()
+        .and_then(|r| d.reads.get(&r))
+        .is_some_and(|s| matches!(s, ReadState::Loading(_)));
     world.get_mut::<Layout>(h.rail).unwrap().width = Size::Px(rail_width(world));
     for (e, name) in &h.nav {
         let active = match route {
@@ -318,7 +328,7 @@ pub fn sync(world: &mut World) {
             Route::Deferred(n) => *name == n,
         };
         world.get_mut::<Label>(*e).unwrap().text = (*name).into();
-        world.get_mut::<TextStyle>(*e).unwrap().size = if narrow { 8. } else { 12. };
+        world.get_mut::<TextStyle>(*e).unwrap().size = if narrow { 10. } else { 12. };
         world.get_mut::<Layout>(*e).unwrap().padding = if narrow { 2. } else { 8. };
         world.get_mut::<rndr_ui::UiStyle>(*e).unwrap().background =
             Some(if active { Token::Canvas } else { Token::Raised }.into());
@@ -357,20 +367,32 @@ pub fn sync(world: &mut World) {
     if !dirty || route == Route::Chat {
         return;
     }
-    // Release focus before deleting dynamic body entities. Search/rail are stable.
-    if world
-        .resource::<Focus>()
-        .and_then(|f| f.entity)
-        .is_some_and(|e| {
-            world.get::<Button>(e).is_some_and(|b| {
-                b.action.starts_with("record:")
-                    || b.action == "admin:back"
-                    || b.action == "admin:refresh"
-            })
-        })
-    {
-        request_focus(world, h.search);
+    // Dynamic controls are keyed by action *and region*. Labels/row indices alone
+    // must not move focus to a different semantic control. Dataset refresh clears
+    // detail selection, so a removed record gets the visible search fallback.
+    let focus = world.resource::<Focus>().and_then(|f| f.entity);
+    let dynamic_focus = focus.and_then(|e| {
+        let region = if descendant(world, e, h.section_nav) {
+            h.section_nav
+        } else if descendant(world, e, h.body) {
+            h.body
+        } else {
+            return None;
+        };
+        Some((region, world.get::<Button>(e).map(|b| b.action.clone())))
+    });
+    if dynamic_focus.is_some() {
+        request_focus(world, fallback(&h, route));
     }
+    let offset = world.get::<Scroll>(h.body).unwrap().offset;
+    let retained = if reset_scroll { None } else { h.loading_offset };
+    let next_offset = if reset_scroll {
+        [0., 0.]
+    } else {
+        retained.unwrap_or(offset)
+    };
+    world.resource_mut::<Handles>().unwrap().loading_offset =
+        if loading { Some(next_offset) } else { None };
     world.insert(
         h.page,
         Layout {
@@ -396,11 +418,50 @@ pub fn sync(world: &mut World) {
     );
     if narrow {
         world.remove::<Scroll>(h.section_nav);
-    } else {
+    } else if !world.has::<Scroll>(h.section_nav) {
         world.insert(h.section_nav, Scroll::default());
     }
     clear(world, h.section_nav);
     clear(world, h.body);
-    world.get_mut::<Scroll>(h.body).unwrap().offset = [0., 0.];
+    world.get_mut::<Scroll>(h.body).unwrap().offset = next_offset;
+    // Layout clamps to the newly measured content, including shorter/empty/error
+    // results. Keeping the Loading offset separately avoids losing it to that
+    // short placeholder; explicit navigation/filter/detail always clears it.
     crate::admin_views::render(world, &h, route, narrow);
+    if let Some((region, action)) = dynamic_focus {
+        let replacement = action.and_then(|action| {
+            world.entities_with::<Button>().into_iter().find(|e| {
+                descendant(world, *e, region)
+                    && world
+                        .get::<Button>(*e)
+                        .is_some_and(|b| b.action == action && b.enabled)
+            })
+        });
+        let target = replacement.unwrap_or_else(|| fallback(&h, route));
+        if !request_focus(world, target) {
+            request_focus(world, fallback(&h, route));
+        }
+    }
+}
+
+/// Hierarchy membership, not a global action-name match (some links repeat).
+fn descendant(world: &World, mut entity: Entity, root: Entity) -> bool {
+    while let Some(parent) = world.get::<Parent>(entity) {
+        if parent.entity == root {
+            return true;
+        }
+        entity = parent.entity;
+    }
+    false
+}
+fn fallback(h: &Handles, route: Route) -> Entity {
+    if route.resource().is_some() {
+        h.search
+    } else {
+        h.nav
+            .iter()
+            .find(|(_, name)| *name == "Settings")
+            .unwrap()
+            .0
+    }
 }
