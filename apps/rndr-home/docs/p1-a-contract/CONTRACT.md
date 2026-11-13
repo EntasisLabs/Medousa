@@ -1,434 +1,523 @@
-# P1a / A — proposed session, draft and recovery contract
+# P1a / A — corrected proposed session, draft and recovery contract
 
-**Status: design for review; NOT implemented and NOT tested.** Author is the new
-senior engineer A, not the principal architect. Architect + C review, followed by
-sender's explicit checkpoint, is required before P1b runtime implementation.
-No reviewers/workers are launched by this handback. All names below are proposed
-app-private shapes, not existing SDK/protocol additions or permission to edit them.
+**Status: DOCS-ONLY correction; NOT implemented, tested or frozen.** This revision
+supersedes the initial P1a proposal, not the sealed qualification evidence. Both
+independent read-only reviews were completed and sender accepted their reports;
+that acceptance was NOT a contract freeze. Principal architect + independent C
+must review this revised contract, then sender must checkpoint, before runtime
+implementation. No workers/reviewers are dispatched here. Names below are proposed
+app-private shapes, not existing SDK/protocol APIs or permission to expand scope.
 
-## 1. Binding and scope
+## 1. Binding, scope and verified existing contracts
 
-- Exact clean entry/base: `93f844648e68bd0e330a4b222f1ce89517f663be`, parent
-  `2cef83fdc3b977bc83b2800a8601f0167bb95a86`.
-- Previously executed/reviewed candidate remains
-  `bdef72eb7fbf8014067603f50bb15cfe0a3745f5`; this contract does not execute it.
-- External rndr pin remains `44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139`;
-  its checkout is neither needed nor accessed. Production Home is untouched.
-- Only this new docs namespace may change. No runtime, module/test registration,
-  manifests, lockfile, shared docs, evidence seals, SDK/daemon/framework or caches.
-- No Cargo/build/test/app/export/native/network/credential/provider execution.
-  No build slot used. Future single shared target, maximum two jobs, debug and
-  incremental off, and 8 GiB floor remain unchanged. No push/deploy/integration.
+- Correction entry: clean `9960e0d89ec00acaf61a397485e29d48d3a54219`, parent
+  `93f844648e68bd0e330a4b222f1ce89517f663be`; original CONTRACT was 434 lines,
+  SHA-256 `79d8ae3da2be2ad85c1f7bff6f208d1c82f0bef5be7bcb8bffcc3231b35b7457`.
+- Worktree: `/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification`.
+- Execution candidate remains `bdef72eb7fbf8014067603f50bb15cfe0a3745f5`.
+  External rndr pin remains `44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139`; its
+  checkout is not accessed. Production Home and all 55 sealed files/manifest stay
+  unchanged. Original P1a base was `93f844648e68bd0e330a4b222f1ce89517f663be`.
+- Only this contract (optionally adjacent correction matrix) may change. No source,
+  manifests, lockfiles, SDK/framework/daemon, existing evidence or shared docs edits.
+  No Cargo/build/test binaries/app/export/native execution, docs-verifier rerun,
+  evidence-script execution, external rndr access, cache cleanup, network/provider,
+  credentials/private data, push/deploy/merge. No build slot used; retain 8 GiB free
+  floor and future single shared target/max two jobs/debug and incremental off.
 
-### Existing symbols that constrain this proposal
+App source references below are relative to `apps/rndr-home/src/`. These are
+constraints, not claims that the proposed adapters already exist:
 
-All app source paths below are relative to `apps/rndr-home/src/` at the base.
-
-| Source symbol | Current contract / required adaptation, not an implemented change |
+| Existing symbol | Verified constraint / proposed owner |
 |---|---|
-| `state.rs::Model` | One `chat`, `loading`, `generation`; global `recovery: Vec<(String,String)>` and index `pending_recovery`; no list or draft map. Replace global index association, do not layer another live editor over it. |
-| `controller.rs::{update,dispatch}` | Replies precede actions; navigation/send generation fencing; `Models`, `Modes`, `Unavailable` are the only stale-generation exceptions. Enqueue is not admission. Selection needs transactional handling, operation correlation and contextual input capture below. |
-| `lib.rs::Chat::{history,begin,admitted,fail,resume,apply}` | `session` is stable authority; `begin` rejects absent session/busy/uncertain/blank. `apply` checks turn identity and increasing stream sequence. Retain these; uncertainty is not text reconciliation. |
-| `backend.rs::{Command,Request,Update,Reply,serve}` | Existing commands New, Recent, Open(String), Send(shared request), Cancel, SetMode. Recent reads `sessions().list(1)`, Open invokes `history(id)`. Add only an app-local bounded list projection/context. |
-| `backend.rs::{history,settled_history,follow,mode}` | Three bounded bracketed history attempts, execution-owned assistant filtering, non-atomic notices, bounded settlement reads and SDK stream reconnection remain. No admission retry, text deduplication or stronger snapshot claim. |
-| `composer.rs::{reset_prompt,guard_submit_boundary,setup,Handles}` | Same Prompt/Label entity is canonical. Reset synchronously inserts/removes `FieldTransactions`, resets scroll; six visual lines; ambiguous Enter/IME batch guard. C owns adapter implementation. |
-| `shell.rs::{Ui,setup,sync}` | B owns navigation/projection. Synchronous history/live take/restore is not transition ownership. Current recovery projection is global and must become selected-session-only. |
-| `main.rs::app`, `fixtures.rs::sync_observation` | Architect owns schedule/initialization/test registration. Existing offline opt-in/empty-state observation authority must not widen for new inactive drafts/recovery/list metadata. |
-| `ui_tests::{failed_admission_reload_preserves_visible_recovery_and_newer_draft,confirmed_admission_retires_recovery_without_touching_newer_draft,terminal_waits_for_history_and_cancel_does_not_fake_settlement}` | Existing acceptance intent, read not run here. Later tests must cover the new session scope and operation routing. |
+| `state.rs::Model` | One active Chat, loading/generation, global recovery vector/index today; architect serializes new shapes with A. No inactive transcript cache. |
+| `controller.rs::update` | Replies applied before actions; action intents retain their order and native Submitted events are appended separately. Stale-generation exceptions are only Models/Modes/Unavailable. A owns transition decisions, not editor internals. |
+| `lib.rs::Chat::{history,resume,begin,admitted,fail,apply}` | Stable session authority; busy/uncertain/nonblank Send guards. `apply` rejects !busy, wrong turn, nonincreasing sequence, but currently returns unit. `resume` clears chat.uncertain; controller must restore the ledger authority below. |
+| `backend.rs::{Request,Reply,Command,Update,history,settled_history,follow,mode}` | New/Recent/Open/Send/Cancel/SetMode exist. Bounded bracketed history, execution-owned assistant filtering, non-atomic notices and bounded reconnect remain. Local correlation/typed failures need architect-owned shapes. |
+| `composer.rs::{reset_prompt,guard_submit_boundary,Handles}` | One Prompt/Label entity. Reset inserts FieldTransactions synchronously, asserts reset_field_draft, removes marker, sets scroll=0. SubmitBoundary reads batch keys, ime_preedit and ime_commit; it is NOT persistent composition ownership. C owns mechanics, never session Model/SDK dispatch. |
+| `main.rs::app` and connected startup | Input guard registered at front of Input; controller Update follows. Connected --session currently sends Open directly with generation 0/loading=true and no proposed pending context. Architect must wire an actual startup Navigation context, not exempt History from routing. |
+| `shell.rs::{Ui,sync}` | B owns UI projections and frozen action emission. Synchronous history/live take/restore does not confer transition ownership. |
+| `fixtures.rs::sync_observation` | Explicit FixtureObservation opt-in plus current five checks (no sender/history/live/recovery/Label text) is insufficient for new private identity/metadata. Early denial and isolated cases required, section 7. |
 
-Read-only shared contracts: `crates/medousa-sdk/src/sessions.rs::SessionsApi::list`
-accepts **only `limit: usize`**, returns `SessionHistoryListResponse`; `history`
-and `active_turn` are already used by the adapter. `crates/medousa-types/src/
-daemon_api.rs::SessionHistoryListResponse` contains `sessions` and `next_cursor`;
-`session.rs::SessionHistorySummary` contains stable `session_id`, optional
-`display_name`, `last_timestamp`, `turns`, `preview` and other metadata. A returned
-cursor is NOT an admitted cursor-taking SDK list method. No raw HTTP workaround.
+SDK read contract: `crates/medousa-sdk/src/sessions.rs::SessionsApi::list` accepts
+only `limit: usize`; shared SessionHistoryListResponse has sessions/next_cursor.
+Summary IDs, optional display_name, last_timestamp and turns suffice. Cursor output
+is NOT an admitted cursor input. No raw HTTP, new endpoint, arbitrary-ID UI,
+history_page substitution, limit-growth pseudo-pagination or SDK edit.
 
-Preparation sources read: `PREPARATION_CLOSURE.md` final P1/A packet,
-`TEAM_PREPARATION.md`, `INDEPENDENT_REVIEW_0_6_0.md`, and both original
-`review-prep-{correctness-20261113-1304,ux-20261113-0bdc05e3}/REPORT.md` reports.
-Their claims/bytes remain historical, not new execution evidence. Root docs-gate
-Coder exit 0 is scoped; sender runtime exit 1 remains unresolved. No app-local
-gate exists; neither rerunning nor diagnosing that discrepancy belongs to P1a.
+Historical preparation references remain PREPARATION_CLOSURE.md, TEAM_PREPARATION.md,
+INDEPENDENT_REVIEW_0_6_0.md and the original review-prep correctness/UX REPORT.md
+packets. Their bytes/claims are historical, not this pass's execution evidence.
+Sender docs-verifier exit-1 discrepancy remains unresolved; no rerun here.
 
-## 2. Identity and single-draft invariants
+## 2. Ownership, reachability and bounded projections (architect R1 / C R1)
 
-1. `SessionKey = New(u64) | Stable(String)`. Stable strings are exact SDK session
-   IDs within this process's single fixed daemon connection. Never normalize,
-   case-fold, title-match, timestamp-match or compare prompt prose for identity.
-   Future connection switching requires a separate contract; no cross-daemon keys.
-2. Initial editor key is `New(0)`. New keys are monotonic process-local tokens,
-   never serialized. There is one selected key, equal to `Stable(chat.session)`
-   when selected chat has a session; selected New has no `Chat.session` and Send
-   is disabled. New is an unsent editor identity, not a provisional daemon ID.
-3. The selected key has **no text entry** in `inactive_drafts`. Its sole mutable
-   text is the mounted Prompt/Label. Inactive snapshots own exact UTF-8 text and
-   a revision token only; no hidden Prompt, mirror live string, second editor,
-   persisted store or automatic draft synchronization. Empty inactive snapshots
-   may be omitted; a fresh target defaults to empty. Snapshots never expire while
-   nonempty. Identical Unicode/multiline prompts in A and B are independent.
-4. New action while selected New requests existing `Command::New`, using that
-   New token. On matching successful creation **and history load**, move the New
-   identity to the returned stable ID; leave its currently live draft intact.
-   Creation identity is the SDK `CreateSessionResponse.session_id`, not a turn
-   `Admitted` event. A late/stale create result cannot migrate anything.
-5. New action while selected Stable allocates a target New token with an empty
-   draft, but does not select it optimistically. Commit it as Stable only when
-   creation/history succeeds; source Stable draft is snapshotted then. There is
-   never a merge with the source or an existing target Stable snapshot.
-6. If New creates a session but history fails, report that known created ID in a
-   typed navigation failure. Keep source selected/live draft untouched and retain
-   the failed navigation's target-token/created-ID association in memory. An
-   explicit Retry Open uses **Open(created stable ID)**, never another implicit
-   New. If the source was that New token, migration occurs only on this successful
-   retry. A user may abandon/retry later; no silent recreation or automatic retry.
-   Failure before an ID is returned is honestly unknown; do not manufacture one.
-   If the user has since switched away from the origin New key, successful Retry
-   Open consumes that key's inactive snapshot as the target stable draft, while
-   snapshotting the currently selected source separately. A target New reserved
-   from Stable has no snapshot and defaults empty. If that New key is live at retry
-   commit, keep its latest live text instead. Remove the migrated New snapshot/key
-   exactly once; never copy current unrelated source text to the created session.
-7. A creation/retry ID colliding with a separately owned inactive Stable draft is
-   a contract conflict: refuse commit, retain both owners and show an error. No
-   text equality shortcut, concatenation, replacement, or implicit merge.
+### 2.1 One live owner
 
-An unsent snapshot must remain reachable: `draft:unsent` is an explicit local
-navigation action, not an SDK request. It selects the sole retained New key if
-one exists (initially New(0)), otherwise allocates a fresh New token. At most one
-ordinary unsent editor/snapshot exists; transient create targets have no draft
-until successful migration. New action from Stable still creates a fresh empty
-target and does not consume an unrelated retained unsent snapshot. On local
-unsent selection, snapshot the source latest text, restore the unsent text, replace
-active transcript with an empty New projection, and keep stable snapshots/recovery.
-Returning to Stable requires explicit successful Open, never a transcript cache.
-This local navigation uses the same idle/not-uncertain/capacity gates, generation
-+1 and atomic editor transfer, but is available disconnected and enqueues nothing.
-It is a no-op when already selected New. B must expose this action whenever an
-unsent snapshot exists; otherwise the initial draft could become unreachable.
+`SessionKey = New(u64) | Stable(String)` uses exact lossless SDK IDs in this
+process's fixed daemon connection: no title/prose/timestamp/case-fold identity.
+Initial key New(0) has no Chat.session and cannot Send. Selected Stable equals
+Chat.session even when only a local, unreconciled projection is displayed.
+The selected key has NO entry in `inactive_drafts`. Only the mounted Prompt/Label
+owns its mutable committed text. `DraftSnapshot { text, revision }` stores exact
+UTF-8 inactive text only, never another editor, native state, caret, scroll or
+transcript. Nonempty snapshots never expire/evict/truncate. Empty entries may be
+omitted. Process exit loses memory; Reload here means history read, not restart.
 
-List absence does not invalidate stable keys, drafts or recovery. Session deletion
-is not introduced; failed Open of a missing ID leaves its draft available. Restart
-loses all memory-only drafts/recovery (explicit limit); **Reload means history
-reload in this running app**, not process persistence.
+There is at most one ordinary retained unsent New owner. `draft:unsent` explicitly
+selects it, or allocates a fresh token if absent; already selected New is a no-op.
+Transient create targets allocated from Stable own no text until migration and do
+not consume an unrelated unsent owner. No automatic identity merge or text matching.
+Every ownership change, including New -> Stable with unchanged text, advances the
+editor opportunity epoch and invalidates captured ownership tokens.
 
-## 3. Proposed Model and app-private context shapes
+### 2.2 Remote recent projection stays separate
 
-Exact conceptual fields below are to be frozen with architect/C, not Rust added
-by P1a. Existing unrelated model catalog selection/depth fields stay as-is.
+`sessions:list` makes exactly one SDK list(50), only on explicit action. Preserve
+server order, collapse duplicate exact IDs to first, discard empty IDs, cap at 50.
+Keep only exact ID, display_name (display capped at 120 Unicode scalars), timestamp,
+turn count; discard preview/other body metadata. Never log raw IDs/text/responses.
+`session_rows`, `list_revision`, Ready/Failed/Never and sanitized list_error are
+independent of chat/recovery. Failure keeps last good rows; empty success clears
+rows, not selection/chat/drafts. Successful refresh increments revision. Show
+“Recent 50 only; older-page navigation unavailable in this slice” if next_cursor
+or overreturn. No Load More, startup loop, search, background refresh or reconnect.
+Row actions encode lossless hex UTF-8 IDs plus list revision; validate strict decode,
+revision AND exact current membership, not index or display text. A list is not a
+lease: missing/deleted history can still fail honestly.
 
-| Field/type | Shape and invariant |
-|---|---|
-| `selected_key: SessionKey` | Committed editor owner, never the speculative target. |
-| `inactive_drafts: BTreeMap<SessionKey, DraftSnapshot>` | `DraftSnapshot { text: String, revision: u64 }`; selected key absent; text-only, no focus/caret/scroll snapshots. |
-| `editor_revision: u64`, `next_identity: u64`, `next_operation: u64`, `next_recovery: u64` | Checked monotonic counters, not wrapping; overflow refuses the operation without text loss. Revision is conservative invalidation, not exact keystroke count. |
-| `pending_operation: Option<PendingOperation>` | `Navigation { operation, generation, from, target: Existing(id) / Create(new_key) / CreatedRetry(new_key,id) / Recent, purpose: Switch / Reload }`, `List { operation,generation }`, or `Mode { operation,generation,session }`. Stores no source draft clone. `loading == pending_operation.is_some()`; cancel/send streaming are not navigation loading. |
-| `projection_operation: Option<OperationId>` | Last committed navigation or accepted Send owning active History/Mode/follow outputs; survives clearing loading/pending admission. Explicit mode requests route through their own pending operation instead. |
-| `creation_retry: Option<CreationRetry>` | Last failed creation/history's `{new_key, created_id}` for explicit retry; no credentials/transcript copy. Refuse a second unresolved create until retry or explicit abandon; abandon of a selected New keeps its live draft. |
-| `session_rows: Vec<SessionRow>` | At most 50 unique exact IDs; `SessionRow { id, display_name, last_timestamp, turns }`. No preview/transcript persistence. |
-| `list_revision: u64`, `list_state: Never / Ready{more_unavailable:bool} / Failed`, `list_error: Option<StaticError>` | Last good rows survive failure; error and truncation separate from transcript status and uncertainty. |
-| `recovery_by_session: BTreeMap<String, Vec<RecoveryEntry>>` | Stable IDs only; `RecoveryEntry { id: RecoveryId, text: String }`, insertion ordered, memory only. No recovery is created before stable session identity exists. |
-| `pending_by_session: BTreeMap<String, PendingAdmission>` | `{ recovery_id, generation, operation }`, at most one unconfirmed send per session. Never a vector index. May outlive history reconciliation until explicit Restore or matching Admitted. |
-| `uncertain_sessions: BTreeSet<String>` | Sticky session-scoped execution uncertainty; never cleared by list, selection elsewhere, Restore, Notice or enqueue success. Active `chat.uncertain` mirrors this authority at transitions. |
-| Existing `chat`, `history_messages`, `mode`, `modes`, `models`, `selection`, `depth`, `commands`, `generation` | Remain canonical active projection/catalog/transport. No inactive transcript cache in P1. Failed navigation never replaces them except scoped error status. |
+### 2.3 Independent retained-key projection and local lossless retrieval
 
-Bound process growth without evicting user text: proposed maximum 32 tracked
-inactive nonempty draft keys and 64 recovery entries total. Refuse a navigation
-commit/send **before any destructive mutation or command** if retaining its source
-would exceed those counts; tell user to clear an unwanted draft or explicitly
-restore recovery, never auto-delete. For navigation reserve required source slot
-before enqueue; live edits during loading must still fit a reserved slot. Empty
-keys/empty recovery vectors may be removed. Existing individual-message size
-limitations remain: this is a count bound, not a byte-memory guarantee. Counters
-and exact constants are explicit review questions in section 10.
+`retained_rows` is a derived, bounded union of inactive Stable draft owners and
+Stable recovery owners, including recovery-only owners; not a filtered recent50.
+With proposed counts 32 drafts and 64 recovery entries, it has at most 96 distinct
+Stable IDs (selected owner may be omitted). Rows contain exact key, draft-present,
+recovery count and availability status, NO text/transcript. Own checked monotonic
+`retained_revision` changes on any membership/row-fact change. Actions require that
+revision and exact current union membership. Do not import remote-list absence as
+delete, remove a retained owner on failed Open, or claim stored bytes are reachable
+without the following B UI paths. Unsent and creation-outcome UI are separate.
 
-### Request/Reply correlation (local adapter only)
+B exposes “Retained drafts / recovery” independently of remote Recent, with:
 
-Propose `Request { generation, operation: OperationId, command }` and
-`Reply { generation, operation: Option<OperationId>, session: Option<String>,
-update }`. Bootstrap catalog/unavailable may have `operation=None`; command
-results/follow streams must carry the originating operation. Adapter stamps the
-exact session from command/create/history, never infers it from prose. This is
-**not** a shared SDK wire envelope. Send uses its own operation carried through
-Admitted/stream/settlement; navigation uses its operation through History, mode
-and reattachment. PendingAdmission is the send association, not loading state.
-A successful navigation records `projection_operation` before clearing pending
-navigation; Send replaces that context. Mode/follow/settlement replies still have
-an owner after loading or the admission pointer has gone away. List results route
-only to the exact pending List op, with session=None; navigation failures with no
-known destination likewise route by pending op, not a fabricated session.
-Informational bootstrap Notice with no operation may update status at its existing
-valid generation, but cannot clear any pending operation. Cancel acknowledgement
-is informational and never changes projection ownership or busy/uncertain state.
+1. `retained:open:<revision>:<hex_id>`: same transactional remote Open as a recent
+   row (section 6), never arbitrary ID/new endpoint. On missing/deleted/typed read
+   failure source remains selected and retained bytes/row remain. Static error:
+   remote history unavailable; local draft/recovery can still be retrieved.
+2. `retained:local:<revision>:<hex_id>`: explicit bounded, offline local navigation
+   to that exact retained owner; no Command. Validate idle/no loading, membership,
+   capacity, editor/composition safety. Atomic latest-source snapshot/target draft
+   move uses the SAME ownership-transfer transaction, but installs an empty local
+   Chat/history projection marked “Local retained text only — history not loaded;
+   Reload required before sending.” It sets target uncertainty in the ledger,
+   never asserts remote existence/deletion or cached history. Selected-only Restore
+   can then move one recovery entry into an empty editor; a nonempty draft must be
+   deliberately cleared/handled by the user first. No automatic recovery-to-draft
+   copy or command. B keeps explicit Reload and local unsent/retained paths visible.
 
-Propose `dispatch(...) -> DispatchOutcome { Enqueued, Offline, WorkerClosed }`
-in place of today's unit result. Caller checks connection and capacity first;
-only Enqueued permits synchronous conditional draft clearing. WorkerClosed on a
-read/navigation rolls back loading/selection, preserves editor/projection and
-reports disconnect; WorkerClosed on Send retains recovery/editor and marks
-execution uncertain. No caller infers enqueue success from `chat.busy` alone.
+Local retained/unsent transfers are the narrow exception to uncertain navigation
+refusal: allowed when !busy && !loading even if source uncertain, with its ledger
+entry/recovery preserved, target Stable marked uncertain. Remote navigation and
+Send remain refused until reconciliation. This exception permits retrieval, not
+execution/admission. Local paths still obey all capacity/composition gates; at a
+full bound they explain which deliberate draft action is needed, never evict text.
+If composition safety cannot be established, section 4's blocker prevents promising
+lossless ownership transfer. No transcript is retained on local or remote switches.
 
-## 4. Draft snapshot/reset API requested from C
+## 3. Capacity and creation transactions (both reviews R2 / R3)
 
-Proposed synchronous app-private API in `composer.rs` (names subject to freeze):
+### 3.1 Net capacity and reservations
 
-- `snapshot_prompt(world, entity, revision) -> DraftSnapshot`: exact Label text,
-  no mutation and no `FieldTransactions`. Called only at a committed ownership
-  transfer, never every idle frame. A owns when; C owns mechanics.
-- `replace_prompt(world, entity, text)`: wraps existing `reset_prompt`; retains
-  entity, synchronous marker lifetime, resets Prompt scroll to zero, resets native
-  draft/caret through the existing reset function. No remount, retained marker,
-  async callback or new framework API. A advances revision before calling.
-- `clear_prompt_if_current(world, entity, expected_key, expected_revision,
-  submitted_text) -> bool`: controller validates key/revision, then C verifies
-  current Label equals submitted snapshot solely as a destructive-clear guard.
-  Equality is **not identity, admission or recovery reconciliation**. Mismatch
-  leaves text untouched. Clear only synchronously after successful local enqueue,
-  never later on Admitted/History. Failed enqueue retains the editor and recovery.
+Proposed bounds remain 32 inactive nonempty draft keys / 64 recovery entries total,
+not byte-memory guarantees. No speculative snapshot, deletion, copies or eviction.
+For a distinct-owner transfer, atomically validate:
 
-Revision strategy deliberately needs no new framework change detector or live
-text shadow: at the start of each controller Update after native Input, checked
-increment `editor_revision` even if text did not change. Also increment before
-every programmatic replacement or editor-owner change, including New-to-Stable
-migration. Thus a revision is an **editor opportunity epoch**, not exact text edit
-count; an edit-away-and-back in a later frame cannot reuse an old clear token.
-Inactive snapshot revisions are provenance only; restoring text allocates a fresh
-active epoch, never reinstates an old counter. Theme/menu/copy do not replace the
-Prompt; ordinary update epochs may advance but identity and text remain unchanged.
+`N_after = N_inactive - consumed_nonempty_target + nonempty_latest_source <= 32`.
 
-Before applying replies, capture all identity-sensitive intents and safe Submitted
-snapshots with the current `{selected_key, editor_revision}`. Then keep existing
-reply-before-action application order. Any reply commit/reset invalidates captured
-Send/Restore/editor-sensitive actions; reject them, do not relabel them for the
-new session. Within the FIFO, New/Open/Reload starts loading before a subsequent
-Send can run; Restore increments revision before any subsequent captured Send.
-Explicit pointer Send snapshots current text at this capture boundary; native
-Submitted retains its payload, accepted only under `SubmitBoundary.safe` and
-matching context. Never claim framework Submitted is Enter-time text. No Send on
-navigation/restore/menu/theme/copy/scroll. C's active IME tests remain required.
+Here consumed target means an exact guaranteed snapshot removed by THIS commit;
+not a matching ID guess, empty entry, speculative future deletion, or unrelated
+recovery. At a remote-navigation BEGIN reserve the worst case source contribution
+of 1 even if currently empty: typing during loading must fit. Credit only a target
+snapshot whose exact owner/revision and consumption are guaranteed by the pending
+transaction. It is locked against other consumers while loading (editor typing
+alone continues); revalidate at commit. At 32, an exact target exchange can proceed
+without a temporary 33rd entry. An absent target requires a free reserved slot.
+New from Stable has no target draft credit. Recent has unknown target at begin:
+reserve a free slot, do not speculate that list(1) will free one. Typed failures,
+RecentEmpty, Unavailable and WorkerClosed release reservation with no text loss.
+No-op/refused actions never reserve or enqueue. Counters checked, never wrap.
 
-## 5. Exact proposed action → Command → Update table
+Same-owner New migration and Reload require NO additional slot or snapshot. For
+CreatedRetry with inactive origin New(D), credit only the exact consumed nonempty
+origin-New snapshot, not an independently owned Stable(created_id) snapshot. If
+origin New is currently live, migration keeps its latest text (same-owner case).
+If another source is live, source contributes 0/1 and origin New is consumed once.
+Synchronous local unsent/retained transfers need no across-frame reservation: use
+actual latest source text and exact target consumption in the net equation.
+Validate counters, keys, capacity, live entity and adapter/composition preconditions
+before taking entries; commit exchange synchronously without observers seeing a
+half-transfer. Recovery capacity is checked before Send/enqueue or destructive
+clear. Refuse with honest user-directed clear/Restore guidance, never silently
+remove pending/recovery to make room. Restore moves an entry into selected editor;
+it is not a navigation slot allocation.
 
-`connected` means a present worker sender; controller checks it before command
-creation/state mutation, not only shell button enablement. A closed channel is a
-separate enqueue failure. All navigation/list/mode actions require `!busy &&
-!loading`; uncertainty additionally refuses New/Recent/Open/list/mode, leaving
-explicit Reload of selected stable ID available. Local Restore is allowed while
-uncertain but never clears it. Cancel retains existing busy-or-uncertain guard.
+### 3.2 Creation lifecycle, exclusive identity and collisions
 
-| Action identity | Controller admission and command | Result / effect |
+`creation_outcome` is one explicit lifecycle, with checked `creation_token`:
+None -> Creating(origin/target New token, operation) -> either successful committed
+migration/None, KnownCreated{token,new_key,created_id}, or Unknown{token,new_key}.
+It is not silently cleared by navigation, list, Reload, Unavailable or a generic
+error. Refuse another New while any unresolved outcome exists. Offline preflight
+that dispatched nothing creates no remote outcome. After dispatch, no-ID failure
+or lost result is honestly Unknown, not proof of noncreation. SDK create success
+followed by SDK history error OR exhaustion of bounded history attempts must carry
+the known created ID in typed NavigationFailure. Disconnect after receiving a
+known ID retains it; any late result after operation abandonment is not migration.
+
+- New on selected New creates using that owner; success + valid history migrates
+  identity only, preserving latest live draft. New on selected Stable reserves a
+  fresh empty target New token; success snapshots source and selects empty Stable.
+- KnownCreated exposes only explicit `sessions:retry-created:<token>` using
+  Open(exact recorded ID), never New/Send. History success performs exactly one
+  origin-New -> Stable move; repeated Retry after completion is stale/no-op.
+- A collision includes an independently owned LIVE Stable(created_id) OR inactive
+  Stable(created_id), regardless of text equality or emptiness. Retry refuses
+  commit and preserves both owners; never insert a selected-key draft-map entry.
+- Until KnownCreated resolves, EVERY ordinary Open path to that ID (remote row,
+  retained remote/local, Recent result, startup Open if applicable) refuses with
+  “Use Retry created session” and keeps all owners intact. Recent may discover ID
+  only after its read; reject before ownership commit, release reservation. No
+  second migration rule. A target selected through any unexpected path is still
+  independently live ownership and fails collision validation.
+- Counterexample: New(D) -> create S/history fails -> ordinary Open S -> type E ->
+  Retry cannot overwrite D or E: ordinary Open S is refused, so E remains with D's
+  current owner or another explicit owner, never a secretly selected S. Retry must
+  still validate live/inactive collisions. No text equality reconciliation.
+- KnownCreated explicit `sessions:abandon-created:<token>` acknowledges remote
+  session may exist, ends automatic migration association, keeps all live/inactive
+  text under original owner, and performs no remote deletion. The text remains
+  reachable through unsent/retained paths; later deliberate ordinary Open is a new
+  independent selection, NOT resurrection of abandoned migration.
+- Unknown exposes NO Retry-New shortcut. `sessions:ack-unknown:<token>` explicitly
+  acknowledges “Creation outcome unknown; a session may exist. Text is retained.
+  A later New is a NEW deliberate creation, not retry/replay.” Only then may a later
+  separate New action begin. Captured earlier New cannot become eligible because
+  acknowledgement happened first in application order (section 5). Explicit abandon
+  of Unknown has this same acknowledgement semantics, not a noncreation assertion.
+
+## 4. C mechanics, opportunity epochs and active composition blocker
+
+A validates owner/epoch and chooses transactions; C owns same-entity editor
+mechanics only. Proposed synchronous API (not yet frozen): snapshot_prompt obtains
+exact committed Label text only at ownership transfer; replace_prompt wraps the
+existing reset_prompt; clear_prompt_if_current runs only after A's key/epoch check
+and current Label == submitted snapshot, as a destructive-clear guard ONLY.
+Identity/admission/recovery never compare prose. Conditional clear occurs only
+synchronously after successful enqueue, never on later Admitted/History. Failed
+enqueue keeps editor/recovery. Reset retains entity, synchronous FieldTransactions
+insert/remove, scroll zero, native draft/caret reset; Reload/theme do not reset.
+Prevalidate existing entity conditions before taking map entries; no claim of
+arbitrary panic recovery, new detector, framework callback or changed framework API.
+
+At controller entry after native Input increment checked `editor_epoch` each Update
+(even unchanged), and again before programmatic replacement or owner migration.
+This is conservative opportunity invalidation, NOT keystroke provenance. Inactive
+revisions are provenance, never reused as live epochs. Capture tokens before
+replies; a reply-driven New -> Stable invalidates them even with identical text.
+Native Submitted payload is NOT certified Enter-time text. Retain SubmitBoundary's
+ambiguous-batch guard; same-frame exact native edit chronology is not promised.
+
+**Active uncommitted IME policy and concrete blocker:** no ownership transfer,
+programmatic replacement or destructive clear may discard/reattribute active
+preedit; refuse/defer the transition while preserving editor and pending target
+until composition is safely finished, or fail it without transfer. A committed
+Label snapshot does NOT preserve preedit. Verified app code exposes batch
+Input.ime_preedit / ime_commit to SubmitBoundary and reset_field_draft via a
+transaction marker; it does NOT establish a persistent active-preedit query,
+lossless preedit snapshot/restore API, nor proof an empty later batch means native
+composition ended. Do NOT invent such an API or use ime_enabled as proof. Thus
+cross-frame active-preedit transfer safety is an unresolved C/architect prerequisite:
+they must verify an existing input/native contract (without framework edits) that
+can enforce refusal through composition completion, including reply commits while
+loading. Until then ownership transfers/conditional destructive clears cannot be
+claimed safe or enabled on a promise of lossless composition. No policy here
+silently commits/cancels IME or considers committed-only snapshots sufficient.
+
+Future C cases separately exercise nonempty preedit+Enter, commit+Enter, enabled
+but idle, and preedit spanning updates then navigation/History/Restore/clear. Assert
+actual native draft and Label plus FieldTransactions absent, entity identity and
+scroll/caret outcomes. No native tests or physical certification in this pass.
+
+## 5. Per-action capture / apply fences (C R4)
+
+At controller entry capture action intents and safe native Submitted BEFORE reply
+application, with capture-time eligibility. Then apply replies before actions.
+Retain intentional FIFO/multiplicity WITHIN action intents; append native Submitted
+separately in their event order. Do NOT claim a globally chronological FIFO across
+those streams. No dedup of intentional user actions, no post-reply retargeting.
+An ineligible captured action stays ineligible even if a reply makes idle/connected
+or changes selected identity, list/catalog/retry state. Each apply rechecks current
+eligibility AND captured owner/context. Earlier actions may invalidate later ones;
+never revive them against a new owner. A deliberate future Update can capture anew.
+
+Common capture `K,G` = exact source selected key and generation; `E` = editor epoch;
+`U` = current pending-UI-operation identity (including None). Capture required
+eligibility booleans plus relevant immutable arguments, not draft shadows. Checked
+operation IDs assigned only when an eligible action is actually applied. Validate
+K/G/U for all session-mutating/SDK actions; E where text/ownership can change.
+Menu/theme/copy need not all use E. Table completes, rather than replaces, gates:
+
+| Action | Capture before replies (including eligibility NOW) | Apply revalidation / command |
 |---|---|---|
-| `new` | connected, idle, not uncertain, creation-retry resolved, capacity reserved; `New` | Matching `History(id,messages,active)` commits create/migration. Typed `NavigationFailure{created_id?}` rolls back selection. No Send. |
-| `recent` | same navigation gates; `Recent` retains SDK `list(1)` then Open-by-ID internally | Matching History commits exact returned ID; new typed `RecentEmpty` finishes operation without selection/draft change. Failure preserves source. It is explicit open-most-recent, not list refresh or implicit New. |
-| `sessions:list` | connected, idle, not uncertain; `ListSessions` fixed limit 50 | `SessionsListed(rows,more_unavailable)` replaces only list metadata; `SessionsListFailed` preserves old rows/selection/draft. No generation increment. |
-| `sessions:open:<list_revision>:<hex_utf8_id>` | revision must equal last successful list revision; strict hex decode and exact ID membership, no ordinal/text matching; connected + navigation gates; `Open(id)` | History must equal requested ID before commit; mismatch is navigation failure. Current selected ID is no-op, use Reload for reconciliation. Missing/stale/tampered ID refuses without command. |
-| `reload` | connected, idle; selected Stable required, allowed when uncertain; `Open(selected_id)` | Matching History replaces history/live projection only; never resets editor, migrates key or removes recovery. Failure retains projection/draft and uncertainty. |
-| `sessions:retry-created` | explicit user retry of retained created ID; same idle/connect gates as navigation (selected New allowed); `Open(created_id)` | Matching History commits recorded New-to-Stable target transaction. No New/Send replay. |
-| `draft:unsent` | idle, not uncertain, draft capacity reserved; local transfer to retained New key or fresh token; connected worker not required | No Command; generation +1 only if changing owner; retain source snapshot and restore exact unsent text in same editor. |
-| `sessions:abandon-created` | idle, explicit local action | Clears retry metadata only; no command, no text deletion, no assertion about remote creation. |
-| `send` / safe native Submitted | connected, !loading, selected Stable, valid model index, captured key/epoch current, `Chat::begin` guards !busy/!uncertain/nonblank; recovery capacity; `Send(Box<InteractiveTurnRequest>)` | Allocate recovery ID/pending operation before enqueue, generation +1. Matching session/generation/operation Admitted retires only its own pending entry. Failure retains it and blocks new Send until reconciliation. |
-| `recover` (label Restore) | !busy, !loading, **exactly empty** live editor, current key/epoch; selected Stable with recovery | Move last entry of selected session to Prompt; remove exactly its ID and only matching pending pointer. No Command, including offline. Uncertainty unchanged. |
-| `cancel` | connected, !loading, selected stable, busy or uncertain; `Cancel(id)` | Existing Notice is request acknowledgement, not settlement/admission. Does not clear recovery/uncertainty or fake idle. |
-| existing mode action | existing catalog validity, connected, !busy/!loading, selected stable, not uncertain; `SetMode(id,mode)` | Server-effective Mode only; operation-correlated Notice finishes only its own mode request. Never clears a navigation/list loading state. |
-| model/depth/menu/appearance/copy/scroll | Existing local behavior and gates; no new SDK action | No navigation, Send, recovery mutation or draft replacement. Unsupported controls remain disabled/honest. |
+| Send pointer / native Submitted | K,G,E,U, connected, !busy/!loading/!uncertain, Stable, valid model selection/catalog identity and depth, recovery capacity; pointer committed text at capture, native payload + SubmitBoundary.safe | Same K/G/E/U, model/depth validity, all Chat.begin guards, capacity, composition safety; allocate send op/recovery then Send; conditional clear only matching key/epoch/current text after Enqueued. Never relabel native payload. |
+| Restore | K,G,E,U, !busy/!loading, Stable, exact empty Label, selected last RecoveryId and entry revision/pending association | Same owner/epoch and exact chosen entry still last/available, editor still empty, composition safe; MOVE exact entry, clear only matching pending pointer; no Command, uncertainty unchanged, offline allowed. |
+| New | K,G,E,U, connected idle not uncertain, creation_outcome=None, target policy and worst-case capacity | Recheck all, no newly resolved retry allowed; reserve/start New. History later validates pending source/target, not a retargeted selected key. |
+| Recent | K,G,E,U, connected idle not uncertain, reservation availability | Recheck all, reserve worst case; Recent list(1)+history. Known-created target detected on result refuses with Retry instruction; no implicit New. |
+| sessions:list | K,G,U, connected idle not uncertain, list revision/state | Same source/generation/pending identity and eligibility; one ListSessions(50), no generation increment. Reply changes rows only. |
+| remote row / retained remote Open | K,G,E,U, respective projection revision + exact membership/decoded ID, idle connected not uncertain, no unresolved-created target, guaranteed target credit | Recheck all projection/target facts and capacity; Open(id). Already selected ID is no-op, explicit Reload reconciles. No stale-list revival. |
+| retained local / draft:unsent | K,G,E,U, exact retained revision/membership or exact unsent key/allocation state, !busy/!loading, actual net capacity; no unresolved-created target | Same facts, composition safe; atomic local navigation, generation+1 on owner change; zero command. Allowed offline/uncertain only as section 2 exception. |
+| Reload | K,G,E,U, connected !busy/!loading, selected Stable exact ID; uncertainty allowed | Same K/G/E/U and gates; Open(selected ID), generation+1; no editor reset/snapshot. Preserve pending recovery. |
+| Cancel | K,G,U, connected !loading, selected Stable and busy-or-uncertain, exact execution/projection owner and turn if known | Same execution/session context and gates; Cancel(id). No retarget after terminal/History reply. Ack never settles. |
+| explicit SetMode | K,G,U, connected idle/not uncertain, exact catalog revision/valid mode ID and current mode watermark | Same owner/catalog/gates/watermark; allocate Mode op and new mode owner; SetMode(id,mode). Menu opening alone is not SetMode. |
+| Retry known creation | K,G,E,U, exact creation_token/new_key/created_id, idle connected/not uncertain, migration capacity/collision checks | Exact lifecycle still KnownCreated and all gates; Open(recorded ID) under CreatedRetry only. Consume origin once, no New/Send. |
+| Abandon known / acknowledge Unknown | K,G,E,U, idle, exact outcome token + kind, explicit acknowledgement | Same token/kind/owner/epoch/gates; local metadata-only resolution, retain text, no remote assertion or command. Previously ineligible New stays refused. |
+| model/depth choice | Captured catalog validity/selection argument and current busy eligibility; K/G/U if next-turn session configuration | Recheck chosen catalog/value and original session eligibility; no silent use of post-reply different catalog index. No Send or draft reset. |
+| appearance/menu/copy/scroll | Existing local argument/target identity and relevant eligibility; copy uses exact current message projection, not arbitrary new message | Revalidate relevant target; harmless local behavior need not E fence. Never navigation/recovery/SDK/Send side effects. |
 
-Proposed new Update variants are `SessionsListed`, `SessionsListFailed`,
-`RecentEmpty`, `NavigationFailure{created_id:Option<String>}`. Existing History,
-SettledHistory, Mode, Models, Modes, Admitted, Stream, Notice, Failure, Unavailable
-remain with the context envelope. History is routed by pending navigation context
-or active stream reconciliation, not assumed to mean any current selection.
-Backend maps read failures to typed list/navigation outcomes instead of treating
-all reads as uncertain turn admission. Other Failure remains send/follow failure.
-No new action accepts title/preview/index as session authority. Hex encoding is
-only lossless action transport; display abbreviations never select sessions.
+Refused/offline remote actions enqueue nothing and do not change generation,
+selection, recovery or outcome metadata; static notice only. WorkerClosed after
+attempted enqueue is distinct: navigation rolls back/releases reservation, Send
+retains recovery/editor and marks execution unknown; never infer successful enqueue
+from busy. Proposed DispatchOutcome = Enqueued / Offline / WorkerClosed. Local
+Restore/menu/appearance/copy/retained retrieval/unsent never reconnect or defer Send.
 
-### Bounded list, errors and pagination
+## 6. Correlated replies, lifetimes and transitions (architect R4 / C)
 
-One explicit list action performs exactly one `client.sessions().list(50)` read.
-No startup loop, background refresh, next-page fetch, search, hidden history load,
-reconnect or provider activity. Preserve server order; collapse duplicate exact
-IDs to first occurrence, discard empty IDs, cap at 50 even if a server overreturns.
-Project only ID, optional display name (truncate display to 120 Unicode scalars,
-never ID), timestamp and turn count. Drop previews/other verification metadata;
-do not log raw response bodies or IDs/text in diagnostics. Stable ID is retained
-losslessly for Open, not parsed as a local path. Non-atomic list is not a lease.
+### 6.1 Separate owners, not one maximum operation number
 
-Set `more_unavailable` if response has `next_cursor` or overreturns. Show “Recent
-50 only; older-page navigation unavailable in this slice.” **No Load More**:
-SDK list lacks cursor input; do not silently use history_page (different API),
-increasing-limit pseudo-pagination or direct HTTP. Empty success is a valid empty
-list, not an instruction to clear chat/create a session. Read failure retains last
-good rows with a fixed sanitized retry error; retry is explicit. Successful refresh
-increments list_revision, invalidating old row actions but retaining selection,
-drafts/recovery and current chat even if its ID is absent. A loading list blocks
-all command navigation/send for this serial slice; editor typing stays available.
+Conceptual Model ledger shapes to serialize (not implemented fields):
 
-## 6. Transactional transitions and failure handling
-
-| Transition | Before reply / commit | Success | Failure / stale |
-|---|---|---|---|
-| Stable A → B | Reserve draft slot, allocate navigation op, generation +1, loading true. Keep A selected, chat/history/mode and editor live; close menus. No speculative snapshot/reset. | Require matching op/generation/target ID. Synchronously snapshot **latest** A text, remove B inactive snapshot, replace editor with B text or empty, select Stable B, replace history/chat/mode projection, clear loading. | No editor reset or key/projection change. Keep latest A edits and recovery. Show scoped error; keep incremented generation (never roll backward). |
-| A → B → A | Each completed switch follows above; active key absent from inactive map. | Exact UTF-8 drafts restored independently, scroll zero each ownership transfer, same editor entity. | No partial transfer/merge on failed second switch. |
-| New → created stable | Keep New editor live during request. | Successful ID/history moves key; no draft rewrite needed, fresh revision. If target draft conflict, refuse commit. | Source New editor retained; retain known created ID for explicit Open retry. |
-| Stable A → new created stable | Keep A live while reserved target New is empty. | Snapshot A, select new stable with empty text; migrate target token, not A. | A selected/live; target retry metadata retained if known. |
-| Reload same stable | No draft snapshot/reset; generation +1, retain recovery/live until valid History. | Replace canonical history/live; no editor operation. No active turn: clear selected uncertainty; active turn: resume existing SDK follow, busy true and Send blocked. | Preserve previous projection and uncertainty. No automatic Send or pending retirement. |
-| List | No generation increment; pending list operation/loading identifies request. | Replace only rows/state/revision; no selected text/key change. | Preserve last good list and editor/chat. Stale reply does not clear a newer loading operation. |
-| Send → admission/failure | Recovery keyed by stable session and unique ID, pending stores send generation/op; no inference replay. | Matching Admitted removes exactly associated entry/pointer, sets admitted turn; never touches editor or another session. | Uncertain for that session, recovery retained. Enqueue failure is conservative unknown, sender disconnected; never auto-retry. |
-| Explicit Restore | Require selected Stable, empty current editor and no busy/loading. | Transfer one selected-session last entry into same editor, fresh revision/scroll zero; remove only its pending association if it points at that ID. | Nonempty/newer draft, stale context or absent entry: no-op/error, no command and no removal. |
-
-Commit is synchronous in one controller call with prevalidated counters/capacity,
-keys and valid existing Prompt before taking snapshots out of the map. No event,
-await, shell sync or observation step may see a half-transfer. If reset adapter
-cannot guarantee its existing live entity preconditions, refuse **before** taking
-any entry; do not claim arbitrary panic recovery/atomic daemon snapshot support.
-Loading does not freeze typing: snapshot source at success, not at request start.
-Failed Open must not call `Chat::fail` on an otherwise known idle A, erase A's mode,
-or remove A's live messages. Reload of already uncertain A preserves that state
-on failure. No optimistic `mode=None` until successful different-session commit.
-Mode follow-up errors affect metadata/status only, never undo a successful History.
-
-Generation increases once at navigation begin, once at accepted Send, and once
-on explicit local `draft:unsent` owner transfer; not on list, Restore, cancel,
-theme or a refused/disconnected SDK-backed action. Never decrement on rollback. Reply routing first preserves exactly existing stale exceptions:
-**Models / Modes / Unavailable only**. No SessionsListed, History, Mode, Notice,
-Failure, Stream or Admitted exception is added. Then check operation/session
-context before mutation. Even matching-generation wrong-session/op replies are
-ignored. Bootstrap None context is not a wildcard for a command outcome.
-Unavailable remains global: disconnect, busy/loading false, preserve editor,
-selected projection and all recovery; abandon pending UI operation without commit.
-If a send/follow could be in flight, mark selected stable session uncertain; do
-not manufacture admission. Catalog updates cannot finish pending operations,
-change selected identity, clear uncertainty or remove recovery; their exception
-is not permission for these side effects. Preserve existing stream turn/sequence
-checks, non-atomic reads and bounded reconnect policy unchanged.
-
-## 7. Recovery and uncertainty are separate ledgers
-
-A pending pointer identifies **one recovery ID in one session**, never “last global
-prompt” or a vector position. Sending from B must not retire A's recovery, even
-with identical text. Only one in-flight send exists in this serial UI, but old
-unconfirmed recovery may remain across reconciled sessions.
-
-- Admission failure, fatal stream or lost stream makes selected stable execution
-  uncertain; Send blocked until explicit matching history reconciliation (normal
-  admitted stream settlement still uses existing bounded settled_history).
-- While uncertain and not busy, only explicit Reload reconciles execution;
-  New/Recent/row navigation/list/mode are refused. Cancel may request cancellation,
-  not certify it. Restore may transfer text locally but uncertainty stays set.
-- Matching explicit History with no active turn clears uncertainty, **not** recovery
-  or its pending pointer. A subsequent send is deliberate user intent, never
-  replay; old pending pointer may then be superseded while its old recovery entry
-  remains individually recoverable. Pending is not “all recoveries in session.”
-- A late old Admitted after Reload's generation increment cannot retire anything,
-  even if the old pending pointer remains. A matching-generation/op/session
-  Admitted whose pointer was explicitly restored cannot delete another entry.
-- Successful history with active turn reattaches the existing execution; busy
-  prevents navigation/Send. It is not a new admission and does not retire recovery.
-- Recovery UI projects only the selected session (count/last-entry Restore and
-  notice); inactive recovery exists but is not attributed to another chat. No
-  draft is reconstructed from history, turn prose, list preview or recovery text.
-- Restore is **move, not copy**: exact one entry removed, pending cleared only if
-  associated with it; no command even with no worker. It does not certify whether
-  the daemon accepted that prompt. Reload before choosing to send restored text.
-- Transport absent: all SDK-backed actions enqueue zero commands and leave
-  generation/selection/draft/recovery/pending state unchanged apart from a static
-  offline notice. Local menu/theme/copy/Restore remain local; there is no hidden
-  reconnect, queued deferred send or worker recreation.
-
-## 8. Synthetic acceptance plan — designed, NOT written/registered/run
-
-Later A tests go to new `session_tests.rs` only after architect registration;
-adapter additions in `backend_tests.rs`. C owns adapter/input tests in new
-`composer_tests.rs`; architect alone updates shared tests/wiring. No live daemon,
-private sessions, credentials or provider calls. Use synthetic App/channel replies
-and SDK test transport conventions; registration is required before counting tests.
-
-| Case | Required observations / negative assertions |
+| Field | Shape / invariant |
 |---|---|
-| A → B → A Unicode/multiline | `α\n世界🙂` and `β\n独立` round-trip byte-for-byte; same Prompt entity; inactive selected key absent; scroll zero and marker absent after each reset. |
-| Independent identical prompts | A and B both `same\n🙂`; clear/restore/admit A never removes or merges B's text/recovery. Identity exclusively keys/IDs. |
-| Initial New and Stable → New | Unsent initial multiline survives successful create key migration; Stable source retains own snapshot, newly created target is empty; no Send. New → Recent → draft:unsent restores the original unsent text locally (also offline); no orphaned snapshot and no SDK command from unsent selection. |
-| Create succeeded/history failed | A/New stays selected, latest typed draft intact; known created ID displayed as retry target; explicit retry emits Open(that ID), never New/Send. Collision with existing Stable snapshot refuses merge. |
-| Failed Open and malformed target | Selected identity, mode/history/live/editor unchanged, scope error shown, generation not rolled back; unexpected History ID rejected; invalid/stale row action enqueues nothing. |
-| List success/empty/failure/refresh | One list(50); optional cursor is truncation indicator only; duplicate/empty IDs handled, overreturn capped. Last good rows retained on error, empty list does not clear chat. Missing selected ID retained; refresh invalidates old row action. |
-| Busy/loading/uncertain | Table-test direct forged actions as well as disabled buttons; navigation refused, no command/generation movement. Uncertain Reload available, no Send before valid history; local Restore does not unlock Send. |
-| Stale/misrouted replies | Old generation and same-generation wrong op/session for History/Mode/Failure/Stream/Admitted/List do not select/reset/remove recovery/finish newer loading. Exactly catalog Models/Modes and Unavailable exceptions retained. |
-| Typing while Open pending | Source text edited after request is snapshotted at successful commit; on failure it stays live. No request-start clone overwrites it. Reply commit invalidates earlier captured Send/Restore from source. |
-| Submit/no newer overwrite | Accepted send clears only current captured key/revision/text. Edits-away-and-back across epochs, queued editor action, ambiguous later key or reply-driven switch cannot clear/send the wrong draft. Failed enqueue retains text/recovery. |
-| Reload/recovery | Failed admission → newer draft → explicit reload(no active) keeps recovery/pending, leaves newer draft and clears uncertainty only; active/history error does not certify idle. No Send from reload or reattachment. |
-| Restore move | Empty selected editor moves last selected entry; exact ID removed; only own pending association cleared, others remain; no command; uncertainty preserved; nonempty/newer draft refusal and offline local move. |
-| Admitted own pending only | Matching generation+op+session removes only pointed ID; wrong/stale/duplicate admission and pointer already restored cannot remove others or reset newer editor. Superseded old pending recovery remains. |
-| Cancel/terminal/non-atomic history | Cancel Notice never settles; terminal retains existing settlement reconciliation, failed bounded reads stay uncertain. Preserve execution-owned assistant filtering/sequence checks, no text deduplication or Send retry. |
-| Disconnected/capacity/overflow | All remote actions zero enqueue and no destructive mutation; closed sender handled conservatively. Reserved draft-slot limit and recovery limit refuse before loss; checked counter overflow refuses without wrap. |
-| Editor/observation | Same entity on switch/reload/theme; scroll reset only on replacements, reload preserves scroll; no FieldTransactions at any exit. Offline inactive nonempty draft/recovery/list metadata must not become Public. |
+| selected_key / inactive_drafts | SessionKey / BTreeMap<SessionKey,DraftSnapshot{text,revision}>; selected absent. |
+| editor_epoch / next_identity / next_operation / next_recovery | Checked monotonic u64 counters; never wrap or reuse old tokens. |
+| recovery_by_session | BTreeMap<StableId,Vec<RecoveryEntry{id,text,revision}>>, insertion ordered, max64 total; revision protects captured entry identity, not text matching. Empty vectors removed. |
+| pending_by_session | BTreeMap<StableId,PendingAdmission{recovery_id,generation,send_op}>; at most one current unconfirmed pointer per session, no vector indices. |
+| uncertain_sessions | BTreeSet<StableId>; active Chat mirrors selected membership as below, never inferred from text. |
+| pending_ui_operation / projection_owner / mode_owner | Independent operation/phase/watermark lifetimes in the next table. |
+| creation_outcome | None / Creating / KnownCreated / Unknown with checked token and exact origin/target association (section3). |
+| session_rows / retained_rows | Separate derived bounded projections and independently checked revisions (section2), not transcript stores. |
+| existing chat/history/mode/catalog/selection/depth/commands/generation | Canonical active projection, next-turn configuration and transport; no inactive transcript cache or duplicated live editor string. |
 
-P3 still requires separate nonempty ime_preedit+Enter and ime_commit+Enter cases,
-not enabled-but-idle IME; no command, preserved composition/draft outcome, no marker
-leak. P2/P4 480pt and real-trigger popup evidence remains deferred, not closed by
-this plan. Physical keyboard/IME/clipboard/accessibility, compositor, live daemon,
-provider, huge messages and full parity remain unverified.
+Architect serializes conceptual Request{generation,operation,command} and
+Reply{generation,operation?,session?,update}. Backend stamps exact command/create
+ID, never infers identity from prose. This is app-local, not SDK wire evolution.
+Models/Modes/Unavailable are the ONLY current stale-generation exceptions. All
+others require current generation first, then exact operation/session/phase checks;
+None bootstrap context is not a wildcard for command results. Wrong session/op
+with matching generation cannot mutate ledgers, editor, loading or status owners.
 
-## 9. Explicit shared-interface requests and ownership
-
-No shape changes authorized until architect/C review and sender checkpoint.
-Architect serializes atomic changes with each file owner, refreshes bases and then
-freezes the interface; no concurrent Model/Ui/Handles/action edits by lanes.
-
-| Request | Owner / consumer / checkpoint |
+| State / owner | Lifetime and allowed outcomes |
 |---|---|
-| SessionKey, DraftSnapshot, correlated operation/recovery shapes, new Model fields and defaults | Architect serializes with A in state.rs; main.rs initialization owned by architect; B reads projections and C accepts snapshot interface. |
-| Request/Reply context, ListSessions and typed Update outcomes | Architect freezes with A/backend/controller; backend_tests later owned by A. SDK/shared types unchanged; no daemon endpoint. |
-| Draft snapshot/replace/conditional-clear API and pre-reply context capture | Architect + C review; C owns composer.rs mechanics, A controller transition calls. No new schedule required: epoch/capture at controller entry after existing Input guard. |
-| Stable row actions, reachable local unsent draft action, list/error/truncation/creation-retry UI, selected-only recovery | B owns shell.rs and Ui handles, architect serializes any handle shape. No extra Handles changes expected. B emits frozen strings only, never SDK or Model transitions. |
-| New session/composer test modules and existing regression adaptation | Architect alone registers modules and edits existing ui/interaction/qualification tests; A/C supply packet-local tests later. An unregistered module is not a pass. |
-| New private-state observation denial inputs | D with architect authority review must add checks for inactive nonempty snapshots/recovery and retained list metadata atomically before new private state can be enabled under observe, not merely before fixture capture. This is stricter denial, not capture expansion; no changes in P1a. |
+| pending_ui_operation | Navigation{op,generation,from,target,purpose,reservation}, List{op,generation}, or Mode{op,generation,session,mode_owner}; loading iff Some. No draft clone. Its own typed success/failure only finishes it. |
+| projection/follow owner | {op,generation,session,phase: Following / AwaitingSettlement / Settled} for committed navigation/accepted Send; survives clearing loading OR pending admission. Do not orphan mode/follow/history replies when those pointers disappear. New accepted navigation/Send replaces it, not arbitrary notices. |
+| mode owner / watermark | Independent per active projection metadata authority. Follow mode read captures watermark at launch. Explicit SetMode advances owner before dispatch and supersedes earlier follow mode metadata, even if it arrives later. No global max-op rejection of valid stream/settlement. Matching Mode success or ModeFailure ends only its own pending Mode operation; older follow mode never clears it. Failure keeps last known mode marked honest, never rolls watermark backward. |
+| pending admission | Per Stable ID {RecoveryId,generation,send_op}; only matching Admitted or explicit Restore removes its referenced entry. Reload keeps pointer and entry; later deliberate accepted Send can supersede pointer, NOT delete old recovery. |
+| recovery / creation outcome / reservations | Memory ledgers separate from loading; recovery lifetime is not history lifetime. Outcome survives typed failure as section 3. Reservation ends on commit/failure/disconnect; release never deletes text. |
 
-B's synchronous move/restore projection remains synchronous and does not own
-selection, recovery, admissions or draft writes. C never dispatches SDK commands.
-D's synthetic fixtures do not become ordinary transition writers. No new generic
-store, framework, persistence layer, protocol or competing editor resource.
+### 6.2 Exhaustive reply routing / terminal effects
 
-## 10. Decisions, tradeoffs and review questions
+| Reply class | Acceptance and effect / what it cannot finish |
+|---|---|
+| History for pending navigation (Open/New/Recent/CreatedRetry/Reload/startup) | Exact pending op/generation/source still selected, expected target ID or typed discovery, collision/outcome/capacity/editor safety. Transaction below. Clear only matching Navigation; install projection owner before clearing. No recovery retirement. |
+| SettledHistory | Exact selected session, projection/follow op+generation, phase AwaitingSettlement only. Consume once -> Settled, update canonical active history/chat projection, clear selected uncertainty after valid idle reconciliation; NEVER Prompt reset or unrelated loading clear. Duplicate, wrong-phase and old settlement ignored. |
+| Mode | Either exact pending explicit Mode owner success (finish that Mode only), or exact projection/follow metadata op/session plus unchanged mode watermark; latter does not finish any pending UI operation. Late older metadata cannot overwrite later explicit SetMode. |
+| ModeFailure | New typed matching mode failure finishes its OWN Mode only; follow metadata failure affects scoped metadata/status only, not navigation/history rollback or busy settlement. Generic Notice is not mode completion. |
+| SessionsListed / SessionsListFailed | Exact pending List op, generation, session=None; replace rows/revision on success, preserve last good rows on typed failure; finish that List only. |
+| RecentEmpty / NavigationFailure{created_id?,creation_outcome?} | Exact pending navigation context; release reservation, preserve selected editor/history/mode/live. Preserve known created ID including bounded-history failure; no-ID dispatched creation becomes Unknown. Non-create Open failure must not call Chat.fail on otherwise idle source. |
+| Admitted | Exact selected send session/generation/op AND pending admission ID; update admitted turn, retire only matching entry/pointer once. No editor reset or loading clear. Wrong/stale/duplicate or restored pointer cannot remove another entry. |
+| Stream | Exact projection/follow owner plus Chat turn and increasing sequence/busy validation BEFORE terminal side effects. Only ACCEPTED terminal transitions phase AwaitingSettlement, marks uncertainty and requests/accepts existing bounded reconciliation. `event.is_terminal()` alone is never authority. Wrong turn, duplicate/out-of-order or already-terminal event changes nothing. |
+| send/follow Failure | Exact pending send or active follow owner, scoped to that session/phase; mark failure/uncertainty, retain recovery, no unrelated pending UI clear. Settlement read exhaustion stays uncertain; no inference replay. |
+| Notice / cancel acknowledgement | Valid existing generation and applicable contextual owner for scoped status; informational bootstrap None cannot finish command. Not settlement, admission, uncertainty clear, mode completion or arbitrary loading clear. |
+| Models / Modes | Existing stale-generation catalog exceptions only; replace catalog, not session/projection/uncertainty/recovery or pending loading. Captured catalog actions must still validate. |
+| Unavailable | Existing global stale-generation exception: disconnect, busy/loading false, release pending navigation reservation, preserve editor/history/recovery/pending admission. KnownCreated/Unknown remain; dispatched Creating with no known ID becomes Unknown under its same token (never silently resolved). Mark affected selected in-flight execution uncertain, retain honest failed follow context for explicit reconciliation; no fabricated admission or successful settlement. |
 
-**Proposed decisions to accept or revise explicitly:** transactional selection
-commits only on history success; allow typing during loading; no caret/scroll
-restoration across switches (reset to zero); Reload leaves editor/scroll alone;
-uncertainty restricts navigation to Reload; retain recovery until matching
-Admitted or explicit move; list fixed 50 with honest unavailable pagination;
-local editor revision uses conservative per-Update epochs; process-only memory.
-These choose safety/small scope over optimistic navigation, complete catalog,
-process-restart recovery, exact edit counts or per-session caret persistence.
+All Update variants must be classified by this table; new typed variants include
+SessionsListed, SessionsListFailed, RecentEmpty, NavigationFailure and ModeFailure.
+Adapter may need an app-local accepted-event result/helper around Chat validation:
+Chat.apply currently returns unit, so controller cannot safely infer acceptance
+from event.is_terminal. Architect must serialize this acceptance contract without
+weakening existing turn/sequence checks or claiming the current code already fixes it.
 
-**Open for architect + C review, before implementation:**
+### 6.3 Transactional navigation and uncertainty authority
 
-1. Approve concrete 50/32/64 limits and reserved-slot refusal UX; count bounds are
-   not byte-memory limits. No eviction or text truncation is permitted. A later
-   byte-budget policy would require an explicit lossless refusal contract.
-2. Validate C's synchronous adapter preconditions and conservative epoch capture
-   against native Submitted timing and theme/menu action FIFO. Same-frame native
-   edit provenance is limited by the framework; ambiguous guard stays, no stronger
-   Enter-time guarantee is claimed. Approve capturing context before replies while
-   preserving reply-before-action application order.
-3. Approve correlation envelope and typed navigation failures, including created-ID
-   retry UX. Existing New path collapses create/history errors; preserving known
-   identity needs that bounded local adaptation. Unknown create outcome cannot be
-   recovered automatically under existing APIs; show honest uncertainty, no retry
-   replay. Decide explicit abandon label/copy with B, not an implicit merge policy.
-4. Approve stricter uncertain navigation/list/mode refusals and offline local Restore
-   as intentional UI/controller changes. They are not accidentally introduced by
-   a broader stale-reply exception. Confirm pending supersession after explicit
-   history reconciliation leaves the old recovery entry recoverable.
-5. Architect/D must agree private-state denial checks before enabling new state: inactive
-   memory and list metadata are new private state not covered by the old five
-   conjuncts. No export/capture expansion or physical certification is proposed.
-6. P1b implementation dispatch must name refreshed exact base, shared-shape owner
-   sequence and registered tests. No implementation follows from this handback.
+Remote Open keeps source selected, live editor/history/mode/chat unchanged during
+loading. At matching valid history, snapshot LATEST source (not request-time clone),
+consume exact target snapshot, replace same editor, select key, install canonical
+history/chat/mode projection, then release reservation/clear own loading. No event,
+await/shell sync/observation sees half a transfer. New same-owner migration instead
+keeps latest live text, removes origin identity once and increments epoch. Local
+navigation follows the same ownership exchange with explicitly empty unreconciled
+projection. Failed/stale/collision/composition-refused commits leave all text and
+selection intact; no optimistic mode=None or partial map take. Generation increments
+once at remote navigation begin/accepted Send/local owner transfer; never rollback.
+List/Restore/Cancel/theme/refusals do not increment generation; Restore advances E.
+
+`uncertain_sessions` is authoritative per stable ID; active chat.uncertain MUST
+mirror selected membership after EVERY relevant Chat replacement/resume/apply/fail.
+History(no active) or valid AwaitingSettlement -> Settled clears selected membership;
+History(active) inserts/preserves membership through Chat.resume (which currently
+clears its local bool), busy=true and follow owner installed. This intentionally
+keeps reattached execution uncertain until durable settlement; busy also blocks
+Send. Matching admission does not itself reconcile uncertainty. Accepted terminal
+sets membership until settled read; failed bounded settlement retains it. Local
+retrieval sets it. List, Notice, Mode, Cancel ack, Restore, catalog or mere enqueue
+never clears it. Do not clear a different session's uncertainty on selection.
+
+Reload keeps current editor, scroll, recovery AND pending admission. Idle history
+can clear uncertainty without retiring recovery; active history resumes without
+new admission. Old-generation Admitted after Reload is rejected even if pointer
+remains. A deliberate later Send after reconciliation may replace pending pointer;
+the superseded entry remains individually recoverable. Selected-only Restore moves
+last entry with exact ID, no command/admission even offline, does not unlock Send.
+No transcript/recovery reconstruction from prose, list preview or duplicate text.
+Startup connected --session must allocate actual pending Navigation/reservation/
+source New context and stamped operation in the later architect wiring pass; do
+not make startup an unrestricted History exception. Startup failure keeps New text.
+
+## 7. Early exhaustive fail-closed observation gate (architect R5 / C)
+
+Architect + D must land denial AND isolated tests atomically WITH OR BEFORE first
+new private state is reachable under observe, not a later P4 task. Default Deny;
+Public only for explicitly opted-in AUDITED EMPTY New/offline fixture. Existing
+five conjuncts alone are not sufficient. Fail closed on absent/unknown state.
+
+Required Public predicate is the conjunction of all audited emptiness conditions:
+explicit FixtureObservation/offline fixture provenance; no worker/connection;
+selected audited New (not Stable), Chat.session=None; empty committed Label AND
+native draft/preedit/private input state under verified C contract; no history/live
+or rendered private message projection/status; no inactive snapshots (including
+identity-bearing empty ones), recovery entries/maps or pending admission; no
+uncertain IDs; no KnownCreated/Unknown/Creating outcome or retry/created ID metadata;
+no session-bearing pending UI/projection/follow/mode-owner context or reservation;
+no retained keys/rows/revisions with private metadata, no remote list IDs/rows/error
+payload metadata; no other private identity/text in shell/menus/handles/events.
+Catalog/theme data may remain only as explicitly audited synthetic fixture values,
+never an implied exception for a private session. Scalar counters alone are not
+content, but emptiness cannot be inferred from counters or a hidden widget.
+
+Each nonempty/private conjunct independently forces Deny with all other state
+empty, notably Stable selected with empty editor/history, inactive empty identity,
+recovery-only owner, pending-only pointer, uncertain-only ID, known/unknown creation,
+session-bearing navigation/projection/mode context, retained-only row and remote
+list-only metadata. Gate must evaluate after mutations and before any observation
+can consume content; no public intermediate frame. If persistent native preedit
+emptiness cannot be established, remain Deny; no invented query/authority expansion.
+No private fixtures/captures or production observation access authorized here.
+
+## 8. Synthetic acceptance / registration plan — ALL UNEXECUTED
+
+No cases written, registered or run now. Later A supplies session_tests.rs and
+backend_tests.rs additions; C supplies composer_tests.rs; architect alone serializes
+module registration and existing ui/interaction/qualification adaptations. D's
+early isolated observation tests register with the gate. Use synthetic App/channels
+and SDK test transport conventions only, no live daemon/provider/credentials.
+
+| Future group | Required counterexamples and assertions |
+|---|---|
+| Identity/editor | A -> B -> A Unicode/multiline and identical prompts independent; selected absent from map, same entity, native draft/Label exact, marker absent, scroll reset on transfer only. Reload/theme keep editor/scroll. |
+| Reachability | >50 remote sessions with inactive Stable draft and recovery-only owner outside list; independent retained projection, stale/tampered revision/member actions refused. Deleted/missing history fails without text loss, explicit offline local retrieval reaches exact draft then selected-only Restore, zero SDK/Send. Local uncertainty escape never enables Send. Unsent New -> Recent -> unsent restores exact bytes offline. |
+| Capacity | 32 with nonempty exact target exchange succeeds; 32 with absent/empty/unknown Recent target refuses. Empty source at request then typed nonempty before History stays covered; typed failure/Unavailable releases reservation. Same-owner New/Reload no slot; CreatedRetry credits only consumed origin-New, not Stable collision. Local transfer uses actual text; recovery64 and counter overflow refuse before loss/command. |
+| Creation | SDK create succeeds/history SDK error and bounded-history exhaustion retain ID. New(D)->S failure->ordinary Open S rejected with Retry->type E->Retry preserves ownership/no selected-map entry. Both live and inactive Stable collisions, inactive-origin retry after navigation, repeated retry, abandon with retained text, Unknown acknowledgement then only later separately captured New; no hidden replay/deletion claim. |
+| Capture matrix | For EVERY section5 row: capture eligible/ineligible then reply switches owner, New->Stable unchanged text, changes pending op, idle/busy/uncertain, catalog/list/retained revision, recovery ID or creation token. No revival/retargeting. Intent multiplicity/order retained; native submissions separately appended, no global FIFO/Enter-time assertion. Reply-before-actions preserved. New/Open before Send blocks Send; Restore invalidates later captured Send. |
+| Replies/lifetimes | Each section6 class: old generation, wrong op/session, duplicate/phase. Only Models/Modes/Unavailable exceptions. Explicit Mode success AND typed failure finish own Mode; late follow Mode after newer SetMode cannot overwrite; stream/settlement still accepted under older independent projection owner. Clear loading/admission pointer then valid follow outputs still route. |
+| Terminal/settlement | Wrong-turn terminal, duplicate/nonincreasing seq, terminal after idle do NOTHING; accepted terminal marks AwaitingSettlement exactly once. SettledHistory only matching selected awaiting owner consumes once, never Prompt reset or unrelated List/Mode loading clear. Notice/cancel/catalog never settles; bounded read failure retains uncertainty; execution-owned assistant filtering remains. |
+| Recovery/uncertainty | Fail admission -> newer draft -> Reload idle keeps recovery/pending, no editor change; Reload active mirrors ledger through resume and blocks Send until settlement. Later deliberate Send supersedes pointer not recovery; old admitted generation rejected, matching admitted retires own ID only. Restore exact move offline/uncertain; nonempty draft refusal; no command or admission inference. |
+| Startup/offline | Connected --session actual pending startup context accepts only matching History and fails to intact New. No worker remote actions zero enqueue/state movement; closed worker preserves drafts/recovery/outcome and releases reservation, no automatic reconnect/resubmit. |
+| Privacy isolated | Every section7 state alone Deny, default/missing state Deny; explicitly opted-in empty audited fixture only Public. Gate and registered cases precede first new state under observe. No actual capture/private data needed. |
+| C composition | Separate future nonempty preedit+Enter, commit+Enter, enabled-idle; active preedit across Updates then action/reply transfer refused safely. SubmitBoundary stays. Assert actual native draft/Label, marker lifetime/absence, scroll/caret, entity, no command on unsafe submission. Unverified API is blocker, not synthetic pass. |
+
+P2/P4 480pt/real-trigger popup evidence and P3 physical input remain deferred.
+Keyboard/IME/clipboard/accessibility/compositor, huge messages, live daemon/provider
+and full parity remain unverified. No test count or physical certification implied.
+
+## 9. Dependency / ownership sequence — no dispatch authorization
+
+After revised principal architect + independent C review AND sender checkpoint:
+
+1. Architect serializes/finalizes Model/Ui/Handles/action/backend/acceptance-result
+   shapes, defaults, operation/phase/mode-watermark contracts and test registration
+   ownership with A/B/C/D. Refresh exact bases, no concurrent shared-shape edits.
+2. Architect + D land early fail-closed gate + isolated registered cases with or
+   before first private state enabled under observe; include defaults/empty fields
+   introduced at step1 atomically if observable. Not deferred to P4.
+3. C verifies existing composition contract/blocker and provides synchronous
+   snapshot/reset/conditional-clear prerequisite, with actual native state tests.
+   A cannot promise transition safety before this prerequisite is resolved.
+4. A implements reviewed transitions/ledgers/capacity/typed backend routes and
+   packet-local tests against serialized shapes, not competing editor ownership.
+5. Architect wires startup --session, schedule/capture ordering, initialization,
+   active accepted-stream helper and shared regression/module registration.
+6. Subsequent B/C UI composition exposes BOTH recent50 and retained local/remote
+   paths, unsent/retry/acknowledgement, selected-only recovery and honest errors.
+   UI projection move/restore stays synchronous and does not write ownership.
+
+Architect may adjust sequencing to ensure early denial and compile-coherent shared
+shapes but cannot waive review/blockers. C never dispatches SDK or owns session
+Model; B emits frozen actions only; D fixtures are not transition writers. No new
+generic store/framework/persistence/protocol, authority or second editor resource.
+Sender retains orchestration, reviews, terminal callback and native integration.
+
+## 10. Correction mapping, proposed decisions and unresolved checkpoints
+
+| Review/request | Corrected normative location |
+|---|---|
+| architect R1 + C R1 reachability | 2.2/2.3 distinct recent/retained revisions, B remote and lossless local retrieval, honest missing/deleted error; 5/8 fences/cases. |
+| both R2 capacity | 3.1 net equation, guaranteed release/worst-case reservation, exact exchanges32, same-owner/CreatedRetry/local accounting, failure release; 8. |
+| both R3 creation | 3.2 live/inactive collision, exclusive Retry-only unresolved ID, one-time migration, Known/Unknown acknowledgement/abandon lifecycle; 5/8. |
+| C R4 actions | 4/5 exhaustive capture/apply table, eligibility before replies, no retarget/revival, separate action/native ordering; 8. |
+| architect R4 + C lifetimes | 6 mode owner vs projection owner, typed Mode completion, accepted terminal/settlement phase, uncertainty mirror/resume, pending preservation, actual startup context; 8. |
+| architect R5 + C privacy | 7 exhaustive early deny predicate/isolated cases, 9 ordering; no observation authority expansion. |
+| C mechanics/composition | 1/4 same entity and C/A ownership, opportunity-not-keystroke epoch, verified batch-only contract and exact persistent-preedit blocker, future distinct native assertions. |
+
+Proposed core preserved: transactional history commit for remote navigation; one
+live editor, text-only inactive memory; selected-only Restore MOVE/no command/no
+admission; no transcript cache; offline safety; honest SDK recent50; counts32/64;
+loading permits typing with worst-case slot reservation; no text identity/eviction.
+New local retained retrieval is explicitly unreconciled (not history success).
+
+**Unresolved decisions / review blockers — no freeze implied:**
+
+1. Principal architect + C must accept/revise local retained retrieval's empty,
+   uncertain projection and narrow uncertain local-navigation exception; B must
+   expose it. Without that path, missing/deleted retained bytes are NOT demonstrably
+   reachable. Capacity refusal must not be mislabeled lossless automatic retrieval.
+2. Approve counts50/32/64 and net-exchange refusal UX; they are count, not byte limits.
+   No later byte limit may truncate/evict. Review reservation validation/composition
+   deferral together so typed-during-loading source is always protected.
+3. C/architect persistent-active-IME safety is a concrete unresolved prerequisite
+   under verified app APIs (section4). No detector/framework API is invented and no
+   runtime promise of safe ownership transfer can bypass it. Verify existing input
+   contracts in later authorized pass or explicitly hold implementation blocked.
+4. Architect must serialize accepted-stream validation result/helper, pending UI vs
+   follow phases, independent mode watermark and typed ModeFailure/creation outcomes;
+   startup --session needs actual pending context. No global max-op filtering.
+5. Approve Known/Unknown lifecycle, explicit acknowledgement/abandon copy with B,
+   ordinary-open refusal for unresolved created ID and live/inactive collision tests.
+6. Architect + D must audit ALL private state including native composition and
+   session-only metadata; absence of a safe query stays Deny. Early isolated gate
+   cases and registration are a prerequisite, not deferred visual qualification.
+7. Revised contract MUST return through principal architect + independent C and
+   sender checkpoint before implementation dispatch. Sender specifies refreshed
+   exact base and serialized owners/test registration. Report acceptance != freeze.
+   Existing docs-verifier discrepancy/physical certification remain outside this pass.
 
 ## 11. Handback validation boundary
 
-Only documentation/source reads and bounded Git/hash/whitespace/scope checks are
-allowed/performed for P1a. Full commit/base/path delta and exact validation commands
-are returned with handback. No designed acceptance case above has been executed;
-no Rust/source/test registration is delivered. All 55 sealed review files and
-execution-candidate source identity must remain byte-identical to the base.
-Sender retains orchestration, independent review decisions and native integration.
+This pass permits only bounded doc/source reads and read-only Git/hash/whitespace/
+scope validation plus authorized docs commit. Exact head/parent/contract hash and
+changed paths returned in handback. Every pre-existing object/mode outside approved
+contract docs, all 55 sealed evidence files/manifest and execution-candidate source
+must remain unchanged. No evidence scripts or verifier/test/build are run; no tests
+written/registered/executed and no runtime implementation/freeze/stage-completion,
+merge or integration claim. Sender retains review/orchestration/terminal callback.
