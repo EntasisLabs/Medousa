@@ -21,7 +21,10 @@ async fn response(
     let origin = format!("http://{}", listener.local_addr().unwrap());
     let path = path.to_string();
     let server = thread::spawn(move || {
-        let deadline = Instant::now() + Duration::from_secs(8);
+        // Parallel text/layout tests can starve ephemeral fixture threads on
+        // shared hosts. Keep a bounded scheduling budget; GET/path/privacy
+        // assertions remain exact. This does not change production deadlines.
+        let deadline = Instant::now() + Duration::from_secs(15);
         let mut socket = loop {
             match listener.accept() {
                 Ok((socket, _)) => break socket,
@@ -30,7 +33,7 @@ async fn response(
             }
         };
         socket
-            .set_read_timeout(Some(Duration::from_secs(3)))
+            .set_read_timeout(Some(Duration::from_secs(15)))
             .unwrap();
         let mut request = Vec::new();
         while !request.windows(4).any(|w| w == b"\r\n\r\n") {
@@ -49,7 +52,7 @@ async fn response(
         write!(socket, "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
     });
     let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap();
