@@ -1,5 +1,10 @@
 //! App-owned menus built on rndr's canonical popup/focus/dismissal scope.
-use super::*;
+use crate::presentation::{button, label};
+use crate::shell::{muted, row};
+use crate::{presentation, state::Model};
+use rndr_app::{child, column};
+use rndr_core::*;
+use rndr_ui::{Token, Typography};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
