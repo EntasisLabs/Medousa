@@ -170,6 +170,7 @@ pub(super) fn setup(world: &mut World) {
         conversation,
         latest,
     });
+    crate::desktop::mount(world, root);
     request_focus(world, composer);
 }
 
@@ -190,7 +191,7 @@ pub(super) fn sync(world: &mut World) {
     let status = if input_ready {
         status
     } else {
-        format!("{status} · Input safety pending: Send, Restore and navigation disabled")
+        format!("{status} · Input safety pending: Send / Restore / New / Recent / Reload disabled")
     };
     let selected = m
         .selection
@@ -254,7 +255,7 @@ pub(super) fn sync(world: &mut World) {
         world.insert(ui.cancel, Hidden);
     }
     // Use rndr's reading measure rather than a second fixed-width policy.
-    let width = world.resource::<Viewport>().unwrap().width;
+    let width = world.resource::<Viewport>().unwrap().width - crate::desktop::rail_width(world);
     let center_width =
         presentation::reading_width((width - 48.).max(0.), &presentation::theme(world));
     world.get_mut::<Layout>(ui.center).unwrap().width = Size::Px(center_width);

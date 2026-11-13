@@ -1,51 +1,83 @@
-# Try the native rndr chat preview
+# Try the native rndr desktop preview
 
-This developer preview is a **second** Medousa desktop app in
-`apps/rndr-home`; the normal Tauri app and home-first install are unchanged.
-It requires a local rndr checkout and an existing configured local Medousa
-workshop/daemon. It does not install or launch the daemon or pair remote hosts.
+This developer preview is a **second** Medousa app in `apps/rndr-home`.
+The normal Tauri app, home-first install and production configuration are unchanged.
+It requires the existing rndr checkout used by the repository. It does not install,
+launch, repair or deploy the daemon or pair remote hosts.
 
-From the repository root, preview the UI without connecting or sending anything:
+From the repository root, browse without any connection or credential discovery:
 
 ```sh
 cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- --offline
 ```
 
-For real chat, follow the [app setup and launch instructions](../../apps/rndr-home/README.md).
-Pass the existing workshop's daemon origin and data directory. Do not copy
-credentials or put tokens in the command line. The app reads the existing
-first-party local credential boundary; provider setup remains in the normal app.
+## Beyond chat
 
-Use **+** to create a chat or **Continue where we left off** to resume the most
-recent one. Use `--session ID` for a specific older chat. Choose a provider/model
-with the selector, write a message, and press **Send ↑** or Enter. Sending can
-incur inference charges; launching/resuming does not send a prompt. Shift+Enter
-adds a newline. Ambiguous batched/IME submissions are deferred visibly, preserving
-the draft. **Stop** asks the daemon to cancel; **Reload history** reconciles a
-failed/disconnected turn before another send is allowed.
+Open **Settings** in the shared rail. The sections and order match the existing
+app: Preferences, Accounts, Medousa Agent, Runtime Controls, Sharing, External
+Agents, Packages, MCP and Connection. Wide windows have the grouped settings
+sidebar; narrow windows have Previous/Next section controls. Sidebar scrolling
+keeps all sections reachable. The rail retains production destination names;
+unported editors open a clear port-status page, not fabricated content.
 
-The model selector now opens a searchable provider-grouped menu rather than
-cycling. **Mode** uses the daemon's effective session mode and available-mode
-registry. **Behavior → Response depth** offers Concise, Standard, and Deep for
-the next turn in this window (not persisted shared defaults). The composer grows
-with wrapped text, up to six visual lines, and the transcript uses separate user
-bubbles and assistant Markdown with Copy controls. **Runtime** shows the native
-runtime; external agent choices are visibly disabled, not silently substituted.
-This app always sends native turns and does not import Svelte's local runtime
-preferences or external-session bindings.
+- **Preferences** changes light/dark/high contrast in this window only. Nothing is
+  persisted, imported from production or inferred from the operating system.
+- **Accounts / External Agents** show daemon-reported external runtime availability
+  and account status. Unknown is not signed out. Presence is not authentication.
+- **Medousa Agent** exposes the cached model catalog and links to agent modes and
+  local engine status. Catalog entries do not prove working inference.
+- **Runtime Controls** links to health/version, worker capacity, external runtimes,
+  schedules and the local engine. **Sharing** reads shared workshop mode.
+- **MCP** shows the gateway and connected/disconnected servers, without invoking
+  tools. **Connection** reads the responding daemon's authority/version descriptor.
+- **Accounts → Hosted review providers** lists discovered providers, not logged-in
+  review accounts. **Schedules** in the rail opens the read-only recurring list.
 
-**Behavior → Window appearance** offers light/dark appearance and a high-contrast
-toggle using rndr's semantic controls. These settings affect this window only;
-they are not saved, do not follow the OS, and never submit a prompt or change
-workshop defaults. The default is dark. Launch with `--light` and/or
-`--high-contrast` to choose an explicit initial appearance, including with
-`--offline` or `--export`. The composer and transcript share rndr's bounded
-reading measure; theme changes retain the draft, focus, and mounted messages.
-High contrast is a palette option, not a claim of full native accessibility
-certification.
+Administrative lists support local filtering, details, Back and explicit refresh.
+Typing filters never requests a service or persists configuration. Loading,
+permission denial, errors, offline, empty and no-match results are distinct.
+Snapshots are not live subscriptions and are capped at 500 entries per service.
 
-Attachments, voice, stickies, approval/secret fulfillment, remote workshops,
-external runtimes, remaining Behavior controls, full tabs/chat browsing, and other
-studio surfaces are not ported. Use the existing app for those functions. The preview never provides
-an enabled pretend approval/credential control. See the app README for tested
-behavior, framework reproductions, [interaction-parity findings](../../apps/rndr-home/docs/INTERACTION_PARITY.md), and [verification evidence](../../apps/rndr-home/docs/VERIFICATION.md).
+For read-only service data, follow the [launch instructions](../../apps/rndr-home/README.md)
+and pass the existing **loopback** daemon origin and local data directory with
+`--daemon` and `--data-dir`. Existing first-party credentials are read through the
+existing local credential boundary. Do not copy tokens or pass them on a command
+line. The preview never offers credential entry. It does not refresh providers,
+validate credentials with inference, grant permissions or mutate admin configuration.
+
+Sign-in/out, review-account setup, pairing, channels, package inventory/install,
+engine start/stop, vault linking, SSH and permission changes remain in the existing
+app. Packages is an honest unsupported-host-service page, not a fake installed
+inventory. Project/review editing, notes/files/artifacts, identity, Create, Calendar,
+Web, Context, Peers, Activity, Agents, Scripts and Flows are not ported in this pass.
+See the [destination parity matrix](../../apps/rndr-home/docs/DESKTOP_PARITY.md)
+for exact implementation and remaining-view status.
+
+## Chat and native input limitations
+
+**Send, Restore, New, Recent and Reload remain disabled** pending native input
+safety proof. Settings/navigation/local filtering do not depend on that gate.
+The existing transcript, virtualization, draft preservation and Jump to latest
+increment remain. This preview does not repair rndr's IME concern or qualify
+native emptiness across frames. Do not use old launch instructions as authority
+to enable input-sensitive actions.
+
+Physical IME, keyboard, accessibility, device scaling and native-window behavior
+are final user-verification items, not demonstrated production readiness.
+High contrast is a palette option, not accessibility certification.
+
+## Reproduce visual evidence without a live connection
+
+```sh
+cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- \
+  --export-desktop ./desktop-renders
+```
+
+This creates synthetic GPU PNGs at 480×760 and 1120×820 in dark, light and
+high contrast, including every settings section and administrative state examples.
+Images carry a **FIXTURE** / **SYNTHETIC GPU RENDER** label. No credentials are
+loaded and no network is contacted. These are not native-window observations or
+proof of physical input. Existing `--export` remains the chat fixture exporter.
+
+See [implementation evidence](../../apps/rndr-home/docs/DESKTOP_IMPLEMENTATION.md)
+for exact checks, source references, limitations and the compact human checklist.

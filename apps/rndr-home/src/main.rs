@@ -1,7 +1,16 @@
+mod admin_backend;
+mod admin_model;
+mod admin_views;
 mod backend;
 mod composer;
 mod controller;
 mod conversation;
+mod desktop;
+mod desktop_fixtures;
+#[cfg(test)]
+mod desktop_layout_tests;
+#[cfg(test)]
+mod desktop_tests;
 mod fixtures;
 #[cfg(test)]
 mod history_tests;
@@ -11,6 +20,7 @@ mod menus;
 mod presentation;
 #[cfg(test)]
 mod qualification_tests;
+mod settings_views;
 mod shell;
 mod state;
 #[cfg(test)]
@@ -43,6 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data_dir: Option<PathBuf> = None;
     let mut session = None;
     let mut export: Option<PathBuf> = None;
+    let mut desktop_export: Option<PathBuf> = None;
     let mut offline = false;
     let mut observe_offline = false;
     let mut theme = UiTheme {
@@ -62,6 +73,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 offline = true;
             }
             "--offline" => offline = true,
+            "--export-desktop" => {
+                desktop_export = Some(
+                    args.next()
+                        .ok_or("--export-desktop needs a directory")?
+                        .into(),
+                );
+                offline = true;
+            }
             "--light" => theme.appearance = Appearance::Light,
             "--high-contrast" => theme.contrast = Contrast::High,
             "--observe-offline" => {
@@ -70,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" | "-h" => {
                 println!(
-                    "Medousa (rndr)\n  --data-dir PATH [--daemon http://127.0.0.1:9777] [--session ID]\n  --offline  No credentials or network\n  --light / --high-contrast  Explicit window appearance (default: dark)\n  --export DIRECTORY  Offline GPU PNG evidence; no network\n  --observe-offline  Synthetic live window capture, 15s normal exit (requires feature observe)\nUse the existing app to start/configure the daemon. Sending can incur inference charges."
+                    "Medousa (rndr)\n  --data-dir PATH [--daemon http://127.0.0.1:9777] [--session ID]\n  --offline  No credentials or network\n  --light / --high-contrast  Explicit window appearance (default: dark)\n  --export DIRECTORY  Offline chat GPU PNG evidence; no network\n  --export-desktop DIRECTORY  Synthetic settings/admin GPU matrix (all themes/widths); no network\n  --observe-offline  Synthetic live window capture, 15s normal exit (requires feature observe)\nUse the existing app to start/configure the daemon. Sending can incur inference charges."
                 );
                 return Ok(());
             }
@@ -81,11 +100,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = app();
     presentation::apply_theme(app.world_mut(), theme);
     let mut _feed = None;
+    let mut _read_feed = None;
     if !offline {
         medousa_rndr_home::local_url(&origin)?;
         let dir = data_dir.ok_or("--data-dir is required; use --offline for UI only. No credentials are discovered or created automatically.")?;
         let (tx, rx) = mpsc::unbounded_channel();
         app.world_mut().resource_mut::<Model>().unwrap().commands = Some(tx.clone());
+        let (read_tx, read_rx) = mpsc::unbounded_channel();
+        app.world_mut()
+            .resource_mut::<desktop::Connection>()
+            .unwrap()
+            .sender = Some(read_tx);
+        let read_origin = origin.clone();
+        let read_dir = dir.clone();
+        _read_feed = Some(feed::spawn_thread(
+            app.world_mut(),
+            FeedConfig::queue(32),
+            move |out| admin_backend::run(read_origin, read_dir, read_rx, out),
+        ));
         _feed = Some(feed::spawn_thread(
             app.world_mut(),
             FeedConfig::queue(256),
@@ -131,7 +163,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if observe_offline {
         return Err("--observe-offline requires --features observe".into());
     }
-    if let Some(dir) = export {
+    if let Some(dir) = desktop_export {
+        desktop_fixtures::export(&mut app, dir)?;
+    } else if let Some(dir) = export {
         fixtures::export(&mut app, dir)?;
     } else {
         rndr_render::run(app);
@@ -171,6 +205,10 @@ fn app() -> App {
     app.add_plugin(MarkdownPlugin);
     app.world_mut().insert_resource(SubmitBoundary::default());
     app.world_mut().insert_resource(menus::Menus::default());
+    app.world_mut()
+        .insert_resource(admin_model::Desktop::default());
+    app.world_mut()
+        .insert_resource(desktop::Connection::default());
     app.add_system_front(Schedule::Input, guard_submit_boundary);
     app.add_system(Schedule::Startup, setup);
     app.add_system(Schedule::Update, update);

@@ -1,6 +1,22 @@
-# Medousa — rndr native chat preview
+# Medousa — rndr desktop preview
 
-> **Current qualification (2026-11-13):** [rndr 0.6.0 at `44f5dc7c`](docs/QUALIFICATION_0_6_0.md)
+> **Current non-chat increment:** [destination parity and remaining-view matrix](docs/DESKTOP_PARITY.md)
+> and [implementation/check evidence](docs/DESKTOP_IMPLEMENTATION.md). Shared shell,
+> all nine Settings destinations, local appearance, and ten real read-only admin
+> models with filter/list/detail/refresh are implemented. No live workshop was
+> contacted during implementation verification. No production-readiness claim.
+>
+> **Send, Restore, New, Recent and Reload remain disabled.** The legacy chat
+> behavior described below does not override the current native-input gate.
+> Harmless settings/navigation and local filtering remain enabled independently.
+> Credentials, installs, permissions, pairing, live config and destructive actions
+> stay in the existing Medousa app. Production Home is unchanged.
+>
+> Generate clearly labeled synthetic non-chat GPU evidence (no network):
+> `cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- --export-desktop ./desktop-renders`
+> See the updated [user guide](../../docs/guides/rndr-native-preview.md).
+
+> **Prior qualification (preserved, before this non-chat increment):** [rndr 0.6.0 at `44f5dc7c`](docs/QUALIFICATION_0_6_0.md)
 > passes 54 default / 55 observe-feature tests, strict scoped clippy and native
 > builds. Includes fresh synthetic headless and native submitted-surface evidence,
 > explicit device/live/compositor gaps, and later team-boundary recommendations.
@@ -55,7 +71,7 @@ There is no token input, credential-copy step, plaintext secret store, remote
 workshop selection, or auth bypass. A data directory is required for a connected
 launch; offline/export launches never load it.
 
-## Use
+## Legacy chat behavior (input-sensitive controls currently gated)
 
 - **+** creates a real single-user session; it does not run inference.
 - **Continue where we left off** opens the most recent daemon session. There is

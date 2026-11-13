@@ -126,6 +126,26 @@ pub(super) fn sync_observation(world: &mut World) {
         let m = world.resource::<Model>().unwrap();
         let public = crate::composer::native_input_ready(world)
             && m.commands.is_none()
+            && world
+                .resource::<crate::desktop::Connection>()
+                .unwrap()
+                .sender
+                .is_none()
+            && world
+                .resource::<crate::admin_model::Desktop>()
+                .unwrap()
+                .reads
+                .is_empty()
+            && world
+                .resource::<crate::admin_model::Desktop>()
+                .unwrap()
+                .route
+                == crate::admin_model::Route::Chat
+            && world
+                .get::<Label>(world.resource::<crate::desktop::Handles>().unwrap().search)
+                .unwrap()
+                .text
+                .is_empty()
             && m.history_messages.is_empty()
             && m.chat.live_messages.is_empty()
             && m.recovery.is_empty()

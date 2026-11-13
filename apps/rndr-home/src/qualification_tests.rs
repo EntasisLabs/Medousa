@@ -106,7 +106,14 @@ fn parley_markdown_hugs_remeasures_and_retains_streaming_view() {
         format!("{body}{suffix}")
     );
     assert!(app.world().get::<Rect>(view).unwrap().h > narrow.h);
-    assert_eq!(app.world().entities_with::<Scroll>(), vec![ui.conversation]);
+    let mut scrolls = app.world().entities_with::<Scroll>();
+    let desktop = app.world().resource::<desktop::Handles>().unwrap();
+    scrolls.retain(|e| *e != desktop.rail && *e != desktop.body);
+    assert_eq!(
+        scrolls,
+        vec![ui.conversation],
+        "transcript must retain its single scrollport"
+    );
     assert!(conversation::copy_message(
         app.world_mut(),
         ui.conversation,

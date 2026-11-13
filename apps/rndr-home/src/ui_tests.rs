@@ -179,7 +179,7 @@ fn offline_controls_are_honest_and_resize_preserves_draft() {
     );
     assert_eq!(
         app.world().get::<Layout>(ui.center).unwrap().width,
-        Size::Px(472.)
+        Size::Px(414.)
     );
     assert!(!app.world().has::<FieldTransactions>(ui.composer));
 }
@@ -555,7 +555,10 @@ fn semantic_reading_measure_resizes_without_losing_draft() {
         for _ in 0..3 {
             app.update();
         }
-        let expected = presentation::reading_width(width - 48., &presentation::theme(app.world()));
+        let expected = presentation::reading_width(
+            width - desktop::rail_width(app.world()) - 48.,
+            &presentation::theme(app.world()),
+        );
         assert_eq!(
             app.world().get::<Layout>(ui.center).unwrap().width,
             Size::Px(expected)

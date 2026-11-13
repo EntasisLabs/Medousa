@@ -129,6 +129,9 @@ pub(super) fn update(world: &mut World) {
         world.resource_mut::<Model>().unwrap().chat.status = "Input changed in the Enter batch; nothing sent, draft preserved. Press Send or Enter again after composition finishes.".into();
     }
     for (action, submitted) in actions {
+        if crate::desktop::action(world, &action) {
+            continue;
+        }
         let (busy, loading) = {
             let m = world.resource::<Model>().unwrap();
             (m.chat.busy, m.loading)
@@ -288,6 +291,7 @@ pub(super) fn update(world: &mut World) {
         }
     }
     shell::sync(world);
+    crate::desktop::sync(world);
     #[cfg(feature = "observe")]
     crate::fixtures::sync_observation(world);
 }
