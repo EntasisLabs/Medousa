@@ -6,9 +6,9 @@ pub trait ToolEventSenderExt {
     fn job_enqueued(&self, job_id: impl Into<String>, job_type: impl Into<String>) -> bool;
 }
 
-impl ToolEventSenderExt for mpsc::Sender<TuiEvent> {
+impl ToolEventSenderExt for mpsc::Sender<RuntimeEvent> {
     fn tool_invoked(&self, tool_name: impl Into<String>, input_summary: impl Into<String>) -> bool {
-        self.try_send(TuiEvent::ToolInvoked {
+        self.try_send(RuntimeEvent::ToolInvoked {
             tool_name: tool_name.into(),
             input_summary: input_summary.into(),
         })
@@ -16,7 +16,7 @@ impl ToolEventSenderExt for mpsc::Sender<TuiEvent> {
     }
 
     fn job_enqueued(&self, job_id: impl Into<String>, job_type: impl Into<String>) -> bool {
-        self.try_send(TuiEvent::JobEnqueued {
+        self.try_send(RuntimeEvent::JobEnqueued {
             job_id: job_id.into(),
             job_type: job_type.into(),
         })
@@ -24,9 +24,9 @@ impl ToolEventSenderExt for mpsc::Sender<TuiEvent> {
     }
 }
 
-/// Events emitted by cognition tools and background agent tasks back to the TUI event loop.
+/// Channel-neutral events emitted by tools and background tasks.
 #[derive(Debug, Clone)]
-pub enum TuiEvent {
+pub enum RuntimeEvent {
     /// One native chronological daemon fact. `turn_id` is the TUI-local routing
     /// id; the envelope retains the daemon turn id and replay cursor.
     TurnStreamV3 {
@@ -126,7 +126,7 @@ pub enum TuiEvent {
 mod tests {
     use tokio::sync::mpsc;
 
-    use super::{ToolEventSenderExt, TuiEvent};
+    use super::{RuntimeEvent, ToolEventSenderExt};
 
     #[tokio::test]
     async fn tool_events_are_best_effort_and_structured() {
@@ -136,11 +136,11 @@ mod tests {
 
         assert!(matches!(
             receiver.recv().await,
-            Some(TuiEvent::ToolInvoked { tool_name, .. }) if tool_name == "tool.test"
+            Some(RuntimeEvent::ToolInvoked { tool_name, .. }) if tool_name == "tool.test"
         ));
         assert!(matches!(
             receiver.recv().await,
-            Some(TuiEvent::JobEnqueued { job_id, .. }) if job_id == "job-1"
+            Some(RuntimeEvent::JobEnqueued { job_id, .. }) if job_id == "job-1"
         ));
     }
 
@@ -152,3 +152,6 @@ mod tests {
         assert!(!sender.job_enqueued("job-1", "test.job"));
     }
 }
+
+/// Compatibility name for terminal consumers of the shared event contract.
+pub type TuiEvent = RuntimeEvent;

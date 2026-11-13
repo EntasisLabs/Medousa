@@ -30,8 +30,14 @@ jobs:
           cache-on-failure: true
       - name: Guard request-scoped runtime ownership
         run: ./scripts/ci/check-runtime-context.sh
+      - name: Guard standalone daemon dependency boundary
+        run: python3 scripts/ci/check-daemon-dependencies.py
+      - name: Check standalone daemon (no workspace feature unification)
+        run: cargo check --locked -p medousa --no-default-features --features full-daemon --bin medousa_daemon
+      - name: Check terminal compatibility
+        run: cargo check --locked -p medousa --no-default-features --features tui --bin medousa_tui --bin medousa
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
+        run: cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh --features medousa/tui -- -D warnings
       - name: cargo check (WhatsApp adapter)
         run: cargo check --locked --manifest-path adapters/medousa-whatsapp/Cargo.toml
       - name: cargo test (lib, hermetic)

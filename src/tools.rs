@@ -5,10 +5,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::Duration;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
-#[cfg(feature = "full-daemon")]
-use locus_core_rs::NodeStore;
-#[cfg(feature = "full-daemon")]
-use medousa_runtime::MedousaToolLoopPipeline;
 use schemars::JsonSchema;
 use schemars::schema::{InstanceType, Schema, SchemaObject};
 use serde::{Deserialize, Serialize};
@@ -17,13 +13,7 @@ use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
 use stasis::application::orchestration::tool_registry::ToolRegistry;
-#[cfg(feature = "full-daemon")]
-use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
-#[cfg(feature = "full-daemon")]
-use stasis::prelude::RuntimeBackend;
 use stasis::prelude::{RuntimeComposition, StasisError};
-#[cfg(feature = "full-daemon")]
-use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
 use crate::capability_catalog::{
     CapabilityListResponse, CapabilityRegistry, CapabilityResolveResponse, CapabilitySearchMatch,
@@ -47,10 +37,6 @@ use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_regi
 use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::runtime_job_spec::ToolJobSpec;
-#[cfg(feature = "full-daemon")]
-use crate::tui::runtime_services::{
-    build_tool_loop_pipeline_for_target, build_tui_runtime_services,
-};
 use crate::turn_continuation::{
     self, ContinuationAwaitMode, continuation_tool_metadata, wire_turn_child_job,
 };
@@ -2825,106 +2811,13 @@ pub type WorkerCodeProjectSetupService = dyn Fn(String, crate::workshop_contract
     + Send
     + Sync;
 
+/// Compatibility alias; the shared runtime is owned by the agent layer.
 #[cfg(feature = "full-daemon")]
-pub struct TuiRuntime {
-    pub runtime: Arc<RuntimeComposition>,
-    pub tool_loop_pipeline: MedousaToolLoopPipeline,
-    pub tool_registry: Arc<dyn ToolRegistry>,
-    pub tool_catalog: Arc<crate::typed_tools::ToolCatalog>,
-    pub capability_registry: Arc<RwLock<CapabilityRegistry>>,
-    pub mcp_gateway_client: Arc<McpGatewayClient>,
-    pub workflow_registry: Arc<crate::workflow::WorkflowRegistry>,
-    pub locus_store: Arc<dyn NodeStore>,
-    pub semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
-    pub medousa_identity_store: Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>,
-    pub identity_memory_store: Arc<dyn IdentityMemoryStore>,
-    pub memory_reader: Arc<dyn MemoryContextReader>,
-    pub memory_writer: Arc<dyn MemoryContextWriter>,
-    pub memory_operations:
-        Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
-    pub client_registry: crate::client_tools::ClientRegistry,
-    pub execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry,
-    pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
-    /// Daemon-owned Forge authority is attached after the platform runtime is
-    /// assembled. Background workers read this slot at execution time so a
-    /// remotely admitted Coder job cannot accidentally use client-local state.
-    pub forge_authority: Arc<std::sync::RwLock<Option<Arc<medousa_forge::forge::Forge>>>>,
-    /// Destination-owned setup service for projectless remote Coder jobs.
-    pub(crate) worker_code_project_setup:
-        Arc<std::sync::RwLock<Option<Arc<WorkerCodeProjectSetupService>>>>,
-}
+pub use crate::agent_runtime::runtime::MedousaAgentRuntime as TuiRuntime;
 
+/// Compatibility constructor; shared runtime assembly is channel-neutral.
 #[cfg(feature = "full-daemon")]
-impl TuiRuntime {
-    pub fn attach_worker_code_project_setup(&self, service: Arc<WorkerCodeProjectSetupService>) {
-        *self
-            .worker_code_project_setup
-            .write()
-            .expect("worker project setup lock poisoned") = Some(service);
-    }
-
-    pub async fn ensure_worker_code_project(
-        &self,
-        session_id: String,
-        setup: crate::workshop_contract::WorkerCodeProjectSetup,
-    ) -> Result<crate::delegated_task::WorkerCodeProjectRef, String> {
-        let service = self
-            .worker_code_project_setup
-            .read()
-            .expect("worker project setup lock poisoned")
-            .clone()
-            .ok_or_else(|| "destination Coder project setup is unavailable".to_string())?;
-        service(session_id, setup).await
-    }
-
-    pub fn attach_forge_authority(&self, forge: Arc<medousa_forge::forge::Forge>) {
-        *self
-            .forge_authority
-            .write()
-            .expect("Forge authority lock poisoned") = Some(forge);
-    }
-
-    pub fn forge_authority(&self) -> Option<Arc<medousa_forge::forge::Forge>> {
-        self.forge_authority
-            .read()
-            .expect("Forge authority lock poisoned")
-            .clone()
-    }
-
-    pub fn tool_loop_pipeline_for_target(
-        &self,
-        provider: &str,
-        model: &str,
-        base_url: Option<&str>,
-    ) -> MedousaToolLoopPipeline {
-        build_tool_loop_pipeline_for_target(provider, model, base_url, self.tool_registry.clone())
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-#[cfg(feature = "full-daemon")]
-pub async fn build_tui_runtime(
-    backend: RuntimeBackend,
-    provider: Option<&str>,
-    model: Option<&str>,
-    base_url: Option<&str>,
-    allowed_grapheme_modules: Vec<String>,
-    session_id: &str,
-    workshop_operator_identity: bool,
-    event_tx: mpsc::Sender<TuiEvent>,
-) -> anyhow::Result<TuiRuntime> {
-    build_tui_runtime_services(
-        backend,
-        provider,
-        model,
-        base_url,
-        allowed_grapheme_modules,
-        session_id,
-        workshop_operator_identity,
-        event_tx,
-    )
-    .await
-}
+pub use crate::agent_runtime::runtime::build_agent_runtime as build_tui_runtime;
 
 #[cfg(test)]
 mod tests {

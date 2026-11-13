@@ -296,11 +296,12 @@ fn worker_intents() -> [(TurnWorkerIntent, &'static str); 4] {
 
 async fn assembled_contract_baseline() -> (ContractBaseline, ToolFootprintBaseline) {
     let (event_tx, _event_rx) = tokio::sync::mpsc::channel(8);
-    let runtime = crate::tui::runtime_services::build_tui_runtime_services_for_contract_baseline(
-        event_tx,
-    )
-    .await
-    .expect("assemble in-memory first-party tool registry");
+    let runtime =
+        crate::runtime::agent_services::build_agent_runtime_services_for_contract_baseline(
+            event_tx,
+        )
+        .await
+        .expect("assemble in-memory first-party tool registry");
     let registered_tools = runtime
         .tool_registry
         .list_tools()

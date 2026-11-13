@@ -10,11 +10,11 @@ use crate::learning_artifacts::{
     DEFAULT_LEARNING_RECALL_BLOCK_CHARS, DEFAULT_SCRIPT_RECALL_BLOCK_CHARS,
     build_grapheme_script_recall_block, build_runtime_learnings_block,
 };
+use crate::runtime::settings::RuntimeSettings;
 use crate::session::ConversationTurn;
 use crate::stage_routing::StageRoute;
 use crate::tool_bootstrap::{DEFAULT_TOOL_HINTS_BLOCK_CHARS, build_tool_hints_block};
 use crate::tools::TuiRuntime;
-use crate::tui::settings::RuntimeSettings;
 use crate::turn_slice::{
     DEFAULT_SLICE_BLOCK_CHARS, DEFAULT_SLICE_HOT_LINE_CHARS, build_tool_slices_block,
     format_cold_history_line, prior_turn_content,
@@ -109,7 +109,7 @@ pub fn select_pipeline_for_turn_with_registry_and_allowlist(
     use stasis::application::orchestration::tool_registry::ToolRegistry;
 
     use crate::agent_runtime::turn_worker::AllowlistToolRegistry;
-    use crate::tui::runtime_services::build_tool_loop_pipeline_for_target;
+    use crate::runtime::agent_services::build_tool_loop_pipeline_for_target;
 
     let registry: Arc<dyn ToolRegistry> = match tool_allowlist {
         // Explicitly empty means result-only, not an implicit public API grant.

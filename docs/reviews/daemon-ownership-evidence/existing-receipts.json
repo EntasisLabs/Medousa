@@ -1,0 +1,51 @@
+{
+  "binary": "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a",
+  "sha256": "44b3a702c465ecfe77f2473f7fcc7a73825fec6f89e88cff2aa367cdf9663347",
+  "results": [
+    {
+      "command": [
+        "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a",
+        "tool_contract_baseline::",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 0.09
+    },
+    {
+      "command": [
+        "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a",
+        "agent_runtime::spine_byte_parity::",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 0.04
+    },
+    {
+      "command": [
+        "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a",
+        "agent_runtime::turn_completion_fsm::",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 0.01
+    },
+    {
+      "command": [
+        "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a",
+        "grapheme_host_catalog::tests::",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 0.01
+    },
+    {
+      "command": [
+        "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a",
+        "grapheme_runtime::tests::",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 0.17
+    }
+  ]
+}

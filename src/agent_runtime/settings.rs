@@ -1,7 +1,7 @@
 use crate::daemon_api::InteractiveTurnRequest;
+use crate::runtime::settings::RuntimeSettings;
 use crate::session::TuiDefaults;
 use crate::stage_routing::StageRoutingMatrix;
-use crate::tui::settings::RuntimeSettings;
 
 use super::turn_loop_settings::{DEFAULT_GENERAL_MAX_TOOL_ROUNDS, apply_turn_loop_field_defaults};
 use super::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS;

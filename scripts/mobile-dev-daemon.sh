@@ -9,4 +9,4 @@ if command -v medousa >/dev/null 2>&1; then
   exec medousa start daemon --public
 fi
 
-exec cargo run -p medousa --bin medousa -- start daemon --public
+exec cargo run -p medousa --bin medousa --features tui -- start daemon --public

@@ -475,7 +475,7 @@ mod daemon_runner {
             );
 
             crate::workshop_env::apply_provider_llm_env(&task.provider);
-            let pipeline = crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
+            let pipeline = crate::runtime::agent_services::build_tool_loop_pipeline_for_target(
                 &task.provider,
                 &task.model,
                 crate::resolve_llm_base_url(Some(&task.provider), None).as_deref(),

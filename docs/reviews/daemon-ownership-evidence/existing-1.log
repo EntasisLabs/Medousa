@@ -1,0 +1,11 @@
+command: /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a tool_contract_baseline:: --nocapture
+
+running 4 tests
+test tool_contract_baseline::normalized_snapshot_detects_contract_and_placement_drift ... ok
+test tool_contract_baseline::legacy_invocation_fixture_covers_required_input_and_aliases ... ok
+test tool_contract_baseline::legacy_invocation_fixture_covers_defaults_enums_nested_inputs_and_bounds ... ok
+Component store (MedousaStore) initialized
+Component runtime hub (artifact doctor logs) initialized
+test tool_contract_baseline::assembled_first_party_contracts_match_baseline ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2192 filtered out; finished in 0.08s

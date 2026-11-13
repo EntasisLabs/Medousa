@@ -27,9 +27,9 @@ use crate::agent_runtime::{
 };
 use crate::channel_delivery::ChannelDeliveryTarget;
 use crate::daemon_api::InteractiveTurnRequest;
+use crate::runtime::settings::RuntimeSettings;
 use crate::stage_routing::StageRoutingMatrix;
 use crate::tools::TuiRuntime;
-use crate::tui::settings::RuntimeSettings;
 use crate::turn_continuation::TurnContinuationScope;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
@@ -1826,7 +1826,7 @@ async fn run_worker_turn_inner(
     // Genai reads env vars; keys live in keyring/file first — inject for the
     // *worker* provider (may differ from the host turn).
     crate::workshop_env::apply_provider_llm_env(&record.provider);
-    let worker_pipeline = crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
+    let worker_pipeline = crate::runtime::agent_services::build_tool_loop_pipeline_for_target(
         &record.provider,
         &record.model,
         crate::model_route::resolve_route_base_url(
@@ -2573,11 +2573,11 @@ pub fn pipeline_for_turn_profile(
             } else {
                 Arc::new(AllowlistToolRegistry::new(tool_registry, allowlist))
             };
-        crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
+        crate::runtime::agent_services::build_tool_loop_pipeline_for_target(
             provider, model, base_url, filtered,
         )
     } else {
-        crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
+        crate::runtime::agent_services::build_tool_loop_pipeline_for_target(
             provider,
             model,
             base_url,

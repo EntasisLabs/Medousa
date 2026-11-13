@@ -5,36 +5,39 @@ use stasis::application::use_cases::identity_memory_service::IdentityMemoryServi
 use stasis::prelude::RuntimeBackend;
 use tokio::sync::mpsc;
 
+use crate::agent_runtime::MedousaAgentRuntime;
 use crate::artifact_store;
 use crate::channel_session_store;
 use crate::client_tools::ClientRegistry;
-use crate::events::TuiEvent;
+use crate::events::RuntimeEvent;
 use crate::openshell_sandbox_run;
 use crate::recurring_agent_turn;
 use crate::recurring_delivery;
 use crate::recurring_feed;
+use crate::runtime::agent_services::assemble_agent_runtime_with_delegation;
+use crate::runtime::event_delivery::HeadlessEventDrain;
 use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_composition};
 use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::session_meta_store;
 use crate::session_store;
-use crate::tools::TuiRuntime;
-use crate::tui::runtime_services::assemble_tui_runtime_with_delegation;
 use crate::turn_continuation;
 use crate::verification_store;
 
 /// Single root handle for daemon and offline runtimes: Stasis composition + agent tooling.
 pub struct MedousaPlatformRuntime {
-    agent: Arc<TuiRuntime>,
+    // Owns headless observations independently of the shared agent Arc graph.
+    _event_drain: Option<HeadlessEventDrain>,
+    agent: Arc<MedousaAgentRuntime>,
     client_registry: ClientRegistry,
     delegation_service: Option<Arc<crate::delegation::DelegationService>>,
 }
 
 impl MedousaPlatformRuntime {
-    pub fn agent(&self) -> &TuiRuntime {
+    pub fn agent(&self) -> &MedousaAgentRuntime {
         &self.agent
     }
 
-    pub fn agent_handle(&self) -> Arc<TuiRuntime> {
+    pub fn agent_handle(&self) -> Arc<MedousaAgentRuntime> {
         self.agent.clone()
     }
 
@@ -102,9 +105,9 @@ impl PlatformBuildConfig {
 pub async fn build_medousa_platform(
     backend: RuntimeBackend,
     config: PlatformBuildConfig,
-    event_tx: mpsc::Sender<TuiEvent>,
+    event_tx: mpsc::Sender<RuntimeEvent>,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
-    build_platform_inner(backend, config, event_tx, None).await
+    build_platform_inner(backend, config, event_tx, None, None).await
 }
 
 /// Build the daemon platform: one DB connection, shared memory, agent tools registered once.
@@ -113,16 +116,23 @@ pub async fn build_daemon_platform(
     config: PlatformBuildConfig,
     delegated_task_transport: Arc<dyn crate::delegated_task::DelegatedTaskTransport>,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
-    let (event_tx, mut event_rx) = mpsc::channel(256);
-    tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
-    build_platform_inner(backend, config, event_tx, Some(delegated_task_transport)).await
+    let (event_tx, event_drain) = HeadlessEventDrain::start();
+    build_platform_inner(
+        backend,
+        config,
+        event_tx,
+        Some(delegated_task_transport),
+        Some(event_drain),
+    )
+    .await
 }
 
 async fn build_platform_inner(
     backend: RuntimeBackend,
     config: PlatformBuildConfig,
-    event_tx: mpsc::Sender<TuiEvent>,
+    event_tx: mpsc::Sender<RuntimeEvent>,
     delegated_task_transport: Option<Arc<dyn crate::delegated_task::DelegatedTaskTransport>>,
+    event_drain: Option<HeadlessEventDrain>,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
     crate::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     crate::ensure_runtime_backend_prerequisites(&backend)?;
@@ -177,7 +187,7 @@ async fn build_platform_inner(
 
     eprintln!("medousa-daemon: assembling agent runtime…");
     let client_registry = ClientRegistry::new();
-    let agent = assemble_tui_runtime_with_delegation(
+    let agent = assemble_agent_runtime_with_delegation(
         composition,
         memory.identity_store.clone(),
         memory.memory_reader.clone(),
@@ -240,13 +250,14 @@ async fn build_platform_inner(
     }
 
     Ok(Arc::new(MedousaPlatformRuntime {
+        _event_drain: event_drain,
         agent,
         client_registry,
         delegation_service,
     }))
 }
 
-async fn sync_mcp_catalog(agent: &TuiRuntime) {
+async fn sync_mcp_catalog(agent: &MedousaAgentRuntime) {
     if let Ok(catalog) = agent.mcp_gateway_client.fetch_catalog().await {
         agent
             .capability_registry

@@ -1,0 +1,18 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+    Checking medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 48.08s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+real 48.13
+user 45.99
+sys 1.32

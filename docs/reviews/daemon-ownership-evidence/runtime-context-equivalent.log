@@ -1,0 +1,2 @@
+Python equivalent of check-runtime-context.sh regex scan: 780 Rust files; no forbidden symbols.
+Original rg-based script could not be qualified: rg is unavailable; its zero exit was not counted.

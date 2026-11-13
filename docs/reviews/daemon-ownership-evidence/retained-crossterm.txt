@@ -1,0 +1,28 @@
+crossterm v0.29.0
+└── comfy-table v7.2.2
+    └── polars-core v0.46.0
+        ├── polars v0.46.0
+        │   └── grapheme-stdlib v0.7.1
+        │       ├── grapheme-aot-container v0.7.1
+        │       │   ├── grapheme-compiler v0.7.1
+        │       │   │   ├── grapheme-lsp v0.7.1
+        │       │   │   │   └── medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline)
+        │       │   │   ├── grapheme-sdk v0.7.1
+        │       │   │   │   ├── medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline)
+        │       │   │   │   └── stasis-rs v0.13.0
+        │       │   │   │       ├── medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline)
+        │       │   │   │       └── medousa-runtime v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/crates/medousa-runtime)
+        │       │   │   │           └── medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline)
+        │       │   │   ├── grapheme-wasm v0.7.1
+        │       │   │   │   └── stasis-rs v0.13.0 (*)
+        │       │   │   ├── medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline)
+        │       │   │   └── stasis-rs v0.13.0 (*)
+        │       │   ├── grapheme-runtime v0.7.1
+        │       │   │   ├── grapheme-sdk v0.7.1 (*)
+        │       │   │   ├── grapheme-wasm v0.7.1 (*)
+        │       │   │   └── medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline)
+        │       │   └── grapheme-sdk v0.7.1 (*)
+        │       ├── grapheme-sdk v0.7.1 (*)
+        │       └── grapheme-wasm v0.7.1 (*)
+        └── polars-io v0.46.0
+            └── polars v0.46.0 (*)

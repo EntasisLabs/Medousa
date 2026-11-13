@@ -1,0 +1,12 @@
+Fri Nov 13 00:05:23 UTC 2026
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+binary: rustc
+commit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a
+commit-date: 2026-11-09
+host: aarch64-apple-darwin
+release: 1.100.0
+LLVM version: 23.1.5
+cargo 1.100.0 (3acc79c0c 2026-11-05)
+Filesystem   1024-blocks      Used Available Capacity iused    ifree %iused  Mounted on
+/dev/disk3s5   239362496 205374552   8397876    97% 1929694 83978760    2%   /System/Volumes/Data
+7182852	../.cache/cargo-target

@@ -311,10 +311,12 @@ jobs:
           cache-on-failure: true
           shared-key: release-daemon-${{ matrix.name }}
 
-      - name: Build medousa + medousa_daemon
+      - name: Build daemon separately from terminal launcher
         run: |
-          cargo build --release -p medousa --bin medousa --bin medousa_daemon \
-            --features iroh-transport --target "${{ matrix.target }}"
+          cargo build --release -p medousa --bin medousa_daemon \
+            --no-default-features --features full-daemon,iroh-transport --target "${{ matrix.target }}"
+          cargo build --release -p medousa --bin medousa \
+            --no-default-features --features tui,iroh-transport --target "${{ matrix.target }}"
 
       - name: Stage daemon + launcher binaries
         run: |

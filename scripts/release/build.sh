@@ -196,7 +196,8 @@ if [[ "${NEED_ENGINE}" -eq 1 ]]; then
   if [[ -n "${MEDOUSA_PREBUILT_DAEMON:-}" && -f "${MEDOUSA_PREBUILT_DAEMON}" ]]; then
     medousa_log "reusing prebuilt daemon: ${MEDOUSA_PREBUILT_DAEMON}"
   else
-    ROOT_BINS+=(medousa_daemon)
+    # Separate invocation: terminal features must not unify into the daemon.
+    cargo build "${CARGO_BUILD_ARGS[@]}" --bin medousa_daemon
   fi
   ROOT_BINS+=(medousa_cli medousa_tui)
 fi
@@ -207,7 +208,7 @@ if [[ ${#ROOT_BINS[@]} -gt 0 ]]; then
   for bin in "${ROOT_BINS[@]}"; do
     BIN_ARGS+=(--bin "${bin}")
   done
-  cargo build "${CARGO_BUILD_ARGS[@]}" "${BIN_ARGS[@]}"
+  cargo build "${CARGO_BUILD_ARGS[@]}" --features tui "${BIN_ARGS[@]}"
 fi
 
 build_adapter_manifest() {

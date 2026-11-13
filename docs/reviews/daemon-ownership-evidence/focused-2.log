@@ -1,0 +1,27 @@
+command: cargo test --locked --offline -p medousa --no-default-features --features full-daemon --lib ownership_tests::
+warning: `package.homepage` is redundant with `package.repository`
+ --> Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `medousa` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.63s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (../.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a)
+
+running 2 tests
+test agent_runtime::runtime::ownership_tests::compatibility_handle_is_the_same_runtime_not_another_authority ... ok
+test agent_runtime::runtime::ownership_tests::terminal_event_compatibility_name_is_the_shared_contract ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2194 filtered out; finished in 0.00s

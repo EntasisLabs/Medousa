@@ -1,0 +1,111 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+    Checking bytemuck v1.25.0
+   Compiling derive_more-impl v2.1.1
+    Checking half v2.7.1
+    Checking num_threads v0.1.7
+    Checking time v0.3.47
+    Checking ciborium-ll v0.2.2
+   Compiling signal-hook v0.3.18
+    Checking derive_more v2.1.1
+    Checking ciborium v0.2.2
+    Checking signal-hook-mio v0.2.5
+    Checking polars-utils v0.46.0
+    Checking diskann-wide v0.54.0
+    Checking roaring v0.11.4
+    Checking diskann-vector v0.54.0
+    Checking revision v0.30.0
+    Checking polars-schema v0.46.0
+    Checking crossterm v0.29.0
+    Checking polars-arrow v0.46.0
+    Checking simple_asn1 v0.6.4
+    Checking diskann-utils v0.54.0
+    Checking diskann v0.54.0
+    Checking jsonwebtoken v10.4.0
+    Checking surrealdb-strand v3.2.3
+    Checking surrealdb-collections v3.2.3
+    Checking surrealdb-core v3.2.3
+    Checking polars-compute v0.46.0
+    Checking polars-row v0.46.0
+    Checking comfy-table v7.2.2
+    Checking polars-core v0.46.0
+    Checking polars-parquet v0.46.0
+    Checking polars-io v0.46.0
+    Checking webc v12.0.0
+    Checking polars v0.46.0
+    Checking wasmer-config v0.702.0-alpha.3
+    Checking wasmer v7.2.0-alpha.3
+    Checking wasmer-package v0.702.0-alpha.3
+    Checking virtual-fs v0.702.0-alpha.3
+    Checking virtual-net v0.702.0-alpha.3
+    Checking wasmer-wasix-types v0.702.0-alpha.3
+   Compiling strum_macros v0.27.2
+   Compiling indoc v2.0.7
+   Compiling instability v0.3.12
+    Checking strum v0.27.2
+    Checking wasmer-journal v0.702.0-alpha.3
+    Checking unicode-truncate v2.0.1
+    Checking compact_str v0.9.1
+    Checking kasuari v0.4.12
+    Checking lru v0.16.4
+   Compiling radium v0.7.0
+    Checking wasmer-wasix v0.702.0-alpha.3
+    Checking ratatui-core v0.1.0
+   Compiling by_address v1.2.1
+   Compiling palette v0.7.6
+    Checking tap v1.0.1
+    Checking wyz v0.5.1
+   Compiling palette_derive v0.7.6
+    Checking image v0.25.10
+    Checking safe_arch v0.9.3
+    Checking line-clipping v0.3.7
+    Checking fast-srgb8 v1.0.0
+   Compiling rustix v0.38.44
+    Checking funty v2.0.0
+    Checking bitvec v1.0.1
+    Checking ratatui-widgets v0.3.0
+    Checking wide v0.8.3
+    Checking value-ext v0.1.3
+    Checking rand_xoshiro v0.7.0
+    Checking ordered-float v5.3.0
+    Checking quantette v0.5.1
+    Checking genai v0.6.5
+    Checking ratatui-macros v0.7.0
+    Checking ratatui-crossterm v0.1.0
+    Checking outref v0.5.2
+   Compiling ratatui-image v11.0.2
+    Checking vsimd v0.8.0
+    Checking base64-simd v0.8.0
+    Checking ratatui v0.30.0
+    Checking icy_sixel v0.5.0
+    Checking crossterm v0.28.1
+    Checking surrealdb v3.2.3
+    Checking qrcode v0.14.1
+    Checking grapheme-stdlib v0.7.1
+    Checking locus-surreal-adapter v0.1.1
+    Checking detamu-surreal v0.2.0
+    Checking grapheme-aot-container v0.7.1
+    Checking detamu v0.2.0
+    Checking grapheme-compiler v0.7.1
+    Checking grapheme-runtime v0.7.1
+    Checking grapheme-sdk v0.7.1
+    Checking grapheme-wasm v0.7.1
+    Checking grapheme-lsp v0.7.1
+    Checking stasis-rs v0.13.0
+    Checking medousa-runtime v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/crates/medousa-runtime)
+    Checking medousa v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 26s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+real 86.67
+user 108.38
+sys 5.52

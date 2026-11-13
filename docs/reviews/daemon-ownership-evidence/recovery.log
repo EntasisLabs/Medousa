@@ -1,0 +1,5 @@
+
+running 1 test
+test engine_recovery::tests::recovery_replays_uncommitted_journal_and_marks_committed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2195 filtered out; finished in 0.09s

@@ -1,0 +1,17 @@
+{
+  "passed": 47,
+  "failed": 0,
+  "groups": {
+    "focused-1": 4,
+    "focused-2": 2,
+    "focused-3": 5,
+    "existing-1": 4,
+    "existing-2": 7,
+    "existing-4": 4,
+    "existing-5": 11,
+    "recovery": 1,
+    "request-boundary": 9
+  },
+  "zero_test_probe_not_counted": "existing-3.log",
+  "cargo_probe_stopped_at_disk_floor": "focused-4.log"
+}

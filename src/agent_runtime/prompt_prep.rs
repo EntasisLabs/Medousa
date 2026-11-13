@@ -19,9 +19,9 @@ use crate::identity_manuscript::{
 use crate::identity_memory::{
     policy_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
 };
+use crate::runtime::settings::{RuntimeSettings, parse_f32_with_bounds};
 use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
-use crate::tui::settings::{RuntimeSettings, parse_f32_with_bounds};
 
 pub use medousa_runtime::MAX_REQUEST_PROMPT_CHARS;
 
@@ -604,7 +604,7 @@ mod tests {
         compile_interactive_context_prompt, derive_recall_readiness,
         verifier_policy_from_settings_and_route,
     };
-    use crate::tui::settings::RuntimeSettings;
+    use crate::runtime::settings::RuntimeSettings;
 
     fn sample_pack() -> ContextPack {
         ContextPack {

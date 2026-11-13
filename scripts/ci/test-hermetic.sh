@@ -18,9 +18,9 @@ run_pass() {
   # Job timeout-minutes covers the suite; per-pass wall clock fails hung tests
   # before the second pass. macOS has no GNU timeout — CI is Ubuntu.
   if command -v timeout >/dev/null 2>&1; then
-    timeout --signal=KILL 20m cargo test -p medousa --lib "${extra[@]}"
+    timeout --signal=KILL 20m cargo test -p medousa --lib --features tui "${extra[@]}"
   else
-    cargo test -p medousa --lib "${extra[@]}"
+    cargo test -p medousa --lib --features tui "${extra[@]}"
   fi
 }
 

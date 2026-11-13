@@ -1,8 +1,26 @@
 # Daemon crate layout (`medousa::daemon`)
 
-The `medousa_daemon` binary is a thin launcher (~500 lines). HTTP handlers live in the library under `src/daemon/`.
+The `medousa_daemon` binary owns process composition, startup recovery and shutdown. HTTP handlers live in the library under `src/daemon/`.
 
 Turn spine and lifecycle: [`medousa-engine` crate](../../crates/medousa-engine/) — see [component-engine.md](../../architecture/component-engine.md).
+
+## Shared runtime and terminal boundary
+
+`agent_runtime::runtime::MedousaAgentRuntime` is the concrete shared service
+bundle. `runtime::agent_services` constructs it and `runtime::settings` owns its
+settings. `tools::TuiRuntime`, `events::TuiEvent` and the terminal settings module
+are compatibility names, not alternate runtime/store authorities.
+
+The default `full-daemon` profile excludes Ratatui and direct TUI dependencies.
+Use `--features tui` for `medousa_tui` and the terminal `medousa` launcher. Build
+the daemon separately from these targets: Cargo unifies a package's features
+within an invocation, even when more than one binary is selected.
+
+The platform owns its best-effort headless event drain; process recovery,
+scheduler/task shutdown, durable turn ordering and store drains remain owned by
+the existing launcher/services. Grapheme data still transitively needs Polars
+formatting and Crossterm 0.29; this is not a claim that no terminal-related crate
+remains. See the [slice report and capability accounting](../reviews/daemon-ownership-and-dependencies-2026-11-12.md).
 
 ## Daemon HTTP modules
 

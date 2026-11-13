@@ -295,6 +295,7 @@ pub mod tool_aliases;
 mod tool_contract_baseline;
 pub mod tool_names;
 pub mod tools;
+#[cfg(feature = "tui")]
 pub mod tui;
 pub mod turn_failure;
 pub mod turn_ticket;
@@ -403,12 +404,15 @@ pub use runtime::surreal_startup::{
     surrealkv_lock_path,
 };
 pub use runtime::{
-    MedousaPlatformRuntime, PlatformBuildConfig, TuiPlatformBuildConfig, TuiPlatformMode,
-    build_daemon_platform, build_medousa_platform, build_tui_platform, is_daemon_bind_reachable,
-    resolve_tui_platform_mode,
+    MedousaPlatformRuntime, PlatformBuildConfig, build_daemon_platform, build_medousa_platform,
 };
 pub use surreal_config::{
     resolve_daemon_launch_backend, resolve_surreal_connection_settings, sync_profile_daemon_backend,
+};
+#[cfg(feature = "tui")]
+pub use runtime::{
+    TuiPlatformBuildConfig, TuiPlatformMode, build_tui_platform, is_daemon_bind_reachable,
+    resolve_tui_platform_mode,
 };
 pub use tools::{TuiRuntime, build_tui_runtime};
 pub use workshop_env::{apply_workshop_llm_env, load_dotenv_overlay};

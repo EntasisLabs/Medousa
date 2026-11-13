@@ -1,0 +1,3 @@
+Bash syntax: PASS
+.github/workflows/ci.yml: YAML parsed
+.github/workflows/release.yml: YAML parsed

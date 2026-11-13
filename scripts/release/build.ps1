@@ -96,10 +96,11 @@ if ($Target) {
 # here makes cargo look in the default package and fail with
 # "no bin target named `medousa_telegram` in default-run packages".
 Write-MedousaLog "phase 1/2: cargo build (root workspace, release)..."
-Invoke-MedousaCargo @cargoBuildArgs `
+# Separate invocations prevent terminal feature unification into the daemon.
+Invoke-MedousaCargo @cargoBuildArgs --bin medousa_daemon
+Invoke-MedousaCargo @cargoBuildArgs --features tui `
     --bin medousa `
     --bin medousa_cli `
-    --bin medousa_daemon `
     --bin medousa_tui
 
 $adapterManifests = @(

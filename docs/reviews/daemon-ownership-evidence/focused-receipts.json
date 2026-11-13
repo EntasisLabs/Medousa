@@ -1,0 +1,82 @@
+[
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "--lib",
+      "runtime::event_delivery::"
+    ],
+    "exit_code": 0,
+    "seconds": 306.68,
+    "initial_free_bytes": 12114182144,
+    "minimum_free_bytes": 6700494848,
+    "stopped_at_disk_floor": false
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "--lib",
+      "ownership_tests::"
+    ],
+    "exit_code": 0,
+    "seconds": 2.01,
+    "initial_free_bytes": 6616518656,
+    "minimum_free_bytes": 6616514560,
+    "stopped_at_disk_floor": false
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "--lib",
+      "runtime::settings::"
+    ],
+    "exit_code": 0,
+    "seconds": 2.01,
+    "initial_free_bytes": 6522114048,
+    "minimum_free_bytes": 6522101760,
+    "stopped_at_disk_floor": false
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "medousa",
+      "--no-default-features",
+      "--features",
+      "full-daemon",
+      "--lib",
+      "tool_contract_baseline::"
+    ],
+    "exit_code": -15,
+    "seconds": 0.01,
+    "initial_free_bytes": 6396174336,
+    "minimum_free_bytes": 6396157952,
+    "stopped_at_disk_floor": true
+  }
+]

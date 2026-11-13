@@ -1,10 +1,10 @@
 //! Operator-configurable tool-loop limits (TUI / daemon settings).
 
-use crate::tui::settings::{RuntimeSettings, parse_usize_with_bounds};
+use crate::runtime::settings::{RuntimeSettings, parse_usize_with_bounds};
 
 use super::turn_worker::HostBusEnvMode;
 
-pub use crate::tui::settings::{
+pub use crate::runtime::settings::{
     OPERATOR_RETRY_LIMIT_MAX as RETRY_LIMIT_MAX, OPERATOR_RETRY_LIMIT_MIN as RETRY_LIMIT_MIN,
     OPERATOR_ROUND_LIMIT_MAX as ROUND_LIMIT_MAX, OPERATOR_ROUND_LIMIT_MIN as ROUND_LIMIT_MIN,
 };

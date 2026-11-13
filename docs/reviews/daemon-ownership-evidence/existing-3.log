@@ -1,0 +1,5 @@
+command: /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/build/medousa/a345143c7716bd5a/out/medousa-a345143c7716bd5a agent_runtime::turn_completion_fsm:: --nocapture
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2196 filtered out; finished in 0.00s

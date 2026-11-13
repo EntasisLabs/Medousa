@@ -1,0 +1,15 @@
+grapheme-aot-container v0.7.1 FEATURES=[]
+grapheme-aot-container v0.7.1 FEATURES=[] (*)
+grapheme-artifact v0.3.0 FEATURES=[]
+grapheme-artifact v0.3.0 FEATURES=[] (*)
+grapheme-compiler v0.7.1 FEATURES=[data,full,image,media,pdf,plot,stage-b]
+grapheme-compiler v0.7.1 FEATURES=[data,full,image,media,pdf,plot,stage-b] (*)
+grapheme-lsp v0.7.1 FEATURES=[default,full]
+grapheme-runtime v0.7.1 FEATURES=[data,image,media,pdf,plot,stage-b,wasix-runtime]
+grapheme-runtime v0.7.1 FEATURES=[data,image,media,pdf,plot,stage-b,wasix-runtime] (*)
+grapheme-sdk v0.7.1 FEATURES=[data,host,image,media,pdf,plot,stage-b,wasix-runtime]
+grapheme-sdk v0.7.1 FEATURES=[data,host,image,media,pdf,plot,stage-b,wasix-runtime] (*)
+grapheme-signatures v0.7.1 FEATURES=[data,full,image,media,pdf,plot]
+grapheme-stdlib v0.7.1 FEATURES=[data,email,host,http,image,media,net,pdf,plot,sql,surreal,transforms,wasm,web]
+grapheme-stdlib v0.7.1 FEATURES=[data,email,host,http,image,media,net,pdf,plot,sql,surreal,transforms,wasm,web] (*)
+grapheme-wasm v0.7.1 FEATURES=[]

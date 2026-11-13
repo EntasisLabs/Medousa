@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::resolve_llm_provider;
+use crate::runtime::settings::parse_env_overrides;
 use crate::session::{load_provider_api_key, load_tui_defaults};
-use crate::tui::settings::parse_env_overrides;
 
 /// Load a `.env` overlay (timezone, grapheme module timeouts, feature toggles,
 /// etc.) via stasis' dotenv loader.
