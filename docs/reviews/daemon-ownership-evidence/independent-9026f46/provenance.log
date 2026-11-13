@@ -1,0 +1,26 @@
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+binary: rustc
+commit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a
+commit-date: 2026-11-09
+host: aarch64-apple-darwin
+release: 1.100.0
+LLVM version: 23.1.5
+cargo 1.100.0 (3acc79c0c 2026-11-05)
+stable-aarch64-apple-darwin (default)
+Darwin Toms-Mac-mini.local 27.0.0 Darwin Kernel Version 27.0.0: Tue Aug 11 21:02:57 PDT 2026; root:xnu-13432.1.9~1/RELEASE_ARM64_T8132 arm64
+Filesystem   1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on
+/dev/disk3s5   239362496 196591580  17180844    92% 1884162 171808440    1%   /System/Volumes/Data
+?? docs/reviews/daemon-ownership-evidence/independent-9026f46/
+9026f46d docs(review): preserve fresh platform harness qualification
+c0d47829 test(runtime): make isolated platform lifetime harness portable
+71a149b3 docs: record independent ownership correction review and fresh qualification
+f44c405c fix: preserve standalone daemon packaging and cover platform lifetime
+# Keep Rust build artifacts out of the git tree (saves tens of GB across workspace + Tauri apps).
+# Override: CARGO_TARGET_DIR or MEDOUSA_CARGO_TARGET_DIR
+[build]
+target-dir = "../.cache/cargo-target"
+
+# Swift plugin build scripts use Tauri's default of iOS 13 unless this is set.
+# Keep host-side Swift availability checks aligned with the mobile app.
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = "16.1"

@@ -1,0 +1,1 @@
+PASS Python equivalent forbidden-symbol scan: 781 Rust files; same pattern and roots as unavailable rg guard

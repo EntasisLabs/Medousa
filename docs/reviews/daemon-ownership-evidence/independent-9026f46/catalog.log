@@ -1,0 +1,9 @@
+
+running 4 tests
+test grapheme_host_catalog::tests::discover_includes_medousa_secret_host_modules ... ok
+test grapheme_host_catalog::tests::ops_search_finds_shell_run ... ok
+test grapheme_host_catalog::tests::secret_info_lists_scoped_operations ... ok
+test grapheme_host_catalog::tests::shell_info_lists_run_and_status ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2196 filtered out; finished in 0.00s
+

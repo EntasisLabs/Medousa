@@ -1,0 +1,6 @@
+default daemon: 803 unique package names, no TUI-only deps; shared Crossterm only via comfy-table
+explicit daemon: 803 unique package names, no TUI-only deps; shared Crossterm only via comfy-table
+release daemon + iroh: 881 unique package names, no TUI-only deps; shared Crossterm only via comfy-table
+Grapheme capability closure: implementations, signatures, AOT and WASIX retained
+terminal positive control: rendering dependencies present
+daemon-dependencies: PASS (host target, standalone package selection)

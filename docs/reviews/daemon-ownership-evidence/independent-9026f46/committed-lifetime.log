@@ -1,0 +1,78 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `medousa` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.73s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (../.cache/cargo-target/debug/build/medousa/b500f8efb0be0f19/out/medousa-b500f8efb0be0f19)
+
+running 1 test
+test runtime::platform::lifetime_tests::retained_agent_survives_final_platform_drop_without_observation_failure ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2199 filtered out; finished in 0.37s
+
+warning: `package.homepage` is redundant with `package.repository`
+ --> Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `medousa` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.43s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (../.cache/cargo-target/debug/build/medousa/b500f8efb0be0f19/out/medousa-b500f8efb0be0f19)
+
+running 1 test
+test runtime::platform::lifetime_tests::late_actual_constructor_failure_closes_observations_after_handler_registration ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2199 filtered out; finished in 0.05s
+
+warning: `package.homepage` is redundant with `package.repository`
+ --> Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `medousa` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (../.cache/cargo-target/debug/build/medousa/b500f8efb0be0f19/out/medousa-b500f8efb0be0f19)
+
+running 1 test
+test runtime::platform::lifetime_tests::polled_actual_constructor_cancellation_closes_observations_after_handler_registration ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2199 filtered out; finished in 0.05s
+

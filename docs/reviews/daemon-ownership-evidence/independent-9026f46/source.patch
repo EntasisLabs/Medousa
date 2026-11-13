@@ -1,0 +1,105 @@
+diff --git a/scripts/ci/test-daemon-packaging.py b/scripts/ci/test-daemon-packaging.py
+index e73e1860..f155c16c 100644
+--- a/scripts/ci/test-daemon-packaging.py
++++ b/scripts/ci/test-daemon-packaging.py
+@@ -153,6 +153,8 @@ medousa_find_release_binary() { echo "$CARGO_TARGET_DIR/$2/release/$1"; }
+             calls = root / "calls.jsonl"
+             cargo.write_text(f'#!{sys.executable}\n' + '''
+ import json, os, sys
++assert os.environ["RUST_MIN_STACK"] == "33554432", "isolated stack must be fixed at 32 MiB"
++assert os.environ.get("TMPDIR") == os.environ.get("EXPECTED_TMPDIR"), "runner must not override host temp root"
+ with open(os.environ["CALLS"], "a") as log:
+     log.write(json.dumps(sys.argv[1:]) + "\\n")
+ print("test result: ok. " + os.environ["PASS_COUNT"] + " passed; 0 failed; 0 ignored; 0 measured; 0 filtered out")
+@@ -160,10 +162,18 @@ print("test result: ok. " + os.environ["PASS_COUNT"] + " passed; 0 failed; 0 ign
+             cargo.chmod(0o755)
+             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"],
+                        CALLS=str(calls), PASS_COUNT="1")
+-            subprocess.run(["bash", str(ROOT / "scripts/ci/test-platform-lifetime.sh")],
+-                           cwd=ROOT, env=env, check=True, capture_output=True, text=True)
++            env.pop("RUST_MIN_STACK", None)
++            if "TMPDIR" in env:
++                env["EXPECTED_TMPDIR"] = env["TMPDIR"]
++            else:
++                env.pop("EXPECTED_TMPDIR", None)
++            for inherited_stack in (None, "1", "67108864"):
++                if inherited_stack is not None:
++                    env["RUST_MIN_STACK"] = inherited_stack
++                subprocess.run(["bash", str(ROOT / "scripts/ci/test-platform-lifetime.sh")],
++                               cwd=ROOT, env=env, check=True, capture_output=True, text=True)
+             invocations = [json.loads(line) for line in calls.read_text().splitlines()]
+-            self.assertEqual(len(invocations), 3)
++            self.assertEqual(len(invocations), 9)
+             source = (ROOT / "src/runtime/platform/lifetime_tests.rs").read_text()
+             for args in invocations:
+                 self.assertEqual(args[0], "test")
+diff --git a/scripts/ci/test-platform-lifetime.sh b/scripts/ci/test-platform-lifetime.sh
+index 9daf04a3..769da02f 100644
+--- a/scripts/ci/test-platform-lifetime.sh
++++ b/scripts/ci/test-platform-lifetime.sh
+@@ -6,6 +6,10 @@ set -euo pipefail
+ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+ export MEDOUSA_TEST_HERMETIC=1
+ export CARGO_TERM_COLOR=never
++# Real constructor futures overflow the default libtest thread stack in debug builds.
++# Fix this isolated harness at 32 MiB (including if a caller supplies another value);
++# do not change production stacks or require an external environment workaround.
++export RUST_MIN_STACK=33554432
+ log="$(mktemp)"
+ trap 'rm -f "$log"' EXIT
+ for name in \
+diff --git a/src/runtime/platform/lifetime_tests.rs b/src/runtime/platform/lifetime_tests.rs
+index 774a4ffa..c3fea0e4 100644
+--- a/src/runtime/platform/lifetime_tests.rs
++++ b/src/runtime/platform/lifetime_tests.rs
+@@ -78,12 +78,48 @@ struct Fixture {
+     _lock: crate::test_env::EnvLock,
+ }
+ 
++// Resolve only our existing trusted temporary directory, before appending vault.
++// macOS temp paths commonly contain /var -> /private/var; production vault roots
++// intentionally reject symlink ancestors. Keep TempDir alive for cleanup.
++fn canonical_fixture_root(directory: &tempfile::TempDir) -> std::path::PathBuf {
++    directory
++        .path()
++        .canonicalize()
++        .expect("canonical fixture root")
++}
++
++#[cfg(unix)]
++#[test]
++fn fixture_root_resolves_symlink_ancestor_and_retains_owner() {
++    let parent = tempfile::tempdir().unwrap();
++    let canonical_parent = parent.path().canonicalize().unwrap();
++    let target = canonical_parent.join("target");
++    std::fs::create_dir(&target).unwrap();
++    let alias = canonical_parent.join("alias");
++    std::os::unix::fs::symlink(&target, &alias).unwrap();
++    let directory = tempfile::tempdir_in(&alias).unwrap();
++    assert!(directory.path().starts_with(&alias));
++    let root = canonical_fixture_root(&directory);
++    assert!(root.starts_with(&target));
++    assert_eq!(root.canonicalize().unwrap(), root);
++    assert!(
++        root.exists(),
++        "canonicalization must retain the TempDir owner"
++    );
++    drop(directory);
++    assert!(
++        !root.exists(),
++        "TempDir must still remove the canonical directory"
++    );
++}
++
+ impl Fixture {
+     fn new() -> Self {
+         let lock = crate::test_env::lock();
+         let directory = tempfile::tempdir().unwrap();
+-        let data = crate::paths::scoped_test_data_dir(directory.path());
+-        crate::vault::roots::set_test_vault_root_override(Some(directory.path().join("vault")));
++        let root = canonical_fixture_root(&directory);
++        let data = crate::paths::scoped_test_data_dir(&root);
++        crate::vault::roots::set_test_vault_root_override(Some(root.join("vault")));
+         let mut previous_env = Vec::new();
+         for (key, value) in [
+             ("MEDOUSA_TEST_HERMETIC", Some("1")),

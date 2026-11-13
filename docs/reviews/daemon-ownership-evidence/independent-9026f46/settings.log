@@ -1,0 +1,10 @@
+
+running 5 tests
+test agent_runtime::settings::tests::daemon_defaults_general_to_thirty_rounds ... ok
+test agent_runtime::settings::tests::host_picker_rebases_uniform_stale_stage_matrix ... ok
+test runtime::settings::tests::cycles_backend_choices ... ok
+test runtime::settings::tests::resolves_backend_with_safe_default ... ok
+test runtime::settings::tests::validates_allowed_module_format ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2195 filtered out; finished in 0.00s
+

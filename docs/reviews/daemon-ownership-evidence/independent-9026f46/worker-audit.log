@@ -1,0 +1,5 @@
+PASS immutable historical evidence/report: 59 files identical to 71a149b3c982a828c3ea8bd76967191c40ea9091
+PASS historical independent archive: 46 files and 1082 source fingerprints; 2 resolved against historical Git source, NOT revised qualification
+Old current-source auditors are expected to reject these revised harness sources; preserved verbatim. Use verify.py here for fresh source evidence.
+PASS fresh evidence: 39 archived files, 1083 revised source fingerprints; 51 unique Rust tests and 9 Python checks recorded passing.
+Committed runner: 3 separate exact tests PASS with no caller stack or TMPDIR workaround. No Rust rerun, production/native certification, acceptance or integration implied.

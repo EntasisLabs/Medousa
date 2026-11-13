@@ -1,0 +1,37 @@
+{
+  "artifact": {
+    "reason": "compiler-artifact",
+    "package_id": "path+file:///Users/theelevators/Library/Application%20Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline#medousa@0.12.0",
+    "manifest_path": "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/Cargo.toml",
+    "target": {
+      "kind": [
+        "lib"
+      ],
+      "crate_types": [
+        "lib"
+      ],
+      "name": "medousa",
+      "src_path": "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/src/lib.rs",
+      "edition": "2024",
+      "doc": true,
+      "doctest": true,
+      "test": true
+    },
+    "profile": {
+      "opt_level": "0",
+      "debuginfo": "line-tables-only",
+      "debug_assertions": true,
+      "overflow_checks": true,
+      "test": true
+    },
+    "features": [
+      "full-daemon"
+    ],
+    "filenames": [
+      "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/b500f8efb0be0f19/out/medousa-b500f8efb0be0f19"
+    ],
+    "executable": "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/../.cache/cargo-target/debug/build/medousa/b500f8efb0be0f19/out/medousa-b500f8efb0be0f19",
+    "fresh": true
+  },
+  "sha256": "c54a858343716ae93208de944c7ff66cf8019c88c5f4b0c2f04655d43cd7bc03"
+}

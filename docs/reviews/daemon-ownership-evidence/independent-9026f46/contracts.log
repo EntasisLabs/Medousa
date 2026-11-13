@@ -1,0 +1,9 @@
+
+running 4 tests
+test tool_contract_baseline::assembled_first_party_contracts_match_baseline ... ok
+test tool_contract_baseline::legacy_invocation_fixture_covers_defaults_enums_nested_inputs_and_bounds ... ok
+test tool_contract_baseline::legacy_invocation_fixture_covers_required_input_and_aliases ... ok
+test tool_contract_baseline::normalized_snapshot_detects_contract_and_placement_drift ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2196 filtered out; finished in 0.07s
+
