@@ -78,12 +78,48 @@ struct Fixture {
     _lock: crate::test_env::EnvLock,
 }
 
+// Resolve only our existing trusted temporary directory, before appending vault.
+// macOS temp paths commonly contain /var -> /private/var; production vault roots
+// intentionally reject symlink ancestors. Keep TempDir alive for cleanup.
+fn canonical_fixture_root(directory: &tempfile::TempDir) -> std::path::PathBuf {
+    directory
+        .path()
+        .canonicalize()
+        .expect("canonical fixture root")
+}
+
+#[cfg(unix)]
+#[test]
+fn fixture_root_resolves_symlink_ancestor_and_retains_owner() {
+    let parent = tempfile::tempdir().unwrap();
+    let canonical_parent = parent.path().canonicalize().unwrap();
+    let target = canonical_parent.join("target");
+    std::fs::create_dir(&target).unwrap();
+    let alias = canonical_parent.join("alias");
+    std::os::unix::fs::symlink(&target, &alias).unwrap();
+    let directory = tempfile::tempdir_in(&alias).unwrap();
+    assert!(directory.path().starts_with(&alias));
+    let root = canonical_fixture_root(&directory);
+    assert!(root.starts_with(&target));
+    assert_eq!(root.canonicalize().unwrap(), root);
+    assert!(
+        root.exists(),
+        "canonicalization must retain the TempDir owner"
+    );
+    drop(directory);
+    assert!(
+        !root.exists(),
+        "TempDir must still remove the canonical directory"
+    );
+}
+
 impl Fixture {
     fn new() -> Self {
         let lock = crate::test_env::lock();
         let directory = tempfile::tempdir().unwrap();
-        let data = crate::paths::scoped_test_data_dir(directory.path());
-        crate::vault::roots::set_test_vault_root_override(Some(directory.path().join("vault")));
+        let root = canonical_fixture_root(&directory);
+        let data = crate::paths::scoped_test_data_dir(&root);
+        crate::vault::roots::set_test_vault_root_override(Some(root.join("vault")));
         let mut previous_env = Vec::new();
         for (key, value) in [
             ("MEDOUSA_TEST_HERMETIC", Some("1")),

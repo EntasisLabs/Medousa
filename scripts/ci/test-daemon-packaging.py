@@ -153,6 +153,8 @@ medousa_find_release_binary() { echo "$CARGO_TARGET_DIR/$2/release/$1"; }
             calls = root / "calls.jsonl"
             cargo.write_text(f'#!{sys.executable}\n' + '''
 import json, os, sys
+assert os.environ["RUST_MIN_STACK"] == "33554432", "isolated stack must be fixed at 32 MiB"
+assert os.environ.get("TMPDIR") == os.environ.get("EXPECTED_TMPDIR"), "runner must not override host temp root"
 with open(os.environ["CALLS"], "a") as log:
     log.write(json.dumps(sys.argv[1:]) + "\\n")
 print("test result: ok. " + os.environ["PASS_COUNT"] + " passed; 0 failed; 0 ignored; 0 measured; 0 filtered out")
@@ -160,10 +162,18 @@ print("test result: ok. " + os.environ["PASS_COUNT"] + " passed; 0 failed; 0 ign
             cargo.chmod(0o755)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"],
                        CALLS=str(calls), PASS_COUNT="1")
-            subprocess.run(["bash", str(ROOT / "scripts/ci/test-platform-lifetime.sh")],
-                           cwd=ROOT, env=env, check=True, capture_output=True, text=True)
+            env.pop("RUST_MIN_STACK", None)
+            if "TMPDIR" in env:
+                env["EXPECTED_TMPDIR"] = env["TMPDIR"]
+            else:
+                env.pop("EXPECTED_TMPDIR", None)
+            for inherited_stack in (None, "1", "67108864"):
+                if inherited_stack is not None:
+                    env["RUST_MIN_STACK"] = inherited_stack
+                subprocess.run(["bash", str(ROOT / "scripts/ci/test-platform-lifetime.sh")],
+                               cwd=ROOT, env=env, check=True, capture_output=True, text=True)
             invocations = [json.loads(line) for line in calls.read_text().splitlines()]
-            self.assertEqual(len(invocations), 3)
+            self.assertEqual(len(invocations), 9)
             source = (ROOT / "src/runtime/platform/lifetime_tests.rs").read_text()
             for args in invocations:
                 self.assertEqual(args[0], "test")

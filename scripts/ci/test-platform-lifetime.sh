@@ -6,6 +6,10 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 export MEDOUSA_TEST_HERMETIC=1
 export CARGO_TERM_COLOR=never
+# Real constructor futures overflow the default libtest thread stack in debug builds.
+# Fix this isolated harness at 32 MiB (including if a caller supplies another value);
+# do not change production stacks or require an external environment workaround.
+export RUST_MIN_STACK=33554432
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 for name in \
