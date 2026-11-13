@@ -10,15 +10,21 @@ app-private shapes, not existing SDK/protocol APIs or permission to expand scope
 
 ## 1. Binding, scope and verified existing contracts
 
-- Correction entry: clean `9960e0d89ec00acaf61a397485e29d48d3a54219`, parent
-  `93f844648e68bd0e330a4b222f1ce89517f663be`; original CONTRACT was 434 lines,
-  SHA-256 `79d8ae3da2be2ad85c1f7bff6f208d1c82f0bef5be7bcb8bffcc3231b35b7457`.
+- Narrow rereview-correction entry: clean `50fd60ae7ed5d097b77fbe49e325656077332102`,
+  parent `9960e0d89ec00acaf61a397485e29d48d3a54219`; input CONTRACT was 523 lines,
+  SHA-256 `a7e95f826ef453497ed4173696a3fb87f4d409b62bddd3755476a25789788965`.
+  Both completed rereviews were read IN FULL: architect session
+  `ses_peer_b83c19fefe5ef7896d50260fa236f2da9a5ad5c1f1aad7c314d8187a61d144a3`
+  turn6 (20,433 characters), independent C session
+  `ses_peer_9e755d6809eba8abd3275a5ed2717ebe4a8c1853d5de4b3e761f08713d788c3d`
+  turn2 (16,386 characters). Sender accepted REVIEW DELIVERABLES, not freeze.
+  A–D below are DESIGN PROPOSALS requiring architect+C rereview and checkpoint.
 - Worktree: `/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification`.
 - Execution candidate remains `bdef72eb7fbf8014067603f50bb15cfe0a3745f5`.
   External rndr pin remains `44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139`; its
   checkout is not accessed. Production Home and all 55 sealed files/manifest stay
   unchanged. Original P1a base was `93f844648e68bd0e330a4b222f1ce89517f663be`.
-- Only this contract (optionally adjacent correction matrix) may change. No source,
+- Only `apps/rndr-home/docs/p1-a-contract/CONTRACT.md` may change/commit. No source,
   manifests, lockfiles, SDK/framework/daemon, existing evidence or shared docs edits.
   No Cargo/build/test binaries/app/export/native execution, docs-verifier rerun,
   evidence-script execution, external rndr access, cache cleanup, network/provider,
@@ -115,6 +121,16 @@ B exposes “Retained drafts / recovery” independently of remote Recent, with:
    deliberately cleared/handled by the user first. No automatic recovery-to-draft
    copy or command. B keeps explicit Reload and local unsent/retained paths visible.
 
+**D — selected-key retained-local DESIGN PROPOSAL:** after captured row revision/
+membership validation, selecting the exact already-selected key is NO-OP. No
+snapshot, map insertion, native reset, history/projection replacement, uncertainty
+change or generation increment; no transition-driven epoch increment beyond the
+normal controller-entry opportunity tick. This covers selected Stable(S) with live
+draft AND recovery. Selected rows may be displayed or omitted; selection never
+means Restore. Restore stays separate and refuses nonempty editor. Busy/loading
+gates still apply, so no-op is not a bypass. Only DISTINCT-owner local selection
+installs the empty uncertain projection described above.
+
 Local retained/unsent transfers are the narrow exception to uncertain navigation
 refusal: allowed when !busy && !loading even if source uncertain, with its ledger
 entry/recovery preserved, target Stable marked uncertain. Remote navigation and
@@ -163,16 +179,61 @@ it is not a navigation slot allocation.
 
 ### 3.2 Creation lifecycle, exclusive identity and collisions
 
-`creation_outcome` is one explicit lifecycle, with checked `creation_token`:
-None -> Creating(origin/target New token, operation) -> either successful committed
-migration/None, KnownCreated{token,new_key,created_id}, or Unknown{token,new_key}.
-It is not silently cleared by navigation, list, Reload, Unavailable or a generic
-error. Refuse another New while any unresolved outcome exists. Offline preflight
-that dispatched nothing creates no remote outcome. After dispatch, no-ID failure
-or lost result is honestly Unknown, not proof of noncreation. SDK create success
-followed by SDK history error OR exhaustion of bounded history attempts must carry
-the known created ID in typed NavigationFailure. Disconnect after receiving a
-known ID retains it; any late result after operation abandonment is not migration.
+**B — bounded creation-outcome routing DESIGN PROPOSAL, not an SDK API:**
+`creation_outcome` is ONE slot: None / Creating / KnownCreated / Unknown. Each
+non-None state retains checked token, origin/target New key, original create op
+AND dispatch generation. KnownCreated retains exact ID. Retry has its own navigation
+op; it does NOT replace original receipt authority. No archive or tombstones.
+Creating is allocated only for an Enqueued New. Matching Unknown moves Creating
+-> Unknown; Known updates only for a nonempty exact SDK ID. A protocol-conflict
+flag, if needed for contradictory IDs, belongs inside this same bounded slot.
+Refuse New while unresolved. Proven no-dispatch Offline/WorkerClosed creates no
+remote outcome; after Enqueued, no-ID failure/lost result is honestly Unknown.
+Navigation/list/Reload/local retrieval/error/Unavailable never silently clears it.
+
+Propose app-local `CreationOutcome{token,create_op,dispatch_generation,new_key,
+result: Known(id) | Unknown}`. Backend emits Known immediately after SDK create
+returns ID, BEFORE awaiting history, and repeats that correlated identity attached
+to creation History/NavigationFailure. SDK history error AND bounded-history
+exhaustion carry the known ID; never another create. No-ID failure emits Unknown,
+not a noncreation claim. This adapter behavior does NOT already exist.
+
+Demultiplex attached creation outcome FIRST, independent of navigation. This is
+one explicit proposed NEW stale-generation exception, limited to outcome-only
+bookkeeping against the exact unresolved slot's token/create_op/dispatch_generation/
+new_key. Current selection, current generation and pending Navigation are NOT
+receipt authority. A bare stale History/failure is still rejected. Matching Known
+refines Creating/Unknown -> KnownCreated; identical duplicate is inert; Unknown
+cannot downgrade KnownCreated. Conflicting IDs retain first ID and block migration
+for diagnosis, never merge. Refinement CANNOT navigate, select, change editor/epoch/
+generation/history/projection/uncertainty, start follow, release another op's
+reservation, resurrect abandoned migration or enable Send.
+
+| Creation boundary | Outcome-only effect; navigation is separately gated |
+|---|---|
+| Known before history success/failure/exhaustion | Retain ID; failure/refused commit leaves KnownCreated. Only independently eligible matching History may migrate once, then close slot. |
+| Unavailable before identity | Enqueued Creating -> Unknown with SAME receipt authority; release own Navigation. Later matching Known retained even after local navigation/old generation; no automatic migration. |
+| Unavailable after identity | Keep KnownCreated; Unknown/error cannot downgrade it. Lost pending Navigation prevents late History transfer/follow. |
+| Late Known while Unknown unacknowledged | Refine visible outcome to KnownCreated, offer Retry-Open/abandon, preserve original text association regardless of local selection. |
+| History/failure after pending loss, before acknowledgement | Extract exact live receipt only, retain ID, reject navigation part. Non-create stale results gain no exception. |
+| After successful migration, explicit known abandon or unknown acknowledgement | Slot closes/None. Later receipts, INCLUDING known IDs, are deliberately ignored at the disclosed receipt-retirement boundary; never resurrection or a noncreation claim. |
+| Newer token in slot | Old token/op/generation/key fails matching and has NO effect, even with ID; cannot overwrite new outcome/status. New requires prior closure. |
+
+**Exact acknowledgement boundary:** only an eligible explicit local action at APPLY,
+U=None, matching token AND kind/known ID, retires this slot. Before confirmation UI
+must say: “Text is retained. This stops tracking this creation; any later result,
+including a session ID, will be discarded. A remote session may exist. A later New
+creates another session, not a retry.” Known abandon additionally shows known ID
+in the private outcome UI before closure, and does not delete remotely. Unknown
+acknowledgement cannot claim an ID will never arrive. If Known arrives in reply
+pass before captured Unknown acknowledgement applies, kind mismatch refuses that
+action: show Known and require a new deliberate decision. Thus an accepted known
+identity is not silently lost under exact-pending-only routing or relabeled Unknown.
+AFTER explicit retirement, late identity is intentionally ignored as disclosed;
+there is no promise of permanent retention. No late notice overwrites newer state.
+No unbounded archive, automatic list/reconnect or invented SDK API recovers retired
+receipts. Architect+C must explicitly accept/revise this finite retirement tradeoff.
+All abandon/acknowledgement bullets below include this FULL disclosure/boundary.
 
 - New on selected New creates using that owner; success + valid history migrates
   identity only, preserving latest live draft. New on selected Stable reserves a
@@ -229,8 +290,18 @@ ambiguous-batch guard; same-frame exact native edit chronology is not promised.
 
 **Active uncommitted IME policy and concrete blocker:** no ownership transfer,
 programmatic replacement or destructive clear may discard/reattribute active
-preedit; refuse/defer the transition while preserving editor and pending target
-until composition is safely finished, or fail it without transfer. A committed
+preedit. **C — DESIGN PROPOSAL: FAIL ownership commit WITHOUT transfer, never
+indefinitely defer/cache History.** At capture AND immediately before remote
+New/Recent/Open/Retry dispatch require proven safe SOURCE editor/composition
+preflight plus capacity/ownership gates. Otherwise no command (especially create),
+reservation or source mutation. This is not destination validation or a promise
+that composition will remain safe until a reply arrives.
+At matching successful History recheck latest source native/editor safety and all
+destination predicates. Unsafe/unknown means fail commit: release ONLY its own
+reservation/pending Navigation/loading, preserve source identity/native editor,
+text/scroll/caret/history/projection, and require a new deliberate Open (created
+ID uses Retry-Open). No map take/snapshot/reset, automatic retry, cached History
+replay or replayed New. A committed
 Label snapshot does NOT preserve preedit. Verified app code exposes batch
 Input.ime_preedit / ime_commit to SubmitBoundary and reset_field_draft via a
 transaction marker; it does NOT establish a persistent active-preedit query,
@@ -247,6 +318,18 @@ Future C cases separately exercise nonempty preedit+Enter, commit+Enter, enabled
 but idle, and preedit spanning updates then navigation/History/Restore/clear. Assert
 actual native draft and Label plus FieldTransactions absent, entity identity and
 scroll/caret outcomes. No native tests or physical certification in this pass.
+
+Smallest READ-ONLY dependency investigation for SENDER TO AUTHORIZE separately:
+verify exact pinned rndr `44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139` source identity;
+inspect Input preedit/commit/reset lifecycle and cross-frame clearing, Prompt/
+TextField draft/composition storage/reset (historical `rndr_core/src/prompt.rs`
+and `field.rs`; locate actual definitions), and native runner IME commit/cancel/
+empty-preedit/focus-loss/disable delivery through Input -> Update -> observation.
+Determine whether an EXISTING public state/event contract proves composition ended,
+including quiet frames and reply commits. A “saw preedit” latch needs proven clear
+semantics. If insufficient, return precise missing capability and retain BLOCKED.
+No external read, framework edit/API, build/native run/test is granted by this
+recommendation or performed here. Documentation does not fix the detector.
 
 ## 5. Per-action capture / apply fences (C R4)
 
@@ -265,24 +348,35 @@ Common capture `K,G` = exact source selected key and generation; `E` = editor ep
 eligibility booleans plus relevant immutable arguments, not draft shadows. Checked
 operation IDs assigned only when an eligible action is actually applied. Validate
 K/G/U for all session-mutating/SDK actions; E where text/ownership can change.
-Menu/theme/copy need not all use E. Table completes, rather than replaces, gates:
+Menu/theme/copy need not all use E. **A — explicit eligibility DESIGN PROPOSAL:**
+`idle` means EXACTLY `!busy && !loading`; `loading` iff pending_ui_operation is Some.
+Every row requires capture predicates AND apply predicates; “recheck all” means
+ALL stated capture predicates remain true, plus captured context/arguments. False
+at capture is permanent for that event, even if replies complete loading.
+New pending allocations require U=None at BOTH capture and apply: never overwrite
+Some, even when equal to captured U. No outcome acknowledgement/abandon while loading.
+Typing and harmless local menu/theme/copy/scroll may continue, never steal pending
+ownership. New/Recent/remote Open/Retry require proven SOURCE composition preflight
+at both stages, separate from destination commit on reply. Idle does NOT prove
+composition ended. `source/Chat agreement` means Stable(id) == Chat.session or
+New with Chat.session=None. Table completes, rather than replaces, gates:
 
 | Action | Capture before replies (including eligibility NOW) | Apply revalidation / command |
 |---|---|---|
-| Send pointer / native Submitted | K,G,E,U, connected, !busy/!loading/!uncertain, Stable, valid model selection/catalog identity and depth, recovery capacity; pointer committed text at capture, native payload + SubmitBoundary.safe | Same K/G/E/U, model/depth validity, all Chat.begin guards, capacity, composition safety; allocate send op/recovery then Send; conditional clear only matching key/epoch/current text after Enqueued. Never relabel native payload. |
-| Restore | K,G,E,U, !busy/!loading, Stable, exact empty Label, selected last RecoveryId and entry revision/pending association | Same owner/epoch and exact chosen entry still last/available, editor still empty, composition safe; MOVE exact entry, clear only matching pending pointer; no Command, uncertainty unchanged, offline allowed. |
-| New | K,G,E,U, connected idle not uncertain, creation_outcome=None, target policy and worst-case capacity | Recheck all, no newly resolved retry allowed; reserve/start New. History later validates pending source/target, not a retargeted selected key. |
-| Recent | K,G,E,U, connected idle not uncertain, reservation availability | Recheck all, reserve worst case; Recent list(1)+history. Known-created target detected on result refuses with Retry instruction; no implicit New. |
-| sessions:list | K,G,U, connected idle not uncertain, list revision/state | Same source/generation/pending identity and eligibility; one ListSessions(50), no generation increment. Reply changes rows only. |
-| remote row / retained remote Open | K,G,E,U, respective projection revision + exact membership/decoded ID, idle connected not uncertain, no unresolved-created target, guaranteed target credit | Recheck all projection/target facts and capacity; Open(id). Already selected ID is no-op, explicit Reload reconciles. No stale-list revival. |
-| retained local / draft:unsent | K,G,E,U, exact retained revision/membership or exact unsent key/allocation state, !busy/!loading, actual net capacity; no unresolved-created target | Same facts, composition safe; atomic local navigation, generation+1 on owner change; zero command. Allowed offline/uncertain only as section 2 exception. |
-| Reload | K,G,E,U, connected !busy/!loading, selected Stable exact ID; uncertainty allowed | Same K/G/E/U and gates; Open(selected ID), generation+1; no editor reset/snapshot. Preserve pending recovery. |
-| Cancel | K,G,U, connected !loading, selected Stable and busy-or-uncertain, exact execution/projection owner and turn if known | Same execution/session context and gates; Cancel(id). No retarget after terminal/History reply. Ack never settles. |
-| explicit SetMode | K,G,U, connected idle/not uncertain, exact catalog revision/valid mode ID and current mode watermark | Same owner/catalog/gates/watermark; allocate Mode op and new mode owner; SetMode(id,mode). Menu opening alone is not SetMode. |
-| Retry known creation | K,G,E,U, exact creation_token/new_key/created_id, idle connected/not uncertain, migration capacity/collision checks | Exact lifecycle still KnownCreated and all gates; Open(recorded ID) under CreatedRetry only. Consume origin once, no New/Send. |
-| Abandon known / acknowledge Unknown | K,G,E,U, idle, exact outcome token + kind, explicit acknowledgement | Same token/kind/owner/epoch/gates; local metadata-only resolution, retain text, no remote assertion or command. Previously ineligible New stays refused. |
-| model/depth choice | Captured catalog validity/selection argument and current busy eligibility; K/G/U if next-turn session configuration | Recheck chosen catalog/value and original session eligibility; no silent use of post-reply different catalog index. No Send or draft reset. |
-| appearance/menu/copy/scroll | Existing local argument/target identity and relevant eligibility; copy uses exact current message projection, not arbitrary new message | Revalidate relevant target; harmless local behavior need not E fence. Never navigation/recovery/SDK/Send side effects. |
+| Send pointer / native Submitted | K,G,E,U=None, connected !busy&&!loading&&!uncertain, Stable exact Chat.session, valid model/catalog/depth, recovery capacity + composition safety; pointer committed text, native payload + SubmitBoundary.safe | Recheck ALL + K/G/E/U=None and Chat.begin guards, capacity/composition; allocate send op/recovery then Send; conditional clear only matching key/epoch/current text after Enqueued. Never relabel payload. |
+| Restore | K,G,E,U=None, !busy&&!loading, Stable exact Chat.session, empty Label + proven composition safety, selected last RecoveryId/revision/pending association | Recheck ALL + K/G/E/U=None, entry still last/available, editor empty/safe; MOVE exact entry, clear matching pending pointer only; no command, uncertainty unchanged, offline/uncertain allowed. |
+| New | K,G,E,U=None, connected !busy&&!loading&&!uncertain, source/Chat agreement, creation_outcome=None, source composition preflight, target policy/worst-case capacity | Recheck ALL + K/G/E/U=None; only then reserve/allocate Navigation/create token/dispatch New. No resolved-retry revival. Reply validates destination independently; already-created ID survives refused commit. |
+| Recent | K,G,E,U=None, connected !busy&&!loading&&!uncertain, source/Chat agreement, source composition preflight, worst-case reservation available | Recheck ALL + K/G/E/U=None; allocate Navigation/reserve, Recent list(1)+history. Known-created result refuses commit with Retry instruction/releases own reservation; never implicit New. |
+| sessions:list | K,G,U=None, connected !busy&&!loading&&!uncertain, source/Chat agreement, exact list revision/state | Recheck ALL + K/G/U=None; allocate List, one ListSessions(50), no G increment. No editor/transfer preflight; reply changes rows only. |
+| remote row / retained remote Open | K,G,E,U=None, respective revision + exact membership/decoded ID, connected !busy&&!loading&&!uncertain, source/Chat agreement, no unresolved-created target; distinct target requires source composition preflight/capacity/guaranteed credit | Recheck ALL + K/G/E/U=None; selected exact ID no-op, no allocation/reset/command. Otherwise allocate Navigation/reserve/Open(id), separate reply commit. Explicit Reload reconciles; no stale-list revival. |
+| retained local / draft:unsent | K,G,E,U=None, exact retained revision/membership or unsent key/allocation state, !busy&&!loading, source/Chat agreement, no unresolved-created target; distinct owner requires actual net capacity/composition safety | Recheck ALL + K/G/E/U=None; selected exact key is section2 NO-OP, no snapshot/reset/map/history/uncertainty/G change. Distinct owner commits atomic exchange, G+1; zero command. Offline/uncertain exception only as section2. |
+| Reload | K,G,E,U=None, connected !busy&&!loading, selected Stable exact Chat.session; uncertainty allowed | Recheck ALL + K/G/E/U=None; allocate own Navigation/Open(selected ID), G+1. No editor/ownership reset/snapshot; preserve native composition/recovery. Reply changes projection only, no deferred ownership transfer. |
+| Cancel | K,G,U=None, connected !loading, selected Stable exact Chat.session and busy-or-uncertain, exact execution/projection owner/turn if known | Recheck ALL + K/G/U=None; Cancel(id), no pending allocation. Busy deliberately allowed; loading is not. No retarget after terminal/History; ack never settles. |
+| explicit SetMode | K,G,U=None, selected Stable(id) EXACT Chat.session=id, connected !busy&&!loading&&!uncertain, exact catalog revision/valid mode ID/current mode watermark | Recheck ALL + K/G/U=None + same catalog/watermark; only then allocate own Mode op/new mode owner, SetMode(id,mode). New/mismatched session or ANY List/Reload/Navigation/Mode loading refuses at capture/apply. Menu opening is not SetMode. |
+| Retry known creation | K,G,E,U=None, exact KnownCreated token/new_key/created_id/original receipt authority, source/Chat agreement, connected !busy&&!loading&&!uncertain, source composition preflight/capacity/collision gates | Recheck ALL + K/G/E/U=None + exact lifecycle; allocate CreatedRetry Navigation/reserve/Open(recorded ID). Commit rechecks latest safety; refusal/failure retains KnownCreated. Consume origin once on success; no New/Send. |
+| Abandon known / acknowledge Unknown | K,G,E,U=None, !busy&&!loading, exact outcome token/kind/known ID if any, FULL section3 receipt-retirement acknowledgement; offline/uncertain allowed | Recheck ALL + K/G/E/U=None + token/kind/ID; close only that outcome slot, no editor/composition/ownership transfer or pending allocation. Keep text; no command/deletion/noncreation assertion. Known refinement invalidates Unknown ack. Earlier ineligible New never revives. |
+| model/depth choice | K,G,U=None, !busy&&!loading, source/Chat agreement, exact catalog revision/valid value; offline/uncertain allowed | Recheck ALL + K/G/U=None + catalog/value; no catalog-index retarget. Local next-turn config only, no pending allocation/Send/reset. |
+| appearance/menu/copy/scroll | Exact local argument/target; allowed busy/loading/offline/uncertain; copy captures exact message/projection identity | Same target still exists/unchanged for copy; menu/theme/scroll only own local state. No pending allocation/navigation/recovery/SDK/Send/outcome resolution; cannot steal navigation association. No E needed. |
 
 Refused/offline remote actions enqueue nothing and do not change generation,
 selection, recovery or outcome metadata; static notice only. WorkerClosed after
@@ -305,21 +399,25 @@ Conceptual Model ledger shapes to serialize (not implemented fields):
 | pending_by_session | BTreeMap<StableId,PendingAdmission{recovery_id,generation,send_op}>; at most one current unconfirmed pointer per session, no vector indices. |
 | uncertain_sessions | BTreeSet<StableId>; active Chat mirrors selected membership as below, never inferred from text. |
 | pending_ui_operation / projection_owner / mode_owner | Independent operation/phase/watermark lifetimes in the next table. |
-| creation_outcome | None / Creating / KnownCreated / Unknown with checked token and exact origin/target association (section3). |
+| creation_outcome | One None/Creating/KnownCreated/Unknown slot; exact token/New key/original create op/dispatch generation; Known ID if received. Receipt authority survives lost Navigation/local owner change until explicit retirement. No archive; section3.2. |
 | session_rows / retained_rows | Separate derived bounded projections and independently checked revisions (section2), not transcript stores. |
 | existing chat/history/mode/catalog/selection/depth/commands/generation | Canonical active projection, next-turn configuration and transport; no inactive transcript cache or duplicated live editor string. |
 
 Architect serializes conceptual Request{generation,operation,command} and
 Reply{generation,operation?,session?,update}. Backend stamps exact command/create
 ID, never infers identity from prose. This is app-local, not SDK wire evolution.
-Models/Modes/Unavailable are the ONLY current stale-generation exceptions. All
-others require current generation first, then exact operation/session/phase checks;
-None bootstrap context is not a wildcard for command results. Wrong session/op
-with matching generation cannot mutate ledgers, editor, loading or status owners.
+Existing Models/Modes/Unavailable exceptions remain. **B proposes ONE additional
+exception:** exact unresolved creation-outcome receipt in section3.2, ONLY to refine
+that slot, never navigation/follow authority. An attached receipt is demultiplexed
+before the enclosing History/failure's navigation generation check. ALL remaining
+reply effects require current generation then exact operation/session/phase checks.
+None bootstrap is not a wildcard. Wrong session/op cannot mutate editor/loading/
+projection/status owners. This is a reviewable app-local routing change, not an
+assertion that existing code or the prior global rule already permits it.
 
 | State / owner | Lifetime and allowed outcomes |
 |---|---|
-| pending_ui_operation | Navigation{op,generation,from,target,purpose,reservation}, List{op,generation}, or Mode{op,generation,session,mode_owner}; loading iff Some. No draft clone. Its own typed success/failure only finishes it. |
+| pending_ui_operation | Navigation{op,generation,from,target,purpose,reservation}, List{op,generation}, or Mode{op,generation,session,mode_owner}; loading iff Some. Allocate only from None; no draft clone/overwrite. Own typed completion, commit-refusal cleanup or Unavailable releases it, never unrelated result. |
 | projection/follow owner | {op,generation,session,phase: Following / AwaitingSettlement / Settled} for committed navigation/accepted Send; survives clearing loading OR pending admission. Do not orphan mode/follow/history replies when those pointers disappear. New accepted navigation/Send replaces it, not arbitrary notices. |
 | mode owner / watermark | Independent per active projection metadata authority. Follow mode read captures watermark at launch. Explicit SetMode advances owner before dispatch and supersedes earlier follow mode metadata, even if it arrives later. No global max-op rejection of valid stream/settlement. Matching Mode success or ModeFailure ends only its own pending Mode operation; older follow mode never clears it. Failure keeps last known mode marked honest, never rolls watermark backward. |
 | pending admission | Per Stable ID {RecoveryId,generation,send_op}; only matching Admitted or explicit Restore removes its referenced entry. Reload keeps pointer and entry; later deliberate accepted Send can supersede pointer, NOT delete old recovery. |
@@ -329,12 +427,13 @@ with matching generation cannot mutate ledgers, editor, loading or status owners
 
 | Reply class | Acceptance and effect / what it cannot finish |
 |---|---|
-| History for pending navigation (Open/New/Recent/CreatedRetry/Reload/startup) | Exact pending op/generation/source still selected, expected target ID or typed discovery, collision/outcome/capacity/editor safety. Transaction below. Clear only matching Navigation; install projection owner before clearing. No recovery retirement. |
+| CreationOutcome, standalone or attached to creation History/NavigationFailure | Section3.2 exact live token/create_op/dispatch generation/New key only; narrow stale-generation outcome exception. Retain known ID despite lost pending/current selection. Retired or newer token: no effect. Cannot navigate, release pending, mutate editor/projection or enable Send. |
+| History for pending navigation (Open/New/Recent/CreatedRetry/Reload/startup) | First extract any separately authorized creation receipt, then require current generation/exact pending op/source/target, collision/outcome/capacity/editor safety. Success installs projection owner before clearing own Navigation. Composition-refused ownership commit FAILS as section6.3, releases own loading/reservation, never defers. No recovery retirement. |
 | SettledHistory | Exact selected session, projection/follow op+generation, phase AwaitingSettlement only. Consume once -> Settled, update canonical active history/chat projection, clear selected uncertainty after valid idle reconciliation; NEVER Prompt reset or unrelated loading clear. Duplicate, wrong-phase and old settlement ignored. |
 | Mode | Either exact pending explicit Mode owner success (finish that Mode only), or exact projection/follow metadata op/session plus unchanged mode watermark; latter does not finish any pending UI operation. Late older metadata cannot overwrite later explicit SetMode. |
 | ModeFailure | New typed matching mode failure finishes its OWN Mode only; follow metadata failure affects scoped metadata/status only, not navigation/history rollback or busy settlement. Generic Notice is not mode completion. |
 | SessionsListed / SessionsListFailed | Exact pending List op, generation, session=None; replace rows/revision on success, preserve last good rows on typed failure; finish that List only. |
-| RecentEmpty / NavigationFailure{created_id?,creation_outcome?} | Exact pending navigation context; release reservation, preserve selected editor/history/mode/live. Preserve known created ID including bounded-history failure; no-ID dispatched creation becomes Unknown. Non-create Open failure must not call Chat.fail on otherwise idle source. |
+| RecentEmpty / NavigationFailure{created_id?,creation_outcome?} | First demultiplex exact creation receipt under section3.2, EVEN without pending context; known ID survives SDK error/exhaustion/pending loss. Navigation cleanup separately requires exact current pending op/generation: release OWN reservation/loading, preserve source editor/history/mode/live. No-ID dispatched create -> Unknown only from matching Creating/Unknown, NEVER downgrades KnownCreated. Non-create Open failure never calls Chat.fail on idle source. |
 | Admitted | Exact selected send session/generation/op AND pending admission ID; update admitted turn, retire only matching entry/pointer once. No editor reset or loading clear. Wrong/stale/duplicate or restored pointer cannot remove another entry. |
 | Stream | Exact projection/follow owner plus Chat turn and increasing sequence/busy validation BEFORE terminal side effects. Only ACCEPTED terminal transitions phase AwaitingSettlement, marks uncertainty and requests/accepts existing bounded reconciliation. `event.is_terminal()` alone is never authority. Wrong turn, duplicate/out-of-order or already-terminal event changes nothing. |
 | send/follow Failure | Exact pending send or active follow owner, scoped to that session/phase; mark failure/uncertainty, retain recovery, no unrelated pending UI clear. Settlement read exhaustion stays uncertain; no inference replay. |
@@ -343,7 +442,8 @@ with matching generation cannot mutate ledgers, editor, loading or status owners
 | Unavailable | Existing global stale-generation exception: disconnect, busy/loading false, release pending navigation reservation, preserve editor/history/recovery/pending admission. KnownCreated/Unknown remain; dispatched Creating with no known ID becomes Unknown under its same token (never silently resolved). Mark affected selected in-flight execution uncertain, retain honest failed follow context for explicit reconciliation; no fabricated admission or successful settlement. |
 
 All Update variants must be classified by this table; new typed variants include
-SessionsListed, SessionsListFailed, RecentEmpty, NavigationFailure and ModeFailure.
+SessionsListed, SessionsListFailed, RecentEmpty, NavigationFailure, ModeFailure and
+the proposed app-local CreationOutcome receipt/envelope (section3.2 exception).
 Adapter may need an app-local accepted-event result/helper around Chat validation:
 Chat.apply currently returns unit, so controller cannot safely infer acceptance
 from event.is_terminal. Architect must serialize this acceptance contract without
@@ -358,10 +458,37 @@ history/chat/mode projection, then release reservation/clear own loading. No eve
 await/shell sync/observation sees half a transfer. New same-owner migration instead
 keeps latest live text, removes origin identity once and increments epoch. Local
 navigation follows the same ownership exchange with explicitly empty unreconciled
-projection. Failed/stale/collision/composition-refused commits leave all text and
-selection intact; no optimistic mode=None or partial map take. Generation increments
+projection. Selected-key retained-local is instead the section2.3 NO-OP.
+Failed/stale/collision/composition-refused commits leave all text and selection
+intact; no optimistic mode=None or partial map take. Generation increments
 once at remote navigation begin/accepted Send/local owner transfer; never rollback.
 List/Restore/Cancel/theme/refusals do not increment generation; Restore advances E.
+
+**C — exact failed-commit lifecycle DESIGN PROPOSAL:** for a matching Open/New/
+CreatedRetry (also Recent/startup ownership transfer) History that cannot safely
+replace/migrate due to active or unknown composition, FAIL, not defer. Release
+only matching reservation and pending Navigation/loading; preserve source native
+composition/editor/history/identity and all unconsumed target/origin snapshots.
+Keep the already-incremented navigation generation (never roll it back), but do
+not install destination projection/follow/mode owner or change its uncertainty.
+No cached successful History, deferred response owner, timer completion or automatic
+fresh read. User must deliberately Open again; known create uses Retry-Open ONLY.
+For New, demultiplex Known ID FIRST and retain KnownCreated even though navigation
+commit failed. Retry refusal likewise retains the original KnownCreated association.
+Non-create failure, typed error, collision and disconnect release the same own
+reservation without text loss; disconnect first resolves creation outcome per B.
+Unknown composition at dispatch fails SOURCE preflight with no command/outcome;
+composition may begin after dispatch, hence reply safety is independently required.
+Reload has no ownership/editor replacement and preserves native composition; it
+must not smuggle a reset through projection installation.
+
+Destination Mode/Stream/terminal/settlement outputs bundled with or following an
+UNCOMMITTED History have no accepted projection owner and are suppressed (including
+mode follow metadata); cannot mutate source or set uncertainty/loading on it.
+Backend must not install/start accepted follow authority before commit; if it has
+already queued destination outputs, routing rejects them. A later deliberate Open
+gets fresh history AND fresh follow correlation/watermark; no stale active snapshot
+or metadata replay. The only surviving portion may be B's exact creation receipt.
 
 `uncertain_sessions` is authoritative per stable ID; active chat.uncertain MUST
 mirror selected membership after EVERY relevant Chat replacement/resume/apply/fail.
@@ -430,12 +557,40 @@ and SDK test transport conventions only, no live daemon/provider/credentials.
 | Capacity | 32 with nonempty exact target exchange succeeds; 32 with absent/empty/unknown Recent target refuses. Empty source at request then typed nonempty before History stays covered; typed failure/Unavailable releases reservation. Same-owner New/Reload no slot; CreatedRetry credits only consumed origin-New, not Stable collision. Local transfer uses actual text; recovery64 and counter overflow refuse before loss/command. |
 | Creation | SDK create succeeds/history SDK error and bounded-history exhaustion retain ID. New(D)->S failure->ordinary Open S rejected with Retry->type E->Retry preserves ownership/no selected-map entry. Both live and inactive Stable collisions, inactive-origin retry after navigation, repeated retry, abandon with retained text, Unknown acknowledgement then only later separately captured New; no hidden replay/deletion claim. |
 | Capture matrix | For EVERY section5 row: capture eligible/ineligible then reply switches owner, New->Stable unchanged text, changes pending op, idle/busy/uncertain, catalog/list/retained revision, recovery ID or creation token. No revival/retargeting. Intent multiplicity/order retained; native submissions separately appended, no global FIFO/Enter-time assertion. Reply-before-actions preserved. New/Open before Send blocks Send; Restore invalidates later captured Send. |
-| Replies/lifetimes | Each section6 class: old generation, wrong op/session, duplicate/phase. Only Models/Modes/Unavailable exceptions. Explicit Mode success AND typed failure finish own Mode; late follow Mode after newer SetMode cannot overwrite; stream/settlement still accepted under older independent projection owner. Clear loading/admission pointer then valid follow outputs still route. |
+| Replies/lifetimes | Each section6 class: old generation, wrong op/session, duplicate/phase. Existing Models/Modes/Unavailable exceptions PLUS narrowly scoped B creation-outcome-only exception; all navigation remains fenced. Explicit Mode success AND typed failure finish own Mode; late follow Mode after newer SetMode cannot overwrite; stream/settlement still accepted under older independent projection owner. Clear loading/admission pointer then valid follow outputs still route. |
 | Terminal/settlement | Wrong-turn terminal, duplicate/nonincreasing seq, terminal after idle do NOTHING; accepted terminal marks AwaitingSettlement exactly once. SettledHistory only matching selected awaiting owner consumes once, never Prompt reset or unrelated List/Mode loading clear. Notice/cancel/catalog never settles; bounded read failure retains uncertainty; execution-owned assistant filtering remains. |
 | Recovery/uncertainty | Fail admission -> newer draft -> Reload idle keeps recovery/pending, no editor change; Reload active mirrors ledger through resume and blocks Send until settlement. Later deliberate Send supersedes pointer not recovery; old admitted generation rejected, matching admitted retires own ID only. Restore exact move offline/uncertain; nonempty draft refusal; no command or admission inference. |
 | Startup/offline | Connected --session actual pending startup context accepts only matching History and fails to intact New. No worker remote actions zero enqueue/state movement; closed worker preserves drafts/recovery/outcome and releases reservation, no automatic reconnect/resubmit. |
 | Privacy isolated | Every section7 state alone Deny, default/missing state Deny; explicitly opted-in empty audited fixture only Public. Gate and registered cases precede first new state under observe. No actual capture/private data needed. |
 | C composition | Separate future nonempty preedit+Enter, commit+Enter, enabled-idle; active preedit across Updates then action/reply transfer refused safely. SubmitBoundary stays. Assert actual native draft/Label, marker lifetime/absence, scroll/caret, entity, no command on unsafe submission. Unverified API is blocker, not synthetic pass. |
+
+Additional assertions from BOTH completed rereviews — all UNEXECUTED:
+
+- A: SetMode captured during EACH List, Reload, Open/New/Recent/Retry Navigation,
+  and Mode loading stays ineligible even if reply clears loading. New-selected and
+  Stable/Chat.session mismatch emit nothing. For every section5 row exercise both
+  capture and apply loading gates, no Some overwrite or reservation orphaning.
+- B: create ID then SDK history error/exhaustion; Unavailable before/after standalone
+  identity; attached Known after pending loss, local navigation and old generation
+  still refines SAME unacknowledged slot only. Known duplicate/Unknown downgrade/
+  conflicting ID handled without migration. Before vs after acknowledgement boundary,
+  reply-before-captured-ack kind change, known abandon and newer token late results:
+  disclosed retired receipts ignored, no newer outcome overwrite/hidden New replay.
+- C: proven persistent preedit across Updates, then quiet batch with successful
+  Open/New/Retry History: fail ownership commit, own loading/reservation released,
+  source native/editor/history/identity preserved, no map take or target follow/
+  Mode/Stream/terminal/settlement leakage. Known ID survives; only deliberate fresh
+  Open/Retry can proceed. Repeat with collision, failure and disconnect, no cached
+  History replay or replayed create. Unsafe dispatch emits no side-effectful command.
+- D: selected same Stable(S) retained-local with live draft + recovery and valid
+  projection: no reset/snapshot/map entry/history or uncertainty/G change and no
+  extra transition-driven epoch increment (normal entry tick still applies);
+  Restore remains separate and refuses nonempty editor.
+- Preserve both reviews' ordinary committed-text/caret/scroll/entity/marker checks,
+  conditional-clear mismatch/edit-away-back/failed enqueue, separate preedit+Enter,
+  commit+Enter, enabled-idle and quiet-frame preedit Restore/clear cases. Unknown
+  native state independently Deny with empty Label; no intermediate Public frame.
+  No assertion can discharge the unproved composition API by documentation alone.
 
 P2/P4 480pt/real-trigger popup evidence and P3 physical input remain deferred.
 Keyboard/IME/clipboard/accessibility/compositor, huge messages, live daemon/provider
@@ -443,7 +598,10 @@ and full parity remain unverified. No test count or physical certification impli
 
 ## 9. Dependency / ownership sequence — no dispatch authorization
 
-After revised principal architect + independent C review AND sender checkpoint:
+First sender must separately authorize the smallest pinned-source read-only
+composition investigation in section4; if unresolved, hold affected runtime work.
+This contract itself authorizes no such external access. After original principal
+architect + independent C rereview of A–D AND sender checkpoint:
 
 1. Architect serializes/finalizes Model/Ui/Handles/action/backend/acceptance-result
    shapes, defaults, operation/phase/mode-watermark contracts and test registration
@@ -479,6 +637,11 @@ Sender retains orchestration, reviews, terminal callback and native integration.
 | architect R4 + C lifetimes | 6 mode owner vs projection owner, typed Mode completion, accepted terminal/settlement phase, uncertainty mirror/resume, pending preservation, actual startup context; 8. |
 | architect R5 + C privacy | 7 exhaustive early deny predicate/isolated cases, 9 ordering; no observation authority expansion. |
 | C mechanics/composition | 1/4 same entity and C/A ownership, opportunity-not-keystroke epoch, verified batch-only contract and exact persistent-preedit blocker, future distinct native assertions. |
+| architect rereview A | 4/5 explicit idle=!busy&&!loading; U=None allocation, exhaustive capture+apply source/Chat/catalog/watermark/loading predicates; separate source preflight vs destination commit; no revival. |
+| architect rereview B + C interruption | 3.2/6 exact single-slot receipt protocol, explicit outcome-only stale-generation proposal, known ID independent of pending, disclosed acknowledgement retirement/late-known tradeoff, no navigation authority. |
+| architect rereview C + C composition lifecycle | 4/6.3 FAIL without transfer, own reservation/loading cleanup, source preservation, no uncommitted follow leakage/cache replay; KnownCreated Retry-Open only. Detector remains BLOCKED. |
+| architect rereview D | 2.3/5 selected-key retained-local strict NO-OP; Restore separate/nonempty refusal. |
+| both rereviews assertions/dependency boundary | 4 narrow pinned-source investigation recommendation only; 8 additional unexecuted assertions; 7 unknown native state stays Deny; 9 no dispatch authority. |
 
 Proposed core preserved: transactional history commit for remote navigation; one
 live editor, text-only inactive memory; selected-only Restore MOVE/no command/no
@@ -493,8 +656,8 @@ New local retained retrieval is explicitly unreconciled (not history success).
    expose it. Without that path, missing/deleted retained bytes are NOT demonstrably
    reachable. Capacity refusal must not be mislabeled lossless automatic retrieval.
 2. Approve counts50/32/64 and net-exchange refusal UX; they are count, not byte limits.
-   No later byte limit may truncate/evict. Review reservation validation/composition
-   deferral together so typed-during-loading source is always protected.
+   No later byte limit may truncate/evict. Review reservation validation with the
+   proposed failed-composition-commit cleanup; typed-during-loading source protected.
 3. C/architect persistent-active-IME safety is a concrete unresolved prerequisite
    under verified app APIs (section4). No detector/framework API is invented and no
    runtime promise of safe ownership transfer can bypass it. Verify existing input
@@ -502,8 +665,12 @@ New local retained retrieval is explicitly unreconciled (not history success).
 4. Architect must serialize accepted-stream validation result/helper, pending UI vs
    follow phases, independent mode watermark and typed ModeFailure/creation outcomes;
    startup --session needs actual pending context. No global max-op filtering.
-5. Approve Known/Unknown lifecycle, explicit acknowledgement/abandon copy with B,
-   ordinary-open refusal for unresolved created ID and live/inactive collision tests.
+5. Explicitly approve/revise A–D DESIGN PROPOSALS, especially B's outcome-only
+   stale-generation exception and finite receipt-retirement disclosure (late known
+   IDs intentionally ignored AFTER exact acknowledgement/abandon), C's fail-not-defer
+   cleanup/follow suppression, and D's strict no-op. Known/Unknown UI copy, ordinary
+   Open refusal and live/inactive collisions need original architect+C rereview.
+   These are proposed contract decisions, not frozen interfaces or implementation.
 6. Architect + D must audit ALL private state including native composition and
    session-only metadata; absence of a safe query stays Deny. Early isolated gate
    cases and registration are a prerequisite, not deferred visual qualification.
