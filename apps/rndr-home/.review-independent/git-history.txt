@@ -1,0 +1,39 @@
+commit aeef3db1dfe768a7c19f327f63c19cbd8a58d319
+Author:     theelevators <elevatorstest@gmail.com>
+AuthorDate: Fri Nov 13 13:04:34 2026 -0700
+Commit:     theelevators <elevatorstest@gmail.com>
+CommitDate: Fri Nov 13 13:04:34 2026 -0700
+
+    docs(rndr-home): seal shell Activity parity and inspected pixel evidence
+
+commit 76f624954de8efca5613bc9c0b998e1dbd315a75
+Author:     theelevators <elevatorstest@gmail.com>
+AuthorDate: Fri Nov 13 12:55:22 2026 -0700
+Commit:     theelevators <elevatorstest@gmail.com>
+CommitDate: Fri Nov 13 12:55:22 2026 -0700
+
+    fix(rndr-home): keep compact Activity metadata visible
+
+commit 2fe38b0e9134afcc7d4dc36dccf17789b295ca76
+Author:     theelevators <elevatorstest@gmail.com>
+AuthorDate: Fri Nov 13 12:51:15 2026 -0700
+Commit:     theelevators <elevatorstest@gmail.com>
+CommitDate: Fri Nov 13 12:51:15 2026 -0700
+
+    test(rndr-home): tolerate bounded fixture thread scheduling
+
+commit 4b28d210326238080f651027691d421c40604e61
+Author:     theelevators <elevatorstest@gmail.com>
+AuthorDate: Fri Nov 13 12:48:59 2026 -0700
+Commit:     theelevators <elevatorstest@gmail.com>
+CommitDate: Fri Nov 13 12:48:59 2026 -0700
+
+    fix(rndr-home): refine compact settings and rail pixels
+
+commit da6f0db4728967450bc0ab15e0ddfbba27081586
+Author:     theelevators <elevatorstest@gmail.com>
+AuthorDate: Fri Nov 13 12:45:18 2026 -0700
+Commit:     theelevators <elevatorstest@gmail.com>
+CommitDate: Fri Nov 13 12:45:18 2026 -0700
+
+    feat(rndr-home): settings chooser and read-only Activity snapshot

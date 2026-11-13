@@ -1,0 +1,170 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_paint/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_paint` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_app/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_app` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-shell-fidelity-and-read-only-activity/Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_core/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_core` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_render/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_render` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_ui/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_ui` (manifest) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running unittests src/lib.rs (../.cache/cargo-target/debug/build/medousa-rndr-home/a7b5eed2d01fb48d/out/medousa_rndr_home-a7b5eed2d01fb48d)
+
+running 6 tests
+test tests::error_blocks_resubmit ... ok
+test tests::credentials_stay_local ... ok
+test tests::send_guards_and_request ... ok
+test tests::empty_started_segments_match_chronological_join_and_resume_resets ... ok
+test tests::interleaved_unicode_segments_use_one_in_place_body ... ok
+test tests::stream_dedup_chronology_terminal ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (../.cache/cargo-target/debug/build/medousa-rndr-home/6411f77e2ef7a3e2/out/medousa_rndr_home-6411f77e2ef7a3e2)
+
+running 79 tests
+test admin_backend::tests::rendering_bounds_and_filters_are_plain_local_text ... ok
+test backend::tests::mode_errors_are_redacted_nonfatal_and_mutation_is_not_retried ... ok
+test backend::tests::fatal_terminal_never_replaces_live_text_with_incomplete_history ... ok
+test backend::tests::catalog_uses_real_snake_case_record_and_is_read_only ... ok
+test admin_backend::tests::activity_caps_rows_and_does_not_guess_empty_or_permission_success ... ok
+test backend::tests::canonical_roles_preserve_heading_like_user_prose_without_inventing_turns ... ok
+test admin_backend::tests::errors_and_malformed_models_never_become_empty_success_or_raw_diagnostics ... ok
+test backend::tests::unauthorized_admission_is_not_retried ... ok
+test backend::tests::session_mode_mutation_uses_session_scope_and_server_effective_value ... ok
+test conversation::tests::follow_respects_user_scroll_and_growth ... ok
+test conversation::tests::prompt_markup_is_literal ... ok
+test conversation::tests::streaming_retains_rows_and_no_inner_scrollports ... ok
+test admin_backend::tests::all_eleven_admin_models_use_existing_get_contracts_and_safe_projections ... ok
+test conversation::tests::truncation_cleans_subtrees_and_narrow_bubbles_fit ... ok
+test backend::tests::completion_between_history_and_active_reads_retries_fresh_history ... ok
+test conversation::tests::layout_hugs_messages_and_outer_port_scrolls ... ok
+test backend::tests::continuous_activity_is_bounded_and_remains_uncertain ... ok
+test backend::tests::active_reattach_full_replay_terminal_has_no_duplicate_or_missing_prose ... ok
+test backend::tests::new_recent_and_open_refresh_effective_mode_after_canonical_history ... ok
+test backend::tests::ui_reload_drives_real_worker_reattach_and_settlement ... ok
+test backend::tests::terminal_ticket_cleanup_retries_are_bounded_and_handoff_is_honest ... ok
+test desktop_preservation_tests::correction_tests::keyboard_tab_and_enter_continue_from_migrated_appearance_control ... ok
+test backend::tests::sdk_create_history_admit_stream_reconnect_and_cancel ... ok
+test desktop_preservation_tests::independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild ... ok
+test desktop_layout_tests::settings_section_pager_and_sidebar_scroll_keep_last_section_reachable ... ok
+test desktop_tests::invalid_routes_and_disconnected_worker_never_panic_or_fake_ready ... ok
+test desktop_preservation_tests::correction_tests::refresh_from_selected_detail_clears_index_and_shows_new_results ... ok
+test desktop_preservation_tests::correction_tests::offroute_begin_and_completion_do_not_invalidate_selection_or_entities ... ok
+test desktop_tests::local_appearance_and_filter_never_persist_or_emit_runtime_commands ... ok
+test desktop_preservation_tests::independent_review_tests::unrelated_reply_preserves_current_dataset_scroll ... ok
+test desktop_tests::stale_results_are_resource_scoped_and_not_relabelled_as_current_route ... ok
+test desktop_preservation_tests::correction_tests::settings_nav_pager_and_resource_link_focus_migrate_or_use_visible_fallback ... ok
+test desktop_tests::loading_error_empty_filter_and_detail_are_distinct_and_read_only ... ok
+test conversation::tests::thousand_message_history_mounts_only_viewport_and_recycles_on_scroll ... ok
+test desktop_preservation_tests::correction_tests::appearance_focus_identity_activation_and_accessible_name_survive_roundtrip_resize ... ok
+test history_tests::unknown_native_input_blocks_buttons_forged_actions_and_submissions ... ok
+test interaction_tests::behavior_depth_reaches_exact_wire_request_without_mode_authority_override ... ok
+test interaction_tests::copy_click_uses_current_assistant_text_and_cannot_copy_user_as_assistant ... ok
+test interaction_tests::escape_closes_popup_and_restores_focus_without_sending ... ok
+test interaction_tests::composer_hugs_wraps_caps_and_shrinks ... ok
+test interaction_tests::fenced_code_has_token_colors_but_copy_remains_source ... ok
+test interaction_tests::mode_action_waits_for_daemon_and_stale_mode_reply_is_ignored ... ok
+test interaction_tests::model_menu_selects_exact_index_and_search_preserves_draft ... ok
+test interaction_tests::runtime_menu_does_not_enable_unimplemented_external_agents ... ok
+test qualification_tests::framework_prompt_reset_requires_marker_but_app_removes_it_synchronously ... ok
+test qualification_tests::framework_prompt_submit_is_still_end_of_batch_not_enter_snapshot ... ok
+test qualification_tests::lucide_atlas_has_nonempty_coverage_for_existing_control_candidates ... ok
+test interaction_tests::physical_pointer_opens_menu_selects_model_and_outside_click_dismisses ... ok
+test history_tests::latest_keyboard_activation_is_viewport_only_even_busy ... ok
+test shell_activity_tests::activity_first_detail_metadata_is_visible_at_minimum_size ... ok
+test qualification_tests::parley_markdown_hugs_remeasures_and_retains_streaming_view ... ok
+test shell_activity_tests::background_activity_reply_does_not_replace_settings_control_or_chat_projection ... ok
+test shell_activity_tests::fixed_dock_is_visible_while_primary_doors_scroll_at_minimum_window ... ok
+test desktop_tests::navigation_preserves_away_history_scroll_session_and_draft ... ok
+test shell_activity_tests::narrow_settings_header_contains_wrapped_fixture_title ... ok
+test shell_activity_tests::unrelated_and_stale_replies_preserve_activity_selection_and_scroll ... ok
+test shell_activity_tests::activity_detail_back_retains_list_scroll_filter_and_keyboard_origin ... ok
+test desktop_preservation_tests::correction_tests::visible_refresh_restores_position_then_clamps_shorter_results_and_navigation_resets ... ok
+test ui_tests::ambiguous_queued_submit_is_not_sent_and_preserves_newer_edits ... ok
+test ui_tests::confirmed_admission_retires_recovery_without_touching_newer_draft ... ok
+test ui_tests::offline_controls_are_honest_and_resize_preserves_draft ... ok
+test ui_tests::disconnected_worker_does_not_leave_spinner_or_erase_draft ... ok
+test ui_tests::permissions_are_not_actionable_ui_approvals ... ok
+test ui_tests::semantic_appearance_actions_use_one_fifo_and_never_send ... ok
+test ui_tests::semantic_reading_measure_resizes_without_losing_draft ... ok
+test ui_tests::semantic_theme_and_surface_updates_preserve_editor_popup_and_messages ... ok
+test ui_tests::send_is_once_clears_draft_and_blocks_overlap ... ok
+test ui_tests::failed_admission_reload_preserves_visible_recovery_and_newer_draft ... ok
+test ui_tests::stale_reply_and_startup_auth_failure ... ok
+test ui_tests::tab_leaves_composer_using_canonical_focus_policy ... ok
+test ui_tests::shift_enter_multiline_survives_clear_and_plain_enter_sends ... ok
+test ui_tests::terminal_waits_for_history_and_cancel_does_not_fake_settlement ... ok
+test ui_tests::popup_content_follows_anchor_width_without_horizontal_overflow ... ok
+test desktop_preservation_tests::correction_tests::resized_admin_updates_preserve_retained_chat_draft_session_and_scroll ... ok
+test desktop_tests::routes_are_available_without_native_input_and_never_send_chat_commands ... ok
+test shell_activity_tests::chooser_keyboard_current_name_escape_and_selection_preserve_chat ... ok
+test interaction_tests::transcript_scrollbar_drag_preserves_draft_and_virtualization ... ok
+test history_tests::latest_is_explicit_preserves_draft_and_resumes_follow_at_all_widths ... ok
+test desktop_layout_tests::settings_and_admin_viewports_fit_both_widths_and_all_supported_themes ... ok
+
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.68s
+
+   Doc-tests medousa_rndr_home
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

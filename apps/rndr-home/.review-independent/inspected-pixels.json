@@ -1,0 +1,125 @@
+{
+  "unique_sample_count": 17,
+  "not_exhaustive": true,
+  "samples": [
+    {
+      "file": "apps/rndr-home/.review-independent/renders/dark-narrow-650-settings-chooser.png",
+      "original_png_sha256": "fb887fdb857155abcb054f82a001a81c30a1ab622fd8ee1cac3303df312c47b8",
+      "viewed_rendition_sha256": "c0797d5d631498248dfcbea0b2551743ac5d94b3a89f67b3afda77ac1f161acd",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/light-narrow-650-activity-list.png",
+      "original_png_sha256": "cca2485866aa2bc0248a34add53b8dbaa72954531476f6e9c1eb657956218ec6",
+      "viewed_rendition_sha256": "59f8dfbfe6d4686f033f89222dfe899abc707c2c030c45b5706cb59dbabf365d",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/high-contrast-narrow-650-activity-detail.png",
+      "original_png_sha256": "31ff7001e08890b04d40ae70b3dae976030d44a8ddb9edf84e8f11a451a5943f",
+      "viewed_rendition_sha256": "797d09bf5f4a32b4bcbc554459994eff4f12e7f50f2d5115aa356d70a2f9374f",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/light-narrow-650-settings-chooser.png",
+      "original_png_sha256": "750b409bdf636904c6613c246dfa14405716d0dcb9ed72a3ca2300b040f401e2",
+      "viewed_rendition_sha256": "9e46c100b15f75b80f1bc86e860a6f3564fefb583f0e79cdeabc0b630b7fb69e",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/light-wide-650-activity-list.png",
+      "original_png_sha256": "396543846adfd4b8712a58aadfb945fbf3f9af483e5b0360eb2d7e699a414200",
+      "viewed_rendition_sha256": "fb5ebd4b41480735c0be5be5c8c5e0988cae82519b5b2d847fdd885a40d0e471",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/light-wide-650-activity-error.png",
+      "original_png_sha256": "cda86295d3cf7667ab62ac731f7b3088c076d6c30d8bbb24111f34424d663067",
+      "viewed_rendition_sha256": "ee43dde0fcced4a8425056b54760f116db2c9616e23d8ee3134e1b39b157cb0c",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/dark-wide-activity-empty.png",
+      "original_png_sha256": "02d03c92616082ef22662acd4bc8b425569fdf13181f2baa2af27925eb58c588",
+      "viewed_rendition_sha256": "211d3ef27c634ec134a8e7bf26f915d35ae3fc57bc0966d1dc44fba8e2331b3b",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/light-narrow-activity-error.png",
+      "original_png_sha256": "8f0ae5944f3724d13c4a1103f1d25b218ad18ae180ed92ba021de7b4e172493f",
+      "viewed_rendition_sha256": "287c5fbb96441c87b64fa7a8def0bfdd13bcd7c70f20b5e074a431024e7ff2f4",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/dark-wide-settings-chooser.png",
+      "original_png_sha256": "b8bc3fd0163ad2c1540436dca1295099a101d8fc4d21f7ddee11aa7471fdc6b6",
+      "viewed_rendition_sha256": "a80a71c78fbd7d9c9be0143b901d0a9c0be2ff03aad0a285b637282a5993f526",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/high-contrast-wide-650-settings-chooser.png",
+      "original_png_sha256": "f529ca50f119b8be2a1df2cba997504ee546c500814d81c038bd622358638294",
+      "viewed_rendition_sha256": "116bb7c9735701b7f5b4137d532926a2686b2ec53076a010668939339f2ec3e0",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/dark-narrow-activity-list.png",
+      "original_png_sha256": "392f6e8d6515a536353da3a7ac673b7f497cd7e7b1096d72704850bd654fb7b9",
+      "viewed_rendition_sha256": "c52ea9689f0e519c198b4e57c74a85f98b205cc9a3a6faeadbaa6f82922cee21",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/high-contrast-narrow-activity-empty.png",
+      "original_png_sha256": "4d2b81753ad1c315e1d96933ffdcf42233a814e12b97a0169328e5bae416ddfd",
+      "viewed_rendition_sha256": "2150a02c8977d76afcea65cb21b0e1aec8ada8974e823f54670ea2ab798d1704",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/light-wide-activity-detail.png",
+      "original_png_sha256": "e1a01911915972aae97bb34f97c59b71f02fa98a0a7f901cd4ae1cbaf7f6ef29",
+      "viewed_rendition_sha256": "6e37215dfd620e775f9254057d207bdfdac31671d1ed98f37d371dd6d3aec43e",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/dark-wide-650-activity-list.png",
+      "original_png_sha256": "b6bf8149dda75a7c56b191fbe3651cf42c826200e4f8b19488f33097edd732d3",
+      "viewed_rendition_sha256": "f4795ededd7aa8a6d55fe98e71549ed06648878d1d5f2b3f2cd790726e130a4a",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/high-contrast-wide-activity-empty.png",
+      "original_png_sha256": "f1292245e0d8810d68d7d8fac9d025e5452ed40da0b1427e1fa99c7fdab77c30",
+      "viewed_rendition_sha256": "ba96108a06231d3f57198c255964b89a87a7ff43ef7c77d978e3d08583148e0f",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/dark-narrow-650-activity-error.png",
+      "original_png_sha256": "77c1ddd6841a6e624841b693683a5ac86c3b60de515c553c40f1ff37a243e144",
+      "viewed_rendition_sha256": "3ac5ebf18dda55a923c7574afd5701af44b8b9b80a65583103513f7b5bb517e2",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    },
+    {
+      "file": "apps/rndr-home/.review-independent/renders/light-narrow-650-activity-empty.png",
+      "original_png_sha256": "f9472301b402396779c8a2f14217d475c38796a5589ce1b7c156b44b65c88c11",
+      "viewed_rendition_sha256": "59977ba6ad2ee5bf9d10c6d7fa5595f28a69479290c5532c23201cd60b3430c8",
+      "inspected_with": "cognition_image_view direct",
+      "origin": "independent GPU reproduction, synthetic, no network"
+    }
+  ]
+}

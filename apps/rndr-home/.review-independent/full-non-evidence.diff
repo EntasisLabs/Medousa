@@ -1,0 +1,1600 @@
+diff --git a/apps/rndr-home/README.md b/apps/rndr-home/README.md
+index 692a50b6..e479301e 100644
+--- a/apps/rndr-home/README.md
++++ b/apps/rndr-home/README.md
+@@ -1,10 +1,13 @@
+ # Medousa — rndr desktop preview
+ 
+-> **Current non-chat increment:** [destination parity and remaining-view matrix](docs/DESKTOP_PARITY.md)
+-> and [implementation/check evidence](docs/DESKTOP_IMPLEMENTATION.md). Shared shell,
+-> all nine Settings destinations, local appearance, and ten real read-only admin
+-> models with filter/list/detail/refresh are implemented. No live workshop was
+-> contacted during implementation verification. No production-readiness claim.
++> **Current desktop slice:** [updated parity / coverage matrix](docs/SHELL_ACTIVITY_PARITY.md)
++> and [checks / pixel evidence](docs/shell-activity-evidence/REPORT.md).
++> Direct Settings chooser, grouped scrolling rail with fixed Activity/Settings/You
++> dock, and a bounded read-only Activity jobs snapshot extend the prior increment.
++> Eleven existing read models have filter/list/detail/refresh; the nine Settings
++> routes remain read-only/local-preview, not editable production panels.
++> No real workshop was contacted. No production-readiness claim.
++> [Previous increment report](docs/DESKTOP_IMPLEMENTATION.md) is preserved.
+ >
+ > **Send, Restore, New, Recent and Reload remain disabled.** The legacy chat
+ > behavior described below does not override the current native-input gate.
+diff --git a/apps/rndr-home/docs/SHELL_ACTIVITY_PARITY.md b/apps/rndr-home/docs/SHELL_ACTIVITY_PARITY.md
+new file mode 100644
+index 00000000..917d6f2d
+--- /dev/null
++++ b/apps/rndr-home/docs/SHELL_ACTIVITY_PARITY.md
+@@ -0,0 +1,126 @@
++# Desktop follow-on: shell, Settings and Activity coverage
++
++Baseline: `9d51646838cba3571eaec994d5919ef7b2bf6be2`, clean at admission.
++This matrix supersedes the **current-status claims** in `DESKTOP_PARITY.md` for
++this follow-on only. Prior reports, commits and evidence remain unchanged.
++This is an app-local preview, not production completion or integration approval.
++
++## Status meanings and reference authority
++
++- **Functional read-only (wired)**: real existing production GET contract in code,
++  exercised only against ephemeral loopback fixture servers here. No real daemon,
++  provider, credential or configuration operation was performed.
++- **Local preview**: reversible window-local navigation, appearance and state;
++  no production configuration changes or persistence.
++- **Deferred**: no functional port; a named explanation is not a working route.
++  A deferred route is not automatically an IME blocker.
++- **Fixture**: synthetic offline exporter data only, never a live success fallback.
++
++Reference sources at the admitted baseline:
++`apps/medousa-home/src/lib/types/settings.ts`,
++`components/settings/SettingsNav.svelte`, `components/layout/NavShell.svelte`,
++`utils/lifeRailSections.ts`, `utils/lifeRailItems.ts`,
++`spotlight/activityApi.ts`, `spotlight/activityData.svelte.ts` (all under its `src/lib`),
++plus `crates/medousa-sdk/src/workspace.rs`,
++`crates/medousa-types/src/daemon_api.rs` and `src/workspace/{card,service}.rs`.
++The production Activity source combines workspace cards with other data. This
++increment deliberately implements **one bounded workspace work-card snapshot**,
++not a fabricated universal jobs endpoint or complete durable queue browser.
++
++## Shell and Settings
++
++| Surface | Classification | Implemented / remaining difference |
++|---|---|---|
++| Primary rail + fixed dock | Local preview, partial reference grouping | Primary doors scroll separately; Focus and Automations group headings; Activity/Settings/You dock remains reachable at 650px height. Selected destination has an explicit semantic name and visual state. Static text shortcuts remain, not the production dynamic icon rail |
++| Native panes, tabs, titlebar, notch, workspace switching | Deferred | No framework/window-system changes or claim of exact native chrome |
++| Automation grouping | Local preview, partial | Scripts/Flows/Schedules retain separate preview shortcuts under Automations; production folds them behind its explorer. Scripts and Flows remain deferred |
++| Settings chooser | Local preview | All nine sections directly available at both widths; Medousa/This host groups, current-view names, last section remembered in this window. Stable anchor survives responsive rebuilds. Escape/outside dismissal and focus return use the existing popup scope |
++| Chooser keyboard order | Local preview, tested app input | Tab/Shift-Tab cycles close + nine sections; arrows and Home/End navigate sections; Enter/Space use existing button activation. Ordinary single navigation keys are mapped in section order independent of recycled entity IDs; mixed/synthetic/modified/composition batches are not intercepted. Physical keyboard and native accessibility bridge remain human checks |
++| Settings sidebar/pager | Local preview | Existing grouped wide sidebar and narrow Previous/Next retained; section labels announce current view and hints |
++| Preferences | Local preview + deferred | Reversible light/dark/high-contrast window controls. Notifications, persistence, OS-following and layout presets remain deferred |
++| Accounts | Functional read-only subset + deferred | Runtime/account availability and review-provider discovery. Not complete account panels; sign-in/out, review accounts, OAuth/keys remain in production app |
++| Medousa Agent | Functional read-only subset + deferred | Cached model catalog, modes/local-engine links. No charter, memory, model-selection, voice or provider writes |
++| Runtime Controls | Functional read-only subset + deferred | Health/version/authority, engine/runtime/capacity/schedule views. Shell/reach/SSH/computer access not ported |
++| Sharing | Functional read-only subset + deferred | Shared-mode snapshot. Seats, phone/peer/portal pairing, channel inventory and permissions deferred |
++| External Agents | Functional read-only subset + deferred | Runtime list/filter/details with safe account status. No login/install/adopt/conversation connect |
++| Packages | Deferred host-boundary page | Missing native inventory adapter; no fake inventory or installs |
++| MCP | Functional read-only subset | Gateway/server status. No invoke, enable, credentials or server configuration |
++| Connection | Functional read-only subset + deferred | Health/authority/version. No daemon start/stop, switching, vault linking or credential editing |
++
++These are nine **read-only/local-preview destinations**, not nine editable or
++production-complete Settings panels. Current-view accessible names and existing
++button/focus semantics are implementation evidence, **not screen-reader certification**.
++
++## Functional read-only datasets
++
++| Dataset | Existing contract | Safe coverage / exclusions |
++|---|---|---|
++| **Activity · jobs snapshot (new)** | SDK workspace `GET /v1/workspace/cards?limit=100&include_terminal=true` | Latest up to 100 work cards, including terminal cards; locally numbered generic title, controlled board-state enum, card ID, created/updated UTC, snapshot revision. Detail reuses exactly this snapshot without a second network read. Prompt-derived title, raw status prose, outputs, prompts, diagnostics, payloads, worker transcript, URLs and associations are not projected. Board state is not execution-success proof |
++| Workshop status | `GET /v1/health` | Existing sanitized authority/version/observed metadata; no diagnostics |
++| Models/providers | `GET /v1/models/catalog` | Cached catalog, not inference/credential proof |
++| External runtimes | `GET /v1/agents/runtimes` | Availability and allowlisted account status, no command/auth detail |
++| Modes | `GET /v1/agent-modes` | Registry, not running-agent roster |
++| MCP | `GET /v1/mcp/gateway/status` | Gateway/server status only, not tool invocation |
++| Local engine | `GET /v1/local/engine/status` | State metadata, no paths/bind/log/process controls |
++| Schedules | `GET /v1/recurring` | Existing sanitized recurring metadata, not execution or editing |
++| Shared mode | `GET /v1/shared-mode` | State metadata only |
++| Worker capacity | `GET /v1/runtime/workers` | Validated capacities only |
++| Review providers | `GET /v1/reviews/providers` | Discovery, not authenticated accounts |
++
++All eleven models reuse the closed resource-enum GET-only worker and existing
++client/authorization boundary. Activity explicitly caps both its query and local
++projection at 100; other models retain their 500-row display cap. No generic write,
++job enqueue/cancel/retry/approve/archive or administrative command channel was added.
++
++Every dataset keeps not-loaded/offline, loading, permission, incompatible,
++unavailable, disconnected, empty, no-match, list and metadata-detail states distinct.
++Fixture/live-read/retained-offline snapshot labels do not imply continuous liveness.
++Refresh deduplicates, serial-fences stale replies and clears index-based detail
++selection before new data. Explicit filter/navigation starts at the top; Back
++restores the results viewport and row focus (canonical focus visibility can reveal
++the row). Same-view resize/refresh and unrelated updates retain state as before.
++No runtime fixture fallback, raw error rendering or secret/config editor exists.
++
++## Actual shell doors: no landing-page inflation
++
++There are still **18 preview doors**. Chat, Settings, Schedules and now Activity
++have working views: **14/18 remain deferred**. Activity here is only the bounded
++read-only subset described above, not full global Activity parity.
++
++| Door / view | Classification | Remaining scope |
++|---|---|---|
++| Chat | Existing preview preserved | Send/Restore/New/Recent/Reload remain denied; draft/session/scroll/virtualization/Jump to latest preserved |
++| Settings | Local preview + functional read-only subsets | Complete editable settings and host services not claimed |
++| Schedules | Functional read-only | Runs/delivery/management deferred |
++| Activity | Functional read-only bounded subset | Unified feed, assignment/agent activity, durable runtime job ledger, richer details and live subscriptions deferred |
++| Code, Reviews | Deferred | Project/review browsing/editing and governed actions not implemented |
++| Notes, Files, Artifacts, Create | Deferred | Authoritative inventory/editing/presentation ports not implemented |
++| Calendar, Web, Context, Peers | Deferred | Existing services and locality/grant boundaries still required |
++| Agents | Deferred | Actual roster/detail is not the mode registry |
++| Scripts, Flows | Deferred | Definition/run/editor views not implemented |
++| You | Deferred | Identity/profile views and persistence not implemented |
++| Channels/Messaging, accounts/pairing, package inventory, connection selector | Deferred nested views | Existing host/permission/locality/secure-entry contracts remain necessary |
++
++## Evidence and final human checklist
++
++See [exact verification and inspected-pixel ledger](shell-activity-evidence/REPORT.md).
++Tests cover navigation, chooser keyboard/focus, selection/Back/scroll/filter,
++responsive anchor stability, stale/unrelated updates and existing chat isolation.
++GPU exports are real rendered pixels with synthetic data; theme/width combinations
++actually inspected are listed explicitly, not inferred from export success.
++
++Final human verification (deferred, **not blanket blockers** on further safe work):
++
++1. On the intended devices, traverse chooser/sidebar/docked rail with the physical
++   keyboard, test focus visibility and dismissal, screen-reader announcements,
++   scaling, narrow/minimum-height windows, pointer/scroll and high contrast.
++2. In an explicitly authorized live environment, verify responding workshop identity,
++   offline/error/permission/empty behavior, real work-card ordering and timestamp
++   meaning, refreshing while reading details, and locality/privacy. This worker did
++   not connect, discover credentials, start/repair/configure daemons or probe providers.
++3. Keep the five input-sensitive actions denied. Physical IME/native-emptiness
++   qualification and any rndr repair belong to their separately authorized track.
++   No framework/pin/root dependency change or production-ready assertion follows.
++
++Independent review, any corrections and native integration remain the sender's
++responsibility. This worker neither accepts its own work nor integrates it.
+diff --git a/apps/rndr-home/src/admin_backend.rs b/apps/rndr-home/src/admin_backend.rs
+index df0dc43e..e216e18c 100644
+--- a/apps/rndr-home/src/admin_backend.rs
++++ b/apps/rndr-home/src/admin_backend.rs
+@@ -78,6 +78,37 @@ fn yes(value: bool) -> String {
+ 
+ pub async fn read(client: &MedousaClient, resource: Resource) -> Result<Vec<Record>, SdkError> {
+     let rows = match resource {
++        Resource::Activity => {
++            // Production Activity consumes workspace work cards. Titles may be
++            // prompt excerpts; never retain those or raw status/diagnostic prose.
++            // This is a bounded snapshot, not the complete durable job ledger.
++            let snapshot = client
++                .workspace()
++                .list_cards(&medousa_types::WorkspaceCardsQuery {
++                    limit: Some(100),
++                    include_terminal: Some(true),
++                    ..Default::default()
++                })
++                .await?;
++            snapshot.cards.into_iter().take(100).enumerate().map(|(i, card)| {
++                use medousa_types::WorkBoardColumn;
++                let column = match card.column {
++                    WorkBoardColumn::Backlog => "Backlog",
++                    WorkBoardColumn::InFlight => "In flight",
++                    WorkBoardColumn::WrappingUp => "Wrapping up",
++                    WorkBoardColumn::Done => "Done",
++                    WorkBoardColumn::Blocked => "Blocked",
++                };
++                Record::new(format!("Work item {} · {column}", i + 1), vec![
++                    ("Board state", column.into()),
++                    ("Card ID", card.id.0),
++                    ("Created UTC", card.created_at_utc.to_rfc3339()),
++                    ("Updated UTC", card.updated_at_utc.to_rfc3339()),
++                    ("Snapshot revision", snapshot.workspace_revision.to_string()),
++                    ("Privacy", "Prompt-derived titles, status prose, outputs and diagnostics withheld".into()),
++                ])
++            }).collect()
++        }
+         Resource::Health => {
+             let h = client.health().get().await?;
+             vec![Record::new(
+diff --git a/apps/rndr-home/src/admin_backend_tests.rs b/apps/rndr-home/src/admin_backend_tests.rs
+index 39211e43..3112411c 100644
+--- a/apps/rndr-home/src/admin_backend_tests.rs
++++ b/apps/rndr-home/src/admin_backend_tests.rs
+@@ -21,7 +21,10 @@ async fn response(
+     let origin = format!("http://{}", listener.local_addr().unwrap());
+     let path = path.to_string();
+     let server = thread::spawn(move || {
+-        let deadline = Instant::now() + Duration::from_secs(8);
++        // Parallel text/layout tests can starve ephemeral fixture threads on
++        // shared hosts. Keep a bounded scheduling budget; GET/path/privacy
++        // assertions remain exact. This does not change production deadlines.
++        let deadline = Instant::now() + Duration::from_secs(15);
+         let mut socket = loop {
+             match listener.accept() {
+                 Ok((socket, _)) => break socket,
+@@ -29,8 +32,11 @@ async fn response(
+                 Err(e) => panic!("fixture request missing: {e}"),
+             }
+         };
++        // Accept polling is nonblocking; header reads use a bounded blocking
++        // socket so a readiness race cannot be mistaken for a missing request.
++        socket.set_nonblocking(false).unwrap();
+         socket
+-            .set_read_timeout(Some(Duration::from_secs(3)))
++            .set_read_timeout(Some(Duration::from_secs(15)))
+             .unwrap();
+         let mut request = Vec::new();
+         while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+@@ -49,7 +55,7 @@ async fn response(
+         write!(socket, "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+     });
+     let http = reqwest::Client::builder()
+-        .timeout(Duration::from_secs(3))
++        .timeout(Duration::from_secs(15))
+         .redirect(reqwest::redirect::Policy::none())
+         .build()
+         .unwrap();
+@@ -59,7 +65,7 @@ async fn response(
+     result
+ }
+ #[tokio::test]
+-async fn all_ten_admin_models_use_existing_get_contracts_and_safe_projections() {
++async fn all_eleven_admin_models_use_existing_get_contracts_and_safe_projections() {
+     let cases = vec![
+         (
+             Resource::Health,
+@@ -111,6 +117,11 @@ async fn all_ten_admin_models_use_existing_get_contracts_and_safe_projections()
+             "/v1/reviews/providers",
+             json!({"providers":[{"protocol_version":1,"id":"test","label":"Test provider","hosts":[],"operations":[]}],"problems":["NEVER-RENDER"]}),
+         ),
++        (
++            Resource::Activity,
++            "/v1/workspace/cards?limit=100&include_terminal=true",
++            json!({"workspace_revision":42,"cards":[{"id":"job-fixture", "column":"in_flight", "title":"NEVER-RENDER prompt excerpt", "status_label":"NEVER-RENDER diagnostics", "created_at_utc":"2026-11-13T00:00:00Z", "updated_at_utc":"2026-11-13T01:00:00Z", "output":"NEVER-RENDER"}]}),
++        ),
+     ];
+     assert_eq!(cases.len(), Resource::ALL.len());
+     for (resource, path, body) in cases {
+@@ -166,6 +177,59 @@ async fn errors_and_malformed_models_never_become_empty_success_or_raw_diagnosti
+         .is_empty()
+     );
+ }
++#[tokio::test]
++async fn activity_caps_rows_and_does_not_guess_empty_or_permission_success() {
++    let path = "/v1/workspace/cards?limit=100&include_terminal=true";
++    let card = json!({"id":"job-fixture", "column":"blocked", "title":"NEVER-RENDER", "status_label":"NEVER-RENDER", "created_at_utc":"2026-11-13T00:00:00Z", "updated_at_utc":"2026-11-13T01:00:00Z"});
++    let rows = response(
++        Resource::Activity,
++        path,
++        200,
++        json!({"workspace_revision":2,"cards":vec![card; 120]}),
++    )
++    .await
++    .unwrap();
++    assert_eq!(rows.len(), 100);
++    assert_eq!(rows[0].title, "Work item 1 · Blocked");
++    assert!(!format!("{rows:?}").contains("NEVER-RENDER"));
++    assert_eq!(
++        classify(
++            response(
++                Resource::Activity,
++                path,
++                403,
++                json!({"error":"NEVER-RENDER"})
++            )
++            .await
++            .unwrap_err()
++        ),
++        ReadError::Permission
++    );
++    for body in [
++        json!({}),
++        json!({"workspace_revision":2,"cards":[{"id":"x"}]}),
++    ] {
++        assert_eq!(
++            classify(
++                response(Resource::Activity, path, 200, body)
++                    .await
++                    .unwrap_err()
++            ),
++            ReadError::Incompatible
++        );
++    }
++    assert!(
++        response(
++            Resource::Activity,
++            path,
++            200,
++            json!({"workspace_revision":2,"cards":[]})
++        )
++        .await
++        .unwrap()
++        .is_empty()
++    );
++}
+ #[test]
+ fn rendering_bounds_and_filters_are_plain_local_text() {
+     let row = Record::new("A\nB\0C", vec![("Field", "x".repeat(1000))]);
+diff --git a/apps/rndr-home/src/admin_model.rs b/apps/rndr-home/src/admin_model.rs
+index 8991050d..6f6fe4ee 100644
+--- a/apps/rndr-home/src/admin_model.rs
++++ b/apps/rndr-home/src/admin_model.rs
+@@ -13,9 +13,10 @@ pub enum Resource {
+     Sharing,
+     Capacity,
+     ReviewProviders,
++    Activity,
+ }
+ impl Resource {
+-    pub const ALL: [Self; 10] = [
++    pub const ALL: [Self; 11] = [
+         Self::Health,
+         Self::Models,
+         Self::Runtimes,
+@@ -26,6 +27,7 @@ impl Resource {
+         Self::Sharing,
+         Self::Capacity,
+         Self::ReviewProviders,
++        Self::Activity,
+     ];
+     pub fn title(self) -> &'static str {
+         match self {
+@@ -39,6 +41,7 @@ impl Resource {
+             Self::Sharing => "Shared workshop mode",
+             Self::Capacity => "Worker capacity",
+             Self::ReviewProviders => "Hosted review providers",
++            Self::Activity => "Activity · jobs snapshot",
+         }
+     }
+ }
+@@ -161,6 +164,7 @@ impl ReadError {
+ }
+ pub struct Desktop {
+     pub route: Route,
++    pub last_settings: usize,
+     pub reads: BTreeMap<Resource, ReadState>,
+     pub serial: u64,
+     pub selected: Option<usize>,
+@@ -174,6 +178,7 @@ impl Default for Desktop {
+     fn default() -> Self {
+         Self {
+             route: Route::Chat,
++            last_settings: 0,
+             reads: BTreeMap::new(),
+             serial: 0,
+             selected: None,
+@@ -187,6 +192,9 @@ impl Default for Desktop {
+ impl Desktop {
+     pub fn navigate(&mut self, route: Route) {
+         self.route = route;
++        if let Route::Settings(index) = route {
++            self.last_settings = index;
++        }
+         self.reset_scroll = true;
+         self.query.clear();
+         self.selected = None;
+diff --git a/apps/rndr-home/src/admin_views.rs b/apps/rndr-home/src/admin_views.rs
+index 920580b0..fb0c63e3 100644
+--- a/apps/rndr-home/src/admin_views.rs
++++ b/apps/rndr-home/src/admin_views.rs
+@@ -22,7 +22,16 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
+     };
+     let connected = world.resource::<Connection>().unwrap().sender.is_some();
+     let header = row(world, parent, Size::Px(34.));
+-    label(world, header, resource.title(), true);
++    label(
++        world,
++        header,
++        if resource == Resource::Activity {
++            "Jobs snapshot"
++        } else {
++            resource.title()
++        },
++        true,
++    );
+     let refresh = nav_button(world, header, "admin:refresh", "Refresh read");
+     world.get_mut::<Layout>(refresh).unwrap().width = Size::Px(112.);
+     world.get_mut::<Button>(refresh).unwrap().enabled =
+@@ -30,7 +39,11 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
+     muted(
+         world,
+         parent,
+-        "Read-only snapshot · refresh explicitly · maximum 500 entries · no operations executed",
++        if resource == Resource::Activity {
++            "Read-only snapshot · refresh explicitly · maximum 100 work cards · no operations executed"
++        } else {
++            "Read-only snapshot · refresh explicitly · maximum 500 entries · no operations executed"
++        },
+     );
+     match state {
+         ReadState::NotLoaded => {
+@@ -55,6 +68,17 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
+             muted(world, parent, error.message());
+         }
+         ReadState::Ready(rows) => {
++            let source = if world
++                .resource::<crate::desktop_fixtures::SyntheticDesktop>()
++                .is_some()
++            {
++                "FIXTURE · synthetic snapshot · no network"
++            } else if connected {
++                "Live read snapshot · configured daemon · not continuous liveness"
++            } else {
++                "Retained snapshot · transport offline · not proof of current state"
++            };
++            muted(world, parent, source);
+             if let Some(record) = selected.and_then(|i| rows.get(i)) {
+                 nav_button(world, parent, "admin:back", "‹ Back to results");
+                 label(world, parent, &record.title, true);
+@@ -101,7 +125,7 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
+                     world.insert(
+                         entry,
+                         Semantics {
+-                            name: Some(record.title.clone()),
++                            name: Some(format!("Open snapshot details: {}", record.title)),
+                             ..Default::default()
+                         },
+                     );
+diff --git a/apps/rndr-home/src/desktop.rs b/apps/rndr-home/src/desktop.rs
+index e6b598e8..2cb156d1 100644
+--- a/apps/rndr-home/src/desktop.rs
++++ b/apps/rndr-home/src/desktop.rs
+@@ -18,13 +18,22 @@ pub struct Handles {
+     pub page: Entity,
+     pub title: Entity,
+     pub subtitle: Entity,
++    pub chooser: Entity,
++    pub top: Entity,
++    pub automation_heading: Entity,
+     pub rail: Entity,
+     pub section_nav: Entity,
++    #[cfg(test)]
++    pub primary_rail: Entity,
++    #[cfg(test)]
++    pub dock: Entity,
+     pub body: Entity,
+     pub search: Entity,
+     pub footer: Entity,
+     /// Offset retained across the temporary Loading placeholder, never across navigation.
+     pub loading_offset: Option<[f32; 2]>,
++    pub list_offset: Option<[f32; 2]>,
++    pub next_focus: Option<String>,
+     pub nav: Vec<(Entity, &'static str)>,
+ }
+ pub const DOORS: [(&str, &str); 18] = [
+@@ -62,23 +71,56 @@ pub fn mount(world: &mut World, chat: Entity) {
+         ..Layout::row()
+     },));
+     crate::presentation::surface(world, root, Token::Canvas, None);
+-    let rail = world.spawn((
+-        Layout {
+-            width: Size::Px(132.),
+-            height: Size::Fill,
+-            padding: 6.,
+-            gap: 3.,
+-            ..Layout::column()
+-        },
+-        Scroll::default(),
+-    ));
++    let rail = world.spawn((Layout {
++        width: Size::Px(132.),
++        height: Size::Fill,
++        padding: 6.,
++        gap: 3.,
++        ..Layout::column()
++    },));
+     crate::presentation::surface(world, rail, Token::Raised, None);
+     child(world, root, rail);
+     let brand = label(world, rail, "M", true);
+     world.get_mut::<TextStyle>(brand).unwrap().size = 24.;
++    // Primary doors scroll independently; account/settings/status stay reachable.
++    // Production folds automations and opens Activity from Spotlight. These are
++    // explicit preview shortcuts, not a claim to reproduce native pane chrome.
++    let primary_rail = world.spawn((column(Size::Fill), Scroll::default()));
++    child(world, rail, primary_rail);
++    let dock = world.spawn((column(Size::Hug),));
++    child(world, rail, dock);
+     let mut nav = Vec::new();
++    let mut automation_heading = None;
+     for (id, name) in DOORS {
+-        let e = nav_button(world, rail, &format!("desk:{id}"), name);
++        let parent = if matches!(id, "history" | "settings" | "profiles") {
++            dock
++        } else {
++            primary_rail
++        };
++        if id == "calendar" || id == "scripts" {
++            let heading = label(
++                world,
++                parent,
++                if id == "calendar" {
++                    "Focus"
++                } else {
++                    "Automations"
++                },
++                false,
++            );
++            world.get_mut::<TextStyle>(heading).unwrap().size = 10.;
++            if id == "scripts" {
++                automation_heading = Some(heading);
++                world.insert(
++                    heading,
++                    Semantics {
++                        name: Some("Automations".into()),
++                        ..Default::default()
++                    },
++                );
++            }
++        }
++        let e = nav_button(world, parent, &format!("desk:{id}"), name);
+         world.insert(
+             e,
+             Semantics {
+@@ -97,6 +139,9 @@ pub fn mount(world: &mut World, chat: Entity) {
+     let title = label(world, top, "Chat", true);
+     world.get_mut::<TextStyle>(title).unwrap().size = 15.;
+     let subtitle = muted(world, top, "Medousa · desktop preview");
++    let chooser = nav_button(world, top, "settings:choose", "Choose settings view");
++    world.get_mut::<Layout>(chooser).unwrap().width = Size::Px(172.);
++    world.insert(chooser, Hidden);
+     child(world, main, chat);
+     let page = world.spawn((
+         Layout {
+@@ -156,13 +201,22 @@ pub fn mount(world: &mut World, chat: Entity) {
+         page,
+         title,
+         subtitle,
++        chooser,
++        top,
++        automation_heading: automation_heading.unwrap(),
+         rail,
+         section_nav,
++        #[cfg(test)]
++        primary_rail,
++        #[cfg(test)]
++        dock,
+         body,
+         search,
+         footer,
+         nav,
+         loading_offset: None,
++        list_offset: None,
++        next_focus: None,
+     });
+ }
+ pub fn nav_button(world: &mut World, parent: Entity, action: &str, text: &str) -> Entity {
+@@ -186,17 +240,18 @@ pub fn navigate(world: &mut World, route: Route) {
+     world.resource_mut::<Desktop>().unwrap().navigate(route);
+     let h = world.resource::<Handles>().unwrap().clone();
+     crate::composer::reset_prompt(world, h.search, "");
+-    // Never return focus to a hidden editor or preserve a soon-to-die detail row.
++    world.resource_mut::<Handles>().unwrap().list_offset = None;
++    world.resource_mut::<Handles>().unwrap().next_focus = None;
++    if matches!(route, Route::Settings(_)) {
++        world.remove::<Hidden>(h.chooser);
++    }
++    // Route focus must not land on a hidden editor or an unrelated Settings door.
+     request_focus(
+         world,
+-        if route.resource().is_some() {
+-            h.search
++        if matches!(route, Route::Settings(_)) {
++            h.chooser
+         } else {
+-            h.nav
+-                .iter()
+-                .find(|(_, name)| *name == "Settings")
+-                .unwrap()
+-                .0
++            rail_target(&h, route)
+         },
+     );
+     if let Some(resource) = route.resource()
+@@ -228,10 +283,21 @@ pub fn refresh(world: &mut World, resource: Resource) {
+ }
+ /// Consumed before the chat controller. No native input gate for harmless view changes.
+ pub fn action(world: &mut World, action: &str) -> bool {
++    if action == "settings:choose" {
++        if matches!(
++            world.resource::<Desktop>().unwrap().route,
++            Route::Settings(_)
++        ) {
++            let anchor = world.resource::<Handles>().unwrap().chooser;
++            crate::menus::open(world, crate::menus::Kind::Settings, anchor);
++        }
++        return true;
++    }
+     if let Some(id) = action.strip_prefix("desk:") {
+         let route = match id {
+             "chat" => Route::Chat,
+-            "settings" => Route::Settings(0),
++            "settings" => Route::Settings(world.resource::<Desktop>().unwrap().last_settings),
++            "history" => Route::Data(Resource::Activity),
+             "runtime" => Route::Data(Resource::Health),
+             "schedules" => Route::Data(Resource::Schedules),
+             _ => match DOORS.iter().find(|(key, _)| *key == id) {
+@@ -268,9 +334,12 @@ pub fn action(world: &mut World, action: &str) -> bool {
+         }
+         "admin:back" => {
+             let d = world.resource_mut::<Desktop>().unwrap();
+-            d.selected = None;
+-            d.reset_scroll = true;
++            let selected = d.selected.take();
++            d.reset_scroll = false;
+             d.dirty = true;
++            let h = world.resource_mut::<Handles>().unwrap();
++            h.loading_offset = h.list_offset.take();
++            h.next_focus = selected.map(|i| format!("record:{i}"));
+         }
+         _ if action.starts_with("record:") => {
+             if let Ok(index) = action[7..].parse::<usize>() {
+@@ -278,6 +347,11 @@ pub fn action(world: &mut World, action: &str) -> bool {
+                 if d.route.resource().and_then(|r| d.reads.get(&r)).is_some_and(|s|
+                     matches!(s, ReadState::Ready(rows) if rows.get(index).is_some_and(|r| r.matches(&d.query)))) {
+                     d.selected = Some(index); d.reset_scroll = true; d.dirty = true;
++                    let h = world.resource::<Handles>().unwrap().clone();
++                    let offset = world.get::<Scroll>(h.body).unwrap().offset;
++                    let h = world.resource_mut::<Handles>().unwrap();
++                    h.list_offset = Some(offset);
++                    h.next_focus = Some("admin:back".into());
+                 }
+             }
+         }
+@@ -318,16 +392,37 @@ pub fn sync(world: &mut World) {
+         .resource()
+         .and_then(|r| d.reads.get(&r))
+         .is_some_and(|s| matches!(s, ReadState::Loading(_)));
++    // Reserve two-line title space beside the chooser at minimum width,
++    // including visibly labeled fixture exports. Avoid unsupported glyphs.
++    world.get_mut::<Layout>(h.top).unwrap().height =
++        Size::Px(if narrow && matches!(route, Route::Settings(_)) {
++            62.
++        } else {
++            42.
++        });
++    world.get_mut::<Label>(h.automation_heading).unwrap().text =
++        if narrow { "Auto" } else { "Automations" }.into();
+     world.get_mut::<Layout>(h.rail).unwrap().width = Size::Px(rail_width(world));
+     for (e, name) in &h.nav {
+         let active = match route {
+             Route::Chat => *name == "Chat",
+             Route::Settings(_) => *name == "Settings",
+             Route::Data(Resource::Schedules) => *name == "Schedules",
++            Route::Data(Resource::Activity) => *name == "Activity",
+             Route::Data(_) => *name == "Settings",
+             Route::Deferred(n) => *name == n,
+         };
+         world.get_mut::<Label>(*e).unwrap().text = (*name).into();
++        world.insert(
++            *e,
++            Semantics {
++                name: Some(format!(
++                    "Open {name}{}",
++                    if active { ", current destination" } else { "" }
++                )),
++                ..Default::default()
++            },
++        );
+         world.get_mut::<TextStyle>(*e).unwrap().size = if narrow { 10. } else { 12. };
+         world.get_mut::<Layout>(*e).unwrap().padding = if narrow { 2. } else { 8. };
+         world.get_mut::<rndr_ui::UiStyle>(*e).unwrap().background =
+@@ -341,6 +436,20 @@ pub fn sync(world: &mut World) {
+     } else {
+         route.title().into()
+     };
++    if matches!(route, Route::Settings(_)) {
++        world.remove::<Hidden>(h.chooser);
++        world.insert(
++            h.chooser,
++            Semantics {
++                name: Some(format!("Choose settings view, current: {}", route.title())),
++                ..Default::default()
++            },
++        );
++        // Reserve the title and chooser; no clipped subtitle at either width.
++        world.insert(h.subtitle, Hidden);
++    } else {
++        world.insert(h.chooser, Hidden);
++    }
+     if route == Route::Chat {
+         world.remove::<Hidden>(h.chat);
+         world.insert(h.page, Hidden);
+@@ -428,7 +537,14 @@ pub fn sync(world: &mut World) {
+     // results. Keeping the Loading offset separately avoids losing it to that
+     // short placeholder; explicit navigation/filter/detail always clears it.
+     crate::admin_views::render(world, &h, route, narrow);
+-    if let Some((region, action)) = dynamic_focus {
++    let next_focus = world.resource_mut::<Handles>().unwrap().next_focus.take();
++    if let Some(action) = next_focus {
++        let target = world.entities_with::<Button>().into_iter().find(|e| {
++            descendant(world, *e, h.body)
++                && world.get::<Button>(*e).is_some_and(|b| b.action == action)
++        });
++        request_focus(world, target.unwrap_or_else(|| fallback(&h, route)));
++    } else if let Some((region, action)) = dynamic_focus {
+         let replacement = action.and_then(|action| {
+             world.entities_with::<Button>().into_iter().find(|e| {
+                 descendant(world, *e, region)
+@@ -454,14 +570,21 @@ fn descendant(world: &World, mut entity: Entity, root: Entity) -> bool {
+     }
+     false
+ }
++fn rail_target(h: &Handles, route: Route) -> Entity {
++    let name = match route {
++        Route::Chat => "Chat",
++        Route::Settings(_) => "Settings",
++        Route::Data(Resource::Schedules) => "Schedules",
++        Route::Data(Resource::Activity) => "Activity",
++        Route::Data(_) => "Settings",
++        Route::Deferred(name) => name,
++    };
++    h.nav.iter().find(|(_, n)| *n == name).unwrap().0
++}
+ fn fallback(h: &Handles, route: Route) -> Entity {
+     if route.resource().is_some() {
+         h.search
+     } else {
+-        h.nav
+-            .iter()
+-            .find(|(_, name)| *name == "Settings")
+-            .unwrap()
+-            .0
++        rail_target(h, route)
+     }
+ }
+diff --git a/apps/rndr-home/src/desktop_fixtures.rs b/apps/rndr-home/src/desktop_fixtures.rs
+index 60931578..825d1dfb 100644
+--- a/apps/rndr-home/src/desktop_fixtures.rs
++++ b/apps/rndr-home/src/desktop_fixtures.rs
+@@ -60,6 +60,12 @@ pub fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::error::Err
+                     format!("FIXTURE · {}", route.title());
+                 app.world_mut().get_mut::<Label>(h.footer).unwrap().text =
+                     "SYNTHETIC GPU RENDER · NO NETWORK · NOT NATIVE WINDOW / INPUT PROOF".into();
++                if name == "settings-chooser" {
++                    crate::desktop::action(app.world_mut(), "settings:choose");
++                    for _ in 0..8 {
++                        app.update();
++                    }
++                }
+                 let frame = rndr_paint::frame(app);
+                 let image = exporter.render_frame(
+                     Some(app.world()),
+@@ -194,5 +200,61 @@ fn cases() -> Vec<Case> {
+         )]),
+         Some(0),
+     ));
++    cases.push((
++        "settings-chooser",
++        Route::Settings(3),
++        None,
++        ReadState::NotLoaded,
++        None,
++    ));
++    let work = Record::new(
++        "Work item 1 · In flight",
++        vec![
++            ("Board state", "In flight (fixture)".into()),
++            ("Card ID", "job-synthetic-001".into()),
++            ("Created UTC", "2026-11-13T00:00:00Z".into()),
++            ("Updated UTC", "2026-11-13T01:00:00Z".into()),
++            ("Snapshot revision", "42 (fixture)".into()),
++            (
++                "Privacy",
++                "Prompt-derived titles, status prose, outputs and diagnostics withheld".into(),
++            ),
++        ],
++    );
++    for (name, state, detail) in [
++        (
++            "activity-list",
++            ReadState::Ready(vec![
++                work.clone(),
++                Record::new(
++                    "Work item 2 · Blocked",
++                    vec![("Board state", "Blocked (fixture)".into())],
++                ),
++            ]),
++            None,
++        ),
++        ("activity-detail", ReadState::Ready(vec![work]), Some(0)),
++        ("activity-empty", ReadState::Ready(vec![]), None),
++        ("activity-offline", ReadState::NotLoaded, None),
++        ("activity-loading", ReadState::Loading(1), None),
++        (
++            "activity-error",
++            ReadState::Error(ReadError::Unavailable),
++            None,
++        ),
++        (
++            "activity-permission",
++            ReadState::Error(ReadError::Permission),
++            None,
++        ),
++    ] {
++        cases.push((
++            name,
++            Route::Data(Resource::Activity),
++            Some(Resource::Activity),
++            state,
++            detail,
++        ));
++    }
+     cases
+ }
+diff --git a/apps/rndr-home/src/desktop_layout_tests.rs b/apps/rndr-home/src/desktop_layout_tests.rs
+index 2ba9ff14..c12a7a93 100644
+--- a/apps/rndr-home/src/desktop_layout_tests.rs
++++ b/apps/rndr-home/src/desktop_layout_tests.rs
+@@ -51,7 +51,10 @@ fn settings_and_admin_viewports_fit_both_widths_and_all_supported_themes() {
+                 desktop::navigate(app.world_mut(), route);
+                 settle(&mut app);
+                 let h = app.world().resource::<Handles>().unwrap();
+-                assert_eq!(app.world().has::<Hidden>(h.subtitle), width < 800.);
++                assert_eq!(
++                    app.world().has::<Hidden>(h.subtitle),
++                    width < 800. || matches!(route, Route::Settings(_))
++                );
+                 assert!(app.world().get::<Rect>(h.title).unwrap().h <= 42.);
+                 for entity in [h.page, h.body, h.section_nav, h.footer] {
+                     let r = app.world().get::<Rect>(entity).unwrap();
+@@ -108,11 +111,6 @@ fn settings_section_pager_and_sidebar_scroll_keep_last_section_reachable() {
+         } else {
+             let h = app.world().resource::<Handles>().unwrap().clone();
+             assert!(app.world().has::<Scroll>(h.section_nav));
+-            app.world_mut()
+-                .get_mut::<Scroll>(h.section_nav)
+-                .unwrap()
+-                .offset[1] = -500.;
+-            settle(&mut app);
+             let e = app
+                 .world()
+                 .entities_with::<Button>()
+@@ -121,6 +119,14 @@ fn settings_section_pager_and_sidebar_scroll_keep_last_section_reachable() {
+                 .unwrap();
+             let r = *app.world().get::<Rect>(e).unwrap();
+             let port = *app.world().get::<Rect>(h.section_nav).unwrap();
++            // Scroll only by the amount needed to expose the last row. Group
++            // labels and font metrics may change the sidebar's content extent.
++            let needed = (r.y + r.h - port.y - port.h).max(0.);
++            app.world_mut()
++                .get_mut::<Scroll>(h.section_nav)
++                .unwrap()
++                .offset[1] = -needed;
++            settle(&mut app);
+             // rndr retains layout Rects; Scroll translates descendants for painting/hit testing.
+             let offset = app.world().get::<Scroll>(h.section_nav).unwrap().offset[1];
+             assert!(
+diff --git a/apps/rndr-home/src/main.rs b/apps/rndr-home/src/main.rs
+index 6a6a55f5..c6f1690d 100644
+--- a/apps/rndr-home/src/main.rs
++++ b/apps/rndr-home/src/main.rs
+@@ -209,6 +209,7 @@ fn app() -> App {
+         .insert_resource(admin_model::Desktop::default());
+     app.world_mut()
+         .insert_resource(desktop::Connection::default());
++    app.add_system_front(Schedule::Input, menus::settings_keyboard);
+     app.add_system_front(Schedule::Input, guard_submit_boundary);
+     app.add_system(Schedule::Startup, setup);
+     app.add_system(Schedule::Update, update);
+@@ -217,3 +218,5 @@ fn app() -> App {
+ 
+ #[cfg(test)]
+ mod desktop_preservation_tests;
++#[cfg(test)]
++mod shell_activity_tests;
+diff --git a/apps/rndr-home/src/menus.rs b/apps/rndr-home/src/menus.rs
+index 21b44c26..a15878d8 100644
+--- a/apps/rndr-home/src/menus.rs
++++ b/apps/rndr-home/src/menus.rs
+@@ -14,6 +14,7 @@ pub enum Kind {
+     Behavior,
+     Depth,
+     Appearance,
++    Settings,
+ }
+ #[derive(Default)]
+ pub struct Menus {
+@@ -82,6 +83,20 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
+             closed,
+         },
+     ));
++    world.insert(
++        root,
++        Semantics {
++            name: Some(
++                if kind == Kind::Settings {
++                    "Choose settings view"
++                } else {
++                    "Preview menu"
++                }
++                .into(),
++            ),
++            ..Default::default()
++        },
++    );
+     presentation::outline(world, root);
+     world.insert(root, Hidden);
+     let header = row(world, root, Size::Px(30.));
+@@ -95,6 +110,7 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
+             Kind::Behavior => "Behavior",
+             Kind::Depth => "Response depth",
+             Kind::Appearance => "Window appearance",
++            Kind::Settings => "Choose settings view",
+         },
+         true,
+     );
+@@ -140,6 +156,43 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
+         query: String::new(),
+     };
+     match kind {
++        Kind::Settings => {
++            let current = world
++                .resource::<crate::admin_model::Desktop>()
++                .unwrap()
++                .last_settings;
++            for (index, (_, name, hint)) in crate::admin_model::SETTINGS.iter().enumerate() {
++                if index == 0 || index == 6 {
++                    label(
++                        world,
++                        body,
++                        if index == 0 { "Medousa" } else { "This host" },
++                        true,
++                    );
++                }
++                let entry = item(
++                    world,
++                    body,
++                    &format!("settings:{index}"),
++                    &format!("{}{}", if index == current { "✓ " } else { "" }, name),
++                    true,
++                );
++                world.insert(
++                    entry,
++                    Semantics {
++                        name: Some(format!(
++                            "{name}{} · {hint}",
++                            if index == current {
++                                ", current settings view"
++                            } else {
++                                ""
++                            }
++                        )),
++                        ..Default::default()
++                    },
++                );
++            }
++        }
+         Kind::Model => model_rows(world, body, ""),
+         Kind::Runtime => {
+             item(world, body, "menu:close", "✓ Medousa · native turns", true);
+@@ -245,7 +298,22 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
+         }
+     }
+     if open_popup(world, root) {
+-        let focus = search
++        let current_setting = if kind == Kind::Settings {
++            let action = format!(
++                "settings:{}",
++                world
++                    .resource::<crate::admin_model::Desktop>()
++                    .unwrap()
++                    .last_settings
++            );
++            children_of(world, body)
++                .into_iter()
++                .find(|e| world.get::<Button>(*e).is_some_and(|b| b.action == action))
++        } else {
++            None
++        };
++        let focus = current_setting
++            .or(search)
+             .or_else(|| {
+                 children_of(world, body)
+                     .into_iter()
+@@ -298,6 +366,91 @@ fn model_rows(world: &mut World, body: Entity, query: &str) {
+         );
+     }
+ }
++/// App-local chooser order is semantic, independent of recycled entity indices.
++/// Escape/outside dismissal and focus restoration remain canonical popup policy.
++/// Only a single ordinary navigation key is handled here; never consume editor,
++/// composition, submission or mixed batches on behalf of the native-input gate.
++pub fn settings_keyboard(world: &mut World) {
++    let Some(m) = world.resource::<Menus>() else {
++        return;
++    };
++    let (Some(root), Some(body)) = (m.root, m.body) else {
++        return;
++    };
++    if m.kind != Some(Kind::Settings) || world.has::<Hidden>(root) {
++        return;
++    }
++    let input = world.resource::<Input>().unwrap();
++    if input.keys.len() != 1
++        || !input.chars.is_empty()
++        || !input.ime_preedit.is_empty()
++        || !input.ime_commit.is_empty()
++    {
++        return;
++    }
++    let key = &input.keys[0];
++    if key.released
++        || key.synthetic
++        || key.modifiers.ctrl
++        || key.modifiers.alt
++        || key.modifiers.super_key
++    {
++        return;
++    }
++    let LogicalKey::Named(named) = key.logical else {
++        return;
++    };
++    let shift = key.modifiers.shift;
++    let entries: Vec<_> = (0..crate::admin_model::SETTINGS.len())
++        .filter_map(|i| {
++            let action = format!("settings:{i}");
++            children_of(world, body).into_iter().find(|e| {
++                world
++                    .get::<Button>(*e)
++                    .is_some_and(|b| b.enabled && b.action == action)
++            })
++        })
++        .collect();
++    if entries.is_empty() {
++        return;
++    }
++    let focused = world.resource::<Focus>().and_then(|f| f.entity);
++    let index = entries.iter().position(|e| Some(*e) == focused);
++    let target = match named {
++        NamedKey::ArrowDown => entries[(index.map_or(0, |i| i + 1)) % entries.len()],
++        NamedKey::ArrowUp => {
++            entries[index.map_or(entries.len() - 1, |i| {
++                (i + entries.len() - 1) % entries.len()
++            })]
++        }
++        NamedKey::Home => entries[0],
++        NamedKey::End => entries[entries.len() - 1],
++        NamedKey::Tab => {
++            // Include the close button in the cyclic Tab order.
++            let close = world.entities_with::<Button>().into_iter().find(|e| {
++                world
++                    .get::<Button>(*e)
++                    .is_some_and(|b| b.action == "menu:close")
++                    && world
++                        .get::<Parent>(*e)
++                        .and_then(|p| world.get::<Parent>(p.entity))
++                        .is_some_and(|p| p.entity == root)
++            });
++            let mut order = entries.clone();
++            if let Some(close) = close {
++                order.insert(0, close);
++            }
++            let at = order.iter().position(|e| Some(*e) == focused).unwrap_or(0);
++            order[(at + if shift { order.len() - 1 } else { 1 }) % order.len()]
++        }
++        _ => return,
++    };
++    if request_focus(world, target) {
++        let input = world.resource_mut::<Input>().unwrap();
++        input.keys.clear();
++        input.key = None;
++    }
++}
+ pub fn update(world: &mut World) {
+     let m = world.resource::<Menus>().unwrap();
+     let Some(search) = m.search else {
+diff --git a/apps/rndr-home/src/qualification_tests.rs b/apps/rndr-home/src/qualification_tests.rs
+index cff9f713..05918735 100644
+--- a/apps/rndr-home/src/qualification_tests.rs
++++ b/apps/rndr-home/src/qualification_tests.rs
+@@ -108,7 +108,7 @@ fn parley_markdown_hugs_remeasures_and_retains_streaming_view() {
+     assert!(app.world().get::<Rect>(view).unwrap().h > narrow.h);
+     let mut scrolls = app.world().entities_with::<Scroll>();
+     let desktop = app.world().resource::<desktop::Handles>().unwrap();
+-    scrolls.retain(|e| *e != desktop.rail && *e != desktop.body);
++    scrolls.retain(|e| *e != desktop.primary_rail && *e != desktop.body);
+     assert_eq!(
+         scrolls,
+         vec![ui.conversation],
+diff --git a/apps/rndr-home/src/settings_views.rs b/apps/rndr-home/src/settings_views.rs
+index c288b5e3..be10505e 100644
+--- a/apps/rndr-home/src/settings_views.rs
++++ b/apps/rndr-home/src/settings_views.rs
+@@ -42,18 +42,47 @@ pub fn render(world: &mut World, h: &Handles, route: Route, narrow: bool) {
+                     label(world, h.section_nav, "Medousa", true);
+                 }
+                 if i == 6 {
+-                    label(world, h.section_nav, "This preview host", true);
++                    label(world, h.section_nav, "This host", true);
+                 }
+-                nav_button(
++                let entry = nav_button(
+                     world,
+                     h.section_nav,
+                     &format!("settings:{i}"),
+                     &format!("{}{}", if i == index { "• " } else { "" }, title),
+                 );
++                world.insert(
++                    entry,
++                    Semantics {
++                        name: Some(format!(
++                            "{title}{} · {hint}",
++                            if i == index {
++                                ", current settings view"
++                            } else {
++                                ""
++                            }
++                        )),
++                        ..Default::default()
++                    },
++                );
+                 muted(world, h.section_nav, hint);
+             }
+         }
+         settings(world, h.body, index);
++    } else if route == Route::Data(Resource::Activity) {
++        if !narrow {
++            label(world, h.section_nav, "Activity", true);
++        }
++        nav_button(
++            world,
++            h.section_nav,
++            "desk:schedules",
++            "Scheduled automations",
++        );
++        muted(
++            world,
++            h.body,
++            "Workspace cards: latest 100 including terminal. Not the full job ledger. Titles/output withheld; board state is not execution-success proof.",
++        );
+     } else if let Route::Data(_) = route {
+         if narrow {
+             let r = row(world, h.section_nav, Size::Px(34.));
+diff --git a/apps/rndr-home/src/shell_activity_tests.rs b/apps/rndr-home/src/shell_activity_tests.rs
+new file mode 100644
+index 00000000..0f840e5b
+--- /dev/null
++++ b/apps/rndr-home/src/shell_activity_tests.rs
+@@ -0,0 +1,359 @@
++//! App input/update/layout regressions, not physical keyboard or screen-reader proof.
++use super::*;
++use admin_model::{Desktop, ReadError, ReadState, Record, Resource, Route};
++use desktop::Handles;
++fn settle(a: &mut App) {
++    for _ in 0..8 {
++        a.update();
++    }
++}
++fn button(a: &App, action: &str) -> Entity {
++    a.world()
++        .entities_with::<Button>()
++        .into_iter()
++        .find(|e| a.world().get::<Button>(*e).unwrap().action == action)
++        .expect(action)
++}
++fn key(a: &mut App, named: NamedKey, shift: bool) {
++    a.world_mut().resource_mut::<Input>().unwrap().keys = vec![KeyEvent::named(
++        named,
++        Modifiers {
++            shift,
++            ..Modifiers::new()
++        },
++    )];
++    a.update();
++    settle(a);
++}
++fn focus_action(a: &App) -> String {
++    let e = a.world().resource::<Focus>().unwrap().entity.unwrap();
++    a.world()
++        .get::<Button>(e)
++        .map(|b| b.action.clone())
++        .unwrap_or_default()
++}
++fn activate(a: &mut App, action: &str) {
++    let e = button(a, action);
++    assert_eq!(try_activate(a.world_mut(), e), ActivationResult::Accepted);
++    settle(a);
++}
++fn rows() -> Vec<Record> {
++    (0..80)
++        .map(|i| {
++            Record::new(
++                format!("Work item {i}"),
++                vec![("Board state", "In flight".into())],
++            )
++        })
++        .collect()
++}
++#[test]
++fn chooser_keyboard_current_name_escape_and_selection_preserve_chat() {
++    for width in [480., 1120.] {
++        let (mut a, mut commands) = ui_tests::ready_unverified();
++        a.world_mut().insert_resource(Viewport::new(width, 650.));
++        let ui = *a.world().resource::<Ui>().unwrap();
++        reset_prompt(a.world_mut(), ui.composer, "draft 👋");
++        desktop::navigate(a.world_mut(), Route::Settings(3));
++        settle(&mut a);
++        let chooser = a.world().resource::<Handles>().unwrap().chooser;
++        assert!(request_focus(a.world_mut(), chooser));
++        key(&mut a, NamedKey::Enter, false);
++        let root = a.world().resource::<menus::Menus>().unwrap().root.unwrap();
++        assert!(!a.world().has::<Hidden>(root));
++        assert_eq!(focus_action(&a), "settings:3");
++        let current = a.world().resource::<Focus>().unwrap().entity.unwrap();
++        assert!(
++            a.world()
++                .get::<Semantics>(current)
++                .unwrap()
++                .name
++                .as_ref()
++                .unwrap()
++                .contains("current settings view")
++        );
++        key(&mut a, NamedKey::Tab, false);
++        assert_eq!(focus_action(&a), "settings:4");
++        key(&mut a, NamedKey::Tab, true);
++        assert_eq!(focus_action(&a), "settings:3");
++        // A responsive page rebuild must not delete the popup anchor or its focus.
++        a.world_mut()
++            .insert_resource(Viewport::new(if width < 800. { 1120. } else { 480. }, 760.));
++        settle(&mut a);
++        assert_eq!(a.world().resource::<Handles>().unwrap().chooser, chooser);
++        assert_eq!(focus_action(&a), "settings:3");
++        key(&mut a, NamedKey::Escape, false);
++        assert!(a.world().has::<Hidden>(root));
++        assert_eq!(a.world().resource::<Focus>().unwrap().entity, Some(chooser));
++        assert_eq!(
++            a.world().resource::<Desktop>().unwrap().route,
++            Route::Settings(3)
++        );
++        key(&mut a, NamedKey::Enter, false);
++        key(&mut a, NamedKey::End, false);
++        assert_eq!(focus_action(&a), "settings:8");
++        key(&mut a, NamedKey::Home, false);
++        assert_eq!(focus_action(&a), "settings:0");
++        key(&mut a, NamedKey::End, false);
++        key(&mut a, NamedKey::Enter, false);
++        assert_eq!(
++            a.world().resource::<Desktop>().unwrap().route,
++            Route::Settings(8)
++        );
++        assert_eq!(focus_action(&a), "settings:choose");
++        assert!(
++            a.world()
++                .get::<Semantics>(chooser)
++                .unwrap()
++                .name
++                .as_ref()
++                .unwrap()
++                .contains("Connection")
++        );
++        activate(&mut a, "desk:chat");
++        assert_eq!(
++            focus_action(&a),
++            "desk:chat",
++            "return focus must not land on Settings or hidden composer"
++        );
++        activate(&mut a, "desk:settings");
++        assert_eq!(
++            a.world().resource::<Desktop>().unwrap().route,
++            Route::Settings(8)
++        );
++        assert_eq!(
++            a.world().get::<Label>(ui.composer).unwrap().text,
++            "draft 👋"
++        );
++        assert_eq!(
++            a.world()
++                .resource::<Model>()
++                .unwrap()
++                .chat
++                .session
++                .as_deref(),
++            Some("s")
++        );
++        assert!(commands.try_recv().is_err());
++        assert!(!composer::native_input_ready(a.world()));
++    }
++}
++#[test]
++fn activity_first_detail_metadata_is_visible_at_minimum_size() {
++    let mut a = app();
++    a.update();
++    a.world_mut().insert_resource(
++        std::sync::Arc::new(rndr_render::ParleyText::new()) as std::sync::Arc<dyn TextEngine>
++    );
++    a.world_mut().insert_resource(Viewport::new(480., 650.));
++    a.world_mut()
++        .insert_resource(desktop_fixtures::SyntheticDesktop);
++    a.world_mut()
++        .resource_mut::<Desktop>()
++        .unwrap()
++        .reads
++        .insert(Resource::Activity, ReadState::Ready(rows()));
++    desktop::navigate(a.world_mut(), Route::Data(Resource::Activity));
++    let d = a.world_mut().resource_mut::<Desktop>().unwrap();
++    d.selected = Some(0);
++    d.dirty = true;
++    settle(&mut a);
++    let h = a.world().resource::<Handles>().unwrap();
++    let state = a
++        .world()
++        .entities_with::<Label>()
++        .into_iter()
++        .find(|e| a.world().get::<Label>(*e).unwrap().text == "In flight")
++        .unwrap();
++    let r = a.world().get::<Rect>(state).unwrap();
++    let port = a.world().get::<Rect>(h.body).unwrap();
++    let offset = a.world().get::<Scroll>(h.body).unwrap().offset[1];
++    assert!(
++        r.y + offset >= port.y && r.y + offset + r.h <= port.y + port.h,
++        "metadata below fold: {r:?} {port:?}"
++    );
++}
++#[test]
++fn narrow_settings_header_contains_wrapped_fixture_title() {
++    let mut a = app();
++    a.update();
++    a.world_mut().insert_resource(
++        std::sync::Arc::new(rndr_render::ParleyText::new()) as std::sync::Arc<dyn TextEngine>
++    );
++    a.world_mut().insert_resource(Viewport::new(480., 650.));
++    desktop::navigate(a.world_mut(), Route::Settings(3));
++    settle(&mut a);
++    let title = a.world().resource::<Handles>().unwrap().title;
++    a.world_mut().get_mut::<Label>(title).unwrap().text = "FIXTURE · Runtime Controls".into();
++    settle(&mut a);
++    let header = a.world().get::<Parent>(title).unwrap().entity;
++    let r = a.world().get::<Rect>(title).unwrap();
++    let port = a.world().get::<Rect>(header).unwrap();
++    // Layout Rects can be clamped even when ink crowds the boundary. Lock the
++    // explicit two-line-space policy; actual pixels are separately inspected.
++    assert!(port.h >= 60., "reserve two-line space beside the chooser");
++    assert!(
++        r.y + r.h <= port.y + port.h + 0.5,
++        "title extends beyond header: {r:?} {port:?}"
++    );
++    let h = a.world().resource::<Handles>().unwrap();
++    assert_eq!(
++        a.world().get::<Label>(h.chooser).unwrap().text,
++        "Choose settings view"
++    );
++    assert_eq!(
++        a.world().get::<Label>(h.automation_heading).unwrap().text,
++        "Auto"
++    );
++}
++#[test]
++fn fixed_dock_is_visible_while_primary_doors_scroll_at_minimum_window() {
++    let mut a = app();
++    a.update();
++    a.world_mut().insert_resource(Viewport::new(480., 650.));
++    settle(&mut a);
++    let h = a.world().resource::<Handles>().unwrap().clone();
++    assert!(!a.world().has::<Scroll>(h.rail));
++    assert!(a.world().has::<Scroll>(h.primary_rail));
++    for action in ["desk:history", "desk:settings", "desk:profiles"] {
++        let e = button(&a, action);
++        assert_eq!(a.world().get::<Parent>(e).unwrap().entity, h.dock);
++        let r = a.world().get::<Rect>(e).unwrap();
++        assert!(r.y >= 0. && r.y + r.h <= 650., "{action}: {r:?}");
++    }
++    let before = *a.world().get::<Rect>(h.dock).unwrap();
++    a.world_mut()
++        .get_mut::<Scroll>(h.primary_rail)
++        .unwrap()
++        .offset[1] = -160.;
++    settle(&mut a);
++    assert_eq!(*a.world().get::<Rect>(h.dock).unwrap(), before);
++    activate(&mut a, "desk:history");
++    assert_eq!(
++        a.world().resource::<Desktop>().unwrap().route,
++        Route::Data(Resource::Activity)
++    );
++    let e = button(&a, "desk:history");
++    assert!(
++        a.world()
++            .get::<Semantics>(e)
++            .unwrap()
++            .name
++            .as_ref()
++            .unwrap()
++            .contains("current destination")
++    );
++}
++#[test]
++fn activity_detail_back_retains_list_scroll_filter_and_keyboard_origin() {
++    let mut a = app();
++    a.update();
++    a.world_mut()
++        .resource_mut::<Desktop>()
++        .unwrap()
++        .reads
++        .insert(Resource::Activity, ReadState::Ready(rows()));
++    desktop::navigate(a.world_mut(), Route::Data(Resource::Activity));
++    settle(&mut a);
++    let h = a.world().resource::<Handles>().unwrap().clone();
++    a.world_mut().get_mut::<Scroll>(h.body).unwrap().offset[1] = -200.;
++    settle(&mut a);
++    assert!(a.world().get::<Scroll>(h.body).unwrap().offset[1] < 0.);
++    let row = button(&a, "record:7");
++    request_focus(a.world_mut(), row);
++    settle(&mut a); // canonical focus visibility may reveal an offscreen row
++    let offset = a.world().get::<Scroll>(h.body).unwrap().offset;
++    key(&mut a, NamedKey::Enter, false);
++    assert_eq!(a.world().resource::<Desktop>().unwrap().selected, Some(7));
++    assert_eq!(focus_action(&a), "admin:back");
++    key(&mut a, NamedKey::Enter, false);
++    assert_eq!(a.world().resource::<Desktop>().unwrap().selected, None);
++    assert_eq!(focus_action(&a), "record:7");
++    assert_eq!(a.world().get::<Scroll>(h.body).unwrap().offset, offset);
++    reset_prompt(a.world_mut(), h.search, "Work item 7");
++    settle(&mut a);
++    activate(&mut a, "record:7");
++    activate(&mut a, "admin:back");
++    assert_eq!(
++        a.world().resource::<Desktop>().unwrap().query,
++        "Work item 7"
++    );
++    assert_eq!(focus_action(&a), "record:7");
++}
++#[test]
++fn background_activity_reply_does_not_replace_settings_control_or_chat_projection() {
++    let (mut a, mut commands) = ui_tests::ready_unverified();
++    let ui = *a.world().resource::<Ui>().unwrap();
++    reset_prompt(a.world_mut(), ui.composer, "private unsent draft");
++    desktop::navigate(a.world_mut(), Route::Settings(0));
++    settle(&mut a);
++    let light = button(&a, "appearance:light");
++    request_focus(a.world_mut(), light);
++    let serial = a
++        .world_mut()
++        .resource_mut::<Desktop>()
++        .unwrap()
++        .begin(Resource::Activity)
++        .unwrap();
++    send(
++        a.world_mut(),
++        admin_backend::ReadReply {
++            resource: Resource::Activity,
++            serial,
++            result: Ok(rows()),
++        },
++    );
++    settle(&mut a);
++    assert_eq!(a.world().resource::<Focus>().unwrap().entity, Some(light));
++    assert_eq!(
++        a.world().get::<Label>(ui.composer).unwrap().text,
++        "private unsent draft"
++    );
++    assert_eq!(a.world().resource::<Model>().unwrap().generation, 0);
++    assert!(commands.try_recv().is_err());
++}
++#[test]
++fn unrelated_and_stale_replies_preserve_activity_selection_and_scroll() {
++    let mut a = app();
++    a.update();
++    a.world_mut()
++        .resource_mut::<Desktop>()
++        .unwrap()
++        .reads
++        .insert(Resource::Activity, ReadState::Ready(rows()));
++    desktop::navigate(a.world_mut(), Route::Data(Resource::Activity));
++    settle(&mut a);
++    activate(&mut a, "record:7");
++    let h = a.world().resource::<Handles>().unwrap().clone();
++    let focus = a.world().resource::<Focus>().unwrap().entity;
++    let offset = a.world().get::<Scroll>(h.body).unwrap().offset;
++    let serial = a
++        .world_mut()
++        .resource_mut::<Desktop>()
++        .unwrap()
++        .begin(Resource::Models)
++        .unwrap();
++    send(
++        a.world_mut(),
++        admin_backend::ReadReply {
++            resource: Resource::Models,
++            serial,
++            result: Err(ReadError::Unavailable),
++        },
++    );
++    send(
++        a.world_mut(),
++        admin_backend::ReadReply {
++            resource: Resource::Activity,
++            serial: 999,
++            result: Ok(vec![]),
++        },
++    );
++    settle(&mut a);
++    assert_eq!(a.world().resource::<Desktop>().unwrap().selected, Some(7));
++    assert_eq!(a.world().resource::<Focus>().unwrap().entity, focus);
++    assert_eq!(a.world().get::<Scroll>(h.body).unwrap().offset, offset);
++    assert!(
++        matches!(a.world().resource::<Desktop>().unwrap().reads.get(&Resource::Activity), Some(ReadState::Ready(r)) if r.len() == 80)
++    );
++}
+diff --git a/docs/README.md b/docs/README.md
+index 3e02beea..73fe4105 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -25,7 +25,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
+ | Guide | You want to… |
+ |-------|----------------|
+ | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
+-| [Native rndr desktop preview](guides/rndr-native-preview.md) | Browse the separate shell, settings and read-only administration preview; input-sensitive chat actions remain gated |
++| [Native rndr desktop preview](guides/rndr-native-preview.md) | Browse settings chooser, grouped shell and read-only Activity/admin snapshots; input-sensitive chat actions remain gated |
+ | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, legacy or registered ChatGPT sign-in, Teacher learning actions, and reply narration in chat |
+ | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |
+ | [Spotlight Activity](guides/spotlight-activity.md) | Follow workshop tasks, agents, code commands, and scheduled runs |
+diff --git a/docs/guides/rndr-native-preview.md b/docs/guides/rndr-native-preview.md
+index b911b290..09875f00 100644
+--- a/docs/guides/rndr-native-preview.md
++++ b/docs/guides/rndr-native-preview.md
+@@ -16,8 +16,13 @@ cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- --offline
+ Open **Settings** in the shared rail. The sections and order match the existing
+ app: Preferences, Accounts, Medousa Agent, Runtime Controls, Sharing, External
+ Agents, Packages, MCP and Connection. Wide windows have the grouped settings
+-sidebar; narrow windows have Previous/Next section controls. Sidebar scrolling
+-keeps all sections reachable. The rail retains production destination names;
++sidebar; narrow windows retain Previous/Next section controls. **Choose settings
++view** directly opens any section at either width and remembers the last section
++for this window. Tab/Shift-Tab and arrows traverse the chooser; Home/End jump to
++the first/last section, Enter/Space activate, and Escape dismisses without changing
++the route and returns focus to the chooser. Sidebar scrolling keeps all sections
++reachable. Primary rail doors scroll while Activity/Settings/You stay docked.
++The rail retains production destination names;
+ unported editors open a clear port-status page, not fabricated content.
+ 
+ - **Preferences** changes light/dark/high contrast in this window only. Nothing is
+@@ -33,10 +38,21 @@ unported editors open a clear port-status page, not fabricated content.
+ - **Accounts → Hosted review providers** lists discovered providers, not logged-in
+   review accounts. **Schedules** in the rail opens the read-only recurring list.
+ 
++**Activity** opens a read-only snapshot of up to 100 workspace work cards,
++including terminal cards. It is useful job/work-item metadata, not the full durable
++job ledger or the unified global Activity feed. Rows show board state, identity,
++created/updated UTC and snapshot revision. Prompt-derived titles, raw status prose,
++outputs and diagnostics are withheld. Board state is not proof of execution
++success. No cancel, retry, approval, archive or execution controls are provided.
++
+ Administrative lists support local filtering, details, Back and explicit refresh.
++Back restores the results viewport and row focus; filter and navigation changes
++start at the top. A refresh clears positional detail selection before new data.
+ Typing filters never requests a service or persists configuration. Loading,
+ permission denial, errors, offline, empty and no-match results are distinct.
+-Snapshots are not live subscriptions and are capped at 500 entries per service.
++Snapshots are not live subscriptions. Activity caps at 100 work cards; other
++services cap displayed rows at 500. Fixture, live-read snapshot and retained offline
++snapshot labels remain distinct; none claims continuous service liveness.
+ 
+ For read-only service data, follow the [launch instructions](../../apps/rndr-home/README.md)
+ and pass the existing **loopback** daemon origin and local data directory with
+@@ -49,8 +65,9 @@ Sign-in/out, review-account setup, pairing, channels, package inventory/install,
+ engine start/stop, vault linking, SSH and permission changes remain in the existing
+ app. Packages is an honest unsupported-host-service page, not a fake installed
+ inventory. Project/review editing, notes/files/artifacts, identity, Create, Calendar,
+-Web, Context, Peers, Activity, Agents, Scripts and Flows are not ported in this pass.
+-See the [destination parity matrix](../../apps/rndr-home/docs/DESKTOP_PARITY.md)
++Web, Context, Peers, Agents, Scripts and Flows are not ported in this pass.
++The wider unified Activity feed is also deferred.
++See the [updated destination parity matrix](../../apps/rndr-home/docs/SHELL_ACTIVITY_PARITY.md)
+ for exact implementation and remaining-view status.
+ 
+ ## Chat and native input limitations
+@@ -73,11 +90,12 @@ cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- \
+   --export-desktop ./desktop-renders
+ ```
+ 
+-This creates synthetic GPU PNGs at 480×760 and 1120×820 in dark, light and
+-high contrast, including every settings section and administrative state examples.
++This creates synthetic GPU PNGs at 480×760, 1120×820, 480×650 and 1120×650
++in dark, light and high contrast, including every settings section, the open
++chooser and administrative state examples.
+ Images carry a **FIXTURE** / **SYNTHETIC GPU RENDER** label. No credentials are
+ loaded and no network is contacted. These are not native-window observations or
+ proof of physical input. Existing `--export` remains the chat fixture exporter.
+ 
+-See [implementation evidence](../../apps/rndr-home/docs/DESKTOP_IMPLEMENTATION.md)
++See [follow-on implementation evidence](../../apps/rndr-home/docs/shell-activity-evidence/REPORT.md)
+ for exact checks, source references, limitations and the compact human checklist.

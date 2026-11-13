@@ -1,0 +1,13 @@
+{
+  "reviewed_head": "aeef3db1dfe768a7c19f327f63c19cbd8a58d319",
+  "author_seal_sha256": "a25e6d5c298bf322f80f3f7f1302f908e5ce57b0b8df19b751de755a866643a5",
+  "source_count": 28,
+  "source_failures": [],
+  "evidence_count": 352,
+  "evidence_failures": [],
+  "binary_sha256": "1946355a165343164adb8f69edd38a97d2429fa6f8bdddce3f81d2d42f6a2415",
+  "binary_matches": true,
+  "inventory_matches": true,
+  "inventory_count": 369,
+  "tracked_worktree_clean": true
+}

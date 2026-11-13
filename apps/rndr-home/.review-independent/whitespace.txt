@@ -1,0 +1,5 @@
+apps/rndr-home/docs/shell-activity-evidence/activity-fold.log:81: new blank line at EOF.
+apps/rndr-home/docs/shell-activity-evidence/focused.log:85: new blank line at EOF.
+apps/rndr-home/docs/shell-activity-evidence/header-before.log:81: new blank line at EOF.
+apps/rndr-home/docs/shell-activity-evidence/test-default.log:170: new blank line at EOF.
+apps/rndr-home/docs/shell-activity-evidence/test-observe.log:179: new blank line at EOF.
