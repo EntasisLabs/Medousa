@@ -1,0 +1,34 @@
+[
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "apps/rndr-home/Cargo.toml",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0,
+    "minimum_free_bytes": 16377090048,
+    "free_after_bytes": 16377094144
+  },
+  {
+    "command": [
+      "bash",
+      "scripts/verify-docs.sh",
+      "--strict"
+    ],
+    "exit_code": 0,
+    "minimum_free_bytes": 16376946688,
+    "free_after_bytes": 16376999936
+  },
+  {
+    "command": [
+      "python3",
+      "apps/rndr-home/docs/split-evidence/audit_source.py"
+    ],
+    "exit_code": 0,
+    "minimum_free_bytes": 16376983552,
+    "free_after_bytes": 16376975360
+  }
+]

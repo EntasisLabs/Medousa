@@ -1,0 +1,7 @@
+{
+  "before_after_final_metadata_equal_except_png_bytes": true,
+  "excluded": "png_bytes (caret/render timing can change native PNG bytes)",
+  "frame_revision": "3",
+  "source": "live-surface-copy-before-present",
+  "presented_confirmation": false
+}

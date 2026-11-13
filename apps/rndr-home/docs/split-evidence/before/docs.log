@@ -1,0 +1,2 @@
+bash scripts/verify-docs.sh --strict
+verify-docs: OK

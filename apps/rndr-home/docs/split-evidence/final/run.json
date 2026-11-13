@@ -1,0 +1,124 @@
+{
+  "utc_start": "2026-11-13T12:54:39.980520+00:00",
+  "medousa_baseline": "08839824203c57588607f3ad66496e1bd81d8cba",
+  "rndr_before": "44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139",
+  "rndr_status_before": "",
+  "target": "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target",
+  "environment": {
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0"
+  },
+  "checks": [
+    {
+      "name": "fmt",
+      "command": "cargo fmt --manifest-path apps/rndr-home/Cargo.toml -- --check",
+      "free_before_bytes": 16381640704,
+      "exit_code": 0,
+      "minimum_free_bytes": 16381636608,
+      "free_after_bytes": 16381693952
+    },
+    {
+      "name": "default",
+      "command": "cargo test --manifest-path apps/rndr-home/Cargo.toml --offline --locked -j 2",
+      "free_before_bytes": 16381677568,
+      "exit_code": 0,
+      "minimum_free_bytes": 16378044416,
+      "free_after_bytes": 16385286144
+    },
+    {
+      "name": "observe",
+      "command": "cargo test --manifest-path apps/rndr-home/Cargo.toml --offline --locked -j 2 --features observe",
+      "free_before_bytes": 16385286144,
+      "exit_code": 0,
+      "minimum_free_bytes": 16378040320,
+      "free_after_bytes": 16385146880
+    },
+    {
+      "name": "clippy-default",
+      "command": "cargo clippy --manifest-path apps/rndr-home/Cargo.toml --offline --locked -j 2 --all-targets -- -D warnings",
+      "free_before_bytes": 16385142784,
+      "exit_code": 0,
+      "minimum_free_bytes": 16385130496,
+      "free_after_bytes": 16385163264
+    },
+    {
+      "name": "clippy-observe",
+      "command": "cargo clippy --manifest-path apps/rndr-home/Cargo.toml --offline --locked -j 2 --all-targets --all-features -- -D warnings",
+      "free_before_bytes": 16385159168,
+      "exit_code": 0,
+      "minimum_free_bytes": 16385142784,
+      "free_after_bytes": 16385122304
+    },
+    {
+      "name": "build-default",
+      "command": "cargo build --manifest-path apps/rndr-home/Cargo.toml --offline --locked -j 2",
+      "free_before_bytes": 16385122304,
+      "exit_code": 0,
+      "minimum_free_bytes": 16378978304,
+      "free_after_bytes": 16385150976
+    },
+    {
+      "name": "build-observe",
+      "command": "cargo build --manifest-path apps/rndr-home/Cargo.toml --offline --locked -j 2 --features observe",
+      "free_before_bytes": 16385142784,
+      "exit_code": 0,
+      "minimum_free_bytes": 16379006976,
+      "free_after_bytes": 16385122304
+    },
+    {
+      "name": "export-dark",
+      "command": "'/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/medousa-rndr-home' --export '/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/apps/rndr-home/docs/split-evidence/final/dark'",
+      "free_before_bytes": 16385118208,
+      "exit_code": 0,
+      "minimum_free_bytes": 16384163840,
+      "free_after_bytes": 16384061440
+    },
+    {
+      "name": "export-light",
+      "command": "'/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/medousa-rndr-home' --export '/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/apps/rndr-home/docs/split-evidence/final/light' --light",
+      "free_before_bytes": 16384057344,
+      "exit_code": 0,
+      "minimum_free_bytes": 16383049728,
+      "free_after_bytes": 16382951424
+    },
+    {
+      "name": "export-high-contrast",
+      "command": "'/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/medousa-rndr-home' --export '/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/apps/rndr-home/docs/split-evidence/final/high-contrast' --high-contrast",
+      "free_before_bytes": 16382947328,
+      "exit_code": 0,
+      "minimum_free_bytes": 16382382080,
+      "free_after_bytes": 16382300160
+    },
+    {
+      "name": "native",
+      "command": "python3 apps/rndr-home/scripts/capture_native.py '/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target/debug/medousa-rndr-home' /Users/theelevators/rndr '/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/apps/rndr-home/docs/split-evidence/final/native-empty'",
+      "free_before_bytes": 16382291968,
+      "exit_code": 0,
+      "minimum_free_bytes": 16382050304,
+      "free_after_bytes": 16381988864
+    },
+    {
+      "name": "docs",
+      "command": "bash scripts/verify-docs.sh --strict",
+      "free_before_bytes": 16381919232,
+      "exit_code": 0,
+      "minimum_free_bytes": 16362594304,
+      "free_after_bytes": 16383754240
+    },
+    {
+      "name": "diff",
+      "command": "git diff --check",
+      "free_before_bytes": 16383750144,
+      "exit_code": 0,
+      "minimum_free_bytes": 16383737856,
+      "free_after_bytes": 16383733760
+    }
+  ],
+  "default_binary_sha256": "ad705c284bb4a818a3162fa8707a758527595acc642fc163775963f59caa5f98",
+  "observe_binary_sha256": "2d6799749ad9024c393cde0c9864630eb6894ce09f7ea1f6ce57a923ccf938b8",
+  "rndr_after": "44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139",
+  "rndr_status_after": "",
+  "utc_end": "2026-11-13T12:56:00.105002+00:00"
+}

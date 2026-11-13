@@ -1,0 +1,12 @@
+{
+  "base": "431ccab3affe24725eaff7d39176661b3398a17f",
+  "code_candidate": "b9ee1f1b55fd984231dcb8082fddd745444d5986",
+  "all_committed_changes_app_only": true,
+  "production_home_unchanged": true,
+  "historical_qualification_and_independent_report_unchanged": true,
+  "manifest_lockfile_unchanged": true,
+  "all_three_source_manifests_match_exact_commits": true,
+  "rndr_pin": "44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139",
+  "rndr_clean": true,
+  "free_bytes_at_seal": 16361537536
+}

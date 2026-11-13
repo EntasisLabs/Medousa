@@ -1,0 +1,9 @@
+{
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5\n",
+  "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)\n",
+  "base_commit": "431ccab3affe24725eaff7d39176661b3398a17f",
+  "split_commit": "08839824203c57588607f3ad66496e1bd81d8cba",
+  "coverage_commit": "b9ee1f1b55fd984231dcb8082fddd745444d5986",
+  "build_class": "existing shared target/dependency reuse; app recompiled after source changes, not a clean rebuild"
+}

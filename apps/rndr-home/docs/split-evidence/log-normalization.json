@@ -1,0 +1,38 @@
+[
+  {
+    "file": "after/default.log",
+    "removed_lf_bytes": 1,
+    "original_sha256": "e28ffbd6136e65f902cac2f44f7e09b1023b382ee72c80453696d45e0b0bad98",
+    "normalized_sha256": "e6c92eb1b914a988d33243772d95892791aa2a93428908624300444f79247d32"
+  },
+  {
+    "file": "after/observe.log",
+    "removed_lf_bytes": 1,
+    "original_sha256": "caf39f0b952d345e5eecaa2e757f753b8cbce812a63f0b0dc92ea02f3dd042c1",
+    "normalized_sha256": "c008d2b0dc1b9717a4792d28fc076c7a98c0ce985e11848d04f6f9278bd82537"
+  },
+  {
+    "file": "before/default.log",
+    "removed_lf_bytes": 1,
+    "original_sha256": "10097fd0c2b7a10f8a63277e23cf5b48939f87c047bd3c458f0566e8769f108f",
+    "normalized_sha256": "28277ae3d278c2bd1ca3f767f6c32534965e8b94d0fbd347ae940b0ce3a1d9d4"
+  },
+  {
+    "file": "before/observe.log",
+    "removed_lf_bytes": 1,
+    "original_sha256": "19b4e288aca3566fe193c62d057e710e7f4b8792bd915ca87c7c740b772c2fab",
+    "normalized_sha256": "2ef9aee81f5553e0b5d9eec73977e5ede5cf4462803a22f5b42890f82fd76d05"
+  },
+  {
+    "file": "final/default.log",
+    "removed_lf_bytes": 1,
+    "original_sha256": "0fe46568272a6bd20f215b8a9017d8aac8589dcb81658f285deed0d4b6409377",
+    "normalized_sha256": "24c9e59ade5d5ef01d5714600ddc4921437f3d676adf8c1cd0b1b7502400c659"
+  },
+  {
+    "file": "final/observe.log",
+    "removed_lf_bytes": 1,
+    "original_sha256": "9c5eb8de311c12c5ad90cc22a9797369a23e789426d45e39a688bd6e1ba80a59",
+    "normalized_sha256": "9857ac78e860134b30ed8e01c57d79f906e2c042db86b5b4e54a1f0e67988e45"
+  }
+]

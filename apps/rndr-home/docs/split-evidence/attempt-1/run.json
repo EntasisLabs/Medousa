@@ -1,0 +1,31 @@
+{
+  "utc_start": "2026-11-13T12:49:05.642050+00:00",
+  "medousa_baseline": "431ccab3affe24725eaff7d39176661b3398a17f",
+  "rndr_before": "44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139",
+  "rndr_status_before": "",
+  "target": "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/.cache/cargo-target",
+  "environment": {
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0"
+  },
+  "checks": [
+    {
+      "name": "fmt",
+      "command": "cargo fmt --manifest-path apps/rndr-home/Cargo.toml -- --check",
+      "free_before_bytes": 16410234880,
+      "exit_code": 0,
+      "minimum_free_bytes": 16410230784,
+      "free_after_bytes": 16410271744
+    },
+    {
+      "name": "default",
+      "command": "cargo test --manifest-path apps/rndr-home/Cargo.toml --offline --locked -j 2",
+      "free_before_bytes": 16410267648,
+      "exit_code": 101,
+      "minimum_free_bytes": 16410222592,
+      "free_after_bytes": 16410247168
+    }
+  ]
+}
