@@ -30,7 +30,11 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
     muted(
         world,
         parent,
-        "Read-only snapshot · refresh explicitly · maximum 500 entries · no operations executed",
+        if resource == Resource::Activity {
+            "Read-only snapshot · refresh explicitly · maximum 100 work cards · no operations executed"
+        } else {
+            "Read-only snapshot · refresh explicitly · maximum 500 entries · no operations executed"
+        },
     );
     match state {
         ReadState::NotLoaded => {
@@ -55,6 +59,17 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
             muted(world, parent, error.message());
         }
         ReadState::Ready(rows) => {
+            let source = if world
+                .resource::<crate::desktop_fixtures::SyntheticDesktop>()
+                .is_some()
+            {
+                "FIXTURE · synthetic snapshot · no network"
+            } else if connected {
+                "Live read snapshot · configured daemon · not continuous liveness"
+            } else {
+                "Retained snapshot · transport offline · not proof of current state"
+            };
+            muted(world, parent, source);
             if let Some(record) = selected.and_then(|i| rows.get(i)) {
                 nav_button(world, parent, "admin:back", "‹ Back to results");
                 label(world, parent, &record.title, true);
@@ -101,7 +116,7 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
                     world.insert(
                         entry,
                         Semantics {
-                            name: Some(record.title.clone()),
+                            name: Some(format!("Open snapshot details: {}", record.title)),
                             ..Default::default()
                         },
                     );

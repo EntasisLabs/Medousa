@@ -60,6 +60,12 @@ pub fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::error::Err
                     format!("FIXTURE · {}", route.title());
                 app.world_mut().get_mut::<Label>(h.footer).unwrap().text =
                     "SYNTHETIC GPU RENDER · NO NETWORK · NOT NATIVE WINDOW / INPUT PROOF".into();
+                if name == "settings-chooser" {
+                    crate::desktop::action(app.world_mut(), "settings:choose");
+                    for _ in 0..8 {
+                        app.update();
+                    }
+                }
                 let frame = rndr_paint::frame(app);
                 let image = exporter.render_frame(
                     Some(app.world()),
@@ -194,5 +200,61 @@ fn cases() -> Vec<Case> {
         )]),
         Some(0),
     ));
+    cases.push((
+        "settings-chooser",
+        Route::Settings(3),
+        None,
+        ReadState::NotLoaded,
+        None,
+    ));
+    let work = Record::new(
+        "Work item 1 · In flight",
+        vec![
+            ("Board state", "In flight (fixture)".into()),
+            ("Card ID", "job-synthetic-001".into()),
+            ("Created UTC", "2026-11-13T00:00:00Z".into()),
+            ("Updated UTC", "2026-11-13T01:00:00Z".into()),
+            ("Snapshot revision", "42 (fixture)".into()),
+            (
+                "Privacy",
+                "Prompt-derived titles, status prose, outputs and diagnostics withheld".into(),
+            ),
+        ],
+    );
+    for (name, state, detail) in [
+        (
+            "activity-list",
+            ReadState::Ready(vec![
+                work.clone(),
+                Record::new(
+                    "Work item 2 · Blocked",
+                    vec![("Board state", "Blocked (fixture)".into())],
+                ),
+            ]),
+            None,
+        ),
+        ("activity-detail", ReadState::Ready(vec![work]), Some(0)),
+        ("activity-empty", ReadState::Ready(vec![]), None),
+        ("activity-offline", ReadState::NotLoaded, None),
+        ("activity-loading", ReadState::Loading(1), None),
+        (
+            "activity-error",
+            ReadState::Error(ReadError::Unavailable),
+            None,
+        ),
+        (
+            "activity-permission",
+            ReadState::Error(ReadError::Permission),
+            None,
+        ),
+    ] {
+        cases.push((
+            name,
+            Route::Data(Resource::Activity),
+            Some(Resource::Activity),
+            state,
+            detail,
+        ));
+    }
     cases
 }

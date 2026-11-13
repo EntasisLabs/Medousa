@@ -25,7 +25,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
-| [Native rndr desktop preview](guides/rndr-native-preview.md) | Browse the separate shell, settings and read-only administration preview; input-sensitive chat actions remain gated |
+| [Native rndr desktop preview](guides/rndr-native-preview.md) | Browse settings chooser, grouped shell and read-only Activity/admin snapshots; input-sensitive chat actions remain gated |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, legacy or registered ChatGPT sign-in, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |
 | [Spotlight Activity](guides/spotlight-activity.md) | Follow workshop tasks, agents, code commands, and scheduled runs |

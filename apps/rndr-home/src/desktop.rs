@@ -18,13 +18,20 @@ pub struct Handles {
     pub page: Entity,
     pub title: Entity,
     pub subtitle: Entity,
+    pub chooser: Entity,
     pub rail: Entity,
     pub section_nav: Entity,
+    #[cfg(test)]
+    pub primary_rail: Entity,
+    #[cfg(test)]
+    pub dock: Entity,
     pub body: Entity,
     pub search: Entity,
     pub footer: Entity,
     /// Offset retained across the temporary Loading placeholder, never across navigation.
     pub loading_offset: Option<[f32; 2]>,
+    pub list_offset: Option<[f32; 2]>,
+    pub next_focus: Option<String>,
     pub nav: Vec<(Entity, &'static str)>,
 }
 pub const DOORS: [(&str, &str); 18] = [
@@ -62,23 +69,45 @@ pub fn mount(world: &mut World, chat: Entity) {
         ..Layout::row()
     },));
     crate::presentation::surface(world, root, Token::Canvas, None);
-    let rail = world.spawn((
-        Layout {
-            width: Size::Px(132.),
-            height: Size::Fill,
-            padding: 6.,
-            gap: 3.,
-            ..Layout::column()
-        },
-        Scroll::default(),
-    ));
+    let rail = world.spawn((Layout {
+        width: Size::Px(132.),
+        height: Size::Fill,
+        padding: 6.,
+        gap: 3.,
+        ..Layout::column()
+    },));
     crate::presentation::surface(world, rail, Token::Raised, None);
     child(world, root, rail);
     let brand = label(world, rail, "M", true);
     world.get_mut::<TextStyle>(brand).unwrap().size = 24.;
+    // Primary doors scroll independently; account/settings/status stay reachable.
+    // Production folds automations and opens Activity from Spotlight. These are
+    // explicit preview shortcuts, not a claim to reproduce native pane chrome.
+    let primary_rail = world.spawn((column(Size::Fill), Scroll::default()));
+    child(world, rail, primary_rail);
+    let dock = world.spawn((column(Size::Hug),));
+    child(world, rail, dock);
     let mut nav = Vec::new();
     for (id, name) in DOORS {
-        let e = nav_button(world, rail, &format!("desk:{id}"), name);
+        let parent = if matches!(id, "history" | "settings" | "profiles") {
+            dock
+        } else {
+            primary_rail
+        };
+        if id == "calendar" || id == "scripts" {
+            let heading = label(
+                world,
+                parent,
+                if id == "calendar" {
+                    "Focus"
+                } else {
+                    "Automations"
+                },
+                false,
+            );
+            world.get_mut::<TextStyle>(heading).unwrap().size = 10.;
+        }
+        let e = nav_button(world, parent, &format!("desk:{id}"), name);
         world.insert(
             e,
             Semantics {
@@ -97,6 +126,9 @@ pub fn mount(world: &mut World, chat: Entity) {
     let title = label(world, top, "Chat", true);
     world.get_mut::<TextStyle>(title).unwrap().size = 15.;
     let subtitle = muted(world, top, "Medousa · desktop preview");
+    let chooser = nav_button(world, top, "settings:choose", "Choose settings view ▾");
+    world.get_mut::<Layout>(chooser).unwrap().width = Size::Px(172.);
+    world.insert(chooser, Hidden);
     child(world, main, chat);
     let page = world.spawn((
         Layout {
@@ -156,13 +188,20 @@ pub fn mount(world: &mut World, chat: Entity) {
         page,
         title,
         subtitle,
+        chooser,
         rail,
         section_nav,
+        #[cfg(test)]
+        primary_rail,
+        #[cfg(test)]
+        dock,
         body,
         search,
         footer,
         nav,
         loading_offset: None,
+        list_offset: None,
+        next_focus: None,
     });
 }
 pub fn nav_button(world: &mut World, parent: Entity, action: &str, text: &str) -> Entity {
@@ -186,17 +225,18 @@ pub fn navigate(world: &mut World, route: Route) {
     world.resource_mut::<Desktop>().unwrap().navigate(route);
     let h = world.resource::<Handles>().unwrap().clone();
     crate::composer::reset_prompt(world, h.search, "");
-    // Never return focus to a hidden editor or preserve a soon-to-die detail row.
+    world.resource_mut::<Handles>().unwrap().list_offset = None;
+    world.resource_mut::<Handles>().unwrap().next_focus = None;
+    if matches!(route, Route::Settings(_)) {
+        world.remove::<Hidden>(h.chooser);
+    }
+    // Route focus must not land on a hidden editor or an unrelated Settings door.
     request_focus(
         world,
-        if route.resource().is_some() {
-            h.search
+        if matches!(route, Route::Settings(_)) {
+            h.chooser
         } else {
-            h.nav
-                .iter()
-                .find(|(_, name)| *name == "Settings")
-                .unwrap()
-                .0
+            rail_target(&h, route)
         },
     );
     if let Some(resource) = route.resource()
@@ -228,10 +268,21 @@ pub fn refresh(world: &mut World, resource: Resource) {
 }
 /// Consumed before the chat controller. No native input gate for harmless view changes.
 pub fn action(world: &mut World, action: &str) -> bool {
+    if action == "settings:choose" {
+        if matches!(
+            world.resource::<Desktop>().unwrap().route,
+            Route::Settings(_)
+        ) {
+            let anchor = world.resource::<Handles>().unwrap().chooser;
+            crate::menus::open(world, crate::menus::Kind::Settings, anchor);
+        }
+        return true;
+    }
     if let Some(id) = action.strip_prefix("desk:") {
         let route = match id {
             "chat" => Route::Chat,
-            "settings" => Route::Settings(0),
+            "settings" => Route::Settings(world.resource::<Desktop>().unwrap().last_settings),
+            "history" => Route::Data(Resource::Activity),
             "runtime" => Route::Data(Resource::Health),
             "schedules" => Route::Data(Resource::Schedules),
             _ => match DOORS.iter().find(|(key, _)| *key == id) {
@@ -268,9 +319,12 @@ pub fn action(world: &mut World, action: &str) -> bool {
         }
         "admin:back" => {
             let d = world.resource_mut::<Desktop>().unwrap();
-            d.selected = None;
-            d.reset_scroll = true;
+            let selected = d.selected.take();
+            d.reset_scroll = false;
             d.dirty = true;
+            let h = world.resource_mut::<Handles>().unwrap();
+            h.loading_offset = h.list_offset.take();
+            h.next_focus = selected.map(|i| format!("record:{i}"));
         }
         _ if action.starts_with("record:") => {
             if let Ok(index) = action[7..].parse::<usize>() {
@@ -278,6 +332,11 @@ pub fn action(world: &mut World, action: &str) -> bool {
                 if d.route.resource().and_then(|r| d.reads.get(&r)).is_some_and(|s|
                     matches!(s, ReadState::Ready(rows) if rows.get(index).is_some_and(|r| r.matches(&d.query)))) {
                     d.selected = Some(index); d.reset_scroll = true; d.dirty = true;
+                    let h = world.resource::<Handles>().unwrap().clone();
+                    let offset = world.get::<Scroll>(h.body).unwrap().offset;
+                    let h = world.resource_mut::<Handles>().unwrap();
+                    h.list_offset = Some(offset);
+                    h.next_focus = Some("admin:back".into());
                 }
             }
         }
@@ -324,10 +383,21 @@ pub fn sync(world: &mut World) {
             Route::Chat => *name == "Chat",
             Route::Settings(_) => *name == "Settings",
             Route::Data(Resource::Schedules) => *name == "Schedules",
+            Route::Data(Resource::Activity) => *name == "Activity",
             Route::Data(_) => *name == "Settings",
             Route::Deferred(n) => *name == n,
         };
         world.get_mut::<Label>(*e).unwrap().text = (*name).into();
+        world.insert(
+            *e,
+            Semantics {
+                name: Some(format!(
+                    "Open {name}{}",
+                    if active { ", current destination" } else { "" }
+                )),
+                ..Default::default()
+            },
+        );
         world.get_mut::<TextStyle>(*e).unwrap().size = if narrow { 10. } else { 12. };
         world.get_mut::<Layout>(*e).unwrap().padding = if narrow { 2. } else { 8. };
         world.get_mut::<rndr_ui::UiStyle>(*e).unwrap().background =
@@ -341,6 +411,20 @@ pub fn sync(world: &mut World) {
     } else {
         route.title().into()
     };
+    if matches!(route, Route::Settings(_)) {
+        world.remove::<Hidden>(h.chooser);
+        world.insert(
+            h.chooser,
+            Semantics {
+                name: Some(format!("Choose settings view, current: {}", route.title())),
+                ..Default::default()
+            },
+        );
+        // Reserve the title and chooser; no clipped subtitle at either width.
+        world.insert(h.subtitle, Hidden);
+    } else {
+        world.insert(h.chooser, Hidden);
+    }
     if route == Route::Chat {
         world.remove::<Hidden>(h.chat);
         world.insert(h.page, Hidden);
@@ -428,7 +512,14 @@ pub fn sync(world: &mut World) {
     // results. Keeping the Loading offset separately avoids losing it to that
     // short placeholder; explicit navigation/filter/detail always clears it.
     crate::admin_views::render(world, &h, route, narrow);
-    if let Some((region, action)) = dynamic_focus {
+    let next_focus = world.resource_mut::<Handles>().unwrap().next_focus.take();
+    if let Some(action) = next_focus {
+        let target = world.entities_with::<Button>().into_iter().find(|e| {
+            descendant(world, *e, h.body)
+                && world.get::<Button>(*e).is_some_and(|b| b.action == action)
+        });
+        request_focus(world, target.unwrap_or_else(|| fallback(&h, route)));
+    } else if let Some((region, action)) = dynamic_focus {
         let replacement = action.and_then(|action| {
             world.entities_with::<Button>().into_iter().find(|e| {
                 descendant(world, *e, region)
@@ -454,14 +545,21 @@ fn descendant(world: &World, mut entity: Entity, root: Entity) -> bool {
     }
     false
 }
+fn rail_target(h: &Handles, route: Route) -> Entity {
+    let name = match route {
+        Route::Chat => "Chat",
+        Route::Settings(_) => "Settings",
+        Route::Data(Resource::Schedules) => "Schedules",
+        Route::Data(Resource::Activity) => "Activity",
+        Route::Data(_) => "Settings",
+        Route::Deferred(name) => name,
+    };
+    h.nav.iter().find(|(_, n)| *n == name).unwrap().0
+}
 fn fallback(h: &Handles, route: Route) -> Entity {
     if route.resource().is_some() {
         h.search
     } else {
-        h.nav
-            .iter()
-            .find(|(_, name)| *name == "Settings")
-            .unwrap()
-            .0
+        rail_target(h, route)
     }
 }

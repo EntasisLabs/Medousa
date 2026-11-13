@@ -108,7 +108,7 @@ fn parley_markdown_hugs_remeasures_and_retains_streaming_view() {
     assert!(app.world().get::<Rect>(view).unwrap().h > narrow.h);
     let mut scrolls = app.world().entities_with::<Scroll>();
     let desktop = app.world().resource::<desktop::Handles>().unwrap();
-    scrolls.retain(|e| *e != desktop.rail && *e != desktop.body);
+    scrolls.retain(|e| *e != desktop.primary_rail && *e != desktop.body);
     assert_eq!(
         scrolls,
         vec![ui.conversation],

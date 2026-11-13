@@ -1,10 +1,13 @@
 # Medousa — rndr desktop preview
 
-> **Current non-chat increment:** [destination parity and remaining-view matrix](docs/DESKTOP_PARITY.md)
-> and [implementation/check evidence](docs/DESKTOP_IMPLEMENTATION.md). Shared shell,
-> all nine Settings destinations, local appearance, and ten real read-only admin
-> models with filter/list/detail/refresh are implemented. No live workshop was
-> contacted during implementation verification. No production-readiness claim.
+> **Current desktop slice:** [updated parity / coverage matrix](docs/SHELL_ACTIVITY_PARITY.md)
+> and [checks / pixel evidence](docs/shell-activity-evidence/REPORT.md).
+> Direct Settings chooser, grouped scrolling rail with fixed Activity/Settings/You
+> dock, and a bounded read-only Activity jobs snapshot extend the prior increment.
+> Eleven existing read models have filter/list/detail/refresh; the nine Settings
+> routes remain read-only/local-preview, not editable production panels.
+> No real workshop was contacted. No production-readiness claim.
+> [Previous increment report](docs/DESKTOP_IMPLEMENTATION.md) is preserved.
 >
 > **Send, Restore, New, Recent and Reload remain disabled.** The legacy chat
 > behavior described below does not override the current native-input gate.

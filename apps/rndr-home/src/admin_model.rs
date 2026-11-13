@@ -13,9 +13,10 @@ pub enum Resource {
     Sharing,
     Capacity,
     ReviewProviders,
+    Activity,
 }
 impl Resource {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Health,
         Self::Models,
         Self::Runtimes,
@@ -26,6 +27,7 @@ impl Resource {
         Self::Sharing,
         Self::Capacity,
         Self::ReviewProviders,
+        Self::Activity,
     ];
     pub fn title(self) -> &'static str {
         match self {
@@ -39,6 +41,7 @@ impl Resource {
             Self::Sharing => "Shared workshop mode",
             Self::Capacity => "Worker capacity",
             Self::ReviewProviders => "Hosted review providers",
+            Self::Activity => "Activity · jobs snapshot",
         }
     }
 }
@@ -161,6 +164,7 @@ impl ReadError {
 }
 pub struct Desktop {
     pub route: Route,
+    pub last_settings: usize,
     pub reads: BTreeMap<Resource, ReadState>,
     pub serial: u64,
     pub selected: Option<usize>,
@@ -174,6 +178,7 @@ impl Default for Desktop {
     fn default() -> Self {
         Self {
             route: Route::Chat,
+            last_settings: 0,
             reads: BTreeMap::new(),
             serial: 0,
             selected: None,
@@ -187,6 +192,9 @@ impl Default for Desktop {
 impl Desktop {
     pub fn navigate(&mut self, route: Route) {
         self.route = route;
+        if let Route::Settings(index) = route {
+            self.last_settings = index;
+        }
         self.reset_scroll = true;
         self.query.clear();
         self.selected = None;

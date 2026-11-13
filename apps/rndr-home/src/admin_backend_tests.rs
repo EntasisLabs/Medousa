@@ -59,7 +59,7 @@ async fn response(
     result
 }
 #[tokio::test]
-async fn all_ten_admin_models_use_existing_get_contracts_and_safe_projections() {
+async fn all_eleven_admin_models_use_existing_get_contracts_and_safe_projections() {
     let cases = vec![
         (
             Resource::Health,
@@ -111,6 +111,11 @@ async fn all_ten_admin_models_use_existing_get_contracts_and_safe_projections() 
             "/v1/reviews/providers",
             json!({"providers":[{"protocol_version":1,"id":"test","label":"Test provider","hosts":[],"operations":[]}],"problems":["NEVER-RENDER"]}),
         ),
+        (
+            Resource::Activity,
+            "/v1/workspace/cards?limit=100&include_terminal=true",
+            json!({"workspace_revision":42,"cards":[{"id":"job-fixture", "column":"in_flight", "title":"NEVER-RENDER prompt excerpt", "status_label":"NEVER-RENDER diagnostics", "created_at_utc":"2026-11-13T00:00:00Z", "updated_at_utc":"2026-11-13T01:00:00Z", "output":"NEVER-RENDER"}]}),
+        ),
     ];
     assert_eq!(cases.len(), Resource::ALL.len());
     for (resource, path, body) in cases {
@@ -160,6 +165,59 @@ async fn errors_and_malformed_models_never_become_empty_success_or_raw_diagnosti
             "/v1/models/catalog",
             200,
             json!({"models":[]})
+        )
+        .await
+        .unwrap()
+        .is_empty()
+    );
+}
+#[tokio::test]
+async fn activity_caps_rows_and_does_not_guess_empty_or_permission_success() {
+    let path = "/v1/workspace/cards?limit=100&include_terminal=true";
+    let card = json!({"id":"job-fixture", "column":"blocked", "title":"NEVER-RENDER", "status_label":"NEVER-RENDER", "created_at_utc":"2026-11-13T00:00:00Z", "updated_at_utc":"2026-11-13T01:00:00Z"});
+    let rows = response(
+        Resource::Activity,
+        path,
+        200,
+        json!({"workspace_revision":2,"cards":vec![card; 120]}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 100);
+    assert_eq!(rows[0].title, "Work item 1 · Blocked");
+    assert!(!format!("{rows:?}").contains("NEVER-RENDER"));
+    assert_eq!(
+        classify(
+            response(
+                Resource::Activity,
+                path,
+                403,
+                json!({"error":"NEVER-RENDER"})
+            )
+            .await
+            .unwrap_err()
+        ),
+        ReadError::Permission
+    );
+    for body in [
+        json!({}),
+        json!({"workspace_revision":2,"cards":[{"id":"x"}]}),
+    ] {
+        assert_eq!(
+            classify(
+                response(Resource::Activity, path, 200, body)
+                    .await
+                    .unwrap_err()
+            ),
+            ReadError::Incompatible
+        );
+    }
+    assert!(
+        response(
+            Resource::Activity,
+            path,
+            200,
+            json!({"workspace_revision":2,"cards":[]})
         )
         .await
         .unwrap()

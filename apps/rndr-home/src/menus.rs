@@ -14,6 +14,7 @@ pub enum Kind {
     Behavior,
     Depth,
     Appearance,
+    Settings,
 }
 #[derive(Default)]
 pub struct Menus {
@@ -82,6 +83,20 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
             closed,
         },
     ));
+    world.insert(
+        root,
+        Semantics {
+            name: Some(
+                if kind == Kind::Settings {
+                    "Choose settings view"
+                } else {
+                    "Preview menu"
+                }
+                .into(),
+            ),
+            ..Default::default()
+        },
+    );
     presentation::outline(world, root);
     world.insert(root, Hidden);
     let header = row(world, root, Size::Px(30.));
@@ -95,6 +110,7 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
             Kind::Behavior => "Behavior",
             Kind::Depth => "Response depth",
             Kind::Appearance => "Window appearance",
+            Kind::Settings => "Choose settings view",
         },
         true,
     );
@@ -140,6 +156,43 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
         query: String::new(),
     };
     match kind {
+        Kind::Settings => {
+            let current = world
+                .resource::<crate::admin_model::Desktop>()
+                .unwrap()
+                .last_settings;
+            for (index, (_, name, hint)) in crate::admin_model::SETTINGS.iter().enumerate() {
+                if index == 0 || index == 6 {
+                    label(
+                        world,
+                        body,
+                        if index == 0 { "Medousa" } else { "This host" },
+                        true,
+                    );
+                }
+                let entry = item(
+                    world,
+                    body,
+                    &format!("settings:{index}"),
+                    &format!("{}{}", if index == current { "✓ " } else { "" }, name),
+                    true,
+                );
+                world.insert(
+                    entry,
+                    Semantics {
+                        name: Some(format!(
+                            "{name}{} · {hint}",
+                            if index == current {
+                                ", current settings view"
+                            } else {
+                                ""
+                            }
+                        )),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
         Kind::Model => model_rows(world, body, ""),
         Kind::Runtime => {
             item(world, body, "menu:close", "✓ Medousa · native turns", true);
@@ -245,7 +298,22 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
         }
     }
     if open_popup(world, root) {
-        let focus = search
+        let current_setting = if kind == Kind::Settings {
+            let action = format!(
+                "settings:{}",
+                world
+                    .resource::<crate::admin_model::Desktop>()
+                    .unwrap()
+                    .last_settings
+            );
+            children_of(world, body)
+                .into_iter()
+                .find(|e| world.get::<Button>(*e).is_some_and(|b| b.action == action))
+        } else {
+            None
+        };
+        let focus = current_setting
+            .or(search)
             .or_else(|| {
                 children_of(world, body)
                     .into_iter()
@@ -296,6 +364,91 @@ fn model_rows(world: &mut World, body: Entity, query: &str) {
                 "No matching models"
             },
         );
+    }
+}
+/// App-local chooser order is semantic, independent of recycled entity indices.
+/// Escape/outside dismissal and focus restoration remain canonical popup policy.
+/// Only a single ordinary navigation key is handled here; never consume editor,
+/// composition, submission or mixed batches on behalf of the native-input gate.
+pub fn settings_keyboard(world: &mut World) {
+    let Some(m) = world.resource::<Menus>() else {
+        return;
+    };
+    let (Some(root), Some(body)) = (m.root, m.body) else {
+        return;
+    };
+    if m.kind != Some(Kind::Settings) || world.has::<Hidden>(root) {
+        return;
+    }
+    let input = world.resource::<Input>().unwrap();
+    if input.keys.len() != 1
+        || !input.chars.is_empty()
+        || !input.ime_preedit.is_empty()
+        || !input.ime_commit.is_empty()
+    {
+        return;
+    }
+    let key = &input.keys[0];
+    if key.released
+        || key.synthetic
+        || key.modifiers.ctrl
+        || key.modifiers.alt
+        || key.modifiers.super_key
+    {
+        return;
+    }
+    let LogicalKey::Named(named) = key.logical else {
+        return;
+    };
+    let shift = key.modifiers.shift;
+    let entries: Vec<_> = (0..crate::admin_model::SETTINGS.len())
+        .filter_map(|i| {
+            let action = format!("settings:{i}");
+            children_of(world, body).into_iter().find(|e| {
+                world
+                    .get::<Button>(*e)
+                    .is_some_and(|b| b.enabled && b.action == action)
+            })
+        })
+        .collect();
+    if entries.is_empty() {
+        return;
+    }
+    let focused = world.resource::<Focus>().and_then(|f| f.entity);
+    let index = entries.iter().position(|e| Some(*e) == focused);
+    let target = match named {
+        NamedKey::ArrowDown => entries[(index.map_or(0, |i| i + 1)) % entries.len()],
+        NamedKey::ArrowUp => {
+            entries[index.map_or(entries.len() - 1, |i| {
+                (i + entries.len() - 1) % entries.len()
+            })]
+        }
+        NamedKey::Home => entries[0],
+        NamedKey::End => entries[entries.len() - 1],
+        NamedKey::Tab => {
+            // Include the close button in the cyclic Tab order.
+            let close = world.entities_with::<Button>().into_iter().find(|e| {
+                world
+                    .get::<Button>(*e)
+                    .is_some_and(|b| b.action == "menu:close")
+                    && world
+                        .get::<Parent>(*e)
+                        .and_then(|p| world.get::<Parent>(p.entity))
+                        .is_some_and(|p| p.entity == root)
+            });
+            let mut order = entries.clone();
+            if let Some(close) = close {
+                order.insert(0, close);
+            }
+            let at = order.iter().position(|e| Some(*e) == focused).unwrap_or(0);
+            order[(at + if shift { order.len() - 1 } else { 1 }) % order.len()]
+        }
+        _ => return,
+    };
+    if request_focus(world, target) {
+        let input = world.resource_mut::<Input>().unwrap();
+        input.keys.clear();
+        input.key = None;
     }
 }
 pub fn update(world: &mut World) {

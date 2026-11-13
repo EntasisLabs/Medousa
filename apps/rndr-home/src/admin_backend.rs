@@ -78,6 +78,37 @@ fn yes(value: bool) -> String {
 
 pub async fn read(client: &MedousaClient, resource: Resource) -> Result<Vec<Record>, SdkError> {
     let rows = match resource {
+        Resource::Activity => {
+            // Production Activity consumes workspace work cards. Titles may be
+            // prompt excerpts; never retain those or raw status/diagnostic prose.
+            // This is a bounded snapshot, not the complete durable job ledger.
+            let snapshot = client
+                .workspace()
+                .list_cards(&medousa_types::WorkspaceCardsQuery {
+                    limit: Some(100),
+                    include_terminal: Some(true),
+                    ..Default::default()
+                })
+                .await?;
+            snapshot.cards.into_iter().take(100).enumerate().map(|(i, card)| {
+                use medousa_types::WorkBoardColumn;
+                let column = match card.column {
+                    WorkBoardColumn::Backlog => "Backlog",
+                    WorkBoardColumn::InFlight => "In flight",
+                    WorkBoardColumn::WrappingUp => "Wrapping up",
+                    WorkBoardColumn::Done => "Done",
+                    WorkBoardColumn::Blocked => "Blocked",
+                };
+                Record::new(format!("Work item {} · {column}", i + 1), vec![
+                    ("Board state", column.into()),
+                    ("Card ID", card.id.0),
+                    ("Created UTC", card.created_at_utc.to_rfc3339()),
+                    ("Updated UTC", card.updated_at_utc.to_rfc3339()),
+                    ("Snapshot revision", snapshot.workspace_revision.to_string()),
+                    ("Privacy", "Prompt-derived titles, status prose, outputs and diagnostics withheld".into()),
+                ])
+            }).collect()
+        }
         Resource::Health => {
             let h = client.health().get().await?;
             vec![Record::new(

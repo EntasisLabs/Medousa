@@ -51,7 +51,10 @@ fn settings_and_admin_viewports_fit_both_widths_and_all_supported_themes() {
                 desktop::navigate(app.world_mut(), route);
                 settle(&mut app);
                 let h = app.world().resource::<Handles>().unwrap();
-                assert_eq!(app.world().has::<Hidden>(h.subtitle), width < 800.);
+                assert_eq!(
+                    app.world().has::<Hidden>(h.subtitle),
+                    width < 800. || matches!(route, Route::Settings(_))
+                );
                 assert!(app.world().get::<Rect>(h.title).unwrap().h <= 42.);
                 for entity in [h.page, h.body, h.section_nav, h.footer] {
                     let r = app.world().get::<Rect>(entity).unwrap();
@@ -108,11 +111,6 @@ fn settings_section_pager_and_sidebar_scroll_keep_last_section_reachable() {
         } else {
             let h = app.world().resource::<Handles>().unwrap().clone();
             assert!(app.world().has::<Scroll>(h.section_nav));
-            app.world_mut()
-                .get_mut::<Scroll>(h.section_nav)
-                .unwrap()
-                .offset[1] = -500.;
-            settle(&mut app);
             let e = app
                 .world()
                 .entities_with::<Button>()
@@ -121,6 +119,14 @@ fn settings_section_pager_and_sidebar_scroll_keep_last_section_reachable() {
                 .unwrap();
             let r = *app.world().get::<Rect>(e).unwrap();
             let port = *app.world().get::<Rect>(h.section_nav).unwrap();
+            // Scroll only by the amount needed to expose the last row. Group
+            // labels and font metrics may change the sidebar's content extent.
+            let needed = (r.y + r.h - port.y - port.h).max(0.);
+            app.world_mut()
+                .get_mut::<Scroll>(h.section_nav)
+                .unwrap()
+                .offset[1] = -needed;
+            settle(&mut app);
             // rndr retains layout Rects; Scroll translates descendants for painting/hit testing.
             let offset = app.world().get::<Scroll>(h.section_nav).unwrap().offset[1];
             assert!(

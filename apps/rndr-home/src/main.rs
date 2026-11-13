@@ -209,6 +209,7 @@ fn app() -> App {
         .insert_resource(admin_model::Desktop::default());
     app.world_mut()
         .insert_resource(desktop::Connection::default());
+    app.add_system_front(Schedule::Input, menus::settings_keyboard);
     app.add_system_front(Schedule::Input, guard_submit_boundary);
     app.add_system(Schedule::Startup, setup);
     app.add_system(Schedule::Update, update);
@@ -217,3 +218,5 @@ fn app() -> App {
 
 #[cfg(test)]
 mod desktop_preservation_tests;
+#[cfg(test)]
+mod shell_activity_tests;
