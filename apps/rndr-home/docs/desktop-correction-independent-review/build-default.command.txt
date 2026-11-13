@@ -1,0 +1,1 @@
+cargo build --manifest-path apps/rndr-home/Cargo.toml --target-dir .independent-correction-target -j 2

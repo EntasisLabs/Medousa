@@ -1,0 +1,5 @@
+original-baseline	101	0 passed / 2 expected failures
+original-corrected-plus-promoted	0	4 passed
+extra-edge-cases	0	3 passed
+permanent-preservation-focused	0	9 passed
+synthetic-edge-export	0	1 passed / 9 PNGs

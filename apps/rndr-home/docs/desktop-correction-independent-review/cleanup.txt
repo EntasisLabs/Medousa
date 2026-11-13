@@ -1,0 +1,6 @@
+1.1G	.independent-after-target
+ 38M	.independent-swift-cache
+1.5M	.independent-correction-harness
+ 17M	.independent-correction-out
+Main full-suite own target was 1.9GB and removed by the successful audited reproduction script.
+All this review own scratch/cache paths removed; committed prior evidence untouched.
