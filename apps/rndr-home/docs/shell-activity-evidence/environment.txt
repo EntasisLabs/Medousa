@@ -1,0 +1,9 @@
+source-head=76f624954de8efca5613bc9c0b998e1dbd315a75
+utc=2026-11-13T19:56:56Z
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+cargo 1.100.0 (3acc79c0c 2026-11-05)
+Darwin arm64
+
+Manifest/lockfile hashes (unchanged from admitted baseline):
+07ea724473064e20d6668c172469899304a7367356f329cf05ebf6ec0264a503  apps/rndr-home/Cargo.toml
+364ae95367dc70dd8f99dd449e61c6aaa70434002921e3c1b15744904304f0ef  apps/rndr-home/Cargo.lock

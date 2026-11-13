@@ -1,0 +1,12 @@
+git diff --check 9d51646838cba3571eaec994d5919ef7b2bf6be2 -- apps/rndr-home/src apps/rndr-home/README.md apps/rndr-home/docs/SHELL_ACTIVITY_PARITY.md docs/README.md docs/guides/rndr-native-preview.md
+source/docs whitespace exit=0
+protected production/manifests/gates/observation/credential code unchanged exit=0
+admitted baseline remains ancestor exit=0
+
+Whole staged evidence diff (preserved log endings):
+apps/rndr-home/docs/shell-activity-evidence/activity-fold.log:81: new blank line at EOF.
+apps/rndr-home/docs/shell-activity-evidence/focused.log:85: new blank line at EOF.
+apps/rndr-home/docs/shell-activity-evidence/header-before.log:81: new blank line at EOF.
+apps/rndr-home/docs/shell-activity-evidence/test-default.log:170: new blank line at EOF.
+apps/rndr-home/docs/shell-activity-evidence/test-observe.log:179: new blank line at EOF.
+whole staged whitespace exit=2

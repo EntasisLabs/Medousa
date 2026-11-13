@@ -1,0 +1,95 @@
+{
+  "source_head": "76f624954de8efca5613bc9c0b998e1dbd315a75",
+  "inspected_count": 11,
+  "exported_count": 312,
+  "images": [
+    {
+      "path": "renders/dark-wide-settings-chooser.png",
+      "original_png_sha256": "b8bc3fd0163ad2c1540436dca1295099a101d8fc4d21f7ddee11aa7471fdc6b6",
+      "viewed_artifact_sha256": "a80a71c78fbd7d9c9be0143b901d0a9c0be2ff03aad0a285b637282a5993f526",
+      "width": 1120,
+      "height": 820,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/dark-narrow-650-settings-chooser.png",
+      "original_png_sha256": "fb887fdb857155abcb054f82a001a81c30a1ab622fd8ee1cac3303df312c47b8",
+      "viewed_artifact_sha256": "c0797d5d631498248dfcbea0b2551743ac5d94b3a89f67b3afda77ac1f161acd",
+      "width": 480,
+      "height": 650,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/light-narrow-650-settings-chooser.png",
+      "original_png_sha256": "750b409bdf636904c6613c246dfa14405716d0dcb9ed72a3ca2300b040f401e2",
+      "viewed_artifact_sha256": "9e46c100b15f75b80f1bc86e860a6f3564fefb583f0e79cdeabc0b630b7fb69e",
+      "width": 480,
+      "height": 650,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/high-contrast-wide-650-settings-chooser.png",
+      "original_png_sha256": "f529ca50f119b8be2a1df2cba997504ee546c500814d81c038bd622358638294",
+      "viewed_artifact_sha256": "116bb7c9735701b7f5b4137d532926a2686b2ec53076a010668939339f2ec3e0",
+      "width": 1120,
+      "height": 650,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/dark-narrow-activity-list.png",
+      "original_png_sha256": "392f6e8d6515a536353da3a7ac673b7f497cd7e7b1096d72704850bd654fb7b9",
+      "viewed_artifact_sha256": "c52ea9689f0e519c198b4e57c74a85f98b205cc9a3a6faeadbaa6f82922cee21",
+      "width": 480,
+      "height": 760,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/light-wide-650-activity-list.png",
+      "original_png_sha256": "396543846adfd4b8712a58aadfb945fbf3f9af483e5b0360eb2d7e699a414200",
+      "viewed_artifact_sha256": "fb5ebd4b41480735c0be5be5c8c5e0988cae82519b5b2d847fdd885a40d0e471",
+      "width": 1120,
+      "height": 650,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/dark-wide-activity-detail.png",
+      "original_png_sha256": "117019a7f087e61ecc2baa92710c327b3539738ca761af25aa38860c5b50db72",
+      "viewed_artifact_sha256": "27883128042182b10e3c7f39b1a1f9253b35f449c3b5e404552028209f9bdb5a",
+      "width": 1120,
+      "height": 820,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/high-contrast-narrow-650-activity-detail.png",
+      "original_png_sha256": "31ff7001e08890b04d40ae70b3dae976030d44a8ddb9edf84e8f11a451a5943f",
+      "viewed_artifact_sha256": "797d09bf5f4a32b4bcbc554459994eff4f12e7f50f2d5115aa356d70a2f9374f",
+      "width": 480,
+      "height": 650,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/light-narrow-activity-error.png",
+      "original_png_sha256": "8f0ae5944f3724d13c4a1103f1d25b218ad18ae180ed92ba021de7b4e172493f",
+      "viewed_artifact_sha256": "287c5fbb96441c87b64fa7a8def0bfdd13bcd7c70f20b5e074a431024e7ff2f4",
+      "width": 480,
+      "height": 760,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/high-contrast-wide-activity-empty.png",
+      "original_png_sha256": "f1292245e0d8810d68d7d8fac9d025e5452ed40da0b1427e1fa99c7fdab77c30",
+      "viewed_artifact_sha256": "ba96108a06231d3f57198c255964b89a87a7ff43ef7c77d978e3d08583148e0f",
+      "width": 1120,
+      "height": 820,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    },
+    {
+      "path": "renders/light-wide-preferences.png",
+      "original_png_sha256": "510e1b2e1e27e9ddb89c5a529d4f4d84732bddb14e1a9e8dadd20774e82cbe85",
+      "viewed_artifact_sha256": "0a5f91abac153a4aa1b1c90026e4fe2b93aef4ccb485a8fd831ba8395b946044",
+      "width": 1120,
+      "height": 820,
+      "inspection": "Actual pixels received via direct cognition_image_view. Artifact is a rendition; its hash is not the original file-byte hash."
+    }
+  ]
+}
