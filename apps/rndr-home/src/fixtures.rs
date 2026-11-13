@@ -4,6 +4,10 @@ use crate::{menus, shell::Ui, state::Model};
 use rndr_core::*;
 use std::{path::PathBuf, sync::Arc};
 
+#[cfg(all(test, feature = "observe"))]
+#[path = "observation_tests.rs"]
+mod observation_tests;
+
 #[cfg(feature = "observe")]
 pub(super) struct FixtureObservation;
 
