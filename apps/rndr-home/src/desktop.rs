@@ -19,6 +19,8 @@ pub struct Handles {
     pub title: Entity,
     pub subtitle: Entity,
     pub chooser: Entity,
+    pub top: Entity,
+    pub automation_heading: Entity,
     pub rail: Entity,
     pub section_nav: Entity,
     #[cfg(test)]
@@ -88,6 +90,7 @@ pub fn mount(world: &mut World, chat: Entity) {
     let dock = world.spawn((column(Size::Hug),));
     child(world, rail, dock);
     let mut nav = Vec::new();
+    let mut automation_heading = None;
     for (id, name) in DOORS {
         let parent = if matches!(id, "history" | "settings" | "profiles") {
             dock
@@ -106,6 +109,16 @@ pub fn mount(world: &mut World, chat: Entity) {
                 false,
             );
             world.get_mut::<TextStyle>(heading).unwrap().size = 10.;
+            if id == "scripts" {
+                automation_heading = Some(heading);
+                world.insert(
+                    heading,
+                    Semantics {
+                        name: Some("Automations".into()),
+                        ..Default::default()
+                    },
+                );
+            }
         }
         let e = nav_button(world, parent, &format!("desk:{id}"), name);
         world.insert(
@@ -126,7 +139,7 @@ pub fn mount(world: &mut World, chat: Entity) {
     let title = label(world, top, "Chat", true);
     world.get_mut::<TextStyle>(title).unwrap().size = 15.;
     let subtitle = muted(world, top, "Medousa · desktop preview");
-    let chooser = nav_button(world, top, "settings:choose", "Choose settings view ▾");
+    let chooser = nav_button(world, top, "settings:choose", "Choose settings view");
     world.get_mut::<Layout>(chooser).unwrap().width = Size::Px(172.);
     world.insert(chooser, Hidden);
     child(world, main, chat);
@@ -189,6 +202,8 @@ pub fn mount(world: &mut World, chat: Entity) {
         title,
         subtitle,
         chooser,
+        top,
+        automation_heading: automation_heading.unwrap(),
         rail,
         section_nav,
         #[cfg(test)]
@@ -377,6 +392,16 @@ pub fn sync(world: &mut World) {
         .resource()
         .and_then(|r| d.reads.get(&r))
         .is_some_and(|s| matches!(s, ReadState::Loading(_)));
+    // Reserve two-line title space beside the chooser at minimum width,
+    // including visibly labeled fixture exports. Avoid unsupported glyphs.
+    world.get_mut::<Layout>(h.top).unwrap().height =
+        Size::Px(if narrow && matches!(route, Route::Settings(_)) {
+            62.
+        } else {
+            42.
+        });
+    world.get_mut::<Label>(h.automation_heading).unwrap().text =
+        if narrow { "Auto" } else { "Automations" }.into();
     world.get_mut::<Layout>(h.rail).unwrap().width = Size::Px(rail_width(world));
     for (e, name) in &h.nav {
         let active = match route {

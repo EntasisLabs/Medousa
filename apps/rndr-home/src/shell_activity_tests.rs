@@ -139,6 +139,39 @@ fn chooser_keyboard_current_name_escape_and_selection_preserve_chat() {
     }
 }
 #[test]
+fn narrow_settings_header_contains_wrapped_fixture_title() {
+    let mut a = app();
+    a.update();
+    a.world_mut().insert_resource(
+        std::sync::Arc::new(rndr_render::ParleyText::new()) as std::sync::Arc<dyn TextEngine>
+    );
+    a.world_mut().insert_resource(Viewport::new(480., 650.));
+    desktop::navigate(a.world_mut(), Route::Settings(3));
+    settle(&mut a);
+    let title = a.world().resource::<Handles>().unwrap().title;
+    a.world_mut().get_mut::<Label>(title).unwrap().text = "FIXTURE · Runtime Controls".into();
+    settle(&mut a);
+    let header = a.world().get::<Parent>(title).unwrap().entity;
+    let r = a.world().get::<Rect>(title).unwrap();
+    let port = a.world().get::<Rect>(header).unwrap();
+    // Layout Rects can be clamped even when ink crowds the boundary. Lock the
+    // explicit two-line-space policy; actual pixels are separately inspected.
+    assert!(port.h >= 60., "reserve two-line space beside the chooser");
+    assert!(
+        r.y + r.h <= port.y + port.h + 0.5,
+        "title extends beyond header: {r:?} {port:?}"
+    );
+    let h = a.world().resource::<Handles>().unwrap();
+    assert_eq!(
+        a.world().get::<Label>(h.chooser).unwrap().text,
+        "Choose settings view"
+    );
+    assert_eq!(
+        a.world().get::<Label>(h.automation_heading).unwrap().text,
+        "Auto"
+    );
+}
+#[test]
 fn fixed_dock_is_visible_while_primary_doors_scroll_at_minimum_window() {
     let mut a = app();
     a.update();
