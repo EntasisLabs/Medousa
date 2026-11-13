@@ -1,0 +1,7 @@
+{
+  "CARGO_BUILD_JOBS": "2",
+  "CARGO_NET_OFFLINE": "true",
+  "MEDOUSA_TEST_HERMETIC": "1",
+  "TMPDIR": "/var/folders/cw/ql6_4ftd3nb2mwwjptzz8j3c0000gn/T/",
+  "RUST_MIN_STACK": null
+}

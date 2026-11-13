@@ -1,0 +1,2030 @@
+{
+  "comfy-table-7.2.2": {
+    "dependencies": {
+      "ansi-str": {
+        "optional": true,
+        "version": "0.9"
+      },
+      "console": {
+        "optional": true,
+        "version": "0.16"
+      },
+      "unicode-segmentation": {
+        "version": "1"
+      },
+      "unicode-width": {
+        "version": "0.2"
+      }
+    },
+    "features": {
+      "_debug": [],
+      "_integration_test": [],
+      "custom_styling": [
+        "dep:ansi-str",
+        "dep:console",
+        "tty"
+      ],
+      "default": [
+        "tty"
+      ],
+      "reexport_crossterm": [
+        "tty"
+      ],
+      "tty": [
+        "dep:crossterm"
+      ]
+    },
+    "sha256": "3a44ecb0e044e44bb65814207cc072d868d6741722b0405476e33ac2222e45c7",
+    "target": {
+      "cfg(not(windows))": {
+        "dependencies": {
+          "crossterm": {
+            "default-features": false,
+            "optional": true,
+            "version": "0.29"
+          }
+        }
+      },
+      "cfg(windows)": {
+        "dependencies": {
+          "crossterm": {
+            "default-features": false,
+            "features": [
+              "windows"
+            ],
+            "optional": true,
+            "version": "0.29"
+          }
+        }
+      }
+    }
+  },
+  "grapheme-aot-container-0.7.1": {
+    "dependencies": {
+      "grapheme-artifact": {
+        "version": "0.3.0"
+      },
+      "grapheme-stdlib": {
+        "default-features": false,
+        "features": [
+          "wasm"
+        ],
+        "version": "0.7.1"
+      },
+      "serde": {
+        "features": [
+          "derive"
+        ],
+        "version": "1.0"
+      },
+      "serde_json": {
+        "version": "1.0"
+      }
+    },
+    "features": {},
+    "sha256": "c5312aee3c2dc43f87adf1f20b250521459e4688b5242dab8a2f157f009fe1aa",
+    "target": {}
+  },
+  "grapheme-compiler-0.7.1": {
+    "dependencies": {
+      "grapheme-aot-container": {
+        "optional": true,
+        "version": "0.7.1"
+      },
+      "grapheme-artifact": {
+        "version": "0.3.0"
+      },
+      "grapheme-signatures": {
+        "default-features": false,
+        "version": "0.7.1"
+      },
+      "pest": {
+        "version": "=2.7.15"
+      },
+      "pest_derive": {
+        "version": "=2.7.15"
+      },
+      "serde": {
+        "features": [
+          "derive"
+        ],
+        "version": "1.0"
+      },
+      "serde_json": {
+        "version": "1.0"
+      },
+      "thiserror": {
+        "version": "1.0"
+      }
+    },
+    "features": {
+      "data": [
+        "grapheme-signatures/data"
+      ],
+      "default": [
+        "stage-b"
+      ],
+      "full": [
+        "stage-b",
+        "grapheme-signatures/full"
+      ],
+      "image": [
+        "grapheme-signatures/image"
+      ],
+      "media": [
+        "grapheme-signatures/media"
+      ],
+      "pdf": [
+        "grapheme-signatures/pdf"
+      ],
+      "plot": [
+        "grapheme-signatures/plot"
+      ],
+      "stage-b": [
+        "dep:grapheme-aot-container"
+      ]
+    },
+    "sha256": "29284f6163aca5145baddf115565698683a8f08b24d6ce2f9bf5bb7aa5ea3421",
+    "target": {}
+  },
+  "grapheme-lsp-0.7.1": {
+    "dependencies": {
+      "grapheme-compiler": {
+        "default-features": false,
+        "features": [
+          "full"
+        ],
+        "version": "0.7.1"
+      },
+      "grapheme-signatures": {
+        "default-features": false,
+        "features": [
+          "full"
+        ],
+        "version": "0.7.1"
+      },
+      "tokio": {
+        "features": [
+          "macros",
+          "rt-multi-thread",
+          "io-std"
+        ],
+        "version": "1"
+      },
+      "tower-lsp": {
+        "version": "0.20"
+      }
+    },
+    "features": {
+      "default": [
+        "full"
+      ],
+      "full": [
+        "grapheme-signatures/full",
+        "grapheme-compiler/full"
+      ]
+    },
+    "sha256": "9811ee0c15224a73f9480b31518c639325ec3b59606eae68f52eace83ef30830",
+    "target": {}
+  },
+  "grapheme-runtime-0.7.1": {
+    "dependencies": {
+      "grapheme-aot-container": {
+        "optional": true,
+        "version": "0.7.1"
+      },
+      "grapheme-artifact": {
+        "version": "0.3.0"
+      },
+      "grapheme-signatures": {
+        "default-features": false,
+        "version": "0.7.1"
+      },
+      "hex": {
+        "version": "0.4"
+      },
+      "serde": {
+        "features": [
+          "derive"
+        ],
+        "version": "1.0"
+      },
+      "serde_json": {
+        "version": "1.0"
+      },
+      "sha2": {
+        "version": "0.10"
+      },
+      "thiserror": {
+        "version": "1.0"
+      },
+      "tokio": {
+        "features": [
+          "rt-multi-thread"
+        ],
+        "optional": true,
+        "version": "1"
+      },
+      "wasmer": {
+        "default-features": false,
+        "optional": true,
+        "version": "7.2.0-alpha.2"
+      },
+      "wasmer-types": {
+        "optional": true,
+        "version": "7.2.0-alpha.2"
+      },
+      "wasmer-wasix": {
+        "default-features": false,
+        "features": [
+          "sys-default"
+        ],
+        "optional": true,
+        "version": "0.702.0-alpha.2"
+      }
+    },
+    "features": {
+      "data": [
+        "grapheme-signatures/data"
+      ],
+      "default": [
+        "stage-b"
+      ],
+      "full": [
+        "stage-b",
+        "data",
+        "pdf",
+        "image",
+        "plot",
+        "media",
+        "grapheme-signatures/full"
+      ],
+      "image": [
+        "grapheme-signatures/image"
+      ],
+      "media": [
+        "grapheme-signatures/media"
+      ],
+      "pdf": [
+        "grapheme-signatures/pdf"
+      ],
+      "plot": [
+        "grapheme-signatures/plot"
+      ],
+      "stage-b": [
+        "dep:grapheme-aot-container"
+      ],
+      "wasix-runtime": [
+        "dep:wasmer-wasix",
+        "dep:wasmer",
+        "dep:wasmer-types",
+        "dep:tokio",
+        "wasmer/sys",
+        "wasmer/cranelift"
+      ]
+    },
+    "sha256": "5ad4a881c915472371107d1297de10eafe4c7035e0d622e8d8bb5b5689e5a392",
+    "target": {}
+  },
+  "grapheme-sdk-0.7.1": {
+    "dependencies": {
+      "grapheme-aot-container": {
+        "optional": true,
+        "version": "0.7.1"
+      },
+      "grapheme-artifact": {
+        "version": "0.3.0"
+      },
+      "grapheme-compiler": {
+        "default-features": false,
+        "version": "0.7.1"
+      },
+      "grapheme-runtime": {
+        "default-features": false,
+        "version": "0.7.1"
+      },
+      "grapheme-signatures": {
+        "default-features": false,
+        "version": "0.7.1"
+      },
+      "grapheme-stdlib": {
+        "default-features": false,
+        "version": "0.7.1"
+      },
+      "serde": {
+        "features": [
+          "derive"
+        ],
+        "version": "1.0"
+      },
+      "serde_json": {
+        "version": "1.0"
+      },
+      "serde_yaml": {
+        "version": "0.9"
+      },
+      "thiserror": {
+        "version": "1.0"
+      }
+    },
+    "features": {
+      "data": [
+        "grapheme-stdlib/data",
+        "grapheme-signatures/data",
+        "grapheme-runtime/data",
+        "grapheme-compiler/data"
+      ],
+      "default": [
+        "host",
+        "stage-b"
+      ],
+      "full": [
+        "grapheme-stdlib/full",
+        "grapheme-signatures/full",
+        "grapheme-runtime/full",
+        "grapheme-compiler/full",
+        "stage-b",
+        "wasix-runtime"
+      ],
+      "host": [
+        "grapheme-stdlib/host"
+      ],
+      "image": [
+        "grapheme-stdlib/image",
+        "grapheme-signatures/image",
+        "grapheme-runtime/image",
+        "grapheme-compiler/image"
+      ],
+      "media": [
+        "grapheme-stdlib/media",
+        "grapheme-signatures/media",
+        "grapheme-runtime/media",
+        "grapheme-compiler/media"
+      ],
+      "pdf": [
+        "grapheme-stdlib/pdf",
+        "grapheme-signatures/pdf",
+        "grapheme-runtime/pdf",
+        "grapheme-compiler/pdf"
+      ],
+      "plot": [
+        "grapheme-stdlib/plot",
+        "grapheme-signatures/plot",
+        "grapheme-runtime/plot",
+        "grapheme-compiler/plot"
+      ],
+      "slim": [],
+      "stage-b": [
+        "dep:grapheme-aot-container",
+        "grapheme-compiler/stage-b",
+        "grapheme-runtime/stage-b"
+      ],
+      "wasix-runtime": [
+        "stage-b",
+        "grapheme-runtime/wasix-runtime"
+      ]
+    },
+    "sha256": "f3736f2419e1fcda8a0e7566316068cd3188cf125c5297f199fe35758a3d4b6a",
+    "target": {}
+  },
+  "grapheme-signatures-0.7.1": {
+    "dependencies": {},
+    "features": {
+      "data": [],
+      "default": [],
+      "full": [
+        "data",
+        "pdf",
+        "image",
+        "plot",
+        "media"
+      ],
+      "image": [],
+      "media": [],
+      "pdf": [],
+      "plot": []
+    },
+    "sha256": "725028e2f23ee4b98ad55e1a698ec3349f13837e08c5b722ba2320698215edc1",
+    "target": {}
+  },
+  "grapheme-stdlib-0.7.1": {
+    "dependencies": {
+      "csv": {
+        "optional": true,
+        "version": "1.3"
+      },
+      "ehttp": {
+        "optional": true,
+        "version": "0.7.1"
+      },
+      "html-to-markdown-rs": {
+        "features": [
+          "serde"
+        ],
+        "optional": true,
+        "version": "3.4.0"
+      },
+      "lettre": {
+        "default-features": false,
+        "features": [
+          "builder",
+          "smtp-transport",
+          "rustls-tls"
+        ],
+        "optional": true,
+        "version": "0.11"
+      },
+      "polars": {
+        "default-features": false,
+        "features": [
+          "csv",
+          "fmt"
+        ],
+        "optional": true,
+        "version": "0.46"
+      },
+      "serde_json": {
+        "version": "1.0"
+      },
+      "serde_yaml": {
+        "optional": true,
+        "version": "0.9"
+      },
+      "sqlx": {
+        "features": [
+          "runtime-tokio-rustls",
+          "any",
+          "sqlite",
+          "postgres",
+          "json"
+        ],
+        "optional": true,
+        "version": "0.8"
+      },
+      "surrealdb": {
+        "default-features": false,
+        "features": [
+          "protocol-http",
+          "rustls"
+        ],
+        "optional": true,
+        "version": "3.0.5"
+      },
+      "tokio": {
+        "features": [
+          "rt",
+          "time",
+          "net"
+        ],
+        "optional": true,
+        "version": "1.48"
+      },
+      "websearch": {
+        "optional": true,
+        "version": "0.1.1"
+      }
+    },
+    "features": {
+      "data": [
+        "dep:polars"
+      ],
+      "default": [
+        "host"
+      ],
+      "email": [
+        "dep:lettre"
+      ],
+      "full": [
+        "host",
+        "data",
+        "pdf",
+        "image",
+        "plot",
+        "media"
+      ],
+      "host": [
+        "transforms",
+        "http",
+        "web",
+        "net",
+        "email",
+        "sql",
+        "surreal"
+      ],
+      "http": [
+        "dep:ehttp"
+      ],
+      "image": [],
+      "media": [],
+      "net": [],
+      "pdf": [],
+      "plot": [],
+      "sql": [
+        "dep:sqlx",
+        "dep:tokio"
+      ],
+      "surreal": [
+        "dep:surrealdb",
+        "dep:tokio"
+      ],
+      "transforms": [
+        "dep:csv",
+        "dep:serde_yaml",
+        "dep:html-to-markdown-rs"
+      ],
+      "wasm": [
+        "transforms"
+      ],
+      "web": [
+        "dep:websearch",
+        "http",
+        "dep:tokio",
+        "transforms"
+      ]
+    },
+    "sha256": "ddc03477f8d38f70cae22b3a057b2911b19956570abc08ba5af2cacdd4589bb5",
+    "target": {}
+  },
+  "grapheme-wasm-0.7.1": {
+    "dependencies": {
+      "grapheme-artifact": {
+        "version": "0.3.0"
+      },
+      "grapheme-compiler": {
+        "default-features": false,
+        "version": "0.7.1"
+      },
+      "grapheme-runtime": {
+        "default-features": false,
+        "version": "0.7.1"
+      },
+      "grapheme-stdlib": {
+        "default-features": false,
+        "features": [
+          "wasm"
+        ],
+        "version": "0.7.1"
+      },
+      "serde": {
+        "features": [
+          "derive"
+        ],
+        "version": "1.0"
+      },
+      "serde_json": {
+        "version": "1.0"
+      }
+    },
+    "features": {},
+    "sha256": "82b870354d730d8670b7921f5acab09cc6ff5f0a7e9cf9dc046c4a74c7de9139",
+    "target": {}
+  },
+  "polars-0.46.0": {
+    "dependencies": {
+      "arrow": {
+        "default-features": false,
+        "features": [
+          "compute_aggregate",
+          "compute_arithmetics",
+          "compute_bitwise",
+          "compute_boolean",
+          "compute_boolean_kleene",
+          "compute_comparison"
+        ],
+        "package": "polars-arrow",
+        "version": "0.46.0"
+      },
+      "polars-core": {
+        "default-features": false,
+        "features": [
+          "algorithm_group_by"
+        ],
+        "version": "0.46.0"
+      },
+      "polars-error": {
+        "default-features": false,
+        "version": "0.46.0"
+      },
+      "polars-io": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.46.0"
+      },
+      "polars-lazy": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.46.0"
+      },
+      "polars-ops": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.46.0"
+      },
+      "polars-parquet": {
+        "default-features": false,
+        "version": "0.46.0"
+      },
+      "polars-plan": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.46.0"
+      },
+      "polars-sql": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.46.0"
+      },
+      "polars-time": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.46.0"
+      },
+      "polars-utils": {
+        "default-features": false,
+        "version": "0.46.0"
+      }
+    },
+    "features": {
+      "abs": [
+        "polars-ops/abs",
+        "polars-lazy?/abs"
+      ],
+      "approx_unique": [
+        "polars-lazy?/approx_unique",
+        "polars-ops/approx_unique",
+        "polars-core/approx_unique"
+      ],
+      "arg_where": [
+        "polars-lazy?/arg_where"
+      ],
+      "array_any_all": [
+        "polars-lazy?/array_any_all",
+        "dtype-array"
+      ],
+      "array_arithmetic": [
+        "polars-core/array_arithmetic",
+        "dtype-array"
+      ],
+      "array_count": [
+        "polars-ops/array_count",
+        "polars-lazy?/array_count",
+        "dtype-array"
+      ],
+      "array_to_struct": [
+        "polars-ops/array_to_struct",
+        "polars-lazy?/array_to_struct"
+      ],
+      "asof_join": [
+        "polars-lazy?/asof_join",
+        "polars-ops/asof_join"
+      ],
+      "async": [
+        "polars-lazy?/async"
+      ],
+      "avro": [
+        "polars-io",
+        "polars-io/avro"
+      ],
+      "avx512": [
+        "polars-core/avx512"
+      ],
+      "aws": [
+        "async",
+        "cloud",
+        "polars-io/aws"
+      ],
+      "azure": [
+        "async",
+        "cloud",
+        "polars-io/azure"
+      ],
+      "bench": [
+        "lazy"
+      ],
+      "bigidx": [
+        "polars-core/bigidx",
+        "polars-lazy?/bigidx",
+        "polars-ops/big_idx",
+        "polars-utils/bigidx"
+      ],
+      "binary_encoding": [
+        "polars-ops/binary_encoding",
+        "polars-lazy?/binary_encoding",
+        "polars-sql?/binary_encoding"
+      ],
+      "bitwise": [
+        "polars-core/bitwise",
+        "polars-plan?/bitwise",
+        "polars-ops/bitwise",
+        "polars-lazy?/bitwise",
+        "polars-sql?/bitwise"
+      ],
+      "business": [
+        "polars-lazy?/business",
+        "polars-ops/business"
+      ],
+      "checked_arithmetic": [
+        "polars-core/checked_arithmetic"
+      ],
+      "chunked_ids": [
+        "polars-ops?/chunked_ids"
+      ],
+      "cloud": [
+        "polars-lazy?/cloud",
+        "polars-io/cloud"
+      ],
+      "coalesce": [
+        "polars-lazy?/coalesce"
+      ],
+      "concat_str": [
+        "polars-lazy?/concat_str"
+      ],
+      "cov": [
+        "polars-lazy/cov"
+      ],
+      "cross_join": [
+        "polars-lazy?/cross_join",
+        "polars-ops/cross_join"
+      ],
+      "cse": [
+        "polars-lazy?/cse"
+      ],
+      "csv": [
+        "polars-io",
+        "polars-io/csv",
+        "polars-lazy?/csv",
+        "polars-sql?/csv"
+      ],
+      "cum_agg": [
+        "polars-ops/cum_agg",
+        "polars-lazy?/cum_agg"
+      ],
+      "cumulative_eval": [
+        "polars-lazy?/cumulative_eval"
+      ],
+      "cutqcut": [
+        "polars-lazy?/cutqcut"
+      ],
+      "dataframe_arithmetic": [
+        "polars-core/dataframe_arithmetic"
+      ],
+      "decompress": [
+        "polars-io/decompress"
+      ],
+      "default": [
+        "docs",
+        "zip_with",
+        "csv",
+        "temporal",
+        "fmt",
+        "dtype-slim"
+      ],
+      "describe": [
+        "polars-core/describe"
+      ],
+      "diagonal_concat": [
+        "polars-core/diagonal_concat",
+        "polars-lazy?/diagonal_concat",
+        "polars-sql?/diagonal_concat"
+      ],
+      "diff": [
+        "polars-ops/diff",
+        "polars-lazy?/diff"
+      ],
+      "docs": [
+        "polars-core/docs"
+      ],
+      "docs-selection": [
+        "csv",
+        "json",
+        "parquet",
+        "ipc",
+        "ipc_streaming",
+        "dtype-full",
+        "is_in",
+        "rows",
+        "docs",
+        "strings",
+        "object",
+        "lazy",
+        "temporal",
+        "random",
+        "zip_with",
+        "round_series",
+        "checked_arithmetic",
+        "ndarray",
+        "repeat_by",
+        "is_between",
+        "is_first_distinct",
+        "is_last_distinct",
+        "asof_join",
+        "cross_join",
+        "semi_anti_join",
+        "iejoin",
+        "concat_str",
+        "string_reverse",
+        "string_to_integer",
+        "decompress",
+        "mode",
+        "take_opt_iter",
+        "cum_agg",
+        "rolling_window",
+        "rolling_window_by",
+        "interpolate",
+        "interpolate_by",
+        "diff",
+        "rank",
+        "range",
+        "diagonal_concat",
+        "abs",
+        "dot_diagram",
+        "string_encoding",
+        "product",
+        "to_dummies",
+        "describe",
+        "list_eval",
+        "cumulative_eval",
+        "timezones",
+        "arg_where",
+        "propagate_nans",
+        "coalesce",
+        "dynamic_group_by",
+        "extract_groups",
+        "replace",
+        "approx_unique",
+        "unique_counts",
+        "polars_cloud",
+        "serde",
+        "ir_serde",
+        "cloud",
+        "async"
+      ],
+      "dot_diagram": [
+        "polars-lazy?/dot_diagram"
+      ],
+      "dot_product": [
+        "polars-core/dot_product"
+      ],
+      "dtype-array": [
+        "polars-core/dtype-array",
+        "polars-lazy?/dtype-array",
+        "polars-ops/dtype-array",
+        "polars-plan?/dtype-array"
+      ],
+      "dtype-categorical": [
+        "polars-core/dtype-categorical",
+        "polars-io/dtype-categorical",
+        "polars-lazy?/dtype-categorical",
+        "polars-ops/dtype-categorical"
+      ],
+      "dtype-date": [
+        "polars-core/dtype-date",
+        "polars-io/dtype-date",
+        "polars-lazy?/dtype-date",
+        "polars-time?/dtype-date",
+        "polars-ops/dtype-date"
+      ],
+      "dtype-datetime": [
+        "polars-core/dtype-datetime",
+        "polars-io/dtype-datetime",
+        "polars-lazy?/dtype-datetime",
+        "polars-time?/dtype-datetime",
+        "polars-ops/dtype-datetime"
+      ],
+      "dtype-decimal": [
+        "polars-core/dtype-decimal",
+        "polars-io/dtype-decimal",
+        "polars-lazy?/dtype-decimal",
+        "polars-sql?/dtype-decimal",
+        "polars-ops/dtype-decimal"
+      ],
+      "dtype-duration": [
+        "polars-core/dtype-duration",
+        "polars-lazy?/dtype-duration",
+        "polars-time?/dtype-duration",
+        "polars-ops/dtype-duration"
+      ],
+      "dtype-full": [
+        "dtype-date",
+        "dtype-datetime",
+        "dtype-duration",
+        "dtype-time",
+        "dtype-array",
+        "dtype-i8",
+        "dtype-i16",
+        "dtype-i128",
+        "dtype-decimal",
+        "dtype-u8",
+        "dtype-u16",
+        "dtype-categorical",
+        "dtype-struct"
+      ],
+      "dtype-i128": [
+        "polars-core/dtype-i128",
+        "polars-io/dtype-i128",
+        "polars-lazy?/dtype-i128",
+        "polars-ops/dtype-i128",
+        "polars-time?/dtype-i128"
+      ],
+      "dtype-i16": [
+        "polars-core/dtype-i16",
+        "polars-io/dtype-i16",
+        "polars-lazy?/dtype-i16",
+        "polars-ops/dtype-i16",
+        "polars-time?/dtype-i16"
+      ],
+      "dtype-i8": [
+        "polars-core/dtype-i8",
+        "polars-io/dtype-i8",
+        "polars-lazy?/dtype-i8",
+        "polars-ops/dtype-i8",
+        "polars-time?/dtype-i8"
+      ],
+      "dtype-slim": [
+        "dtype-date",
+        "dtype-datetime",
+        "dtype-duration"
+      ],
+      "dtype-struct": [
+        "polars-core/dtype-struct",
+        "polars-io/dtype-struct",
+        "polars-lazy?/dtype-struct",
+        "polars-ops/dtype-struct"
+      ],
+      "dtype-time": [
+        "polars-core/dtype-time",
+        "polars-io/dtype-time",
+        "polars-lazy?/dtype-time",
+        "polars-time?/dtype-time",
+        "polars-ops/dtype-time"
+      ],
+      "dtype-u16": [
+        "polars-core/dtype-u16",
+        "polars-io/dtype-u16",
+        "polars-lazy?/dtype-u16",
+        "polars-ops/dtype-u16",
+        "polars-time?/dtype-u16"
+      ],
+      "dtype-u8": [
+        "polars-core/dtype-u8",
+        "polars-io/dtype-u8",
+        "polars-lazy?/dtype-u8",
+        "polars-ops/dtype-u8",
+        "polars-time?/dtype-u8"
+      ],
+      "dynamic_group_by": [
+        "polars-core/dynamic_group_by",
+        "polars-lazy?/dynamic_group_by"
+      ],
+      "ewma": [
+        "polars-ops/ewma",
+        "polars-lazy?/ewma"
+      ],
+      "ewma_by": [
+        "polars-ops/ewma_by",
+        "polars-lazy?/ewma_by"
+      ],
+      "extract_groups": [
+        "polars-lazy?/extract_groups"
+      ],
+      "extract_jsonpath": [
+        "polars-core/strings",
+        "polars-ops/extract_jsonpath",
+        "polars-ops/strings",
+        "polars-lazy?/extract_jsonpath"
+      ],
+      "find_many": [
+        "polars-plan/find_many"
+      ],
+      "fmt": [
+        "polars-core/fmt"
+      ],
+      "fmt_no_tty": [
+        "polars-core/fmt_no_tty"
+      ],
+      "full": [
+        "docs-selection",
+        "performant",
+        "fmt"
+      ],
+      "fused": [
+        "polars-ops/fused",
+        "polars-lazy?/fused"
+      ],
+      "gcp": [
+        "async",
+        "cloud",
+        "polars-io/gcp"
+      ],
+      "hist": [
+        "polars-ops/hist",
+        "polars-lazy/hist"
+      ],
+      "http": [
+        "async",
+        "cloud",
+        "polars-io/http"
+      ],
+      "iejoin": [
+        "polars-lazy?/iejoin"
+      ],
+      "index_of": [
+        "polars-lazy?/index_of"
+      ],
+      "interpolate": [
+        "polars-ops/interpolate",
+        "polars-lazy?/interpolate"
+      ],
+      "interpolate_by": [
+        "polars-ops/interpolate_by",
+        "polars-lazy?/interpolate_by"
+      ],
+      "ipc": [
+        "polars-io",
+        "polars-io/ipc",
+        "polars-lazy?/ipc",
+        "polars-sql?/ipc"
+      ],
+      "ipc_streaming": [
+        "polars-io",
+        "polars-io/ipc_streaming",
+        "polars-lazy?/ipc"
+      ],
+      "ir_serde": [
+        "polars-plan/ir_serde"
+      ],
+      "is_between": [
+        "polars-lazy?/is_between",
+        "polars-ops/is_between"
+      ],
+      "is_first_distinct": [
+        "polars-lazy?/is_first_distinct",
+        "polars-ops/is_first_distinct"
+      ],
+      "is_in": [
+        "polars-lazy?/is_in"
+      ],
+      "is_last_distinct": [
+        "polars-lazy?/is_last_distinct",
+        "polars-ops/is_last_distinct"
+      ],
+      "is_unique": [
+        "polars-lazy?/is_unique",
+        "polars-ops/is_unique"
+      ],
+      "json": [
+        "polars-io",
+        "polars-io/json",
+        "polars-lazy?/json",
+        "polars-sql?/json",
+        "dtype-struct"
+      ],
+      "lazy": [
+        "polars-core/lazy",
+        "polars-lazy"
+      ],
+      "list_any_all": [
+        "polars-lazy?/list_any_all"
+      ],
+      "list_arithmetic": [
+        "polars-core/list_arithmetic"
+      ],
+      "list_count": [
+        "polars-ops/list_count",
+        "polars-lazy?/list_count"
+      ],
+      "list_drop_nulls": [
+        "polars-lazy?/list_drop_nulls"
+      ],
+      "list_eval": [
+        "polars-lazy?/list_eval",
+        "polars-sql?/list_eval"
+      ],
+      "list_gather": [
+        "polars-ops/list_gather",
+        "polars-lazy?/list_gather"
+      ],
+      "list_sample": [
+        "polars-lazy?/list_sample"
+      ],
+      "list_sets": [
+        "polars-lazy?/list_sets"
+      ],
+      "list_to_struct": [
+        "polars-ops/list_to_struct",
+        "polars-lazy?/list_to_struct"
+      ],
+      "log": [
+        "polars-ops/log",
+        "polars-lazy?/log"
+      ],
+      "merge_sorted": [
+        "polars-lazy?/merge_sorted"
+      ],
+      "meta": [
+        "polars-lazy?/meta"
+      ],
+      "mode": [
+        "polars-ops/mode",
+        "polars-lazy?/mode"
+      ],
+      "moment": [
+        "polars-ops/moment",
+        "polars-lazy?/moment"
+      ],
+      "month_end": [
+        "polars-lazy?/month_end"
+      ],
+      "month_start": [
+        "polars-lazy?/month_start"
+      ],
+      "ndarray": [
+        "polars-core/ndarray"
+      ],
+      "nightly": [
+        "polars-core/nightly",
+        "polars-ops?/nightly",
+        "simd",
+        "polars-lazy?/nightly",
+        "polars-sql?/nightly"
+      ],
+      "object": [
+        "polars-core/object",
+        "polars-lazy?/object",
+        "polars-io/object"
+      ],
+      "offset_by": [
+        "polars-lazy?/offset_by"
+      ],
+      "parquet": [
+        "polars-io",
+        "polars-lazy?/parquet",
+        "polars-io/parquet",
+        "polars-sql?/parquet"
+      ],
+      "partition_by": [
+        "polars-core/partition_by"
+      ],
+      "pct_change": [
+        "polars-ops/pct_change",
+        "polars-lazy?/pct_change"
+      ],
+      "peaks": [
+        "polars-lazy/peaks"
+      ],
+      "performant": [
+        "polars-core/performant",
+        "chunked_ids",
+        "dtype-u8",
+        "dtype-u16",
+        "dtype-struct",
+        "cse",
+        "polars-ops/performant",
+        "streaming",
+        "fused"
+      ],
+      "pivot": [
+        "polars-lazy?/pivot",
+        "polars-ops/pivot",
+        "dtype-struct",
+        "rows"
+      ],
+      "polars_cloud": [
+        "polars-lazy?/polars_cloud"
+      ],
+      "product": [
+        "polars-core/product"
+      ],
+      "propagate_nans": [
+        "polars-lazy?/propagate_nans"
+      ],
+      "random": [
+        "polars-core/random",
+        "polars-lazy?/random",
+        "polars-ops/random"
+      ],
+      "range": [
+        "polars-lazy?/range"
+      ],
+      "rank": [
+        "polars-lazy?/rank",
+        "polars-ops/rank"
+      ],
+      "regex": [
+        "polars-lazy?/regex"
+      ],
+      "reinterpret": [
+        "polars-core/reinterpret",
+        "polars-lazy?/reinterpret",
+        "polars-ops/reinterpret"
+      ],
+      "repeat_by": [
+        "polars-ops/repeat_by",
+        "polars-lazy?/repeat_by"
+      ],
+      "replace": [
+        "polars-ops/replace",
+        "polars-lazy?/replace"
+      ],
+      "rle": [
+        "polars-lazy?/rle"
+      ],
+      "rolling_window": [
+        "polars-core/rolling_window",
+        "polars-lazy?/rolling_window"
+      ],
+      "rolling_window_by": [
+        "polars-core/rolling_window_by",
+        "polars-lazy?/rolling_window_by",
+        "polars-time/rolling_window_by"
+      ],
+      "round_series": [
+        "polars-ops/round_series",
+        "polars-lazy?/round_series"
+      ],
+      "row_hash": [
+        "polars-core/row_hash",
+        "polars-lazy?/row_hash"
+      ],
+      "rows": [
+        "polars-core/rows"
+      ],
+      "search_sorted": [
+        "polars-lazy?/search_sorted"
+      ],
+      "semi_anti_join": [
+        "polars-lazy?/semi_anti_join",
+        "polars-ops/semi_anti_join",
+        "polars-sql?/semi_anti_join"
+      ],
+      "serde": [
+        "polars-core/serde",
+        "polars-utils/serde",
+        "ir_serde"
+      ],
+      "serde-lazy": [
+        "polars-core/serde-lazy",
+        "polars-lazy?/serde",
+        "polars-time?/serde",
+        "polars-io?/serde",
+        "polars-ops?/serde",
+        "polars-utils/serde"
+      ],
+      "sign": [
+        "polars-lazy?/sign"
+      ],
+      "simd": [
+        "polars-core/simd",
+        "polars-io/simd",
+        "polars-ops?/simd"
+      ],
+      "sql": [
+        "polars-sql"
+      ],
+      "streaming": [
+        "polars-lazy?/streaming"
+      ],
+      "string_encoding": [
+        "polars-ops/string_encoding",
+        "polars-lazy?/string_encoding",
+        "polars-core/strings"
+      ],
+      "string_normalize": [
+        "polars-lazy?/string_normalize",
+        "polars-ops/string_normalize"
+      ],
+      "string_pad": [
+        "polars-lazy?/string_pad",
+        "polars-ops/string_pad"
+      ],
+      "string_reverse": [
+        "polars-lazy?/string_reverse",
+        "polars-ops/string_reverse"
+      ],
+      "string_to_integer": [
+        "polars-lazy?/string_to_integer",
+        "polars-ops/string_to_integer"
+      ],
+      "strings": [
+        "polars-core/strings",
+        "polars-lazy?/strings",
+        "polars-ops/strings"
+      ],
+      "take_opt_iter": [
+        "polars-core/take_opt_iter"
+      ],
+      "temporal": [
+        "polars-core/temporal",
+        "polars-lazy?/temporal",
+        "polars-io/temporal",
+        "polars-time"
+      ],
+      "test": [
+        "lazy",
+        "rolling_window",
+        "rank",
+        "round_series",
+        "csv",
+        "dtype-categorical",
+        "cum_agg",
+        "fmt",
+        "diff",
+        "abs",
+        "parquet",
+        "ipc",
+        "ipc_streaming",
+        "json"
+      ],
+      "timezones": [
+        "polars-core/timezones",
+        "polars-lazy?/timezones",
+        "polars-io/timezones",
+        "polars-ops/timezones",
+        "polars-sql?/timezones"
+      ],
+      "to_dummies": [
+        "polars-ops/to_dummies"
+      ],
+      "top_k": [
+        "polars-lazy?/top_k"
+      ],
+      "trigonometry": [
+        "polars-lazy?/trigonometry"
+      ],
+      "true_div": [
+        "polars-lazy?/true_div"
+      ],
+      "unique_counts": [
+        "polars-ops/unique_counts",
+        "polars-lazy?/unique_counts"
+      ],
+      "zip_with": [
+        "polars-core/zip_with"
+      ]
+    },
+    "sha256": "f5e47e466fea1f2e4b1f933df0835f858813af7be571e32395c61b863dadc37e",
+    "target": {
+      "cfg(target_family = \"wasm\")": {
+        "dependencies": {
+          "getrandom": {
+            "features": [
+              "js"
+            ],
+            "version": "0.2"
+          }
+        }
+      }
+    }
+  },
+  "polars-core-0.46.0": {
+    "dependencies": {
+      "ahash": {
+        "version": ">=0.8.5"
+      },
+      "arrow": {
+        "default-features": false,
+        "features": [
+          "compute_aggregate",
+          "compute_arithmetics",
+          "compute_bitwise",
+          "compute_boolean",
+          "compute_boolean_kleene",
+          "compute_comparison"
+        ],
+        "package": "polars-arrow",
+        "version": "0.46.0"
+      },
+      "bitflags": {
+        "version": "2"
+      },
+      "bytemuck": {
+        "features": [
+          "derive",
+          "extern_crate_alloc"
+        ],
+        "version": "1.21"
+      },
+      "chrono": {
+        "default-features": false,
+        "features": [
+          "std"
+        ],
+        "optional": true,
+        "version": "0.4.31"
+      },
+      "chrono-tz": {
+        "optional": true,
+        "version": "0.10"
+      },
+      "comfy-table": {
+        "default-features": false,
+        "optional": true,
+        "version": "7.1.1"
+      },
+      "either": {
+        "version": "1.11"
+      },
+      "hashbrown": {
+        "features": [
+          "rayon",
+          "serde"
+        ],
+        "version": "0.15.0"
+      },
+      "hashbrown_old_nightly_hack": {
+        "features": [
+          "rayon",
+          "serde"
+        ],
+        "package": "hashbrown",
+        "version": "0.14.5"
+      },
+      "indexmap": {
+        "features": [
+          "std",
+          "serde"
+        ],
+        "version": "2"
+      },
+      "itoa": {
+        "version": "1.0.6"
+      },
+      "ndarray": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.16"
+      },
+      "num-traits": {
+        "version": "0.2"
+      },
+      "once_cell": {
+        "version": "1"
+      },
+      "polars-compute": {
+        "default-features": false,
+        "features": [
+          "gather"
+        ],
+        "version": "0.46.0"
+      },
+      "polars-error": {
+        "default-features": false,
+        "version": "0.46.0"
+      },
+      "polars-row": {
+        "default-features": false,
+        "version": "0.46.0"
+      },
+      "polars-schema": {
+        "default-features": false,
+        "version": "0.46.0"
+      },
+      "polars-utils": {
+        "default-features": false,
+        "version": "0.46.0"
+      },
+      "rand": {
+        "features": [
+          "small_rng",
+          "std"
+        ],
+        "optional": true,
+        "version": "0.8"
+      },
+      "rand_distr": {
+        "optional": true,
+        "version": "0.4"
+      },
+      "rayon": {
+        "version": "1.9"
+      },
+      "regex": {
+        "optional": true,
+        "version": "1.9"
+      },
+      "serde": {
+        "features": [
+          "derive",
+          "rc"
+        ],
+        "optional": true,
+        "version": "1.0.188"
+      },
+      "serde_json": {
+        "optional": true,
+        "version": "1"
+      },
+      "strum_macros": {
+        "version": "0.26"
+      },
+      "thiserror": {
+        "version": "2"
+      },
+      "xxhash-rust": {
+        "features": [
+          "xxh3"
+        ],
+        "version": "0.8.6"
+      }
+    },
+    "features": {
+      "algorithm_group_by": [],
+      "approx_unique": [
+        "polars-compute/approx_unique"
+      ],
+      "array_arithmetic": [
+        "dtype-array"
+      ],
+      "avx512": [],
+      "bigidx": [
+        "arrow/bigidx",
+        "polars-utils/bigidx"
+      ],
+      "bitwise": [
+        "algorithm_group_by"
+      ],
+      "checked_arithmetic": [],
+      "dataframe_arithmetic": [],
+      "default": [
+        "algorithm_group_by"
+      ],
+      "describe": [],
+      "diagonal_concat": [],
+      "docs": [],
+      "docs-selection": [
+        "ndarray",
+        "rows",
+        "docs",
+        "strings",
+        "object",
+        "lazy",
+        "temporal",
+        "random",
+        "zip_with",
+        "checked_arithmetic",
+        "is_first_distinct",
+        "is_last_distinct",
+        "dot_product",
+        "row_hash",
+        "rolling_window",
+        "rolling_window_by",
+        "serde",
+        "dtype-categorical",
+        "dtype-decimal",
+        "diagonal_concat",
+        "dataframe_arithmetic",
+        "product",
+        "describe",
+        "partition_by",
+        "algorithm_group_by",
+        "list_arithmetic",
+        "array_arithmetic"
+      ],
+      "dot_product": [],
+      "dtype-array": [
+        "arrow/dtype-array",
+        "polars-compute/dtype-array"
+      ],
+      "dtype-categorical": [],
+      "dtype-date": [
+        "temporal"
+      ],
+      "dtype-datetime": [
+        "temporal"
+      ],
+      "dtype-decimal": [
+        "arrow/dtype-decimal",
+        "polars-compute/cast",
+        "polars-compute/dtype-decimal",
+        "dtype-i128"
+      ],
+      "dtype-duration": [
+        "temporal"
+      ],
+      "dtype-i128": [
+        "polars-compute/dtype-i128"
+      ],
+      "dtype-i16": [],
+      "dtype-i8": [],
+      "dtype-struct": [],
+      "dtype-time": [
+        "temporal"
+      ],
+      "dtype-u16": [],
+      "dtype-u8": [],
+      "dynamic_group_by": [
+        "dtype-datetime",
+        "dtype-date"
+      ],
+      "fmt": [
+        "comfy-table/tty"
+      ],
+      "fmt_no_tty": [
+        "comfy-table"
+      ],
+      "group_by_list": [],
+      "is_first_distinct": [],
+      "is_last_distinct": [],
+      "lazy": [],
+      "list_arithmetic": [],
+      "nightly": [
+        "simd",
+        "hashbrown/nightly",
+        "hashbrown_old_nightly_hack/nightly",
+        "polars-utils/nightly",
+        "arrow/nightly"
+      ],
+      "object": [
+        "serde_json",
+        "algorithm_group_by"
+      ],
+      "partition_by": [
+        "algorithm_group_by"
+      ],
+      "performant": [
+        "arrow/performant",
+        "reinterpret"
+      ],
+      "product": [],
+      "python": [],
+      "random": [
+        "rand",
+        "rand_distr"
+      ],
+      "reinterpret": [],
+      "rolling_window": [],
+      "rolling_window_by": [],
+      "round_series": [],
+      "row_hash": [],
+      "rows": [],
+      "serde": [
+        "dep:serde",
+        "bitflags/serde",
+        "polars-schema/serde",
+        "polars-utils/serde",
+        "arrow/io_ipc",
+        "arrow/io_ipc_compression",
+        "serde_json"
+      ],
+      "serde-lazy": [
+        "serde",
+        "arrow/serde",
+        "indexmap/serde",
+        "chrono/serde"
+      ],
+      "simd": [
+        "arrow/simd",
+        "polars-compute/simd"
+      ],
+      "strings": [
+        "regex",
+        "arrow/strings",
+        "polars-error/regex"
+      ],
+      "take_opt_iter": [],
+      "temporal": [
+        "regex",
+        "chrono",
+        "polars-error/regex"
+      ],
+      "timezones": [
+        "temporal",
+        "chrono",
+        "chrono-tz",
+        "arrow/chrono-tz",
+        "arrow/timezones"
+      ],
+      "unique_counts": [],
+      "zip_with": []
+    },
+    "sha256": "45bc64484f0575dd0fc4990d7ee1d753f546500ac84598930d3f48e3398349b2",
+    "target": {}
+  },
+  "stasis-rs-0.13.0": {
+    "dependencies": {
+      "anyhow": {
+        "version": "1"
+      },
+      "askama": {
+        "features": [
+          "with-axum"
+        ],
+        "optional": true,
+        "version": "0.12"
+      },
+      "askama_axum": {
+        "optional": true,
+        "version": "0.4"
+      },
+      "async-trait": {
+        "version": "0.1"
+      },
+      "axum": {
+        "optional": true,
+        "version": "0.8"
+      },
+      "chrono": {
+        "features": [
+          "serde"
+        ],
+        "version": "0.4"
+      },
+      "chrono-tz": {
+        "version": "0.10"
+      },
+      "cron": {
+        "version": "0.12"
+      },
+      "dotenvy": {
+        "optional": true,
+        "version": "0.15"
+      },
+      "futures-util": {
+        "version": "0.3"
+      },
+      "genai": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.6.5"
+      },
+      "grapheme-compiler": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.7.1"
+      },
+      "grapheme-lsp": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.7.1"
+      },
+      "grapheme-sdk": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.7.1"
+      },
+      "grapheme-wasm": {
+        "optional": true,
+        "version": "0.7.1"
+      },
+      "hex": {
+        "version": "0.4"
+      },
+      "lapin": {
+        "optional": true,
+        "version": "2"
+      },
+      "locus-core-rs": {
+        "default-features": false,
+        "version": "=0.5.1"
+      },
+      "locus-sdk": {
+        "default-features": false,
+        "version": "=0.5.0"
+      },
+      "locus-surreal-adapter": {
+        "default-features": false,
+        "optional": true,
+        "version": "0.1.1"
+      },
+      "opentelemetry": {
+        "optional": true,
+        "version": "0.29"
+      },
+      "opentelemetry-otlp": {
+        "features": [
+          "grpc-tonic",
+          "metrics"
+        ],
+        "optional": true,
+        "version": "0.29"
+      },
+      "opentelemetry_sdk": {
+        "features": [
+          "rt-tokio"
+        ],
+        "optional": true,
+        "version": "0.29"
+      },
+      "regex": {
+        "version": "1"
+      },
+      "rskafka": {
+        "optional": true,
+        "version": "0.5"
+      },
+      "rust-embed": {
+        "optional": true,
+        "version": "8"
+      },
+      "schemars": {
+        "version": "0.8"
+      },
+      "serde": {
+        "features": [
+          "derive"
+        ],
+        "version": "1"
+      },
+      "serde_json": {
+        "version": "1"
+      },
+      "sha2": {
+        "version": "0.10"
+      },
+      "stasis-macros": {
+        "package": "stasis-rs-macros",
+        "version": "0.1.0"
+      },
+      "surrealdb": {
+        "default-features": false,
+        "optional": true,
+        "version": "3"
+      },
+      "surrealdb-types": {
+        "optional": true,
+        "version": "3"
+      }
+    },
+    "features": {
+      "dashboard": [
+        "dep:axum",
+        "dep:askama",
+        "dep:askama_axum",
+        "dep:rust-embed",
+        "grapheme-host",
+        "surreal-native",
+        "env-fs"
+      ],
+      "dashboard-embedded": [
+        "dashboard"
+      ],
+      "dashboard-lsp": [
+        "dashboard",
+        "grapheme",
+        "dep:grapheme-lsp"
+      ],
+      "default": [
+        "native"
+      ],
+      "env-fs": [
+        "dep:dotenvy"
+      ],
+      "grapheme": [
+        "dep:grapheme-sdk",
+        "dep:grapheme-compiler",
+        "dep:grapheme-wasm"
+      ],
+      "grapheme-full": [
+        "grapheme-host",
+        "grapheme-sdk/full",
+        "grapheme-compiler/full"
+      ],
+      "grapheme-host": [
+        "grapheme",
+        "grapheme-sdk/host"
+      ],
+      "http-wasm": [
+        "reqwest"
+      ],
+      "llm-chat": [],
+      "llm-genai": [
+        "dep:genai",
+        "genai/rustls-tls",
+        "llm-chat"
+      ],
+      "llm-openai-http": [
+        "reqwest",
+        "llm-chat"
+      ],
+      "locus-persist": [
+        "dep:locus-surreal-adapter"
+      ],
+      "native": [
+        "dashboard",
+        "surreal-native",
+        "llm-genai",
+        "grapheme-host",
+        "env-fs",
+        "locus-sdk/genai-provider",
+        "locus-sdk/http-providers"
+      ],
+      "otel": [
+        "dep:opentelemetry",
+        "dep:opentelemetry_sdk",
+        "dep:opentelemetry-otlp"
+      ],
+      "surreal": [
+        "dep:surrealdb",
+        "dep:surrealdb-types"
+      ],
+      "surreal-native": [
+        "surreal",
+        "surrealdb/kv-surrealkv",
+        "surrealdb/rustls",
+        "surrealdb/kv-mem",
+        "surrealdb/protocol-ws"
+      ],
+      "surreal-ws": [
+        "surreal",
+        "surrealdb/protocol-ws"
+      ],
+      "transport-kafka": [
+        "dep:rskafka"
+      ],
+      "transport-kafka-wasm": [],
+      "transport-rabbitmq": [
+        "dep:lapin"
+      ]
+    },
+    "sha256": "b8a46b117751eb7e01dce338de61a0631c5234e0d686e358cf1824d308b3f0d4",
+    "target": {
+      "cfg(not(target_arch = \"wasm32\"))": {
+        "dependencies": {
+          "locus-surreal-adapter": {
+            "default-features": false,
+            "features": [
+              "native"
+            ],
+            "optional": true,
+            "version": "0.1.1"
+          },
+          "reqwest": {
+            "default-features": false,
+            "features": [
+              "json",
+              "rustls-tls"
+            ],
+            "version": "0.12"
+          },
+          "tokio": {
+            "features": [
+              "macros",
+              "rt-multi-thread",
+              "sync",
+              "time",
+              "net",
+              "io-util"
+            ],
+            "version": "1"
+          }
+        }
+      },
+      "cfg(target_arch = \"wasm32\")": {
+        "dependencies": {
+          "chrono": {
+            "features": [
+              "serde",
+              "wasmbind"
+            ],
+            "version": "0.4"
+          },
+          "getrandom": {
+            "features": [
+              "js"
+            ],
+            "version": "0.2"
+          },
+          "locus-surreal-adapter": {
+            "default-features": false,
+            "features": [
+              "wasm"
+            ],
+            "optional": true,
+            "version": "0.1.1"
+          },
+          "reqwest": {
+            "default-features": false,
+            "features": [
+              "json"
+            ],
+            "optional": true,
+            "version": "0.12"
+          },
+          "tokio": {
+            "features": [
+              "macros",
+              "rt",
+              "sync",
+              "time"
+            ],
+            "version": "1"
+          },
+          "wasm-bindgen": {
+            "version": "0.2"
+          },
+          "wasm-bindgen-futures": {
+            "version": "0.4"
+          },
+          "web-time": {
+            "version": "1"
+          }
+        },
+        "dev-dependencies": {
+          "wasm-bindgen-test": {
+            "version": "0.3"
+          }
+        }
+      }
+    }
+  }
+}

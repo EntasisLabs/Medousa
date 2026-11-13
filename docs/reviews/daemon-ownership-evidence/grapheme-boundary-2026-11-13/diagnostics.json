@@ -1,0 +1,21 @@
+{
+  "not_qualification_gates": [
+    {
+      "probe": "initial raw Git source comparison",
+      "status": "failed on declared CRLF checkout; collector corrected to committed Git archive attributes"
+    },
+    {
+      "probe": "initial normalized-working versus Git archive comparison",
+      "status": "failed because archive already applies CRLF; corrected to exact archive bytes"
+    },
+    {
+      "probe": "optional .cargo-checksum.json discovery",
+      "status": "unavailable; cache metadata absent; locked cached .crate comparison passed instead"
+    },
+    {
+      "probe": "initial staged whitespace check",
+      "status": "failed on unchanged raw libtest EOF blanks and blank numbered source lines; raw bytes preserved losslessly as gzip, final staged check required"
+    }
+  ],
+  "unchanged_rg_guard": "unavailable, NOT green; equivalent Python scan independently passed"
+}
