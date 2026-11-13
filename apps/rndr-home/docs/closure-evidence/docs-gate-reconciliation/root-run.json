@@ -1,0 +1,19 @@
+{
+  "command": "bash scripts/verify-docs.sh --strict",
+  "cwd": "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification",
+  "runtime": "cognition_coder_shell_run / coder_pty; Python subprocess capture, no pipeline",
+  "head": "2cef83fdc3b977bc83b2800a8601f0167bb95a86",
+  "argv": [
+    "bash",
+    "scripts/verify-docs.sh",
+    "--strict"
+  ],
+  "bash_resolved": "/opt/homebrew/bin/bash",
+  "bash_version": "GNU bash, version 5.3.15(1)-release (aarch64-apple-darwin25.4.0)",
+  "exit_code": 0,
+  "stdout": "verify-docs: OK\n",
+  "stderr": "",
+  "duration_seconds": 46.299,
+  "verifier_sha256": "933a9e5035f575370a92878ac815aebc2732cf8486153eb849b065dc0140e670",
+  "app_local_verifier_exists": false
+}

@@ -8,9 +8,12 @@ Preparation itself awaits sender's assessment of this bounded closure. This is
 not acceptance on sender's behalf, worker dispatch, feature implementation or
 native integration. No workers have been launched by this closure.
 
-The docs-only closure commit is the commit containing this document; resolve its
-full OID from Git and use the exact OID returned with this handback for dispatch.
-Its direct parent/base is `bdef72eb7fbf8014067603f50bb15cfe0a3745f5`.
+The original docs-only closure commit is
+`2cef83fdc3b977bc83b2800a8601f0167bb95a86`; its direct parent/base is
+`bdef72eb7fbf8014067603f50bb15cfe0a3745f5`. A later docs-only gate-evidence
+reconciliation does not change that candidate binding; see
+`closure-evidence/docs-gate-reconciliation/RECONCILIATION.md` and the exact
+reconciliation OID returned in handback before dispatch.
 Do not call closure HEAD the independently executed candidate. Source remains
 bound to extraction `08839824203c57588607f3ad66496e1bd81d8cba` plus denial coverage
 `b9ee1f1b55fd984231dcb8082fddd745444d5986`; prep baseline remains
@@ -51,7 +54,10 @@ remain distinct. Neither lane grants preparation acceptance or feature authority
 This closure runs only bounded documentation/hash/Git diff checks. No Rust tests,
 Cargo/build, app, export or native capture are rerun. Candidate test results are
 not relabelled as execution on closure HEAD. `closure-evidence/verification.json`
-records the allowlisted path/no-code-change checks and evidence integrity.
+records the original closure allowlisted path/no-code-change checks and evidence
+integrity. Its strict-docs field now distinguishes the fresh repository-root
+verifier capture from the historical claim and sender's unresolved exit-1 runtime
+result. There is no app-local verifier; this is not an app-doc completeness gate.
 
 ## Resolved wording, not changed behavior
 

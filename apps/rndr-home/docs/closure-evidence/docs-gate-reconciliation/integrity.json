@@ -1,0 +1,9 @@
+{
+  "base": "2cef83fdc3b977bc83b2800a8601f0167bb95a86",
+  "review_candidate": "bdef72eb7fbf8014067603f50bb15cfe0a3745f5",
+  "sealed_files_verified": 55,
+  "seal_itself_unchanged": true,
+  "non_docs_diff_empty": true,
+  "non_docs_tree_sha256": "de428dd0ea439d400111b90133f1d71152feb45b49987f4012dbe2394a635e25",
+  "note": "Final committed non-doc tree equality and clean state checked in handback; original manifests and report bytes not edited."
+}

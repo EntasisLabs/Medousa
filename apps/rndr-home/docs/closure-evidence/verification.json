@@ -1,7 +1,7 @@
 {
   "kind": "docs-only closure checks; no Cargo/build/app/test/export/native execution",
   "base_and_reviewed_candidate": "bdef72eb7fbf8014067603f50bb15cfe0a3745f5",
-  "closure_identity": "commit containing this record; exact OID returned in handback",
+  "closure_identity": "2cef83fdc3b977bc83b2800a8601f0167bb95a86 (original closure; reconciliation is a later docs-only commit)",
   "changed_paths": 62,
   "all_paths_under": "apps/rndr-home/docs/",
   "review_seal_entries_verified": 55,
@@ -30,8 +30,30 @@
   "non_docs_git_diff_empty": true,
   "strict_docs": {
     "command": "bash scripts/verify-docs.sh --strict",
+    "cwd": "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification",
+    "scope": "repository root docs verifier, NOT an app-local docs gate; does not validate all rndr-home documentation",
+    "runtime": "cognition_coder_shell_run / coder_pty; Python subprocess capture, no pipeline",
+    "bash_resolved": "/opt/homebrew/bin/bash",
+    "bash_version": "GNU bash, version 5.3.15(1)-release (aarch64-apple-darwin25.4.0)",
+    "executed_head": "2cef83fdc3b977bc83b2800a8601f0167bb95a86",
     "exit_code": 0,
-    "output": "verify-docs: OK"
+    "stdout": "verify-docs: OK\n",
+    "stderr": "",
+    "evidence": "docs-gate-reconciliation/root-run.json",
+    "historical_claim": {
+      "record_at": "2cef83fdc3b977bc83b2800a8601f0167bb95a86",
+      "command": "bash scripts/verify-docs.sh --strict",
+      "exit_code": 0,
+      "output": "verify-docs: OK",
+      "status": "historical only; ledger records OK output on poll, but complete invocation/cwd/exit reconstruction unavailable; superseded for reproducible scope by fresh capture"
+    },
+    "sender_root_check": {
+      "runtime": "cognition_shell_run (reported by sender)",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "",
+      "status": "unreconciled runtime-specific outcome; no root docs defect or sandbox cause proven; not reclassified as passing"
+    }
   },
   "whitespace_policy": "Changed authored contracts pass git diff --check. Original review bytes retained, including terminal blank lines; any full-diff warnings in immutable receipts are documented, not normalized.",
   "external_rndr": "not accessed; saved read-only pin 44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139; no fresh cleanliness claim",
