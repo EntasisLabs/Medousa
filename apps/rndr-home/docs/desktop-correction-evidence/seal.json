@@ -1,0 +1,2378 @@
+{
+  "baseline": "b5b2fa9cb116cd8cd25275d61a28a15b06abeb80",
+  "evidence_sha256": {
+    "apps/rndr-home/docs/desktop-correction-evidence/REPORT.md": "c4999f159ec63ff1deda48cc3d0193669ee1fdabbc4893be50d4bcde16d8bd0a",
+    "apps/rndr-home/docs/desktop-correction-evidence/build-default.command.txt": "2f87c960b0dff610cdbf11fbcfd46363983cf925d9fb08110d58f67e281b24fa",
+    "apps/rndr-home/docs/desktop-correction-evidence/build-default.log": "3a4a85e4137890aa177eea6652598825860190876d31684db1b0ffb7c8b535c6",
+    "apps/rndr-home/docs/desktop-correction-evidence/build-observe.command.txt": "7ef8a6727be8f86c52cccf3b8623ebcc4845d54d0023e0e9c7b234a670cf8868",
+    "apps/rndr-home/docs/desktop-correction-evidence/build-observe.log": "1e754a7135606337c9b4ccde6b073f4cacdc2b0f0db6551791b9295b5d9cacef",
+    "apps/rndr-home/docs/desktop-correction-evidence/cleanup.txt": "55cf88e31b1ea303257b77d7d6fafde176d05dcedad126b247f68589bd17be5e",
+    "apps/rndr-home/docs/desktop-correction-evidence/clippy-default.command.txt": "acca6a5eec2041f1ee74376290453874dc8f6a1956045e431312e7b65ce1282f",
+    "apps/rndr-home/docs/desktop-correction-evidence/clippy-default.log": "34726b1bf709d79133deb7acbb5be091706b075472808c3a83a24ab45830d5dc",
+    "apps/rndr-home/docs/desktop-correction-evidence/clippy-observe.command.txt": "b4b1e13ad876e269befb7026ac9b494e55c033e7589d52053fe1308958d8acda",
+    "apps/rndr-home/docs/desktop-correction-evidence/clippy-observe.log": "6b4e136e9dab0949b4b7ac437f6ba404efb1237f01318625e2161a214700c8ab",
+    "apps/rndr-home/docs/desktop-correction-evidence/disk.txt": "acf60beb475db5e2c32ae9ca81f5d97c6ad964501e7317c03a653b0cdd6fceb0",
+    "apps/rndr-home/docs/desktop-correction-evidence/docs-final.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "apps/rndr-home/docs/desktop-correction-evidence/docs-final.log": "4c4813d86353443ea5b5c00c36b49336b103503a94108f203e0507830d90bfdb",
+    "apps/rndr-home/docs/desktop-correction-evidence/docs-strict.log": "4c4813d86353443ea5b5c00c36b49336b103503a94108f203e0507830d90bfdb",
+    "apps/rndr-home/docs/desktop-correction-evidence/environment.txt": "a5f0facf382826a3b3987877303bfbbe37752437cbc683d8560e10274274e684",
+    "apps/rndr-home/docs/desktop-correction-evidence/fail-before.exit": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+    "apps/rndr-home/docs/desktop-correction-evidence/fail-before.log": "85a3e154b48f9cc91b1b2ea7a92f9b3903d86f64345c606414f8a4307a29db7d",
+    "apps/rndr-home/docs/desktop-correction-evidence/first-clippy-formatting.log": "6d281e3a1c93ac03d52822f5e70588a7f3532f867a95b4fa0861aa4af39edaaf",
+    "apps/rndr-home/docs/desktop-correction-evidence/first-default-rail-width.log": "da6101bd6c69d84394b6b20f0bd8b3264cab36b178202569f09445c6fc368721",
+    "apps/rndr-home/docs/desktop-correction-evidence/first-suite-results.tsv": "140cd5d6326163809c12d877c890a084be4ea03d9ca930048513333242f409fc",
+    "apps/rndr-home/docs/desktop-correction-evidence/fmt.command.txt": "8ce0c876ff1ca03b8c06659c1a81078e81b2dbc6ddce64501251dc96a48aa0d0",
+    "apps/rndr-home/docs/desktop-correction-evidence/fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/desktop-correction-evidence/focused-final.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "apps/rndr-home/docs/desktop-correction-evidence/focused-final.log": "856401f2d1ee863a429d8f2e23257aead9484897158f240bd4e18d88de964cae",
+    "apps/rndr-home/docs/desktop-correction-evidence/focused.log": "44920c64d6a44f130ee5136c491584f21b6382bdeca3fd8fa92258b450100b21",
+    "apps/rndr-home/docs/desktop-correction-evidence/make-contact-sheet.swift": "5f8eb0c2e4fac63cad47c13f042c8f19e8c173d74ea4bde48c879f46964e8b76",
+    "apps/rndr-home/docs/desktop-correction-evidence/minimum-height-contact-sheet.png": "3de83f722c4f235aee16875e7883963bf3a953eb431a2e4e191a7e806eb7c2f2",
+    "apps/rndr-home/docs/desktop-correction-evidence/parallel-fixture-timeout.log": "8f77a5447f6feed061832860a33077c0dcd29cf5127b561caa336fd90033194e",
+    "apps/rndr-home/docs/desktop-correction-evidence/parallel-suite-results.tsv": "140cd5d6326163809c12d877c890a084be4ea03d9ca930048513333242f409fc",
+    "apps/rndr-home/docs/desktop-correction-evidence/pass-after.log": "2c308323e694ddcc35f36c180d841df6e84980454a672d79be9e32d470e3912d",
+    "apps/rndr-home/docs/desktop-correction-evidence/pre-format-results.tsv": "ccff2628d3b1c8943d09915286b0e8e5735f1737ad4f918193e099b3ab55dcdb",
+    "apps/rndr-home/docs/desktop-correction-evidence/render.command.txt": "c51e9b4b86d1ef0e0113fda927d4f0ec45272e1a24b83edea51d70869382b5b2",
+    "apps/rndr-home/docs/desktop-correction-evidence/render.log": "6893c2ce83d2a0a835c16e0790bfc0c8e0aeaa901ed37eee23355e65556a64ee",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-accounts.png": "ac24a76af9e1413538a7f566b4a5938dc62cb5eca08076879366c41928fd29fa",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-agent.png": "e13447b4b44b4a44231bd8d3d77f690c398ed566f69097c97f7d5eaf99399c22",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-automations.png": "20f1d942f5e56a00471eb80dc7c44dc894dfde313f6278808d3ddec87c29fd25",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-basement.png": "6491692bed9270b019309d3274df33c90a1fba35838308ca0b9d2cdd634a6a6d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-connections.png": "c91fc59209192fc9ce94c17bb0c3241a8bdf2b4d526cc60f28b7248abf29af67",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-mcp-disconnected.png": "aae137933d51d54c919b41b0b6ce13ddeabb01bd9e1b0fb21b4fbc83c4976a4a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-mcp.png": "c4fc16ee0416c46ca44f43b8dd569a8959c6b308f423d1e85f53dc81e42ffa92",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-models.png": "17212ef0d3af65f9fca6e5aa510200b64b2f83d732bd9b08c489223e5e9bde1b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-network.png": "af3305e203aed2807c975826d3b018a27bf2577ee50b22386580b377978730c7",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-packages.png": "6c6c5dc2850dacd4b919161eff606b77ba4c57eca40e96ab17d5b455814f3c5d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-preferences.png": "7d7fc8629c59f49e7467dead037e35ef048c1529dd5a64b3d4a31ce7e4b36adb",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-runtime-detail.png": "2a233f29a061e1c68ba18fad28ad19023a5b1f1348c73515ceedf130eacf8530",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-runtime-empty.png": "37c7fa37f7cbd34b3d57c21d6e7f9d627443acf72ed4e8c41941ff249ea4b395",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-runtime-error.png": "5196d8829625606fc93be0feac80213b80ad14f9da0d57cd281ce115213f5187",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-runtime-list.png": "640443ce67d765ba1285b055b23b77afdda3ed942972d5db2179e63eed275328",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-runtime-loading.png": "1362f684d089333f5d395a959581502fa6a5b5e685659338edada9483c1feef3",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-runtime-permission.png": "80f9a255cd9994e0c8bf6eb19adf07ba19075349e6ee3b8f31612ffd92ceb480",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-650-runtime.png": "ceebb70d2d4df3d4aba06ea214fe76949ef94e8552cda8b255702a52ce60a9de",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-accounts.png": "7ca22898fd6cfb7a5e16062b043762d9e54a3002721aa00dbb837118101ac607",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-agent.png": "e22a7a9119a96e857495d203a8753fdd217767e5c4107dc98455a5415532f0cc",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-automations.png": "abbe00d61263de3608483a7ac7a48f59945015ba34d6f95230d1f7897ca2adf2",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-basement.png": "0144770a86cb05a9467f8690b88d423434bf67860aefc77759a74f8f0901c3e3",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-connections.png": "91870c2e29d4109500cc663b010b88dbf5a3975611dcb06bbea536498c25a94d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-mcp-disconnected.png": "39c0613b7fd85c68c696548b5d4f341ffaff3d9517f77a6b110c8022db22f9a5",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-mcp.png": "fb25837f14beffcf222d857c1002d9dd536657c314e96da76b1d4b32e2992f37",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-models.png": "32293247b4c8de553c059e49a280ccfb66e95ed20b22d25cbea34668948b36f4",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-network.png": "25e246eab3f3d99693531c815b9f9593da0a69c3beb87c8987141ea23fb94665",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-packages.png": "e4312f8dd3a5e5daf44b70216f84fc780dff92767f748145260cd07eec0baffb",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-preferences.png": "7da0ad9be9f05b9691cc5224b476ced20b3ab0cff9c76446694547e163863b79",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-runtime-detail.png": "b035b34398fa20a392373c267f2e351c0a72d216119cc3f3985ca6938c567dd1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-runtime-empty.png": "2cf68f87b36d72d1279bf578d909d2062f664be19fe2cf4aedbbd6eb52978642",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-runtime-error.png": "e06a4d23329a9f0990d5da4310795b4dff3afc75b7169f231cafed8785bc13d8",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-runtime-list.png": "3a3b5cde6438897e3d21ac47ba189ceb32bbb62c0dea72b1033451cfcd054b4b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-runtime-loading.png": "371f6c2bdcd3fa3caa43cdd1db1cd23111b414b38cf56032da19968ef837cce4",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-runtime-permission.png": "fc4d9ae66a9c98ad5e2331bb7656f6314159d0a9d4f21bd409897942e9ba1cf3",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-narrow-runtime.png": "587c5f9b44b0b02b42bd166dd3798748d04b1a14abb5196ba9c4bdfe80f77059",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-accounts.png": "8db3b0afb05d4ded14b899bb696c159904c4e657aecffb9c1be12c4eb1f522b0",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-agent.png": "93da7405be325c5e1fde997b26f8f167b902878fc9ddd789938d7a78cdbbbae3",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-automations.png": "b36b4fb67249803895921051956e923a3f341fe97f5d27ef792dd2bd039ef789",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-basement.png": "417201fd692579db7c49ff69656a32e76d098901b2b7a2930f87214df3f40e27",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-connections.png": "f8385fec872d60a0fafebbe6f07af5ff4b3c5f083f7d1c07758ecdca06950de3",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-mcp-disconnected.png": "4f4010fab97b7fe3af4ee36068a484584a59a60ca9408ad30fc142abbd6cd9ab",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-mcp.png": "8b2a1a18598be44cc9c1bc6c74e6bbe80509c85791937d771e7f0135f68d8c5d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-models.png": "31622a1626e6d81d17645f33e95e18e28da554bbb458d2fd5d76b3d114b4314f",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-network.png": "75db94445266e070e5ceba1b5b01b40df3ee7b81174e0e3770efa103d1275036",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-packages.png": "3422a486b97b7e22bf870b3b37d2b33449bdddc3a837ab3b1c60d15a64bbe839",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-preferences.png": "ddb12d2eacf76298d922dd12e8d9152664ac2ddaa88e6d540cdd5c5138c6aeef",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-runtime-detail.png": "a71e7d7b4eea76152001112259484922ee0412af9678251313b4e00a27716c5f",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-runtime-empty.png": "5ab9ce0891ba707789f687fd27b0ce637696ed9d388d827992cebc4f1782d6d1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-runtime-error.png": "3c3a6a59efcfd22b4ef10586b6e0eaeb46fca660cb5bcfca6824aee93c8b70e4",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-runtime-list.png": "6a5368039c0884baa79d7e2868a458890f4a4943855a3c7207cb89b08fd1b035",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-runtime-loading.png": "505d7002973a80da50ce07a86d5e33b79a26dc9df46624489b2be654e958c62e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-runtime-permission.png": "1c6eddfe545517cc04d2cd935a973b566afdd55d751fff15607d05208146b534",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-650-runtime.png": "9bc48d8d877e0b1a1464227e758f0d9c196c0440ec9d6b4ba96fef78c13b2205",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-accounts.png": "650a00d113f33c72b6ca61b77eae2aece7207d2a0676dbdc04782ded6bad1eea",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-agent.png": "a61ff76cf42d1672f314936017e389f1941430f6d333efde4ff0cad1a3f38240",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-automations.png": "c3bcdb080b06b190eb252507df677947f7d8de34251547b4fb94d69c531c281c",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-basement.png": "fdb706804036435bbc10ea15f804116741f33301a59ebef6839c929e30e3f52c",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-connections.png": "a49a4fd35404df211d59c1afe05267ae9fb6b46982e853badd2045ad54525c6b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-mcp-disconnected.png": "515fbfea69f0783ddb2ee95e1d095d817cce9b4a387f15da60cce4ff02429095",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-mcp.png": "96e2e70d9069fce39741c65112576f816969a3d7d0778100599fc36a88d0e866",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-models.png": "d37d3981d8fd1b98aadcf4cdd1a1b4ebe0a1fdd45b69065ac7e1077a4c9b0b7a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-network.png": "555449436c8a8a7f2e53351fd3822fda0b9530e878608ca2f505ddd96c22e668",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-packages.png": "0613a9b56301febd420ed79a8cbbf6c7dc85bee95bf2c48c8e50370d3c2c3d4f",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-preferences.png": "b039f53b361e9dd214980708213409958eb8dd5c0aa957fc7e43854a306cb003",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-runtime-detail.png": "eb37ba11d881cf081b3410f57bbf913f9af5a9d0ded99c0f9a7cc177f928b5c6",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-runtime-empty.png": "f00de069e27c118f662677b4452d1cb7128d901bf1c056d5ccb14e37ec214aca",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-runtime-error.png": "ff537dd947f77a08968d4f793aaaf49e93e7c111721d6b2f295786105883ce3f",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-runtime-list.png": "f530ac0d940221c68230f8d4ab2969953da186f8afa83c1de5c94f861ae224a5",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-runtime-loading.png": "344111ac2a63c42694d234faaf8d627faff5473b2630e48e45504e976f6b2d57",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-runtime-permission.png": "d75faad0f6a1ebe85bf3e8c71ec9e959a64734b1993eebd699f010b688ef0865",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/dark-wide-runtime.png": "dc722e33fb47142a12cd5df55677234ef610854e73594aa2dd868318ca1a80df",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-accounts.png": "641df8dc85e2e0e0a31f56b46596168ae26b6b2275458eac5ca6a100a63a0804",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-agent.png": "c1c9cbd8c227a1ad4fa52cbbd88a0838a7b35775efef85b946380684604159f9",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-automations.png": "6765dd23f6bef6e9794239119ea1b5ed1319fcf4c7d4092f7a9e91a001a9167c",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-basement.png": "5e5ef6ffcff21a59127c7c3abdf97b98367894b0b2444deea58d587fc4e6d18c",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-connections.png": "b6728eabe3b1262a1416c6f7c8614669a412c98d6f8a4a1135bf730d48f71c1b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-mcp-disconnected.png": "ef66ffe22fd48c96e304629b168b7a41336f9e776894c90f2685ae0b213acaf3",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-mcp.png": "142870fb56d88d600f960cb622ab169959d03776e6903cf9eccecc882ef0aeff",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-models.png": "fbd0f55a92485bfefb5215cbdf88695aa195e496d6e4bd871c0a6e8a3a9d065b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-network.png": "0c026f4df3b7bde1769532a8b4a8d5f646a00f63bb3ce5c43ff6d0f6225859bd",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-packages.png": "f8af47a056af7f99b0fa683e31a5848bc1e3fb5470670c3020f3e0870cc3e564",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-preferences.png": "44046bbd8d5f36a68128d0b7ee40b5332db830b5cd65f5fb43a9441ce86878b5",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-runtime-detail.png": "ef07bfd059865c9f5a316f93807074e1ef06aa36eec77726214cf8c6186d07e1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-runtime-empty.png": "ef21f0ab26ef54da3fa3c2903fe33fe34d47ce2959cc3160e3212e092735a855",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-runtime-error.png": "69f1ca692f5a92080ac111f0f1a18cd4e672bb7b2de43596b6aa7c104ec1d9b8",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-runtime-list.png": "fb2a5bd4c123e73c6c80774b820d23ed56b1578b219342b36653581ce4366bb1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-runtime-loading.png": "4ec1c0207990614d280350f8d8531d21e30a514abd8a295987da68953821a391",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-runtime-permission.png": "73a759efb7dc61387a73b8c4d5b43d3fbebd313d609cc5c9f695e58a64945db0",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-650-runtime.png": "50d1e23b6120999c21c5ef53a755300165fdfec4c780ebe4cea8b3df0c1bf9d9",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-accounts.png": "c42492989e674ed791d3c0cd3273bf745f05bfd8e0d7b2c819207e0fce71c5db",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-agent.png": "2ccfa87098201f5b9483b396697a07d1a2670bab393118918ddf7222019721dc",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-automations.png": "350435604e8d8bb0ab5697c7b9a45e76466670e616f6a19e91b8947d6b093dcc",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-basement.png": "941982075129e91f94929f6e69f4a8325e1d2202e59fd58cdcc058403d9e0868",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-connections.png": "92d0993ab14ebd7e55369d545b07f1dc8ecae00c71cbabedb4b7d893959fa9be",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-mcp-disconnected.png": "7d313420ee2a09b26a351323292c55cdcae1636e93e1b019caf72e8a00b6c76e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-mcp.png": "36622054da0ada07f56da7cd6bbadd69a3a699a2fbe622c6c7af9f81b53038fa",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-models.png": "c26b72e3c88af4a0b4f721f67af5ac3bfdc4ab1f6012e3c72cb96e4f92bec90f",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-network.png": "51d21ba0e0587bba2bb1ec5c0a5d00ece0558b6a425d8a36db36ae54f34c630a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-packages.png": "c69103619a18e976ebc82bb3292816ea9b420fe2c25a84fc0ee027c8ffe0240b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-preferences.png": "32c36604205806055684f6bb1eb56f6d89b27e40f094f45bdbd852225884990f",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-runtime-detail.png": "9656e1002bbb537e4cab86f262b86944057b8bee222d9827dcf7aae925ad98d9",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-runtime-empty.png": "cc1bd6e6d8ed07d0ff01f0797eadaee602a574a1dbc6fdf5b6634324d335cc3a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-runtime-error.png": "2240957340c79d17bf2adde522202cd4feb071ae7898ae9f22922183a8f5fe4d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-runtime-list.png": "7e4d94e8abe455a715fbc5b5f6a97f6eb8d4445094be5d56026b514326ef481a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-runtime-loading.png": "a29f0af93cec137d5ae9338e0c4e78a26a2549b13751bc3f987b02928ff4a411",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-runtime-permission.png": "df4d5a9fac78c2e55c3c8ef5d76822491e5ee04ebf34bf5c3a0e5095fea22d18",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-narrow-runtime.png": "eb7b692d3fd710c645bdf005fbd25b1eb45c38eefc87cff6c7b72b19c26082e5",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-accounts.png": "62a3f90cab5f8fe41311632e3affb6a775a0a6e1545c94b2facf1a5046de2f67",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-agent.png": "0012099a0b97c1cfc38b9ee9eeace780f0d457cfd1b875dce98d30fcd276eb27",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-automations.png": "62e4cc132e3a92c81319ab346eeb706332df05c5960751d81a3728d3fa7c822e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-basement.png": "1ebbdce87154d77e26f5103ec4f4884a7c0713a48972558f9381020e6f3dfb13",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-connections.png": "c1cb7061b0f37035daedcf20728101d0796b59de2794a19b652b7d92b5744501",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-mcp-disconnected.png": "afb5069c82d8a55ad0a9e2ee6928e469167988e35d9178b398c3dbce12b51f11",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-mcp.png": "7a4c6bf562a1d0940e037116c8e5e8630330cad215c06b4f2820e837adc57ecf",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-models.png": "21aa915143733a4bea37a4f7189f067df6ec026e9d0233b8770511e91bd5e2d2",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-network.png": "c70371541566f426089b42bc3aaa83e7cffc0d98ef8e760eb39da18b26fb7bc9",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-packages.png": "97be9313e2e0e0fbb6761f547e3ca4f5552959d8a47b8a3df1c2ae1a9924269e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-preferences.png": "15045de13e600d3393666c458ab1d45d862314478c4a92ae4080a6b4b172fcbf",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-runtime-detail.png": "ac87e23bf356ea29ff8c1b61e62e98491998c73caded7acb2f04c3f33cab1d88",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-runtime-empty.png": "3f1eced4c06de4d7cb8608c8434cc0bd3e0bece31cf63431a2df1780e1215f7b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-runtime-error.png": "5f38f41e253a697ca02a43cc294d47cb8ed910858e8388f1be1d3c191cbf573b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-runtime-list.png": "05adcafd5951df86399ec5cbc4285cd9e321a789e06f2a55191433d730253157",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-runtime-loading.png": "748b27fe87532215f677e25fc3b962ff279ef5f55f0c5e12f06eb878fbad5dee",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-runtime-permission.png": "f10e9f079eddb779fb10f80bb00ea9495d0a07adff62324f8f8c4f765ddf2c3b",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-650-runtime.png": "97408f25bcf3ac384f81293dd301ea63554f94efde03a1c7f70361d9b91d81cf",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-accounts.png": "91f0c6b8632cc6117796bc3dccf4f6057b38583b5488ec4c0238d686b2871150",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-agent.png": "4749b364655801c86fbe58eb0e8536650c73d37fa3caf9fb5188bd9b9a07c3a3",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-automations.png": "5ce5ab52a990dce6bedeafc86fe042d8dcd60d32f3a225da9e7fb5d62f9d67ce",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-basement.png": "8b021a336228329163e7ad746bfd61858d61fbd854059cf852011abae3ba6324",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-connections.png": "b81e42c1ddf757553fe568eea6092aff672a37628c0b9725337cf9f2c7fffbb6",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-mcp-disconnected.png": "acb492b96375c8f6c7c03e1f3b3d7863e23945838a59d451c93d704fb72921c7",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-mcp.png": "0adeaefbbfd4683bf4bbdcc2086e56e2cc0928fd24812848b7156e877ab86f1d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-models.png": "b98da2c84f1f1c8ffb706e1e4fe6ea7cab148948a0017939051d5d0983ea2aad",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-network.png": "f1224b9ffeee2bc39e46ea762c0dc62d20af7e8cc4b2bd2a479480d1c4aaa917",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-packages.png": "09df80ff553926ff33c8f74d2a6c5097faf70190563a362285098394ca052af0",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-preferences.png": "ffcc72b80e09d9c995db8d349fcbd72d69322482d1878aafd844edbd9f78d96d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-runtime-detail.png": "4d727c538d2320b4cfaead16f7d126329df4310c1e6fe25f8da9c3cfcf9a0f95",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-runtime-empty.png": "c96ef49d5ecff91cd145f9c23f2df3cb6f40c3b57646ca6693007ba2f6ca71e0",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-runtime-error.png": "565b81426670293dd33f5aa338f3dc7e64db94493bf6ef2baec89666ae150a68",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-runtime-list.png": "30f9f7e87e658b8131712ba28d911ac07e5b5f90e68678975fd0e3bb5ba11de5",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-runtime-loading.png": "93fdf68e4f6303606b23f8ea8738c76290b7f4bf49f120b202fee5083271aebe",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-runtime-permission.png": "486c8311da076faf7988ed32a9202ef266c13393e3d2deed192139f8fc17fb30",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/high-contrast-wide-runtime.png": "8bb49f48d6b23716de34eebfd413a3dcba95b086c8b92719ea63a500773c1a65",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-accounts.png": "f28688417f12c797347a5d081f5a3e66f1240da60579d1b33aa00eafa81e90fb",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-agent.png": "279e1f053d202ddbb229b4eb61c4c864c6028497d96f0a832cc24ac43ba71e94",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-automations.png": "79f60625c1fb577ebb492f97e05d98e58dcac6fff81c05bb5b89d003cb745cdc",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-basement.png": "b246d8fdb556ef8751c3bcd96c48acb517aaafa973a5ac8bd96eb4ec02024c9e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-connections.png": "661528c12b446999660a7cb26065a018a27ef65bbfb7b79e1c75c704444130b1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-mcp-disconnected.png": "d0f05b21192f3544a6981f486eeb2782ee5f123dc4d89a8e7c86b3ae399c5369",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-mcp.png": "2dfac58b81ab9b53282667c4724cb65464c253b327ccb9a607a17b49f948eee2",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-models.png": "af89299f287b431137cf09478f47e659406b26fe2c03697524c675011b7eee95",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-network.png": "5acf9d20d0648b16f967511830e417bbc21457efd29cbe0c6d30618539044132",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-packages.png": "050c5f8f46b1faa8a393cb7ea7bc052b474d55b0049c58d6adfb431fe5b816c1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-preferences.png": "41b8aec9c79880ce774d053891c1a8b57378e97d302453d9fccb0fee58482df1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-runtime-detail.png": "a6056495714f6f7d5c58444b237954a2223b22d83a612fc7be9b5b57fe237b43",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-runtime-empty.png": "1e1cd711e2d3410bafe93bbf0594177507f03d0f44791e483019a7d38d164747",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-runtime-error.png": "8736a9a593c36b576bb3bcec0382998199194a37b7aec6d8ee31d27574d65437",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-runtime-list.png": "2e9e9cb79c301d93873607704b4ac7f39d793a3b11df93ad09e1fbe15f0d1e27",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-runtime-loading.png": "88ecc980ef82661787bfe49fe8cf40707a664702b50ccf9837f391ccc60e9fb6",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-runtime-permission.png": "6c5ea0557eced1c9772f884f51b1ddb91fb418bfd343b00667b3b28e76526e8e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-650-runtime.png": "67e31711ccc7a6b0393096a802dd53ab74914c455d591d689284e33824c1be10",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-accounts.png": "9b4c1a59237271ab2e6ae325bcda0739aa9dff5783b1e91722415f0391349d27",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-agent.png": "14c7f7c39e171c4ce57d33ffefa0a8ed17e9329b495835bf3fff4a987974df19",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-automations.png": "b4f34e7ff7b7bfff34fae8638115cee6dd59278474ef0a67566252a03cd76bcd",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-basement.png": "b4620a250098e0de613179e5589e094c544fdf49d6308ec25c4196275c2e6f06",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-connections.png": "4f02bfd54eb328692c08057ce357876530ff18c7a4c786ab87d3f605a3024ba3",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-mcp-disconnected.png": "732de382aaff54cb8b891748534e495ce104c439a2442199b03ca8d543b47b89",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-mcp.png": "cc89a33684e97425eb1ea64ddae777a30ba2ae10acffe7797dc44dd0a29d022c",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-models.png": "d7f37037373e00d34bc768d1410501bb5a82908a221741fb93ab04037afdf7ae",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-network.png": "2cbe695e8201b29f1c88314be735683b8c86ac6684121090d914950306e09ff0",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-packages.png": "63ccf9bcc0c2623a1b64e83256c0793a103c6bdb21eadcd90e480b0075af7fe0",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-preferences.png": "191d084822d39b31defb7fd7a29d421a71ed3204548f6e39b082403489869430",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-runtime-detail.png": "090c0e86a5acc673a3ae09b78520e0c57ea7062c008ff0e89c1ebcd0df77f4f7",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-runtime-empty.png": "4867e2e2ccd8f73506a410b9d4f48b5233c5de5a480a28df2a213437e81f9503",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-runtime-error.png": "22dbf13377f52029853042ddeac6a2e80ee490717f53664ca835f1d262f6c554",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-runtime-list.png": "fafd34dd0b650f6621b81d1411f792c770e36a1e4b4be58843f95902024b467e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-runtime-loading.png": "4bead180d469713dd097ef88d6b65eeb738be335de4638b912bf5b2355b93bc7",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-runtime-permission.png": "a405073d342a309200f206d754a36041b174e607efe8d12eaa1a4b7c01b8e6aa",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-narrow-runtime.png": "a7f1fd96a72de3c43afd9b600fec565cb0c5e9ed49355df6831a27a8e0d2f0aa",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-accounts.png": "89c795a7396d127549df581b72f35f469550e9a237e9558cb6157a8c311f798e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-agent.png": "a97724e005c1d44d832a6d12e0b45b70e160a894404f9187d3665d5748bdef7a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-automations.png": "856f1d2104945a82a9caf0f41856b1b328003f4a1315bf8a478d433130f855b7",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-basement.png": "e031c53c563f2ebcb632a47c92e9c61a92bbae1700eb34c5e133149e9f36ba49",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-connections.png": "044b370bdd8dc2091568baf300e65a8e7684d98ac9242ba160fc4bf5a5c392c4",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-mcp-disconnected.png": "11f269eb52072a57ed1be39740403b71139126c9ef0abbb190adf51bf37313c1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-mcp.png": "c00b3b58f4df201069f022240215068474183589a2c564aaa99f8d5a24329446",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-models.png": "2fd4bda7d90865f93e950920607f9c7ef11d43452789d428d873ba06699d0daa",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-network.png": "9ba3769805f5454f675f362b7d949c5c4b3e30504e8d5e97f04c8a8463eee49d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-packages.png": "5e5116a439a03c303a3eb1046041d31e0db88d0527a4b32372ef5125e4a9318e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-preferences.png": "cd7690174ce8e0e1675c4cd3364f175477f8e46c407ef34888d14c61b698c687",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-runtime-detail.png": "8af51dba0f703795fa1c82b1b5bbd5312bd5b7e815bd08a14bc31e45e80dc88a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-runtime-empty.png": "7854a2b81b4b2ed170c45f1f169e42ea1d8ffd5ad50c32f9a826244c660cad54",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-runtime-error.png": "5b4de7207cbcb269abd8fe8eac69dab4eb8a118e2601d8fffebd382507d05eae",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-runtime-list.png": "078e1771cdf56e5affe69f47e44fd9260c9be2c084b45e5c3bf5545ccb86b64a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-runtime-loading.png": "d45fe448fdb810a44f295978391ea9f28e8c404ad32161aaad883fb35b8428d6",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-runtime-permission.png": "894c2f507fc4d744dcee02a478773eff171969ac8475dbea18d8c1238f60576c",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-650-runtime.png": "665d5eda178f04c89fcc496e0e82690de35b4e79345170c895d47a85eef40efe",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-accounts.png": "17ef1a15d32a4421df50bb3953f436a7946690da8af39d0a360f1b01ae8140bd",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-agent.png": "31f3e6866dd03a2d5d462fc23cff98a9e3a58e6a2c5c0a35c993ad6911150fec",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-automations.png": "3be416113fbb9fda1b376b3f84c0fb952d7b9c5258684df9c699224fcc0a64f0",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-basement.png": "4385ee014cb0f8b6b7df325a9e7c8f34a58bd6ec5bb9b99635edb240f5b0fd24",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-connections.png": "d46e62079c4a06b1a0864b19cb41cdbe5a03cd00c6ae3e417490fc6668b2a3e8",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-mcp-disconnected.png": "47ca488798952cd709a225e3bc5188dcb80d9066b5af2f523d303e34f5b8bc2d",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-mcp.png": "30b76a3ea3a6c65270de9a6756df67af09f32ba53b20ded889ebb6c5364490e2",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-models.png": "bd4f04ffdf9a01119f84d505048caad9107e1413b9ea3f7366a4123fbcc357fb",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-network.png": "463548fea0cbc29229aeb7bda2c2f660c25f6d36640e342e5b831ccc5bfee466",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-packages.png": "23b41d64974e97998f39e636cb5e8e5bf70d06ec944cfb6ce8c6a1998167ca00",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-preferences.png": "8bd895657881b67dd21cc11745d5b4627f0aaf46859d52e81c3a9726f3d22037",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-runtime-detail.png": "b1fe396325299b82b41dd002f694f3f1e422e0c9681ffdff699e0290cad68038",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-runtime-empty.png": "20209909912b82f5d44c98fa242eb6eec71bb3d050bd977e4ccb7e0ca6deb2d1",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-runtime-error.png": "b7fb566390b35dc3ad86f5e430a05b6a45cdf556fd74f1093933410be879db1e",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-runtime-list.png": "aad516c6bf61479c076203c4b47ec9b53c8bebaa7ee3b9f84b837be1f58309ee",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-runtime-loading.png": "438cd84d011958bd1ae359c6e2c2c1717b44ad1f038910875c34e94921c11a8a",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-runtime-permission.png": "257f5752bca15ef135320ec4b3ec0e5bb88b49c2008874344d388dc139e2b066",
+    "apps/rndr-home/docs/desktop-correction-evidence/renders/light-wide-runtime.png": "19e7f33fa6fc2e526473e64cc49008543b5374dbaaebcb484f51b83ae3f0314f",
+    "apps/rndr-home/docs/desktop-correction-evidence/reproduce.sh": "0689c2bee6b6ce1c6a72991bd41164ce592780268c8efd0a97d8d259d66fa964",
+    "apps/rndr-home/docs/desktop-correction-evidence/results.tsv": "4847ea32a5451bf09f8ae9c57194dc121a814a2851f90c18e0f07ae30e806a55",
+    "apps/rndr-home/docs/desktop-correction-evidence/seal-evidence.py": "17c2c7c9cf0c3f8c5d1923ae291419fe981aa744247bc033dc4684380ccf437b",
+    "apps/rndr-home/docs/desktop-correction-evidence/test-default.command.txt": "b736c241e0ccb88e80e15ef7f22839fe38e6fa9202e56d2cfa30335d191736a2",
+    "apps/rndr-home/docs/desktop-correction-evidence/test-default.log": "205470cb9c9b5018f1990405abc5d0983ec51c3864fee90c3aed473360dc802c",
+    "apps/rndr-home/docs/desktop-correction-evidence/test-observe.command.txt": "e66ef7f742745c6d419886f91ac799ee9a8d797a242e4949ed71bf7012ad138b",
+    "apps/rndr-home/docs/desktop-correction-evidence/test-observe.log": "8d4aabfd0ed51b32c7cc5e24f2fbae05edfc3428e68d7ab21beb959a8c3bfb8f",
+    "apps/rndr-home/docs/desktop-correction-evidence/verification-config.txt": "c6eb8ce96c3ceeed618f0d0d2d0b7d03a0ec32905a4811758c32fb85879b6c3c",
+    "apps/rndr-home/docs/desktop-correction-evidence/visual-inspection.md": "439a95285eb635853d9ba98cb2c3e4fc0eed3c4149dad1a7ee1a304d7f4e9c12",
+    "apps/rndr-home/docs/desktop-correction-evidence/whitespace.exit": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+    "apps/rndr-home/docs/desktop-correction-evidence/whitespace.txt": "1b6b49c68cd774815bd47c6222178f12c584b4d8d0faa12f3ffa04a730cf42b0"
+  },
+  "final_counts": {
+    "default_app": 71,
+    "default_library": 6,
+    "focused": 9,
+    "observe_app": 79,
+    "observe_library": 6
+  },
+  "final_gates": {
+    "build-default": "0",
+    "build-observe": "0",
+    "clippy-default": "0",
+    "clippy-observe": "0",
+    "docs-strict": "0",
+    "fmt": "0",
+    "render": "0",
+    "test-default": "0",
+    "test-observe": "0"
+  },
+  "independently_reviewed_source": "97e0c223bf1d1016b2e8b440e7e924fd9716ce7c",
+  "prior_documents_sha256": {
+    "apps/rndr-home/docs/DESKTOP_IMPLEMENTATION.md": "12604f6634424d1a27c4f3c97c8b7c4735026e83b110747f137e35b764261f09",
+    "apps/rndr-home/docs/INDEPENDENT_REVIEW_0_6_0.md": "ef768dc424ff4b63127a05efbd68d4ec2bc8287a43b27d0b8c9ce71fc7b8f725",
+    "apps/rndr-home/docs/INTERACTION_PARITY.md": "b3c25be5a19b141e8d725c4c5fb0c52de1a88585d4b72ea0bea9a4cd25b85435",
+    "apps/rndr-home/docs/PREPARATION_CLOSURE.md": "87532426351e25712e61ea2849fb5ee3cfb8365db53eb40bfc6de656033f749e",
+    "apps/rndr-home/docs/QUALIFICATION_0_6_0.md": "0ca5a6f08a20d1b799dae5822b4be6516a226d95f8d6c6056c964aee1355f5f7",
+    "apps/rndr-home/docs/REVIEW_BRIEF_CORRECTNESS.md": "6b406a1f6bca8edd587c273f268dd334b74e3151dbe7db180a01de3597b0f044",
+    "apps/rndr-home/docs/REVIEW_BRIEF_DESKTOP_UX.md": "7d22177cd6947b85b69938975fa5111e2c83f2d03a6830e81a9463ab9995dc6a",
+    "apps/rndr-home/docs/SPLIT_VERIFICATION.md": "b710b64542c390b8b18f4fcdc0df0e4fd771d42e50d9be28148ce318a38bb1d8",
+    "apps/rndr-home/docs/TEAM_PREPARATION.md": "41ca56819fec1b111f483bcfca52f4f8aad4a44bfed0c2a9b8247e6285d1e8d1",
+    "apps/rndr-home/docs/VERIFICATION.md": "268578ba514aeca59529f5eadeec8a67a43629d7732a697ca0760ae118c43f1a",
+    "apps/rndr-home/docs/closure-evidence/CHANGED_FILES.txt": "aa282bc522c02627ffaf667b9c0dbb4ee1f4316dc34498c5b42fcf530efb1ac0",
+    "apps/rndr-home/docs/closure-evidence/REVIEW_SHA256SUMS": "0087cb138732b092251c57bf715e697c8ccb058ed75b4f6aa2a793f8b0d48d4d",
+    "apps/rndr-home/docs/closure-evidence/docs-gate-reconciliation/RECONCILIATION.md": "192eee1cb9040da47cfb3a267fa70b4d94efdae1c73f6a108d2a92503ea62c5c",
+    "apps/rndr-home/docs/closure-evidence/docs-gate-reconciliation/integrity.json": "edb1646c020ba5d2aa9a6ba574832e17172f929cb2d260030fd3ca64e198034d",
+    "apps/rndr-home/docs/closure-evidence/docs-gate-reconciliation/root-run.json": "7b851af1170e92f64ec91ec5cf65a15c9de416c7c614c2e9e2372db42bd38679",
+    "apps/rndr-home/docs/closure-evidence/docs-gate-reconciliation/root.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/closure-evidence/docs-gate-reconciliation/root.stdout": "4c4813d86353443ea5b5c00c36b49336b103503a94108f203e0507830d90bfdb",
+    "apps/rndr-home/docs/closure-evidence/verification.json": "5ed3527997930e539c2810728d090777bad0943f9958b663683669981a104697",
+    "apps/rndr-home/docs/desktop-evidence/build-default.command.txt": "87b86770db3d47923c4de11995be5ed7d5744b303f403947964d0505b5678855",
+    "apps/rndr-home/docs/desktop-evidence/build-default.log": "04d4d1fa0d3f74ba75ffc7ae3a1cd1ae9c47f2b3722c9a1cd28917a0c44566ee",
+    "apps/rndr-home/docs/desktop-evidence/build-observe.command.txt": "764c58c6d288e2077b2f55a551bb428244b86507654c8c4076e8da0473e98334",
+    "apps/rndr-home/docs/desktop-evidence/build-observe.log": "d1787c5887f19267d86c4c5775d5c47ce06a8ea807f76186d814ed549548fb6d",
+    "apps/rndr-home/docs/desktop-evidence/clippy-default.command.txt": "1f34eac4295440f97f860b35abba7c3d439acbc00b6a7642665268b09890fc8c",
+    "apps/rndr-home/docs/desktop-evidence/clippy-default.log": "e384322adb04c13b6880d11fc4f5562ba3dabc8e6042c4dbd43fe3e1fe9fd288",
+    "apps/rndr-home/docs/desktop-evidence/clippy-observe.command.txt": "4bd58234ea446e1f85f0f0f01b6b7d1c8ca80125c36536a8a9cba60c8fe8c18f",
+    "apps/rndr-home/docs/desktop-evidence/clippy-observe.log": "6b19f312d122988539e79e8caf4bcc927c175d7cf91b68ad0a28fd34d340744a",
+    "apps/rndr-home/docs/desktop-evidence/disk.txt": "64dc37b201596e314e78d3d0c3ca7675c1f645bdcda9d55a8794be0e0f1f6afb",
+    "apps/rndr-home/docs/desktop-evidence/docs-strict.log": "4c4813d86353443ea5b5c00c36b49336b103503a94108f203e0507830d90bfdb",
+    "apps/rndr-home/docs/desktop-evidence/environment.txt": "0d9675424b885814c86056b3360fc4ae7f04f9b1c1f5446068b0cc8e57abdc45",
+    "apps/rndr-home/docs/desktop-evidence/fmt.command.txt": "8ce0c876ff1ca03b8c06659c1a81078e81b2dbc6ddce64501251dc96a48aa0d0",
+    "apps/rndr-home/docs/desktop-evidence/fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/desktop-evidence/render.command.txt": "c53677168cd63f7c807664c0e0ee448aee4069c7d031898ce28e1e625aa438c5",
+    "apps/rndr-home/docs/desktop-evidence/render.log": "1ee409c02eb4308648af3f78b6b352a97df8ade201f477f14bbead6420de9e3d",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-accounts.png": "70c0f025a91b04963a64c01176051e791fd5a00bd178fd9a6bea1c63a4536734",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-agent.png": "598137c87217d45095e949f695e808444ae16e68ab0235d34e643dd73ff8c8a7",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-automations.png": "4379ffa15f3dc3b28c305ede5a4d6c672981f1d4ba4e108d9db714ed9b966550",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-basement.png": "a39dca442a33388798612a1461067af7c93727ca187563604d0fa923bba2e53b",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-connections.png": "ecf0962d4cc5baec47d427e98e3d8b51a0d55ec3ad520a8c2fc89b156e88e759",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-mcp-disconnected.png": "eb3cac5ec23704af37ddbb8c42c84cebaac88c3549575a9b3792c64f3a1298a7",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-mcp.png": "df88d82c99b4e284a6df2bd88960e85c7592d1c3407b77aab2a2b6a9a164c675",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-models.png": "352f08ed14f55975bfe67cf6146d60fb1031379c8fb72d7ca5992a2aeb4ba7f9",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-network.png": "008e0b547b1ec2afd07af1c55ed74cf39db48b048c71f759f38555e02741e53f",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-packages.png": "8a371222b6ac247ada4a7aec40ae1a0a3c2193d78ded9e15d8bbe77e999c5299",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-preferences.png": "1f7e635dc463a39b1a5df27bf13fd25a4eb2582d9b591ce55d05166ef646674d",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-runtime-detail.png": "76f90cb1337dfe248fe9c7f9e65fd54f77486563d1df205ba7faa813dd988a6e",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-runtime-empty.png": "bbe2ae4d6a54d29f03916d6e0a06e0afec79fe70889651590cb91f5f42249dd1",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-runtime-error.png": "30b19e8b97c1c04f67f6f7c0cb417fa0192958bf6020d3f3ad57a428e9337633",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-runtime-list.png": "192200cd724a326bc9add0061671bf28489def35f30e03eb31eea9293f56f3f8",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-runtime-loading.png": "38cae90202f56746b77229821ef6a1c7348a2df35187aa8f8d5d8853215aae54",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-runtime-permission.png": "c68a3f9fcd2a45e6cef42f9f503ea6f383f3c7141a0d2125baaa6b9007126b8d",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-runtime.png": "3d15e923cc3c924885125d4089284266c87b8f9ee298c59c0d37b0981a31bafa",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-accounts.png": "650a00d113f33c72b6ca61b77eae2aece7207d2a0676dbdc04782ded6bad1eea",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-agent.png": "a61ff76cf42d1672f314936017e389f1941430f6d333efde4ff0cad1a3f38240",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-automations.png": "c3bcdb080b06b190eb252507df677947f7d8de34251547b4fb94d69c531c281c",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-basement.png": "fdb706804036435bbc10ea15f804116741f33301a59ebef6839c929e30e3f52c",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-connections.png": "a49a4fd35404df211d59c1afe05267ae9fb6b46982e853badd2045ad54525c6b",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-mcp-disconnected.png": "515fbfea69f0783ddb2ee95e1d095d817cce9b4a387f15da60cce4ff02429095",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-mcp.png": "96e2e70d9069fce39741c65112576f816969a3d7d0778100599fc36a88d0e866",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-models.png": "d37d3981d8fd1b98aadcf4cdd1a1b4ebe0a1fdd45b69065ac7e1077a4c9b0b7a",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-network.png": "555449436c8a8a7f2e53351fd3822fda0b9530e878608ca2f505ddd96c22e668",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-packages.png": "0613a9b56301febd420ed79a8cbbf6c7dc85bee95bf2c48c8e50370d3c2c3d4f",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-preferences.png": "b039f53b361e9dd214980708213409958eb8dd5c0aa957fc7e43854a306cb003",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-runtime-detail.png": "eb37ba11d881cf081b3410f57bbf913f9af5a9d0ded99c0f9a7cc177f928b5c6",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-runtime-empty.png": "f00de069e27c118f662677b4452d1cb7128d901bf1c056d5ccb14e37ec214aca",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-runtime-error.png": "ff537dd947f77a08968d4f793aaaf49e93e7c111721d6b2f295786105883ce3f",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-runtime-list.png": "f530ac0d940221c68230f8d4ab2969953da186f8afa83c1de5c94f861ae224a5",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-runtime-loading.png": "344111ac2a63c42694d234faaf8d627faff5473b2630e48e45504e976f6b2d57",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-runtime-permission.png": "d75faad0f6a1ebe85bf3e8c71ec9e959a64734b1993eebd699f010b688ef0865",
+    "apps/rndr-home/docs/desktop-evidence/renders/dark-wide-runtime.png": "dc722e33fb47142a12cd5df55677234ef610854e73594aa2dd868318ca1a80df",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-accounts.png": "2e7c47fb6bbff949923955d1ff49caabbd924750165a1afe86ee329db1978619",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-agent.png": "0e16d776e1bfbddcdfbf5b7956296267da26dd0c8f1e1126e86647c94fcb4bd9",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-automations.png": "268b401bd2871c289eac336708a272aba2d0db0019fda3cf74c98622e2d1eaff",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-basement.png": "7a6d4db5dbd38927c6925ee926292f666bccdb248ee690dcc702a2f3e7f80868",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-connections.png": "e42c6413b05b64922b7e3fa3c37d9b55b08fc14f4321441f8144a833fcd09f3e",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-mcp-disconnected.png": "c8d0472dd2b3e036fd34b0dafba5929c363981a91f37519e882d0c581427f4d2",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-mcp.png": "70342e31f8833ca13b2a69eee8affc60feb021f6db5ec845b9028488a30f45ce",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-models.png": "2c111791ac460b9111eee4e5573806fb87203dffd491b41878cd240ab3c3d8a4",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-network.png": "a48e43d8ff3d0cd715b75699f7166c29fc04a3520f5b572c59e7eb67e625554e",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-packages.png": "b065b5a5efbe86c770be92aa2ecefc51cc198c15fd76f360aa38430d36f8a03b",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-preferences.png": "53b525bbe934fe0055553dc912e405a244459c3a67bf153b14996a185e40439c",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-runtime-detail.png": "4fa5afec0bc9a04dfa20d925d9224303ca7360ba0ca7f565376db2247ba3dbed",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-runtime-empty.png": "9ffbd69ae8f6bbdc30772d4070cb11d209b94f73fd3703f8b462f27b7200b564",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-runtime-error.png": "13823a4d74849a9f02ce8ff23c9df26592c7decf9e3a237841032e374be0bc0d",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-runtime-list.png": "52733c9df388ae690dfd52423da83c52a30f7c472755dcf0faab5a80227d6eb2",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-runtime-loading.png": "9d6f5e62dce650f27d4ecbb629a2c2fbc1e3fb43ad235a596beb491f6c35b055",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-runtime-permission.png": "d1666841e5a3af21883a332b2566b65b7404c9e89a59451d51af2371079101b6",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-runtime.png": "37c6f8363fb4f279a34f6c1ff4314a31fbbebb077504a3bdf74f3e1d5a6ffb28",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-accounts.png": "91f0c6b8632cc6117796bc3dccf4f6057b38583b5488ec4c0238d686b2871150",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-agent.png": "4749b364655801c86fbe58eb0e8536650c73d37fa3caf9fb5188bd9b9a07c3a3",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-automations.png": "5ce5ab52a990dce6bedeafc86fe042d8dcd60d32f3a225da9e7fb5d62f9d67ce",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-basement.png": "8b021a336228329163e7ad746bfd61858d61fbd854059cf852011abae3ba6324",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-connections.png": "b81e42c1ddf757553fe568eea6092aff672a37628c0b9725337cf9f2c7fffbb6",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-mcp-disconnected.png": "acb492b96375c8f6c7c03e1f3b3d7863e23945838a59d451c93d704fb72921c7",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-mcp.png": "0adeaefbbfd4683bf4bbdcc2086e56e2cc0928fd24812848b7156e877ab86f1d",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-models.png": "b98da2c84f1f1c8ffb706e1e4fe6ea7cab148948a0017939051d5d0983ea2aad",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-network.png": "f1224b9ffeee2bc39e46ea762c0dc62d20af7e8cc4b2bd2a479480d1c4aaa917",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-packages.png": "09df80ff553926ff33c8f74d2a6c5097faf70190563a362285098394ca052af0",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-preferences.png": "ffcc72b80e09d9c995db8d349fcbd72d69322482d1878aafd844edbd9f78d96d",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-runtime-detail.png": "4d727c538d2320b4cfaead16f7d126329df4310c1e6fe25f8da9c3cfcf9a0f95",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-runtime-empty.png": "c96ef49d5ecff91cd145f9c23f2df3cb6f40c3b57646ca6693007ba2f6ca71e0",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-runtime-error.png": "565b81426670293dd33f5aa338f3dc7e64db94493bf6ef2baec89666ae150a68",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-runtime-list.png": "30f9f7e87e658b8131712ba28d911ac07e5b5f90e68678975fd0e3bb5ba11de5",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-runtime-loading.png": "93fdf68e4f6303606b23f8ea8738c76290b7f4bf49f120b202fee5083271aebe",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-runtime-permission.png": "486c8311da076faf7988ed32a9202ef266c13393e3d2deed192139f8fc17fb30",
+    "apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-runtime.png": "8bb49f48d6b23716de34eebfd413a3dcba95b086c8b92719ea63a500773c1a65",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-accounts.png": "52d2204df6e96db03c0e2d2c2944e82ecff8cc58afc5e0ae165d1e0cf3644f6d",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-agent.png": "936288cfd8ffb1f29df252903a65824af6242969cc9d514f0b2aeee49313ca22",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-automations.png": "837bfc340374adafb15c750ca3e81fda1f99111568ad7f2039b427e83a6a2795",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-basement.png": "85a4834fd64277f048f55b8b902a3f8f39fcb1bd457de6dc90cc160f3f6f0f97",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-connections.png": "be288e04bb70fa2c4611246f339afa0ac4e2f4b39b8093ad33069737a04e9211",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-mcp-disconnected.png": "fd1437fffe6de7515a6442a8c710e03b59fc70e0f2d99aa511b903e9a2893e78",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-mcp.png": "4bf07a3be1c5d73f360f0e5c3801b09f9478e574d92ff6f65fc034a8c46f94e0",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-models.png": "3f03ec9b331398c8ee08cdb5ed5dc1987dd043f2000f714d72f69380074ec542",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-network.png": "56223caaa22b0fb8d80f093138309b2764a435cf2570ffe2bf6e25c37bd3ba0d",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-packages.png": "d9eac2b5e8e3976e34e4e0c30570a96a46d2360e1faf85431c0991baf4a7cbdc",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-preferences.png": "a1ea74d8c3e2b0776ee192cdd1178a7767f0e3d469fbb298cb3c25f50682b8f6",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-runtime-detail.png": "a0b3b799c64c705037641e15bc131db2c22acd2ceb0a1e175a779b40b3d3936a",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-runtime-empty.png": "c1bbb0980a76f84b5c79ed982d6a97e822c6a3f51923bb8a4a2cc221d20acc97",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-runtime-error.png": "4d388af763719d5d8122ea0fa154d87789d09db0dd6bafff8b3fd59cc6d31fa2",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-runtime-list.png": "bb906608d24a7925d72141caf3683686fa869c39fa28c531b597477c4bbd02d3",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-runtime-loading.png": "306f6dd8ad4bb222a3fd4a61d8729ed6c153b2cae320a6d0b06ddab9bab69ea8",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-runtime-permission.png": "47c0a71976c66e6b1e1607890ac1d9ed43590b217e86fad2ec1ad03fdb20ff87",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-narrow-runtime.png": "ca57501d88bfa8871b3717329cf252fc1601a624ef5f4ed572bcae81ee3684cf",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-accounts.png": "17ef1a15d32a4421df50bb3953f436a7946690da8af39d0a360f1b01ae8140bd",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-agent.png": "31f3e6866dd03a2d5d462fc23cff98a9e3a58e6a2c5c0a35c993ad6911150fec",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-automations.png": "3be416113fbb9fda1b376b3f84c0fb952d7b9c5258684df9c699224fcc0a64f0",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-basement.png": "4385ee014cb0f8b6b7df325a9e7c8f34a58bd6ec5bb9b99635edb240f5b0fd24",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-connections.png": "d46e62079c4a06b1a0864b19cb41cdbe5a03cd00c6ae3e417490fc6668b2a3e8",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-mcp-disconnected.png": "47ca488798952cd709a225e3bc5188dcb80d9066b5af2f523d303e34f5b8bc2d",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-mcp.png": "30b76a3ea3a6c65270de9a6756df67af09f32ba53b20ded889ebb6c5364490e2",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-models.png": "bd4f04ffdf9a01119f84d505048caad9107e1413b9ea3f7366a4123fbcc357fb",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-network.png": "463548fea0cbc29229aeb7bda2c2f660c25f6d36640e342e5b831ccc5bfee466",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-packages.png": "23b41d64974e97998f39e636cb5e8e5bf70d06ec944cfb6ce8c6a1998167ca00",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-preferences.png": "8bd895657881b67dd21cc11745d5b4627f0aaf46859d52e81c3a9726f3d22037",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-runtime-detail.png": "b1fe396325299b82b41dd002f694f3f1e422e0c9681ffdff699e0290cad68038",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-runtime-empty.png": "20209909912b82f5d44c98fa242eb6eec71bb3d050bd977e4ccb7e0ca6deb2d1",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-runtime-error.png": "b7fb566390b35dc3ad86f5e430a05b6a45cdf556fd74f1093933410be879db1e",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-runtime-list.png": "aad516c6bf61479c076203c4b47ec9b53c8bebaa7ee3b9f84b837be1f58309ee",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-runtime-loading.png": "438cd84d011958bd1ae359c6e2c2c1717b44ad1f038910875c34e94921c11a8a",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-runtime-permission.png": "257f5752bca15ef135320ec4b3ec0e5bb88b49c2008874344d388dc139e2b066",
+    "apps/rndr-home/docs/desktop-evidence/renders/light-wide-runtime.png": "19e7f33fa6fc2e526473e64cc49008543b5374dbaaebcb484f51b83ae3f0314f",
+    "apps/rndr-home/docs/desktop-evidence/reproduce.sh": "90533dc6bc2a782a4b3775b75916839ec5eecd4cba0749766a10f29196098f23",
+    "apps/rndr-home/docs/desktop-evidence/results.tsv": "4847ea32a5451bf09f8ae9c57194dc121a814a2851f90c18e0f07ae30e806a55",
+    "apps/rndr-home/docs/desktop-evidence/seal.json": "5e45ccfcb4c60cb0628249641cf2fb723826c179ff63dc68965673ba42fc09d8",
+    "apps/rndr-home/docs/desktop-evidence/test-default.command.txt": "f6deae894dfcd873a88d3b8f4fd9ddeb677d064c9b49cef3e869fb1c828603c2",
+    "apps/rndr-home/docs/desktop-evidence/test-default.log": "8c4398b23ff7a649aa1693dcd30ee08541d8a728362b1be1d8e87d4428b31fa7",
+    "apps/rndr-home/docs/desktop-evidence/test-observe.command.txt": "18de09fa45f10f0f6a050dc475bb0a4b019cc78eed1c4f2d04871da6b8c466e1",
+    "apps/rndr-home/docs/desktop-evidence/test-observe.log": "463e815369072021844360618f9157e6a636aa4519a34a0851ee2841fa00347f",
+    "apps/rndr-home/docs/desktop-evidence/visual-inspection.md": "41fd9f23edbb4c5de9b01960908d9785a994007723b5a360c8a86b8875dc3c0a",
+    "apps/rndr-home/docs/desktop-evidence/whitespace-check.log": "3f4ced7be0621c4802f5dcb137c21b4ed092e6a73d11450240c92bac8589d955",
+    "apps/rndr-home/docs/desktop-independent-review/REPORT.md": "3500fc85e528f4de56e8e391c67dc2356bde2065b92eb3236675b9c75c18355f",
+    "apps/rndr-home/docs/desktop-independent-review/build-default.command.txt": "a72f6e85d84b872fee7bd337db5e27bf42fbb767b06f13b703c1022651c482df",
+    "apps/rndr-home/docs/desktop-independent-review/build-default.log": "0e68887a1f3c7706a7d1380a636dd004c056f9b7e215c24d6d5238cf6b0997ef",
+    "apps/rndr-home/docs/desktop-independent-review/build-observe.command.txt": "406e87eb91686631a18cfff43bc908262b3aad1175a1c8ae6453218fae761bbc",
+    "apps/rndr-home/docs/desktop-independent-review/build-observe.log": "7e7d135d398a25844cfe2ea2dd703ee9513ed0c6ce47af7ea4117dee53e165c5",
+    "apps/rndr-home/docs/desktop-independent-review/clippy-default.command.txt": "dc6786683ef2d096ea5d5ceea117777566f2fa12db295218aa8543529d57ef22",
+    "apps/rndr-home/docs/desktop-independent-review/clippy-default.log": "d432f53ec70eddbd10ebc7042c6de46b9d226aefef7308eca99aade7888ad50a",
+    "apps/rndr-home/docs/desktop-independent-review/clippy-observe.command.txt": "ed4c044b854d5f8c57b5f9e503e041a83182e4560116a9e80f5b59437a44dfec",
+    "apps/rndr-home/docs/desktop-independent-review/clippy-observe.log": "4c1361cb3aa58edb3a183591a7cb2d38baa490687d6fcce47dc9a426070d67d4",
+    "apps/rndr-home/docs/desktop-independent-review/disk.txt": "b95ce76b43442946e29c6fe49c970806785dcdbe0963ebd0d57d2bba39c026bd",
+    "apps/rndr-home/docs/desktop-independent-review/docs-strict.log": "4c4813d86353443ea5b5c00c36b49336b103503a94108f203e0507830d90bfdb",
+    "apps/rndr-home/docs/desktop-independent-review/environment.txt": "8a1d717f2d083462b6eb3b252179da8c7b23491cfacdb5624897d2a7612d9f8a",
+    "apps/rndr-home/docs/desktop-independent-review/fmt.command.txt": "8ce0c876ff1ca03b8c06659c1a81078e81b2dbc6ddce64501251dc96a48aa0d0",
+    "apps/rndr-home/docs/desktop-independent-review/fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/desktop-independent-review/independent-regressions.log": "fc5ef275019fd2f5530962561a6c4ae1e2619bf6d28bb36b39dc5b6c17ddd3a2",
+    "apps/rndr-home/docs/desktop-independent-review/integrity.json": "631f3f57ad3dd8329e757000f77c02ed3ff623f717446c02e51bc01525a675a9",
+    "apps/rndr-home/docs/desktop-independent-review/ocr.swift": "72fa7bdc3426f71e763c0dab9cfa743fc17df8a4fe0e9738be7060603dd430a1",
+    "apps/rndr-home/docs/desktop-independent-review/pixel-ocr.txt": "c09a996f36f10d991e2a3294993c2580fed3940c86780fd01a0df6bb69664a08",
+    "apps/rndr-home/docs/desktop-independent-review/regression-module.rs": "09d0aae52e12905dd1f9d9a7bd81ec378db2eef1d4de29004a44b0004de4ca7d",
+    "apps/rndr-home/docs/desktop-independent-review/render.command.txt": "b18192cd6383e5c09cb804eff1f8e68d2238b063e057745984ca38d56fe362a2",
+    "apps/rndr-home/docs/desktop-independent-review/render.log": "67e490784f4e5f5db2a35fad010043afd0620db000efc83fcf3f3ad2693a709e",
+    "apps/rndr-home/docs/desktop-independent-review/reproduce-regressions.py": "f6b91c57a3a80123eae2a09f4e8a6a2df19f9fad0054f6dce75df3728bccbd8f",
+    "apps/rndr-home/docs/desktop-independent-review/results.tsv": "4847ea32a5451bf09f8ae9c57194dc121a814a2851f90c18e0f07ae30e806a55",
+    "apps/rndr-home/docs/desktop-independent-review/review-docs.log": "4c4813d86353443ea5b5c00c36b49336b103503a94108f203e0507830d90bfdb",
+    "apps/rndr-home/docs/desktop-independent-review/review-evidence-hashes.json": "030e657df4c2dda647e5a02aa29ca85dbb16b717c2f9336274412fd914503573",
+    "apps/rndr-home/docs/desktop-independent-review/saved-script-reproduction.log": "8964f8b128e2dfcd9bd47925c1230908fb50dff9cb02cdd895c8749b19b7d678",
+    "apps/rndr-home/docs/desktop-independent-review/test-default.command.txt": "296487d6fc07ee9371ae3b7d124906a9b120eedf4e38d4c257b38358e21c682b",
+    "apps/rndr-home/docs/desktop-independent-review/test-default.log": "0057815f4b1fa3d827ac3e107a00b978597445f5a0aacfedde2bdfd47b1b4902",
+    "apps/rndr-home/docs/desktop-independent-review/test-observe.command.txt": "cc8d62ed9087a418b6c8369a17bda9928b02b75f0ebbfe8733b93ad6c400c66e",
+    "apps/rndr-home/docs/desktop-independent-review/test-observe.log": "a5a80688bfcd62c36ad25e926d8da8f45ed92eee2c53b0739c27e63fa208f147",
+    "apps/rndr-home/docs/history-increment/REPORT.md": "cfdba42bb0b74d0acb933481e4789a29d5d44d93671e0ce3f57c7e8088ac9d77",
+    "apps/rndr-home/docs/history-increment/SHA256SUMS": "8b678c657c0cf28ed8add25ad16eab7e262172a811e623e824b0ace01754e3b9",
+    "apps/rndr-home/docs/history-increment/audit.py": "e85d5749c679b08e0436dbce0cdd46659b759cee2eecb980f7ba82f3f8ba1446",
+    "apps/rndr-home/docs/history-increment/build-20261113T153613510907Z.log": "eca20ef2b6726a54e6dfbef8fe0f6106fd57eecb9abda3899a4a1118f72cc81f",
+    "apps/rndr-home/docs/history-increment/build-20261113T153848807279Z.log": "30dbe36fbd5753fd7aa7e205df0bfecff15d2f82e494252b017033c198f6a538",
+    "apps/rndr-home/docs/history-increment/build-observe-20261113T153615120853Z.log": "798d6c69728eed3a40e3723a25b6859cb0059514db2f8dcc91e5f8353b9b7b9e",
+    "apps/rndr-home/docs/history-increment/build-observe-20261113T153849130850Z.log": "8d3e981fe96ef80593085ad38ee83efae0732465bfb6b81c9de8e8baf2c11a41",
+    "apps/rndr-home/docs/history-increment/clippy-20261113T153453210568Z.log": "52ddad040b13658d1375b8b29e4ba805cb9172d65ea99fff9103c68f8ed678e7",
+    "apps/rndr-home/docs/history-increment/clippy-20261113T153612435484Z.log": "8cb14bc4fcf40791488957fe3d99bdd7696739766c1bc019b1ea1d74b12ef922",
+    "apps/rndr-home/docs/history-increment/clippy-20261113T153848499493Z.log": "ee323d2d9751be117b1ded683d4d8371d3316d9d37fc549912088fb8aa311666",
+    "apps/rndr-home/docs/history-increment/dark/appearance.png": "7b49fe8e485496c693c9da209b47712153c8eb02cd8d42b2590238b1f7d83191",
+    "apps/rndr-home/docs/history-increment/dark/behavior.png": "0c2b47281fb6ba4c91368b24039112c78c01af93344ebee6c086d94b89fdb012",
+    "apps/rndr-home/docs/history-increment/dark/chat.png": "cd4ed2a2b836eeb4af047f29a02db86ea1dd0f8911a033cede7a5de8bd19dee0",
+    "apps/rndr-home/docs/history-increment/dark/depth.png": "0a42801522e51a96b3be490b9ec6454697b84cac5c03491b4448d48d1fd87fa3",
+    "apps/rndr-home/docs/history-increment/dark/draft.png": "aceecf931ab3db3f8cdb24686b14b819fa295fac43fe481533a265a09d20b0fd",
+    "apps/rndr-home/docs/history-increment/dark/empty.png": "a83333ac1b2948f6f86d9e20177e6e0c67dcc795faf4e9c6954b3f4dd2c5115e",
+    "apps/rndr-home/docs/history-increment/dark/history-away-narrow.png": "c8a68b8311fb06bbe9f8099374505bed4fb6d8e6923e9cf4e59fa7e3d5011d04",
+    "apps/rndr-home/docs/history-increment/dark/history-away.png": "786589a4eb0bd42b46a607f691d363b478c265cfa2d91f67b92560c294ad9f81",
+    "apps/rndr-home/docs/history-increment/dark/history-latest.png": "bc07f3133c1bf4280e570bf022c0e18038fd29f423dbc3be405d36d685340383",
+    "apps/rndr-home/docs/history-increment/dark/models.png": "b8dc0d391ff1a2994f0a9e39c0166648c68335da7d8dedf11261a645d3f9f635",
+    "apps/rndr-home/docs/history-increment/dark/narrow.png": "b83cbb4fac34a846e2063bc03fd7c928ecd651239e84f34f08da78a1717ac54a",
+    "apps/rndr-home/docs/history-increment/dark/runtime.png": "f1804d5d1c342a43ca2bd3d54f4a0287c772b4ebcff00f4025fae0cdccdc4c9e",
+    "apps/rndr-home/docs/history-increment/default-20261113T152259564131Z.log": "2fd800c03b54a6b31065304ec029e38e46d62f1932c4f405a9fb8aa865ea79d3",
+    "apps/rndr-home/docs/history-increment/default-20261113T152358823541Z.log": "efb40bf5bb11d697b3f1f706da0852f948a6e6014b39a0e2d6a11f12723f5519",
+    "apps/rndr-home/docs/history-increment/default-20261113T152530502810Z.log": "46f7fbc7384717a65d8697c3721be538477b31be6ac69f6332e06d818a9ae62f",
+    "apps/rndr-home/docs/history-increment/default-20261113T152639481025Z.log": "d37b87fb7c4d1bcec89c9104aac20b5cc8fb494844bf287e5e320c2513b3a956",
+    "apps/rndr-home/docs/history-increment/default-20261113T152749806563Z.log": "4e563de11f2514048222ea4fd14c7f9bfc18bf2ae736734bc79df75fc5c14b98",
+    "apps/rndr-home/docs/history-increment/default-20261113T152849413123Z.log": "e96e2f51f9900a5beaaa8b9cffd63854763dfc4ba39d52ae07eceea3945d275e",
+    "apps/rndr-home/docs/history-increment/default-20261113T152948924323Z.log": "bb70c24d82e2b8a0d98a225f547b18795271dfb2b75d77e645ae2813fb8da17f",
+    "apps/rndr-home/docs/history-increment/default-20261113T153122321866Z.log": "3b98a2e236ca9e93b92c7cb1f9b616eff8025ee4cc7f30ac68a4cbbe8c451ce8",
+    "apps/rndr-home/docs/history-increment/default-20261113T153327359776Z.log": "73a48dce1bf30eeeacb2e1cab3354dc6e52893035752e07f180b434c9a7d3726",
+    "apps/rndr-home/docs/history-increment/default-20261113T153434640735Z.log": "99b667310dbbb814737740c4006154cb1aa696aa99068e2b1018edf6c7450f14",
+    "apps/rndr-home/docs/history-increment/default-20261113T153554073815Z.log": "777a5a25882b4763a9c68f0863243853324bbcca325a9148cc649be531363fe1",
+    "apps/rndr-home/docs/history-increment/default-20261113T153834028242Z.log": "b832b9fd9239a90c694e671954c994b0daf76f5757c1108960fe190d3cdd22e2",
+    "apps/rndr-home/docs/history-increment/diff-20261113T153858886810Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/export-contrast-20261113T153656333774Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/export-contrast-20261113T153856000929Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/export-dark-20261113T153649801933Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/export-dark-20261113T153849449180Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/export-light-20261113T153653451408Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/export-light-20261113T153853140934Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/fmt-20261113T153553749650Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/fmt-20261113T153833711265Z.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/history-increment/high-contrast/appearance.png": "8544914eec40f0805374735c8d11d93d46dd0760f3ec812d3e89092d473580ce",
+    "apps/rndr-home/docs/history-increment/high-contrast/behavior.png": "c4cb24920ee1af341bd9ed08cb7ace0238c6a525bb6583d3ea87abfb39b93e4a",
+    "apps/rndr-home/docs/history-increment/high-contrast/chat.png": "26bb2b7e61868b9e724fa9b361022ba999a7429b817c3e60eed259b45f6d1aa2",
+    "apps/rndr-home/docs/history-increment/high-contrast/depth.png": "f9a36612450a69e923af2a2127696e87b750bb80e449f6b38922198689ef161f",
+    "apps/rndr-home/docs/history-increment/high-contrast/draft.png": "2bcf988ca64a7f7605cdaff944623e8e8e062b67df57f736bef6ae6d330cce78",
+    "apps/rndr-home/docs/history-increment/high-contrast/empty.png": "a494e1eea6bd22222855d796c0cde6f35caf596906a32385ad620d631caea30f",
+    "apps/rndr-home/docs/history-increment/high-contrast/history-away-narrow.png": "aa54b30de8fb6dee8395dd26ef0e71a3f95c1df610236ed6b1dca9082faa7b03",
+    "apps/rndr-home/docs/history-increment/high-contrast/history-away.png": "be2d509d121a18321a03208dd15e13902f0ab688f7753f691ec75fb2f21004ca",
+    "apps/rndr-home/docs/history-increment/high-contrast/history-latest.png": "04ec6bde14c6e7e8b110400372ccf5de7ee310a70334b00b19b6c898399b9b48",
+    "apps/rndr-home/docs/history-increment/high-contrast/models.png": "85b7aab8c79dc9160999dad560b3ce647388a3b4866a8117c7e131f77c78a23b",
+    "apps/rndr-home/docs/history-increment/high-contrast/narrow.png": "5da319ad7bd9760675523ae99598c81fe288736227ba430b078c37e029f94631",
+    "apps/rndr-home/docs/history-increment/high-contrast/runtime.png": "7cf198577a429f301184703fabe586ade5ff8728b56d4fa77d33a5a5756cea83",
+    "apps/rndr-home/docs/history-increment/implementation.patch": "44124e9e86ca05ea3796adb8eaa8d722332f2a3ea2a722cab61ea2e6cdeef83f",
+    "apps/rndr-home/docs/history-increment/light/appearance.png": "dfa61030b7ab8bafc1769752fbfc3eec490eba5978ec49cb8e465f337e6dc56c",
+    "apps/rndr-home/docs/history-increment/light/behavior.png": "2706ec6b94724afa6f02890db8100c592ed7fd5343da79d78395ae2a6f0fa5e5",
+    "apps/rndr-home/docs/history-increment/light/chat.png": "a167e81ba67eabae7c79181c89cdc9b89113f0a42dd0a9823783e14d5f5dc6df",
+    "apps/rndr-home/docs/history-increment/light/depth.png": "57cec327253d4aa72baedaabecebdf97125cb0bfa503d9e2d8eafb472f83ff0f",
+    "apps/rndr-home/docs/history-increment/light/draft.png": "9ffa8512fb82c12773e9f4a4d61d2eb5802fc13d7be79d39697b0c3cb645675d",
+    "apps/rndr-home/docs/history-increment/light/empty.png": "944556b46308712ed05541d0591b9029b04abf774b074db8cd3c07396d13586a",
+    "apps/rndr-home/docs/history-increment/light/history-away-narrow.png": "6d447fdad4687bcd56d5175119bcc165e91b48b250aa6e17f0a7f81aed54461f",
+    "apps/rndr-home/docs/history-increment/light/history-away.png": "3aa9c2e771d388aa7872a0d87a35dbb2ebf94048ba6b3d851fb4358dc0398b3a",
+    "apps/rndr-home/docs/history-increment/light/history-latest.png": "2aeaa53255000d2e6628c832fdc350f0b23d40ac1d7e6e1721ac72c441f372e5",
+    "apps/rndr-home/docs/history-increment/light/models.png": "62ac8c6ab85de4f3ae62008df18d9cd80f270b86533f6cad6cd6805db099974b",
+    "apps/rndr-home/docs/history-increment/light/narrow.png": "b95b6ef30094d11a5fce89e8d55f4ec60eea66f509658e06bfa9f03f7ce191f2",
+    "apps/rndr-home/docs/history-increment/light/runtime.png": "3957812ab8520e83419ae2c4203f2531d5132922942331cb58be1107d4a3ee37",
+    "apps/rndr-home/docs/history-increment/observe-20261113T153443942610Z.log": "1dc81f85c6672c7595030c7ec423703f4a08fd5a14fb389fcdabe00c19f1ca8f",
+    "apps/rndr-home/docs/history-increment/observe-20261113T153603412392Z.log": "6970e02167e171bad9009f48f6ec59c5e4a63aa47f9dd2a37030c9bd64c85e2f",
+    "apps/rndr-home/docs/history-increment/observe-20261113T153841278695Z.log": "16d98b43e854adb845de7a39bea0519a736e4fb4f16544209130fa289c1709c4",
+    "apps/rndr-home/docs/history-increment/preservation.json": "0681cf12938d807788adb02b40d8c346a53a60cc0aaa8b321218b2c3bc715cb2",
+    "apps/rndr-home/docs/history-increment/run_checks.py": "648217b693a66cc98c2a88cefd77a120f27e9e89203c5b94d0dbb52d1a95bff3",
+    "apps/rndr-home/docs/history-increment/runs.jsonl": "e74e37dbc15ccf806955b031e2f70452c9bd90ce5085701f63d65dba2240b2b3",
+    "apps/rndr-home/docs/p1-a-contract/CONTRACT.md": "430b7111a8f02a7a0455e2bb9e34d332bc637a98e9727319c534e54210a34d29",
+    "apps/rndr-home/docs/qualification-44f5dc7c/SHA256SUMS": "73cff92eb2ddfe76f194bcb965dd37eaf9e8f81f030df1d1e065873212e57996",
+    "apps/rndr-home/docs/qualification-44f5dc7c/SOURCE_SHA256.txt": "23aba943e20ce399bc30e96aba9c97a2c96bacfe579ea967bd3352004579c1a8",
+    "apps/rndr-home/docs/qualification-44f5dc7c/artifacts.json": "7b8906925a9cb133c0da48a0249f003c336bc7a1905e3864ac283aed53f0d520",
+    "apps/rndr-home/docs/qualification-44f5dc7c/build-default.log": "1a194e9c1ea3ad3bdba2a281704fe42497ddbb51b5ac998cfb4f4809b9175d32",
+    "apps/rndr-home/docs/qualification-44f5dc7c/build-observe.log": "f60102242ca08cbba6f9a5fc1d676ac4caaa33b6d987a5f6dc0e24b4cf42ca10",
+    "apps/rndr-home/docs/qualification-44f5dc7c/clippy-default.log": "da5d2df891e061cbcee3a83db626ecbb9ebeaedc4edf879f1bcb9fb4dac715d3",
+    "apps/rndr-home/docs/qualification-44f5dc7c/clippy-observe.log": "f1f8c4d69e55d038ad0cdefd7716423f173df44dc9bd4a77165e95e3a21540b2",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/appearance.png": "8a62170ae74e960eb838f710827dcfebf4952be453676538bc9d6ac66300e75b",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/behavior.png": "2fad49219d5b505a71cac86b67eeb290a482bc47a5f8994c2146c738fa604a15",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/chat.png": "12ae7138ab37831a12a357059acb385f7ff5614524a8ccc8685f15a71a283e67",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/depth.png": "2feb5756a41aa8b434c0ebb9cc55e61dbb5d4b04fa6354a3eccf495b1aa2afe1",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/draft.png": "87ba37152f655a62d764e5be5ef689b8886fb7819caa10d1e7b363e0745220b1",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/empty.png": "3dcf579ffbd0b3243b86a0f629c87ab1a335ba5423bf4e0d522176603a46958e",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/models.png": "861463504c2f004aea02798ecb1f27ea0a72b8032b0b775556caa14811b67086",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/narrow.png": "45dfc76f050a75926c0ff4a043125bafeb412739932d6e2287296c37e1f4569a",
+    "apps/rndr-home/docs/qualification-44f5dc7c/dark/runtime.png": "a75068a7bf3bf31d949a340a2275f3dbfbc09c7fe4a483a2c0cb9bbfd3cd5ad5",
+    "apps/rndr-home/docs/qualification-44f5dc7c/default-baseline.log": "937e7cf09380aaac2918c9ff5b9b512808fc5b0fa9149531b58ac0922ecfdae4",
+    "apps/rndr-home/docs/qualification-44f5dc7c/default.log": "d620d48f334eb8f7b577d7d2651a345b8488ae0da0ce236cf7142c3126567da2",
+    "apps/rndr-home/docs/qualification-44f5dc7c/diff.log": "d9ef3d1695645413cdc098707c0b447cc19275eb61556bf9d84a09633cf075a6",
+    "apps/rndr-home/docs/qualification-44f5dc7c/docs.log": "4e8124bfb74acc0e04b246835c1ff40ca8977f37d2c976073622189a2c3127b1",
+    "apps/rndr-home/docs/qualification-44f5dc7c/environment.json": "59b3b72a95458ec46e06a2dce31f33bee2120a769bd68d166689fef070480274",
+    "apps/rndr-home/docs/qualification-44f5dc7c/export-dark.log": "94d927ae4fe440ef8b0741f051679f4ea6c4b38c1cc826f1c61b89df6fdd07fc",
+    "apps/rndr-home/docs/qualification-44f5dc7c/export-high-contrast.log": "6eb40262953e54f5e05abb5756c2e165fe9f8f0a693cd44fbfbc4ba9ac22ec64",
+    "apps/rndr-home/docs/qualification-44f5dc7c/export-light.log": "b5299030d9ef59fbef6db23b1b68683df5b4ee070e5cd50b4516ee2fb27eb69b",
+    "apps/rndr-home/docs/qualification-44f5dc7c/final-audit.log": "bc3c0b3b60cf903ac6f180c10851261321f5021bb9e65d0fe672e94214fea49d",
+    "apps/rndr-home/docs/qualification-44f5dc7c/fmt.log": "a776add3c14662349179cfa8b99be9377d26a6495e444735de4ab73d30dae8fe",
+    "apps/rndr-home/docs/qualification-44f5dc7c/focused-initial.log": "a9af7de7afe35d43b5fc32fc9e75063f56a1d3815518c84d2bc6d6e0e6ee96cc",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/appearance.png": "203e902220153fa5fff2e975b96a848e8d5eaf989bf40de9eed4a4686fb5e686",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/behavior.png": "d9d1543903f1226d74a95ab181c2bbd9ceb8195b6f380e64a84e7f76e9d8bdd8",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/chat.png": "150e51f4dfb1b1ef8efda8f3210e45fbe6ce35bf294e130cc4af9a0e040abcb9",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/depth.png": "ee56e2dcd5feded88539066cfefe74415164dcf3eaea3fe29efc57f6a270de79",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/draft.png": "5769894e956e83a88e0779a6691b272d3c14c2dffe1aa10964413dd81bc60269",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/empty.png": "4a702657cd5fab88a577a96e4bdad04d782a49521eb93b645a1b056a495978b7",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/models.png": "18d0171cb9a091d46693f98b4a60a7d67f4bccbd4f037651501f86aa9a6a2cca",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/narrow.png": "b411f2b7ec333fe67d19158adc8936ec46172e645582009ea8f7225e0edfa994",
+    "apps/rndr-home/docs/qualification-44f5dc7c/high-contrast/runtime.png": "add4cb8976b93b9e186a301a0f1501549f55231abca40c8140f01588239d6913",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/appearance.png": "54f58ba7e769aa06803f5f90601a9fecb52fb5c7e838c4a5ac8ef4ff75667c94",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/behavior.png": "6e6778d715f6b24fa92dfb94f74a8a88dd0a95d77da1d95737df3df5c305de50",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/chat.png": "0de93ef39ce9a8b7bb5827fc5f1abb2b5261b6f7058bebfd534b386fa7fa46b4",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/depth.png": "480c7c3a1e559ef9c1b7fb206253d5fcf7450000ac82f06d1283df78479afd58",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/draft.png": "bd10160b71de7eddf0e9bbed93885205d5575b4d9a39c94f7648ebe83e7258ab",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/empty.png": "db31c0c01b8b3a48fb55bb2bdbb6b7b0a2f901dfcb0b9558ddaee123b77fbac4",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/models.png": "19684aeefaa9b7e8a9b9510f281ff88c8a5a96bd7c19659d0bd76659d2f0edbe",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/narrow.png": "e68f02dd7dba27ddd500903c98fccc928b1a6053f10af4fe6a7b139d13fd2a17",
+    "apps/rndr-home/docs/qualification-44f5dc7c/light/runtime.png": "6bd140b1322862ba57949146248e4b9669f5f192127ac3abc3052fbb8575f741",
+    "apps/rndr-home/docs/qualification-44f5dc7c/lockfile-audit.json": "4c02e56d6abfc6c5b14d81e23b702a7a75306a9c23113b6a93fdf5b953f92b4d",
+    "apps/rndr-home/docs/qualification-44f5dc7c/log-normalization.json": "0f2a59c84b2035cd7dbf324f4dc87dfc09dfe9471ab51935035b45011ea2adb2",
+    "apps/rndr-home/docs/qualification-44f5dc7c/native-empty.json": "e588460291d14db1c090799c649c685c8571617c60f7d89b7b4eaad6a03fa74d",
+    "apps/rndr-home/docs/qualification-44f5dc7c/native-empty.png": "de4e8fa13452191c8757251da42997d9e81cf71e340140b983f5dee3dad07d0c",
+    "apps/rndr-home/docs/qualification-44f5dc7c/native.log": "0a6e1363f31f68bb2d44e5605c675b9f250bcba93480c33ee95121e7aa416114",
+    "apps/rndr-home/docs/qualification-44f5dc7c/observe.log": "30d55628b2ff505c58583c0c0410690b37a8d063b327797cb288bf506d92050d",
+    "apps/rndr-home/docs/qualification-44f5dc7c/run.json": "91549d68d7fa2fc258e84a1a72b6e604d30f4688ed6fe012db5aca2e2d20572e",
+    "apps/rndr-home/docs/qualification-44f5dc7c/run_checks.py": "c4f192ca44e4ddab4252b29b16b9990cc8cae5f636bb94b114b8ecc4d95cfc23",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/REPORT.md": "d04c7ded00300286d981c3eefc383bf34d6f2de498b345acace63d68c293e4b6",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/SHA256SUMS": "b78d134777bc10612a24e1359c47c65934d669bf96e733a3cf5f4d2a727f8bd9",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/SOURCE_SHA256.txt": "02f513bd67e8dc966387b4b7bea74f057fa278220fced7eca3bd7f6b00026f18",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/audit_source.py": "95e736ac3a7c95b8b2d057891e8f5c196b36c300d560e8f588ff6ddbda63407d",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/build-default.log": "53f5cd66af1f874c543251e6701d47940316e223f165736d507fa7a75ffd23a3",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/build-observe.log": "6a87a8632d79481e14227375d64dca839842120d14c325ceb0eec27858deae6e",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/clippy-default.log": "79dd440716efc9ecf9e891c21607aae90f480f99bb79b795f058fd11db77c11e",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/clippy-observe.log": "f0c8cea267b8e0d439cce4d62d9f640fec9a7c38272488b66ce67fcee1e083f4",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/compare.py": "15f3428bd93cecedbdf45677bfe3eb037d90fbdc625a67057dd6bac25399d432",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/comparison.json": "90ffac61742bd2e41d5dc34da453c8a34a5a72b4af501ffe8aee0539e7a5dab3",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/appearance.png": "8a62170ae74e960eb838f710827dcfebf4952be453676538bc9d6ac66300e75b",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/behavior.png": "2fad49219d5b505a71cac86b67eeb290a482bc47a5f8994c2146c738fa604a15",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/chat.png": "12ae7138ab37831a12a357059acb385f7ff5614524a8ccc8685f15a71a283e67",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/depth.png": "2feb5756a41aa8b434c0ebb9cc55e61dbb5d4b04fa6354a3eccf495b1aa2afe1",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/draft.png": "87ba37152f655a62d764e5be5ef689b8886fb7819caa10d1e7b363e0745220b1",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/empty.png": "3dcf579ffbd0b3243b86a0f629c87ab1a335ba5423bf4e0d522176603a46958e",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/models.png": "861463504c2f004aea02798ecb1f27ea0a72b8032b0b775556caa14811b67086",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/narrow.png": "45dfc76f050a75926c0ff4a043125bafeb412739932d6e2287296c37e1f4569a",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/dark/runtime.png": "a75068a7bf3bf31d949a340a2275f3dbfbc09c7fe4a483a2c0cb9bbfd3cd5ad5",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/default.log": "6933f1280fab496d641841599870b5ec6ca2d9591d1a9d7a6aec14160370c16d",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/diff.log": "d9ef3d1695645413cdc098707c0b447cc19275eb61556bf9d84a09633cf075a6",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/docs.log": "4e8124bfb74acc0e04b246835c1ff40ca8977f37d2c976073622189a2c3127b1",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/export-dark.log": "1221ccb76cceda5611e226916ea4c8184605ef163f6bbd30e5133cb1aa5f0156",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/export-high-contrast.log": "e0b8cee4b8fbe6fe8a7845458ab07ca92a472cc8e370d5b2d980faa5566e1485",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/export-light.log": "ad4cc8adb4c4cf316693df6818a47118c55a3a5355ed49e5f6fa707690b9033f",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/final-state.json": "4aa2038e33664dcb2368252c4d8c54325ae7a9cd9d0ea0244b622d868430d8a5",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/fmt.log": "a776add3c14662349179cfa8b99be9377d26a6495e444735de4ab73d30dae8fe",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/appearance.png": "203e902220153fa5fff2e975b96a848e8d5eaf989bf40de9eed4a4686fb5e686",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/behavior.png": "d9d1543903f1226d74a95ab181c2bbd9ceb8195b6f380e64a84e7f76e9d8bdd8",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/chat.png": "150e51f4dfb1b1ef8efda8f3210e45fbe6ce35bf294e130cc4af9a0e040abcb9",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/depth.png": "ee56e2dcd5feded88539066cfefe74415164dcf3eaea3fe29efc57f6a270de79",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/draft.png": "5769894e956e83a88e0779a6691b272d3c14c2dffe1aa10964413dd81bc60269",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/empty.png": "4a702657cd5fab88a577a96e4bdad04d782a49521eb93b645a1b056a495978b7",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/models.png": "18d0171cb9a091d46693f98b4a60a7d67f4bccbd4f037651501f86aa9a6a2cca",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/narrow.png": "b411f2b7ec333fe67d19158adc8936ec46172e645582009ea8f7225e0edfa994",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/high-contrast/runtime.png": "add4cb8976b93b9e186a301a0f1501549f55231abca40c8140f01588239d6913",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/integrity.json": "65f978c6389bf60655182557b28236182f13a0822c91bb5fad1140218fcf114c",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/appearance.png": "54f58ba7e769aa06803f5f90601a9fecb52fb5c7e838c4a5ac8ef4ff75667c94",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/behavior.png": "6e6778d715f6b24fa92dfb94f74a8a88dd0a95d77da1d95737df3df5c305de50",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/chat.png": "0de93ef39ce9a8b7bb5827fc5f1abb2b5261b6f7058bebfd534b386fa7fa46b4",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/depth.png": "480c7c3a1e559ef9c1b7fb206253d5fcf7450000ac82f06d1283df78479afd58",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/draft.png": "bd10160b71de7eddf0e9bbed93885205d5575b4d9a39c94f7648ebe83e7258ab",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/empty.png": "db31c0c01b8b3a48fb55bb2bdbb6b7b0a2f901dfcb0b9558ddaee123b77fbac4",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/models.png": "19684aeefaa9b7e8a9b9510f281ff88c8a5a96bd7c19659d0bd76659d2f0edbe",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/narrow.png": "e68f02dd7dba27ddd500903c98fccc928b1a6053f10af4fe6a7b139d13fd2a17",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/light/runtime.png": "6bd140b1322862ba57949146248e4b9669f5f192127ac3abc3052fbb8575f741",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/native-comparison.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/native-empty.json": "e588460291d14db1c090799c649c685c8571617c60f7d89b7b4eaad6a03fa74d",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/native-empty.png": "de4e8fa13452191c8757251da42997d9e81cf71e340140b983f5dee3dad07d0c",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/native.log": "db9d6da394c129c23fe5a9a9b6f653593457f1a3446c173bd50bbe757a9ef2a6",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/observe.log": "3648131cc418baf52e6fb4df1e834aad89e949fb0eac5aa213af993b38d56df7",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/run.json": "d78961b7e8f1f7c7bde29dd1d0bcd967178a613e121cb43549cd2f65114dad3e",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/run_checks.py": "01bcfc8d13a4a8154e4cdce016ec4147dad6f78b4c9b8fefd15765ab05fea5b1",
+    "apps/rndr-home/docs/review-prep-correctness-20261113-1304/source-body-audit.json": "1d8f67d1f2209d45fb2c6ea0dbdc3612c6bc8f6ffb8abd615247b056108e33a1",
+    "apps/rndr-home/docs/review-prep-ux-20261113-0bdc05e3/REPORT.md": "4ef4fffc33e9ad19d766a47d90010efefeebc41c6a0ef20a92455026a775bdd3",
+    "apps/rndr-home/docs/screenshots/chat.png": "018862ae920e9a21211ecd94baf119129e1fc62bb15ae0b07f4461408c5e8792",
+    "apps/rndr-home/docs/screenshots/empty.png": "45e2526a0256cff88a225b5b259edf4f0e5ae934681d193cd22b6b6a5fcde2ee",
+    "apps/rndr-home/docs/screenshots/narrow.png": "aa6de55b0c79c659b3b96084b765404a4ac9a4ed555716f72dc545299eed9543",
+    "apps/rndr-home/docs/screenshots/native-empty.json": "cdccc81d470afad6c07a92659dc54dfc5c261446bda0b613f10aab46dcb20836",
+    "apps/rndr-home/docs/screenshots/native-empty.png": "efc213391ee471dc8fa9827d4beab52ac71faaca69c49600de043ef4a96e186b",
+    "apps/rndr-home/docs/screenshots/parity/behavior.png": "a231afe7854577476483ea4b9ace43c3493e100aceeb951cbb9f4657d9c47db2",
+    "apps/rndr-home/docs/screenshots/parity/chat.png": "52dcc9c7cea41e228596678bf9b0e70b259326895f1069633e584ca634063440",
+    "apps/rndr-home/docs/screenshots/parity/depth.png": "ba7eed3cc64bba073eaf652c29febb6cf3435a3282a9d2ba3626bd14a7bf694d",
+    "apps/rndr-home/docs/screenshots/parity/draft.png": "5db85132b9ec2a22f320b0df54ab5f0efeef24bc3f2001c30937ac318fe11614",
+    "apps/rndr-home/docs/screenshots/parity/empty.png": "a943365c7de6a1501ff25024cfef853984088d5cdc8613914fb880f7ba32fe0a",
+    "apps/rndr-home/docs/screenshots/parity/models.png": "f2e41c310cbdb2b6556af0c8a69fd1eb6309728ffbc48385812b264128fbd144",
+    "apps/rndr-home/docs/screenshots/parity/narrow.png": "f6bb151943d86e355dbc37febe3bbf3fcb15ba33305e624d211783ecf733a426",
+    "apps/rndr-home/docs/screenshots/parity/native-empty.json": "2a62ffc5a1635b8092bd3e3ac58f7155ede80ab77af6552852a672cd6e1e31b0",
+    "apps/rndr-home/docs/screenshots/parity/native-empty.png": "576dbe22a4b0a3826a74c099b26b1f6134be902b59e7d316261ec8719d80dee1",
+    "apps/rndr-home/docs/screenshots/parity/runtime.png": "3723bd5ecc352f1851753dad2afa8ff62bb56b65f5067c6732114c31bc0c56dc",
+    "apps/rndr-home/docs/split-evidence/SHA256SUMS": "f73347489539fe950fb8a08f5363954855dcf7e532812c79f5858bd245af6f0a",
+    "apps/rndr-home/docs/split-evidence/after/SOURCE_SHA256.txt": "b1587da7cc27cc645ab9db71108dfbb9dd96ca85cfb1ff4d622f01387a448606",
+    "apps/rndr-home/docs/split-evidence/after/build-default.log": "2ac085f171dd7cdb0888a60335eeb06909b7313caa21280b64302317ce9f7854",
+    "apps/rndr-home/docs/split-evidence/after/build-observe.log": "d4b4c46c73d44887d3e7b419cab639789ccbd5f360f4c8c85e0942e65958cadc",
+    "apps/rndr-home/docs/split-evidence/after/clippy-default.log": "673226fc872e61be39d3323fbb4b995824a1c891a44319c6474d3ca6008fabf9",
+    "apps/rndr-home/docs/split-evidence/after/clippy-observe.log": "1b50543e50a52ef63db73204d65d81317d3409951d34ee7d798bb31bf07c27cd",
+    "apps/rndr-home/docs/split-evidence/after/dark/appearance.png": "8a62170ae74e960eb838f710827dcfebf4952be453676538bc9d6ac66300e75b",
+    "apps/rndr-home/docs/split-evidence/after/dark/behavior.png": "2fad49219d5b505a71cac86b67eeb290a482bc47a5f8994c2146c738fa604a15",
+    "apps/rndr-home/docs/split-evidence/after/dark/chat.png": "12ae7138ab37831a12a357059acb385f7ff5614524a8ccc8685f15a71a283e67",
+    "apps/rndr-home/docs/split-evidence/after/dark/depth.png": "2feb5756a41aa8b434c0ebb9cc55e61dbb5d4b04fa6354a3eccf495b1aa2afe1",
+    "apps/rndr-home/docs/split-evidence/after/dark/draft.png": "87ba37152f655a62d764e5be5ef689b8886fb7819caa10d1e7b363e0745220b1",
+    "apps/rndr-home/docs/split-evidence/after/dark/empty.png": "3dcf579ffbd0b3243b86a0f629c87ab1a335ba5423bf4e0d522176603a46958e",
+    "apps/rndr-home/docs/split-evidence/after/dark/models.png": "861463504c2f004aea02798ecb1f27ea0a72b8032b0b775556caa14811b67086",
+    "apps/rndr-home/docs/split-evidence/after/dark/narrow.png": "45dfc76f050a75926c0ff4a043125bafeb412739932d6e2287296c37e1f4569a",
+    "apps/rndr-home/docs/split-evidence/after/dark/runtime.png": "a75068a7bf3bf31d949a340a2275f3dbfbc09c7fe4a483a2c0cb9bbfd3cd5ad5",
+    "apps/rndr-home/docs/split-evidence/after/default.log": "e6c92eb1b914a988d33243772d95892791aa2a93428908624300444f79247d32",
+    "apps/rndr-home/docs/split-evidence/after/diff.log": "d9ef3d1695645413cdc098707c0b447cc19275eb61556bf9d84a09633cf075a6",
+    "apps/rndr-home/docs/split-evidence/after/docs.log": "4e8124bfb74acc0e04b246835c1ff40ca8977f37d2c976073622189a2c3127b1",
+    "apps/rndr-home/docs/split-evidence/after/export-dark.log": "8335d23fe53e91c1471afe7ae1063048385045124eac1d8168ba3fe5399282f0",
+    "apps/rndr-home/docs/split-evidence/after/export-high-contrast.log": "1100119ee557596a99cf109e91e3c9ea4a2c122ce3d05c561d3e8e19c32b98cc",
+    "apps/rndr-home/docs/split-evidence/after/export-light.log": "77e3766e5d2019deb1e2a8df86d1860501fccaa325b9e1f5ead191fc684b11a4",
+    "apps/rndr-home/docs/split-evidence/after/fmt.log": "a776add3c14662349179cfa8b99be9377d26a6495e444735de4ab73d30dae8fe",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/appearance.png": "203e902220153fa5fff2e975b96a848e8d5eaf989bf40de9eed4a4686fb5e686",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/behavior.png": "d9d1543903f1226d74a95ab181c2bbd9ceb8195b6f380e64a84e7f76e9d8bdd8",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/chat.png": "150e51f4dfb1b1ef8efda8f3210e45fbe6ce35bf294e130cc4af9a0e040abcb9",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/depth.png": "ee56e2dcd5feded88539066cfefe74415164dcf3eaea3fe29efc57f6a270de79",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/draft.png": "5769894e956e83a88e0779a6691b272d3c14c2dffe1aa10964413dd81bc60269",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/empty.png": "4a702657cd5fab88a577a96e4bdad04d782a49521eb93b645a1b056a495978b7",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/models.png": "18d0171cb9a091d46693f98b4a60a7d67f4bccbd4f037651501f86aa9a6a2cca",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/narrow.png": "b411f2b7ec333fe67d19158adc8936ec46172e645582009ea8f7225e0edfa994",
+    "apps/rndr-home/docs/split-evidence/after/high-contrast/runtime.png": "add4cb8976b93b9e186a301a0f1501549f55231abca40c8140f01588239d6913",
+    "apps/rndr-home/docs/split-evidence/after/light/appearance.png": "54f58ba7e769aa06803f5f90601a9fecb52fb5c7e838c4a5ac8ef4ff75667c94",
+    "apps/rndr-home/docs/split-evidence/after/light/behavior.png": "6e6778d715f6b24fa92dfb94f74a8a88dd0a95d77da1d95737df3df5c305de50",
+    "apps/rndr-home/docs/split-evidence/after/light/chat.png": "0de93ef39ce9a8b7bb5827fc5f1abb2b5261b6f7058bebfd534b386fa7fa46b4",
+    "apps/rndr-home/docs/split-evidence/after/light/depth.png": "480c7c3a1e559ef9c1b7fb206253d5fcf7450000ac82f06d1283df78479afd58",
+    "apps/rndr-home/docs/split-evidence/after/light/draft.png": "bd10160b71de7eddf0e9bbed93885205d5575b4d9a39c94f7648ebe83e7258ab",
+    "apps/rndr-home/docs/split-evidence/after/light/empty.png": "db31c0c01b8b3a48fb55bb2bdbb6b7b0a2f901dfcb0b9558ddaee123b77fbac4",
+    "apps/rndr-home/docs/split-evidence/after/light/models.png": "19684aeefaa9b7e8a9b9510f281ff88c8a5a96bd7c19659d0bd76659d2f0edbe",
+    "apps/rndr-home/docs/split-evidence/after/light/narrow.png": "e68f02dd7dba27ddd500903c98fccc928b1a6053f10af4fe6a7b139d13fd2a17",
+    "apps/rndr-home/docs/split-evidence/after/light/runtime.png": "6bd140b1322862ba57949146248e4b9669f5f192127ac3abc3052fbb8575f741",
+    "apps/rndr-home/docs/split-evidence/after/native-empty.json": "e588460291d14db1c090799c649c685c8571617c60f7d89b7b4eaad6a03fa74d",
+    "apps/rndr-home/docs/split-evidence/after/native-empty.png": "de4e8fa13452191c8757251da42997d9e81cf71e340140b983f5dee3dad07d0c",
+    "apps/rndr-home/docs/split-evidence/after/native.log": "9992e48836463fb0a8f208321d5d1bafc49b048e7b7921323fd11827c5c9e5d2",
+    "apps/rndr-home/docs/split-evidence/after/observe.log": "c008d2b0dc1b9717a4792d28fc076c7a98c0ce985e11848d04f6f9278bd82537",
+    "apps/rndr-home/docs/split-evidence/after/run.json": "87f338508a07ba07d05050ef0a8b19c02541b535ee975008a7bc96e276bb933f",
+    "apps/rndr-home/docs/split-evidence/after/run_checks.py": "0e333b78ea1f78234635dd60d7da120dd76a2b7a5e04e799e7b87f28a7c2c394",
+    "apps/rndr-home/docs/split-evidence/attempt-1/default.log": "b11c26ae7830401d454d84f2a634d80135dce7321d831dd4f425e9edc9aa2378",
+    "apps/rndr-home/docs/split-evidence/attempt-1/run.json": "9b65453e628ed860db5e854c12b1cf8b238bdd067e83ff9030a13f0d197fc9f7",
+    "apps/rndr-home/docs/split-evidence/audit_source.py": "dedde06d041b450dd89b9ddb6c3d56337dcb8cdda29578a85c14d7b0503925f3",
+    "apps/rndr-home/docs/split-evidence/before/SOURCE_SHA256.txt": "2794ca891dabe93b0bcb7bc45216ac6cdf4a7a4018d9f656aecfaee35d055051",
+    "apps/rndr-home/docs/split-evidence/before/build-default.log": "d4c97cc97817faed84deb5877c5f2d90aecc11be6eef4f75fae177b65b584f88",
+    "apps/rndr-home/docs/split-evidence/before/build-observe.log": "0bdd7182065e15929f2f0ffd26ff2fd86b5d37e3e967e17f75b6600fab955a3e",
+    "apps/rndr-home/docs/split-evidence/before/clippy-default.log": "ff7af4620694ef5570ab7634636180f199db7d490d19cdd6908156477df6fbb2",
+    "apps/rndr-home/docs/split-evidence/before/clippy-observe.log": "f0c8cea267b8e0d439cce4d62d9f640fec9a7c38272488b66ce67fcee1e083f4",
+    "apps/rndr-home/docs/split-evidence/before/dark/appearance.png": "8a62170ae74e960eb838f710827dcfebf4952be453676538bc9d6ac66300e75b",
+    "apps/rndr-home/docs/split-evidence/before/dark/behavior.png": "2fad49219d5b505a71cac86b67eeb290a482bc47a5f8994c2146c738fa604a15",
+    "apps/rndr-home/docs/split-evidence/before/dark/chat.png": "12ae7138ab37831a12a357059acb385f7ff5614524a8ccc8685f15a71a283e67",
+    "apps/rndr-home/docs/split-evidence/before/dark/depth.png": "2feb5756a41aa8b434c0ebb9cc55e61dbb5d4b04fa6354a3eccf495b1aa2afe1",
+    "apps/rndr-home/docs/split-evidence/before/dark/draft.png": "87ba37152f655a62d764e5be5ef689b8886fb7819caa10d1e7b363e0745220b1",
+    "apps/rndr-home/docs/split-evidence/before/dark/empty.png": "3dcf579ffbd0b3243b86a0f629c87ab1a335ba5423bf4e0d522176603a46958e",
+    "apps/rndr-home/docs/split-evidence/before/dark/models.png": "861463504c2f004aea02798ecb1f27ea0a72b8032b0b775556caa14811b67086",
+    "apps/rndr-home/docs/split-evidence/before/dark/narrow.png": "45dfc76f050a75926c0ff4a043125bafeb412739932d6e2287296c37e1f4569a",
+    "apps/rndr-home/docs/split-evidence/before/dark/runtime.png": "a75068a7bf3bf31d949a340a2275f3dbfbc09c7fe4a483a2c0cb9bbfd3cd5ad5",
+    "apps/rndr-home/docs/split-evidence/before/default.log": "28277ae3d278c2bd1ca3f767f6c32534965e8b94d0fbd347ae940b0ce3a1d9d4",
+    "apps/rndr-home/docs/split-evidence/before/diff.log": "d9ef3d1695645413cdc098707c0b447cc19275eb61556bf9d84a09633cf075a6",
+    "apps/rndr-home/docs/split-evidence/before/docs.log": "4e8124bfb74acc0e04b246835c1ff40ca8977f37d2c976073622189a2c3127b1",
+    "apps/rndr-home/docs/split-evidence/before/export-dark.log": "847f347ceeb7639c604629b5311274e9f06bd51af5d0ab8810b24c6ad4840343",
+    "apps/rndr-home/docs/split-evidence/before/export-high-contrast.log": "def1c86ea6799567c14d858246331d2e95839caa4057c60a1625fd18731d99a3",
+    "apps/rndr-home/docs/split-evidence/before/export-light.log": "caf9c2d75bac4c8d84947c9bd6c6832dc18318cd050bba0e03fa8a182c3e234a",
+    "apps/rndr-home/docs/split-evidence/before/fmt.log": "a776add3c14662349179cfa8b99be9377d26a6495e444735de4ab73d30dae8fe",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/appearance.png": "203e902220153fa5fff2e975b96a848e8d5eaf989bf40de9eed4a4686fb5e686",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/behavior.png": "d9d1543903f1226d74a95ab181c2bbd9ceb8195b6f380e64a84e7f76e9d8bdd8",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/chat.png": "150e51f4dfb1b1ef8efda8f3210e45fbe6ce35bf294e130cc4af9a0e040abcb9",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/depth.png": "ee56e2dcd5feded88539066cfefe74415164dcf3eaea3fe29efc57f6a270de79",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/draft.png": "5769894e956e83a88e0779a6691b272d3c14c2dffe1aa10964413dd81bc60269",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/empty.png": "4a702657cd5fab88a577a96e4bdad04d782a49521eb93b645a1b056a495978b7",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/models.png": "18d0171cb9a091d46693f98b4a60a7d67f4bccbd4f037651501f86aa9a6a2cca",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/narrow.png": "b411f2b7ec333fe67d19158adc8936ec46172e645582009ea8f7225e0edfa994",
+    "apps/rndr-home/docs/split-evidence/before/high-contrast/runtime.png": "add4cb8976b93b9e186a301a0f1501549f55231abca40c8140f01588239d6913",
+    "apps/rndr-home/docs/split-evidence/before/light/appearance.png": "54f58ba7e769aa06803f5f90601a9fecb52fb5c7e838c4a5ac8ef4ff75667c94",
+    "apps/rndr-home/docs/split-evidence/before/light/behavior.png": "6e6778d715f6b24fa92dfb94f74a8a88dd0a95d77da1d95737df3df5c305de50",
+    "apps/rndr-home/docs/split-evidence/before/light/chat.png": "0de93ef39ce9a8b7bb5827fc5f1abb2b5261b6f7058bebfd534b386fa7fa46b4",
+    "apps/rndr-home/docs/split-evidence/before/light/depth.png": "480c7c3a1e559ef9c1b7fb206253d5fcf7450000ac82f06d1283df78479afd58",
+    "apps/rndr-home/docs/split-evidence/before/light/draft.png": "bd10160b71de7eddf0e9bbed93885205d5575b4d9a39c94f7648ebe83e7258ab",
+    "apps/rndr-home/docs/split-evidence/before/light/empty.png": "db31c0c01b8b3a48fb55bb2bdbb6b7b0a2f901dfcb0b9558ddaee123b77fbac4",
+    "apps/rndr-home/docs/split-evidence/before/light/models.png": "19684aeefaa9b7e8a9b9510f281ff88c8a5a96bd7c19659d0bd76659d2f0edbe",
+    "apps/rndr-home/docs/split-evidence/before/light/narrow.png": "e68f02dd7dba27ddd500903c98fccc928b1a6053f10af4fe6a7b139d13fd2a17",
+    "apps/rndr-home/docs/split-evidence/before/light/runtime.png": "6bd140b1322862ba57949146248e4b9669f5f192127ac3abc3052fbb8575f741",
+    "apps/rndr-home/docs/split-evidence/before/native-empty.json": "e588460291d14db1c090799c649c685c8571617c60f7d89b7b4eaad6a03fa74d",
+    "apps/rndr-home/docs/split-evidence/before/native-empty.png": "de4e8fa13452191c8757251da42997d9e81cf71e340140b983f5dee3dad07d0c",
+    "apps/rndr-home/docs/split-evidence/before/native.log": "6f21c31cc249d951c6826420ba9e019f53b9e7f06b0df422934fc1bdf319ec79",
+    "apps/rndr-home/docs/split-evidence/before/observe.log": "2ef9aee81f5553e0b5d9eec73977e5ede5cf4462803a22f5b42890f82fd76d05",
+    "apps/rndr-home/docs/split-evidence/before/run.json": "edd5e27f3d4dd9634f1baf9fd02a7e364668a079f2cece60036aa2f8f7ab223b",
+    "apps/rndr-home/docs/split-evidence/before/run_checks.py": "0e333b78ea1f78234635dd60d7da120dd76a2b7a5e04e799e7b87f28a7c2c394",
+    "apps/rndr-home/docs/split-evidence/comparison.json": "097d0e5ab2599449168fb585aae4a33e4ab6a4804a949bb6f1c220c719a778f5",
+    "apps/rndr-home/docs/split-evidence/environment.json": "b7862cdfc68d0abd112e5286b88437759c8ae2632c990e6aa5e5672f3da12683",
+    "apps/rndr-home/docs/split-evidence/extract.py": "7fef1f08932aca1306cec7a43a6535012b09970c6704d93ff85b0ef145d101c5",
+    "apps/rndr-home/docs/split-evidence/extract_composer.py": "acfc073d1b1db474e8dba94a879b0d8dbfb02f7ab4de929474004bbab3162ad3",
+    "apps/rndr-home/docs/split-evidence/final-gate-0.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apps/rndr-home/docs/split-evidence/final-gate-1.log": "4c4813d86353443ea5b5c00c36b49336b103503a94108f203e0507830d90bfdb",
+    "apps/rndr-home/docs/split-evidence/final-gate-2.log": "31cad22ecacbd038e325778947fdb90ddac32cbeddab493794d5acec2cb79e3e",
+    "apps/rndr-home/docs/split-evidence/final-gates.json": "75362e1833cdda581a239a71574ef0a9b8e6a76ccc6c2a8bf26451caed25ab64",
+    "apps/rndr-home/docs/split-evidence/final/SOURCE_SHA256.txt": "02f513bd67e8dc966387b4b7bea74f057fa278220fced7eca3bd7f6b00026f18",
+    "apps/rndr-home/docs/split-evidence/final/build-default.log": "197ff2c80f05ff468a2399642ceff0c22bbcaa5a70be10f8f305bd576a68ddf6",
+    "apps/rndr-home/docs/split-evidence/final/build-observe.log": "a743d84466d47641bd398ffc4d13a416d7f372ee077fd37ba58bba607e40de90",
+    "apps/rndr-home/docs/split-evidence/final/clippy-default.log": "bf14081123ba39926eedc19564a1dbe2839119e8551a3813e301cb3a9812e4e6",
+    "apps/rndr-home/docs/split-evidence/final/clippy-observe.log": "f399a40e35260b047783fc51c98321c62dab116c877d255ee5dabab6c850bbe3",
+    "apps/rndr-home/docs/split-evidence/final/dark/appearance.png": "8a62170ae74e960eb838f710827dcfebf4952be453676538bc9d6ac66300e75b",
+    "apps/rndr-home/docs/split-evidence/final/dark/behavior.png": "2fad49219d5b505a71cac86b67eeb290a482bc47a5f8994c2146c738fa604a15",
+    "apps/rndr-home/docs/split-evidence/final/dark/chat.png": "12ae7138ab37831a12a357059acb385f7ff5614524a8ccc8685f15a71a283e67",
+    "apps/rndr-home/docs/split-evidence/final/dark/depth.png": "2feb5756a41aa8b434c0ebb9cc55e61dbb5d4b04fa6354a3eccf495b1aa2afe1",
+    "apps/rndr-home/docs/split-evidence/final/dark/draft.png": "87ba37152f655a62d764e5be5ef689b8886fb7819caa10d1e7b363e0745220b1",
+    "apps/rndr-home/docs/split-evidence/final/dark/empty.png": "3dcf579ffbd0b3243b86a0f629c87ab1a335ba5423bf4e0d522176603a46958e",
+    "apps/rndr-home/docs/split-evidence/final/dark/models.png": "861463504c2f004aea02798ecb1f27ea0a72b8032b0b775556caa14811b67086",
+    "apps/rndr-home/docs/split-evidence/final/dark/narrow.png": "45dfc76f050a75926c0ff4a043125bafeb412739932d6e2287296c37e1f4569a",
+    "apps/rndr-home/docs/split-evidence/final/dark/runtime.png": "a75068a7bf3bf31d949a340a2275f3dbfbc09c7fe4a483a2c0cb9bbfd3cd5ad5",
+    "apps/rndr-home/docs/split-evidence/final/default.log": "24c9e59ade5d5ef01d5714600ddc4921437f3d676adf8c1cd0b1b7502400c659",
+    "apps/rndr-home/docs/split-evidence/final/diff.log": "d9ef3d1695645413cdc098707c0b447cc19275eb61556bf9d84a09633cf075a6",
+    "apps/rndr-home/docs/split-evidence/final/docs.log": "4e8124bfb74acc0e04b246835c1ff40ca8977f37d2c976073622189a2c3127b1",
+    "apps/rndr-home/docs/split-evidence/final/export-dark.log": "ad00f359e9fddbed6457015a9afdd660ccd009d215d34650de0c63b724f70e45",
+    "apps/rndr-home/docs/split-evidence/final/export-high-contrast.log": "e695fd8c93a06042212b93faec11c8bb2eb2fd212101bac81600fa2f9b4fca29",
+    "apps/rndr-home/docs/split-evidence/final/export-light.log": "d9f85dff1046a15b23dbbac8aceb0800e50d8e8ca3f84d7021755ef3ed4256f3",
+    "apps/rndr-home/docs/split-evidence/final/fmt.log": "a776add3c14662349179cfa8b99be9377d26a6495e444735de4ab73d30dae8fe",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/appearance.png": "203e902220153fa5fff2e975b96a848e8d5eaf989bf40de9eed4a4686fb5e686",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/behavior.png": "d9d1543903f1226d74a95ab181c2bbd9ceb8195b6f380e64a84e7f76e9d8bdd8",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/chat.png": "150e51f4dfb1b1ef8efda8f3210e45fbe6ce35bf294e130cc4af9a0e040abcb9",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/depth.png": "ee56e2dcd5feded88539066cfefe74415164dcf3eaea3fe29efc57f6a270de79",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/draft.png": "5769894e956e83a88e0779a6691b272d3c14c2dffe1aa10964413dd81bc60269",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/empty.png": "4a702657cd5fab88a577a96e4bdad04d782a49521eb93b645a1b056a495978b7",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/models.png": "18d0171cb9a091d46693f98b4a60a7d67f4bccbd4f037651501f86aa9a6a2cca",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/narrow.png": "b411f2b7ec333fe67d19158adc8936ec46172e645582009ea8f7225e0edfa994",
+    "apps/rndr-home/docs/split-evidence/final/high-contrast/runtime.png": "add4cb8976b93b9e186a301a0f1501549f55231abca40c8140f01588239d6913",
+    "apps/rndr-home/docs/split-evidence/final/light/appearance.png": "54f58ba7e769aa06803f5f90601a9fecb52fb5c7e838c4a5ac8ef4ff75667c94",
+    "apps/rndr-home/docs/split-evidence/final/light/behavior.png": "6e6778d715f6b24fa92dfb94f74a8a88dd0a95d77da1d95737df3df5c305de50",
+    "apps/rndr-home/docs/split-evidence/final/light/chat.png": "0de93ef39ce9a8b7bb5827fc5f1abb2b5261b6f7058bebfd534b386fa7fa46b4",
+    "apps/rndr-home/docs/split-evidence/final/light/depth.png": "480c7c3a1e559ef9c1b7fb206253d5fcf7450000ac82f06d1283df78479afd58",
+    "apps/rndr-home/docs/split-evidence/final/light/draft.png": "bd10160b71de7eddf0e9bbed93885205d5575b4d9a39c94f7648ebe83e7258ab",
+    "apps/rndr-home/docs/split-evidence/final/light/empty.png": "db31c0c01b8b3a48fb55bb2bdbb6b7b0a2f901dfcb0b9558ddaee123b77fbac4",
+    "apps/rndr-home/docs/split-evidence/final/light/models.png": "19684aeefaa9b7e8a9b9510f281ff88c8a5a96bd7c19659d0bd76659d2f0edbe",
+    "apps/rndr-home/docs/split-evidence/final/light/narrow.png": "e68f02dd7dba27ddd500903c98fccc928b1a6053f10af4fe6a7b139d13fd2a17",
+    "apps/rndr-home/docs/split-evidence/final/light/runtime.png": "6bd140b1322862ba57949146248e4b9669f5f192127ac3abc3052fbb8575f741",
+    "apps/rndr-home/docs/split-evidence/final/native-empty.json": "e588460291d14db1c090799c649c685c8571617c60f7d89b7b4eaad6a03fa74d",
+    "apps/rndr-home/docs/split-evidence/final/native-empty.png": "de4e8fa13452191c8757251da42997d9e81cf71e340140b983f5dee3dad07d0c",
+    "apps/rndr-home/docs/split-evidence/final/native.log": "23353ac91bda0f3c5953f2bced4c7f29d7d90d2d232023ffe6c85ac0533d1b11",
+    "apps/rndr-home/docs/split-evidence/final/observe.log": "9857ac78e860134b30ed8e01c57d79f906e2c042db86b5b4e54a1f0e67988e45",
+    "apps/rndr-home/docs/split-evidence/final/run.json": "71377785bfb12457c840805989a741dd7b666d0d6cbf18646d59c20af93764d0",
+    "apps/rndr-home/docs/split-evidence/final/run_checks.py": "0e333b78ea1f78234635dd60d7da120dd76a2b7a5e04e799e7b87f28a7c2c394",
+    "apps/rndr-home/docs/split-evidence/log-normalization.json": "cad9f935b1295d88f0a02ef3382290a0259a20bb8ddee78cfe64f0b337d841fe",
+    "apps/rndr-home/docs/split-evidence/native-comparison.json": "d1cd5130ab8fb4d8da1c4ab1cc569b8a4355ee7e390a74f5459c6cdfdd2c67ff",
+    "apps/rndr-home/docs/split-evidence/scope-audit.json": "dff64d53e48fa1c5f53649eaf2adbe08cb354d6bb23520ada785f08aa01a87c0",
+    "apps/rndr-home/docs/split-evidence/source-body-audit.json": "41df6c1836e213add67165757b25fefea1199991036d7ee4152ebde50dcea4eb"
+  },
+  "prior_documents_unchanged_count": 529,
+  "promoted_reviewer_tests_formatting_only_changes": true,
+  "qualification": "Synthetic preview correction for independent verification; no implementation acceptance or integration.",
+  "renders": {
+    "dark-narrow-650-accounts.png": {
+      "sha256": "ac24a76af9e1413538a7f566b4a5938dc62cb5eca08076879366c41928fd29fa",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-agent.png": {
+      "sha256": "e13447b4b44b4a44231bd8d3d77f690c398ed566f69097c97f7d5eaf99399c22",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-automations.png": {
+      "sha256": "20f1d942f5e56a00471eb80dc7c44dc894dfde313f6278808d3ddec87c29fd25",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-basement.png": {
+      "sha256": "6491692bed9270b019309d3274df33c90a1fba35838308ca0b9d2cdd634a6a6d",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-connections.png": {
+      "sha256": "c91fc59209192fc9ce94c17bb0c3241a8bdf2b4d526cc60f28b7248abf29af67",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-mcp-disconnected.png": {
+      "sha256": "aae137933d51d54c919b41b0b6ce13ddeabb01bd9e1b0fb21b4fbc83c4976a4a",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-mcp.png": {
+      "sha256": "c4fc16ee0416c46ca44f43b8dd569a8959c6b308f423d1e85f53dc81e42ffa92",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-models.png": {
+      "sha256": "17212ef0d3af65f9fca6e5aa510200b64b2f83d732bd9b08c489223e5e9bde1b",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-network.png": {
+      "sha256": "af3305e203aed2807c975826d3b018a27bf2577ee50b22386580b377978730c7",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-packages.png": {
+      "sha256": "6c6c5dc2850dacd4b919161eff606b77ba4c57eca40e96ab17d5b455814f3c5d",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-preferences.png": {
+      "sha256": "7d7fc8629c59f49e7467dead037e35ef048c1529dd5a64b3d4a31ce7e4b36adb",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-runtime-detail.png": {
+      "sha256": "2a233f29a061e1c68ba18fad28ad19023a5b1f1348c73515ceedf130eacf8530",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-runtime-empty.png": {
+      "sha256": "37c7fa37f7cbd34b3d57c21d6e7f9d627443acf72ed4e8c41941ff249ea4b395",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-runtime-error.png": {
+      "sha256": "5196d8829625606fc93be0feac80213b80ad14f9da0d57cd281ce115213f5187",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-runtime-list.png": {
+      "sha256": "640443ce67d765ba1285b055b23b77afdda3ed942972d5db2179e63eed275328",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-runtime-loading.png": {
+      "sha256": "1362f684d089333f5d395a959581502fa6a5b5e685659338edada9483c1feef3",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-runtime-permission.png": {
+      "sha256": "80f9a255cd9994e0c8bf6eb19adf07ba19075349e6ee3b8f31612ffd92ceb480",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-650-runtime.png": {
+      "sha256": "ceebb70d2d4df3d4aba06ea214fe76949ef94e8552cda8b255702a52ce60a9de",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "dark-narrow-accounts.png": {
+      "sha256": "7ca22898fd6cfb7a5e16062b043762d9e54a3002721aa00dbb837118101ac607",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-agent.png": {
+      "sha256": "e22a7a9119a96e857495d203a8753fdd217767e5c4107dc98455a5415532f0cc",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-automations.png": {
+      "sha256": "abbe00d61263de3608483a7ac7a48f59945015ba34d6f95230d1f7897ca2adf2",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-basement.png": {
+      "sha256": "0144770a86cb05a9467f8690b88d423434bf67860aefc77759a74f8f0901c3e3",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-connections.png": {
+      "sha256": "91870c2e29d4109500cc663b010b88dbf5a3975611dcb06bbea536498c25a94d",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-mcp-disconnected.png": {
+      "sha256": "39c0613b7fd85c68c696548b5d4f341ffaff3d9517f77a6b110c8022db22f9a5",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-mcp.png": {
+      "sha256": "fb25837f14beffcf222d857c1002d9dd536657c314e96da76b1d4b32e2992f37",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-models.png": {
+      "sha256": "32293247b4c8de553c059e49a280ccfb66e95ed20b22d25cbea34668948b36f4",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-network.png": {
+      "sha256": "25e246eab3f3d99693531c815b9f9593da0a69c3beb87c8987141ea23fb94665",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-packages.png": {
+      "sha256": "e4312f8dd3a5e5daf44b70216f84fc780dff92767f748145260cd07eec0baffb",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-preferences.png": {
+      "sha256": "7da0ad9be9f05b9691cc5224b476ced20b3ab0cff9c76446694547e163863b79",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-runtime-detail.png": {
+      "sha256": "b035b34398fa20a392373c267f2e351c0a72d216119cc3f3985ca6938c567dd1",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-runtime-empty.png": {
+      "sha256": "2cf68f87b36d72d1279bf578d909d2062f664be19fe2cf4aedbbd6eb52978642",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-runtime-error.png": {
+      "sha256": "e06a4d23329a9f0990d5da4310795b4dff3afc75b7169f231cafed8785bc13d8",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-runtime-list.png": {
+      "sha256": "3a3b5cde6438897e3d21ac47ba189ceb32bbb62c0dea72b1033451cfcd054b4b",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-runtime-loading.png": {
+      "sha256": "371f6c2bdcd3fa3caa43cdd1db1cd23111b414b38cf56032da19968ef837cce4",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-runtime-permission.png": {
+      "sha256": "fc4d9ae66a9c98ad5e2331bb7656f6314159d0a9d4f21bd409897942e9ba1cf3",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-narrow-runtime.png": {
+      "sha256": "587c5f9b44b0b02b42bd166dd3798748d04b1a14abb5196ba9c4bdfe80f77059",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "dark-wide-650-accounts.png": {
+      "sha256": "8db3b0afb05d4ded14b899bb696c159904c4e657aecffb9c1be12c4eb1f522b0",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-agent.png": {
+      "sha256": "93da7405be325c5e1fde997b26f8f167b902878fc9ddd789938d7a78cdbbbae3",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-automations.png": {
+      "sha256": "b36b4fb67249803895921051956e923a3f341fe97f5d27ef792dd2bd039ef789",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-basement.png": {
+      "sha256": "417201fd692579db7c49ff69656a32e76d098901b2b7a2930f87214df3f40e27",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-connections.png": {
+      "sha256": "f8385fec872d60a0fafebbe6f07af5ff4b3c5f083f7d1c07758ecdca06950de3",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-mcp-disconnected.png": {
+      "sha256": "4f4010fab97b7fe3af4ee36068a484584a59a60ca9408ad30fc142abbd6cd9ab",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-mcp.png": {
+      "sha256": "8b2a1a18598be44cc9c1bc6c74e6bbe80509c85791937d771e7f0135f68d8c5d",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-models.png": {
+      "sha256": "31622a1626e6d81d17645f33e95e18e28da554bbb458d2fd5d76b3d114b4314f",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-network.png": {
+      "sha256": "75db94445266e070e5ceba1b5b01b40df3ee7b81174e0e3770efa103d1275036",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-packages.png": {
+      "sha256": "3422a486b97b7e22bf870b3b37d2b33449bdddc3a837ab3b1c60d15a64bbe839",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-preferences.png": {
+      "sha256": "ddb12d2eacf76298d922dd12e8d9152664ac2ddaa88e6d540cdd5c5138c6aeef",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-runtime-detail.png": {
+      "sha256": "a71e7d7b4eea76152001112259484922ee0412af9678251313b4e00a27716c5f",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-runtime-empty.png": {
+      "sha256": "5ab9ce0891ba707789f687fd27b0ce637696ed9d388d827992cebc4f1782d6d1",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-runtime-error.png": {
+      "sha256": "3c3a6a59efcfd22b4ef10586b6e0eaeb46fca660cb5bcfca6824aee93c8b70e4",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-runtime-list.png": {
+      "sha256": "6a5368039c0884baa79d7e2868a458890f4a4943855a3c7207cb89b08fd1b035",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-runtime-loading.png": {
+      "sha256": "505d7002973a80da50ce07a86d5e33b79a26dc9df46624489b2be654e958c62e",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-runtime-permission.png": {
+      "sha256": "1c6eddfe545517cc04d2cd935a973b566afdd55d751fff15607d05208146b534",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-650-runtime.png": {
+      "sha256": "9bc48d8d877e0b1a1464227e758f0d9c196c0440ec9d6b4ba96fef78c13b2205",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "dark-wide-accounts.png": {
+      "sha256": "650a00d113f33c72b6ca61b77eae2aece7207d2a0676dbdc04782ded6bad1eea",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-agent.png": {
+      "sha256": "a61ff76cf42d1672f314936017e389f1941430f6d333efde4ff0cad1a3f38240",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-automations.png": {
+      "sha256": "c3bcdb080b06b190eb252507df677947f7d8de34251547b4fb94d69c531c281c",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-basement.png": {
+      "sha256": "fdb706804036435bbc10ea15f804116741f33301a59ebef6839c929e30e3f52c",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-connections.png": {
+      "sha256": "a49a4fd35404df211d59c1afe05267ae9fb6b46982e853badd2045ad54525c6b",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-mcp-disconnected.png": {
+      "sha256": "515fbfea69f0783ddb2ee95e1d095d817cce9b4a387f15da60cce4ff02429095",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-mcp.png": {
+      "sha256": "96e2e70d9069fce39741c65112576f816969a3d7d0778100599fc36a88d0e866",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-models.png": {
+      "sha256": "d37d3981d8fd1b98aadcf4cdd1a1b4ebe0a1fdd45b69065ac7e1077a4c9b0b7a",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-network.png": {
+      "sha256": "555449436c8a8a7f2e53351fd3822fda0b9530e878608ca2f505ddd96c22e668",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-packages.png": {
+      "sha256": "0613a9b56301febd420ed79a8cbbf6c7dc85bee95bf2c48c8e50370d3c2c3d4f",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-preferences.png": {
+      "sha256": "b039f53b361e9dd214980708213409958eb8dd5c0aa957fc7e43854a306cb003",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-runtime-detail.png": {
+      "sha256": "eb37ba11d881cf081b3410f57bbf913f9af5a9d0ded99c0f9a7cc177f928b5c6",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-runtime-empty.png": {
+      "sha256": "f00de069e27c118f662677b4452d1cb7128d901bf1c056d5ccb14e37ec214aca",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-runtime-error.png": {
+      "sha256": "ff537dd947f77a08968d4f793aaaf49e93e7c111721d6b2f295786105883ce3f",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-runtime-list.png": {
+      "sha256": "f530ac0d940221c68230f8d4ab2969953da186f8afa83c1de5c94f861ae224a5",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-runtime-loading.png": {
+      "sha256": "344111ac2a63c42694d234faaf8d627faff5473b2630e48e45504e976f6b2d57",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-runtime-permission.png": {
+      "sha256": "d75faad0f6a1ebe85bf3e8c71ec9e959a64734b1993eebd699f010b688ef0865",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "dark-wide-runtime.png": {
+      "sha256": "dc722e33fb47142a12cd5df55677234ef610854e73594aa2dd868318ca1a80df",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-narrow-650-accounts.png": {
+      "sha256": "641df8dc85e2e0e0a31f56b46596168ae26b6b2275458eac5ca6a100a63a0804",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-agent.png": {
+      "sha256": "c1c9cbd8c227a1ad4fa52cbbd88a0838a7b35775efef85b946380684604159f9",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-automations.png": {
+      "sha256": "6765dd23f6bef6e9794239119ea1b5ed1319fcf4c7d4092f7a9e91a001a9167c",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-basement.png": {
+      "sha256": "5e5ef6ffcff21a59127c7c3abdf97b98367894b0b2444deea58d587fc4e6d18c",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-connections.png": {
+      "sha256": "b6728eabe3b1262a1416c6f7c8614669a412c98d6f8a4a1135bf730d48f71c1b",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-mcp-disconnected.png": {
+      "sha256": "ef66ffe22fd48c96e304629b168b7a41336f9e776894c90f2685ae0b213acaf3",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-mcp.png": {
+      "sha256": "142870fb56d88d600f960cb622ab169959d03776e6903cf9eccecc882ef0aeff",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-models.png": {
+      "sha256": "fbd0f55a92485bfefb5215cbdf88695aa195e496d6e4bd871c0a6e8a3a9d065b",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-network.png": {
+      "sha256": "0c026f4df3b7bde1769532a8b4a8d5f646a00f63bb3ce5c43ff6d0f6225859bd",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-packages.png": {
+      "sha256": "f8af47a056af7f99b0fa683e31a5848bc1e3fb5470670c3020f3e0870cc3e564",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-preferences.png": {
+      "sha256": "44046bbd8d5f36a68128d0b7ee40b5332db830b5cd65f5fb43a9441ce86878b5",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-runtime-detail.png": {
+      "sha256": "ef07bfd059865c9f5a316f93807074e1ef06aa36eec77726214cf8c6186d07e1",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-runtime-empty.png": {
+      "sha256": "ef21f0ab26ef54da3fa3c2903fe33fe34d47ce2959cc3160e3212e092735a855",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-runtime-error.png": {
+      "sha256": "69f1ca692f5a92080ac111f0f1a18cd4e672bb7b2de43596b6aa7c104ec1d9b8",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-runtime-list.png": {
+      "sha256": "fb2a5bd4c123e73c6c80774b820d23ed56b1578b219342b36653581ce4366bb1",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-runtime-loading.png": {
+      "sha256": "4ec1c0207990614d280350f8d8531d21e30a514abd8a295987da68953821a391",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-runtime-permission.png": {
+      "sha256": "73a759efb7dc61387a73b8c4d5b43d3fbebd313d609cc5c9f695e58a64945db0",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-650-runtime.png": {
+      "sha256": "50d1e23b6120999c21c5ef53a755300165fdfec4c780ebe4cea8b3df0c1bf9d9",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "high-contrast-narrow-accounts.png": {
+      "sha256": "c42492989e674ed791d3c0cd3273bf745f05bfd8e0d7b2c819207e0fce71c5db",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-agent.png": {
+      "sha256": "2ccfa87098201f5b9483b396697a07d1a2670bab393118918ddf7222019721dc",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-automations.png": {
+      "sha256": "350435604e8d8bb0ab5697c7b9a45e76466670e616f6a19e91b8947d6b093dcc",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-basement.png": {
+      "sha256": "941982075129e91f94929f6e69f4a8325e1d2202e59fd58cdcc058403d9e0868",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-connections.png": {
+      "sha256": "92d0993ab14ebd7e55369d545b07f1dc8ecae00c71cbabedb4b7d893959fa9be",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-mcp-disconnected.png": {
+      "sha256": "7d313420ee2a09b26a351323292c55cdcae1636e93e1b019caf72e8a00b6c76e",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-mcp.png": {
+      "sha256": "36622054da0ada07f56da7cd6bbadd69a3a699a2fbe622c6c7af9f81b53038fa",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-models.png": {
+      "sha256": "c26b72e3c88af4a0b4f721f67af5ac3bfdc4ab1f6012e3c72cb96e4f92bec90f",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-network.png": {
+      "sha256": "51d21ba0e0587bba2bb1ec5c0a5d00ece0558b6a425d8a36db36ae54f34c630a",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-packages.png": {
+      "sha256": "c69103619a18e976ebc82bb3292816ea9b420fe2c25a84fc0ee027c8ffe0240b",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-preferences.png": {
+      "sha256": "32c36604205806055684f6bb1eb56f6d89b27e40f094f45bdbd852225884990f",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-runtime-detail.png": {
+      "sha256": "9656e1002bbb537e4cab86f262b86944057b8bee222d9827dcf7aae925ad98d9",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-runtime-empty.png": {
+      "sha256": "cc1bd6e6d8ed07d0ff01f0797eadaee602a574a1dbc6fdf5b6634324d335cc3a",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-runtime-error.png": {
+      "sha256": "2240957340c79d17bf2adde522202cd4feb071ae7898ae9f22922183a8f5fe4d",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-runtime-list.png": {
+      "sha256": "7e4d94e8abe455a715fbc5b5f6a97f6eb8d4445094be5d56026b514326ef481a",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-runtime-loading.png": {
+      "sha256": "a29f0af93cec137d5ae9338e0c4e78a26a2549b13751bc3f987b02928ff4a411",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-runtime-permission.png": {
+      "sha256": "df4d5a9fac78c2e55c3c8ef5d76822491e5ee04ebf34bf5c3a0e5095fea22d18",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-narrow-runtime.png": {
+      "sha256": "eb7b692d3fd710c645bdf005fbd25b1eb45c38eefc87cff6c7b72b19c26082e5",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "high-contrast-wide-650-accounts.png": {
+      "sha256": "62a3f90cab5f8fe41311632e3affb6a775a0a6e1545c94b2facf1a5046de2f67",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-agent.png": {
+      "sha256": "0012099a0b97c1cfc38b9ee9eeace780f0d457cfd1b875dce98d30fcd276eb27",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-automations.png": {
+      "sha256": "62e4cc132e3a92c81319ab346eeb706332df05c5960751d81a3728d3fa7c822e",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-basement.png": {
+      "sha256": "1ebbdce87154d77e26f5103ec4f4884a7c0713a48972558f9381020e6f3dfb13",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-connections.png": {
+      "sha256": "c1cb7061b0f37035daedcf20728101d0796b59de2794a19b652b7d92b5744501",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-mcp-disconnected.png": {
+      "sha256": "afb5069c82d8a55ad0a9e2ee6928e469167988e35d9178b398c3dbce12b51f11",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-mcp.png": {
+      "sha256": "7a4c6bf562a1d0940e037116c8e5e8630330cad215c06b4f2820e837adc57ecf",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-models.png": {
+      "sha256": "21aa915143733a4bea37a4f7189f067df6ec026e9d0233b8770511e91bd5e2d2",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-network.png": {
+      "sha256": "c70371541566f426089b42bc3aaa83e7cffc0d98ef8e760eb39da18b26fb7bc9",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-packages.png": {
+      "sha256": "97be9313e2e0e0fbb6761f547e3ca4f5552959d8a47b8a3df1c2ae1a9924269e",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-preferences.png": {
+      "sha256": "15045de13e600d3393666c458ab1d45d862314478c4a92ae4080a6b4b172fcbf",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-runtime-detail.png": {
+      "sha256": "ac87e23bf356ea29ff8c1b61e62e98491998c73caded7acb2f04c3f33cab1d88",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-runtime-empty.png": {
+      "sha256": "3f1eced4c06de4d7cb8608c8434cc0bd3e0bece31cf63431a2df1780e1215f7b",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-runtime-error.png": {
+      "sha256": "5f38f41e253a697ca02a43cc294d47cb8ed910858e8388f1be1d3c191cbf573b",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-runtime-list.png": {
+      "sha256": "05adcafd5951df86399ec5cbc4285cd9e321a789e06f2a55191433d730253157",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-runtime-loading.png": {
+      "sha256": "748b27fe87532215f677e25fc3b962ff279ef5f55f0c5e12f06eb878fbad5dee",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-runtime-permission.png": {
+      "sha256": "f10e9f079eddb779fb10f80bb00ea9495d0a07adff62324f8f8c4f765ddf2c3b",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-650-runtime.png": {
+      "sha256": "97408f25bcf3ac384f81293dd301ea63554f94efde03a1c7f70361d9b91d81cf",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "high-contrast-wide-accounts.png": {
+      "sha256": "91f0c6b8632cc6117796bc3dccf4f6057b38583b5488ec4c0238d686b2871150",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-agent.png": {
+      "sha256": "4749b364655801c86fbe58eb0e8536650c73d37fa3caf9fb5188bd9b9a07c3a3",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-automations.png": {
+      "sha256": "5ce5ab52a990dce6bedeafc86fe042d8dcd60d32f3a225da9e7fb5d62f9d67ce",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-basement.png": {
+      "sha256": "8b021a336228329163e7ad746bfd61858d61fbd854059cf852011abae3ba6324",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-connections.png": {
+      "sha256": "b81e42c1ddf757553fe568eea6092aff672a37628c0b9725337cf9f2c7fffbb6",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-mcp-disconnected.png": {
+      "sha256": "acb492b96375c8f6c7c03e1f3b3d7863e23945838a59d451c93d704fb72921c7",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-mcp.png": {
+      "sha256": "0adeaefbbfd4683bf4bbdcc2086e56e2cc0928fd24812848b7156e877ab86f1d",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-models.png": {
+      "sha256": "b98da2c84f1f1c8ffb706e1e4fe6ea7cab148948a0017939051d5d0983ea2aad",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-network.png": {
+      "sha256": "f1224b9ffeee2bc39e46ea762c0dc62d20af7e8cc4b2bd2a479480d1c4aaa917",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-packages.png": {
+      "sha256": "09df80ff553926ff33c8f74d2a6c5097faf70190563a362285098394ca052af0",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-preferences.png": {
+      "sha256": "ffcc72b80e09d9c995db8d349fcbd72d69322482d1878aafd844edbd9f78d96d",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-runtime-detail.png": {
+      "sha256": "4d727c538d2320b4cfaead16f7d126329df4310c1e6fe25f8da9c3cfcf9a0f95",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-runtime-empty.png": {
+      "sha256": "c96ef49d5ecff91cd145f9c23f2df3cb6f40c3b57646ca6693007ba2f6ca71e0",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-runtime-error.png": {
+      "sha256": "565b81426670293dd33f5aa338f3dc7e64db94493bf6ef2baec89666ae150a68",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-runtime-list.png": {
+      "sha256": "30f9f7e87e658b8131712ba28d911ac07e5b5f90e68678975fd0e3bb5ba11de5",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-runtime-loading.png": {
+      "sha256": "93fdf68e4f6303606b23f8ea8738c76290b7f4bf49f120b202fee5083271aebe",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-runtime-permission.png": {
+      "sha256": "486c8311da076faf7988ed32a9202ef266c13393e3d2deed192139f8fc17fb30",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "high-contrast-wide-runtime.png": {
+      "sha256": "8bb49f48d6b23716de34eebfd413a3dcba95b086c8b92719ea63a500773c1a65",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-narrow-650-accounts.png": {
+      "sha256": "f28688417f12c797347a5d081f5a3e66f1240da60579d1b33aa00eafa81e90fb",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-agent.png": {
+      "sha256": "279e1f053d202ddbb229b4eb61c4c864c6028497d96f0a832cc24ac43ba71e94",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-automations.png": {
+      "sha256": "79f60625c1fb577ebb492f97e05d98e58dcac6fff81c05bb5b89d003cb745cdc",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-basement.png": {
+      "sha256": "b246d8fdb556ef8751c3bcd96c48acb517aaafa973a5ac8bd96eb4ec02024c9e",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-connections.png": {
+      "sha256": "661528c12b446999660a7cb26065a018a27ef65bbfb7b79e1c75c704444130b1",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-mcp-disconnected.png": {
+      "sha256": "d0f05b21192f3544a6981f486eeb2782ee5f123dc4d89a8e7c86b3ae399c5369",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-mcp.png": {
+      "sha256": "2dfac58b81ab9b53282667c4724cb65464c253b327ccb9a607a17b49f948eee2",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-models.png": {
+      "sha256": "af89299f287b431137cf09478f47e659406b26fe2c03697524c675011b7eee95",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-network.png": {
+      "sha256": "5acf9d20d0648b16f967511830e417bbc21457efd29cbe0c6d30618539044132",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-packages.png": {
+      "sha256": "050c5f8f46b1faa8a393cb7ea7bc052b474d55b0049c58d6adfb431fe5b816c1",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-preferences.png": {
+      "sha256": "41b8aec9c79880ce774d053891c1a8b57378e97d302453d9fccb0fee58482df1",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-runtime-detail.png": {
+      "sha256": "a6056495714f6f7d5c58444b237954a2223b22d83a612fc7be9b5b57fe237b43",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-runtime-empty.png": {
+      "sha256": "1e1cd711e2d3410bafe93bbf0594177507f03d0f44791e483019a7d38d164747",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-runtime-error.png": {
+      "sha256": "8736a9a593c36b576bb3bcec0382998199194a37b7aec6d8ee31d27574d65437",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-runtime-list.png": {
+      "sha256": "2e9e9cb79c301d93873607704b4ac7f39d793a3b11df93ad09e1fbe15f0d1e27",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-runtime-loading.png": {
+      "sha256": "88ecc980ef82661787bfe49fe8cf40707a664702b50ccf9837f391ccc60e9fb6",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-runtime-permission.png": {
+      "sha256": "6c5ea0557eced1c9772f884f51b1ddb91fb418bfd343b00667b3b28e76526e8e",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-650-runtime.png": {
+      "sha256": "67e31711ccc7a6b0393096a802dd53ab74914c455d591d689284e33824c1be10",
+      "size": [
+        480,
+        650
+      ]
+    },
+    "light-narrow-accounts.png": {
+      "sha256": "9b4c1a59237271ab2e6ae325bcda0739aa9dff5783b1e91722415f0391349d27",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-agent.png": {
+      "sha256": "14c7f7c39e171c4ce57d33ffefa0a8ed17e9329b495835bf3fff4a987974df19",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-automations.png": {
+      "sha256": "b4f34e7ff7b7bfff34fae8638115cee6dd59278474ef0a67566252a03cd76bcd",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-basement.png": {
+      "sha256": "b4620a250098e0de613179e5589e094c544fdf49d6308ec25c4196275c2e6f06",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-connections.png": {
+      "sha256": "4f02bfd54eb328692c08057ce357876530ff18c7a4c786ab87d3f605a3024ba3",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-mcp-disconnected.png": {
+      "sha256": "732de382aaff54cb8b891748534e495ce104c439a2442199b03ca8d543b47b89",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-mcp.png": {
+      "sha256": "cc89a33684e97425eb1ea64ddae777a30ba2ae10acffe7797dc44dd0a29d022c",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-models.png": {
+      "sha256": "d7f37037373e00d34bc768d1410501bb5a82908a221741fb93ab04037afdf7ae",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-network.png": {
+      "sha256": "2cbe695e8201b29f1c88314be735683b8c86ac6684121090d914950306e09ff0",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-packages.png": {
+      "sha256": "63ccf9bcc0c2623a1b64e83256c0793a103c6bdb21eadcd90e480b0075af7fe0",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-preferences.png": {
+      "sha256": "191d084822d39b31defb7fd7a29d421a71ed3204548f6e39b082403489869430",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-runtime-detail.png": {
+      "sha256": "090c0e86a5acc673a3ae09b78520e0c57ea7062c008ff0e89c1ebcd0df77f4f7",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-runtime-empty.png": {
+      "sha256": "4867e2e2ccd8f73506a410b9d4f48b5233c5de5a480a28df2a213437e81f9503",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-runtime-error.png": {
+      "sha256": "22dbf13377f52029853042ddeac6a2e80ee490717f53664ca835f1d262f6c554",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-runtime-list.png": {
+      "sha256": "fafd34dd0b650f6621b81d1411f792c770e36a1e4b4be58843f95902024b467e",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-runtime-loading.png": {
+      "sha256": "4bead180d469713dd097ef88d6b65eeb738be335de4638b912bf5b2355b93bc7",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-runtime-permission.png": {
+      "sha256": "a405073d342a309200f206d754a36041b174e607efe8d12eaa1a4b7c01b8e6aa",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-narrow-runtime.png": {
+      "sha256": "a7f1fd96a72de3c43afd9b600fec565cb0c5e9ed49355df6831a27a8e0d2f0aa",
+      "size": [
+        480,
+        760
+      ]
+    },
+    "light-wide-650-accounts.png": {
+      "sha256": "89c795a7396d127549df581b72f35f469550e9a237e9558cb6157a8c311f798e",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-agent.png": {
+      "sha256": "a97724e005c1d44d832a6d12e0b45b70e160a894404f9187d3665d5748bdef7a",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-automations.png": {
+      "sha256": "856f1d2104945a82a9caf0f41856b1b328003f4a1315bf8a478d433130f855b7",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-basement.png": {
+      "sha256": "e031c53c563f2ebcb632a47c92e9c61a92bbae1700eb34c5e133149e9f36ba49",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-connections.png": {
+      "sha256": "044b370bdd8dc2091568baf300e65a8e7684d98ac9242ba160fc4bf5a5c392c4",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-mcp-disconnected.png": {
+      "sha256": "11f269eb52072a57ed1be39740403b71139126c9ef0abbb190adf51bf37313c1",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-mcp.png": {
+      "sha256": "c00b3b58f4df201069f022240215068474183589a2c564aaa99f8d5a24329446",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-models.png": {
+      "sha256": "2fd4bda7d90865f93e950920607f9c7ef11d43452789d428d873ba06699d0daa",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-network.png": {
+      "sha256": "9ba3769805f5454f675f362b7d949c5c4b3e30504e8d5e97f04c8a8463eee49d",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-packages.png": {
+      "sha256": "5e5116a439a03c303a3eb1046041d31e0db88d0527a4b32372ef5125e4a9318e",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-preferences.png": {
+      "sha256": "cd7690174ce8e0e1675c4cd3364f175477f8e46c407ef34888d14c61b698c687",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-runtime-detail.png": {
+      "sha256": "8af51dba0f703795fa1c82b1b5bbd5312bd5b7e815bd08a14bc31e45e80dc88a",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-runtime-empty.png": {
+      "sha256": "7854a2b81b4b2ed170c45f1f169e42ea1d8ffd5ad50c32f9a826244c660cad54",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-runtime-error.png": {
+      "sha256": "5b4de7207cbcb269abd8fe8eac69dab4eb8a118e2601d8fffebd382507d05eae",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-runtime-list.png": {
+      "sha256": "078e1771cdf56e5affe69f47e44fd9260c9be2c084b45e5c3bf5545ccb86b64a",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-runtime-loading.png": {
+      "sha256": "d45fe448fdb810a44f295978391ea9f28e8c404ad32161aaad883fb35b8428d6",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-runtime-permission.png": {
+      "sha256": "894c2f507fc4d744dcee02a478773eff171969ac8475dbea18d8c1238f60576c",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-650-runtime.png": {
+      "sha256": "665d5eda178f04c89fcc496e0e82690de35b4e79345170c895d47a85eef40efe",
+      "size": [
+        1120,
+        650
+      ]
+    },
+    "light-wide-accounts.png": {
+      "sha256": "17ef1a15d32a4421df50bb3953f436a7946690da8af39d0a360f1b01ae8140bd",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-agent.png": {
+      "sha256": "31f3e6866dd03a2d5d462fc23cff98a9e3a58e6a2c5c0a35c993ad6911150fec",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-automations.png": {
+      "sha256": "3be416113fbb9fda1b376b3f84c0fb952d7b9c5258684df9c699224fcc0a64f0",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-basement.png": {
+      "sha256": "4385ee014cb0f8b6b7df325a9e7c8f34a58bd6ec5bb9b99635edb240f5b0fd24",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-connections.png": {
+      "sha256": "d46e62079c4a06b1a0864b19cb41cdbe5a03cd00c6ae3e417490fc6668b2a3e8",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-mcp-disconnected.png": {
+      "sha256": "47ca488798952cd709a225e3bc5188dcb80d9066b5af2f523d303e34f5b8bc2d",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-mcp.png": {
+      "sha256": "30b76a3ea3a6c65270de9a6756df67af09f32ba53b20ded889ebb6c5364490e2",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-models.png": {
+      "sha256": "bd4f04ffdf9a01119f84d505048caad9107e1413b9ea3f7366a4123fbcc357fb",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-network.png": {
+      "sha256": "463548fea0cbc29229aeb7bda2c2f660c25f6d36640e342e5b831ccc5bfee466",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-packages.png": {
+      "sha256": "23b41d64974e97998f39e636cb5e8e5bf70d06ec944cfb6ce8c6a1998167ca00",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-preferences.png": {
+      "sha256": "8bd895657881b67dd21cc11745d5b4627f0aaf46859d52e81c3a9726f3d22037",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-runtime-detail.png": {
+      "sha256": "b1fe396325299b82b41dd002f694f3f1e422e0c9681ffdff699e0290cad68038",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-runtime-empty.png": {
+      "sha256": "20209909912b82f5d44c98fa242eb6eec71bb3d050bd977e4ccb7e0ca6deb2d1",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-runtime-error.png": {
+      "sha256": "b7fb566390b35dc3ad86f5e430a05b6a45cdf556fd74f1093933410be879db1e",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-runtime-list.png": {
+      "sha256": "aad516c6bf61479c076203c4b47ec9b53c8bebaa7ee3b9f84b837be1f58309ee",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-runtime-loading.png": {
+      "sha256": "438cd84d011958bd1ae359c6e2c2c1717b44ad1f038910875c34e94921c11a8a",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-runtime-permission.png": {
+      "sha256": "257f5752bca15ef135320ec4b3ec0e5bb88b49c2008874344d388dc139e2b066",
+      "size": [
+        1120,
+        820
+      ]
+    },
+    "light-wide-runtime.png": {
+      "sha256": "19e7f33fa6fc2e526473e64cc49008543b5374dbaaebcb484f51b83ae3f0314f",
+      "size": [
+        1120,
+        820
+      ]
+    }
+  },
+  "source_changed_paths": [
+    "apps/rndr-home/docs/DESKTOP_PARITY.md",
+    "apps/rndr-home/src/admin_model.rs",
+    "apps/rndr-home/src/desktop.rs",
+    "apps/rndr-home/src/desktop_fixtures.rs",
+    "apps/rndr-home/src/desktop_layout_tests.rs",
+    "apps/rndr-home/src/desktop_preservation_tests.rs",
+    "apps/rndr-home/src/main.rs",
+    "apps/rndr-home/src/ui_tests.rs"
+  ],
+  "source_commit": "542fe2dc98582a628e93c7f9aa46cb41cce3e786",
+  "source_sha256": {
+    "Cargo.lock": "9a6a2661dc86886e81b7168b5c3507828321e6dd3abf500c902f165defc3ac79",
+    "Cargo.toml": "036ed3e035e7ee9bb8c40694ab63da1a083f7b98528eb060f34e1a139c5a064a",
+    "apps/rndr-home/Cargo.lock": "364ae95367dc70dd8f99dd449e61c6aaa70434002921e3c1b15744904304f0ef",
+    "apps/rndr-home/Cargo.toml": "07ea724473064e20d6668c172469899304a7367356f329cf05ebf6ec0264a503",
+    "apps/rndr-home/docs/DESKTOP_PARITY.md": "7901d04a0c06637bbe7f0825b0034273d6cefa34bbe041bcc7a6c7c851ff7668",
+    "apps/rndr-home/src/admin_backend.rs": "64caf2ea86ad85071336f3c4871f25773db88a4acf82823da4aca46ac5bebb70",
+    "apps/rndr-home/src/admin_backend_tests.rs": "db798418d0dcdb7320c3b59506dff848fa10326fc7adc733e7c7875bfbbe5e1a",
+    "apps/rndr-home/src/admin_model.rs": "ceeab162230fd29554efd364152c4ad0b638e999ce2517a1ab0a1b83cbc728cb",
+    "apps/rndr-home/src/admin_views.rs": "4418b110b95be47526ef32a4b2f3d75dd5632ca33df6abe175389a207721e0cf",
+    "apps/rndr-home/src/backend.rs": "68934e026de415e19f4f01a7a8a54277fe2c915a3e478028061c23cf2d88c76f",
+    "apps/rndr-home/src/backend_tests.rs": "c1dae047a812622be5aa10053b497502890e7796dac1076c265bace60b55953d",
+    "apps/rndr-home/src/composer.rs": "febe5c1ec119764ded661a75d434576a1e4108653b2b92f8cf96a7ff8d46c58b",
+    "apps/rndr-home/src/controller.rs": "d959daf54010a8e9ac88e739b6f0b3e9b6dd258ce37a3a8d8b566ffb3264f3ca",
+    "apps/rndr-home/src/conversation.rs": "0b986a3832b812f33f2a8ece7e2a403cc81b4e251aa02e7c2fd76845f486c3a1",
+    "apps/rndr-home/src/desktop.rs": "1539abe8ffcfce837a88dee9d8c1418a33925e6d8118d8db8de56110e5af5ba8",
+    "apps/rndr-home/src/desktop_fixtures.rs": "99401d6bda97b1ba5de1f6443ba0112435f0a21fd2bbb08d153e78d7782d24ed",
+    "apps/rndr-home/src/desktop_layout_tests.rs": "30e082e398b49a096d4482d0a5783f4d7b6d95b846610c49b2a54e51c34c85fb",
+    "apps/rndr-home/src/desktop_preservation_tests.rs": "9320bcea8c2ef4843cb41abc41afb1d172388d3cbbbd140f63f9ec56590f566c",
+    "apps/rndr-home/src/desktop_tests.rs": "04e2b795f419390bb2348d3edd344339488a90caa25f831e2a493af89050bfad",
+    "apps/rndr-home/src/fixtures.rs": "01257e18659cb0ceb8e62f5ddfa9287e23427ede3baca0e827681241b65bfdb5",
+    "apps/rndr-home/src/history_tests.rs": "cf5ff3ddf324309669183f08155a591f1bc0b6fc10e1d992767440635b6183ce",
+    "apps/rndr-home/src/interaction_tests.rs": "60f51c13d7e6d43e93fa46b42d0c9fdda3163463883b85f1eaca58f913a34cd9",
+    "apps/rndr-home/src/lib.rs": "d638cb5388b8fd7544da7dbac20571a5a0cf1ed73115dc3ae7cecbace7e8819b",
+    "apps/rndr-home/src/main.rs": "3e19f209da38da0ff38af4b9cff2cc528d1ce23325be74b17cd300b4061ebced",
+    "apps/rndr-home/src/menus.rs": "e8d327a6834b9391a99fba0b5e727531b3598abf498f97789b365dfa84e9cc3a",
+    "apps/rndr-home/src/observation_tests.rs": "f8af1835aa0595fa172eef339bfd79ccf826cc84a086ac317f664af6d98558d9",
+    "apps/rndr-home/src/presentation.rs": "f28625b4bc1d887daaf660c9187b562417e1b8886839880e0bb60bb6a5725510",
+    "apps/rndr-home/src/qualification_tests.rs": "26b2be7ed8c15c4903e8b3fb7c418735a283fffeee82999848a703f5d21d33f1",
+    "apps/rndr-home/src/settings_views.rs": "d90dcea3ab38b11143cc63f3a1c88c22f39574dcfad53103ff5b2e5a3b3f63f3",
+    "apps/rndr-home/src/shell.rs": "c7589bdb31810b0484552551feac4d08be4acfd05840305bce96c8f87a1f1f90",
+    "apps/rndr-home/src/state.rs": "40ad41a048d3a5ba6037d1b3d24924045d491415e18b455c4e24e89e5c8471cf",
+    "apps/rndr-home/src/ui_tests.rs": "d53a376ed088856da11ffe1b51cfd7871bd0e28a4429c7980494586dc9282bc9"
+  },
+  "source_tree": "f10e1070a2d24d8180c7786fc3a41be5ce4a4ca7"
+}

@@ -1,0 +1,1 @@
+cargo run --manifest-path apps/rndr-home/Cargo.toml --target-dir .desktop-correction-target -j 2 -- --export-desktop apps/rndr-home/docs/desktop-correction-evidence/renders

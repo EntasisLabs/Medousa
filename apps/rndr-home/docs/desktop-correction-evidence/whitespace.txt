@@ -1,0 +1,5 @@
+apps/rndr-home/docs/desktop-correction-evidence/focused-final.log:88: new blank line at EOF.
+apps/rndr-home/docs/desktop-correction-evidence/focused.log:86: new blank line at EOF.
+apps/rndr-home/docs/desktop-correction-evidence/pass-after.log:82: new blank line at EOF.
+apps/rndr-home/docs/desktop-correction-evidence/test-default.log:163: new blank line at EOF.
+apps/rndr-home/docs/desktop-correction-evidence/test-observe.log:171: new blank line at EOF.

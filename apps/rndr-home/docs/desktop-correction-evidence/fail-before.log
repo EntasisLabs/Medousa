@@ -1,0 +1,369 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_paint/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_paint` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_app/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_app` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_core/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_core` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_ui/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_ui` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_render/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_render` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling libc v0.2.191
+   Compiling syn v3.0.9
+   Compiling bitflags v2.13.2
+   Compiling cfg-if v1.0.5
+   Compiling objc2-encode v4.1.0
+   Compiling autocfg v1.5.1
+   Compiling libm v0.2.16
+   Compiling num-traits v0.2.19
+   Compiling synstructure v0.14.0
+   Compiling objc2 v0.6.5
+   Compiling once_cell v1.21.4
+   Compiling zerofrom-derive v0.1.8
+   Compiling zerofrom v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling stable_deref_trait v1.2.1
+   Compiling smallvec v1.16.5
+   Compiling block2 v0.6.2
+   Compiling objc2-core-foundation v0.3.2
+   Compiling yoke v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling memchr v2.8.3
+   Compiling displaydoc v0.2.7
+   Compiling zerovec v0.11.9
+   Compiling foldhash v0.2.0
+   Compiling hashbrown v0.17.1
+   Compiling bytemuck_derive v1.12.1
+   Compiling cfg_aliases v0.2.2
+   Compiling writeable v0.6.4
+   Compiling pin-project-lite v0.2.17
+   Compiling syn v2.0.119
+   Compiling bytemuck v1.25.2
+   Compiling zerocopy v0.8.63
+   Compiling itoa v1.0.18
+   Compiling tinystr v0.8.5
+   Compiling objc2-foundation v0.3.2
+   Compiling zerocopy-derive v0.8.63
+   Compiling litemap v0.8.3
+   Compiling icu_locale_core v2.4.0
+   Compiling potential_utf v0.1.6
+   Compiling zerotrie v0.2.5
+   Compiling utf_types v1.0.0
+   Compiling utf8_iter v1.1.0
+   Compiling icu_provider v2.4.0
+   Compiling serde_core v1.0.229
+   Compiling icu_collections v2.4.0
+   Compiling thiserror v2.0.21
+   Compiling equivalent v1.0.3
+   Compiling bytes v1.12.1
+   Compiling futures-core v0.3.34
+   Compiling arrayvec v0.7.8
+   Compiling icu_properties_data v2.4.0
+   Compiling indexmap v2.14.2
+   Compiling objc2-core-graphics v0.3.2
+   Compiling thiserror-impl v2.0.21
+   Compiling serde v1.0.229
+   Compiling icu_normalizer_data v2.4.0
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.7
+   Compiling serde_derive v1.0.229
+   Compiling getrandom v0.2.17
+   Compiling raw-window-handle v0.6.2
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling subtle v2.6.1
+   Compiling cc v1.11.1
+   Compiling icu_properties v2.4.0
+   Compiling half v2.7.1
+   Compiling tokio-macros v2.7.2
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling core-foundation-sys v0.8.7
+   Compiling zeroize v1.9.1
+   Compiling log v0.4.35
+   Compiling zmij v1.0.23
+   Compiling typenum v1.20.1
+   Compiling tokio v1.54.1
+   Compiling icu_normalizer v2.4.0
+   Compiling ring v0.17.14
+   Compiling tracing-core v0.1.36
+   Compiling futures-sink v0.3.34
+   Compiling getrandom v0.4.3
+   Compiling simd-adler32 v0.3.10
+   Compiling rustc-hash v1.1.0
+   Compiling serde_json v1.0.154
+   Compiling naga-types v30.0.1
+   Compiling tracing v0.1.44
+   Compiling http v1.5.0
+   Compiling font-types v0.12.7
+   Compiling naga v30.0.1
+   Compiling euclid v0.22.14
+   Compiling bit-vec v0.9.1
+   Compiling parking_lot_core v0.9.12
+   Compiling percent-encoding v2.3.2
+   Compiling crc32fast v1.5.4
+   Compiling crossbeam-utils v0.8.23
+   Compiling adler2 v2.0.1
+   Compiling unicode-width v0.2.3
+   Compiling objc-sys v0.3.5
+   Compiling codespan-reporting v0.13.1
+   Compiling bit-set v0.10.0
+   Compiling read-fonts v0.41.0
+   Compiling http-body v1.1.0
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling rustls-pki-types v1.15.1
+   Compiling objc2-metal v0.3.2
+   Compiling futures-macro v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling scopeguard v1.2.0
+   Compiling slab v0.4.12
+   Compiling futures-io v0.3.34
+   Compiling icu_locale_fallback_data v2.4.0
+   Compiling crossbeam-epoch v0.9.21
+   Compiling untrusted v0.9.0
+   Compiling static_assertions v1.1.0
+   Compiling pulldown-cmark v0.13.6
+   Compiling httparse v1.10.1
+   Compiling wgpu-types v30.0.1
+   Compiling futures-util v0.3.34
+   Compiling lock_api v0.4.14
+   Compiling objc2-quartz-core v0.3.2
+   Compiling digest v0.10.7
+   Compiling uuid v1.29.1
+   Compiling miniz_oxide v0.9.1
+   Compiling lyon_geom v1.0.20
+   Compiling wgpu-hal v30.0.1
+   Compiling tower-service v0.3.3
+   Compiling icu_segmenter_data v2.4.0
+   Compiling crossbeam-deque v0.8.8
+   Compiling unicase v2.10.0
+   Compiling anyhow v1.0.104
+   Compiling try-lock v0.2.5
+   Compiling rustls v0.23.46
+   Compiling wgpu-naga-bridge v30.0.1
+   Compiling want v0.3.2
+   Compiling lyon_path v1.0.19
+   Compiling flate2 v1.1.11
+   Compiling objc2 v0.5.3
+   Compiling parking_lot v0.12.5
+   Compiling raw-window-metal v1.1.0
+   Compiling rustls-webpki v0.103.16
+   Compiling form_urlencoded v1.2.2
+   Compiling idna_adapter v1.2.2
+   Compiling iana-time-zone v0.1.65
+   Compiling libloading v0.8.9
+   Compiling keyboard-types v0.8.3
+   Compiling cpufeatures v0.2.17
+   Compiling dpi v0.1.2
+   Compiling ryu v1.0.23
+   Compiling profiling v1.0.18
+   Compiling quick-error v2.0.1
+   Compiling cursor-icon v1.2.0
+   Compiling atomic-waker v1.1.2
+   Compiling web-time v1.1.0
+   Compiling zune-core v0.5.3
+   Compiling unicode-segmentation v1.13.3
+   Compiling smol_str v0.3.7
+   Compiling base64 v0.22.1
+   Compiling rayon-core v1.13.0
+   Compiling winit-core v0.31.0-beta.4
+   Compiling rndr_core v0.6.0 (/Users/theelevators/rndr/crates/rndr_core)
+   Compiling zune-jpeg v0.5.15
+   Compiling hyper v1.12.0
+   Compiling sha2 v0.10.9
+   Compiling chrono v0.4.45
+   Compiling idna v1.1.0
+   Compiling icu_locale_fallback v2.4.0
+   Compiling block2 v0.5.1
+   Compiling hmac v0.12.1
+   Compiling skrifa v0.44.0
+   Compiling futures-channel v0.3.34
+   Compiling security-framework-sys v2.17.0
+   Compiling core-foundation v0.9.4
+   Compiling objc2-app-kit v0.3.2
+   Compiling sync_wrapper v1.0.2
+   Compiling wgpu-core v30.0.1
+   Compiling objc2-core-text v0.3.2
+   Compiling memmap2 v0.9.12
+   Compiling weezl v0.1.12
+   Compiling tower-layer v0.3.3
+   Compiling pxfm v0.1.30
+   Compiling rustversion v1.0.23
+   Compiling float_next_after v1.0.0
+   Compiling ipnet v2.12.2
+   Compiling byteorder-lite v0.1.0
+   Compiling linebender_resource_handle v0.1.1
+   Compiling litrs v1.0.1
+   Compiling base64 v0.23.1
+   Compiling fax v0.2.7
+   Compiling parlance v0.1.1
+   Compiling fontique v0.12.0
+   Compiling tiff v0.11.3
+   Compiling moxcms v0.8.1
+   Compiling hyper-util v0.1.21
+   Compiling document-features v0.2.12
+   Compiling lyon_tessellation v1.0.23
+   Compiling tower v0.5.3
+   Compiling security-framework v2.11.1
+   Compiling medousa-types v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-types)
+   Compiling icu_segmenter v2.4.0
+   Compiling objc2-foundation v0.2.2
+   Compiling tokio-rustls v0.26.6
+   Compiling url v2.5.8
+   Compiling wgpu-core-deps-apple v30.0.1
+   Compiling winit-common v0.31.0-beta.4
+   Compiling lyon_algorithms v1.0.22
+   Compiling accesskit v0.25.2
+   Compiling harfrust v0.12.0
+   Compiling webpki-roots v1.0.11
+   Compiling parley_data v0.12.0
+   Compiling rand_core v0.6.4
+   Compiling objc2-core-video v0.3.2
+   Compiling ppv-lite86 v0.2.21
+   Compiling winit v0.31.0-beta.4
+   Compiling wgpu v30.0.1
+   Compiling dispatch2 v0.3.1
+   Compiling lazy_static v1.5.1
+   Compiling either v1.19.0
+   Compiling parley_emoji v0.12.0
+   Compiling unsafe-libyaml v0.2.11
+   Compiling minimal-lexical v0.2.1
+   Compiling nom v7.1.3
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling parley_engine v0.12.0
+   Compiling rayon v1.12.0
+   Compiling keyring v2.3.3
+   Compiling winit-appkit v0.31.0-beta.4
+   Compiling rand_chacha v0.3.1
+   Compiling hyper-rustls v0.27.10
+   Compiling accesskit_consumer v0.39.2
+   Compiling lyon v1.0.19
+   Compiling tower-http v0.6.11
+   Compiling objc2-app-kit v0.2.2
+   Compiling image v0.25.10
+   Compiling serde_urlencoded v0.7.1
+   Compiling http-body-util v0.1.5
+   Compiling miniz_oxide v0.8.9
+   Compiling tokio-util v0.7.20
+   Compiling fdeflate v0.3.7
+   Compiling rndr_render v0.6.0 (/Users/theelevators/rndr/crates/rndr_render)
+   Compiling zeno v0.3.3
+   Compiling yazi v0.2.2
+   Compiling swash v0.2.10
+   Compiling png v0.18.1
+   Compiling reqwest v0.12.28
+   Compiling arc-swap v1.9.4
+   Compiling arboard v3.7.0
+   Compiling accesskit_macos v0.27.2
+   Compiling rndr_paint v0.6.0 (/Users/theelevators/rndr/crates/rndr_paint)
+   Compiling rand v0.8.8
+   Compiling medousa-secrets v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-secrets)
+   Compiling jpeg-decoder v0.3.2
+   Compiling parley v0.12.0
+   Compiling medousa-api-contract v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-api-contract)
+   Compiling eventsource-stream v0.2.3
+   Compiling image-webp v0.2.4
+   Compiling etagere v0.3.0
+   Compiling pollster v0.4.0
+   Compiling urlencoding v2.1.3
+   Compiling medousa-sdk v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-sdk)
+   Compiling medousa-local-credential v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-local-credential)
+   Compiling rndr_app v0.6.0 (/Users/theelevators/rndr/crates/rndr_app)
+   Compiling rndr_ui v0.6.0 (/Users/theelevators/rndr/crates/rndr_ui)
+   Compiling medousa-rndr-home v0.1.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/apps/rndr-home)
+    Finished `test` profile [unoptimized] target(s) in 53.50s
+     Running unittests src/lib.rs (.desktop-correction-target/debug/build/medousa-rndr-home/28a69fd229c8ace2/out/medousa_rndr_home-28a69fd229c8ace2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (.desktop-correction-target/debug/build/medousa-rndr-home/d143937d9a2a589f/out/medousa_rndr_home-d143937d9a2a589f)
+
+running 2 tests
+test independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild ... FAILED
+test independent_review_tests::unrelated_reply_preserves_current_dataset_scroll ... FAILED
+
+failures:
+
+---- independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild stdout ----
+
+thread 'independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild' (3103304) panicked at src/desktop_preservation_tests.rs:15:2:
+focus lost/deleted on responsive rebuild: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- independent_review_tests::unrelated_reply_preserves_current_dataset_scroll stdout ----
+
+thread 'independent_review_tests::unrelated_reply_preserves_current_dataset_scroll' (3103305) panicked at src/desktop_preservation_tests.rs:28:2:
+assertion `left == right` failed: background Health reply reset Runtimes scroll
+  left: [0.0, 0.0]
+ right: [0.0, -200.0]
+
+
+failures:
+    independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild
+    independent_review_tests::unrelated_reply_preserves_current_dataset_scroll
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 62 filtered out; finished in 0.31s
+
+error: test failed, to rerun pass `--bin medousa-rndr-home`

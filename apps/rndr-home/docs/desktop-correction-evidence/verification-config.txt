@@ -1,0 +1,10 @@
+Correction baseline b5b2fa9cb116cd8cd25275d61a28a15b06abeb80
+Source commit 542fe2dc98582a628e93c7f9aa46cb41cce3e786
+CARGO_NET_OFFLINE=true CARGO_INCREMENTAL=0
+CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
+RUST_TEST_THREADS=2; Cargo -j 2
+Final focused command: cargo test --manifest-path apps/rndr-home/Cargo.toml --target-dir .desktop-correction-target -j 2 desktop_preservation_tests
+Full commands: *.command.txt; shared desktop-evidence/reproduce.sh invoked with OUT=apps/rndr-home/docs/desktop-correction-evidence TARGET=.desktop-correction-target
+Final source contents match source commit; initial environment.txt predates source commit.
+Contact sheet: swift -module-cache-path .desktop-correction-swift-cache apps/rndr-home/docs/desktop-correction-evidence/make-contact-sheet.swift apps/rndr-home/docs/desktop-correction-evidence/renders apps/rndr-home/docs/desktop-correction-evidence/minimum-height-contact-sheet.png
+Pillow was unavailable; no dependency was installed. Offline system CoreGraphics/ImageIO composition used instead.

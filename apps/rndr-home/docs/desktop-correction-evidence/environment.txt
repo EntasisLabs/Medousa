@@ -1,0 +1,13 @@
+Fri Nov 13 18:13:57 UTC 2026
+b5b2fa9cb116cd8cd25275d61a28a15b06abeb80
+apps/rndr-home/docs/DESKTOP_PARITY.md
+apps/rndr-home/src/admin_model.rs
+apps/rndr-home/src/desktop.rs
+apps/rndr-home/src/desktop_fixtures.rs
+apps/rndr-home/src/desktop_layout_tests.rs
+apps/rndr-home/src/main.rs
+apps/rndr-home/src/ui_tests.rs
+rustc 1.100.0 (0ef1bc386 2026-11-09)
+cargo 1.100.0 (3acc79c0c 2026-11-05)
+Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s5   228Gi   191Gi    13Gi    94%    1.9M  136M    1%   /System/Volumes/Data
