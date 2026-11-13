@@ -1,0 +1,106 @@
+[
+  {
+    "label": "packaging-invocations",
+    "command": [
+      "python3",
+      "scripts/ci/test-daemon-packaging.py"
+    ],
+    "exit_code": 0,
+    "seconds": 1.0,
+    "compiles_rust": false
+  },
+  {
+    "label": "dependency-guard",
+    "command": [
+      "python3",
+      "scripts/ci/check-daemon-dependencies.py",
+      "--offline"
+    ],
+    "exit_code": 0,
+    "seconds": 3.922,
+    "compiles_rust": false
+  },
+  {
+    "label": "rustfmt",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "src/runtime/platform.rs",
+      "src/runtime/event_delivery.rs"
+    ],
+    "exit_code": 0,
+    "seconds": 0.188,
+    "compiles_rust": false
+  },
+  {
+    "label": "bash-syntax",
+    "command": [
+      "bash",
+      "-n",
+      "scripts/ci/test-platform-lifetime.sh",
+      "scripts/release/build.sh",
+      "scripts/mobile-dev-daemon.sh"
+    ],
+    "exit_code": 0,
+    "seconds": 0.006,
+    "compiles_rust": false
+  },
+  {
+    "label": "yaml-syntax",
+    "command": [
+      "ruby",
+      "-e",
+      "require \"yaml\"; ARGV.each { |f| YAML.parse_file(f); puts \"PASS: #{f}\" }",
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml"
+    ],
+    "exit_code": 0,
+    "seconds": 0.065,
+    "compiles_rust": false
+  },
+  {
+    "label": "docs-strict",
+    "command": [
+      "bash",
+      "scripts/verify-docs.sh",
+      "--strict"
+    ],
+    "exit_code": 0,
+    "seconds": 44.093,
+    "compiles_rust": false
+  },
+  {
+    "label": "source-evidence",
+    "command": [
+      "python3",
+      "docs/reviews/daemon-ownership-evidence/correction-2026-11-13/verify-evidence.py"
+    ],
+    "exit_code": 1,
+    "seconds": 0.504,
+    "compiles_rust": false
+  },
+  {
+    "label": "source-evidence-final",
+    "command": [
+      "python3",
+      "docs/reviews/daemon-ownership-evidence/correction-2026-11-13/verify-evidence.py"
+    ],
+    "exit_code": 0,
+    "seconds": 0.82,
+    "compiles_rust": false
+  },
+  {
+    "label": "source-diff-whitespace",
+    "command": [
+      "git",
+      "diff",
+      "--cached",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.01,
+    "compiles_rust": false
+  }
+]

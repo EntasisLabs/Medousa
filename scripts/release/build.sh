@@ -186,6 +186,16 @@ if [[ -n "${TARGET}" ]]; then
   CARGO_BUILD_ARGS+=(--target "${TARGET}")
 fi
 
+stage_bin() {
+  local bin="$1"
+  local src="$2"
+  local dst="${BIN_DIR}/$(medousa_binary_filename "${bin}" "${TARGET}")"
+  medousa_validate_native_binary "${src}" "${TARGET}"
+  cp -f "${src}" "${dst}"
+  chmod +x "${dst}" 2>/dev/null || true
+  medousa_log "  ${bin}"
+}
+
 ROOT_BINS=()
 if [[ "${NEED_ENGINE}" -eq 1 ]]; then
   if [[ -n "${MEDOUSA_PREBUILT_LAUNCHER:-}" && -f "${MEDOUSA_PREBUILT_LAUNCHER}" ]]; then
@@ -195,9 +205,14 @@ if [[ "${NEED_ENGINE}" -eq 1 ]]; then
   fi
   if [[ -n "${MEDOUSA_PREBUILT_DAEMON:-}" && -f "${MEDOUSA_PREBUILT_DAEMON}" ]]; then
     medousa_log "reusing prebuilt daemon: ${MEDOUSA_PREBUILT_DAEMON}"
+    stage_bin medousa_daemon "${MEDOUSA_PREBUILT_DAEMON}"
   else
     # Separate invocation: terminal features must not unify into the daemon.
     cargo build "${CARGO_BUILD_ARGS[@]}" --bin medousa_daemon
+    # Preserve BEFORE any launcher/adapter build can replace Cargo's output.
+    src="$(medousa_find_release_binary medousa_daemon "${TARGET}")"
+    [[ -n "${src}" ]] || { echo "error: expected binary missing: medousa_daemon" >&2; exit 1; }
+    stage_bin medousa_daemon "${src}"
   fi
   ROOT_BINS+=(medousa_cli medousa_tui)
 fi
@@ -246,29 +261,10 @@ build_workspace_package() {
 MAIN_RELEASE="$(medousa_cargo_release_dir "${TARGET}")"
 WA_RELEASE="$(medousa_whatsapp_cargo_release_dir "${TARGET}")"
 
-stage_bin() {
-  local bin="$1"
-  local src="$2"
-  local dst="${BIN_DIR}/$(medousa_binary_filename "${bin}" "${TARGET}")"
-  medousa_validate_native_binary "${src}" "${TARGET}"
-  cp -f "${src}" "${dst}"
-  chmod +x "${dst}" 2>/dev/null || true
-  medousa_log "  ${bin}"
-}
-
 medousa_log "staging release binaries → ${BIN_DIR}"
 
 if [[ "${NEED_ENGINE}" -eq 1 ]]; then
-  if [[ -n "${MEDOUSA_PREBUILT_DAEMON:-}" && -f "${MEDOUSA_PREBUILT_DAEMON}" ]]; then
-    stage_bin medousa_daemon "${MEDOUSA_PREBUILT_DAEMON}"
-  else
-    src="$(medousa_find_release_binary medousa_daemon "${TARGET}" || true)"
-    [[ -n "${src}" ]] || {
-      echo "error: expected binary missing: medousa_daemon" >&2
-      exit 1
-    }
-    stage_bin medousa_daemon "${src}"
-  fi
+  # The daemon was already validated and staged before terminal compilation.
   if [[ -n "${MEDOUSA_PREBUILT_LAUNCHER:-}" && -f "${MEDOUSA_PREBUILT_LAUNCHER}" ]]; then
     stage_bin medousa "${MEDOUSA_PREBUILT_LAUNCHER}"
   else

@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/docs/reviews/daemon-ownership-evidence/correction-2026-11-13/verify-evidence.py", line 43, in <module>
+    main()
+    ~~~~^^
+  File "/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-daemon-ownership-and-dependencies-on-audited-baseline/docs/reviews/daemon-ownership-evidence/correction-2026-11-13/verify-evidence.py", line 32, in main
+    assert digest(original) == expected, f"old candidate source mismatch: {path}"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: old candidate source mismatch: scripts/release/build.ps1

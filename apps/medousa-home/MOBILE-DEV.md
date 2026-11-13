@@ -28,8 +28,15 @@ Build the Rust toolchain + daemon once (same as desktop):
 ```bash
 # rustup — https://rustup.rs
 cargo build -p medousa --bin medousa_daemon
-# optional: cargo install --path . --bin medousa
+# optional terminal/management launcher (terminal support is opt-in):
+# cargo install --path . --locked --features tui --bin medousa
 ```
+
+Source builds default to the daemon, not the terminal launcher. `cargo build -p medousa`
+builds the default daemon/CLI targets; select `--features tui --bin medousa` for the
+terminal/management launcher. Build the standalone daemon separately from the launcher
+to avoid feature unification; preserve its artifact before any later terminal build.
+See the root README's source-build guidance for explicit install commands.
 
 Copy config from your Linux box if you already have keys and vault:
 
@@ -107,7 +114,7 @@ Foreground / debug:
 
 ```bash
 medousa daemon --public
-# or: cargo run -p medousa --bin medousa -- start daemon --public
+# or: cargo run -p medousa --features tui --bin medousa -- start daemon --public
 ```
 
 The CLI prints something like:

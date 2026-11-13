@@ -1,0 +1,14 @@
+test_bash_release_caller_stages_before_terminal_build (__main__.PackagingInvocations.test_bash_release_caller_stages_before_terminal_build) ... ok
+test_combined_tui_daemon_invocation_is_rejected (__main__.PackagingInvocations.test_combined_tui_daemon_invocation_is_rejected) ... ok
+test_docker_invocations_preserve_all_packaged_binaries (__main__.PackagingInvocations.test_docker_invocations_preserve_all_packaged_binaries) ... ok
+test_inherited_missing_tui_invocation_is_rejected (__main__.PackagingInvocations.test_inherited_missing_tui_invocation_is_rejected) ... ok
+test_late_daemon_copy_would_package_contaminated_binary (__main__.PackagingInvocations.test_late_daemon_copy_would_package_contaminated_binary) ... ok
+test_mobile_documented_launcher_commands_opt_in (__main__.PackagingInvocations.test_mobile_documented_launcher_commands_opt_in) ... ok
+test_platform_lifetime_runner_isolation_and_zero_match_guard (__main__.PackagingInvocations.test_platform_lifetime_runner_isolation_and_zero_match_guard) ... ok
+test_powershell_preservation_order_static_only (__main__.PackagingInvocations.test_powershell_preservation_order_static_only) ... ok
+test_release_invocations_preserve_standalone_for_each_suffix (__main__.PackagingInvocations.test_release_invocations_preserve_standalone_for_each_suffix) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.952s
+
+OK

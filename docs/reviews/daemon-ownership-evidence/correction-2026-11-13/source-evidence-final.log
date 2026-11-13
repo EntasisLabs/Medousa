@@ -1,0 +1,2 @@
+PASS: 40 current source fingerprints; 37 immutable old-candidate files; 29 old-source fingerprints verified against 49984680858d50da8ec424709b943c62a1bfe589
+Three new Rust constructor tests remain uncompiled/unrun. No Rust/Docker qualification implied.

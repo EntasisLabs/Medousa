@@ -315,6 +315,11 @@ jobs:
         run: |
           cargo build --release -p medousa --bin medousa_daemon \
             --no-default-features --features full-daemon,iroh-transport --target "${{ matrix.target }}"
+          # Preserve the standalone artifact before the launcher build can rebuild it.
+          EXT=""
+          [[ "${{ matrix.target }}" == *-pc-windows-msvc ]] && EXT=".exe"
+          mkdir -p dist/daemon
+          cp -f "${CARGO_TARGET_DIR}/${{ matrix.target }}/release/medousa_daemon${EXT}" "dist/daemon/medousa_daemon-${{ matrix.target }}${EXT}"
           cargo build --release -p medousa --bin medousa \
             --no-default-features --features tui,iroh-transport --target "${{ matrix.target }}"
 
@@ -324,7 +329,6 @@ jobs:
           [[ "${{ matrix.target }}" == *-pc-windows-msvc ]] && EXT=".exe"
           REL="${CARGO_TARGET_DIR}/${{ matrix.target }}/release"
           mkdir -p dist/daemon
-          cp -f "${REL}/medousa_daemon${EXT}" "dist/daemon/medousa_daemon-${{ matrix.target }}${EXT}"
           cp -f "${REL}/medousa${EXT}" "dist/daemon/medousa-${{ matrix.target }}${EXT}"
 
       - name: Upload daemon artifact

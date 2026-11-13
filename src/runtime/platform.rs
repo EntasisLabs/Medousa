@@ -134,6 +134,9 @@ async fn build_platform_inner(
     delegated_task_transport: Option<Arc<dyn crate::delegated_task::DelegatedTaskTransport>>,
     event_drain: Option<HeadlessEventDrain>,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
+    // Test-only observation of the very sender installed into real tool bindings.
+    #[cfg(test)]
+    let observation_sender = event_tx.clone();
     crate::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     crate::ensure_runtime_backend_prerequisites(&backend)?;
 
@@ -236,6 +239,11 @@ async fn build_platform_inner(
     )
     .await
     .context("failed to register durable turn worker job handler")?;
+    // This checkpoint is after actual handler registration (which retains agent Arcs),
+    // not a synthetic future standing in for construction. No production hook exists.
+    #[cfg(test)]
+    lifetime_tests::after_handler_registration(&agent, observation_sender).await?;
+
     crate::agent_runtime::turn_worker_job::reconcile_durable_turn_workers(
         agent.runtime.as_ref(),
         agent.clone(),
@@ -256,6 +264,9 @@ async fn build_platform_inner(
         delegation_service,
     }))
 }
+
+#[cfg(test)]
+mod lifetime_tests;
 
 async fn sync_mcp_catalog(agent: &MedousaAgentRuntime) {
     if let Ok(catalog) = agent.mcp_gateway_client.fetch_catalog().await {

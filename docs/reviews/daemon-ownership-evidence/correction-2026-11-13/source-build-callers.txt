@@ -1,0 +1,62 @@
+.github/workflows/ci.yml:248:run: cargo build -p medousa-app-core --bin app-chat-dispatch
+.github/workflows/ci.yml:393:cargo run -p medousa-types-schema
+.github/workflows/nightly.yml:47:run: cargo run -p medousa-forge --release --example p04_forge_store
+.github/workflows/nightly.yml:49:run: cargo run -p medousa-forge --release --example p05_coder_observation
+.github/workflows/nightly.yml:51:run: cargo run -p medousa --release --example p06_vault_backend
+.github/workflows/release.yml:316:cargo build --release -p medousa --bin medousa_daemon \
+.github/workflows/release.yml:323:cargo build --release -p medousa --bin medousa \
+CONTRIBUTING.md:23:cargo build -p medousa --bin medousa_daemon
+Dockerfile:9:RUN cargo build --locked --release -p medousa --no-default-features --features full-daemon --bin medousa_daemon --bin medousa_cli \
+Dockerfile:12:RUN cargo build --locked --release -p medousa --no-default-features --features tui --bin medousa \
+README.md:101:cargo build --locked -p medousa --no-default-features --features full-daemon --bin medousa_daemon --bin medousa_cli
+README.md:102:cargo install --locked --path . --no-default-features --features full-daemon --bin medousa_daemon --bin medousa_cli
+README.md:104:cargo build --locked -p medousa --features tui --bin medousa --bin medousa_tui
+README.md:105:cargo install --locked --path . --features tui --bin medousa --bin medousa_tui
+README.md:106:cargo run -p medousa --features tui --bin medousa -- --help
+apps/medousa-home/MOBILE-DEV.md:30:cargo build -p medousa --bin medousa_daemon
+apps/medousa-home/MOBILE-DEV.md:32:# cargo install --path . --locked --features tui --bin medousa
+apps/medousa-home/MOBILE-DEV.md:35:Source builds default to the daemon, not the terminal launcher. `cargo build -p medousa`
+apps/medousa-home/MOBILE-DEV.md:117:# or: cargo run -p medousa --features tui --bin medousa -- start daemon --public
+apps/medousa-home/scripts/prepare-engine-sidecar.sh:170:cargo build --release -p medousa --bin medousa_daemon --target "${TARGET}" "${DAEMON_FEATURE_ARGS[@]}"
+apps/medousa-home/scripts/prepare-engine-sidecar.sh:193:cargo build --release -p medousa-local-inference --bin medousa_local --target "${TARGET}" --features "${INFERENCE_FEATURE}"
+architecture/hardening/verification/performance-budgets.md:116:**Harness:** `cargo run -p medousa-engine --release --example p01_turn_stream`.
+architecture/hardening/verification/performance-budgets.md:224:fixture via `cargo run -p medousa --release --example p03_feed_workspace`
+architecture/hardening/verification/performance-budgets.md:248:**Harness:** `cargo run -p medousa-forge --example p04_forge_store`
+architecture/hardening/verification/performance-budgets.md:288:**Harness:** `cargo run -p medousa-forge --example p05_coder_observation`
+architecture/hardening/verification/performance-budgets.md:341:**Harness:** `cargo run -p medousa --example p06_vault_backend`
+architecture/hardening/verification/performance-budgets.md:343:`MEDOUSA_P06_NOTES=100000 cargo run -p medousa --example p06_vault_backend`.
+crates/medousa-app-core/README.md:58:cargo run -p medousa-app-core --features json-schema --bin medousa-app-core-schema
+docs/CONTRIBUTING-DOCS.md:50:3. When `medousa-sdk` exposes a typed method, document it in [`docs/sdk/api-reference.md`](sdk/api-reference.md) and regenerate the contract (`UPDATE_API_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::checked_in_contract_artifacts_match_generation`). Run `scripts/check-api-contract.sh`. For new DTOs, run `cargo run -p medousa-types-schema` + `scripts/gen-python-types.py` + `scripts/gen-ts-types.py` (Medousa Home generated stream types).
+docs/cookbook/build-from-source.md:143:cargo build -p medousa-local-inference --bin medousa_local --features embedded-inference-metal
+docs/cookbook/build-from-source.md:144:cargo run -p medousa-local-inference --bin medousa_local --features embedded-inference-metal -- --load-recommended
+docs/cookbook/build-from-source.md:149:cargo build -p medousa --bin medousa_daemon
+docs/cookbook/build-from-source.md:150:cargo run -p medousa --bin medousa_daemon
+docs/cookbook/mcp-server-setup.md:10:cargo run -p medousa-mcp-server --bin medousa_mcp_server
+docs/guides/packages.md:121:cargo run -p medousa-local-inference \
+docs/guides/provider-conversations.md:30:Alternatively, set `MEDOUSA_BRIDGE_IROH_TICKET` privately and omit `--iroh-ticket`. An explicit ticket takes precedence over this environment variable. `--worker` always uses its own saved ticket and bearer. Both Iroh forms skip direct HTTP, even when a LAN URL is available, and fail without HTTP fallback. A CLI built without Iroh support reports an error; source builds need `cargo build --release --features iroh-transport --bin medousa_cli` (the resulting binary is named `medousa_cli`).
+docs/guides/terminal-bench.md:28:cargo build --release -p medousa -p medousa-code -p medousa-session \
+docs/mcp-gateway-setup.md:235:| Spawn uses `cargo run` and dies | Install release binaries next to `medousa`, or set `MEDOUSA_MCP_GATEWAY_BIN` |
+docs/reviews/daemon-ownership-and-dependencies-2026-11-12.md:62:cargo build --locked --release -p medousa --no-default-features --features full-daemon,iroh-transport --bin medousa_daemon
+docs/reviews/daemon-ownership-and-dependencies-2026-11-12.md:65:cargo run --features tui --bin medousa_tui
+docs/sdk/api-reference.md:572:cargo run -p medousa-types-schema
+docs/sdk/python.md:165:cargo run -p medousa-types-schema          # writes sdk-contract/medousa-types.schema.json
+scripts/benchmark-local-inference-matrix.sh:91:if ! cargo run --quiet -p medousa-local-inference \
+scripts/check-app-api.sh:11:cargo run -q -p medousa-app-core --features json-schema --bin medousa-app-core-schema
+scripts/ci/check-ios-embedded-deps.sh:39:cargo build --locked -p medousa-ios-dependency-probe \
+scripts/ci/check-ios-embedded-deps.sh:46:cargo build --locked -p medousa-ios-dependency-probe \
+scripts/ci/check-ios-embedded-deps.sh:53:cargo build --locked -p medousa-ios-dependency-probe \
+scripts/ci/check-perf-budgets.sh:22:cargo run -p medousa-engine --release --example p01_turn_stream >"${p01_out}"
+scripts/ci/check-perf-budgets.sh:24:cargo run -p medousa --release --example p03_feed_workspace >"${p03_out}"
+scripts/clean-build-artifacts.sh:80:echo "next: cargo build -p medousa --bin medousa_daemon  (artifacts land in cache, not Medousa/)"
+scripts/mobile-dev-daemon.sh:12:exec cargo run -p medousa --bin medousa --features tui -- start daemon --public
+scripts/release/build-local-brain.sh:111:cargo build --release -p medousa-local-inference --bin medousa_local --features "${FEATURE}" --target "${TARGET}"
+scripts/release/build.ps1:100:Invoke-MedousaCargo @cargoBuildArgs --bin medousa_daemon
+scripts/release/build.ps1:125:Write-MedousaLog "cargo build (medousa-code)..."
+scripts/release/build.ps1:130:Write-MedousaLog "cargo build (medousa-session)..."
+scripts/release/build.ps1:135:Write-MedousaLog "cargo build (medousa-computer)..."
+scripts/release/build.sh:211:cargo build "${CARGO_BUILD_ARGS[@]}" --bin medousa_daemon
+scripts/release/build.sh:221:medousa_log "cargo build (root): ${ROOT_BINS[*]}"
+scripts/release/build.sh:232:medousa_log "cargo build (${label})…"
+scripts/release/build.sh:243:medousa_log "cargo build (${package} / ${bin})…"
+sdk-contract/openapi.json:46867:"command": "cargo run -p medousa-api-contract -- generate",
+sdk-contract/route-inventory.json:8303:"command": "cargo run -p medousa-api-contract -- generate",

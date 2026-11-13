@@ -1,0 +1,17 @@
+{
+  "parent_candidate": "49984680858d50da8ec424709b943c62a1bfe589",
+  "initial_free_bytes_observed": 6856613888,
+  "hard_floor_bytes": 6442450944,
+  "final_free_bytes": 25169649664,
+  "rust_compilation_attempted": false,
+  "new_rust_tests_executed": false,
+  "docker_executed": false,
+  "powershell_executed": false,
+  "archive_files_preserved": 37,
+  "source_fingerprint_count": 40,
+  "python_ast": "PASS",
+  "powershell_crlf": "PASS",
+  "patch_sha256": "225cce7dcfba792f5152dae4448ee84f47d22b265906f07b38ab01db20494e21",
+  "patch_bytes": 51890,
+  "intermediate_evidence_failure": "Old PS1 hashes are checkout CRLF, not raw LF Git blobs. Verifier now requires unchanged .gitattributes and applies declared checkout filters. Initial failure retained; final verification passed."
+}

@@ -1,0 +1,81 @@
+{
+  "status": "uncompiled_and_unrun",
+  "reason": "Explicit no-expensive-compilation instruction; initial free space about 6.38 GiB at 6 GiB hard floor. Later external recovery does not override instruction.",
+  "tests": [
+    {
+      "selector": "runtime::platform::lifetime_tests::retained_agent_survives_final_platform_drop_without_observation_failure",
+      "environment": {
+        "MEDOUSA_TEST_HERMETIC": "1"
+      },
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "medousa",
+        "--no-default-features",
+        "--features",
+        "full-daemon",
+        "--lib",
+        "runtime::platform::lifetime_tests::retained_agent_survives_final_platform_drop_without_observation_failure",
+        "--",
+        "--ignored",
+        "--exact",
+        "--test-threads=1"
+      ],
+      "executed": false,
+      "compiled": false
+    },
+    {
+      "selector": "runtime::platform::lifetime_tests::late_actual_constructor_failure_closes_observations_after_handler_registration",
+      "environment": {
+        "MEDOUSA_TEST_HERMETIC": "1"
+      },
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "medousa",
+        "--no-default-features",
+        "--features",
+        "full-daemon",
+        "--lib",
+        "runtime::platform::lifetime_tests::late_actual_constructor_failure_closes_observations_after_handler_registration",
+        "--",
+        "--ignored",
+        "--exact",
+        "--test-threads=1"
+      ],
+      "executed": false,
+      "compiled": false
+    },
+    {
+      "selector": "runtime::platform::lifetime_tests::polled_actual_constructor_cancellation_closes_observations_after_handler_registration",
+      "environment": {
+        "MEDOUSA_TEST_HERMETIC": "1"
+      },
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "medousa",
+        "--no-default-features",
+        "--features",
+        "full-daemon",
+        "--lib",
+        "runtime::platform::lifetime_tests::polled_actual_constructor_cancellation_closes_observations_after_handler_registration",
+        "--",
+        "--ignored",
+        "--exact",
+        "--test-threads=1"
+      ],
+      "executed": false,
+      "compiled": false
+    }
+  ]
+}

@@ -1,7 +1,10 @@
 //! Lifetime ownership for best-effort runtime observations in headless hosts.
 //!
 //! This is not a turn journal, delivery outbox, scheduler, or authority. Dropping
-//! the owner stops only the observation drain; durable work has its own shutdown.
+//! the owner requests asynchronous abortion of only the observation drain. The
+//! receiver closes when Tokio next processes cancellation, not synchronously in
+//! Drop. This does not stop durable workers or all background tasks; durable work
+//! has its own shutdown.
 
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -22,7 +25,9 @@ impl HeadlessEventDrain {
 
 impl Drop for HeadlessEventDrain {
     fn drop(&mut self) {
+        // Requests asynchronous cancellation; receiver closure requires runtime progress.
         // Also covers cancelled/failed construction, even if tools retained a sender.
+        // Does not shut down durable workers or other background tasks.
         self.task.abort();
     }
 }

@@ -1,0 +1,2 @@
+PASS: .github/workflows/ci.yml
+PASS: .github/workflows/release.yml

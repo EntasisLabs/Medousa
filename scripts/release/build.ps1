@@ -98,6 +98,10 @@ if ($Target) {
 Write-MedousaLog "phase 1/2: cargo build (root workspace, release)..."
 # Separate invocations prevent terminal feature unification into the daemon.
 Invoke-MedousaCargo @cargoBuildArgs --bin medousa_daemon
+# Preserve BEFORE any launcher/adapter build can replace Cargo's output.
+$daemonSrc = Find-MedousaReleaseBinary -Bin medousa_daemon -Target $Target
+if (-not $daemonSrc) { throw "expected binary missing: medousa_daemon" }
+Copy-Item -Force $daemonSrc (Join-Path $binDir (Get-MedousaBinaryFilename -Name medousa_daemon -Target $Target))
 Invoke-MedousaCargo @cargoBuildArgs --features tui `
     --bin medousa `
     --bin medousa_cli `
@@ -139,7 +143,8 @@ $waRelease = Get-MedousaWhatsappCargoReleaseDir $Target
 Write-MedousaLog "phase 1/2: staging release binaries -> $binDir"
 $stageBins = $MedousaBinaries + @("medousa-code", "medousa-session", "medousa-computer")
 foreach ($bin in $stageBins) {
-    if ($bin -eq "medousa_local") { continue }
+    # Daemon was already staged before terminal feature compilation.
+    if ($bin -eq "medousa_local" -or $bin -eq "medousa_daemon") { continue }
     $src = Find-MedousaReleaseBinary -Bin $bin -Target $Target
     if (-not $src) {
         throw "expected binary missing: $bin (searched under $mainRelease and $waRelease)"
