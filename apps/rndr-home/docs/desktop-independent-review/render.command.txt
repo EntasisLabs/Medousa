@@ -1,0 +1,1 @@
+cargo run --manifest-path apps/rndr-home/Cargo.toml --target-dir .desktop-review-target -j 2 -- --export-desktop .desktop-review/renders

@@ -1,0 +1,279 @@
+FILE apps/rndr-home/docs/desktop-evidence/renders/dark-narrow-runtime.png
+0.146 0.966 0.425 0.018 FIXTURE • Runtime Controls
+0.033 0.945 0.054 0.026 M
+0.033 0.897 0.050 0.013 Chat
+0.033 0.850 0.050 0.013 Code
+0.171 0.895 0.125 0.016 ‹ Previous
+0.592 0.895 0.175 0.016 Next section ›
+0.171 0.845 0.571 0.018 Settings 4 of 9 • Reach, shell, engine & versions
+0.033 0.803 0.075 0.013 Reviews
+0.171 0.774 0.350 0.024 Filter this read-only list...
+0.033 0.755 0.054 0.013 Notes
+0.033 0.708 0.046 0.013 Files
+0.175 0.708 0.508 0.024 Reach, shell, engine & versions
+0.033 0.661 0.075 0.013 Artifacts
+0.171 0.650 0.725 0.018 Read-only health and version descriptor from the configured
+0.171 0.632 0.663 0.016 loopback daemon. A successful read is a snapshot, not
+0.171 0.608 0.583 0.018 continuous liveness or native-input qualification.
+0.033 0.613 0.079 0.014 Calendar
+0.033 0.566 0.046 0.013 Web
+0.033 0.518 0.071 0.013 Context
+0.170 0.549 0.280 0.020 Local inference engine
+0.174 0.490 0.288 0.021 External agent runtimes
+0.033 0.471 0.054 0.013 Peers
+0.171 0.434 0.288 0.016 Scheduled automations
+0.033 0.421 0.063 0.016 Agents
+0.032 0.373 0.074 0.019 Activity
+0.033 0.326 0.063 0.016 Scripts
+0.033 0.282 0.054 0.013 Flows
+0.175 0.374 0.196 0.016 Worker capacity
+0.175 0.316 0.625 0.016 Shell reach, computer control, worker capacity, SSH,
+0.171 0.295 0.688 0.016 permissions and runtime defaults remain managed by the
+0.171 0.271 0.762 0.018 existing app. This preview cannot grant access or start workers.
+0.033 0.234 0.079 0.014 Schedule
+0.033 0.187 0.062 0.013 Create
+0.170 0.198 0.355 0.032 Workshop status
+0.758 0.216 0.158 0.016 Refresh read
+0.171 0.155 0.746 0.016 Read-only snapshot • refresh explicitly • maximum 500 entries
+0.170 0.133 0.288 0.019 no operations executed
+0.033 0.137 0.072 0.014 Settings
+0.033 0.092 0.042 0.013 You
+0.175 0.076 0.721 0.016 Offline / not connected. No live data or fixture results loaded.
+0.146 0.032 0.821 0.016 SYNTHETIC GPU RENDER • NO NETWORK • NOT NATIVE WINDOW / INPUT
+0.142 0.013 0.088 0.014 PROOF
+FILE apps/rndr-home/docs/desktop-evidence/renders/light-wide-accounts.png
+0.127 0.963 0.134 0.024 FIXTURE • Accounts
+0.570 0.971 0.146 0.017 Medousa • desktop preview
+0.014 0.946 0.025 0.029 M
+0.014 0.895 0.030 0.022 Chat
+0.014 0.851 0.030 0.022 Code
+0.012 0.807 0.048 0.022 Reviews
+0.012 0.764 0.037 0.021 Notes
+0.012 0.720 0.030 0.022 Files
+0.012 0.675 0.048 0.023 Artifacts
+0.014 0.632 0.050 0.022 Calendar
+0.012 0.588 0.029 0.022 Web
+0.014 0.544 0.045 0.022 Context
+0.012 0.500 0.036 0.022 Peers
+0.012 0.454 0.041 0.024 Agents
+0.012 0.412 0.045 0.022 Activity
+0.012 0.368 0.041 0.022 Scripts
+0.012 0.324 0.036 0.022 Flows
+0.012 0.280 0.059 0.022 Schedules
+0.014 0.236 0.038 0.022 Create
+0.012 0.190 0.046 0.025 Settings
+0.012 0.149 0.025 0.022 You
+0.139 0.890 0.084 0.024 Medousa
+0.137 0.839 0.068 0.023 Preferences
+0.137 0.795 0.150 0.020 Look, notifications & chrome
+0.137 0.744 0.063 0.020 • Accounts
+0.137 0.698 0.154 0.022 Connected services & review
+0.137 0.678 0.052 0.020 accounts
+0.137 0.631 0.088 0.022 Medousa Agent
+0.139 0.585 0.138 0.022 Stance, memory & models
+0.137 0.534 0.093 0.022 Runtime Controls
+0.137 0.490 0.163 0.022 Reach, shell, engine & versions
+0.137 0.439 0.046 0.024 Sharing
+0.136 0.393 0.118 0.022 Seats, phone, peers &
+0.139 0.375 0.050 0.020 channels
+0.137 0.326 0.086 0.023 External Agents
+0.137 0.283 0.132 0.022 External coding agents &
+0.137 0.263 0.134 0.020 connected conversations
+0.139 0.203 0.159 0.032 This preview host
+0.137 0.156 0.055 0.022 Packages
+0.136 0.112 0.145 0.022 Channel adapters & installs
+0.137 0.061 0.030 0.024 MCP
+0.125 0.015 0.391 0.022 SYNTHETIC GPU RENDER • NO NETWORK • NOT NATIVE WINDOW / INPUT PROOF
+0.332 0.894 0.151 0.027 Filter this read-only list...
+0.332 0.839 0.273 0.022 Connected services & review accounts
+0.332 0.785 0.634 0.020 Read-only daemon-reported external account status below. Unknown is not signed out; binary presence is not authenticated
+0.330 0.763 0.043 0.020 access.
+0.332 0.710 0.618 0.022 Provider keys, OAuth, review-account linking and sign-out use the existing Medousa app's authorization and secret-entry
+0.332 0.693 0.264 0.020 flows. No credential entry is offered in this preview.
+0.330 0.634 0.102 0.022 Models & providers
+0.330 0.580 0.129 0.022 Hosted review providers
+0.332 0.512 0.211 0.029 External agent runtimes
+0.330 0.471 0.446 0.022 Read-only snapshot • refresh explicitly • maximum 500 entries • no operations executed
+0.895 0.526 0.070 0.020 Refresh read
+0.334 0.412 0.636 0.022 Offline / not connected. No live data or fixture results loaded. Restart with an explicit local data directory to read the daemon.
+FILE apps/rndr-home/docs/desktop-evidence/renders/high-contrast-narrow-runtime-detail.png
+0.146 0.963 0.525 0.021 FIXTURE • External agent runtimes
+0.033 0.897 0.046 0.013 Chat
+0.171 0.895 0.212 0.016 Runtime Controls
+0.596 0.895 0.142 0.016 Connection
+0.033 0.850 0.050 0.013 Code
+0.171 0.829 0.350 0.021 Filter this read-only list...
+0.033 0.803 0.075 0.013 Reviews
+0.033 0.755 0.054 0.013 Notes
+0.033 0.708 0.046 0.013 Files
+0.033 0.661 0.075 0.013 Artifacts
+0.171 0.755 0.492 0.029 External agent runtimes
+0.758 0.771 0.162 0.016 Refresh read
+0.171 0.711 0.754 0.018 Read-only snapshot • refresh explicitly - maximum 500 entries -
+0.170 0.689 0.288 0.021 no operations executed
+0.171 0.632 0.200 0.016 ‹ Back to results
+0.033 0.613 0.079 0.013 Calendar
+0.033 0.566 0.046 0.013 Web
+0.033 0.518 0.071 0.013 Context
+0.171 0.555 0.342 0.032 Synthetic Codex
+0.170 0.485 0.193 0.029 Available
+0.033 0.471 0.054 0.013 Peers
+0.033 0.424 0.058 0.008 Agents
+0.175 0.426 0.146 0.019 Yes (fixture)
+0.033 0.374 0.071 0.016 Activity
+0.033 0.326 0.064 0.015 Scripts
+0.033 0.282 0.054 0.013 Flows
+0.171 0.350 0.317 0.026 Account status
+0.171 0.289 0.212 0.016 unknown (fixture)
+0.033 0.234 0.083 0.014 Schedule
+0.171 0.213 0.267 0.026 Qualification
+0.033 0.187 0.062 0.013 Create
+0.175 0.150 0.512 0.018 No login, execution or inference performed
+0.032 0.135 0.078 0.019 Settings
+0.033 0.092 0.042 0.013 You
+0.175 0.089 0.758 0.016 Details are from the last completed read, not a live subscription.
+0.175 0.076 0.625 0.008 Lfaattil aantrale ramain in the aviatina Aladarian ann
+0.146 0.032 0.821 0.016 SYNTHETIC GPU RENDER • NO NETWORK • NOT NATIVE WINDOW / INPUT
+0.142 0.013 0.088 0.013 PROOF
+FILE apps/rndr-home/docs/desktop-evidence/renders/light-narrow-basement.png
+0.146 0.966 0.337 0.018 FIXTURE • Connection
+0.033 0.945 0.058 0.026 M
+0.033 0.897 0.050 0.013 Chat
+0.171 0.896 0.130 0.015 ‹ Previous
+0.592 0.895 0.175 0.016 Next section ›
+0.033 0.850 0.050 0.013 Code
+0.175 0.845 0.571 0.016 Settings 9 of 9 • Active workshop, engine & files
+0.171 0.774 0.350 0.021 Filter this read-only list...
+0.033 0.755 0.058 0.013 Notes
+0.033 0.708 0.046 0.013 Files
+0.175 0.710 0.276 0.023 Active workshop
+0.033 0.661 0.075 0.013 Artifacts
+0.033 0.613 0.079 0.013 Calendar
+0.175 0.650 0.717 0.018 Only an explicitly configured loopback daemon is supported.
+0.175 0.629 0.729 0.018 Launch with --data-dir and --daemon to use the existing local
+0.175 0.608 0.738 0.018 credential boundary; offline mode never discovers credentials.
+0.033 0.566 0.046 0.013 Web
+0.175 0.545 0.221 0.021 Engine & files
+0.033 0.471 0.054 0.013 Peers
+0.033 0.421 0.067 0.013 Agents
+0.175 0.484 0.725 0.018 Filesystem authority follows the workshop daemon. This port
+0.175 0.463 0.746 0.018 offers no local folder picker, Reveal or remote path conversion.
+0.175 0.442 0.700 0.018 Start, stop, vault linking, workshop switching and transport
+0.171 0.421 0.479 0.018 configuration remain in the existing app.
+0.033 0.329 0.067 0.013 Seripts
+0.175 0.362 0.725 0.022 Transport configured does not mean connected. Read health
+0.171 0.342 0.767 0.016 below to verity the responder's authority/version; authentication
+0.171 0.324 0.521 0.016 and service errors remain local to this view.
+0.033 0.282 0.054 0.013 Flows
+0.033 0.234 0.083 0.013 Schedule
+0.170 0.244 0.352 0.035 Workshop status
+0.758 0.266 0.158 0.013 Refresh read
+0.175 0.203 0.750 0.018 Read-only snapshot • refresh explicitly • maximum 500 entries •
+0.171 0.184 0.287 0.016 no operations executed
+0.032 0.136 0.078 0.018 Settings
+0.033 0.092 0.042 0.013 You
+0.175 0.126 0.721 0.016 Offline / not connected. No live data or fixture results loaded.
+0.175 0.103 0.750 0.018 Restart with an explicit local data directory to read the daemon.
+0.146 0.032 0.821 0.016 SYNTHETIC GPU RENDER • NO NETWORK • NOT NATIVE WINDOW / INPUT
+0.142 0.013 0.087 0.013 PROOF
+FILE apps/rndr-home/docs/desktop-evidence/renders/dark-wide-preferences.png
+0.129 0.968 0.148 0.017 FIXTURE • Preferences
+0.571 0.973 0.145 0.015 Medousa • desktop preview
+0.014 0.949 0.023 0.027 M
+0.014 0.900 0.029 0.015 Chat
+0.014 0.856 0.030 0.015 Code
+0.014 0.812 0.045 0.015 Reviews
+0.014 0.768 0.034 0.015 Notes
+0.014 0.724 0.027 0.015 Files
+0.014 0.680 0.045 0.016 Artifacts
+0.016 0.637 0.048 0.015 Calendar
+0.014 0.593 0.027 0.015 Web
+0.016 0.548 0.043 0.015 Context
+0.014 0.505 0.034 0.015 Peers
+0.012 0.456 0.041 0.020 Agents
+0.012 0.412 0.043 0.020 Activity
+0.014 0.371 0.039 0.017 Scripts
+0.014 0.329 0.034 0.015 Flows
+0.014 0.285 0.057 0.015 Schedules
+0.016 0.241 0.036 0.015 Create
+0.014 0.195 0.045 0.017 Settings
+0.014 0.154 0.023 0.017 You
+0.139 0.893 0.084 0.022 Medousa
+0.139 0.844 0.073 0.015 • Preferences
+0.139 0.798 0.148 0.017 Look, notifications & chrome
+0.139 0.746 0.052 0.016 Accounts
+0.141 0.702 0.150 0.015 Connected services & review
+0.139 0.683 0.050 0.012 accounts
+0.139 0.634 0.084 0.017 Medousa Agent
+0.139 0.590 0.138 0.015 Stance, memory & models
+0.139 0.539 0.091 0.017 Runtime Controls
+0.139 0.493 0.161 0.017 Reach, shell, engine & versions
+0.137 0.439 0.043 0.020 Sharing
+0.141 0.393 0.115 0.021 Seats, phone, peers &
+0.141 0.378 0.048 0.015 channels
+0.141 0.332 0.082 0.015 External Agents
+0.141 0.285 0.129 0.017 External coding agents &
+0.141 0.268 0.130 0.015 connected conversations
+0.334 0.894 0.145 0.024 Window appearance
+0.332 0.841 0.405 0.017 Local preview only • changes are reversible and reset when this window closes.
+0.330 0.778 0.032 0.022 Light
+0.332 0.729 0.029 0.015 Dark
+0.332 0.673 0.109 0.015 Toggle high contrast
+0.330 0.612 0.164 0.022 Notifications & chrome
+0.332 0.554 0.646 0.020 Production preferences are not loaded or changed. Notification permissions, sound, layout presets and global shortcuts remain
+0.332 0.537 0.204 0.020 managed by the existing Medousa app.
+0.332 0.483 0.593 0.017 Physical keyboard, IME, accessibility and device checks are pending user verification. Harmless navigation and local
+0.332 0.463 0.150 0.019 appearance remain available.
+0.139 0.207 0.159 0.024 This preview host
+0.139 0.161 0.054 0.015 Packages
+0.141 0.117 0.139 0.015 Channel adapters & installs
+0.139 0.066 0.027 0.015 MCP
+0.129 0.017 0.387 0.015 SYNTHETIC GPU RENDER • NO NETWORK • NOT NATIVE WINDOW / INPUT PROOF
+FILE apps/rndr-home/docs/desktop-evidence/renders/high-contrast-wide-mcp-disconnected.png
+0.127 0.963 0.225 0.022 FIXTURE - MCP gateway & servers
+0.570 0.968 0.146 0.022 Medousa - desktop preview
+0.016 0.900 0.027 0.015 Chat
+0.016 0.856 0.029 0.015 Code
+0.014 0.812 0.045 0.015 Reviews
+0.014 0.768 0.034 0.015 Notes
+0.014 0.724 0.027 0.015 Files
+0.014 0.680 0.046 0.015 Artifacts
+0.016 0.637 0.048 0.015 Calendar
+0.014 0.593 0.027 0.015 Web
+0.016 0.549 0.043 0.015 Context
+0.014 0.505 0.034 0.015 Peers
+0.014 0.458 0.039 0.017 Agents
+0.012 0.412 0.043 0.020 Activity
+0.012 0.368 0.041 0.020 Scripts
+0.012 0.324 0.036 0.020 Flows
+0.014 0.285 0.057 0.015 Schedules
+0.016 0.241 0.036 0.015 Create
+0.012 0.193 0.046 0.020 Settings
+0.014 0.154 0.023 0.015 You
+0.139 0.888 0.087 0.027 Settings /
+0.139 0.856 0.130 0.024 administration
+0.139 0.810 0.091 0.015 Runtime Controls
+0.141 0.763 0.061 0.015 Connection
+0.141 0.713 0.088 0.019 Workshop status
+0.139 0.668 0.102 0.017 Models & providers
+0.141 0.622 0.121 0.017 External agent runtimes
+0.139 0.575 0.071 0.017 Agent modes
+0.137 0.527 0.127 0.020 MCP gateway & servers
+0.139 0.483 0.120 0.017 Local inference engine
+0.141 0.437 0.121 0.017 Scheduled automations
+0.139 0.390 0.125 0.017 Shared workshop mode
+0.137 0.341 0.089 0.020 Worker capacity
+0.137 0.295 0.129 0.020 Hosted review providers
+0.334 0.898 0.148 0.020 Filter this read-only list...
+0.332 0.829 0.211 0.029 MCP gateway & servers
+0.330 0.788 0.446 0.022 Read-only snapshot - refresh explicitly - maximum 500 entries - no operations executed
+0.896 0.846 0.068 0.018 Refresh read
+0.332 0.732 0.086 0.017 ‹ Back to results
+0.332 0.661 0.271 0.029 Synthetic disconnected server
+0.332 0.597 0.098 0.025 Connected
+0.330 0.539 0.063 0.020 No (fixture)
+0.332 0.470 0.075 0.030 Enabled
+0.330 0.410 0.068 0.022 Yes (fixture)
+0.332 0.344 0.050 0.024 Tools
+0.334 0.229 0.598 0.017 Details are from the last completed read, not a live subscription. Effectful controls remain in the existing Medousa app.
+0.129 0.017 0.388 0.017 SYNTHETIC GPU RENDER • NO NETWORK • NOT NATIVE WINDOW / INPUT PROOF

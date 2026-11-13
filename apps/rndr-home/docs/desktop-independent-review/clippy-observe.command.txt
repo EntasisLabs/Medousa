@@ -1,0 +1,1 @@
+cargo clippy --manifest-path apps/rndr-home/Cargo.toml --target-dir .desktop-review-target -j 2 --all-targets --features observe -- -D warnings

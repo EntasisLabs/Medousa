@@ -1,0 +1,20 @@
+{
+  "reviewed_head": "97e0c223bf1d1016b2e8b440e7e924fd9716ce7c",
+  "baseline": "a42c5236cd2239864d27aa9c151c3acd3e8191a0",
+  "implementation_commit": "2cf6b171fdcaf4c5c74fdaccb3ed0299dbc7db82",
+  "implementation_tree": "286017c76704cefbc44b4493e5a955ba7ffac56d",
+  "source_hash_mismatches": [],
+  "evidence_hash_mismatches": [],
+  "render_hash_mismatches": [],
+  "rerender_count": 108,
+  "rerenders_byte_identical": 108,
+  "prior_doc_evidence_file_count": 366,
+  "prior_doc_evidence_changed": [],
+  "outside_preview_scope": [
+    "docs/README.md",
+    "docs/guides/README.md",
+    "docs/guides/rndr-native-preview.md"
+  ],
+  "image_view_status": "metadata received; no inspectable pixel attachment in reviewer context; six actual PNGs independently OCRed, not full visual signoff",
+  "regression_exit_code": 101
+}

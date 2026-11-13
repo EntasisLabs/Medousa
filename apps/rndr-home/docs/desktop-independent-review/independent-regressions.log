@@ -1,0 +1,103 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_paint/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_paint` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_app/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_app` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_core/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_core` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_render/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_render` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_ui/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_ui` (manifest) generated 1 warning
+   Compiling medousa-rndr-home v0.1.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/.desktop-review/harness)
+    Finished `test` profile [unoptimized] target(s) in 2.74s
+     Running unittests src/lib.rs (.desktop-review-target/debug/build/medousa-rndr-home/28a69fd229c8ace2/out/medousa_rndr_home-28a69fd229c8ace2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (.desktop-review-target/debug/build/medousa-rndr-home/d143937d9a2a589f/out/medousa_rndr_home-d143937d9a2a589f)
+
+running 2 tests
+test independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild ... FAILED
+test independent_review_tests::unrelated_reply_preserves_current_dataset_scroll ... FAILED
+
+failures:
+
+---- independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild stdout ----
+
+thread 'independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild' (2938412) panicked at src/main.rs:231:2:
+focus lost/deleted on responsive rebuild: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- independent_review_tests::unrelated_reply_preserves_current_dataset_scroll stdout ----
+
+thread 'independent_review_tests::unrelated_reply_preserves_current_dataset_scroll' (2938413) panicked at src/main.rs:244:2:
+assertion `left == right` failed: background Health reply reset Runtimes scroll
+  left: [0.0, 0.0]
+ right: [0.0, -200.0]
+
+
+failures:
+    independent_review_tests::focus_on_preferences_control_survives_responsive_rebuild
+    independent_review_tests::unrelated_reply_preserves_current_dataset_scroll
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 62 filtered out; finished in 0.31s
+
+error: test failed, to rerun pass `--bin medousa-rndr-home`

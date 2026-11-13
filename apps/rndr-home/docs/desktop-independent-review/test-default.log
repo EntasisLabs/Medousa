@@ -1,0 +1,420 @@
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_paint/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_paint` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_app/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_app` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_core/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_core` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_ui/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_ui` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_render/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_render` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling libc v0.2.191
+   Compiling syn v3.0.9
+   Compiling bitflags v2.13.2
+   Compiling cfg-if v1.0.5
+   Compiling objc2-encode v4.1.0
+   Compiling autocfg v1.5.1
+   Compiling libm v0.2.16
+   Compiling num-traits v0.2.19
+   Compiling synstructure v0.14.0
+   Compiling objc2 v0.6.5
+   Compiling once_cell v1.21.4
+   Compiling zerofrom-derive v0.1.8
+   Compiling zerofrom v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling stable_deref_trait v1.2.1
+   Compiling smallvec v1.16.5
+   Compiling block2 v0.6.2
+   Compiling objc2-core-foundation v0.3.2
+   Compiling yoke v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling memchr v2.8.3
+   Compiling displaydoc v0.2.7
+   Compiling zerovec v0.11.9
+   Compiling foldhash v0.2.0
+   Compiling hashbrown v0.17.1
+   Compiling bytemuck_derive v1.12.1
+   Compiling cfg_aliases v0.2.2
+   Compiling writeable v0.6.4
+   Compiling pin-project-lite v0.2.17
+   Compiling syn v2.0.119
+   Compiling bytemuck v1.25.2
+   Compiling zerocopy v0.8.63
+   Compiling itoa v1.0.18
+   Compiling tinystr v0.8.5
+   Compiling objc2-foundation v0.3.2
+   Compiling zerocopy-derive v0.8.63
+   Compiling litemap v0.8.3
+   Compiling icu_locale_core v2.4.0
+   Compiling potential_utf v0.1.6
+   Compiling zerotrie v0.2.5
+   Compiling utf_types v1.0.0
+   Compiling utf8_iter v1.1.0
+   Compiling icu_provider v2.4.0
+   Compiling serde_core v1.0.229
+   Compiling icu_collections v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling thiserror v2.0.21
+   Compiling equivalent v1.0.3
+   Compiling bytes v1.12.1
+   Compiling futures-core v0.3.34
+   Compiling arrayvec v0.7.8
+   Compiling indexmap v2.14.2
+   Compiling objc2-core-graphics v0.3.2
+   Compiling thiserror-impl v2.0.21
+   Compiling icu_normalizer_data v2.4.0
+   Compiling serde v1.0.229
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.7
+   Compiling serde_derive v1.0.229
+   Compiling getrandom v0.2.17
+   Compiling raw-window-handle v0.6.2
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling subtle v2.6.1
+   Compiling cc v1.11.1
+   Compiling icu_properties v2.4.0
+   Compiling half v2.7.1
+   Compiling tokio-macros v2.7.2
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling core-foundation-sys v0.8.7
+   Compiling zeroize v1.9.1
+   Compiling log v0.4.35
+   Compiling zmij v1.0.23
+   Compiling typenum v1.20.1
+   Compiling tokio v1.54.1
+   Compiling icu_normalizer v2.4.0
+   Compiling ring v0.17.14
+   Compiling tracing-core v0.1.36
+   Compiling getrandom v0.4.3
+   Compiling simd-adler32 v0.3.10
+   Compiling futures-sink v0.3.34
+   Compiling serde_json v1.0.154
+   Compiling rustc-hash v1.1.0
+   Compiling naga-types v30.0.1
+   Compiling tracing v0.1.44
+   Compiling http v1.5.0
+   Compiling font-types v0.12.7
+   Compiling naga v30.0.1
+   Compiling euclid v0.22.14
+   Compiling bit-vec v0.9.1
+   Compiling parking_lot_core v0.9.12
+   Compiling crc32fast v1.5.4
+   Compiling percent-encoding v2.3.2
+   Compiling crossbeam-utils v0.8.23
+   Compiling adler2 v2.0.1
+   Compiling unicode-width v0.2.3
+   Compiling objc-sys v0.3.5
+   Compiling codespan-reporting v0.13.1
+   Compiling bit-set v0.10.0
+   Compiling read-fonts v0.41.0
+   Compiling http-body v1.1.0
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling rustls-pki-types v1.15.1
+   Compiling objc2-metal v0.3.2
+   Compiling futures-macro v0.3.34
+   Compiling httparse v1.10.1
+   Compiling scopeguard v1.2.0
+   Compiling futures-task v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling crossbeam-epoch v0.9.21
+   Compiling slab v0.4.12
+   Compiling icu_locale_fallback_data v2.4.0
+   Compiling untrusted v0.9.0
+   Compiling static_assertions v1.1.0
+   Compiling pulldown-cmark v0.13.6
+   Compiling wgpu-types v30.0.1
+   Compiling futures-util v0.3.34
+   Compiling lock_api v0.4.14
+   Compiling objc2-quartz-core v0.3.2
+   Compiling digest v0.10.7
+   Compiling uuid v1.29.1
+   Compiling miniz_oxide v0.9.1
+   Compiling lyon_geom v1.0.20
+   Compiling wgpu-hal v30.0.1
+   Compiling crossbeam-deque v0.8.8
+   Compiling icu_segmenter_data v2.4.0
+   Compiling tower-service v0.3.3
+   Compiling unicase v2.10.0
+   Compiling anyhow v1.0.104
+   Compiling rustls v0.23.46
+   Compiling try-lock v0.2.5
+   Compiling want v0.3.2
+   Compiling wgpu-naga-bridge v30.0.1
+   Compiling lyon_path v1.0.19
+   Compiling flate2 v1.1.11
+   Compiling objc2 v0.5.3
+   Compiling parking_lot v0.12.5
+   Compiling raw-window-metal v1.1.0
+   Compiling rustls-webpki v0.103.16
+   Compiling form_urlencoded v1.2.2
+   Compiling idna_adapter v1.2.2
+   Compiling iana-time-zone v0.1.65
+   Compiling libloading v0.8.9
+   Compiling keyboard-types v0.8.3
+   Compiling cpufeatures v0.2.17
+   Compiling rayon-core v1.13.0
+   Compiling base64 v0.22.1
+   Compiling ryu v1.0.23
+   Compiling dpi v0.1.2
+   Compiling profiling v1.0.18
+   Compiling quick-error v2.0.1
+   Compiling cursor-icon v1.2.0
+   Compiling atomic-waker v1.1.2
+   Compiling web-time v1.1.0
+   Compiling zune-core v0.5.3
+   Compiling unicode-segmentation v1.13.3
+   Compiling smol_str v0.3.7
+   Compiling winit-core v0.31.0-beta.4
+   Compiling rndr_core v0.6.0 (/Users/theelevators/rndr/crates/rndr_core)
+   Compiling zune-jpeg v0.5.15
+   Compiling hyper v1.12.0
+   Compiling sha2 v0.10.9
+   Compiling chrono v0.4.45
+   Compiling idna v1.1.0
+   Compiling icu_locale_fallback v2.4.0
+   Compiling block2 v0.5.1
+   Compiling hmac v0.12.1
+   Compiling skrifa v0.44.0
+   Compiling futures-channel v0.3.34
+   Compiling security-framework-sys v2.17.0
+   Compiling core-foundation v0.9.4
+   Compiling objc2-app-kit v0.3.2
+   Compiling sync_wrapper v1.0.2
+   Compiling wgpu-core v30.0.1
+   Compiling objc2-core-text v0.3.2
+   Compiling memmap2 v0.9.12
+   Compiling weezl v0.1.12
+   Compiling tower-layer v0.3.3
+   Compiling pxfm v0.1.30
+   Compiling rustversion v1.0.23
+   Compiling float_next_after v1.0.0
+   Compiling byteorder-lite v0.1.0
+   Compiling ipnet v2.12.2
+   Compiling linebender_resource_handle v0.1.1
+   Compiling litrs v1.0.1
+   Compiling fax v0.2.7
+   Compiling parlance v0.1.1
+   Compiling base64 v0.23.1
+   Compiling hyper-util v0.1.21
+   Compiling moxcms v0.8.1
+   Compiling fontique v0.12.0
+   Compiling tiff v0.11.3
+   Compiling document-features v0.2.12
+   Compiling lyon_tessellation v1.0.23
+   Compiling tower v0.5.3
+   Compiling security-framework v2.11.1
+   Compiling medousa-types v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-types)
+   Compiling icu_segmenter v2.4.0
+   Compiling objc2-foundation v0.2.2
+   Compiling url v2.5.8
+   Compiling tokio-rustls v0.26.6
+   Compiling wgpu-core-deps-apple v30.0.1
+   Compiling winit-common v0.31.0-beta.4
+   Compiling lyon_algorithms v1.0.22
+   Compiling accesskit v0.25.2
+   Compiling harfrust v0.12.0
+   Compiling webpki-roots v1.0.11
+   Compiling parley_data v0.12.0
+   Compiling rand_core v0.6.4
+   Compiling objc2-core-video v0.3.2
+   Compiling ppv-lite86 v0.2.21
+   Compiling winit v0.31.0-beta.4
+   Compiling wgpu v30.0.1
+   Compiling dispatch2 v0.3.1
+   Compiling minimal-lexical v0.2.1
+   Compiling either v1.19.0
+   Compiling lazy_static v1.5.1
+   Compiling parley_emoji v0.12.0
+   Compiling unsafe-libyaml v0.2.11
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling parley_engine v0.12.0
+   Compiling keyring v2.3.3
+   Compiling rayon v1.12.0
+   Compiling nom v7.1.3
+   Compiling winit-appkit v0.31.0-beta.4
+   Compiling rand_chacha v0.3.1
+   Compiling hyper-rustls v0.27.10
+   Compiling accesskit_consumer v0.39.2
+   Compiling lyon v1.0.19
+   Compiling tower-http v0.6.11
+   Compiling objc2-app-kit v0.2.2
+   Compiling image v0.25.10
+   Compiling serde_urlencoded v0.7.1
+   Compiling http-body-util v0.1.5
+   Compiling miniz_oxide v0.8.9
+   Compiling tokio-util v0.7.20
+   Compiling fdeflate v0.3.7
+   Compiling rndr_render v0.6.0 (/Users/theelevators/rndr/crates/rndr_render)
+   Compiling zeno v0.3.3
+   Compiling yazi v0.2.2
+   Compiling swash v0.2.10
+   Compiling reqwest v0.12.28
+   Compiling png v0.18.1
+   Compiling arboard v3.7.0
+   Compiling arc-swap v1.9.4
+   Compiling accesskit_macos v0.27.2
+   Compiling rndr_paint v0.6.0 (/Users/theelevators/rndr/crates/rndr_paint)
+   Compiling rand v0.8.8
+   Compiling medousa-secrets v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-secrets)
+   Compiling eventsource-stream v0.2.3
+   Compiling jpeg-decoder v0.3.2
+   Compiling parley v0.12.0
+   Compiling medousa-api-contract v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-api-contract)
+   Compiling image-webp v0.2.4
+   Compiling etagere v0.3.0
+   Compiling urlencoding v2.1.3
+   Compiling pollster v0.4.0
+   Compiling medousa-sdk v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-sdk)
+   Compiling medousa-local-credential v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/crates/medousa-local-credential)
+   Compiling rndr_app v0.6.0 (/Users/theelevators/rndr/crates/rndr_app)
+   Compiling rndr_ui v0.6.0 (/Users/theelevators/rndr/crates/rndr_ui)
+   Compiling medousa-rndr-home v0.1.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-desktop-app-shell-settings-connections-and-administratio/apps/rndr-home)
+    Finished `test` profile [unoptimized] target(s) in 53.99s
+     Running unittests src/lib.rs (.desktop-review-target/debug/build/medousa-rndr-home/28a69fd229c8ace2/out/medousa_rndr_home-28a69fd229c8ace2)
+
+running 6 tests
+test tests::error_blocks_resubmit ... ok
+test tests::credentials_stay_local ... ok
+test tests::empty_started_segments_match_chronological_join_and_resume_resets ... ok
+test tests::stream_dedup_chronology_terminal ... ok
+test tests::send_guards_and_request ... ok
+test tests::interleaved_unicode_segments_use_one_in_place_body ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (.desktop-review-target/debug/build/medousa-rndr-home/d143937d9a2a589f/out/medousa_rndr_home-d143937d9a2a589f)
+
+running 62 tests
+test admin_backend::tests::rendering_bounds_and_filters_are_plain_local_text ... ok
+test backend::tests::fatal_terminal_never_replaces_live_text_with_incomplete_history ... ok
+test backend::tests::mode_errors_are_redacted_nonfatal_and_mutation_is_not_retried ... ok
+test backend::tests::catalog_uses_real_snake_case_record_and_is_read_only ... ok
+test backend::tests::canonical_roles_preserve_heading_like_user_prose_without_inventing_turns ... ok
+test admin_backend::tests::errors_and_malformed_models_never_become_empty_success_or_raw_diagnostics ... ok
+test admin_backend::tests::all_ten_admin_models_use_existing_get_contracts_and_safe_projections ... ok
+test backend::tests::unauthorized_admission_is_not_retried ... ok
+test conversation::tests::follow_respects_user_scroll_and_growth ... ok
+test conversation::tests::prompt_markup_is_literal ... ok
+test conversation::tests::streaming_retains_rows_and_no_inner_scrollports ... ok
+test backend::tests::session_mode_mutation_uses_session_scope_and_server_effective_value ... ok
+test conversation::tests::truncation_cleans_subtrees_and_narrow_bubbles_fit ... ok
+test backend::tests::completion_between_history_and_active_reads_retries_fresh_history ... ok
+test conversation::tests::layout_hugs_messages_and_outer_port_scrolls ... ok
+test backend::tests::continuous_activity_is_bounded_and_remains_uncertain ... ok
+test desktop_tests::invalid_routes_and_disconnected_worker_never_panic_or_fake_ready ... ok
+test backend::tests::new_recent_and_open_refresh_effective_mode_after_canonical_history ... ok
+test backend::tests::active_reattach_full_replay_terminal_has_no_duplicate_or_missing_prose ... ok
+test backend::tests::ui_reload_drives_real_worker_reattach_and_settlement ... ok
+test desktop_tests::stale_results_are_resource_scoped_and_not_relabelled_as_current_route ... ok
+test backend::tests::terminal_ticket_cleanup_retries_are_bounded_and_handoff_is_honest ... ok
+test desktop_tests::local_appearance_and_filter_never_persist_or_emit_runtime_commands ... ok
+test backend::tests::sdk_create_history_admit_stream_reconnect_and_cancel ... ok
+test history_tests::unknown_native_input_blocks_buttons_forged_actions_and_submissions ... ok
+test interaction_tests::behavior_depth_reaches_exact_wire_request_without_mode_authority_override ... ok
+test interaction_tests::copy_click_uses_current_assistant_text_and_cannot_copy_user_as_assistant ... ok
+test desktop_layout_tests::settings_section_pager_and_sidebar_scroll_keep_last_section_reachable ... ok
+test interaction_tests::escape_closes_popup_and_restores_focus_without_sending ... ok
+test interaction_tests::composer_hugs_wraps_caps_and_shrinks ... ok
+test interaction_tests::fenced_code_has_token_colors_but_copy_remains_source ... ok
+test interaction_tests::model_menu_selects_exact_index_and_search_preserves_draft ... ok
+test interaction_tests::mode_action_waits_for_daemon_and_stale_mode_reply_is_ignored ... ok
+test interaction_tests::runtime_menu_does_not_enable_unimplemented_external_agents ... ok
+test qualification_tests::framework_prompt_reset_requires_marker_but_app_removes_it_synchronously ... ok
+test qualification_tests::framework_prompt_submit_is_still_end_of_batch_not_enter_snapshot ... ok
+test qualification_tests::lucide_atlas_has_nonempty_coverage_for_existing_control_candidates ... ok
+test interaction_tests::physical_pointer_opens_menu_selects_model_and_outside_click_dismisses ... ok
+test ui_tests::ambiguous_queued_submit_is_not_sent_and_preserves_newer_edits ... ok
+test desktop_tests::loading_error_empty_filter_and_detail_are_distinct_and_read_only ... ok
+test ui_tests::confirmed_admission_retires_recovery_without_touching_newer_draft ... ok
+test ui_tests::disconnected_worker_does_not_leave_spinner_or_erase_draft ... ok
+test ui_tests::offline_controls_are_honest_and_resize_preserves_draft ... ok
+test ui_tests::permissions_are_not_actionable_ui_approvals ... ok
+test history_tests::latest_keyboard_activation_is_viewport_only_even_busy ... ok
+test ui_tests::semantic_appearance_actions_use_one_fifo_and_never_send ... ok
+test ui_tests::failed_admission_reload_preserves_visible_recovery_and_newer_draft ... ok
+test ui_tests::semantic_reading_measure_resizes_without_losing_draft ... ok
+test ui_tests::semantic_theme_and_surface_updates_preserve_editor_popup_and_messages ... ok
+test ui_tests::send_is_once_clears_draft_and_blocks_overlap ... ok
+test ui_tests::shift_enter_multiline_survives_clear_and_plain_enter_sends ... ok
+test qualification_tests::parley_markdown_hugs_remeasures_and_retains_streaming_view ... ok
+test ui_tests::stale_reply_and_startup_auth_failure ... ok
+test ui_tests::tab_leaves_composer_using_canonical_focus_policy ... ok
+test ui_tests::terminal_waits_for_history_and_cancel_does_not_fake_settlement ... ok
+test ui_tests::popup_content_follows_anchor_width_without_horizontal_overflow ... ok
+test conversation::tests::thousand_message_history_mounts_only_viewport_and_recycles_on_scroll ... ok
+test desktop_tests::navigation_preserves_away_history_scroll_session_and_draft ... ok
+test desktop_tests::routes_are_available_without_native_input_and_never_send_chat_commands ... ok
+test interaction_tests::transcript_scrollbar_drag_preserves_draft_and_virtualization ... ok
+test desktop_layout_tests::settings_and_admin_viewports_fit_both_widths_and_all_supported_themes ... ok
+test history_tests::latest_is_explicit_preserves_draft_and_resumes_follow_at_all_widths ... ok
+
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.04s
+
+   Doc-tests medousa_rndr_home
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
