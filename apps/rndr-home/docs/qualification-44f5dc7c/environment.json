@@ -1,0 +1,16 @@
+{
+  "tools": {
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5",
+    "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
+    "python": "Python 3.14.6",
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434"
+  },
+  "initial_medousa_head": "333a14d823ea09c48fdb3bf6224f7e7960029495",
+  "initial_medousa_porcelain": "",
+  "initial_rndr_head": "44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139",
+  "initial_rndr_porcelain": "",
+  "initial_free_1024_blocks": 17942632,
+  "initial_observation_evidence_digest": "sha256:94e4a15a3f4e18678ed795c63e0b81fcef0da6ea0af6f16c86aeee52cd4395b9",
+  "fixture_source": "apps/rndr-home/src/main.rs --export and --observe-offline",
+  "no_live_daemon_or_inference": true
+}

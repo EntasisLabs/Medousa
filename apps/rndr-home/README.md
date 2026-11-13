@@ -1,5 +1,11 @@
 # Medousa — rndr native chat preview
 
+> **Current qualification (2026-11-13):** [rndr 0.6.0 at `44f5dc7c`](docs/QUALIFICATION_0_6_0.md)
+> passes 54 default / 55 observe-feature tests, strict scoped clippy and native
+> builds. Includes fresh synthetic headless and native submitted-surface evidence,
+> explicit device/live/compositor gaps, and later team-boundary recommendations.
+> Older 0.4.0 verification is historical, not current evidence.
+
 A **second desktop app**, not a replacement for `apps/medousa-home`. Native
 rndr ECS/layout/input/Parley/AccessKit/Markdown rendering; no Tauri, browser,
 webview, JavaScript server, renderer fork, or alternate inference service.

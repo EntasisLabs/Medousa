@@ -1,0 +1,311 @@
+cargo clippy --manifest-path apps/rndr-home/Cargo.toml --offline --locked -j 2 --all-targets -- -D warnings
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_paint/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_paint` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_app/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_app` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_core/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_core` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_render/Cargo.toml:9:1
+  |
+8 | repository.workspace = true
+  | ----------
+9 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_render` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/Cargo.toml:7:12
+  |
+6 | repository = "https://github.com/EntasisLabs/Medousa"
+  |              ----------------------------------------
+7 | homepage = "https://github.com/EntasisLabs/Medousa"
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `medousa` (manifest) generated 1 warning
+warning: `package.homepage` is redundant with `package.repository`
+ --> /Users/theelevators/rndr/crates/rndr_ui/Cargo.toml:7:1
+  |
+6 | repository.workspace = true
+  | ----------
+7 | homepage.workspace = true
+  | ^^^^^^^^
+  |
+  = note: `cargo::redundant_homepage` is set to `warn` by default
+help: consider removing `package.homepage`
+warning: `rndr_ui` (manifest) generated 1 warning
+    Checking libc v0.2.191
+    Checking bitflags v2.13.2
+    Checking cfg-if v1.0.5
+    Checking objc2-encode v4.1.0
+    Checking libm v0.2.16
+    Checking once_cell v1.21.4
+    Checking objc2 v0.6.5
+    Checking num-traits v0.2.19
+    Checking zerofrom v0.1.8
+    Checking stable_deref_trait v1.2.1
+    Checking smallvec v1.16.5
+    Checking yoke v0.8.4
+    Checking block2 v0.6.2
+    Checking memchr v2.8.3
+    Checking objc2-core-foundation v0.3.2
+    Checking zerovec v0.11.9
+    Checking foldhash v0.2.0
+    Checking writeable v0.6.4
+    Checking hashbrown v0.17.1
+    Checking pin-project-lite v0.2.17
+    Checking bytemuck v1.25.2
+    Checking itoa v1.0.18
+    Checking objc2-foundation v0.3.2
+    Checking tinystr v0.8.5
+    Checking litemap v0.8.3
+    Checking icu_locale_core v2.4.0
+    Checking zerocopy v0.8.63
+    Checking potential_utf v0.1.6
+    Checking zerotrie v0.2.5
+    Checking utf_types v1.0.0
+    Checking utf8_iter v1.1.0
+    Checking icu_provider v2.4.0
+    Checking icu_collections v2.4.0
+    Checking equivalent v1.0.3
+    Checking bytes v1.12.1
+    Checking arrayvec v0.7.8
+    Checking futures-core v0.3.34
+    Checking indexmap v2.14.2
+    Checking serde_core v1.0.229
+    Checking objc2-core-graphics v0.3.2
+    Checking thiserror v2.0.21
+    Checking icu_properties_data v2.4.0
+    Checking getrandom v0.2.17
+    Checking subtle v2.6.1
+    Checking raw-window-handle v0.6.2
+    Checking serde v1.0.229
+    Checking icu_properties v2.4.0
+    Checking icu_normalizer_data v2.4.0
+    Checking half v2.7.1
+    Checking socket2 v0.6.5
+    Checking mio v1.2.4
+    Checking typenum v1.20.1
+    Checking log v0.4.35
+    Checking core-foundation-sys v0.8.7
+    Checking zeroize v1.9.1
+    Checking generic-array v0.14.7
+    Checking tokio v1.54.1
+    Checking icu_normalizer v2.4.0
+    Checking tracing-core v0.1.36
+    Checking simd-adler32 v0.3.10
+    Checking rustc-hash v1.1.0
+    Checking futures-sink v0.3.34
+    Checking naga-types v30.0.1
+    Checking tracing v0.1.44
+    Checking zmij v1.0.23
+    Checking http v1.5.0
+    Checking font-types v0.12.7
+    Checking euclid v0.22.14
+    Checking bit-vec v0.9.1
+    Checking adler2 v2.0.1
+    Checking unicode-width v0.2.3
+    Checking percent-encoding v2.3.2
+    Checking codespan-reporting v0.13.1
+    Checking bit-set v0.10.0
+    Checking read-fonts v0.41.0
+    Checking http-body v1.1.0
+    Checking serde_json v1.0.154
+    Checking getrandom v0.4.3
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking rustls-pki-types v1.15.1
+    Checking objc2-metal v0.3.2
+    Checking scopeguard v1.2.0
+    Checking untrusted v0.9.0
+    Checking futures-task v0.3.34
+    Checking futures-io v0.3.34
+    Checking static_assertions v1.1.0
+    Checking slab v0.4.12
+    Checking unicode-ident v1.0.27
+    Checking naga v30.0.1
+    Checking futures-util v0.3.34
+    Checking wgpu-types v30.0.1
+    Checking ring v0.17.14
+    Checking lock_api v0.4.14
+    Checking objc2-quartz-core v0.3.2
+    Checking digest v0.10.7
+    Checking uuid v1.29.1
+    Checking parking_lot_core v0.9.12
+    Checking crc32fast v1.5.4
+    Checking crossbeam-utils v0.8.23
+    Checking objc-sys v0.3.5
+    Checking lyon_geom v1.0.20
+    Checking miniz_oxide v0.9.1
+    Checking try-lock v0.2.5
+    Checking unicase v2.10.0
+    Checking tower-service v0.3.3
+    Checking flate2 v1.1.11
+    Checking pulldown-cmark v0.13.6
+    Checking want v0.3.2
+    Checking lyon_path v1.0.19
+    Checking objc2 v0.5.3
+    Checking crossbeam-epoch v0.9.21
+    Checking parking_lot v0.12.5
+    Checking raw-window-metal v1.1.0
+    Checking wgpu-naga-bridge v30.0.1
+    Checking httparse v1.10.1
+    Checking icu_locale_fallback_data v2.4.0
+    Checking rustls-webpki v0.103.16
+    Checking form_urlencoded v1.2.2
+    Checking idna_adapter v1.2.2
+    Checking iana-time-zone v0.1.65
+    Checking cpufeatures v0.2.17
+    Checking libloading v0.8.9
+    Checking keyboard-types v0.8.3
+    Checking cursor-icon v1.2.0
+    Checking profiling v1.0.18
+    Checking quick-error v2.0.1
+    Checking base64 v0.22.1
+    Checking ryu v1.0.23
+    Checking smol_str v0.3.7
+    Checking web-time v1.1.0
+    Checking zune-core v0.5.3
+    Checking atomic-waker v1.1.2
+    Checking dpi v0.1.2
+    Checking unicode-segmentation v1.13.3
+    Checking winit-core v0.31.0-beta.4
+    Checking rndr_core v0.6.0 (/Users/theelevators/rndr/crates/rndr_core)
+    Checking zune-jpeg v0.5.15
+    Checking hyper v1.12.0
+    Checking wgpu-hal v30.0.1
+    Checking sha2 v0.10.9
+    Checking chrono v0.4.45
+    Checking rustls v0.23.46
+    Checking idna v1.1.0
+    Checking icu_locale_fallback v2.4.0
+    Checking block2 v0.5.1
+    Checking crossbeam-deque v0.8.8
+    Checking icu_segmenter_data v2.4.0
+    Checking anyhow v1.0.104
+    Checking hmac v0.12.1
+    Checking skrifa v0.44.0
+    Checking futures-channel v0.3.34
+    Checking core-foundation v0.9.4
+    Checking security-framework-sys v2.17.0
+    Checking objc2-app-kit v0.3.2
+    Checking sync_wrapper v1.0.2
+    Checking objc2-core-text v0.3.2
+    Checking memmap2 v0.9.12
+    Checking weezl v0.1.12
+    Checking base64 v0.23.1
+    Checking pxfm v0.1.30
+    Checking tower-layer v0.3.3
+    Checking byteorder-lite v0.1.0
+    Checking float_next_after v1.0.0
+    Checking linebender_resource_handle v0.1.1
+    Checking fax v0.2.7
+    Checking parlance v0.1.1
+    Checking ipnet v2.12.2
+    Checking fontique v0.12.0
+    Checking hyper-util v0.1.21
+    Checking tiff v0.11.3
+    Checking lyon_tessellation v1.0.23
+    Checking tower v0.5.3
+    Checking moxcms v0.8.1
+    Checking security-framework v2.11.1
+    Checking tokio-rustls v0.26.6
+    Checking medousa-types v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/crates/medousa-types)
+    Checking icu_segmenter v2.4.0
+    Checking rayon-core v1.13.0
+    Checking objc2-foundation v0.2.2
+    Checking url v2.5.8
+    Checking wgpu-core-deps-apple v30.0.1
+    Checking winit-common v0.31.0-beta.4
+    Checking lyon_algorithms v1.0.22
+    Checking accesskit v0.25.2
+    Checking harfrust v0.12.0
+    Checking webpki-roots v1.0.11
+    Checking parley_data v0.12.0
+    Checking rand_core v0.6.4
+    Checking objc2-core-video v0.3.2
+    Checking ppv-lite86 v0.2.21
+    Checking dispatch2 v0.3.1
+    Checking lazy_static v1.5.1
+    Checking unsafe-libyaml v0.2.11
+    Checking minimal-lexical v0.2.1
+    Checking either v1.19.0
+    Checking parley_emoji v0.12.0
+    Checking parley_engine v0.12.0
+    Checking rayon v1.12.0
+    Checking nom v7.1.3
+    Checking serde_yaml v0.9.34+deprecated
+    Checking keyring v2.3.3
+    Checking winit-appkit v0.31.0-beta.4
+    Checking rand_chacha v0.3.1
+    Checking hyper-rustls v0.27.10
+    Checking accesskit_consumer v0.39.2
+    Checking lyon v1.0.19
+    Checking wgpu-core v30.0.1
+    Checking tower-http v0.6.11
+    Checking objc2-app-kit v0.2.2
+    Checking image v0.25.10
+    Checking serde_urlencoded v0.7.1
+    Checking http-body-util v0.1.5
+    Checking miniz_oxide v0.8.9
+    Checking tokio-util v0.7.20
+    Checking fdeflate v0.3.7
+    Checking zeno v0.3.3
+    Checking yazi v0.2.2
+    Checking png v0.18.1
+    Checking swash v0.2.10
+    Checking reqwest v0.12.28
+    Checking accesskit_macos v0.27.2
+    Checking arc-swap v1.9.4
+    Checking arboard v3.7.0
+    Checking wgpu v30.0.1
+    Checking medousa-secrets v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/crates/medousa-secrets)
+    Checking rndr_paint v0.6.0 (/Users/theelevators/rndr/crates/rndr_paint)
+    Checking rand v0.8.8
+    Checking winit v0.31.0-beta.4
+    Checking medousa-api-contract v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/crates/medousa-api-contract)
+    Checking eventsource-stream v0.2.3
+    Checking jpeg-decoder v0.3.2
+    Checking parley v0.12.0
+    Checking image-webp v0.2.4
+    Checking etagere v0.3.0
+    Checking urlencoding v2.1.3
+    Checking pollster v0.4.0
+    Checking medousa-sdk v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/crates/medousa-sdk)
+    Checking rndr_render v0.6.0 (/Users/theelevators/rndr/crates/rndr_render)
+    Checking medousa-local-credential v0.12.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/crates/medousa-local-credential)
+    Checking rndr_app v0.6.0 (/Users/theelevators/rndr/crates/rndr_app)
+    Checking rndr_ui v0.6.0 (/Users/theelevators/rndr/crates/rndr_ui)
+    Checking medousa-rndr-home v0.1.0 (/Users/theelevators/Library/Application Support/medousa/forge/worktrees/b906e0f57650/medousa-rndr-home-current-main-preview-requalification/apps/rndr-home)
+    Finished `dev` profile [unoptimized] target(s) in 26.35s

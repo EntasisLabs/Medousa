@@ -5,6 +5,8 @@ mod interaction_tests;
 mod menus;
 mod presentation;
 #[cfg(test)]
+mod qualification_tests;
+#[cfg(test)]
 mod ui_tests;
 use backend::{Command, Reply, Request, Update};
 use medousa_rndr_home::{Chat, turn_request};

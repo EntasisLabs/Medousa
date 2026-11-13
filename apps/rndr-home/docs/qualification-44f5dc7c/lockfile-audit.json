@@ -1,0 +1,145 @@
+{
+  "baseline": "333a14d823ea09c48fdb3bf6224f7e7960029495",
+  "unchanged_non_rndr_package_entries": 560,
+  "old_rndr": [
+    {
+      "name": "rndr_app",
+      "version": "0.4.0",
+      "dependencies": [
+        "rndr_core",
+        "serde",
+        "serde_json"
+      ]
+    },
+    {
+      "name": "rndr_core",
+      "version": "0.4.0",
+      "dependencies": [
+        "pulldown-cmark",
+        "unicode-segmentation"
+      ]
+    },
+    {
+      "name": "rndr_paint",
+      "version": "0.4.0",
+      "dependencies": [
+        "lyon",
+        "rndr_core"
+      ]
+    },
+    {
+      "name": "rndr_render",
+      "version": "0.4.0",
+      "dependencies": [
+        "accesskit",
+        "accesskit_macos",
+        "accesskit_unix",
+        "accesskit_windows",
+        "arboard",
+        "block2 0.5.1",
+        "etagere",
+        "getrandom 0.3.4",
+        "image-webp",
+        "jpeg-decoder",
+        "libc",
+        "objc2 0.5.3",
+        "objc2-app-kit 0.2.2",
+        "parley",
+        "png",
+        "pollster",
+        "rndr_core",
+        "rndr_paint",
+        "serde_json",
+        "swash",
+        "unicode-segmentation",
+        "wayland-client",
+        "wayland-protocols-wlr",
+        "wgpu",
+        "windows-sys 0.59.0",
+        "winit",
+        "xkbcommon"
+      ]
+    },
+    {
+      "name": "rndr_ui",
+      "version": "0.4.0",
+      "dependencies": [
+        "rndr_core"
+      ]
+    }
+  ],
+  "new_rndr": [
+    {
+      "name": "rndr_app",
+      "version": "0.6.0",
+      "dependencies": [
+        "rndr_core",
+        "serde",
+        "serde_json"
+      ]
+    },
+    {
+      "name": "rndr_core",
+      "version": "0.6.0",
+      "dependencies": [
+        "pulldown-cmark",
+        "unicode-segmentation",
+        "web-time"
+      ]
+    },
+    {
+      "name": "rndr_paint",
+      "version": "0.6.0",
+      "dependencies": [
+        "lyon",
+        "rndr_core"
+      ]
+    },
+    {
+      "name": "rndr_render",
+      "version": "0.6.0",
+      "dependencies": [
+        "accesskit",
+        "accesskit_macos",
+        "accesskit_unix",
+        "accesskit_windows",
+        "arboard",
+        "block2 0.5.1",
+        "etagere",
+        "getrandom 0.3.4",
+        "image-webp",
+        "jpeg-decoder",
+        "js-sys",
+        "libc",
+        "objc2 0.5.3",
+        "objc2-app-kit 0.2.2",
+        "objc2-foundation 0.2.2",
+        "parley",
+        "png",
+        "pollster",
+        "rndr_core",
+        "rndr_paint",
+        "serde_json",
+        "swash",
+        "unicode-segmentation",
+        "wasm-bindgen",
+        "wasm-bindgen-futures",
+        "wayland-client",
+        "wayland-protocols-wlr",
+        "web-sys",
+        "web-time",
+        "wgpu",
+        "windows-sys 0.59.0",
+        "winit",
+        "xkbcommon"
+      ]
+    },
+    {
+      "name": "rndr_ui",
+      "version": "0.6.0",
+      "dependencies": [
+        "rndr_core"
+      ]
+    }
+  ]
+}

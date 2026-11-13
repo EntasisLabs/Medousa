@@ -1,5 +1,10 @@
 # First rndr chat port — verification and review evidence
 
+> **Fresh current evidence:** [2026-11-13 rndr 0.6.0 qualification](QUALIFICATION_0_6_0.md)
+> uses pinned `44f5dc7c`, with 54 default / 55 observe-feature tests and fresh
+> native/headless captures. The 0.4.0 results below are historical, not evidence
+> for the current framework. Device/live-daemon/compositor gaps remain explicit.
+
 > **Follow-on UI work:** See [interaction parity](INTERACTION_PARITY.md) for the
 > 2026-11-07 Svelte-reference polish, current menu/composer/message-row behavior,
 > new regression evidence, screenshots, and remaining app-versus-rndr gaps.

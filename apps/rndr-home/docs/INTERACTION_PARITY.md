@@ -1,5 +1,12 @@
 # rndr chat interaction parity — 2026-11-07
 
+> **2026-11-13 update:** [Pinned rndr 0.6.0 qualification](QUALIFICATION_0_6_0.md)
+> is the fresh test/build/visual evidence for `44f5dc7c`. Existing adapters pass;
+> Prompt submit/reset limitations remain explicitly reproduced. The Lucide atlas
+> is now available (coverage checked), superseding the old no-icon-system claim;
+> no icon redesign or broader parity implementation was made in qualification.
+> All dated sections below retain their original historical scope.
+
 This follow-on compares the native preview with the current Svelte/Tauri chat,
 using the two screenshots supplied in the UI-polish request as visual reference.
 It changes only `apps/rndr-home` and its guide; the production Home UI, daemon,

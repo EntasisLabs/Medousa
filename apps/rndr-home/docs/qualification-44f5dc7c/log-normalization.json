@@ -1,0 +1,30 @@
+[
+  {
+    "path": "default-baseline.log",
+    "original_sha256": "4957a13eb3606e0a59afeee3c78de644cca9b5f21e1c9206a4edbbdef5322a66",
+    "stored_sha256": "937e7cf09380aaac2918c9ff5b9b512808fc5b0fa9149531b58ac0922ecfdae4",
+    "removed_terminal_lf_bytes": 1,
+    "reconstruct_original": "append this many LF bytes to the stored file"
+  },
+  {
+    "path": "default.log",
+    "original_sha256": "6751864eb0c18e86b4a5e17624f5d2e014c4f6299b0e7a5dba2ff67ad20bc1b0",
+    "stored_sha256": "d620d48f334eb8f7b577d7d2651a345b8488ae0da0ce236cf7142c3126567da2",
+    "removed_terminal_lf_bytes": 1,
+    "reconstruct_original": "append this many LF bytes to the stored file"
+  },
+  {
+    "path": "focused-initial.log",
+    "original_sha256": "09b94f12ab38df44a469cfc79914792f253712d659d85fb01e3afc57c7581d9b",
+    "stored_sha256": "a9af7de7afe35d43b5fc32fc9e75063f56a1d3815518c84d2bc6d6e0e6ee96cc",
+    "removed_terminal_lf_bytes": 1,
+    "reconstruct_original": "append this many LF bytes to the stored file"
+  },
+  {
+    "path": "observe.log",
+    "original_sha256": "e3a0ce8b1b135492b75cf4f970f8081d14ce75fa8cf60988ace0420798323ca5",
+    "stored_sha256": "30d55628b2ff505c58583c0c0410690b37a8d063b327797cb288bf506d92050d",
+    "removed_terminal_lf_bytes": 1,
+    "reconstruct_original": "append this many LF bytes to the stored file"
+  }
+]

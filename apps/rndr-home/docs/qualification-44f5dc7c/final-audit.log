@@ -1,0 +1,10 @@
+$ bash scripts/verify-docs.sh --strict
+verify-docs: OK
+docs_exit=0
+$ git diff --check
+$ git -C /Users/theelevators/rndr rev-parse HEAD; git -C /Users/theelevators/rndr status --porcelain
+44f5dc7c0c91af56e4f3e29f97283b8e8d1e1139
+Filesystem   1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on
+/dev/disk3s5   239362496 197752240  16021208    93% 1907374 160212080    1%   /System/Volumes/Data
+$ git diff --cached --check (after reversible test-log terminal-newline normalization)
+staged_diff_exit=0

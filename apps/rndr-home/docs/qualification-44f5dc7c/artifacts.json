@@ -1,0 +1,226 @@
+[
+  {
+    "path": "dark/appearance.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 98520,
+    "sha256": "8a62170ae74e960eb838f710827dcfebf4952be453676538bc9d6ac66300e75b",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "dark/behavior.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 101313,
+    "sha256": "2fad49219d5b505a71cac86b67eeb290a482bc47a5f8994c2146c738fa604a15",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "dark/chat.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 85354,
+    "sha256": "12ae7138ab37831a12a357059acb385f7ff5614524a8ccc8685f15a71a283e67",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "dark/depth.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 96555,
+    "sha256": "2feb5756a41aa8b434c0ebb9cc55e61dbb5d4b04fa6354a3eccf495b1aa2afe1",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "dark/draft.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 93821,
+    "sha256": "87ba37152f655a62d764e5be5ef689b8886fb7819caa10d1e7b363e0745220b1",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "dark/empty.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 35443,
+    "sha256": "3dcf579ffbd0b3243b86a0f629c87ab1a335ba5423bf4e0d522176603a46958e",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "dark/models.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 83646,
+    "sha256": "861463504c2f004aea02798ecb1f27ea0a72b8032b0b775556caa14811b67086",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "dark/narrow.png",
+    "width": 520,
+    "height": 760,
+    "bytes": 75692,
+    "sha256": "45dfc76f050a75926c0ff4a043125bafeb412739932d6e2287296c37e1f4569a",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "dark/runtime.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 89379,
+    "sha256": "a75068a7bf3bf31d949a340a2275f3dbfbc09c7fe4a483a2c0cb9bbfd3cd5ad5",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/appearance.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 79607,
+    "sha256": "203e902220153fa5fff2e975b96a848e8d5eaf989bf40de9eed4a4686fb5e686",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/behavior.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 80877,
+    "sha256": "d9d1543903f1226d74a95ab181c2bbd9ceb8195b6f380e64a84e7f76e9d8bdd8",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/chat.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 68216,
+    "sha256": "150e51f4dfb1b1ef8efda8f3210e45fbe6ce35bf294e130cc4af9a0e040abcb9",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/depth.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 77292,
+    "sha256": "ee56e2dcd5feded88539066cfefe74415164dcf3eaea3fe29efc57f6a270de79",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/draft.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 75542,
+    "sha256": "5769894e956e83a88e0779a6691b272d3c14c2dffe1aa10964413dd81bc60269",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/empty.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 29142,
+    "sha256": "4a702657cd5fab88a577a96e4bdad04d782a49521eb93b645a1b056a495978b7",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/models.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 67452,
+    "sha256": "18d0171cb9a091d46693f98b4a60a7d67f4bccbd4f037651501f86aa9a6a2cca",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/narrow.png",
+    "width": 520,
+    "height": 760,
+    "bytes": 60073,
+    "sha256": "b411f2b7ec333fe67d19158adc8936ec46172e645582009ea8f7225e0edfa994",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "high-contrast/runtime.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 71499,
+    "sha256": "add4cb8976b93b9e186a301a0f1501549f55231abca40c8140f01588239d6913",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/appearance.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 94578,
+    "sha256": "54f58ba7e769aa06803f5f90601a9fecb52fb5c7e838c4a5ac8ef4ff75667c94",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/behavior.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 97137,
+    "sha256": "6e6778d715f6b24fa92dfb94f74a8a88dd0a95d77da1d95737df3df5c305de50",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/chat.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 81752,
+    "sha256": "0de93ef39ce9a8b7bb5827fc5f1abb2b5261b6f7058bebfd534b386fa7fa46b4",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/depth.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 92476,
+    "sha256": "480c7c3a1e559ef9c1b7fb206253d5fcf7450000ac82f06d1283df78479afd58",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/draft.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 90800,
+    "sha256": "bd10160b71de7eddf0e9bbed93885205d5575b4d9a39c94f7648ebe83e7258ab",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/empty.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 33412,
+    "sha256": "db31c0c01b8b3a48fb55bb2bdbb6b7b0a2f901dfcb0b9558ddaee123b77fbac4",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/models.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 80026,
+    "sha256": "19684aeefaa9b7e8a9b9510f281ff88c8a5a96bd7c19659d0bd76659d2f0edbe",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/narrow.png",
+    "width": 520,
+    "height": 760,
+    "bytes": 71926,
+    "sha256": "e68f02dd7dba27ddd500903c98fccc928b1a6053f10af4fe6a7b139d13fd2a17",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "light/runtime.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 86302,
+    "sha256": "6bd140b1322862ba57949146248e4b9669f5f192127ac3abc3052fbb8575f741",
+    "source": "synthetic-headless-export"
+  },
+  {
+    "path": "native-empty.png",
+    "width": 1120,
+    "height": 820,
+    "bytes": 33371,
+    "sha256": "de4e8fa13452191c8757251da42997d9e81cf71e340140b983f5dee3dad07d0c",
+    "source": "native-surface-copy-before-present"
+  }
+]
