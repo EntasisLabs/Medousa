@@ -1,0 +1,53 @@
+{
+  "base": "15eedfbc66cf4f2713f1ac148a27b7f80f1080e7",
+  "source_commit": "995fcd5b85ab67708634623f83251fd1ce363d0d",
+  "changed_paths": [
+    "apps/rndr-home/docs/history-increment/run_checks.py",
+    "apps/rndr-home/src/backend_tests.rs",
+    "apps/rndr-home/src/composer.rs",
+    "apps/rndr-home/src/controller.rs",
+    "apps/rndr-home/src/conversation.rs",
+    "apps/rndr-home/src/fixtures.rs",
+    "apps/rndr-home/src/history_tests.rs",
+    "apps/rndr-home/src/main.rs",
+    "apps/rndr-home/src/observation_tests.rs",
+    "apps/rndr-home/src/shell.rs",
+    "apps/rndr-home/src/ui_tests.rs"
+  ],
+  "preserved_tree_entries": 8200,
+  "sealed_files_passed": {
+    "closure": 55,
+    "qualification": 52
+  },
+  "minimum_free_bytes_all_runs": 15883010048,
+  "minimum_free_bytes_exact_source": 15985004544,
+  "final_free_bytes": 15982784512,
+  "exact_source_passing_gates": [
+    "fmt",
+    "default",
+    "observe",
+    "clippy",
+    "build",
+    "build-observe",
+    "export-dark",
+    "export-light",
+    "export-contrast",
+    "diff"
+  ],
+  "source_sha256": {
+    "apps/rndr-home/docs/history-increment/run_checks.py": "648217b693a66cc98c2a88cefd77a120f27e9e89203c5b94d0dbb52d1a95bff3",
+    "apps/rndr-home/src/backend_tests.rs": "c1dae047a812622be5aa10053b497502890e7796dac1076c265bace60b55953d",
+    "apps/rndr-home/src/composer.rs": "febe5c1ec119764ded661a75d434576a1e4108653b2b92f8cf96a7ff8d46c58b",
+    "apps/rndr-home/src/controller.rs": "eb8b29ce1d97fcb45b83971acc2c17bcfb85c2cde6b86da2a97a876f025820e5",
+    "apps/rndr-home/src/conversation.rs": "0b986a3832b812f33f2a8ece7e2a403cc81b4e251aa02e7c2fd76845f486c3a1",
+    "apps/rndr-home/src/fixtures.rs": "021af08fe0ba0b01ffa5ce87f1f5728e13ab1233e4e20fb6df7b20ae84196993",
+    "apps/rndr-home/src/history_tests.rs": "cf5ff3ddf324309669183f08155a591f1bc0b6fc10e1d992767440635b6183ce",
+    "apps/rndr-home/src/main.rs": "73e8ab1b6501647fc4f7de8ffbd33f7b3932d1dd68a317c8f1e5399b98d41473",
+    "apps/rndr-home/src/observation_tests.rs": "f8af1835aa0595fa172eef339bfd79ccf826cc84a086ac317f664af6d98558d9",
+    "apps/rndr-home/src/shell.rs": "85017dde9b9e5d9dd6a0a203af16c1eea2138059c47b42f83c31958be3998838",
+    "apps/rndr-home/src/ui_tests.rs": "6dd9e6f9e52e6e25b050ea942f0ec36b7ba1985647328a71acbd186c2b2a9337"
+  },
+  "limits": "jobs <=2; debug=0; incremental=0; existing target; sampled 8GiB floor",
+  "network": "Mock HTTP fixtures use loopback only; Cargo offline/locked; no provider requests",
+  "visual_origin": "Synthetic offscreen exports only; no native/live private capture"
+}
