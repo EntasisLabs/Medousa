@@ -27,7 +27,7 @@ fn window(tokens: u32) -> InferenceWindowPolicy {
 }
 
 #[tokio::test]
-async fn adaptive_window_rechecks_growing_real_tool_loop_with_streaming_and_reports() {
+async fn hybrid_window_keeps_selected_baseline_with_streaming_and_reports() {
     for stream in [false, true] {
         let registry = InMemoryToolRegistry::default();
         registry.register_tool(DataProbeTool).unwrap();
@@ -253,4 +253,187 @@ async fn restored_checkpoint_recompiles_for_smaller_target_and_replaces_stale_st
         durable[0].user_lane_prefix[0].content.first_text(),
         prefix[0].content.first_text()
     );
+}
+
+#[derive(Default)]
+struct RolloverEvidence(Mutex<Vec<Value>>);
+impl crate::ports::PerceptionEvidencePort for RolloverEvidence {
+    fn persist(
+        &self,
+        request: crate::ports::PerceptionEvidenceRequest<'_>,
+    ) -> std::result::Result<crate::ports::PersistedPerceptionEvidence, String> {
+        let mut values = self.0.lock().unwrap();
+        values.push(request.output.clone());
+        Ok(crate::ports::PersistedPerceptionEvidence {
+            receipt: json!({"reference":format!("archive:{}",values.len()),"tool":"read_evidence"}),
+            logical_bytes: request.output.to_string().len() as u64,
+            durable_receipt_staged: true,
+            receipt_stage_error: None,
+        })
+    }
+}
+
+#[tokio::test]
+async fn hybrid_rollover_continues_productive_tools_with_durable_archives_and_stable_prefix() {
+    for stream in [false, true] {
+        let registry = InMemoryToolRegistry::default();
+        registry.register_tool(DataProbeTool).unwrap();
+        register_golden_turn_tool(&registry);
+        let mut steps: Vec<_> = (0..30)
+            .map(|round| {
+                tool_response(vec![tool_call(
+                    "data_probe",
+                    json!({
+                        "round":round, "exact_argument":"structured source identifier ".repeat(40)
+                    }),
+                )])
+            })
+            .collect();
+        steps.push(tool_response(vec![finish_call("completed after rollover")]));
+        let client = Arc::new(ScriptedClient::new(steps));
+        let pipeline = MedousaToolLoopPipeline::new(
+            PromptExecutionPipeline::new(client.clone()),
+            Arc::new(registry),
+        )
+        .with_window_policy(window(20000));
+        let evidence = Arc::new(RolloverEvidence::default());
+        let checkpoints = CapturingCheckpoints::default();
+        let mut gate = ToolLoopCompletionGate::new_for_execution(
+            1,
+            RuntimePorts::new().with_perception_evidence(evidence.clone()),
+            40,
+        );
+        gate.active_turn_checkpoint_sink = Some(Arc::new(checkpoints.clone()));
+        let request = ToolLoopExecutionRequest {
+            user_prompt: "keep exact-current-goal".into(),
+            system_prompt: Some("governing policy".into()),
+            context: Default::default(),
+            tool_name: String::new(),
+            tool_input: Value::Null,
+            tool_call_mode: ToolCallMode::Auto,
+        };
+        let prior = vec![
+            ChatMessage::user("stable prior question"),
+            ChatMessage::assistant("stable prior answer"),
+        ];
+        let (tx, mut rx) = mpsc::channel(128);
+        let drain = tokio::spawn(async move { while rx.recv().await.is_some() {} });
+        let response = with_turn_execution_boundary(
+            golden_execution_boundary(),
+            pipeline.execute_with_stream_prior_messages_max_rounds(
+                request,
+                prior,
+                stream.then_some(&tx),
+                40,
+                Some(&mut gate),
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+        drop(tx);
+        drain.await.unwrap();
+        assert_eq!(response.text, "completed after rollover");
+        assert_eq!(response.tool_invocations.len(), 31);
+        let requests = client.requests();
+        assert_eq!(requests.len(), 31);
+        let prefix = crate::context::prepared_messages_digest(&requests[0].messages[..4]);
+        for request in &requests {
+            assert_eq!(
+                crate::context::prepared_messages_digest(&request.messages[..4]),
+                prefix
+            );
+            assert!(estimate(request).total_tokens <= 20000);
+            let calls: Vec<_> = request
+                .messages
+                .iter()
+                .flat_map(|m| m.content.tool_calls())
+                .map(|c| c.call_id.clone())
+                .collect();
+            let results: Vec<_> = request
+                .messages
+                .iter()
+                .flat_map(|m| m.content.tool_responses())
+                .map(|r| r.call_id.clone())
+                .collect();
+            assert_eq!(calls, results);
+        }
+        assert!(
+            evidence
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|a| a["kind"] == "tool_history_rollover")
+        );
+        assert!(
+            checkpoints
+                .states
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|s| s.termination_reason.as_deref() == Some("context_window_rollover"))
+        );
+        assert!(requests.last().unwrap().messages.iter().any(|m| {
+            m.content
+                .first_text()
+                .is_some_and(|t| t.starts_with("[MEDOUSA_CONTEXT_ROLLOVER]"))
+        }));
+    }
+}
+
+#[tokio::test]
+async fn context_exhaustion_saves_checkpoint_without_claiming_completion() {
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(DataProbeTool).unwrap();
+    register_golden_turn_tool(&registry);
+    let client = Arc::new(ScriptedClient::new(vec![tool_response(vec![tool_call(
+        "data_probe",
+        json!({"exact_argument":"x".repeat(10000)}),
+    )])]));
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    )
+    .with_window_policy(window(6000));
+    let checkpoints = CapturingCheckpoints::default();
+    let mut gate = ToolLoopCompletionGate::new_for_execution(1, RuntimePorts::new(), 4);
+    gate.active_turn_checkpoint_sink = Some(Arc::new(checkpoints.clone()));
+    let response = with_turn_execution_boundary(
+        golden_execution_boundary(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
+            ToolLoopExecutionRequest {
+                user_prompt: "exact instruction".into(),
+                system_prompt: None,
+                context: Default::default(),
+                tool_name: String::new(),
+                tool_input: Value::Null,
+                tool_call_mode: ToolCallMode::Auto,
+            },
+            Vec::new(),
+            None,
+            4,
+            Some(&mut gate),
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.termination_reason, "context_window_checkpoint");
+    assert_eq!(response.rounds_executed, 1);
+    assert_eq!(client.requests().len(), 1);
+    let states = checkpoints.states.lock().unwrap();
+    let saved = states.last().unwrap();
+    assert_eq!(
+        saved.status,
+        crate::checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure
+    );
+    assert_eq!(
+        saved.invocations[0].tool_input["exact_argument"]
+            .as_str()
+            .unwrap()
+            .len(),
+        10000
+    );
+    assert!(!saved.tool_lane_messages.is_empty());
 }

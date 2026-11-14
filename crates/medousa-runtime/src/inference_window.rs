@@ -1,4 +1,4 @@
-//! Per-inference window policy. This is an estimate, never a provider tokenizer.
+//! Hybrid window policy: stable turn baseline, soft maintenance, hard admission.
 //! Producers retain storage, authority, and valid reductions. Only whole old chat
 //! exchanges may be deferred here; tool evidence is reduced by perception.
 use genai::chat::{ChatRequest, ChatRole, ContentPart};
@@ -12,6 +12,9 @@ use crate::perception::ToolPerceptionGovernor;
 mod tests;
 
 pub const UNKNOWN_INPUT_TOKENS: u32 = 8_000;
+/// Working input ceiling, independent of a provider's potentially larger limit.
+/// This is an operating policy, not a claim of a universally optimal model size.
+pub const WORKING_INPUT_TOKENS: u32 = 280_000;
 pub const DEFAULT_OUTPUT_RESERVE: u32 = 4_096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,7 +48,10 @@ impl Default for InferenceWindowPolicy {
 
 impl InferenceWindowPolicy {
     pub fn input_budget(&self) -> u32 {
-        let input = self.input_tokens.unwrap_or(UNKNOWN_INPUT_TOKENS);
+        let input = self
+            .input_tokens
+            .or(self.shared_tokens)
+            .unwrap_or(UNKNOWN_INPUT_TOKENS);
         let shared = self
             .shared_tokens
             .map(|limit| limit.saturating_sub(self.output_reserve))
@@ -62,6 +68,75 @@ impl InferenceWindowPolicy {
             .min(shared)
             .saturating_sub(self.safety_tokens)
             .saturating_sub(self.observation_tokens)
+    }
+    /// Crossing this target requests maintenance; only input_budget rejects input.
+    pub fn working_budget(&self) -> u32 {
+        self.input_budget().min(WORKING_INPUT_TOKENS)
+    }
+
+    fn uses_openai_proxy(&self) -> bool {
+        let (provider, model) = self.target.split_once(':').unwrap_or(("", ""));
+        matches!(
+            provider,
+            "openai-codex" | "openai" | "azure-openai" | "azure_openai"
+        ) && (model.starts_with("gpt-5")
+            || model.starts_with("gpt-6")
+            || model.starts_with("gpt-4o")
+            || model.starts_with("gpt-4.1")
+            || model.starts_with("o1")
+            || model.starts_with("o3")
+            || model.starts_with("o4"))
+    }
+
+    pub fn text_tokens(&self, text: &str) -> u32 {
+        let count = if self.uses_openai_proxy() {
+            // GPT-6's exact encoding is not published. This offline o200k proxy
+            // includes 25% headroom; it is never labeled provider tokenization.
+            // Bound BPE merge work on long repeated logs/identifiers. Chunk
+            // boundaries may add tokens, which is conservative for this proxy.
+            let tokenizer = tiktoken_rs::o200k_base_singleton();
+            let mut remaining = text;
+            let mut tokens = 0usize;
+            while !remaining.is_empty() {
+                let mut end = remaining.len().min(2048);
+                while !remaining.is_char_boundary(end) {
+                    end -= 1;
+                }
+                let (chunk, rest) = remaining.split_at(end);
+                tokens = tokens.saturating_add(tokenizer.encode_ordinary(chunk).len());
+                remaining = rest;
+            }
+            tokens.saturating_mul(5).div_ceil(4)
+        } else {
+            text.len()
+        };
+        u32::try_from(count).unwrap_or(u32::MAX)
+    }
+
+    pub fn accounting(&self) -> &'static str {
+        if self.uses_openai_proxy() {
+            "estimated_o200k_proxy_plus25pct_protocol_media8192_framing32; not_provider_tokenization"
+        } else {
+            "estimated_utf8_bytes_plus_protocol_media8192_framing32; not_provider_tokenization"
+        }
+    }
+
+    pub fn estimate(&self, request: &ChatRequest) -> WindowEstimate {
+        estimate_with(request, |text| self.text_tokens(text))
+    }
+
+    /// Conversion for byte-based observation lanes only, not token admission.
+    pub fn observation_byte_budget(&self) -> usize {
+        self.observation_bytes_for_tokens(self.working_budget())
+    }
+
+    pub fn observation_bytes_for_tokens(&self, tokens: u32) -> usize {
+        let budget = tokens as usize;
+        if self.uses_openai_proxy() {
+            budget.saturating_mul(2)
+        } else {
+            budget
+        }
     }
 }
 
@@ -83,35 +158,40 @@ fn add(total: &mut u32, value: usize) {
 /// uncertain 8192-token allowance per part (not a claim of measured media cost).
 /// Opaque payload bytes/base64 are deliberately not tokenized as text.
 pub fn estimate(request: &ChatRequest) -> WindowEstimate {
+    estimate_with(request, |text| {
+        u32::try_from(text.len()).unwrap_or(u32::MAX)
+    })
+}
+
+fn estimate_with(request: &ChatRequest, count: impl Fn(&str) -> u32) -> WindowEstimate {
     let mut text = 0u32;
     let mut media_parts = 0u32;
-    add(&mut text, request.system.as_ref().map_or(0, String::len));
+    add(
+        &mut text,
+        request.system.as_ref().map_or(0, |s| count(s) as usize),
+    );
     for tool in request.tools.iter().flatten() {
         add(
             &mut text,
-            serde_json::to_vec(tool).expect("tool serializes").len(),
+            count(&serde_json::to_string(tool).expect("tool serializes")) as usize,
         );
     }
     for part in request.messages.iter().flat_map(|m| m.content.parts()) {
         match part {
             ContentPart::Text(value)
             | ContentPart::ReasoningContent(value)
-            | ContentPart::ThoughtSignature(value) => add(&mut text, value.len()),
+            | ContentPart::ThoughtSignature(value) => add(&mut text, count(value) as usize),
             ContentPart::ToolCall(_) | ContentPart::ToolResponse(_) => {
                 add(
                     &mut text,
-                    serde_json::to_vec(part)
-                        .expect("tool part serializes")
-                        .len(),
+                    count(&serde_json::to_string(part).expect("tool part serializes")) as usize,
                 );
             }
             ContentPart::Binary(_) => media_parts = media_parts.saturating_add(1),
             ContentPart::Custom(value) => {
                 add(
                     &mut text,
-                    serde_json::to_vec(value)
-                        .expect("custom part serializes")
-                        .len(),
+                    count(&serde_json::to_string(value).expect("custom part serializes")) as usize,
                 );
                 media_parts = media_parts.saturating_add(1);
             }
@@ -176,6 +256,27 @@ impl ContextCoordinator {
         assembly: Option<&ContextDecisionReport>,
         perception: &mut ToolPerceptionGovernor,
     ) -> Result<InferenceWindowReport, ContextWindowOverflow> {
+        Self::compile_inference_for_round(
+            request,
+            policy,
+            system_messages,
+            prefix_messages,
+            assembly,
+            perception,
+            true,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn compile_inference_for_round(
+        request: &mut ChatRequest,
+        policy: &InferenceWindowPolicy,
+        system_messages: usize,
+        prefix_messages: usize,
+        assembly: Option<&ContextDecisionReport>,
+        perception: &mut ToolPerceptionGovernor,
+        select_baseline: bool,
+    ) -> Result<InferenceWindowReport, ContextWindowOverflow> {
         let budget = policy.input_budget();
         let history_end = system_messages
             .saturating_add(prefix_messages.saturating_sub(1))
@@ -201,8 +302,9 @@ impl ContextCoordinator {
         }
         let mut remove = vec![false; request.messages.len()];
         let mut deferred = 0;
+        let mut projected_tokens = policy.estimate(request).total_tokens;
         for group in groups {
-            if estimate(request).total_tokens <= budget {
+            if !select_baseline || projected_tokens <= policy.working_budget() {
                 break;
             }
             if group.clone().any(|index| {
@@ -229,9 +331,7 @@ impl ContextCoordinator {
                 .enumerate()
                 .filter_map(|(i, m)| (!remove[i]).then_some(m))
                 .collect();
-            if estimate(&trial).total_tokens <= budget {
-                break;
-            }
+            projected_tokens = policy.estimate(&trial).total_tokens;
         }
         let original_prefix = system_messages.saturating_add(prefix_messages);
         let removed_prefix = remove
@@ -257,31 +357,12 @@ impl ContextCoordinator {
             }
             keep
         });
-        // Reclaim evidence only as needed, never delete tool calls or results.
-        if estimate(request).total_tokens > budget {
-            let before = estimate(request).total_tokens;
-            let response_bytes: usize = request
-                .messages
-                .iter()
-                .flat_map(|m| m.content.parts())
-                .filter_map(|part| {
-                    if let ContentPart::ToolResponse(r) = part {
-                        Some(r.content.len())
-                    } else {
-                        None
-                    }
-                })
-                .sum();
-            let desired = response_bytes.saturating_sub(before.saturating_sub(budget) as usize);
-            perception.compact_tool_history_with_budget(
-                &mut request.messages,
-                desired,
-                desired,
-                0,
-                1024,
-            );
+        // Only cold observations are eligible. Recent results, errors, arguments
+        // and exact instructions survive soft maintenance even above the target.
+        if policy.estimate(request).total_tokens > policy.working_budget() {
+            perception.compact_tool_history_with_budget(&mut request.messages, 0, 0, 4, 1024);
         }
-        let measured = estimate(request);
+        let measured = policy.estimate(request);
         let cost = crate::inference_usage::RequestFootprint::new(request, None, None)
             .content_cost
             .expect("request cost");
@@ -357,9 +438,7 @@ impl ContextCoordinator {
             meaningful_changes: Vec::new(),
             input_budget: budget,
             estimate: measured.clone(),
-            accounting:
-                "estimated_utf8_bytes_plus_protocol_media8192_framing32; not_provider_tokenization"
-                    .into(),
+            accounting: policy.accounting().into(),
             deferred_history_messages: deferred,
             request_messages_digest: crate::context::prepared_messages_digest(&request.messages),
             reconciled,

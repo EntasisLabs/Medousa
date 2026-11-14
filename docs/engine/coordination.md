@@ -1,5 +1,12 @@
 # Agent handoffs and coordination
 
+Paired worker sessions renew automatically when an expired bearer is rejected.
+The sender proves its existing device key and pins the destination's signature
+before storing the rotated credential. This applies to completion queries and
+mesh messages without creating another assignment. Revoked or expired device
+trust still requires explicit pairing again.
+
+
 Logical coordination channels are not Telegram/Slack delivery channels. Proposal
 snapshots retain authority-qualified channel/session references, exact context
 ranges and digests, a governed Forge work item, and independent peer custody.

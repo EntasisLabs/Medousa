@@ -280,13 +280,13 @@ pub fn persistence_failure_guidance(summary: &str) -> Value {
         "recommended_first_tool": "cognition_memory_query",
         "recommended_next_steps": [
             "read the SurrealDB error in validation_error — it is the root cause, not a decode wrapper",
-            "if the error mentions a missing or mismatched field, restart with MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON=1 so temporal_node schema is upgraded",
+            "if the error mentions a missing or mismatched field, restart an updated daemon so its temporal_node compatibility repair runs",
             "if schema is current, fix the STTP payload and retry cognition_memory_mutate action=memory.store",
             "check daemon logs for [sttp_ingest_trace] stage=store reason=store_failure for retry/cooldown state"
         ],
         "operator_hints": [
-            "MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON=1 runs Locus initialize_async (adds new temporal_node fields such as semantic_links)",
-            "MEDOUSA_SKIP_LOCUS_INIT_ON_DAEMON=1 skips init on existing graphs — can leave schema stale"
+            "startup repairs source_metadata and semantic_links object definitions, including semantic_links.* on older schemas",
+            "MEDOUSA_SKIP_LOCUS_INIT_ON_DAEMON=1 skips full Locus initialization; targeted compatibility repairs still run"
         ]
     })
 }

@@ -38,12 +38,12 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Siri and Shortcuts](guides/siri-and-shortcuts.md) | Continue the selected chat by voice or from an iPhone shortcut |
 | [Medousa Live on iPhone](guides/medousa-live-ios.md) | Continuous in-app voice, controls, requirements, and preview limits |
 | [Medousa Live in CarPlay](guides/medousa-carplay.md) | Development companion controls, setup, and qualification limits |
-| [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
+| [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops and paired-worker session renewal |
 | [SSH targets](guides/ssh-targets.md) | Connect named servers and open workshop or SSH terminals from Spotlight |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Notes and vaults](guides/notes-and-vaults.md) | Switch linked vaults, search across them, and discuss notes with separate context |
 | [Files](guides/files.md) | Open and edit files; preview images, PDFs, and spreadsheets |
-| [Context](guides/context.md) | Browse saved session memory and its sources |
+| [Context](guides/context.md) | Browse saved session memory, sources, and context during long runs |
 | [Chat sticky notes](guides/chat-sticky-notes.md) | Keep corrections, exact details, and follow-ups hot across turns |
 | [Agent work in chat](guides/agent-work-in-chat.md) | Follow agent exchanges from the composer or inline handoffs, with explicit approval boundaries |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |

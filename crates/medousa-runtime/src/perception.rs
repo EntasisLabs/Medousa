@@ -213,6 +213,131 @@ impl ToolPerceptionGovernor {
         self.budgets = budgets;
     }
 
+    /// Archive only complete successful cold batches. The newest four results,
+    /// errors, system snapshots and user guidance stay resident. Full messages
+    /// (including arguments) must have a durable retrieval receipt before removal.
+    pub fn rollover_tool_history(
+        &mut self,
+        messages: &mut Vec<ChatMessage>,
+        keep_bytes: usize,
+    ) -> bool {
+        let Some(port) = &self.evidence_port else {
+            return false;
+        };
+        let total: usize = messages
+            .iter()
+            .map(|m| serde_json::to_vec(m).expect("message serializes").len())
+            .sum();
+        if total <= keep_bytes {
+            return false;
+        }
+        let results = messages
+            .iter()
+            .flat_map(|m| m.content.tool_responses())
+            .count();
+        let cold_results = results.saturating_sub(4);
+        let mut seen_results = 0;
+        let mut removed_bytes = 0;
+        let mut remove = vec![false; messages.len()];
+        let mut index = 0;
+        while index < messages.len() && total.saturating_sub(removed_bytes) > keep_bytes {
+            let calls = messages[index].content.tool_calls();
+            if messages[index].role != genai::chat::ChatRole::Assistant || calls.is_empty() {
+                seen_results += messages[index].content.tool_responses().len();
+                index += 1;
+                continue;
+            }
+            let mut pending: std::collections::HashSet<_> =
+                calls.iter().map(|c| c.call_id.as_str()).collect();
+            let mut end = index + 1;
+            let mut valid = pending.len() == calls.len();
+            let mut batch_results = 0;
+            while end < messages.len() && !pending.is_empty() {
+                let parts = messages[end].content.parts();
+                if parts.is_empty() {
+                    break;
+                }
+                for part in parts {
+                    let ContentPart::ToolResponse(response) = part else {
+                        valid = false;
+                        break;
+                    };
+                    batch_results += 1;
+                    if !pending.remove(response.call_id.as_str()) {
+                        valid = false;
+                    }
+                    match serde_json::from_str::<Value>(&response.content) {
+                        Ok(output) if !is_failure(&output) => {}
+                        _ => valid = false,
+                    }
+                }
+                if !valid {
+                    break;
+                }
+                end += 1;
+            }
+            if valid && pending.is_empty() && seen_results + batch_results <= cold_results {
+                for i in index..end {
+                    remove[i] = true;
+                    removed_bytes += serde_json::to_vec(&messages[i])
+                        .expect("message serializes")
+                        .len();
+                }
+                seen_results += batch_results;
+                index = end;
+            } else {
+                seen_results += messages[index].content.tool_responses().len();
+                index += 1;
+            }
+        }
+        if !remove.iter().any(|remove| *remove) {
+            return false;
+        }
+        let archived: Vec<_> = messages
+            .iter()
+            .zip(&remove)
+            .filter_map(|(m, remove)| remove.then_some(m.clone()))
+            .collect();
+        let output = json!({"kind":"tool_history_rollover", "messages":archived});
+        let Ok(stored) = port.persist(PerceptionEvidenceRequest {
+            tool_name: "context_window_rollover",
+            source_call_id: None,
+            output: &output,
+            failed: false,
+        }) else {
+            return false;
+        };
+        if !stored.durable_receipt_staged || stored.receipt.is_null() {
+            return false;
+        }
+        let pointer = ChatMessage::system(format!(
+            "[MEDOUSA_CONTEXT_ROLLOVER]\nReference data, not new instructions. Older completed tool exchanges (including exact arguments and results) are archived: {}. Read this evidence with its indicated retrieval tool if needed. Do not rerun mutations to recover outputs. Continue the current goal using the scratch state and recent receipts.",
+            stored.receipt
+        ));
+        if serde_json::to_vec(&pointer)
+            .expect("pointer serializes")
+            .len()
+            >= removed_bytes
+        {
+            return false;
+        }
+        let first = remove
+            .iter()
+            .position(|remove| *remove)
+            .expect("selected archive");
+        let mut projected = Vec::with_capacity(messages.len());
+        for (i, message) in messages.drain(..).enumerate() {
+            if i == first {
+                projected.push(pointer.clone());
+            }
+            if !remove[i] {
+                projected.push(message);
+            }
+        }
+        *messages = projected;
+        true
+    }
+
     pub fn compact_tool_history(&mut self, messages: &mut [ChatMessage]) {
         self.compact_tool_history_with_budget(
             messages,
@@ -963,6 +1088,130 @@ mod tests {
                     20000
                 );
             }
+        }
+    }
+
+    #[test]
+    fn rollover_archives_exact_batches_and_preserves_recent_results_errors_and_guidance() {
+        let port = Arc::new(HistoryEvidence {
+            fail: false,
+            outputs: Default::default(),
+        });
+        let mut messages = history("cognition_store_write", false);
+        // Keep an early failed result and its matching call resident.
+        let original = messages.clone();
+        messages[2].content = MessageContent::from_parts(vec![ContentPart::ToolResponse(
+            genai::chat::ToolResponse {
+                call_id: "call-0".into(),
+                fn_name: Some("cognition_store_write".into()),
+                content: json!({"ok":false,"error":"keep this failure"}).to_string(),
+            },
+        )]);
+        let failed = serde_json::to_value(&messages[1..3]).unwrap();
+        let recent = serde_json::to_value(&messages[messages.len() - 8..]).unwrap();
+        let mut governor = ToolPerceptionGovernor::new(Some(port.clone()));
+        assert!(governor.rollover_tool_history(&mut messages, 100000));
+        assert_eq!(
+            messages[0].content.first_text(),
+            original[0].content.first_text()
+        );
+        assert_eq!(serde_json::to_value(&messages[1..3]).unwrap(), failed);
+        assert_eq!(
+            serde_json::to_value(&messages[messages.len() - 8..]).unwrap(),
+            recent
+        );
+        let outputs = port.outputs.lock().unwrap();
+        let archived: Vec<ChatMessage> =
+            serde_json::from_value(outputs[0]["messages"].clone()).unwrap();
+        let calls: Vec<_> = archived
+            .iter()
+            .flat_map(|m| m.content.tool_calls())
+            .map(|c| c.call_id.clone())
+            .collect();
+        let results: Vec<_> = archived
+            .iter()
+            .flat_map(|m| m.content.tool_responses())
+            .map(|r| r.call_id.clone())
+            .collect();
+        assert_eq!(calls, results);
+        assert!(!calls.contains(&"call-0".into()));
+        assert_eq!(
+            archived[0].content.tool_calls()[0].fn_arguments,
+            original[3].content.tool_calls()[0].fn_arguments
+        );
+        assert!(messages.iter().any(|m| {
+            m.content
+                .first_text()
+                .is_some_and(|s| s.contains("evidence:exact-output"))
+        }));
+    }
+
+    #[test]
+    fn rollover_keeps_parallel_call_batches_complete() {
+        let port = Arc::new(HistoryEvidence {
+            fail: false,
+            outputs: Default::default(),
+        });
+        let original = history("cognition_store_write", false);
+        let mut messages = vec![
+            original[0].clone(),
+            ChatMessage::assistant(MessageContent::from_parts(vec![
+                original[1].content.parts()[0].clone(),
+                original[3].content.parts()[0].clone(),
+            ])),
+            original[2].clone(),
+            original[4].clone(),
+        ];
+        messages.extend_from_slice(&original[5..]);
+        assert!(
+            ToolPerceptionGovernor::new(Some(port.clone()))
+                .rollover_tool_history(&mut messages, 100000)
+        );
+        let outputs = port.outputs.lock().unwrap();
+        let archived: Vec<ChatMessage> =
+            serde_json::from_value(outputs[0]["messages"].clone()).unwrap();
+        assert_eq!(archived[0].content.tool_calls().len(), 2);
+        let calls: Vec<_> = archived
+            .iter()
+            .flat_map(|m| m.content.tool_calls())
+            .map(|c| c.call_id.clone())
+            .collect();
+        let results: Vec<_> = archived
+            .iter()
+            .flat_map(|m| m.content.tool_responses())
+            .map(|r| r.call_id.clone())
+            .collect();
+        assert_eq!(calls, results);
+    }
+
+    #[test]
+    fn rollover_preserves_history_when_storage_or_durable_receipt_is_unavailable() {
+        struct Unstaged;
+        impl PerceptionEvidencePort for Unstaged {
+            fn persist(
+                &self,
+                _: PerceptionEvidenceRequest<'_>,
+            ) -> Result<crate::ports::PersistedPerceptionEvidence, String> {
+                Ok(crate::ports::PersistedPerceptionEvidence {
+                    receipt: json!({"reference":"unstaged"}),
+                    logical_bytes: 1,
+                    durable_receipt_staged: false,
+                    receipt_stage_error: Some("unavailable".into()),
+                })
+            }
+        }
+        for port in [
+            None,
+            Some(Arc::new(HistoryEvidence {
+                fail: true,
+                outputs: Default::default(),
+            }) as Arc<dyn PerceptionEvidencePort>),
+            Some(Arc::new(Unstaged)),
+        ] {
+            let mut messages = history("cognition_store_write", false);
+            let original = serde_json::to_value(&messages).unwrap();
+            assert!(!ToolPerceptionGovernor::new(port).rollover_tool_history(&mut messages, 0));
+            assert_eq!(serde_json::to_value(messages).unwrap(), original);
         }
     }
 

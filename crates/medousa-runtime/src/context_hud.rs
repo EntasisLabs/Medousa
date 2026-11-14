@@ -2,7 +2,7 @@
 //! Snapshots live on the request copy, never in the authoritative transcript.
 use crate::context::{ContextCoordinator, ContextDecision, ContextDecisionReport};
 use crate::inference_window::{
-    ContextWindowOverflow, InferenceWindowPolicy, InferenceWindowReport, estimate,
+    ContextWindowOverflow, InferenceWindowPolicy, InferenceWindowReport,
 };
 use crate::perception::ToolPerceptionGovernor;
 use genai::chat::{ChatMessage, ChatRequest, ChatRole};
@@ -15,7 +15,7 @@ fn pressure(report: &InferenceWindowReport) -> &'static str {
     if report.estimate.total_tokens > report.input_budget {
         "overflow"
     } else if report.estimate.total_tokens.saturating_mul(100)
-        > report.input_budget.saturating_mul(85)
+        > report.policy.working_budget().saturating_mul(85)
     {
         "high"
     } else {
@@ -109,6 +109,24 @@ fn model_snapshot(report: &InferenceWindowReport, view: &UserContextProjection) 
     }
 }
 
+fn inherit_baseline_selection(
+    report: &mut InferenceWindowReport,
+    previous: Option<&InferenceWindowReport>,
+) {
+    if let Some(previous) = previous {
+        report.deferred_history_messages = previous.deferred_history_messages;
+        report.deferred_pointers = previous.deferred_pointers.clone();
+        report.decisions.contributions.extend(
+            previous
+                .decisions
+                .contributions
+                .iter()
+                .filter(|c| c.id == "window_deferred_chat_history")
+                .cloned(),
+        );
+    }
+}
+
 impl ContextCoordinator {
     /// Reserve a bounded replaceable tail before selection, then reconcile the
     /// rendered snapshot. No hidden append after budgeting, no stable-prefix churn.
@@ -137,16 +155,17 @@ impl ContextCoordinator {
         });
         request.messages.push(ChatMessage::system(format!(
             "{MODEL_HUD_PREFIX}\n{}",
-            " ".repeat(HUD_RESERVE_BYTES - MODEL_HUD_PREFIX.len() - 1)
+            "?".repeat(HUD_RESERVE_BYTES - MODEL_HUD_PREFIX.len() - 1)
         )));
         let original = request.clone();
-        let mut report = match Self::compile_inference(
+        let mut report = match Self::compile_inference_for_round(
             request,
             policy,
             system_messages,
             prefix_messages,
             assembly,
             perception,
+            previous.is_none(),
         ) {
             Ok(report) => report,
             Err(_) => {
@@ -154,13 +173,14 @@ impl ContextCoordinator {
                 // overflow that would not occur without it.
                 *request = original;
                 request.messages.pop();
-                let mut report = Self::compile_inference(
+                let mut report = Self::compile_inference_for_round(
                     request,
                     policy,
                     system_messages,
                     prefix_messages,
                     assembly,
                     perception,
+                    previous.is_none(),
                 )?;
                 report
                     .decisions
@@ -180,12 +200,14 @@ impl ContextCoordinator {
                         cost: Default::default(),
                         budget_chars: None,
                     });
+                inherit_baseline_selection(&mut report, previous);
                 let view = user_projection(&report, work);
                 report.meaningful_changes = meaningful_changes(&report, &view, previous);
                 report.hud = Some(view);
                 return Ok(report);
             }
         };
+        inherit_baseline_selection(&mut report, previous);
         let view = user_projection(&report, work);
         report.meaningful_changes = meaningful_changes(&report, &view, previous);
         let mut snapshot = model_snapshot(&report, &view);
@@ -193,6 +215,11 @@ impl ContextCoordinator {
         // share the same pressure decision and the final guard sees no growth.
         snapshot.push_str(&" ".repeat(HUD_RESERVE_BYTES.saturating_sub(snapshot.len())));
         *request.messages.last_mut().expect("reserved HUD") = ChatMessage::system(snapshot);
+        // Byte padding does not imply equal tokenizer cost. Drop the flexible
+        // HUD if its final rendered snapshot outgrows the token reservation.
+        if policy.estimate(request).total_tokens > policy.input_budget() {
+            request.messages.pop();
+        }
         let omitted = report
             .decisions
             .contributions
@@ -206,14 +233,18 @@ impl ContextCoordinator {
         let compiled = crate::request_context::compile_first_request(
             request,
             system_messages,
-            prefix_messages.saturating_sub(report.deferred_history_messages),
+            prefix_messages.saturating_sub(if previous.is_none() {
+                report.deferred_history_messages
+            } else {
+                0
+            }),
             assembly,
             cost,
         );
         report.decisions = compiled.decisions;
         report.decisions.capacity.input_tokens = policy.input_tokens;
         report.decisions.contributions.extend(omitted);
-        report.estimate = estimate(request);
+        report.estimate = policy.estimate(request);
         report.reconciled = compiled.reconciled;
         report.request_messages_digest =
             crate::context::prepared_messages_digest(&request.messages);
@@ -226,6 +257,7 @@ impl ContextCoordinator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inference_window::estimate;
     #[test]
     fn semantic_deltas_are_coalesced_and_hud_can_defer_without_protected_overflow() {
         let mut request = ChatRequest::new(vec![

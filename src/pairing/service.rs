@@ -162,7 +162,7 @@ pub struct PairSessionChallengeRequest {
     pub phone_id: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairSessionChallengeResponse {
     pub status: String,
@@ -186,7 +186,7 @@ pub struct PairSessionRefreshRequest {
     pub phone_nonce: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairSessionRefreshResponse {
     pub status: String,
@@ -1378,7 +1378,7 @@ fn pairing_trust_active(record: &PairedDeviceRecord, now: DateTime<Utc>) -> bool
     idle_seconds < idle_timeout_seconds
 }
 
-fn session_refresh_challenge_message(
+pub(crate) fn session_refresh_challenge_message(
     session_id: &str,
     pairing_id: &str,
     phone_id: &str,
@@ -1390,7 +1390,7 @@ fn session_refresh_challenge_message(
     )
 }
 
-fn session_refresh_issued_message(
+pub(crate) fn session_refresh_issued_message(
     session_id: &str,
     pairing_id: &str,
     phone_nonce: &str,

@@ -67,22 +67,12 @@ impl ModelCapabilityRegistry {
         crate::reasoning_effort::reasoning_capability(&provider, model)
     }
 
-    pub fn record_chatgpt_catalog(
-        &self,
-        models: Vec<(String, Option<String>, Option<crate::reasoning_effort::ReasoningCapability>)>,
-    ) {
-        let records = models.into_iter().map(|(model, display_name, reasoning)| {
-            let mut record = infer_capability("openai-codex", &model);
-            record.reasoning = reasoning.or(record.reasoning);
-            record.display_name = display_name;
-            record.source = "chatgpt_account".into();
-            record
-        }).collect();
+    pub fn record_chatgpt_catalog(&self, models: Vec<ModelCapabilityRecord>) {
         self.persist_snapshot(ProviderCatalogSnapshot {
             provider: "openai-codex".into(),
             fetched_at: Utc::now(),
             source: "chatgpt_account".into(),
-            models: records,
+            models,
             error: None,
         });
     }
@@ -346,7 +336,8 @@ impl ModelCapabilityRegistry {
             return Some(record);
         }
 
-        if provider != "openrouter" {
+        // A signed-in account's limits must never come from API-key routes.
+        if provider != "openrouter" && provider != "openai-codex" {
             let slug = openrouter_slug_for(&provider, model);
             if let Some(snapshot) = snapshots.get("openrouter")
                 && let Some(record) = find_model_record(&snapshot.models, &slug)
@@ -481,6 +472,22 @@ fn provider_base_url(provider: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_route_does_not_inherit_openrouter_limits() {
+        let mut api = infer_capability("openrouter", "openai-codex/gpt-6.1-sol");
+        api.max_input_tokens = Some(1_000_000);
+        let registry = ModelCapabilityRegistry {
+            index: RwLock::new(CatalogIndex::default()),
+            snapshots: RwLock::new(HashMap::from([("openrouter".into(), ProviderCatalogSnapshot {
+                provider: "openrouter".into(), fetched_at: Utc::now(),
+                source: "openrouter".into(), models: vec![api], error: None,
+            })])),
+        };
+        let result = registry.resolve("openai-codex", "gpt-6.1-sol");
+        assert!(!result.found);
+        assert_eq!(result.model.unwrap().max_input_tokens, None);
+    }
 
     #[test]
     fn openrouter_slug_lookup_uses_heuristic_when_empty_cache() {

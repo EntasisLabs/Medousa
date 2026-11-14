@@ -165,3 +165,32 @@ fn unknown_capacity_and_tool_schema_cost_are_not_assumed_to_fit() {
             .contains("context_window_overflow")
     );
 }
+
+#[test]
+fn codex_dispatch_uses_the_same_token_proxy_and_hard_limit_as_compilation() {
+    let client = Arc::new(CountClient::default());
+    let policy = InferenceWindowPolicy {
+        target: "openai-codex:gpt-6.1-sol".into(),
+        input_tokens: Some(475000),
+        shared_tokens: Some(475000),
+        enforce_output_limit: false,
+        ..Default::default()
+    };
+    let source: String = (0..6000)
+        .map(|i| format!("let entry_{i} = read_record(\"source/path/{i}\");\n"))
+        .collect();
+    let request = ChatRequest::new(vec![ChatMessage::user(source)]);
+    assert!(crate::inference_window::estimate(&request).total_tokens > 280000);
+    assert!(policy.estimate(&request).total_tokens < policy.working_budget());
+    let guard = WindowedChatClient::new(client, policy);
+    assert_eq!(guard.options(&request, None).unwrap().max_tokens, None);
+    let oversized_options =
+        ChatOptions::default().with_extra_body(json!({"instructions":"a ".repeat(450000)}));
+    assert!(
+        guard
+            .options(&request, Some(&oversized_options))
+            .unwrap_err()
+            .to_string()
+            .contains("context_window_overflow")
+    );
+}

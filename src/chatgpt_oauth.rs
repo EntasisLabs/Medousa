@@ -913,22 +913,9 @@ impl ChatGptOAuthBroker {
             if let Some(slug) = model["slug"].as_str().filter(|s| !s.trim().is_empty())
                 && seen.insert(slug.to_string())
             {
-                let reasoning = model["supported_reasoning_levels"]
-                    .as_array()
-                    .map(|levels| {
-                        crate::reasoning_effort::ReasoningCapability::advertised(
-                            &levels
-                                .iter()
-                                .filter_map(|level| level["effort"].as_str().map(str::to_owned))
-                                .collect::<Vec<_>>(),
-                            model["default_reasoning_level"].as_str().map(str::to_owned),
-                        )
-                    });
-                capabilities.push((
-                    slug.to_string(),
-                    model["display_name"].as_str().map(str::to_owned),
-                    reasoning,
-                ));
+                capabilities.push(
+                    crate::model_capability_registry::heuristic::chatgpt_catalog_record(model),
+                );
                 models.push(slug.to_string());
                 display_names.insert(
                     slug.into(),
@@ -947,11 +934,7 @@ impl ChatGptOAuthBroker {
         })
     }
 }
-type CatalogEntry = (
-    String,
-    Option<String>,
-    Option<crate::reasoning_effort::ReasoningCapability>,
-);
+type CatalogEntry = crate::model_capability_registry::types::ModelCapabilityRecord;
 async fn update_catalog(models: Vec<CatalogEntry>) -> Result<(), OAuthError> {
     // Unit brokers must never mutate the installation's catalog on disk.
     #[cfg(not(test))]

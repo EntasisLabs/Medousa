@@ -29,6 +29,36 @@ pub fn infer_capability(provider: &str, model: &str) -> ModelCapabilityRecord {
     }
 }
 
+/// Preserve the limits advertised by the signed-in account, independently of
+/// API-key model catalogs. Codex's effective percentage reserves provider headroom.
+pub fn chatgpt_catalog_record(model: &serde_json::Value) -> ModelCapabilityRecord {
+    let mut record = infer_capability("openai-codex", model["slug"].as_str().unwrap_or_default());
+    record.display_name = model["display_name"].as_str().map(str::to_owned);
+    record.source = "chatgpt_account".into();
+    let positive = |key: &str| model[key].as_u64().filter(|value| *value > 0);
+    let window = match (positive("context_window"), positive("max_context_window")) {
+        (Some(window), Some(maximum)) => Some(window.min(maximum)),
+        (window, maximum) => window.or(maximum),
+    };
+    let percent = positive("effective_context_window_percent")
+        .filter(|value| *value <= 100)
+        .unwrap_or(95);
+    record.max_input_tokens = window.map(|window| window.saturating_mul(percent) / 100);
+    record.max_output_tokens = positive("max_output_tokens");
+    record.reasoning = model["supported_reasoning_levels"]
+        .as_array()
+        .map(|levels| {
+            crate::reasoning_effort::ReasoningCapability::advertised(
+                &levels
+                    .iter()
+                    .filter_map(|level| level["effort"].as_str().map(str::to_owned))
+                    .collect::<Vec<_>>(),
+                model["default_reasoning_level"].as_str().map(str::to_owned),
+            )
+        });
+    record
+}
+
 pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
     let model = model.trim().to_ascii_lowercase();
     if model.is_empty() {
@@ -90,6 +120,44 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_catalog_preserves_effective_limits_and_reasoning() {
+        let record = chatgpt_catalog_record(&serde_json::json!({
+            "slug": "gpt-6.1-sol", "display_name": "Sol",
+            "context_window": 272000, "max_context_window": 872000,
+            "effective_context_window_percent": 95, "max_output_tokens": 16384,
+            "supported_reasoning_levels": [{"effort": "low"}, {"effort": "high"}],
+            "default_reasoning_level": "high"
+        }));
+        assert_eq!(record.max_input_tokens, Some(258400));
+        assert_eq!(record.max_output_tokens, Some(16384));
+        assert_eq!(record.display_name.as_deref(), Some("Sol"));
+        assert_eq!(record.source, "chatgpt_account");
+        assert!(record.reasoning.is_some());
+        assert!(record.supports_vision);
+    }
+
+    #[test]
+    fn account_catalog_missing_or_invalid_limits_remain_unknown() {
+        for value in [
+            serde_json::json!({}),
+            serde_json::json!({
+                "context_window": -1, "max_context_window": 0, "max_output_tokens": "bad"
+            }),
+        ] {
+            let record = chatgpt_catalog_record(&value);
+            assert_eq!(record.max_input_tokens, None);
+            assert_eq!(record.max_output_tokens, None);
+        }
+        let record = chatgpt_catalog_record(&serde_json::json!({
+            "context_window": 1000000, "max_context_window": 100000,
+            "effective_context_window_percent": 100
+        }));
+        assert_eq!(record.max_input_tokens, Some(100000));
+        let record = chatgpt_catalog_record(&serde_json::json!({"max_context_window": 100000}));
+        assert_eq!(record.max_input_tokens, Some(95000));
+    }
 
     #[test]
     fn chatgpt_account_gpt_models_support_vision() {

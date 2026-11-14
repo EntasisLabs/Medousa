@@ -35,7 +35,10 @@ use std::{
     },
     time::Duration,
 };
+mod session;
+
 const VERSION: u32 = 1;
+static STORE_MUTATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static LOCAL_DELEGATED_EXECUTOR: once_cell::sync::OnceCell<
     Arc<dyn crate::mesh::DelegatedTaskExecutor>,
 > = once_cell::sync::OnceCell::new();
@@ -122,27 +125,24 @@ impl DaemonWorkerPairing {
         if label.is_empty() || label.chars().count() > 80 {
             bail!("worker name must be between 1 and 80 characters")
         }
-        let mut store = self.load()?;
-        let Some(connection) = store.connections.iter_mut().find(|x| x.summary.id == id) else {
-            return Ok(None);
-        };
-        connection.summary.label = label.to_string();
-        let summary = connection.summary.clone();
-        self.save(&store)?;
-        Ok(Some(summary))
+        self.update_store(|store| {
+            let Some(connection) = store.connections.iter_mut().find(|x| x.summary.id == id) else {
+                return Ok(None);
+            };
+            connection.summary.label = label.to_string();
+            Ok(Some(connection.summary.clone()))
+        })
     }
     pub fn remove(&self, id: &str) -> Result<bool> {
-        let mut s = self.load()?;
-        let n = s.connections.len();
-        s.connections.retain(|x| {
-            x.summary.id != id
-                && !x.summary.label.eq_ignore_ascii_case(id)
-                && !x.summary.workshop_device_id.starts_with(id)
-        });
-        if n != s.connections.len() {
-            self.save(&s)?;
-        }
-        Ok(n != s.connections.len())
+        self.update_store(|store| {
+            let n = store.connections.len();
+            store.connections.retain(|x| {
+                x.summary.id != id
+                    && !x.summary.label.eq_ignore_ascii_case(id)
+                    && !x.summary.workshop_device_id.starts_with(id)
+            });
+            Ok(n != store.connections.len())
+        })
     }
     pub async fn revoke_and_remove(&self, id: &str) -> Result<Option<DaemonWorkerConnection>> {
         let pairing = self.clone();
@@ -159,17 +159,19 @@ impl DaemonWorkerPairing {
         let Some(stored) = stored else {
             return Ok(None);
         };
-        let (status, body) = worker_request(
-            &self.client,
-            &stored.summary.daemon_url,
-            stored.summary.iroh_ticket.as_deref(),
-            Method::DELETE,
-            &format!("/pair/{}", stored.summary.pairing_id),
-            Some(&stored.session_token),
-            None,
-        )
-        .await
-        .context("revoke destination worker credential")?;
+        let transport = DaemonWorkerTransport::new(self.root.clone(), self.client.clone());
+        let (identity, _) = transport.all_async().await?;
+        let (status, body) = transport
+            .request_authenticated(
+                &stored,
+                &identity,
+                Method::DELETE,
+                &format!("/pair/{}", stored.summary.pairing_id),
+                None,
+                64 * 1024,
+            )
+            .await
+            .context("revoke destination worker credential")?;
         if !(200..300).contains(&status) && status != 404 {
             bail!(
                 "destination rejected worker credential revocation: HTTP {status}: {}",
@@ -180,11 +182,12 @@ impl DaemonWorkerPairing {
         let pairing = self.clone();
         let remove_id = summary.id.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let mut store = pairing.load()?;
-            store
-                .connections
-                .retain(|connection| connection.summary.id != remove_id);
-            pairing.save(&store)
+            pairing.update_store(|store| {
+                store
+                    .connections
+                    .retain(|connection| connection.summary.id != remove_id);
+                Ok(())
+            })
         })
         .await
         .context("join worker credential removal")??;
@@ -359,15 +362,16 @@ impl DaemonWorkerPairing {
         let pairing = self.clone();
         let stored_summary = summary.clone();
         tokio::task::spawn_blocking(move || {
-            let mut store = pairing.load()?;
-            store
-                .connections
-                .retain(|connection| connection.summary.id != stored_summary.id);
-            store.connections.push(Stored {
-                summary: stored_summary,
-                session_token: token,
-            });
-            pairing.save(&store)
+            pairing.update_store(|store| {
+                store
+                    .connections
+                    .retain(|connection| connection.summary.id != stored_summary.id);
+                store.connections.push(Stored {
+                    summary: stored_summary,
+                    session_token: token,
+                });
+                Ok(())
+            })
         })
         .await
         .context("join worker credential store")??;
@@ -388,12 +392,30 @@ impl DaemonWorkerPairing {
         }
         Ok(s)
     }
+    fn update_store<T>(&self, update: impl FnOnce(&mut Store) -> Result<T>) -> Result<T> {
+        let _guard = STORE_MUTATION_LOCK
+            .lock()
+            .map_err(|_| anyhow::anyhow!("worker credential store lock poisoned"))?;
+        let mut store = self.load()?;
+        let before = serde_json::to_vec(&store)?;
+        let result = update(&mut store)?;
+        if serde_json::to_vec(&store)? != before {
+            self.save(&store)?;
+        }
+        Ok(result)
+    }
     fn save(&self, s: &Store) -> Result<()> {
         private_dir(&self.root)?;
-        private_write(
-            &self.root.join("workers.json"),
-            &serde_json::to_vec_pretty(s)?,
-        )
+        // Readers must see a complete generation, and a crash must not truncate
+        // every saved pairing while rotating one worker's access token.
+        use std::io::Write as _;
+        let mut staged = tempfile::NamedTempFile::new_in(&self.root)?;
+        staged.write_all(&serde_json::to_vec_pretty(s)?)?;
+        staged.as_file().sync_all()?;
+        staged.persist(self.root.join("workers.json"))?;
+        #[cfg(unix)]
+        fs::File::open(&self.root)?.sync_all()?;
+        Ok(())
     }
     fn identity(&self) -> Result<Identity> {
         private_dir(&self.root)?;
@@ -416,6 +438,7 @@ impl DaemonWorkerPairing {
 }
 /// Prepared only by the admitted host I/O path; credentials never enter model output.
 pub(crate) struct AgentMessageRoute {
+    root: PathBuf,
     stored: Stored,
     identity: Identity,
     client: reqwest::Client,
@@ -434,6 +457,7 @@ impl DaemonWorkerPairing {
             .context("agent message workshop connection was removed")?;
         Ok(AgentMessageRoute {
             stored,
+            root: self.root.clone(),
             identity: self.identity()?,
             client,
         })
@@ -470,16 +494,15 @@ impl AgentMessageRoute {
         }
         let (status, response) = tokio::time::timeout(
             Duration::from_secs(6),
-            worker_request_bounded(
-                &self.client,
-                &self.stored.summary.daemon_url,
-                self.stored.summary.iroh_ticket.as_deref(),
-                Method::POST,
-                path,
-                Some(&self.stored.session_token),
-                Some(&body),
-                256 * 1024,
-            ),
+            DaemonWorkerTransport::new(self.root.clone(), self.client.clone())
+                .request_authenticated(
+                    &self.stored,
+                    &self.identity,
+                    Method::POST,
+                    path,
+                    Some(&body),
+                    256 * 1024,
+                ),
         )
         .await
         .context("agent message workshop request timed out")??;
@@ -591,18 +614,9 @@ impl DaemonWorkerTransport {
         };
         let body = serde_json::to_vec(&request)
             .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
-        let (status, response) = worker_request_bounded(
-            &self.client,
-            &s.summary.daemon_url,
-            s.summary.iroh_ticket.as_deref(),
-            Method::POST,
-            path,
-            Some(&s.session_token),
-            Some(&body),
-            response_limit,
-        )
-        .await
-        .map_err(|e| DelegatedTaskError::transport(e.to_string()))?;
+        let (status, response) = self
+            .request_authenticated(s, i, Method::POST, path, Some(&body), response_limit)
+            .await?;
         if !(200..300).contains(&status) {
             return Err(classify_destination_http_failure(status, &response));
         }
@@ -1369,7 +1383,9 @@ mod tests {
         let mut summary = sample();
         summary.daemon_url = base;
         summary.daemon_public_key = remote_public;
+        let temp = tempfile::tempdir().unwrap();
         let mut route = AgentMessageRoute {
+            root: temp.path().to_path_buf(),
             stored: Stored {
                 summary,
                 session_token: "test-message-token".into(),
