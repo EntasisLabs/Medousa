@@ -2,8 +2,9 @@
 
 This developer preview is a **second** Medousa app in `apps/rndr-home`.
 The normal Tauri app, home-first install and production configuration are unchanged.
-It requires the existing rndr checkout used by the repository. It does not install,
-launch, repair or deploy the daemon or pair remote hosts.
+It requires the existing rndr checkout used by the repository. It does not install, rebuild or deploy the daemon or pair remote hosts. Normal
+connected startup can bootstrap the configured local daemon using the same shared
+engine manager as Tauri; offline/export/help modes never do.
 
 From the repository root, browse without any connection or credential discovery:
 
@@ -70,14 +71,22 @@ rows at 500. Fixture, live-read snapshot and retained offline snapshot labels
 remain distinct; none claims continuous service liveness.
 
 For read-only service data, follow the [launch instructions](../../apps/rndr-home/README.md)
-and pass the existing **loopback** daemon origin and local data directory with
-`--daemon` and `--data-dir`. Existing first-party credentials are read through the
+and launch without flags to use the same configured local workshop as Tauri.
+Optional `--daemon` and `--data-dir` provide an explicit matching **loopback**
+origin/engine-root override; `--daemon` is attach-only. Data-root precedence is
+`MEDOUSA_DATA_DIR` → platform bootstrap redirect → platform local-data `medousa`;
+the active local registry bind supplies the URL (personal defaults to port 7419).
+The shared manager waits for health before credential loading and can bootstrap a
+missing configured engine; no downloads or engine rebuild occur. Missing auth,
+invalid config and unavailable engines are reported, not bypassed. Offline, export
+and help skip env overlays and all connection discovery/effects.
+Existing first-party credentials are read through the
 existing local credential boundary. Do not copy tokens or pass them on a command
 line. The preview never offers credential entry. It does not refresh providers,
 validate credentials with inference, grant permissions or mutate admin configuration.
 
 Sign-in/out, review-account setup, pairing, channels, package inventory/install,
-engine start/stop, vault linking, SSH and permission changes remain in the existing
+manual engine start/stop, vault linking, SSH and permission changes remain in the existing
 app. Packages is an honest unsupported-host-service page, not a fake installed
 inventory. Project/review editing, full note reading/editing, Files/Artifacts,
 identity, Create, Calendar, Web, Context, Peers, Agents, Scripts and Flows remain

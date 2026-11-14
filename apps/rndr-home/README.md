@@ -55,29 +55,68 @@ From the Medousa repository root:
 # Safe UI-only launch: no credential loader, daemon traffic, or inference.
 cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- --offline
 
-# Use the origin and data directory of the SAME existing local workshop.
-# These are paths/origins, NOT tokens. Do not put secrets on the command line.
-export MEDOUSA_DAEMON_ORIGIN='http://127.0.0.1:9777' # replace with actual origin
-export MEDOUSA_DATA_DIR='/absolute/path/to/that/workshop/data'
-cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- \
-  --daemon "$MEDOUSA_DAEMON_ORIGIN" --data-dir "$MEDOUSA_DATA_DIR"
+# Normal connected launch: use the same configured local workshop as Tauri.
+cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 --
 
-# Open a specific existing chat, or reload/follow its active turn.
+# Optional existing session; connection discovery is unchanged.
+cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- --session 'YOUR_EXISTING_SESSION_ID'
+
+# Advanced attach-only override: matching origin AND engine data directory.
+# These are paths/origins, NOT tokens. Do not put secrets on the command line.
 cargo run --manifest-path apps/rndr-home/Cargo.toml -j 2 -- \
-  --daemon "$MEDOUSA_DAEMON_ORIGIN" --data-dir "$MEDOUSA_DATA_DIR" \
-  --session 'YOUR_EXISTING_SESSION_ID'
+  --daemon 'http://127.0.0.1:7419' --data-dir '/absolute/path/to/workshop/data'
 ```
 
-Start/configure the daemon using the existing Medousa app/workshop. The port
-above is an example/default for this preview, **not discovery**. The daemon must
-serve the current SDK session/interactive routes and v3 turn SSE contract, with
-its existing first-party local credential available for that exact data
-directory. Configure provider credentials in the existing app. This preview
-neither starts a daemon nor provisions/rotates credentials. macOS Keychain may
-require the normal OS consent for the existing first-party credential loader.
-There is no token input, credential-copy step, plaintext secret store, remote
-workshop selection, or auth bypass. A data directory is required for a connected
-launch; offline/export launches never load it.
+### Connection and bootstrap policy
+
+Tauri and RNDR share the non-renderer `medousa-desktop-host` path, registry,
+engine-manager and defaults-schema code. Connected startup loads Tauri's first
+readable env overlay (`STASIS_ENV_FILE`, config-dir `.env`, data-dir `.env`),
+without replacing process environment variables. The canonical data root is
+`MEDOUSA_DATA_DIR` (nonempty), then the platform-default `medousa/data_dir`
+bootstrap redirect, then the platform local-data directory joined with `medousa`.
+`MEDOUSA_CONFIG_DIR` selects the config overlay directory. As in Tauri, the data
+root is resolved/cached while selecting the overlay, before applying its entries.
+An overlay cannot retrospectively relocate that root.
+
+`workshops.json` selects the active local workshop. Its bind determines the URL;
+public wildcard binds map to loopback for the client. Personal uses the canonical
+root (ignoring a stale personal `dataDir`); other local workshops use their own
+configured `dataDir`. Missing local fields are backfilled by the shared policy.
+A missing registry means personal at `127.0.0.1:7419` — **not 9777**. Environment
+`MEDOUSA_DAEMON_URL` / legacy `STASIS_DAEMON_URL` and `home_daemon_url.txt` are
+Tauri's legacy seed URL, not overrides of a local workshop's effective bind.
+RNDR does not scan for installations, migrate legacy pairing secrets or write a
+registry. Malformed/unreadable registries fail with a non-secret diagnostic;
+remote/paired active workshops are unsupported, with no credential fallback.
+
+Configured local startup uses the same core-only engine ensure policy as Tauri:
+reuse a healthy daemon; wait for an occupied bind to become healthy; otherwise
+stop the managed unready engine and bootstrap via the existing binary resolution,
+command/env, runtime PID/log paths and bounded readiness wait. Optional local brain
+remains opt-in, never inferred from provider. Inherited optional managed-Laya
+bootstrap behavior is unchanged. RNDR does not download or rebuild an engine;
+if its engine binary is unavailable, install/configure through the existing app.
+Daemon binary preference is `MEDOUSA_MEDOUSA_DAEMON_BIN`, executable sibling,
+then PATH, exactly as the reference. There is no speculative installation search
+or Cargo/build fallback. Optional component binaries retain their existing policy.
+
+`--data-dir` explicitly selects an engine root instead of importing the registry.
+`--daemon` overrides the origin and is **attach-only** (no process stop/start),
+while retaining the selected credential root; pair both flags for another engine.
+Readiness is checked before authenticated SDK clients are created. Origins must
+be loopback HTTP(S), with no userinfo, path, query or fragment. Authenticated and
+health transports bypass proxies and refuse redirects. Existing first-party local
+credentials are loaded only for the selected engine root; RNDR never provisions,
+copies or rotates them. Normal daemon bootstrap may initialize its own auth store,
+as in Tauri. Missing auth is a distinct, non-secret connection failure. macOS
+Keychain may require normal OS consent. Provider setup remains in the existing app;
+there is no token entry, credential-copy step, remote selection or auth bypass.
+
+`--offline`, every export mode, `--observe-offline`, and `--help` bypass overlay,
+registry, credential and engine discovery entirely: **no credential, network or
+bootstrap effects**. Synthetic exports still write their explicitly requested
+output files. The five sensitive chat controls remain denied.
 
 ## Legacy chat behavior (input-sensitive controls currently gated)
 

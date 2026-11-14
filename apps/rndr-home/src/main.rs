@@ -25,6 +25,7 @@ mod presentation;
 mod qualification_tests;
 mod settings_views;
 mod shell;
+mod startup;
 mod state;
 #[cfg(test)]
 mod ui_tests;
@@ -39,83 +40,49 @@ use controller::update;
 use fixtures::FixtureObservation;
 use medousa_rndr_home::Chat;
 use rndr_core::*;
+use rndr_ui::{Appearance, UiTheme};
 #[cfg(test)]
-use rndr_ui::Token;
-use rndr_ui::{Appearance, Contrast, UiTheme};
+use rndr_ui::{Contrast, Token};
 #[cfg(test)]
 use shell::Ui;
 use shell::setup;
 use state::Model;
-use std::path::PathBuf;
 #[cfg(test)]
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut origin = "http://127.0.0.1:9777".to_string();
-    let mut data_dir: Option<PathBuf> = None;
-    let mut session = None;
-    let mut export: Option<PathBuf> = None;
-    let mut desktop_export: Option<PathBuf> = None;
-    let mut notes_export: Option<PathBuf> = None;
-    let mut offline = false;
-    let mut observe_offline = false;
-    let mut theme = UiTheme {
-        appearance: Appearance::Dark,
-        ..Default::default()
-    };
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--daemon" => origin = args.next().ok_or("--daemon needs an origin")?,
-            "--data-dir" => {
-                data_dir = Some(args.next().ok_or("--data-dir needs a directory")?.into())
-            }
-            "--session" => session = Some(args.next().ok_or("--session needs an id")?),
-            "--export" => {
-                export = Some(args.next().ok_or("--export needs a directory")?.into());
-                offline = true;
-            }
-            "--offline" => offline = true,
-            "--export-notes" => {
-                notes_export = Some(
-                    args.next()
-                        .ok_or("--export-notes needs a directory")?
-                        .into(),
-                );
-                offline = true;
-            }
-            "--export-desktop" => {
-                desktop_export = Some(
-                    args.next()
-                        .ok_or("--export-desktop needs a directory")?
-                        .into(),
-                );
-                offline = true;
-            }
-            "--light" => theme.appearance = Appearance::Light,
-            "--high-contrast" => theme.contrast = Contrast::High,
-            "--observe-offline" => {
-                offline = true;
-                observe_offline = true;
-            }
-            "--help" | "-h" => {
-                println!(
-                    "Medousa (rndr)\n  --data-dir PATH [--daemon http://127.0.0.1:9777] [--session ID]\n  --offline  No credentials or network\n  --light / --high-contrast  Explicit window appearance (default: dark)\n  --export DIRECTORY  Offline chat GPU PNG evidence; no network\n  --export-notes DIRECTORY  Synthetic Notes GPU matrix (all themes/widths); no network\n  --export-desktop DIRECTORY  Synthetic settings/admin GPU matrix (all themes/widths); no network\n  --observe-offline  Synthetic live window capture, 15s normal exit (requires feature observe)\nUse the existing app to start/configure the daemon. Sending can incur inference charges."
-                );
-                return Ok(());
-            }
-            _ if arg.starts_with("-psn_") => {}
-            _ => return Err(format!("Unknown argument: {arg}").into()),
-        }
+    let cli = startup::Cli::parse(std::env::args().skip(1))?;
+    if cli.help {
+        println!("{}", startup::HELP);
+        return Ok(());
     }
+    // This closure is unreachable for every offline/export/observe mode. Load the
+    // same overlay at process startup as Tauri, before any worker threads exist.
+    let connection = cli.connection_with(|overrides| {
+        medousa_desktop_host::paths::load_env_overlay();
+        medousa_desktop_host::connection::discover(overrides)
+    })?;
+    if let Some(connection) = &connection {
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(connection.ensure_ready())?;
+    }
+    let startup::Cli {
+        session,
+        export,
+        desktop_export,
+        notes_export,
+        observe_offline,
+        theme,
+        ..
+    } = cli;
     let mut app = app();
     presentation::apply_theme(app.world_mut(), theme);
     let mut _feed = None;
     let mut _read_feed = None;
-    if !offline {
-        medousa_rndr_home::local_url(&origin)?;
-        let dir = data_dir.ok_or("--data-dir is required; use --offline for UI only. No credentials are discovered or created automatically.")?;
+    if let Some(connection) = connection {
+        let origin = connection.origin;
+        let dir = connection.data_dir;
         let (tx, rx) = mpsc::unbounded_channel();
         app.world_mut().resource_mut::<Model>().unwrap().commands = Some(tx.clone());
         let (read_tx, read_rx) = mpsc::unbounded_channel();

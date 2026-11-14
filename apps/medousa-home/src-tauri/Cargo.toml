@@ -55,6 +55,7 @@ medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
 medousa-mcp-gateway = { path = "../../../adapters/medousa-mcp-gateway" }
 medousa-install-support = { path = "../../../crates/medousa-install-support" }
 medousa-local-credential = { path = "../../../crates/medousa-local-credential" }
+medousa-desktop-host = { path = "../../../crates/medousa-desktop-host" }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]

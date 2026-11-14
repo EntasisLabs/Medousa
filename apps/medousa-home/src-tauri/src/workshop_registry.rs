@@ -1,7 +1,7 @@
 //! Client-side registry of Medousa Engine connections (ADR-003).
 
 use crate::daemon::types::DEFAULT_DAEMON_URL;
-use crate::daemon::{DaemonState, apply_daemon_url, resolve_daemon_url};
+use crate::daemon::{apply_daemon_url, resolve_daemon_url, DaemonState};
 use crate::workshop_runtime::resolve_workshop_url;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -10,70 +10,12 @@ use tauri::State;
 
 use medousa_types::authority_id::WorkshopScopeId;
 
-pub const REGISTRY_VERSION: u32 = 1;
-pub const PERSONAL_WORKSHOP_ID: &str = "personal";
-pub const MAX_WORKSHOPS: usize = 10;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkshopPairingRef {
-    pub pairing_id: String,
-    pub phone_id: String,
-    pub workshop_device_id: String,
-    pub paired_at: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub credentials_rel_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub has_iroh_ticket: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workshop_peer_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkshopClientState {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_session_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub color_theme_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkshopServer {
-    pub id: String,
-    pub label: String,
-    pub kind: String,
-    pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_connected_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub brand_color: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tagline: Option<String>,
-    /// Absolute engine storage root for local workshops (`MEDOUSA_DATA_DIR`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_dir: Option<String>,
-    /// Loopback bind address for local engine spawn, e.g. `127.0.0.1:7420`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bind: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pairing: Option<WorkshopPairingRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_state: Option<WorkshopClientState>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkshopRegistry {
-    pub version: u32,
-    pub active_workshop_id: String,
-    pub workshops: Vec<WorkshopServer>,
-}
+#[cfg(test)]
+use medousa_desktop_host::workshop_registry::default_personal_workshop;
+pub use medousa_desktop_host::workshop_registry::{
+    default_registry, now_iso, validate_registry, WorkshopClientState, WorkshopPairingRef,
+    WorkshopRegistry, WorkshopServer, MAX_WORKSHOPS, PERSONAL_WORKSHOP_ID,
+};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,14 +44,6 @@ pub fn is_portal_kind(kind: &str) -> bool {
 
 pub fn is_peer_kind(kind: &str) -> bool {
     kind == "peer"
-}
-
-fn migrate_kind(kind: &str) -> String {
-    if kind == "paired" {
-        "portal".to_string()
-    } else {
-        kind.to_string()
-    }
 }
 
 pub fn medousa_data_dir() -> PathBuf {
@@ -162,80 +96,25 @@ fn normalize_url(raw: &str) -> String {
     raw.trim().trim_end_matches('/').to_string()
 }
 
-pub fn now_iso() -> String {
-    chrono::Utc::now().to_rfc3339()
-}
-
-pub fn default_personal_workshop() -> WorkshopServer {
-    let iso = now_iso();
-    WorkshopServer {
-        id: PERSONAL_WORKSHOP_ID.to_string(),
-        label: "Personal".to_string(),
-        kind: "local".to_string(),
-        url: DEFAULT_DAEMON_URL.to_string(),
-        icon: Some("home".to_string()),
-        created_at: iso.clone(),
-        updated_at: iso,
-        last_connected_at: None,
-        brand_color: None,
-        tagline: None,
-        data_dir: None,
-        bind: Some(crate::workshop_runtime::DEFAULT_LOCAL_BIND.to_string()),
-        pairing: None,
-        client_state: None,
-    }
-}
-
-pub fn default_registry() -> WorkshopRegistry {
-    WorkshopRegistry {
-        version: REGISTRY_VERSION,
-        active_workshop_id: PERSONAL_WORKSHOP_ID.to_string(),
-        workshops: vec![default_personal_workshop()],
-    }
-}
-
 pub fn load_registry() -> Result<WorkshopRegistry, String> {
     let path = workshops_registry_path();
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
     let mut registry: WorkshopRegistry =
         serde_json::from_str(&raw).map_err(|err| err.to_string())?;
-    let mut migrated = false;
-    for workshop in &mut registry.workshops {
-        let next_kind = migrate_kind(&workshop.kind);
-        if next_kind != workshop.kind {
-            workshop.kind = next_kind;
-            migrated = true;
-        }
-    }
-    if normalize_embedded_personal(
+    let embedded_migrated = normalize_embedded_personal(
         &mut registry,
         cfg!(any(target_os = "ios", target_os = "android")),
-    ) {
-        migrated = true;
-    }
-    // Peer credentials must never be the active workshop.
-    if let Some(active) = registry
-        .workshops
-        .iter()
-        .find(|workshop| workshop.id == registry.active_workshop_id)
-    {
-        if is_peer_kind(&active.kind) {
-            registry.active_workshop_id = PERSONAL_WORKSHOP_ID.to_string();
-            migrated = true;
-        }
-    }
-    validate_registry(&registry)?;
-    crate::workshop_runtime::backfill_local_workshop_fields(&mut registry);
+    );
+    let migrated =
+        medousa_desktop_host::workshop_registry::normalize_desktop_registry(&mut registry)?
+            || embedded_migrated;
     if migrated {
         save_registry(&registry)?;
     }
     Ok(registry)
 }
 
-fn normalize_embedded_personal(
-    registry: &mut WorkshopRegistry,
-    embedded_personal: bool,
-) -> bool {
+fn normalize_embedded_personal(registry: &mut WorkshopRegistry, embedded_personal: bool) -> bool {
     if !embedded_personal {
         return false;
     }
@@ -259,26 +138,6 @@ fn normalize_embedded_personal(
         personal.updated_at = now_iso();
     }
     changed
-}
-
-fn validate_registry(registry: &WorkshopRegistry) -> Result<(), String> {
-    if registry.version != REGISTRY_VERSION {
-        return Err(format!(
-            "Unsupported workshop registry version {}",
-            registry.version
-        ));
-    }
-    if registry.workshops.is_empty() {
-        return Err("Workshop registry must contain at least one workshop".to_string());
-    }
-    if !registry
-        .workshops
-        .iter()
-        .any(|workshop| workshop.id == registry.active_workshop_id)
-    {
-        return Err("Active workshop id not found in registry".to_string());
-    }
-    Ok(())
 }
 
 pub fn save_registry(registry: &WorkshopRegistry) -> Result<(), String> {
@@ -415,7 +274,6 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
             }),
             client_state: None,
         });
-
     }
 
     save_registry(&registry)?;

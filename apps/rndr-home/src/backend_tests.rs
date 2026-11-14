@@ -777,3 +777,22 @@ async fn mode_errors_are_redacted_nonfatal_and_mutation_is_not_retried() {
     );
     server.join().unwrap();
 }
+
+#[test]
+fn connected_client_missing_auth_is_load_only_and_sanitized() {
+    let temp = tempfile::tempdir().unwrap();
+    let error = client("http://127.0.0.1:7419", temp.path())
+        .err()
+        .expect("missing auth must fail");
+    assert!(error.contains("Local credential unavailable"));
+    assert_eq!(
+        std::fs::read_dir(temp.path()).unwrap().count(),
+        0,
+        "client must not provision credentials"
+    );
+    let error = client("http://user:fixture-secret@remote.invalid", temp.path())
+        .err()
+        .unwrap();
+    assert!(!error.contains("fixture-secret"));
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+}

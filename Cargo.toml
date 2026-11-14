@@ -25,6 +25,7 @@ members = [
     "crates/medousa-local-engine",
     "crates/medousa-local-inference",
     "crates/medousa-host",
+    "crates/medousa-desktop-host",
     "crates/medousa-store",
     "crates/medousa-work",
     "crates/medousa-browser-lite",

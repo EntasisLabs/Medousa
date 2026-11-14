@@ -1,0 +1,1346 @@
+//! Per-workshop process management: slim `medousa_daemon` (:7419) and optional `medousa_local` brain (:7421).
+
+use crate::defaults::{read_tui_defaults_file, tui_defaults_path};
+use crate::workshop_registry::{PERSONAL_WORKSHOP_ID, WorkshopRegistry, WorkshopServer};
+use reqwest::Client;
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
+use std::fs::{self, OpenOptions};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
+use medousa_types::authority_id::WorkshopScopeId;
+
+pub const DEFAULT_LOCAL_BIND: &str = "127.0.0.1:7419";
+const PUBLIC_LOCAL_BIND: &str = "0.0.0.0:7419";
+const DEFAULT_BACKEND: &str = "surreal-mem";
+const LOCAL_PORT_START: u16 = 7419;
+const LOCAL_PORT_END: u16 = 7499;
+const DEFAULT_LAYA_BIND: &str = "127.0.0.1:7422";
+const DEFAULT_LAYA_BASE_URL: &str = "http://127.0.0.1:7422";
+static LOCAL_BRAIN_START_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+/// Desktop-only process helpers (`medousa-host` is not linked on iOS/Android).
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod host_proc {
+    pub use medousa_host::{
+        force_process_stop_by_pid, is_process_alive, probe_local_worker,
+        request_process_stop_by_pid, stop_local_worker, stop_workshop_sidecars,
+    };
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+mod host_proc {
+    use std::time::Duration;
+
+    use medousa_types::local::LocalWorkerStatus;
+
+    pub fn is_process_alive(_pid: u32) -> bool {
+        false
+    }
+
+    pub fn request_process_stop_by_pid(_pid: u32) -> bool {
+        false
+    }
+
+    pub fn force_process_stop_by_pid(_pid: u32) -> bool {
+        false
+    }
+
+    pub fn stop_workshop_sidecars() {}
+
+    pub fn probe_local_worker(_bind: &str) -> Result<LocalWorkerStatus, String> {
+        Err("local worker process control is desktop-only".to_string())
+    }
+
+    pub async fn stop_local_worker(_bind: &str, _timeout: Duration) -> Result<bool, String> {
+        Err("local worker process control is desktop-only".to_string())
+    }
+}
+
+pub struct ComponentCommand {
+    pub program: String,
+    pub pre_args: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalEngineEnsureResult {
+    pub ok: bool,
+    pub already_running: bool,
+    pub started: bool,
+    pub pid: Option<u32>,
+    pub url: String,
+    pub bind: String,
+    pub data_dir: String,
+    pub log_path: String,
+    pub message: String,
+}
+
+pub fn public_local_bind() -> &'static str {
+    PUBLIC_LOCAL_BIND
+}
+
+pub fn resolve_backend() -> String {
+    if let Ok(raw) = fs::read_to_string(tui_defaults_path()) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(backend) = json.get("backend").and_then(|value| value.as_str()) {
+                let trimmed = backend.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+    DEFAULT_BACKEND.to_string()
+}
+
+pub fn platform_binary_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
+
+pub fn find_command_in_path(command: &str) -> Option<PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    let names = if cfg!(windows) {
+        vec![platform_binary_name(command), command.to_string()]
+    } else {
+        vec![command.to_string()]
+    };
+    std::env::split_paths(&path_var).find_map(|dir| {
+        names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+/// Prepend common vendor / Node install dirs so the daemon can spawn ACP CLIs.
+fn enrich_daemon_path(command: &mut Command) {
+    let mut extras: Vec<PathBuf> = Vec::new();
+    if let Some(home) = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+    {
+        extras.push(home.join(".local").join("bin"));
+        extras.push(home.join(".npm-global").join("bin"));
+        extras.push(home.join("bin"));
+        extras.push(home.join(".volta").join("bin"));
+        extras.push(home.join(".cargo").join("bin"));
+        let nvm_node = home.join(".nvm").join("versions").join("node");
+        if let Ok(entries) = fs::read_dir(&nvm_node) {
+            let mut versions: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.is_dir())
+                .collect();
+            versions.sort();
+            versions.reverse();
+            for version_dir in versions.into_iter().take(3) {
+                extras.push(version_dir.join("bin"));
+            }
+        }
+    }
+    if cfg!(target_os = "macos") {
+        extras.push(PathBuf::from("/opt/homebrew/bin"));
+        extras.push(PathBuf::from("/usr/local/bin"));
+    }
+    let mut parts: Vec<PathBuf> = extras.into_iter().filter(|d| d.is_dir()).collect();
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            if !parts.iter().any(|existing| existing == &dir) {
+                parts.push(dir);
+            }
+        }
+    }
+    if let Ok(joined) = std::env::join_paths(parts) {
+        command.env("PATH", joined);
+    }
+}
+
+/// Optional binaries installed via Settings → Packages / Installer land here.
+pub fn shared_bin_binary(name: &str) -> Option<PathBuf> {
+    let candidate = crate::paths::medousa_data_dir()
+        .join("bin")
+        .join(platform_binary_name(name));
+    candidate.is_file().then_some(candidate)
+}
+
+pub fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
+    if let Ok(explicit) = std::env::var("MEDOUSA_MEDOUSA_DAEMON_BIN") {
+        let path = PathBuf::from(explicit.trim());
+        if path.exists() {
+            return Ok(ComponentCommand {
+                program: path.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        let sibling = current_exe.with_file_name(platform_binary_name("medousa_daemon"));
+        if sibling.exists() {
+            return Ok(ComponentCommand {
+                program: sibling.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if find_command_in_path("medousa_daemon").is_some() {
+        return Ok(ComponentCommand {
+            program: platform_binary_name("medousa_daemon"),
+            pre_args: Vec::new(),
+        });
+    }
+
+    Err(
+        "Medousa could not start — the app bundle may be incomplete. Reinstall Medousa, or set MEDOUSA_MEDOUSA_DAEMON_BIN for development.".to_string(),
+    )
+}
+
+pub fn resolve_local_binary() -> Result<ComponentCommand, String> {
+    if let Ok(explicit) = std::env::var("MEDOUSA_MEDOUSA_LOCAL_BIN") {
+        let path = PathBuf::from(explicit.trim());
+        if path.exists() {
+            return Ok(ComponentCommand {
+                program: path.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        let sibling = current_exe.with_file_name(platform_binary_name("medousa_local"));
+        if sibling.exists() {
+            return Ok(ComponentCommand {
+                program: sibling.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Some(shared) = shared_bin_binary("medousa_local") {
+        return Ok(ComponentCommand {
+            program: shared.to_string_lossy().to_string(),
+            pre_args: Vec::new(),
+        });
+    }
+
+    if find_command_in_path("medousa_local").is_some() {
+        return Ok(ComponentCommand {
+            program: platform_binary_name("medousa_local"),
+            pre_args: Vec::new(),
+        });
+    }
+
+    Err(
+        "Offline brain is not installed. Run Medousa Installer and add the Offline brain package."
+            .to_string(),
+    )
+}
+
+pub fn local_brain_installed() -> bool {
+    resolve_local_binary().is_ok()
+}
+
+fn resolve_laya_binary() -> Result<ComponentCommand, String> {
+    if let Ok(explicit) = std::env::var("MEDOUSA_LAYA_SERVE_BIN") {
+        let path = PathBuf::from(explicit.trim());
+        if path.is_file() {
+            return Ok(ComponentCommand {
+                program: path.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        let sibling = current_exe.with_file_name(platform_binary_name("laya-serve"));
+        if sibling.is_file() {
+            return Ok(ComponentCommand {
+                program: sibling.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Some(shared) = shared_bin_binary("laya-serve") {
+        return Ok(ComponentCommand {
+            program: shared.to_string_lossy().to_string(),
+            pre_args: Vec::new(),
+        });
+    }
+
+    if find_command_in_path("laya-serve").is_some() {
+        return Ok(ComponentCommand {
+            program: platform_binary_name("laya-serve"),
+            pre_args: Vec::new(),
+        });
+    }
+
+    Err("Laya System One is not installed".to_string())
+}
+
+fn env_flag(name: &str, default: bool) -> bool {
+    std::env::var(name)
+        .ok()
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "off" | "no"
+            )
+        })
+        .unwrap_or(default)
+}
+
+pub fn is_bind_reachable(bind: &str) -> bool {
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        medousa_host::is_bind_reachable(bind)
+    }
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        use std::net::{TcpStream, ToSocketAddrs};
+        if let Ok(mut addrs) = bind.to_socket_addrs() {
+            if let Some(addr) = addrs.next() {
+                return TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok();
+            }
+        }
+        false
+    }
+}
+
+/// Offline / local brain is opt-in only. Never infer from provider — Gemma
+/// kills desktop performance if login/engine ensure auto-spawns it.
+pub fn should_load_private_brain(explicit: bool) -> bool {
+    explicit
+}
+
+fn apply_daemon_apns_env(command: &mut Command) {
+    const KEYS: &[&str] = &[
+        "MEDOUSA_APNS_TEAM_ID",
+        "MEDOUSA_APNS_KEY_ID",
+        "MEDOUSA_APNS_KEY_PATH",
+        "MEDOUSA_APNS_BUNDLE_ID",
+        "MEDOUSA_APNS_SANDBOX",
+    ];
+    for key in KEYS {
+        if let Ok(value) = std::env::var(key) {
+            if !value.trim().is_empty() {
+                command.env(key, value);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn detach_new_session(command: &mut Command) {
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        medousa_host::detach_new_session(command);
+    }
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        use std::io;
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn detach_new_session(command: &mut Command) {
+    medousa_host::detach_new_session(command);
+}
+
+pub fn engine_runtime_dir(workshop_id: &str) -> PathBuf {
+    let storage_key = WorkshopScopeId::parse(workshop_id)
+        .map(|id| id.storage_key().as_str().to_string())
+        .unwrap_or_else(|_| {
+            let mut digest = Sha256::new();
+            digest.update(b"medousa-storage-authority\0workshop-runtime\0");
+            digest.update(workshop_id.as_bytes());
+            let digest = digest.finalize();
+            format!("wr1-{digest:x}")
+        });
+    crate::paths::medousa_data_dir()
+        .join("engines")
+        .join(storage_key)
+}
+
+pub fn daemon_pid_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("daemon.pid")
+}
+
+pub fn daemon_log_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("daemon.log")
+}
+
+pub fn local_brain_pid_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("local.pid")
+}
+
+pub fn local_brain_log_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("local.log")
+}
+
+fn laya_pid_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("laya.pid")
+}
+
+fn laya_log_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("laya.log")
+}
+
+pub const DEFAULT_LOCAL_BRAIN_BIND: &str = "127.0.0.1:7421";
+
+fn legacy_daemon_pid_path() -> PathBuf {
+    crate::paths::medousa_data_dir().join("daemon.pid")
+}
+
+fn legacy_daemon_log_path() -> PathBuf {
+    crate::paths::medousa_data_dir()
+        .join("logs")
+        .join("daemon.log")
+}
+
+pub fn url_from_bind(bind: &str) -> String {
+    let bind = bind.trim();
+    // Public bind listens on all interfaces; local clients still use loopback.
+    if let Some(port) = bind
+        .strip_prefix("0.0.0.0:")
+        .or_else(|| bind.strip_prefix("[::]:"))
+    {
+        return format!("http://127.0.0.1:{port}");
+    }
+    format!("http://{bind}")
+}
+
+pub fn is_public_bind(bind: &str) -> bool {
+    let bind = bind.trim();
+    bind.starts_with("0.0.0.0:") || bind.starts_with("[::]:")
+}
+
+pub fn parse_bind_port(bind: &str) -> Option<u16> {
+    bind.rsplit(':').next()?.parse().ok()
+}
+
+pub fn resolve_workshop_bind(workshop: &WorkshopServer) -> String {
+    workshop
+        .bind
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| DEFAULT_LOCAL_BIND.to_string())
+}
+
+pub fn resolve_workshop_data_dir(workshop: &WorkshopServer) -> PathBuf {
+    if let Some(raw) = workshop
+        .data_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        return PathBuf::from(raw);
+    }
+    crate::paths::medousa_data_dir()
+}
+
+pub fn resolve_workshop_url(workshop: &WorkshopServer) -> String {
+    if workshop.kind == "local" {
+        url_from_bind(&resolve_workshop_bind(workshop))
+    } else {
+        workshop.url.trim().trim_end_matches('/').to_string()
+    }
+}
+
+pub fn allocate_local_bind(registry: &WorkshopRegistry) -> Result<String, String> {
+    let mut used_ports = HashSet::new();
+    for workshop in registry
+        .workshops
+        .iter()
+        .filter(|entry| entry.kind == "local")
+    {
+        if let Some(port) = parse_bind_port(&resolve_workshop_bind(workshop)) {
+            used_ports.insert(port);
+        }
+    }
+
+    for port in LOCAL_PORT_START..=LOCAL_PORT_END {
+        if used_ports.contains(&port) {
+            continue;
+        }
+        let bind = format!("127.0.0.1:{port}");
+        if is_bind_reachable(&bind) {
+            continue;
+        }
+        return Ok(bind);
+    }
+
+    Err(format!(
+        "No free local engine ports in {LOCAL_PORT_START}–{LOCAL_PORT_END} — remove a local workshop or stop another engine."
+    ))
+}
+
+pub fn validate_engine_data_dir(raw: &str) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Engine data folder is required".to_string());
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.is_absolute() {
+        return Err("Engine data folder must be an absolute path".to_string());
+    }
+    Ok(path)
+}
+
+pub fn backfill_local_workshop_fields(registry: &mut WorkshopRegistry) {
+    for workshop in &mut registry.workshops {
+        if workshop.kind != "local" {
+            continue;
+        }
+        if workshop
+            .bind
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .is_none()
+        {
+            workshop.bind = Some(DEFAULT_LOCAL_BIND.to_string());
+        }
+        if workshop.id == PERSONAL_WORKSHOP_ID {
+            workshop.data_dir = None;
+        }
+        workshop.url = url_from_bind(&resolve_workshop_bind(workshop));
+    }
+}
+
+fn write_daemon_pid(workshop_id: &str, pid: u32) -> Result<(), String> {
+    let path = daemon_pid_path(workshop_id);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(path, pid.to_string()).map_err(|err| err.to_string())
+}
+
+fn clear_daemon_pid(workshop_id: &str) {
+    let _ = fs::remove_file(daemon_pid_path(workshop_id));
+}
+
+fn read_daemon_pid(workshop_id: &str) -> Option<u32> {
+    let paths = if workshop_id == PERSONAL_WORKSHOP_ID {
+        vec![daemon_pid_path(workshop_id), legacy_daemon_pid_path()]
+    } else {
+        vec![daemon_pid_path(workshop_id)]
+    };
+    for path in paths {
+        if let Ok(raw) = fs::read_to_string(path) {
+            if let Ok(pid) = raw.trim().parse::<u32>() {
+                return Some(pid);
+            }
+        }
+    }
+    None
+}
+
+pub fn stop_local_engine(workshop_id: &str) {
+    stop_local_brain(workshop_id);
+    stop_laya(workshop_id);
+    if let Some(pid) = read_daemon_pid(workshop_id) {
+        let _ = host_proc::request_process_stop_by_pid(pid);
+    }
+    // Lazy workshop sidecars are separate listeners. Stop them with the daemon
+    // so package/API upgrades cannot reuse a stale compatible-looking process.
+    host_proc::stop_workshop_sidecars();
+    clear_daemon_pid(workshop_id);
+    if workshop_id == PERSONAL_WORKSHOP_ID {
+        let _ = fs::remove_file(legacy_daemon_pid_path());
+    }
+}
+
+fn read_laya_pid(workshop_id: &str) -> Option<u32> {
+    fs::read_to_string(laya_pid_path(workshop_id))
+        .ok()
+        .and_then(|raw| raw.trim().parse().ok())
+}
+
+fn clear_laya_pid(workshop_id: &str) {
+    let _ = fs::remove_file(laya_pid_path(workshop_id));
+}
+
+fn stop_laya(workshop_id: &str) {
+    if let Some(pid) = read_laya_pid(workshop_id) {
+        let _ = host_proc::request_process_stop_by_pid(pid);
+    }
+    clear_laya_pid(workshop_id);
+}
+
+fn spawn_laya(workshop_id: &str, data_dir: &Path) -> Result<u32, String> {
+    let laya = resolve_laya_binary()?;
+    let log_path = laya_log_path(workshop_id);
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|err| err.to_string())?;
+    let log_file_err = log_file.try_clone().map_err(|err| err.to_string())?;
+
+    let mut command = Command::new(&laya.program);
+    command.args(&laya.pre_args);
+    command
+        .env("LAYA_HOST", "127.0.0.1")
+        .env("LAYA_PORT", "7422")
+        .env("LAYA_PRELOAD", "1")
+        .env("LAYA_MODELS", "english")
+        .env("HF_HOME", data_dir.join("models").join("huggingface"));
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::from(log_file));
+    command.stderr(Stdio::from(log_file_err));
+    detach_new_session(&mut command);
+
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("Failed to spawn laya-serve ({}): {err}", laya.program))?;
+    let pid = child.id();
+    let pid_path = laya_pid_path(workshop_id);
+    let write_result = pid_path
+        .parent()
+        .map_or(Ok(()), fs::create_dir_all)
+        .and_then(|()| fs::write(&pid_path, pid.to_string()));
+    if let Err(err) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("Failed to record laya-serve pid: {err}"));
+    }
+    Ok(pid)
+}
+
+fn configure_laya_for_daemon(command: &mut Command, workshop_id: &str, data_dir: &Path) {
+    const FORWARDED: &[&str] = &[
+        "MEDOUSA_SYSTEM_ONE_ENGINE",
+        "MEDOUSA_SYSTEM_ONE_MODE",
+        "MEDOUSA_SYSTEM_ONE_CONFIDENCE_THRESHOLD",
+        "MEDOUSA_SYSTEM_ONE_EVAL_PATH",
+        "MEDOUSA_LAYA_BASE_URL",
+        "MEDOUSA_LAYA_API_KEY",
+        "MEDOUSA_LAYA_MODEL",
+        "MEDOUSA_LAYA_TIMEOUT_MS",
+    ];
+    for key in FORWARDED {
+        if let Ok(value) = std::env::var(key) {
+            if !value.trim().is_empty() {
+                command.env(key, value);
+            }
+        }
+    }
+
+    let configured_engine = std::env::var("MEDOUSA_SYSTEM_ONE_ENGINE").ok();
+    if configured_engine
+        .as_deref()
+        .is_some_and(|engine| !engine.trim().eq_ignore_ascii_case("laya"))
+    {
+        return;
+    }
+    if configured_engine.is_some() && std::env::var("MEDOUSA_LAYA_BASE_URL").is_ok() {
+        return;
+    }
+    if !env_flag("MEDOUSA_LAYA_MANAGED", true) || resolve_laya_binary().is_err() {
+        return;
+    }
+
+    let tracked_alive = read_laya_pid(workshop_id).is_some_and(host_proc::is_process_alive);
+    if !tracked_alive {
+        clear_laya_pid(workshop_id);
+        if is_bind_reachable(DEFAULT_LAYA_BIND) || spawn_laya(workshop_id, data_dir).is_err() {
+            return;
+        }
+    }
+
+    command
+        .env("MEDOUSA_SYSTEM_ONE_ENGINE", "laya")
+        .env("MEDOUSA_SYSTEM_ONE_MODE", "shadow")
+        .env("MEDOUSA_LAYA_BASE_URL", DEFAULT_LAYA_BASE_URL)
+        .env("MEDOUSA_LAYA_MODEL", "english");
+}
+
+pub fn spawn_local_engine(
+    workshop_id: &str,
+    bind: &str,
+    data_dir: &Path,
+    private_brain: bool,
+) -> Result<(u32, PathBuf), String> {
+    fs::create_dir_all(data_dir).map_err(|err| err.to_string())?;
+
+    let daemon = resolve_daemon_binary()?;
+    let log_path =
+        if workshop_id == PERSONAL_WORKSHOP_ID && !engine_runtime_dir(workshop_id).exists() {
+            legacy_daemon_log_path()
+        } else {
+            daemon_log_path(workshop_id)
+        };
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|err| err.to_string())?;
+    let log_file_err = log_file.try_clone().map_err(|err| err.to_string())?;
+
+    let summary = read_tui_defaults_file();
+    let mut command = Command::new(&daemon.program);
+    command.args(&daemon.pre_args);
+    command.arg("--backend").arg(resolve_backend());
+    command.arg("--bind").arg(bind);
+    if let Some(provider) = summary
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        command.arg("--provider").arg(provider);
+    }
+    if let Some(model) = summary
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        command.arg("--model").arg(model);
+    }
+    if private_brain {
+        command.env("MEDOUSA_LOCAL_ENGINE_BIND", DEFAULT_LOCAL_BRAIN_BIND);
+    }
+    command.env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string());
+    // So ACP can find `agent` / `codex` / `npx` even when the GUI PATH is thin.
+    enrich_daemon_path(&mut command);
+    apply_daemon_apns_env(&mut command);
+    configure_laya_for_daemon(&mut command, workshop_id, data_dir);
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::from(log_file));
+    command.stderr(Stdio::from(log_file_err));
+    detach_new_session(&mut command);
+
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            stop_laya(workshop_id);
+            return Err(format!(
+                "Failed to spawn medousa_daemon ({}): {err}",
+                daemon.program
+            ));
+        }
+    };
+    let pid = child.id();
+    if let Err(err) = write_daemon_pid(workshop_id, pid) {
+        let _ = child.kill();
+        let _ = child.wait();
+        stop_laya(workshop_id);
+        return Err(err);
+    }
+    Ok((pid, log_path))
+}
+
+fn write_local_brain_pid(workshop_id: &str, pid: u32) -> Result<(), String> {
+    let path = local_brain_pid_path(workshop_id);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(path, pid.to_string()).map_err(|err| err.to_string())
+}
+
+fn clear_local_brain_pid(workshop_id: &str) {
+    let _ = fs::remove_file(local_brain_pid_path(workshop_id));
+}
+
+fn read_local_brain_pid(workshop_id: &str) -> Option<u32> {
+    fs::read_to_string(local_brain_pid_path(workshop_id))
+        .ok()
+        .and_then(|raw| raw.trim().parse().ok())
+}
+
+pub fn stop_local_brain(workshop_id: &str) {
+    request_local_brain_stop(workshop_id);
+    clear_local_brain_pid(workshop_id);
+}
+
+/// Ask the local worker to terminate without discarding its identity record.
+/// App shutdown cannot wait for confirmation; retaining the PID prevents a
+/// surviving worker from becoming an untracked orphan on the next launch.
+pub fn request_local_brain_stop(workshop_id: &str) -> bool {
+    read_local_brain_pid(workshop_id).is_some_and(host_proc::request_process_stop_by_pid)
+}
+
+pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String> {
+    let tracked_pid = read_local_brain_pid(workshop_id);
+    if let Ok(worker) = host_proc::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
+        if tracked_pid != Some(worker.pid) {
+            return Err("Refusing to stop an untracked local worker generation".to_string());
+        }
+        let stopped =
+            host_proc::stop_local_worker(DEFAULT_LOCAL_BRAIN_BIND, Duration::from_secs(10)).await?;
+        clear_local_brain_pid(workshop_id);
+        return Ok(stopped);
+    }
+    if is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND) {
+        return Err(format!(
+            "Refusing to stop incompatible service on {DEFAULT_LOCAL_BRAIN_BIND}"
+        ));
+    }
+    let Some(pid) = tracked_pid else {
+        return Ok(false);
+    };
+    if !host_proc::is_process_alive(pid) {
+        clear_local_brain_pid(workshop_id);
+        return Ok(false);
+    }
+    let _ = host_proc::request_process_stop_by_pid(pid);
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(10) {
+        if !host_proc::is_process_alive(pid) {
+            clear_local_brain_pid(workshop_id);
+            return Ok(true);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let _ = host_proc::force_process_stop_by_pid(pid);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    if host_proc::is_process_alive(pid) {
+        return Err(format!(
+            "Local worker pid {pid} survived forced termination"
+        ));
+    }
+    clear_local_brain_pid(workshop_id);
+    Ok(true)
+}
+
+pub fn local_brain_process_alive(workshop_id: &str) -> bool {
+    let Some(pid) = read_local_brain_pid(workshop_id) else {
+        return false;
+    };
+    if host_proc::is_process_alive(pid) {
+        true
+    } else {
+        clear_local_brain_pid(workshop_id);
+        false
+    }
+}
+
+pub fn spawn_local_brain(
+    workshop_id: &str,
+    data_dir: &Path,
+    model_id: Option<&str>,
+) -> Result<(u32, PathBuf), String> {
+    if let Ok(worker) = host_proc::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
+        let tracked_pid = read_local_brain_pid(workshop_id);
+        let requested_matches = model_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none_or(|model_id| worker.model_alias == model_id);
+        if tracked_pid == Some(worker.pid) && requested_matches {
+            return Ok((worker.pid, local_brain_log_path(workshop_id)));
+        }
+        return Err(format!(
+            "A different Medousa local worker generation is already using {DEFAULT_LOCAL_BRAIN_BIND}"
+        ));
+    }
+    if is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND) {
+        return Err(format!(
+            "{DEFAULT_LOCAL_BRAIN_BIND} is occupied by an incompatible service"
+        ));
+    }
+
+    let local = resolve_local_binary()?;
+    let log_path = local_brain_log_path(workshop_id);
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|err| err.to_string())?;
+    let log_file_err = log_file.try_clone().map_err(|err| err.to_string())?;
+
+    let mut command = Command::new(&local.program);
+    command.args(&local.pre_args);
+    command
+        .arg("--bind")
+        .arg(DEFAULT_LOCAL_BRAIN_BIND)
+        .env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string())
+        .env("MEDOUSA_LOCAL_PID_FILE", local_brain_pid_path(workshop_id));
+    match model_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(model_id) => {
+            command.arg("--model-id").arg(model_id);
+        }
+        None => {
+            command.arg("--load-recommended");
+        }
+    }
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::from(log_file));
+    command.stderr(Stdio::from(log_file_err));
+    detach_new_session(&mut command);
+
+    let child = command
+        .spawn()
+        .map_err(|err| format!("Failed to spawn medousa_local ({}): {err}", local.program))?;
+    let pid = child.id();
+    write_local_brain_pid(workshop_id, pid)?;
+    Ok((pid, log_path))
+}
+
+fn local_brain_http_ready(
+    workshop_id: &str,
+    model_id: Option<&str>,
+) -> Option<medousa_types::local::LocalWorkerStatus> {
+    let worker = host_proc::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND).ok()?;
+    if read_local_brain_pid(workshop_id) != Some(worker.pid) {
+        return None;
+    }
+    if let Some(model_id) = model_id.map(str::trim).filter(|value| !value.is_empty()) {
+        if worker.model_alias != model_id {
+            return None;
+        }
+    }
+    Some(worker)
+}
+
+pub async fn ensure_local_brain(
+    workshop_id: &str,
+    data_dir: &Path,
+    model_id: Option<&str>,
+) -> Result<bool, String> {
+    if !local_brain_installed() {
+        return Ok(false);
+    }
+    let _start_guard = LOCAL_BRAIN_START_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    if local_brain_http_ready(workshop_id, model_id).is_some() {
+        return Ok(true);
+    }
+    spawn_local_brain(workshop_id, data_dir, model_id)?;
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(600) {
+        if local_brain_http_ready(workshop_id, model_id).is_some() {
+            return Ok(true);
+        }
+        if !local_brain_process_alive(workshop_id) {
+            return Err(format!(
+                "Offline brain stopped before it became ready — check {}",
+                local_brain_log_path(workshop_id).display()
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    Err(format!(
+        "Offline brain did not become ready — check {}",
+        local_brain_log_path(workshop_id).display()
+    ))
+}
+
+async fn daemon_http_healthy(base_url: &str) -> bool {
+    let client = match Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return false,
+    };
+    let url = format!("{}/health", base_url.trim_end_matches('/'));
+    client
+        .get(url)
+        .send()
+        .await
+        .map(|response| response.status().is_success())
+        .unwrap_or(false)
+}
+
+pub async fn wait_engine_healthy(
+    base_url: &str,
+    timeout_seconds: u64,
+    poll_ms: u64,
+) -> Result<(bool, u32), String> {
+    let timeout = Duration::from_secs(timeout_seconds.max(1));
+    let poll = Duration::from_millis(poll_ms.clamp(250, 10_000));
+    let started = Instant::now();
+    let mut attempts = 0u32;
+
+    while started.elapsed() < timeout {
+        attempts += 1;
+        if daemon_http_healthy(base_url).await {
+            return Ok((true, attempts));
+        }
+        tokio::time::sleep(poll).await;
+    }
+    Ok((false, attempts))
+}
+
+pub async fn ensure_local_engine(
+    workshop: &WorkshopServer,
+    _private_brain: bool,
+) -> Result<LocalEngineEnsureResult, String> {
+    if workshop.kind != "local" {
+        return Ok(LocalEngineEnsureResult {
+            ok: true,
+            already_running: true,
+            started: false,
+            pid: None,
+            url: resolve_workshop_url(workshop),
+            bind: resolve_workshop_bind(workshop),
+            data_dir: resolve_workshop_data_dir(workshop).display().to_string(),
+            log_path: String::new(),
+            message: "Remote workshop — no local engine spawn".to_string(),
+        });
+    }
+
+    let bind = resolve_workshop_bind(workshop);
+    let url = url_from_bind(&bind);
+    let data_dir = resolve_workshop_data_dir(workshop);
+    let log_path = daemon_log_path(&workshop.id);
+
+    let mut effects = NativeEngineEffects {
+        workshop_id: &workshop.id,
+        bind: &bind,
+        url: &url,
+        data_dir: &data_dir,
+    };
+    let readiness = ensure_engine_ready_with(&mut effects).await?;
+    let (started, pid, actual_log, ok, message) = match readiness {
+        EngineReadiness::Running { waited } => (
+            false,
+            read_daemon_pid(&workshop.id),
+            log_path,
+            true,
+            if waited {
+                format!("Engine is ready at {bind}")
+            } else {
+                format!("Engine already running at {bind}")
+            },
+        ),
+        EngineReadiness::Started {
+            pid,
+            log_path,
+            healthy,
+        } => {
+            let message = if healthy {
+                format!("Started local engine (pid {pid})")
+            } else {
+                format!("Engine did not become ready — check {}", log_path.display())
+            };
+            (true, Some(pid), log_path, healthy, message)
+        }
+    };
+    Ok(LocalEngineEnsureResult {
+        ok,
+        already_running: !started,
+        started,
+        pid,
+        url,
+        bind,
+        data_dir: data_dir.display().to_string(),
+        log_path: actual_log.display().to_string(),
+        message,
+    })
+}
+
+/// Effect seam for desktop startup. Unit tests must use a fake implementation;
+/// no test needs a running daemon, credentials, process launch or real configuration.
+#[allow(async_fn_in_trait)]
+pub trait EngineEffects {
+    async fn healthy(&mut self) -> bool;
+    fn reachable(&mut self) -> bool;
+    async fn wait_healthy(&mut self) -> Result<bool, String>;
+    async fn stop_and_pause(&mut self);
+    fn spawn(&mut self) -> Result<(u32, PathBuf), String>;
+}
+
+#[derive(Debug, PartialEq)]
+pub enum EngineReadiness {
+    Running {
+        waited: bool,
+    },
+    Started {
+        pid: u32,
+        log_path: PathBuf,
+        healthy: bool,
+    },
+}
+
+/// Reference desktop policy: reuse healthy -> wait for an occupied bind ->
+/// replace an unready managed engine -> start core only -> bounded health wait.
+pub async fn ensure_engine_ready_with(
+    effects: &mut impl EngineEffects,
+) -> Result<EngineReadiness, String> {
+    if effects.healthy().await {
+        return Ok(EngineReadiness::Running { waited: false });
+    }
+    if effects.reachable() {
+        if effects.wait_healthy().await? {
+            return Ok(EngineReadiness::Running { waited: true });
+        }
+        effects.stop_and_pause().await;
+    }
+    let (pid, log_path) = effects.spawn()?;
+    let healthy = effects.wait_healthy().await?;
+    Ok(EngineReadiness::Started {
+        pid,
+        log_path,
+        healthy,
+    })
+}
+
+struct NativeEngineEffects<'a> {
+    workshop_id: &'a str,
+    bind: &'a str,
+    url: &'a str,
+    data_dir: &'a Path,
+}
+impl EngineEffects for NativeEngineEffects<'_> {
+    async fn healthy(&mut self) -> bool {
+        daemon_http_healthy(self.url).await
+    }
+    fn reachable(&mut self) -> bool {
+        is_bind_reachable(self.bind)
+    }
+    async fn wait_healthy(&mut self) -> Result<bool, String> {
+        Ok(wait_engine_healthy(self.url, 45, 500).await?.0)
+    }
+    async fn stop_and_pause(&mut self) {
+        stop_local_engine(self.workshop_id);
+        tokio::time::sleep(Duration::from_millis(750)).await;
+    }
+    fn spawn(&mut self) -> Result<(u32, PathBuf), String> {
+        spawn_local_engine(self.workshop_id, self.bind, self.data_dir, false)
+    }
+}
+
+pub async fn ensure_active_local_engine(
+    registry: &WorkshopRegistry,
+    private_brain: bool,
+) -> Result<LocalEngineEnsureResult, String> {
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|entry| entry.id == registry.active_workshop_id)
+        .ok_or_else(|| "Active workshop not found".to_string())?;
+    ensure_local_engine(workshop, private_brain).await
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineDiagnosis {
+    pub issue: String,
+    pub title: String,
+    pub message: String,
+    pub log_path: Option<String>,
+    pub lock_path: Option<String>,
+    pub bind: Option<String>,
+    pub can_clear_lock: bool,
+    pub can_restart: bool,
+}
+
+fn surreal_kv_lock_path(backend: &str, data_dir: &Path) -> Option<PathBuf> {
+    let trimmed = backend.trim();
+    let kv_root = if trimmed.eq_ignore_ascii_case("surreal-kv") {
+        Some(data_dir.join("runtime.surrealkv"))
+    } else if let Some(rest) = trimmed.strip_prefix("surreal-kv:") {
+        let path = rest.trim();
+        if path.is_empty() {
+            Some(data_dir.join("runtime.surrealkv"))
+        } else {
+            Some(PathBuf::from(path))
+        }
+    } else {
+        None
+    }?;
+    Some(kv_root.join("LOCK"))
+}
+
+pub async fn diagnose_local_engine(workshop: &WorkshopServer) -> EngineDiagnosis {
+    let bind = resolve_workshop_bind(workshop);
+    let url = url_from_bind(&bind);
+    let log_path = daemon_log_path(&workshop.id);
+    let log_path_display = log_path.display().to_string();
+    let bind_display = bind.clone();
+
+    if workshop.kind != "local" {
+        return EngineDiagnosis {
+            issue: "remote".to_string(),
+            title: "Remote workshop".to_string(),
+            message: "This workshop runs on another device. Open Connection settings and check the address.".to_string(),
+            log_path: None,
+            lock_path: None,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: false,
+        };
+    }
+
+    if resolve_daemon_binary().is_err() {
+        return EngineDiagnosis {
+            issue: "binary_missing".to_string(),
+            title: "Medousa engine missing".to_string(),
+            message: "The app couldn't find its engine files. Try reinstalling Medousa."
+                .to_string(),
+            log_path: Some(log_path_display),
+            lock_path: None,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: false,
+        };
+    }
+
+    let healthy = daemon_http_healthy(&url).await;
+    if healthy {
+        return EngineDiagnosis {
+            issue: "ok".to_string(),
+            title: "Medousa is running".to_string(),
+            message: format!("Engine is ready at {bind}"),
+            log_path: Some(log_path_display),
+            lock_path: None,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: false,
+        };
+    }
+
+    let data_dir = resolve_workshop_data_dir(workshop);
+    let backend = resolve_backend();
+    let lock_path = surreal_kv_lock_path(&backend, &data_dir);
+    let lock_exists = lock_path.as_ref().is_some_and(|path| path.exists());
+    let lock_display = lock_path.as_ref().map(|path| path.display().to_string());
+
+    let pid = read_daemon_pid(&workshop.id);
+    let pid_alive = pid.is_some_and(host_proc::is_process_alive);
+    let bind_up = is_bind_reachable(&bind);
+
+    if lock_exists && !pid_alive {
+        return EngineDiagnosis {
+            issue: "stale_lock".to_string(),
+            title: "Medousa didn't shut down cleanly".to_string(),
+            message: "A leftover lock file is blocking startup. Tap Fix and we'll clear it, then start Medousa again.".to_string(),
+            log_path: Some(log_path_display),
+            lock_path: lock_display,
+            bind: Some(bind_display),
+            can_clear_lock: true,
+            can_restart: true,
+        };
+    }
+
+    if bind_up && !healthy {
+        return EngineDiagnosis {
+            issue: "port_blocked".to_string(),
+            title: "Something else is using the engine port".to_string(),
+            message: format!(
+                "Port {} is busy but Medousa isn't responding. Restarting usually fixes this — or another app may be using that port.",
+                parse_bind_port(&bind).unwrap_or(7419)
+            ),
+            log_path: Some(log_path_display),
+            lock_path: lock_display,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: true,
+        };
+    }
+
+    if pid_alive && !healthy {
+        return EngineDiagnosis {
+            issue: "wedged".to_string(),
+            title: "Medousa is stuck starting up".to_string(),
+            message: "The engine process is running but not responding. Try restarting Medousa."
+                .to_string(),
+            log_path: Some(log_path_display),
+            lock_path: lock_display,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: true,
+        };
+    }
+
+    EngineDiagnosis {
+        issue: "not_running".to_string(),
+        title: "Medousa isn't running".to_string(),
+        message:
+            "Start Medousa on this computer to chat. Your notes and settings stay on this machine."
+                .to_string(),
+        log_path: Some(log_path_display),
+        lock_path: lock_display,
+        bind: Some(bind_display),
+        can_clear_lock: false,
+        can_restart: true,
+    }
+}
+
+pub fn clear_stale_engine_lock(workshop: &WorkshopServer) -> Result<(), String> {
+    if workshop.kind != "local" {
+        return Err("Only local workshops have engine locks".to_string());
+    }
+    let data_dir = resolve_workshop_data_dir(workshop);
+    let backend = resolve_backend();
+    let Some(lock_path) = surreal_kv_lock_path(&backend, &data_dir) else {
+        return Err("This workshop doesn't use on-disk storage locks".to_string());
+    };
+    if !lock_path.exists() {
+        return Ok(());
+    }
+    let pid = read_daemon_pid(&workshop.id);
+    if pid.is_some_and(host_proc::is_process_alive) {
+        return Err("Medousa is still running — stop it before clearing the lock".to_string());
+    }
+    fs::remove_file(&lock_path).map_err(|err| {
+        format!(
+            "Couldn't remove the lock file ({}): {err}",
+            lock_path.display()
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_from_bind_formats_http() {
+        assert_eq!(url_from_bind("127.0.0.1:7420"), "http://127.0.0.1:7420");
+    }
+
+    #[test]
+    fn url_from_bind_maps_public_to_loopback_client_url() {
+        assert_eq!(url_from_bind("0.0.0.0:7419"), "http://127.0.0.1:7419");
+    }
+
+    #[test]
+    fn parse_bind_port_reads_trailing_port() {
+        assert_eq!(parse_bind_port("127.0.0.1:7419"), Some(7419));
+    }
+
+    #[test]
+    fn managed_laya_uses_a_loopback_endpoint() {
+        assert_eq!(DEFAULT_LAYA_BIND, "127.0.0.1:7422");
+        assert_eq!(DEFAULT_LAYA_BASE_URL, "http://127.0.0.1:7422");
+    }
+}

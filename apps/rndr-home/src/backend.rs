@@ -56,7 +56,7 @@ pub fn client(origin: &str, data_dir: &std::path::Path) -> Result<MedousaClient,
     // Same first-party local boundary as Tauri. Load only: never provision,
     // rotate, copy, or persist credentials. No pairing or remote fallback.
     let secret = medousa_local_credential::load_home_local_secret(data_dir)
-        .map_err(|_| "Local credential unavailable. Start the daemon for this data directory using the existing Medousa app.".to_string())?;
+        .map_err(|_| "Local credential unavailable for the selected workshop. Check its daemon startup/auth state and matching data directory; RNDR does not create or copy credentials.".to_string())?;
     let mut auth = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", secret.token()))
         .map_err(|_| "Invalid local credential".to_string())?;
     auth.set_sensitive(true);

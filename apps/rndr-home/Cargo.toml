@@ -19,12 +19,16 @@ rndr_paint = { path = "/Users/theelevators/rndr/crates/rndr_paint", features = [
 rndr_render = { path = "/Users/theelevators/rndr/crates/rndr_render", default-features = false, features = ["parley", "accesskit"] }
 medousa-sdk = { path = "../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-app-core = { path = "../../crates/medousa-app-core" }
+medousa-desktop-host = { path = "../../crates/medousa-desktop-host" }
 medousa-types = { path = "../../crates/medousa-types" }
 medousa-local-credential = { path = "../../crates/medousa-local-credential" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 futures-util = "0.3"
 serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.dev]
 debug = 0

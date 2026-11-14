@@ -281,30 +281,7 @@ pub fn turn_request(
 
 /// Only the existing local credential boundary is supported in this slice.
 /// No remote redirects, userinfo, or arbitrary credential forwarding.
-pub fn local_url(value: &str) -> Result<reqwest::Url, String> {
-    let url = reqwest::Url::parse(value).map_err(|_| "Invalid daemon URL")?;
-    let local = url.host_str().is_some_and(|host| {
-        host == "localhost"
-            || host
-                .trim_matches(['[', ']'])
-                .parse::<std::net::IpAddr>()
-                .is_ok_and(|ip| ip.is_loopback())
-    });
-    if !local
-        || !matches!(url.scheme(), "http" | "https")
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.path() != "/"
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(
-            "This slice requires a loopback HTTP(S) daemon origin, without userinfo/path/query"
-                .into(),
-        );
-    }
-    Ok(url)
-}
+pub use medousa_desktop_host::connection::local_url;
 pub fn stream_path(path: &str) -> Result<&str, String> {
     if !path.starts_with("/v1/") || path.contains("://") || path.contains('\\') {
         return Err(
