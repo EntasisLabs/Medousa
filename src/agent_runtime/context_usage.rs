@@ -42,7 +42,9 @@ pub struct ContextUsageInput<'a> {
 pub struct ContextUsageCompilation {
     pub usage: ContextUsageReport,
     pub decisions: medousa_runtime::context::ContextDecisionReport,
-    /// Independent assembly measurement must equal the contribution total.
+    /// Reconciliation of the preparation snapshot only, NOT a ChatRequest.
+    pub assembly_reconciled: bool,
+    /// Always false here: runtime-owned layers and effective schemas are pending.
     pub reconciled: bool,
 }
 
@@ -150,7 +152,7 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageC
     let decisions = coordinator.report(ContextCapacity {
         input_tokens: input.context_limit_tokens,
     });
-    let reconciled = decisions.cost == expected
+    let assembly_reconciled = decisions.cost == expected
         && !decisions
             .contributions
             .iter()
@@ -161,6 +163,7 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageC
         if matches!(
             item.decision,
             medousa_runtime::context::ContextDecision::Excluded { .. }
+                | medousa_runtime::context::ContextDecision::Omitted { .. }
         ) {
             continue;
         }
@@ -180,13 +183,56 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageC
             context_limit_tokens: input.context_limit_tokens,
             tool_count: u32::try_from(input.tool_count).unwrap_or(u32::MAX),
             estimator: format!(
-                "{ESTIMATOR_LABEL}_text_only; framing_unknown; unknown_parts={}; initial_snapshot",
+                "{ESTIMATOR_LABEL}_text_only; framing_unknown; unknown_parts={}; assembly_snapshot_incomplete_unreconciled",
                 decisions.cost.unknown_parts
             ),
         },
         decisions,
-        reconciled,
+        assembly_reconciled,
+        reconciled: false,
     }
+}
+
+/// Final telemetry comes from the same footprint retained by inference usage.
+pub fn first_request_usage_report(
+    footprint: &medousa_runtime::inference_usage::RequestFootprint,
+) -> Option<ContextUsageReport> {
+    let report = footprint.first_request_context.as_ref()?;
+    let mut layers: Vec<ContextUsageLayer> = Vec::new();
+    for item in &report.decisions.contributions {
+        if matches!(
+            item.decision,
+            medousa_runtime::context::ContextDecision::Excluded { .. }
+                | medousa_runtime::context::ContextDecision::Omitted { .. }
+        ) {
+            continue;
+        }
+        if let Some(existing) = layers.iter_mut().find(|layer| layer.id == item.id) {
+            existing.chars = existing
+                .chars
+                .saturating_add(u32::try_from(item.cost.text_chars).unwrap_or(u32::MAX));
+            existing.tokens_estimate = chars_to_tokens(existing.chars as usize);
+        } else {
+            layers.push(layer(&item.id, layer_label(&item.id), item.cost.text_chars));
+        }
+    }
+    Some(ContextUsageReport {
+        layers,
+        total_chars: u32::try_from(report.decisions.cost.text_chars).unwrap_or(u32::MAX),
+        total_tokens_estimate: report.decisions.text_tokens_estimate,
+        context_limit_tokens: report.decisions.capacity.input_tokens,
+        tool_count: u32::try_from(report.tool_count.unwrap_or(0)).unwrap_or(u32::MAX),
+        estimator: format!(
+            "{ESTIMATOR_LABEL}_text_only; framing_unknown; unknown_parts={}; first_request; reconciled={}; tools={}",
+            report.decisions.cost.unknown_parts,
+            report.reconciled,
+            if report.tool_count.is_some() {
+                "catalog_known"
+            } else {
+                "disabled"
+            }
+        ),
+    })
 }
 
 fn layer_label(id: &str) -> &str {
@@ -350,6 +396,257 @@ fn format_tokens(n: u32) -> String {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn first_request_reports_effective_profile_schemas_and_empty_catalog() {
+        use async_trait::async_trait;
+        use genai::chat::{
+            ChatMessage, ChatOptions, ChatRequest, ChatResponse, MessageContent, Tool,
+        };
+        use medousa_runtime::context::{ContextCoordinator, ContextCost, ContextOwner, Retention};
+        use medousa_runtime::request_context::FirstRequestContextConfig;
+        use stasis::application::orchestration::prompt_pipeline::{
+            PromptExecutionContext, PromptExecutionPipeline,
+        };
+        use stasis::application::orchestration::tool_loop_pipeline::{
+            ToolCallMode, ToolLoopExecutionRequest,
+        };
+        use stasis::domain::errors::{Result, StasisError};
+        use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
+        use std::sync::Mutex;
+        struct Registry {
+            fail: bool,
+        }
+        #[async_trait]
+        impl ToolRegistry for Registry {
+            async fn list_tools(&self) -> Result<Vec<Tool>> {
+                if self.fail {
+                    return Err(StasisError::PortFailure("catalog unavailable".into()));
+                }
+                Ok(vec![
+                    Tool::new("allowed_tool").with_schema(
+                        serde_json::json!({"type":"object","properties":{"α":{"type":"string"}}}),
+                    ),
+                    Tool::new("denied_tool").with_schema(
+                        serde_json::json!({"type":"object","properties":{"x":{"type":"integer"}}}),
+                    ),
+                ])
+            }
+            async fn invoke_tool(
+                &self,
+                _: &str,
+                _: serde_json::Value,
+            ) -> Result<serde_json::Value> {
+                unreachable!()
+            }
+        }
+        #[derive(Default)]
+        struct Client(Mutex<Vec<ChatRequest>>);
+        #[async_trait]
+        impl AiChatClient for Client {
+            async fn complete(
+                &self,
+                request: ChatRequest,
+                _: Option<&ChatOptions>,
+            ) -> Result<ChatResponse> {
+                self.0.lock().unwrap().push(request);
+                let model_iden = genai::ModelIden::from_static(
+                    genai::adapter::AdapterKind::OpenAI,
+                    "context-test",
+                );
+                Ok(ChatResponse {
+                    content: MessageContent::from("answer"),
+                    reasoning_content: None,
+                    model_iden: model_iden.clone(),
+                    provider_model_iden: model_iden,
+                    stop_reason: None,
+                    response_id: None,
+                    usage: Default::default(),
+                    captured_raw_body: None,
+                })
+            }
+            async fn complete_stream(
+                &self,
+                request: ChatRequest,
+                options: Option<&ChatOptions>,
+                _: Option<&tokio::sync::mpsc::Sender<StreamDelta>>,
+            ) -> Result<ChatResponse> {
+                self.complete(request, options).await
+            }
+        }
+        let underlying: Arc<dyn ToolRegistry> = Arc::new(Registry { fail: false });
+        assert_eq!(underlying.list_tools().await.unwrap().len(), 2);
+        for permitted in [vec!["allowed_tool".to_string()], vec![]] {
+            let registry: Arc<dyn ToolRegistry> = Arc::new(
+                crate::agent_runtime::turn_worker::SessionBootstrapToolRegistry::host(
+                    underlying.clone(),
+                    "context-profile",
+                    permitted.iter().cloned().collect(),
+                    false,
+                    false,
+                    None,
+                    crate::client_tools::ClientRegistry::new(),
+                ),
+            );
+            let effective = measure_tool_schema_footprint(&registry).await;
+            assert!(effective.known);
+            assert_eq!(effective.tool_count, permitted.len());
+            let client = Arc::new(Client::default());
+            let observed = Arc::new(Mutex::new(Vec::new()));
+            let captured = observed.clone();
+            let mut seed = ContextCoordinator::default();
+            for (id, owner, chars) in [
+                ("user_message", ContextOwner::Chat, 8),
+                ("system_prompt", ContextOwner::Host, 6),
+                ("tool_definitions", ContextOwner::Tool, 9999),
+            ] {
+                seed.include(super::super::context_assembly::contribution(
+                    id,
+                    owner,
+                    "context-profile",
+                    ContextCost::text(chars),
+                    Retention::Required,
+                    None,
+                ));
+            }
+            let pipeline = medousa_runtime::MedousaToolLoopPipeline::new(
+                PromptExecutionPipeline::new(client.clone()),
+                registry,
+            )
+            .with_first_request_context(FirstRequestContextConfig {
+                assembly: Some(seed.report(Default::default())),
+                observer: Some(Arc::new(move |footprint| {
+                    captured.lock().unwrap().push(footprint);
+                    Box::pin(async {})
+                })),
+            });
+            let request = ToolLoopExecutionRequest {
+                user_prompt: "question".into(),
+                system_prompt: Some("policy".into()),
+                context: PromptExecutionContext::default(),
+                tool_name: String::new(),
+                tool_input: serde_json::Value::Null,
+                tool_call_mode: ToolCallMode::Auto,
+            };
+            let boundary = Arc::new(
+                medousa_runtime::execution_boundary::TurnExecutionBoundary::new(
+                    tokio_util::sync::CancellationToken::new(),
+                    None,
+                ),
+            );
+            let result = medousa_runtime::execution_boundary::with_turn_execution_boundary(
+                boundary,
+                pipeline.execute_with_prior_messages(request, Vec::new()),
+            )
+            .await;
+            if permitted.is_empty() {
+                // Legacy tool-loop semantics: a known empty effective catalog
+                // aborts before inference. Do not invent a sent empty request.
+                assert!(result.is_err());
+                assert!(client.0.lock().unwrap().is_empty());
+                assert!(observed.lock().unwrap().is_empty());
+                continue;
+            }
+            result.unwrap();
+            let requests = client.0.lock().unwrap();
+            let footprints = observed.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(footprints.len(), 1);
+            let report = footprints[0].first_request_context.as_ref().unwrap();
+            assert!(report.reconciled, "{report:?}");
+            assert_eq!(report.tool_count, Some(permitted.len()));
+            assert_eq!(
+                requests[0]
+                    .tools
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .map(|tool| tool.name.to_string())
+                    .collect::<Vec<_>>(),
+                permitted
+            );
+            let actual =
+                measure_tool_schema_footprint_for_tools(requests[0].tools.as_deref().unwrap());
+            assert_eq!(report.schema_chars, actual.total_chars);
+            let usage = first_request_usage_report(&footprints[0]).unwrap();
+            assert_eq!(usage.tool_count as usize, actual.tool_count);
+            assert_eq!(usage.total_chars as usize, report.decisions.cost.text_chars);
+            assert!(usage.estimator.contains("first_request; reconciled=true"));
+            assert!(
+                report
+                    .decisions
+                    .contributions
+                    .iter()
+                    .any(|item| item.id == "user_message"
+                        && item.provenance.scope.as_deref() == Some("context-profile"))
+            );
+        }
+        let failed: Arc<dyn ToolRegistry> = Arc::new(Registry { fail: true });
+        let unknown = measure_tool_schema_footprint(&failed).await;
+        assert!(!unknown.known);
+        assert!(measure_tool_schema_footprint_for_tools(&[]).known);
+        let failed_client = Arc::new(Client::default());
+        let failed_pipeline = medousa_runtime::MedousaToolLoopPipeline::new(
+            PromptExecutionPipeline::new(failed_client.clone()),
+            failed,
+        );
+        let request = ToolLoopExecutionRequest {
+            user_prompt: "question".into(),
+            system_prompt: Some("policy".into()),
+            context: PromptExecutionContext::default(),
+            tool_name: String::new(),
+            tool_input: serde_json::Value::Null,
+            tool_call_mode: ToolCallMode::Auto,
+        };
+        let boundary = Arc::new(
+            medousa_runtime::execution_boundary::TurnExecutionBoundary::new(
+                tokio_util::sync::CancellationToken::new(),
+                None,
+            ),
+        );
+        let result = medousa_runtime::execution_boundary::with_turn_execution_boundary(
+            boundary,
+            failed_pipeline.execute_with_prior_messages(request, Vec::new()),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(
+            failed_client.0.lock().unwrap().is_empty(),
+            "failed catalog must not masquerade as an empty request"
+        );
+        // The request contract also distinguishes an explicit empty schema array
+        // from no-tools None, even though the legacy tool loop rejects empty catalogs.
+        let empty_request = ChatRequest::from_user("question").with_tools(Vec::<Tool>::new());
+        let empty =
+            medousa_runtime::inference_usage::RequestFootprint::new(&empty_request, None, None)
+                .with_first_request_context(&empty_request, 0, 1, None);
+        assert_eq!(
+            empty.first_request_context.as_ref().unwrap().tool_count,
+            Some(0)
+        );
+        assert!(empty.first_request_context.as_ref().unwrap().reconciled);
+        // Actual no-tools requests use None, versus the effective empty Some([]).
+        let client = Client::default();
+        let request = ChatRequest::new(vec![
+            ChatMessage::system("policy"),
+            ChatMessage::user("question"),
+        ]);
+        let footprint =
+            medousa_runtime::inference_usage::RequestFootprint::new(&request, None, None)
+                .with_first_request_context(&request, 1, 1, None);
+        client.complete(request, None).await.unwrap();
+        assert!(client.0.lock().unwrap()[0].tools.is_none());
+        let context = footprint.first_request_context.as_ref().unwrap();
+        assert_eq!(context.tool_count, None);
+        assert_eq!(context.schema_chars, 0);
+        assert!(context.reconciled);
+        assert!(
+            first_request_usage_report(&footprint)
+                .unwrap()
+                .estimator
+                .contains("tools=disabled")
+        );
+    }
+
     #[test]
     fn complete_layers_reconcile_with_actual_text_and_unknown_media() {
         use super::super::context_assembly::{PromptLedger, contribution};
@@ -428,7 +725,8 @@ mod tests {
                 tool_schema_known: true,
                 context_limit_tokens: limit,
             });
-            assert!(compiled.reconciled);
+            assert!(compiled.assembly_reconciled);
+            assert!(!compiled.reconciled);
             let report = compiled.usage;
             assert_eq!(
                 report.layers.iter().map(|layer| layer.chars).sum::<u32>(),

@@ -51,6 +51,9 @@ pub struct RequestFootprint {
     /// separate from serialized bytes and provider-reported/billed tokens.
     #[serde(default)]
     pub content_cost: Option<crate::context::ContextCost>,
+    /// Present only at the actual first ChatRequest boundary, not assembly time.
+    #[serde(default)]
+    pub first_request_context: Option<crate::request_context::FirstRequestContextReport>,
     pub system: RequestSection,
     pub messages: Vec<RequestSection>,
     pub model: Option<String>,
@@ -79,11 +82,30 @@ impl RequestFootprint {
         Self {
             tools: section(&request.tools),
             content_cost: Some(content_cost),
+            first_request_context: None,
             system: section(&request.system),
             messages: request.messages.iter().map(section).collect(),
             model,
             reasoning_effort,
         }
+    }
+
+    pub fn with_first_request_context(
+        mut self,
+        request: &ChatRequest,
+        system_messages: usize,
+        prefix_messages: usize,
+        assembly: Option<&crate::context::ContextDecisionReport>,
+    ) -> Self {
+        self.first_request_context = Some(crate::request_context::compile_first_request(
+            request,
+            system_messages,
+            prefix_messages,
+            assembly,
+            self.content_cost
+                .expect("new request has measured content cost"),
+        ));
+        self
     }
 
     fn compare(&self, previous: &Self) -> RequestChange {

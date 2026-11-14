@@ -805,6 +805,122 @@ async fn golden_screenshot_pixels_are_transient_between_model_rounds() {
 }
 
 #[tokio::test]
+async fn golden_first_request_attributes_runtime_layers_and_unknown_media() {
+    struct WorkContext;
+    impl crate::turn_context::ToolRoundContextProvider for WorkContext {
+        fn context_for_next_round(&self) -> StasisResult<Option<String>> {
+            Ok(Some("[TEST_FIRST_WORK_CONTEXT]\nwork state 🦀".into()))
+        }
+        fn replaces_previous_context(&self) -> bool {
+            true
+        }
+    }
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(DataProbeTool).unwrap();
+    let client = Arc::new(ScriptedClient::new(vec![text_response("Direct answer")]));
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let captured = observed.clone();
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    )
+    .with_first_request_context(crate::request_context::FirstRequestContextConfig {
+        assembly: None,
+        observer: Some(Arc::new(move |footprint| {
+            captured.lock().unwrap().push(footprint);
+            Box::pin(async {})
+        })),
+    });
+    let ports = Arc::new(CapturingPorts::default());
+    let mut gate = ToolLoopCompletionGate::new_for_execution(
+        1,
+        RuntimePorts::new().with_ledger_sink(ports.clone()),
+        3,
+    );
+    gate.enforce_tool_round_limit = true;
+    gate.round_context_provider = Some(Arc::new(WorkContext));
+    let request = ToolLoopExecutionRequest {
+        user_prompt: "prompt αβ".into(),
+        system_prompt: Some("policy".into()),
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: ToolCallMode::Auto,
+    };
+    let current = genai::chat::ChatMessage::user(MessageContent::from_parts(vec![
+        ContentPart::Text("prompt αβ".into()),
+        ContentPart::from_binary_base64("image/png", "AAAA", None),
+    ]));
+    with_turn_execution_boundary(
+        golden_execution_boundary(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
+            request,
+            Vec::new(),
+            None,
+            3,
+            Some(&mut gate),
+            Some(current),
+        ),
+    )
+    .await
+    .unwrap();
+    let requests = client.requests();
+    assert_eq!(requests.len(), 1);
+    let footprints = observed.lock().unwrap();
+    assert_eq!(footprints.len(), 1);
+    let footprint = &footprints[0];
+    let report = footprint.first_request_context.as_ref().unwrap();
+    assert!(report.reconciled, "{report:?}");
+    let cost = crate::context::ContextCost::messages(&requests[0].messages).saturating_add(
+        crate::context::ContextCost::text(
+            requests[0]
+                .system
+                .as_ref()
+                .map_or(0, |text| text.chars().count())
+                + report.schema_chars,
+        ),
+    );
+    assert_eq!(report.decisions.cost, cost);
+    assert_eq!(Some(cost), footprint.content_cost);
+    assert_eq!(cost.unknown_parts, 1);
+    for (id, owner) in [
+        ("turn_scratch", crate::context::ContextOwner::UnitOfWork),
+        ("turn_control", crate::context::ContextOwner::Host),
+        ("round_context", crate::context::ContextOwner::UnitOfWork),
+    ] {
+        assert!(
+            report
+                .decisions
+                .contributions
+                .iter()
+                .any(|item| item.id == id && item.owner == owner && item.cost.text_chars > 0),
+            "missing {id}: {report:?}"
+        );
+    }
+    assert!(requests[0].messages.iter().any(|message| {
+        message
+            .content
+            .first_text()
+            .is_some_and(|text| text.contains("TEST_FIRST_WORK_CONTEXT"))
+    }));
+    let ledger = ports.ledger.lock().unwrap();
+    let inference = ledger
+        .iter()
+        .find_map(|record| record.inference.as_ref())
+        .unwrap();
+    assert_eq!(
+        inference
+            .request
+            .first_request_context
+            .as_ref()
+            .unwrap()
+            .decisions
+            .cost,
+        cost
+    );
+}
+
+#[tokio::test]
 async fn golden_round_context_is_injected_before_the_next_inference() {
     let registry = InMemoryToolRegistry::default();
     registry.register_tool(DataProbeTool).unwrap();

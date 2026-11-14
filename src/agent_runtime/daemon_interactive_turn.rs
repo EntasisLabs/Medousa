@@ -2548,7 +2548,7 @@ async fn run_agent_turn_inner(
             return;
         }
     };
-    let assembled = turn_orchestrator::assemble_local_turn(AssembleLocalTurnParams {
+    let mut assembled = turn_orchestrator::assemble_local_turn(AssembleLocalTurnParams {
         session_id: &session_id,
         settings: &settings,
         conversation: &conversation,
@@ -2644,13 +2644,52 @@ async fn run_agent_turn_inner(
             context_limit_tokens,
         },
     );
-    if !context_compilation.reconciled {
+    if !context_compilation.assembly_reconciled {
         tracing::error!(target: "medousa::context_usage", turn_id = %turn_id,
             decisions = ?context_compilation.decisions, "turn context attribution does not reconcile");
     }
     tracing::debug!(target: "medousa::context_usage", turn_id = %turn_id,
         decisions = ?context_compilation.decisions, reconciled = context_compilation.reconciled,
-        "turn context decisions (initial snapshot, text estimates only)");
+        "turn context decisions (assembly snapshot incomplete; first request pending)");
+    let published = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let final_telemetry = context_telemetry.clone();
+    assembled.execution.first_request_context =
+        medousa_runtime::request_context::FirstRequestContextConfig {
+            assembly: Some(context_compilation.decisions.clone()),
+            observer: Some(Arc::new(move |footprint| {
+                let stream_sink = final_telemetry.clone();
+                let first = !published.swap(true, std::sync::atomic::Ordering::SeqCst);
+                Box::pin(async move {
+                    if !first {
+                        return;
+                    }
+                    let Some(report) =
+                        crate::agent_runtime::context_usage::first_request_usage_report(&footprint)
+                    else {
+                        return;
+                    };
+                    tracing::debug!(target: "medousa::context_usage", ?footprint,
+                    "first assembled request footprint and owned context decisions");
+                    if let Some(stream_sink) = stream_sink {
+                        if let Some(cache) = &stream_sink.session_hooks.context_usage_by_session {
+                            cache
+                                .write()
+                                .await
+                                .insert(stream_sink.session_id.clone(), report.clone());
+                        }
+                        let operator_summary = Some(
+                            crate::agent_runtime::context_usage::operator_summary(&report),
+                        );
+                        stream_sink
+                            .publish_tracked(TurnStreamEventV3::ContextUsage {
+                                report,
+                                operator_summary,
+                            })
+                            .await;
+                    }
+                })
+            })),
+        };
     let context_report = context_compilation.usage;
     let context_summary = crate::agent_runtime::context_usage::operator_summary(&context_report);
     tracing::info!(

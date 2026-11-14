@@ -344,6 +344,7 @@ pub struct LocalTurnExecutionParams {
     pub activation: TurnActivationDecision,
     pub pipeline: MedousaToolLoopPipeline,
     pub no_tools_pipeline: PromptExecutionPipeline,
+    pub first_request_context: medousa_runtime::request_context::FirstRequestContextConfig,
     pub prior_messages: Vec<ChatMessage>,
     pub prompt_for_request: String,
     pub original_prompt: String,
@@ -592,6 +593,7 @@ pub async fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> Assembl
             activation: activation.clone(),
             pipeline: pipeline_selection.pipeline.clone(),
             no_tools_pipeline,
+            first_request_context: Default::default(),
             prior_messages: prior_build.messages.clone(),
             prompt_for_request,
             original_prompt: params.prompt.to_string(),
@@ -989,6 +991,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         mut activation,
         pipeline: default_pipeline,
         no_tools_pipeline,
+        first_request_context,
         prior_messages,
         prompt_for_request,
         original_prompt,
@@ -1335,9 +1338,31 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             }
         }
         let prompt_stream = stream_bridge.attempt();
+        let prefix_messages = messages.len().saturating_sub(1);
+        let sticky_count = usize::from(messages.last().is_some_and(|message| {
+            message.role == genai::chat::ChatRole::System
+                && message.content.first_text().is_some_and(|text| {
+                    text.starts_with(medousa_runtime::turn_context::STICKY_CONTEXT_PREFIX)
+                })
+        }));
+        let chat_request = ChatRequest::new(messages);
+        let footprint = medousa_runtime::inference_usage::RequestFootprint::new(
+            &chat_request,
+            Some(model.clone()),
+            Some(reasoning_effort.clone()),
+        )
+        .with_first_request_context(
+            &chat_request,
+            1,
+            prefix_messages.saturating_sub(sticky_count),
+            first_request_context.assembly.as_ref(),
+        );
+        if let Some(observer) = &first_request_context.observer {
+            observer(footprint).await;
+        }
         let prompt_only_result = match super::execution_context::await_turn_boundary(
             no_tools_pipeline.complete_chat_stream(
-                ChatRequest::new(messages),
+                chat_request,
                 prompt_ctx.clone(),
                 Some(prompt_stream.sender()),
             ),
@@ -1586,6 +1611,8 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 .and_then(|scope| scope.channel_surface.as_deref()),
             client_registry.clone(),
         );
+        let attempt_pipeline =
+            attempt_pipeline.with_first_request_context(first_request_context.clone());
         let mut target_completion_gate_config = completion_gate_config.clone();
         target_completion_gate_config.runtime_ports = target_completion_gate_config
             .runtime_ports

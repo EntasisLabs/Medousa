@@ -72,9 +72,26 @@ impl ContextCost {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContextDecision {
     Included,
-    Projected { source_text_chars: usize },
-    Excluded { source_text_chars: usize },
+    Projected {
+        source_text_chars: usize,
+    },
+    Excluded {
+        source_text_chars: usize,
+    },
     Unattributed,
+    /// No emitted span. None is an unmeasured source length, never zero.
+    Omitted {
+        reason: ContextOmissionReason,
+        source_text_chars: Option<usize>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContextOmissionReason {
+    Disabled,
+    Unavailable,
+    NoResult,
+    BudgetExcluded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

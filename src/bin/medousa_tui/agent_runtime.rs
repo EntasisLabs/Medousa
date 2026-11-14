@@ -783,10 +783,21 @@ pub(crate) async fn start_prompt_run(
             context_limit_tokens: None,
         },
     );
-    if !compiled_context.reconciled {
+    if !compiled_context.assembly_reconciled {
         tracing::error!(decisions = ?compiled_context.decisions, "TUI context attribution does not reconcile");
     }
-    tracing::debug!(decisions = ?compiled_context.decisions, reconciled = compiled_context.reconciled, "TUI turn context (initial snapshot, text estimates only)");
+    tracing::debug!(decisions = ?compiled_context.decisions, reconciled = compiled_context.reconciled, "TUI turn context (assembly snapshot incomplete; first request pending)");
+    let first_request_context = medousa_runtime::request_context::FirstRequestContextConfig {
+        assembly: Some(compiled_context.decisions.clone()),
+        observer: Some(Arc::new(move |footprint| {
+            Box::pin(async move {
+                tracing::debug!(
+                    ?footprint,
+                    "TUI first assembled request context (text estimate with unknown parts)"
+                );
+            })
+        })),
+    };
     let prior_messages = prior_build.messages;
     let retry_max_retries = medousa::tui::settings::parse_usize_with_bounds(
         &state.settings.retry_runtime_max_retries,
@@ -939,6 +950,7 @@ pub(crate) async fn start_prompt_run(
                     supports_liquid_markdown: false,
                     supports_browser_host: false,
                     round_context_provider: None,
+                    first_request_context,
                     evidence_undertaking_id: None,
                     compact_evidence_receipt_sink: None,
                     active_turn_checkpoint_sink: None,

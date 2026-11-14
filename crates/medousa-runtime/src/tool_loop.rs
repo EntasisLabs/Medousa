@@ -90,6 +90,7 @@ pub struct MedousaToolLoopPipeline {
     prompt_pipeline: PromptExecutionPipeline,
     tool_registry: Arc<dyn ToolRegistry>,
     parallel_execution_settings_provider: Arc<dyn ParallelExecutionSettingsProvider>,
+    first_request_context: crate::request_context::FirstRequestContextConfig,
 }
 
 #[derive(Clone)]
@@ -121,7 +122,16 @@ impl MedousaToolLoopPipeline {
             prompt_pipeline,
             tool_registry,
             parallel_execution_settings_provider: Arc::new(ParallelExecutionSettings::default),
+            first_request_context: Default::default(),
         }
+    }
+
+    pub fn with_first_request_context(
+        mut self,
+        config: crate::request_context::FirstRequestContextConfig,
+    ) -> Self {
+        self.first_request_context = config;
+        self
     }
 
     pub fn with_parallel_execution_settings(mut self, settings: ParallelExecutionSettings) -> Self {
@@ -534,11 +544,27 @@ impl MedousaToolLoopPipeline {
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
                 ensure_assistant_tool_turn_reasoning(&mut messages);
                 let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
-                let footprint = crate::inference_usage::RequestFootprint::new(
+                let mut footprint = crate::inference_usage::RequestFootprint::new(
                     &chat_request,
                     shared_inputs.context.model_hint.clone(),
                     shared_inputs.context.reasoning_effort.clone(),
                 );
+                if previous_request.is_none() {
+                    footprint = footprint.with_first_request_context(
+                        &chat_request,
+                        usize::from(
+                            shared_inputs
+                                .system_prompt
+                                .as_deref()
+                                .is_some_and(|text| !text.trim().is_empty()),
+                        ),
+                        turn_ctx.user_lane_prefix.len(),
+                        self.first_request_context.assembly.as_ref(),
+                    );
+                    if let Some(observer) = &self.first_request_context.observer {
+                        observer(footprint.clone()).await;
+                    }
+                }
                 let mut observation = crate::inference_usage::InferenceObservation::start(
                     completion_gate.as_deref(),
                     rounds_executed,

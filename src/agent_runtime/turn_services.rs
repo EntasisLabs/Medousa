@@ -165,6 +165,42 @@ pub fn parse_tool_call_mode(value: &str) -> ToolCallMode {
     }
 }
 
+/// A rendered empty block is a no-result, not proof of source availability.
+/// Producers that expose unavailability pass None; legacy String-only producers
+/// cannot distinguish swallowed retrieval failures, so lengths remain unknown.
+fn record_auxiliary_omission(
+    context: &mut ContextCoordinator,
+    session_id: &str,
+    id: &str,
+    rendered: Option<&str>,
+    budget: usize,
+) {
+    use medousa_runtime::context::{ContextDecision, ContextOmissionReason};
+    if rendered.is_some_and(|text| !text.trim().is_empty()) {
+        return;
+    }
+    let reason = if budget == 0 {
+        ContextOmissionReason::BudgetExcluded
+    } else if rendered.is_none() {
+        ContextOmissionReason::Unavailable
+    } else {
+        ContextOmissionReason::NoResult
+    };
+    let mut item = contribution(
+        id,
+        ContextOwner::Tool,
+        session_id,
+        ContextCost::default(),
+        Retention::Flexible,
+        Some(budget),
+    );
+    item.decision = ContextDecision::Omitted {
+        reason,
+        source_text_chars: None,
+    };
+    context.include(item);
+}
+
 #[allow(clippy::too_many_arguments)] // prior-message windows travel together
 pub fn build_prior_messages(
     tool_catalog: &crate::typed_tools::ToolCatalog,
@@ -203,13 +239,34 @@ pub fn build_prior_messages(
 
     let mut hot_remaining = context.history_allocation(limits.hot_window_char_budget);
     for turn in &hot_turns {
-        if hot_remaining == 0 {
-            break;
-        }
-
         let content = prior_turn_content(turn, limits.max_single_prior_message_chars);
+        if hot_remaining == 0 {
+            context.include(
+                contribution(
+                    "prior_conversation",
+                    ContextOwner::Chat,
+                    session_id,
+                    ContextCost::text(content.chars().count()),
+                    Retention::Flexible,
+                    Some(0),
+                )
+                .project_text(0),
+            );
+            continue;
+        }
         let bounded = truncate_text_for_budget(&content, hot_remaining);
         if bounded.trim().is_empty() {
+            context.include(
+                contribution(
+                    "prior_conversation",
+                    ContextOwner::Chat,
+                    session_id,
+                    ContextCost::text(content.chars().count()),
+                    Retention::Flexible,
+                    Some(hot_remaining),
+                )
+                .project_text(0),
+            );
             continue;
         }
 
@@ -294,6 +351,8 @@ pub fn build_prior_messages(
         total_chars = total_chars.saturating_add(cold_summary_chars);
         context.account_history_selection(cold_summary_chars);
         accepted.push(ChatMessage::assistant(cold_summary));
+    }
+    if !cold_source.is_empty() {
         context.include(
             contribution(
                 "cold_history",
@@ -307,12 +366,41 @@ pub fn build_prior_messages(
         );
     }
 
+    if cold_source.is_empty() {
+        for turn in &cold_turns {
+            let mut item = contribution(
+                "cold_history_candidate",
+                ContextOwner::Chat,
+                session_id,
+                ContextCost::default(),
+                Retention::Flexible,
+                Some(limits.cold_summary_line_chars),
+            );
+            item.decision = medousa_runtime::context::ContextDecision::Omitted {
+                reason: if limits.cold_summary_line_chars == 0 {
+                    medousa_runtime::context::ContextOmissionReason::BudgetExcluded
+                } else {
+                    medousa_runtime::context::ContextOmissionReason::NoResult
+                },
+                source_text_chars: Some(turn.content.chars().count()),
+            };
+            context.include(item);
+        }
+    }
+
     let (tool_slices_chars, script_recall_chars, learning_recall_chars, tool_hints_chars) =
         if limits.include_auxiliary_history {
             let slice_budget = context
                 .history_allocation(limits.hot_window_char_budget.min(DEFAULT_SLICE_BLOCK_CHARS));
             let tool_slices_block = tool_context.slices(&hot_turns, slice_budget);
             let tool_slices_chars = tool_slices_block.chars().count();
+            record_auxiliary_omission(
+                &mut context,
+                session_id,
+                "tool_slices",
+                Some(&tool_slices_block),
+                slice_budget,
+            );
             if !tool_slices_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(tool_slices_chars);
                 context.account_history_selection(tool_slices_chars);
@@ -334,6 +422,13 @@ pub fn build_prior_messages(
             );
             let script_recall_block = tool_context.scripts(script_budget);
             let script_recall_chars = script_recall_block.chars().count();
+            record_auxiliary_omission(
+                &mut context,
+                session_id,
+                "grapheme_scripts",
+                Some(&script_recall_block),
+                script_budget,
+            );
             if !script_recall_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(script_recall_chars);
                 context.account_history_selection(script_recall_chars);
@@ -355,6 +450,13 @@ pub fn build_prior_messages(
             );
             let learning_recall_block = tool_context.learnings(learning_budget);
             let learning_recall_chars = learning_recall_block.chars().count();
+            record_auxiliary_omission(
+                &mut context,
+                session_id,
+                "runtime_learnings",
+                Some(&learning_recall_block),
+                learning_budget,
+            );
             if !learning_recall_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(learning_recall_chars);
                 context.account_history_selection(learning_recall_chars);
@@ -376,6 +478,13 @@ pub fn build_prior_messages(
             );
             let tool_hints_block = tool_context.hints(hints_budget);
             let tool_hints_chars = tool_hints_block.chars().count();
+            record_auxiliary_omission(
+                &mut context,
+                session_id,
+                "tool_hints",
+                Some(&tool_hints_block),
+                hints_budget,
+            );
             if !tool_hints_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(tool_hints_chars);
                 context.account_history_selection(tool_hints_chars);
@@ -396,6 +505,26 @@ pub fn build_prior_messages(
                 tool_hints_chars,
             )
         } else {
+            for id in [
+                "tool_slices",
+                "grapheme_scripts",
+                "runtime_learnings",
+                "tool_hints",
+            ] {
+                let mut item = contribution(
+                    id,
+                    ContextOwner::Tool,
+                    session_id,
+                    ContextCost::default(),
+                    Retention::Flexible,
+                    None,
+                );
+                item.decision = medousa_runtime::context::ContextDecision::Omitted {
+                    reason: medousa_runtime::context::ContextOmissionReason::Disabled,
+                    source_text_chars: None,
+                };
+                context.include(item);
+            }
             (0, 0, 0, 0)
         };
 
@@ -924,6 +1053,269 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn correction_turn(role: &str, content: &str) -> ConversationTurn {
+        ConversationTurn {
+            role: role.into(),
+            content: content.into(),
+            timestamp: Utc::now(),
+            tool_names: Vec::new(),
+            answer_state: None,
+            parts: None,
+            slice_summary: None,
+            speaker_profile_id: None,
+            reactions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn known_history_candidates_are_recorded_after_zero_or_exhausted_budget() {
+        use medousa_runtime::context::{ContextCost, ContextDecision};
+        let turns = vec![
+            correction_turn("user", "old user"),
+            correction_turn("assistant", "old answer"),
+            correction_turn("user", "recent user"),
+            correction_turn("assistant", "recent answer"),
+        ];
+        for cap in [0, 1] {
+            let mut limits = sample_limits();
+            limits.max_prior_total_chars = cap;
+            limits.include_auxiliary_history = false;
+            let built = build_prior_messages(
+                &crate::typed_tools::ToolCatalog::default(),
+                "excluded",
+                &turns,
+                "current",
+                false,
+                2,
+                2,
+                limits,
+            );
+            let hot: Vec<_> = built
+                .context
+                .contributions
+                .iter()
+                .filter(|item| item.id == "prior_conversation")
+                .collect();
+            assert_eq!(hot.len(), 2);
+            assert!(hot.iter().filter(|item| matches!(item.decision, ContextDecision::Excluded { source_text_chars } if source_text_chars > 0))
+                .count() >= if cap == 0 { 2 } else { 1 });
+            let cold = built
+                .context
+                .contributions
+                .iter()
+                .find(|item| item.id == "cold_history")
+                .unwrap();
+            assert!(
+                matches!(cold.decision, ContextDecision::Excluded { source_text_chars } if source_text_chars > 0)
+            );
+            assert_eq!(cold.cost, ContextCost::default());
+            assert_eq!(
+                built.context.report(Default::default()).cost,
+                ContextCost::messages(&built.messages)
+            );
+            if cap == 0 {
+                assert!(built.messages.is_empty());
+                assert_eq!(built.total_chars, 0);
+            } else {
+                assert_eq!(built.messages.len(), 1);
+                assert_eq!(built.total_chars, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn cold_candidates_survive_zero_line_rendering_budget() {
+        use medousa_runtime::context::{ContextCost, ContextDecision, ContextOmissionReason};
+        let turns = vec![
+            correction_turn("user", "older question"),
+            correction_turn("assistant", "older answer"),
+        ];
+        let mut limits = sample_limits();
+        limits.cold_summary_line_chars = 0;
+        limits.include_auxiliary_history = false;
+        let built = build_prior_messages(
+            &crate::typed_tools::ToolCatalog::default(),
+            "cold-zero-lines",
+            &turns,
+            "current",
+            false,
+            0,
+            2,
+            limits,
+        );
+        assert!(built.messages.is_empty());
+        let candidates: Vec<_> = built
+            .context
+            .contributions
+            .iter()
+            .filter(|item| item.id == "cold_history_candidate")
+            .collect();
+        assert_eq!(candidates.len(), 2);
+        for item in candidates {
+            assert_eq!(item.cost, ContextCost::default());
+            assert!(
+                matches!(item.decision, ContextDecision::Omitted { reason: ContextOmissionReason::BudgetExcluded, source_text_chars: Some(count) } if count > 0)
+            );
+        }
+    }
+
+    #[test]
+    fn auxiliary_omissions_distinguish_disabled_budget_unavailable_and_no_result() {
+        use medousa_runtime::context::{
+            ContextCoordinator, ContextCost, ContextDecision, ContextOmissionReason,
+        };
+        for enabled in [false, true] {
+            let mut limits = sample_limits();
+            limits.max_prior_total_chars = 0;
+            limits.include_auxiliary_history = enabled;
+            let built = build_prior_messages(
+                &crate::typed_tools::ToolCatalog::default(),
+                "aux-empty",
+                &[],
+                "current",
+                false,
+                2,
+                2,
+                limits,
+            );
+            for id in [
+                "tool_slices",
+                "grapheme_scripts",
+                "runtime_learnings",
+                "tool_hints",
+            ] {
+                let item = built
+                    .context
+                    .contributions
+                    .iter()
+                    .find(|item| item.id == id)
+                    .unwrap();
+                assert_eq!(item.cost, ContextCost::default());
+                assert_eq!(
+                    item.decision,
+                    ContextDecision::Omitted {
+                        reason: if enabled {
+                            ContextOmissionReason::BudgetExcluded
+                        } else {
+                            ContextOmissionReason::Disabled
+                        },
+                        source_text_chars: None,
+                    }
+                );
+            }
+            assert!(built.messages.is_empty());
+        }
+        let mut context = ContextCoordinator::default();
+        super::record_auxiliary_omission(&mut context, "aux-empty", "unavailable", None, 10);
+        super::record_auxiliary_omission(&mut context, "aux-empty", "empty", Some(""), 10);
+        for (id, reason) in [
+            ("unavailable", ContextOmissionReason::Unavailable),
+            ("empty", ContextOmissionReason::NoResult),
+        ] {
+            let item = context
+                .contributions
+                .iter()
+                .find(|item| item.id == id)
+                .unwrap();
+            assert_eq!(
+                item.decision,
+                ContextDecision::Omitted {
+                    reason,
+                    source_text_chars: None
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn real_auxiliary_rendering_preserves_legacy_order_and_budgets() {
+        crate::vault::service::with_temp_vault(|| {
+            let prompt = "context-auxiliary-parity";
+            let path = "learnings/context-auxiliary-parity.md";
+            crate::vault::VaultService::write_note(Some(path), &crate::daemon_api::VaultWriteRequest {
+                path: Some(path.into()), content: format!("---\ntags: [runtime-learning]\n---\n# {prompt}\nKeep domain ownership explicit."),
+                ..Default::default()
+            }, None).unwrap();
+            let turns = vec![
+                correction_turn("user", "old"),
+                correction_turn("assistant", "old answer"),
+                correction_turn("user", "recent question"),
+                correction_turn("assistant", "recent answer"),
+            ];
+            let catalog = crate::typed_tools::ToolCatalog::default();
+            let limits = sample_limits();
+            let actual =
+                build_prior_messages(&catalog, "aux-parity", &turns, prompt, false, 2, 2, limits);
+            let mut no_aux = limits;
+            no_aux.include_auxiliary_history = false;
+            let base =
+                build_prior_messages(&catalog, "aux-parity", &turns, prompt, false, 2, 2, no_aux);
+            let mut expected = base.messages;
+            expected.reverse();
+            let mut used = base.total_chars;
+            let hot = vec![&turns[3], &turns[2]];
+            // Frozen pre-coordinator allocation expression. Run the real producers,
+            // including a guaranteed nonempty vault learning and tool-slice block.
+            let budget = |used: usize, cap: usize| {
+                limits
+                    .max_prior_total_chars
+                    .saturating_sub(used)
+                    .min(limits.hot_window_char_budget.min(cap))
+            };
+            let slices = crate::turn_slice::build_tool_slices_block(
+                &turns,
+                &hot,
+                budget(used, crate::turn_slice::DEFAULT_SLICE_BLOCK_CHARS),
+                crate::turn_slice::DEFAULT_SLICE_HOT_LINE_CHARS,
+            );
+            assert!(!slices.is_empty());
+            used += slices.chars().count();
+            expected.push(genai::chat::ChatMessage::assistant(slices));
+            let scripts = crate::learning_artifacts::build_grapheme_script_recall_block(
+                prompt,
+                budget(
+                    used,
+                    crate::learning_artifacts::DEFAULT_SCRIPT_RECALL_BLOCK_CHARS,
+                ),
+            );
+            if !scripts.trim().is_empty() {
+                used += scripts.chars().count();
+                expected.push(genai::chat::ChatMessage::assistant(scripts));
+            }
+            let learnings = crate::learning_artifacts::build_runtime_learnings_block(
+                prompt,
+                budget(
+                    used,
+                    crate::learning_artifacts::DEFAULT_LEARNING_RECALL_BLOCK_CHARS,
+                ),
+            );
+            assert!(!learnings.is_empty());
+            used += learnings.chars().count();
+            expected.push(genai::chat::ChatMessage::assistant(learnings));
+            let hints = crate::tool_bootstrap::build_tool_hints_block(
+                &catalog,
+                "aux-parity",
+                prompt,
+                &turns,
+                budget(used, crate::tool_bootstrap::DEFAULT_TOOL_HINTS_BLOCK_CHARS),
+            );
+            if !hints.trim().is_empty() {
+                used += hints.chars().count();
+                expected.push(genai::chat::ChatMessage::assistant(hints));
+            }
+            expected.reverse();
+            assert_eq!(
+                serde_json::to_value(actual.messages).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+            assert_eq!(actual.total_chars, used);
+            assert_eq!(
+                actual.context.report(Default::default()).cost.text_chars,
+                used
+            );
+        });
     }
 
     #[test]
