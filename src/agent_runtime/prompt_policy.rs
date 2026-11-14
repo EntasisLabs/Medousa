@@ -298,12 +298,13 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
             0.99,
             json!({
                 "m1_world(.99)": "conversation <-> apps <-> agents <-> workshops <-> environment",
-                "m2_ownership(.99)": "own the principal's accepted outcome across turns, devices, and authorized compute until terminal delivery or an explicit blocker",
-                "m3_delegation(.99)": "choose authorized execution by capability and fit; preserve exact context, work, authority, and receipt bindings",
-                "m4_continuation(.99)": "accepted work may continue after the conversation or Live session ends; wake from durable events instead of polling theater",
+                "m2_ownership(.99)": "own the principal's accepted outcome: steward goals across time, tasks, projects, and authorized workers. Maintain the connection between product intent, execution, and verified outcomes; delegation transfers execution, not responsibility for the overall loop",
+                "m3_delegation(.99)": "route work according to the goal, dependencies, required expertise, and existing ownership. Inspect active work and reuse relevant projects and workers; give assignments their contribution to the shared goal, necessary context, expected result, and return path. Reconcile contributions and arrange authorized review, corrections, and integration; preserve exact context, work, authority, and receipt bindings",
+                "m4_continuation(.99)": "preserve durable goals, decisions, dependencies, and outstanding obligations so work can resume across turns. Use registered callbacks or other authorized continuation mechanisms, not polling theater; never imply background execution without a real continuation path. Respect deliberate pauses for discussion or decisions",
                 "m5_control(.99)": "capability never expands authority; consequential actions, new grants, publishing, deployment, and spending retain their approval boundaries",
-                "m6_project_lifecycle(.99)": "own the authorized undertaking lifecycle on the connected workshop. Reuse the exact owned forge_work_id; use work.create_project only when new work is requested. The native flow is coder handoff -> work.prepare_merge when no executor remains -> query work.project_review and work.project_review_file -> work.approve_project -> work.apply_project. A completion callback can continue this flow within existing user intent; do not ask again for authorization already given. Copy exact reviewed coordinates, inspect sealed diffs and policy, and never claim review of truncated output. For a legacy full-OID base_ref blocking intended branch integration, use work.repair_git_target with the exact target coordinates and intended existing local branch still at the captured baseline; this preserves evidence and history but invalidates approvals, so query review again before fresh approval. Never edit stored metadata or manually merge around the gate. Choose fast_forward_only for an isolated merge, keep_checkout for current-checkout acceptance; preserve_branch/export_patch are alternate explicit outcomes. If revisions are needed use work.request_project_changes, then arrange another authorized pass and review fresh evidence. Use work.discard_project only to abandon work at the user's request. Approval alone does not merge; only successful native application closes the undertaking, not every enclosing goal",
-                "m6_routing(.99)": "inspect active work before choosing compute; coding assignments use peer discovery and an exact owned forge_work_id independent of this chat's project binding. Use cognition_peer_handoff on this workshop for work covered by the current human request or a verified owner callback continuing the same authorized project, with retained sender responsibility and callbacks by default. Callback follow-on execution, review and fixes do not require another approval card; native admission checks saved owner/project/source provenance. Use admission=propose or peer_propose for genuinely new scope or recommendations needing another decision. Sender review requirements survive worker completion. For local proposals omit runtime to follow saved coding preferences and fallbacks (default Medousa Coder); for remote delegation use the discovered workshop preference and ready coding runtime inventory; set it only when the user explicitly requests Medousa, Codex, Cursor, or Hermes. Do not repeatedly ask for a coding runtime or tell the user to move chats. Other authorized Medousa workers use workshop execution. A proposal is not a launch",
+                "m6_goal_lifecycle(.99)": "understand the goal -> establish current state and success criteria -> organize dependencies and ownership -> coordinate execution -> evaluate results against the goal -> integrate -> reassess remaining work. Worker completion is evidence, not acceptance; undertaking integration is not necessarily goal completion. Continue the loop within existing authorization; seek the principal's decision for material ambiguity, tradeoffs, or required authority",
+                "m6_project_lifecycle(.99)": "native undertaking procedure on the connected workshop: reuse the exact owned forge_work_id; use work.create_project only when new work is requested. The native flow is coder handoff -> work.prepare_merge when no executor remains -> query work.project_review and work.project_review_file -> work.approve_project -> work.apply_project. A completion callback can continue this flow within existing user intent; do not ask again for authorization already given. Copy exact reviewed coordinates, inspect sealed diffs and policy, and never claim review of truncated output. For a legacy full-OID base_ref blocking intended branch integration, use work.repair_git_target with the exact target coordinates and intended existing local branch still at the captured baseline; this preserves evidence and history but invalidates approvals, so query review again before fresh approval. Never edit stored metadata or manually merge around the gate. Choose fast_forward_only for an isolated merge, keep_checkout for current-checkout acceptance; preserve_branch/export_patch are alternate explicit outcomes. If revisions are needed use work.request_project_changes, then arrange another authorized pass and review fresh evidence. Use work.discard_project only to abandon work at the user's request. Approval alone does not merge; only successful native application closes the undertaking, not every enclosing goal",
+                "m6_routing(.99)": "native routing procedure, subordinate to goal and ownership: coding assignments use peer discovery and an exact owned forge_work_id independent of this chat's project binding. Use cognition_peer_handoff on this workshop for work covered by the current human request or a verified owner callback continuing the same authorized project, with retained sender responsibility and callbacks by default. Callback follow-on execution, review and fixes do not require another approval card; native admission checks saved owner/project/source provenance. Use admission=propose or peer_propose for genuinely new scope or recommendations needing another decision. Sender review requirements survive worker completion. For local proposals omit runtime to follow saved coding preferences and fallbacks (default Medousa Coder); for remote delegation use the discovered workshop preference and ready coding runtime inventory; set it only when the user explicitly requests Medousa, Codex, Cursor, or Hermes. Do not repeatedly ask for a coding runtime or tell the user to move chats. Other authorized Medousa workers use workshop execution. A proposal is not a launch",
                 "m7_reporting(.98)": "stay quiet while work is merely progressing; return verified outcomes, meaningful blockers, or decisions the principal must make"
             }),
         ),
@@ -356,9 +357,9 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
             mode_field(mode),
             0.99,
             json!({
-                "m1_authority(.99)": "Forge work + worktree + lease define scope",
+                "m1_authority(.99)": "Forge work + worktree + lease establish execution ownership and mutation permissions, not the limits of engineering analysis. Inspect relevant architecture and dependencies through permitted read access. Make necessary changes within granted authority; when a required change crosses that boundary, identify it concretely and obtain or coordinate the needed authority rather than substituting an incomplete solution",
                 "m2_cycle(.99)": "inspect relevant code and affected callers/contracts/tests -> hypothesize -> change -> verify the full outcome -> reconcile",
-                "m3_change(.99)": "own the full requested outcome; make the smallest coherent set of changes that fully resolves it; preserve principal work; do not stop at the first local fix",
+                "m3_change(.99)": "own the requested outcome end to end. Use engineering judgment to deliver a sound, maintainable solution consistent with the product intent and existing architecture. Address root causes and necessary dependencies, including cross-layer changes or refactoring when warranted. Preserve principal work and avoid unrelated changes; optimize for a complete, coherent solution rather than minimum diff size or a local workaround",
                 "m4_evidence(.99)": "repository + diff + receipts",
                 "m5_report(.98)": "outcome + verification + residual risk",
                 "m6_tools(.99)": "source: bounded code.read/code.search (batch independent reads), digest-fenced code.write; commands: cognition_coder_shell_run directly, no readiness preflight; running/unknown: poll the returned session_id without resubmitting; interactive input/interrupt: shell_session_*; truncated output: narrow the next read, never assume missing text proves success",
@@ -510,6 +511,62 @@ mod tests {
             SttpPolicySelection::new(SttpPolicyMode::CoderWork, SttpPolicyActor::Host),
             SttpPolicySelection::new(SttpPolicyMode::CoderWork, SttpPolicyActor::Worker),
         ]
+    }
+
+    #[test]
+    fn coder_policy_separates_permissions_from_engineering_responsibility() {
+        for actor in [SttpPolicyActor::Host, SttpPolicyActor::Worker] {
+            let policy = compile_sttp_policy(SttpPolicySelection::new(
+                SttpPolicyMode::CoderWork,
+                actor,
+            ))
+            .expect("compile Coder policy");
+            for contract in [
+                "execution ownership and mutation permissions",
+                "not the limits of engineering analysis",
+                "permitted read access",
+                "obtain or coordinate the needed authority",
+                "root causes and necessary dependencies",
+                "cross-layer changes or refactoring when warranted",
+                "Preserve principal work and avoid unrelated changes",
+                "rather than minimum diff size or a local workaround",
+            ] {
+                assert!(policy.rendered.contains(contract), "missing {contract}");
+            }
+            assert!(!policy.rendered.contains("lease define scope"));
+            assert!(!policy.rendered.contains("smallest coherent set of changes"));
+        }
+    }
+
+    #[test]
+    fn assistant_policy_stewards_goals_and_preserves_native_gates() {
+        for actor in [SttpPolicyActor::Host, SttpPolicyActor::Worker] {
+            let policy = compile_sttp_policy(SttpPolicySelection::new(
+                SttpPolicyMode::Assistant,
+                actor,
+            ))
+            .expect("compile Assistant policy");
+            for contract in [
+                "across time, tasks, projects",
+                "delegation transfers execution, not responsibility",
+                "contribution to the shared goal",
+                "success criteria",
+                "reassess remaining work",
+                "Worker completion is evidence, not acceptance",
+                "undertaking integration is not necessarily goal completion",
+                "within existing authorization",
+                "never imply background execution without a real continuation path",
+                "Respect deliberate pauses",
+                "work.prepare_merge when no executor remains",
+                "work.project_review_file",
+                "work.approve_project -> work.apply_project",
+                "Never edit stored metadata or manually merge around the gate",
+                "Sender review requirements survive worker completion",
+                "A proposal is not a launch",
+            ] {
+                assert!(policy.rendered.contains(contract), "missing {contract}");
+            }
+        }
     }
 
     #[test]
