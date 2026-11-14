@@ -15,7 +15,7 @@ use crate::SdkError;
 #[cfg(feature = "sse")]
 pub struct SseLineStream<S> {
     inner: S,
-    buffer: String,
+    buffer: Vec<u8>,
 }
 
 #[cfg(feature = "sse")]
@@ -23,7 +23,7 @@ impl<S> SseLineStream<S> {
     pub fn new(inner: S) -> Self {
         Self {
             inner,
-            buffer: String::new(),
+            buffer: Vec::new(),
         }
     }
 }
@@ -37,10 +37,12 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
-            if let Some(line) = self.buffer.lines().next() {
-                let line = line.to_string();
-                let consumed = line.len() + 1;
-                self.buffer.drain(..consumed);
+            // Chunks need not end at a newline or even a UTF-8 boundary.
+            // Wait for a whole line before consuming or decoding it.
+            if let Some(end) = self.buffer.iter().position(|byte| *byte == b'\n') {
+                let bytes: Vec<_> = self.buffer.drain(..=end).collect();
+                let line = String::from_utf8_lossy(&bytes[..end]);
+                let line = line.trim_end_matches('\r');
                 if line.starts_with(':') {
                     continue;
                 }
@@ -55,14 +57,14 @@ where
             }
             match Pin::new(&mut self.inner).poll_next(cx) {
                 Poll::Ready(Some(Ok(chunk))) => {
-                    self.buffer.push_str(&String::from_utf8_lossy(&chunk));
+                    self.buffer.extend_from_slice(&chunk);
                 }
                 Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e))),
                 Poll::Ready(None) => {
                     if self.buffer.is_empty() {
                         return Poll::Ready(None);
                     }
-                    self.buffer.push('\n');
+                    self.buffer.push(b'\n');
                 }
                 Poll::Pending => return Poll::Pending,
             }

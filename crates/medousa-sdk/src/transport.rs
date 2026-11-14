@@ -11,6 +11,22 @@ use crate::error::SdkError;
 
 /// Object-safe HTTP transport for the Medousa daemon API.
 pub trait Transport: Send + Sync {
+    /// Authenticated, bounded binary GET. Implementations must enforce the limit
+    /// while reading, not merely trust Content-Length.
+    fn get_bytes<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        max_bytes: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, SdkError>> + Send + 'a>> {
+        let _ = (base_url, path, max_bytes);
+        Box::pin(async {
+            Err(SdkError::Transport(
+                "transport does not support binary reads".into(),
+            ))
+        })
+    }
+
     fn get_json<'a>(
         &'a self,
         base_url: &'a str,
@@ -37,6 +53,25 @@ pub trait Transport: Send + Sync {
         Box::pin(async {
             Err(SdkError::Transport(
                 "transport does not support per-request JSON headers".to_string(),
+            ))
+        })
+    }
+
+    /// Upload one multipart media file using the transport's existing credentials.
+    /// Unsupported transports fail explicitly rather than using an unauthenticated fallback.
+    fn post_multipart<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        filename: &'a str,
+        mime: &'a str,
+        bytes: Vec<u8>,
+        label: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let _ = (base_url, path, filename, mime, bytes, label);
+        Box::pin(async {
+            Err(SdkError::Transport(
+                "transport does not support multipart uploads".into(),
             ))
         })
     }
@@ -203,6 +238,72 @@ impl HttpTransport {
 }
 
 impl Transport for HttpTransport {
+    fn get_bytes<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        max_bytes: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, SdkError>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut response = self.client.get(Self::url(base_url, path)).send().await?;
+            if !response.status().is_success() {
+                return Err(SdkError::Http(format!(
+                    "Media request failed: {}",
+                    response.status()
+                )));
+            }
+            if response
+                .content_length()
+                .is_some_and(|len| len > max_bytes as u64)
+            {
+                return Err(SdkError::Transport(
+                    "Media exceeds preview size limit".into(),
+                ));
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await? {
+                if bytes.len().saturating_add(chunk.len()) > max_bytes {
+                    return Err(SdkError::Transport(
+                        "Media exceeds preview size limit".into(),
+                    ));
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(bytes)
+        })
+    }
+
+    /// Upload one multipart media file using the transport's existing credentials.
+    /// Unsupported transports fail explicitly rather than using an unauthenticated fallback.
+    fn post_multipart<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        filename: &'a str,
+        mime: &'a str,
+        bytes: Vec<u8>,
+        label: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let client = self.client.clone();
+        let url = Self::url(base_url, path);
+        Box::pin(async move {
+            let part = reqwest::multipart::Part::bytes(bytes)
+                .file_name(filename.to_owned())
+                .mime_str(mime)?;
+            let mut form = reqwest::multipart::Form::new().part("file", part);
+            if let Some(label) = label {
+                form = form.text("label", label.to_owned());
+            }
+            let response = client.post(url).multipart(form).send().await?;
+            let status = response.status();
+            let text = response.text().await?;
+            if !status.is_success() {
+                return Err(SdkError::Http(format!("{status}: {text}")));
+            }
+            Ok(serde_json::from_str(&text)?)
+        })
+    }
+
     fn get_json<'a>(
         &'a self,
         base_url: &'a str,

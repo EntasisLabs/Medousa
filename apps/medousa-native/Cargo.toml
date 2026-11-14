@@ -1,0 +1,39 @@
+[package]
+name = "medousa-native"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone native application, like the Tauri shell.
+[workspace]
+
+[dependencies]
+rfd = { version = "0.15", default-features = false, features = ["tokio", "xdg-portal"] }
+rndr_core = { path = "../../../../rndr/crates/rndr_core" }
+rndr_ui = { path = "../../../../rndr/crates/rndr_ui" }
+rndr_paint = { path = "../../../../rndr/crates/rndr_paint", features = ["highlight"] }
+rndr_render = { path = "../../../../rndr/crates/rndr_render", default-features = false, features = ["parley", "accesskit"] }
+medousa-sdk = { path = "../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
+medousa-app-core = { path = "../../crates/medousa-app-core" }
+medousa-desktop-host = { path = "../../crates/medousa-desktop-host" }
+medousa-types = { path = "../../crates/medousa-types" }
+medousa-local-credential = { path = "../../crates/medousa-local-credential" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+futures-util = "0.3"
+serde_json = "1"
+mime_guess = "2"
+urlencoding = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+
+[dev-dependencies]
+tempfile = "3"
+bytes = "1"
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false

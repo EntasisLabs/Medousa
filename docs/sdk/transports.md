@@ -25,6 +25,14 @@ Uses `reqwest` against `base_url` + path. `HttpTransport::new()` is suitable
 only for public `/health` or tests; protected routes require a paired bearer
 even when `base_url` is loopback. Mark authorization header values sensitive.
 
+For bounded binary downloads, `Transport::get_bytes(base_url, path, max_bytes)`
+uses the same authenticated client. `HttpTransport` rejects non-success status,
+oversized `Content-Length`, and streamed bodies exceeding `max_bytes` (including
+chunked responses). Other transports default to an explicit unsupported error;
+there is no unauthenticated direct-HTTP fallback. Native image previews request
+`/v1/media/{encoded_media_id}?session_id={encoded_session_id}` and decode off the
+UI thread. This API does not grant additional media access.
+
 ---
 
 ## `WorkshopTransport` (`medousa-sdk-iroh`)
