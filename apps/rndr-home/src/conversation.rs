@@ -6,6 +6,7 @@ const PAD: f32 = 16.0; // rndr markdown's internal measurement inset
 const MAX_WIDTH: f32 = 760.0;
 
 struct Message {
+    id: String,
     row: Entity,
     lane: Entity,
     bubble: Entity,
@@ -116,6 +117,23 @@ pub fn sync_iter<'a>(
     root: Entity,
     messages: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) {
+    let messages: Vec<_> = messages
+        .into_iter()
+        .enumerate()
+        .map(|(i, (r, t))| (format!("fixture:{i}"), r, t))
+        .collect();
+    sync_items(
+        world,
+        root,
+        messages.iter().map(|(id, r, t)| (id.as_str(), *r, *t)),
+    );
+}
+
+pub fn sync_items<'a>(
+    world: &mut World,
+    root: Entity,
+    messages: impl IntoIterator<Item = (&'a str, &'a str, &'a str)>,
+) {
     let messages: Vec<_> = messages.into_iter().collect();
     let Some(mut state) = world.remove::<Conversation>(root) else {
         return;
@@ -172,34 +190,63 @@ pub fn sync_iter<'a>(
         y += message.height + 18.0;
     }
     let offset = (scroll.offset[1] - correction).min(0.0);
-    // A role change invalidates the suffix, not the unaffected prefix.
-    let keep = state
-        .messages
-        .iter()
-        .zip(&messages)
-        .position(|(old, (role, _))| old.role != *role)
-        .unwrap_or(state.messages.len().min(messages.len()));
-    for old in state.messages.drain(keep..) {
-        despawn(world, old.row);
-    }
-    for &(role, _) in &messages[state.messages.len()..] {
-        let row = world.spawn((Layout {
-            width: Size::Fill,
-            height: Size::Px(160.0),
-            ..Layout::row()
-        },));
-        set_parent(world, row, root);
-        state.messages.push(Message {
-            row,
-            lane: row,
-            bubble: row,
-            view: row,
-            role: role.into(),
-            user_text: String::new(),
-            mounted: false,
-            height: 160.0,
-            width: 0.0,
-        });
+    // Reconcile by canonical ID, not position or prose. Hydration may insert a
+    // persisted user before an already-mounted live assistant.
+    if state.messages.len() != messages.len()
+        || state
+            .messages
+            .iter()
+            .zip(&messages)
+            .any(|(old, (id, role, _))| old.id != *id || old.role != *role)
+    {
+        let mut old: std::collections::HashMap<_, _> = std::mem::take(&mut state.messages)
+            .into_iter()
+            .map(|m| (m.id.clone(), m))
+            .collect();
+        for &(id, role, _) in &messages {
+            let retained = old.remove(id);
+            let message = match retained {
+                Some(message) if message.role == role => message,
+                other => {
+                    if let Some(message) = other {
+                        despawn(world, message.row);
+                    }
+                    let row = world.spawn((Layout {
+                        width: Size::Fill,
+                        height: Size::Px(160.0),
+                        ..Layout::row()
+                    },));
+                    set_parent(world, row, root);
+                    Message {
+                        id: id.into(),
+                        row,
+                        lane: row,
+                        bubble: row,
+                        view: row,
+                        role: role.into(),
+                        user_text: String::new(),
+                        mounted: false,
+                        height: 160.0,
+                        width: 0.0,
+                    }
+                }
+            };
+            state.messages.push(message);
+        }
+        for message in old.into_values() {
+            despawn(world, message.row);
+        }
+        // Parent edges are unchanged; only sibling paint/layout order changes.
+        if let Some(children) = world.get_mut::<Children>(root) {
+            children.list = state.messages.iter().map(|m| m.row).collect();
+        }
+        for (index, message) in state.messages.iter().enumerate().filter(|(_, m)| m.mounted) {
+            for child in children_of(world, message.bubble) {
+                if let Some(button) = world.get_mut::<Button>(child) {
+                    button.action = format!("copy-message:{index}");
+                }
+            }
+        }
     }
     let total: f32 = 24.0 + state.messages.iter().map(|m| m.height + 18.0).sum::<f32>();
     let top = if follow {
@@ -209,7 +256,7 @@ pub fn sync_iter<'a>(
     };
     let overscan = rect.h.max(400.0);
     let mut y = 12.0;
-    for (index, &(role, text)) in messages.iter().enumerate() {
+    for (index, &(id, role, text)) in messages.iter().enumerate() {
         let message = &mut state.messages[index];
         let visible = y + message.height >= top - overscan && y <= top + rect.h + overscan;
         y += message.height + 18.0;
@@ -228,6 +275,7 @@ pub fn sync_iter<'a>(
         if !message.mounted {
             let height = message.height;
             *message = make_message(world, message.row, role, index);
+            message.id = id.into();
             message.height = height;
         }
         world.get_mut::<Layout>(message.lane).unwrap().width = Size::Px(width);
@@ -439,6 +487,7 @@ fn make_message(world: &mut World, row: Entity, role: &str, index: usize) -> Mes
         );
     }
     Message {
+        id: String::new(),
         row,
         lane,
         bubble,
@@ -485,6 +534,40 @@ mod tests {
         );
         (world, root)
     }
+    #[test]
+    fn canonical_keys_survive_insertion_reorder_and_copy_rebinding() {
+        let (mut world, root) = fixture();
+        sync_items(&mut world, root, [("a", "assistant", "answer")]);
+        let original = world.get::<Conversation>(root).unwrap().messages[0].row;
+        sync_items(
+            &mut world,
+            root,
+            [("u", "user", "same prompt"), ("a", "assistant", "answer")],
+        );
+        let state = world.get::<Conversation>(root).unwrap();
+        assert_eq!(state.messages[1].row, original);
+        assert_eq!(
+            children_of(&world, root),
+            state.messages.iter().map(|m| m.row).collect::<Vec<_>>()
+        );
+        assert!(
+            children_of(&world, state.messages[1].bubble)
+                .iter()
+                .any(|e| world
+                    .get::<Button>(*e)
+                    .is_some_and(|b| b.action == "copy-message:1"))
+        );
+        sync_items(
+            &mut world,
+            root,
+            [("a", "assistant", "answer"), ("u", "user", "same prompt")],
+        );
+        assert_eq!(
+            world.get::<Conversation>(root).unwrap().messages[0].row,
+            original
+        );
+    }
+
     #[test]
     fn streaming_retains_rows_and_no_inner_scrollports() {
         let (mut world, root) = fixture();

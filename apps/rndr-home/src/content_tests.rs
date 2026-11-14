@@ -123,12 +123,7 @@ fn notes_keyboard_detail_back_filter_resize_and_chat_isolation() {
             "private unsent draft 👋"
         );
         assert_eq!(
-            a.world()
-                .resource::<Model>()
-                .unwrap()
-                .chat
-                .session
-                .as_deref(),
+            a.world().resource::<Model>().unwrap().chat.session(),
             Some("s")
         );
         assert!(!composer::native_input_ready(a.world()));

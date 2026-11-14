@@ -213,7 +213,7 @@ fn copy_click_uses_current_assistant_text_and_cannot_copy_user_as_assistant() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages = vec![
+        .fixture_rows = vec![
         ("user".into(), "my draft".into()),
         (
             "assistant".into(),
@@ -244,7 +244,7 @@ fn transcript_scrollbar_drag_preserves_draft_and_virtualization() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages = (0..1000)
+        .fixture_rows = (0..1000)
         .map(|i| {
             (
                 "assistant".into(),
@@ -307,7 +307,7 @@ fn transcript_scrollbar_drag_preserves_draft_and_virtualization() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages[999]
+        .fixture_rows[999]
         .1
         .push_str(" tail");
     app.update();
@@ -324,7 +324,7 @@ fn transcript_scrollbar_drag_preserves_draft_and_virtualization() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages
+        .fixture_rows
         .clear();
     for _ in 0..4 {
         app.update();
@@ -360,7 +360,7 @@ fn fenced_code_has_token_colors_but_copy_remains_source() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages = vec![("assistant".into(), source.into())];
+        .fixture_rows = vec![("assistant".into(), source.into())];
     for _ in 0..4 {
         app.update();
     }

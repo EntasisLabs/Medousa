@@ -1,3 +1,28 @@
+pub(super) fn history_chat(session: String, active: bool) -> Chat {
+    let mut chat = Chat::offline();
+    chat.hydrate(session, "fixture-authority".into(), vec![], None)
+        .unwrap();
+    if active {
+        chat.admitted("t".into(), String::new()).unwrap();
+    }
+    chat
+}
+pub(super) fn ledger(rows: Vec<(String, String)>) -> Vec<serde_json::Value> {
+    rows.into_iter().enumerate().map(|(i, (role, content))| serde_json::json!({
+        "entry_id": format!("fixture-{i}"), "entry_seq": i+1, "role": role, "content": content,
+        "timestamp": "2026-11-07T00:00:00Z", "tool_names": []
+    })).collect()
+}
+pub(super) fn pairs(rows: &[serde_json::Value]) -> Vec<(String, String)> {
+    rows.iter()
+        .map(|r| {
+            (
+                r["role"].as_str().unwrap().into(),
+                r["content"].as_str().unwrap().into(),
+            )
+        })
+        .collect()
+}
 use super::*;
 pub(super) fn ready() -> (App, mpsc::UnboundedReceiver<Request>) {
     let (mut app, rx) = ready_unverified();
@@ -13,7 +38,7 @@ pub(super) fn ready_unverified() -> (App, mpsc::UnboundedReceiver<Request>) {
     let (tx, rx) = mpsc::unbounded_channel();
     let m = app.world_mut().resource_mut::<Model>().unwrap();
     m.commands = Some(tx);
-    m.chat = Chat::history("s".into(), false);
+    m.chat = crate::ui_tests::history_chat("s".into(), false);
     m.models = vec![("mock".into(), "test-only".into())];
     m.selection = Some(0);
     app.update();
@@ -24,79 +49,33 @@ pub(super) fn reply(app: &mut App, generation: u64, update: Update) {
     app.update();
 }
 #[test]
-fn failed_admission_reload_preserves_visible_recovery_and_newer_draft() {
-    for failure in ["401 unauthorized", "network failure before persistence"] {
-        for newer in ["", "newer draft\nnever overwrite 👋"] {
-            let (mut app, mut rx) = ready();
-            let ui = *app.world().resource::<Ui>().unwrap();
-            reset_prompt(app.world_mut(), ui.composer, "unique original prompt");
-            app.update();
-            try_activate(app.world_mut(), ui.send);
-            app.update();
-            assert!(matches!(rx.try_recv().unwrap().command, Command::Send(_)));
-            reset_prompt(app.world_mut(), ui.composer, newer);
-            reply(&mut app, 1, Update::Failure(failure.into()));
-            assert!(!app.world().get::<Button>(ui.send).unwrap().enabled);
-            let reload = app
-                .world()
-                .entities_with::<Button>()
-                .into_iter()
-                .find(|e| app.world().get::<Button>(*e).unwrap().action == "reload")
-                .unwrap();
-            try_activate(app.world_mut(), reload);
-            app.update();
-            let request = rx.try_recv().unwrap();
-            assert!(matches!(request.command, Command::Open(_)));
-            reply(
-                &mut app,
-                request.generation,
-                Update::History("s".into(), Vec::new(), None),
-            );
-            assert_eq!(app.world().get::<Label>(ui.composer).unwrap().text, newer);
-            let visible = app
-                .world()
-                .entities_with::<MarkdownView>()
-                .into_iter()
-                .map(|e| app.world().get::<MarkdownView>(e).unwrap().source())
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert!(visible.contains("Recoverable prompt"));
-            assert!(visible.contains("unique original prompt"));
-            assert!(rx.try_recv().is_err(), "reload must never resubmit");
-            assert_eq!(
-                app.world().get::<Button>(ui.recover).unwrap().enabled,
-                newer.is_empty()
-            );
-            try_activate(app.world_mut(), ui.recover);
-            app.update();
-            assert_eq!(
-                app.world().get::<Label>(ui.composer).unwrap().text,
-                if newer.is_empty() {
-                    "unique original prompt"
-                } else {
-                    newer
-                }
-            );
-            assert!(rx.try_recv().is_err(), "restoring must not send");
-        }
-    }
+fn failed_admission_preserves_draft_and_blocks_blind_resubmission() {
+    let (mut app, _) = ready();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    reset_prompt(app.world_mut(), ui.composer, "newer unsent draft");
+    reply(&mut app, 0, Update::Failure("network failure".into()));
+    assert_eq!(
+        app.world().get::<Label>(ui.composer).unwrap().text,
+        "newer unsent draft"
+    );
+    assert!(app.world().resource::<Model>().unwrap().chat.uncertain);
 }
 #[test]
 fn terminal_waits_for_history_and_cancel_does_not_fake_settlement() {
     let (mut app, mut rx) = ready();
     let ui = *app.world().resource::<Ui>().unwrap();
     assert!(!app.world().get::<Button>(ui.cancel).unwrap().enabled);
-    reset_prompt(app.world_mut(), ui.composer, "hi");
+    reset_prompt(app.world_mut(), ui.composer, "hi".into());
     app.update();
     try_activate(app.world_mut(), ui.send);
     app.update();
     rx.try_recv().unwrap();
-    reply(&mut app, 1, Update::Admitted("t".into()));
+    reply(&mut app, 1, Update::Admitted("t".into(), "hi".into()));
     try_activate(app.world_mut(), ui.cancel);
     app.update();
     assert!(matches!(rx.try_recv().unwrap().command, Command::Cancel(id) if id == "s"));
     reply(&mut app, 1, Update::Notice("cancel requested".into()));
-    assert!(app.world().resource::<Model>().unwrap().chat.busy);
+    assert!(app.world().resource::<Model>().unwrap().chat.busy());
     let terminal = serde_json::from_value(serde_json::json!({"schema_version":3,"turn_id":"t","seq":1,"emitted_at_utc":"2026-11-07T00:00:00Z","event":{"type":"turn_completed","outcome":"cancelled","aggregate_text":""}})).unwrap();
     reply(&mut app, 1, Update::Stream(terminal));
     reset_prompt(app.world_mut(), ui.composer, "new draft");
@@ -106,7 +85,11 @@ fn terminal_waits_for_history_and_cancel_does_not_fake_settlement() {
     reply(
         &mut app,
         1,
-        Update::SettledHistory("s".into(), vec![("user".into(), "hi".into())]),
+        Update::SettledHistory(
+            "s".into(),
+            "fixture-authority".into(),
+            ledger(vec![("user".into(), "hi".into())]),
+        ),
     );
     assert!(app.world().get::<Button>(ui.send).unwrap().enabled);
     assert!(
@@ -115,7 +98,7 @@ fn terminal_waits_for_history_and_cancel_does_not_fake_settlement() {
             .unwrap()
             .chat
             .status
-            .contains("Cancelled")
+            .contains("History reconciled")
     );
     assert_eq!(
         app.world().get::<Label>(ui.composer).unwrap().text,
@@ -132,14 +115,15 @@ fn confirmed_admission_retires_recovery_without_touching_newer_draft() {
     app.update();
     rx.try_recv().unwrap();
     reset_prompt(app.world_mut(), ui.composer, "next draft");
-    reply(&mut app, 1, Update::Admitted("t".into()));
-    assert!(app.world().resource::<Model>().unwrap().recovery.is_empty());
+    reply(&mut app, 1, Update::Admitted("t".into(), "hi".into()));
+    assert!(app.world().resource::<Model>().unwrap().chat.busy());
     reply(
         &mut app,
         1,
         Update::History(
             "s".into(),
-            vec![("user".into(), "admitted original".into())],
+            "fixture-authority".into(),
+            ledger(vec![("user".into(), "admitted original".into())]),
             None,
         ),
     );
@@ -184,7 +168,7 @@ fn offline_controls_are_honest_and_resize_preserves_draft() {
     assert!(!app.world().has::<FieldTransactions>(ui.composer));
 }
 #[test]
-fn send_is_once_clears_draft_and_blocks_overlap() {
+fn send_is_once_preserves_draft_and_blocks_overlap() {
     let (mut app, mut rx) = ready();
     let ui = *app.world().resource::<Ui>().unwrap();
     reset_prompt(app.world_mut(), ui.composer, "hello");
@@ -199,8 +183,8 @@ fn send_is_once_clears_draft_and_blocks_overlap() {
     };
     assert_eq!(request.session_id, "s");
     assert_eq!(request.prompt, "hello");
-    assert_eq!(app.world().get::<Label>(ui.composer).unwrap().text, "");
-    assert!(app.world().resource::<Model>().unwrap().chat.busy);
+    assert_eq!(app.world().get::<Label>(ui.composer).unwrap().text, "hello");
+    assert!(app.world().resource::<Model>().unwrap().loading);
     assert!(!app.world().get::<Button>(ui.send).unwrap().enabled);
     try_activate(app.world_mut(), ui.send);
     app.update();
@@ -227,7 +211,7 @@ fn disconnected_worker_does_not_leave_spinner_or_erase_draft() {
     try_activate(app.world_mut(), ui.send);
     app.update();
     let m = app.world().resource::<Model>().unwrap();
-    assert!(!m.chat.busy);
+    assert!(!m.chat.busy());
     assert!(m.commands.is_none());
     assert_eq!(
         app.world().get::<Label>(ui.composer).unwrap().text,
@@ -241,16 +225,31 @@ fn stale_reply_and_startup_auth_failure() {
     reply(
         &mut app,
         1,
-        Update::History("wrong".into(), vec![("user".into(), "wrong".into())], None),
+        Update::History(
+            "wrong".into(),
+            "fixture-authority".into(),
+            ledger(vec![("user".into(), "wrong".into())]),
+            None,
+        ),
     );
     reply(&mut app, 1, Update::Failure("old stream".into()));
-    assert_eq!(
+    reply(
+        &mut app,
+        1,
+        Update::Admitted("stale-turn".into(), "stale prompt".into()),
+    );
+    let stale = serde_json::from_value(serde_json::json!({"schema_version":3,"turn_id":"stale-turn","seq":1,"emitted_at_utc":"2026-11-14T00:00:00Z","event":{"type":"content_append","segment_id":"a","text":"stale prose"}})).unwrap();
+    reply(&mut app, 1, Update::Stream(stale));
+    assert!(
         app.world()
             .resource::<Model>()
             .unwrap()
             .chat
-            .session
-            .as_deref(),
+            .rows
+            .is_empty()
+    );
+    assert_eq!(
+        app.world().resource::<Model>().unwrap().chat.session(),
         Some("s")
     );
     assert!(!app.world().resource::<Model>().unwrap().chat.uncertain);
@@ -288,13 +287,16 @@ fn shift_enter_multiline_survives_clear_and_plain_enter_sends() {
         vec![KeyEvent::named(NamedKey::Enter, Modifiers::new())];
     app.update();
     assert!(matches!(rx.try_recv().unwrap().command, Command::Send(_)));
-    assert_eq!(app.world().get::<Label>(ui.composer).unwrap().text, "");
+    assert_eq!(
+        app.world().get::<Label>(ui.composer).unwrap().text,
+        "line\n"
+    );
 }
 #[test]
 fn ambiguous_queued_submit_is_not_sent_and_preserves_newer_edits() {
     let (mut app, mut rx) = ready();
     let ui = *app.world().resource::<Ui>().unwrap();
-    reset_prompt(app.world_mut(), ui.composer, "hi");
+    reset_prompt(app.world_mut(), ui.composer, "hi".into());
     request_focus(app.world_mut(), ui.composer);
     app.world_mut().resource_mut::<Input>().unwrap().keys = vec![
         KeyEvent::named(NamedKey::Enter, Modifiers::new()),
@@ -358,7 +360,7 @@ fn semantic_theme_and_surface_updates_preserve_editor_popup_and_messages() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages = vec![
+        .fixture_rows = vec![
         ("user".into(), "literal **prompt**".into()),
         (
             "assistant".into(),
@@ -574,9 +576,9 @@ fn semantic_reading_measure_resizes_without_losing_draft() {
 #[test]
 fn permissions_are_not_actionable_ui_approvals() {
     let (mut app, _) = ready();
-    let mut chat = Chat::history("s".into(), false);
-    chat.begin("hi").unwrap();
-    chat.admitted("t".into());
+    let mut chat = crate::ui_tests::history_chat("s".into(), false);
+
+    chat.admitted("t".into(), "hi".into());
     let e = serde_json::from_value(serde_json::json!({"schema_version":3,"turn_id":"t","seq":1,"emitted_at_utc":"2026-11-07T00:00:00Z","event":{"type":"permission_request","request_id":"r","message":"Allow tool?"}})).unwrap();
     chat.apply(e);
     app.world_mut().resource_mut::<Model>().unwrap().chat = chat;

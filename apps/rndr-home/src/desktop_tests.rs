@@ -33,7 +33,11 @@ fn routes_are_available_without_native_input_and_never_send_chat_commands() {
         app.world_mut().insert_resource(Viewport::new(width, 820.));
         let ui = *app.world().resource::<Ui>().unwrap();
         reset_prompt(app.world_mut(), ui.composer, "unsent draft 👋");
-        app.world_mut().resource_mut::<Model>().unwrap().chat.busy = true;
+        app.world_mut()
+            .resource_mut::<Model>()
+            .unwrap()
+            .chat
+            .admitted("fixture-turn".into(), "".into());
         settle(&mut app);
         activate(&mut app, "desk:settings");
         for (index, (_, title, _)) in SETTINGS.iter().enumerate() {
@@ -81,7 +85,7 @@ fn navigation_preserves_away_history_scroll_session_and_draft() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages = (0..1000)
+        .fixture_rows = (0..1000)
         .map(|i| {
             (
                 "assistant".into(),
@@ -108,12 +112,7 @@ fn navigation_preserves_away_history_scroll_session_and_draft() {
         "retained draft"
     );
     assert_eq!(
-        app.world()
-            .resource::<Model>()
-            .unwrap()
-            .chat
-            .session
-            .as_deref(),
+        app.world().resource::<Model>().unwrap().chat.session(),
         Some("s")
     );
     assert!(chat_rx.try_recv().is_err());

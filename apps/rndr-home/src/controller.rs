@@ -1,9 +1,10 @@
-//! Sole runtime writer of session identity, generations and pending recovery.
+//! Host connection generation fencing and canonical core command dispatch.
 use crate::backend::{Command, Reply, Request, Update};
-use crate::composer::{SubmitBoundary, reset_prompt};
+use crate::composer::SubmitBoundary;
 use crate::shell::Ui;
 use crate::{conversation, menus, presentation, shell, state::Model};
-use medousa_rndr_home::{Chat, turn_request};
+use medousa_app_core::TurnFact;
+use medousa_rndr_home::turn_request;
 use rndr_core::*;
 use rndr_ui::{Appearance, Contrast};
 
@@ -42,23 +43,26 @@ pub(super) fn update(world: &mut World) {
             continue;
         }
         match reply.update {
-            Update::History(session, messages, active) => {
-                model.chat = Chat::history(session, active.is_some());
-                model.history_messages = messages;
-                if let Some(turn) = active {
-                    model.chat.resume(turn.turn_id);
+            Update::History(session, authority, turns, active) => {
+                let active = active.map(|turn| TurnFact {
+                    turn_id: turn.turn_id,
+                    mode: "interactive".into(),
+                    phase: "streaming".into(),
+                    message_id: None,
+                    workspace_card_id: None,
+                    reusable_stream: true,
+                    budget_request_id: None,
+                    requested_rounds: None,
+                });
+                if let Err(e) = model.chat.hydrate(session, authority, turns, active) {
+                    model.chat.fail(e);
                 }
                 model.loading = false;
             }
-            Update::SettledHistory(session, messages) => {
-                let status = model
-                    .chat
-                    .status
-                    .trim_end_matches(" · reconciling durable history…")
-                    .to_string();
-                model.chat = Chat::history(session, false);
-                model.history_messages = messages;
-                model.chat.status = format!("{status} · history reconciled (non-atomic reads)");
+            Update::SettledHistory(session, authority, turns) => {
+                if let Err(e) = model.chat.hydrate(session, authority, turns, None) {
+                    model.chat.fail(e);
+                }
                 model.loading = false;
             }
             Update::Mode(mode) => {
@@ -68,21 +72,20 @@ pub(super) fn update(world: &mut World) {
             Update::Modes(modes) => {
                 model.modes = modes;
             }
-            Update::Admitted(turn) => {
-                model.chat.admitted(turn);
-                if let Some(index) = model.pending_recovery.take() {
-                    model.recovery.remove(index);
+            Update::Admitted(turn, prompt) => {
+                if let Err(e) = model.chat.admitted(turn, prompt) {
+                    model.chat.fail(e);
                 }
+                model.loading = false;
             }
             Update::Stream(e) => {
                 let terminal = e.event.is_terminal();
-                model.chat.apply(e);
+                if let Err(e) = model.chat.apply(e) {
+                    model.chat.fail(e);
+                }
                 if terminal {
                     model.chat.uncertain = true;
-                    model
-                        .chat
-                        .status
-                        .push_str(" · reconciling durable history…");
+                    model.chat.status = "Reconciling durable history…".into();
                 }
             }
             Update::Models(models) => {
@@ -100,7 +103,6 @@ pub(super) fn update(world: &mut World) {
             }
             Update::Unavailable(message) => {
                 model.chat.status = message;
-                model.chat.busy = false;
                 model.loading = false;
                 model.commands = None;
             }
@@ -134,7 +136,7 @@ pub(super) fn update(world: &mut World) {
         }
         let (busy, loading) = {
             let m = world.resource::<Model>().unwrap();
-            (m.chat.busy, m.loading)
+            (m.chat.busy(), m.loading)
         };
         // UI disabling is not admission control: reject forged/queued intents too.
         if matches!(
@@ -159,7 +161,12 @@ pub(super) fn update(world: &mut World) {
                     "new" => Command::New,
                     "recent" => Command::Recent,
                     _ => {
-                        let Some(s) = world.resource::<Model>().unwrap().chat.session.clone()
+                        let Some(s) = world
+                            .resource::<Model>()
+                            .unwrap()
+                            .chat
+                            .session()
+                            .map(str::to_string)
                         else {
                             continue;
                         };
@@ -220,7 +227,7 @@ pub(super) fn update(world: &mut World) {
                 let m = world.resource::<Model>().unwrap();
                 if m.modes.iter().any(|(mode, _, ok)| mode == id && *ok)
                     && let (Some(session), Ok(mode)) = (
-                        m.chat.session.clone(),
+                        m.chat.session().map(str::to_string),
                         serde_json::from_value(serde_json::Value::String(id.into())),
                     )
                 {
@@ -243,47 +250,33 @@ pub(super) fn update(world: &mut World) {
                     continue;
                 };
                 let (provider, model) = m.models[index].clone();
-                match m.chat.begin(&prompt) {
-                    Ok(()) => {
-                        m.generation += 1;
-                        m.pending_recovery = Some(m.recovery.len());
-                        m.recovery
-                            .push((m.chat.session.clone().unwrap(), prompt.clone()));
-                        let mut request = turn_request(
-                            m.chat.session.as_deref().unwrap(),
-                            &prompt,
-                            &provider,
-                            &model,
-                        );
-                        request.response_depth_mode = m.depth.clone();
-                        menus::close(world);
-                        dispatch(world, Command::Send(Box::new(request)));
-                        // Prompt emits a snapshot, not a synchronous owner callback.
-                        // Never erase edits queued after that submission boundary.
-                        if world.resource::<Model>().unwrap().chat.busy
-                            && world.get::<Label>(ui.composer).unwrap().text == prompt
-                        {
-                            reset_prompt(world, ui.composer, "");
-                            request_focus(world, ui.composer);
-                        }
-                    }
-                    Err(e) => m.chat.status = e.into(),
+                if prompt.trim().is_empty()
+                    || m.chat.busy()
+                    || m.chat.uncertain
+                    || m.chat.session().is_none()
+                {
+                    m.chat.status =
+                        "Open/reconcile a session before sending a nonempty prompt".into();
+                    continue;
                 }
-            }
-            "recover"
-                if !busy
-                    && !loading
-                    && world.get::<Label>(ui.composer).unwrap().text.is_empty() =>
-            {
-                let m = world.resource_mut::<Model>().unwrap();
-                if let Some((_, prompt)) = m.recovery.pop() {
-                    m.pending_recovery = None;
-                    reset_prompt(world, ui.composer, &prompt);
-                    request_focus(world, ui.composer);
-                }
+                m.generation += 1;
+                m.loading = true;
+                let mut request =
+                    turn_request(m.chat.session().unwrap(), &prompt, &provider, &model);
+                request.response_depth_mode = m.depth.clone();
+                menus::close(world);
+                dispatch(world, Command::Send(Box::new(request)));
+                // No optimistic execution/recovery state. Draft stays intact if
+                // admission fails; guarded input actions remain denied.
             }
             "cancel" if !loading && (busy || world.resource::<Model>().unwrap().chat.uncertain) => {
-                if let Some(id) = world.resource::<Model>().unwrap().chat.session.clone() {
+                if let Some(id) = world
+                    .resource::<Model>()
+                    .unwrap()
+                    .chat
+                    .session()
+                    .map(str::to_string)
+                {
                     dispatch(world, Command::Cancel(id));
                 }
             }

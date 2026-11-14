@@ -18,7 +18,7 @@ fn latest_is_explicit_preserves_draft_and_resumes_follow_at_all_widths() {
         app.world_mut()
             .resource_mut::<Model>()
             .unwrap()
-            .history_messages = (0..1000)
+            .fixture_rows = (0..1000)
             .map(|i| {
                 (
                     "assistant".into(),
@@ -39,7 +39,7 @@ fn latest_is_explicit_preserves_draft_and_resumes_follow_at_all_widths() {
         app.world_mut()
             .resource_mut::<Model>()
             .unwrap()
-            .history_messages[999]
+            .fixture_rows[999]
             .1
             .push_str(" new tail");
         settle(&mut app);
@@ -63,7 +63,7 @@ fn latest_is_explicit_preserves_draft_and_resumes_follow_at_all_widths() {
         app.world_mut()
             .resource_mut::<Model>()
             .unwrap()
-            .history_messages[999]
+            .fixture_rows[999]
             .1
             .push_str(" more streaming");
         settle(&mut app);
@@ -73,12 +73,7 @@ fn latest_is_explicit_preserves_draft_and_resumes_follow_at_all_widths() {
             "unsent 👋 draft"
         );
         assert_eq!(
-            app.world()
-                .resource::<Model>()
-                .unwrap()
-                .chat
-                .session
-                .as_deref(),
+            app.world().resource::<Model>().unwrap().chat.session(),
             Some("s")
         );
         assert_eq!(app.world().resource::<Model>().unwrap().generation, 0);
@@ -89,7 +84,7 @@ fn latest_is_explicit_preserves_draft_and_resumes_follow_at_all_widths() {
         app.world_mut()
             .resource_mut::<Model>()
             .unwrap()
-            .history_messages
+            .fixture_rows
             .clear();
         settle(&mut app);
         assert!(app.world().has::<Hidden>(ui.latest));
@@ -107,7 +102,7 @@ fn latest_keyboard_activation_is_viewport_only_even_busy() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages = (0..40)
+        .fixture_rows = (0..40)
         .map(|i| {
             (
                 "assistant".into(),
@@ -115,7 +110,11 @@ fn latest_keyboard_activation_is_viewport_only_even_busy() {
             )
         })
         .collect();
-    app.world_mut().resource_mut::<Model>().unwrap().chat.busy = true;
+    app.world_mut()
+        .resource_mut::<Model>()
+        .unwrap()
+        .chat
+        .admitted("fixture-turn".into(), "".into());
     settle(&mut app);
     app.world_mut()
         .get_mut::<Scroll>(ui.conversation)
@@ -152,7 +151,7 @@ fn latest_keyboard_activation_is_viewport_only_even_busy() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages[39]
+        .fixture_rows[39]
         .1
         .push_str(" new tail");
     settle(&mut app);
@@ -169,7 +168,7 @@ fn latest_keyboard_activation_is_viewport_only_even_busy() {
         app.world().get::<Scroll>(ui.conversation),
         app.world().get::<Rect>(ui.conversation)
     );
-    assert!(app.world().resource::<Model>().unwrap().chat.busy);
+    assert!(app.world().resource::<Model>().unwrap().chat.busy());
     assert!(rx.try_recv().is_err());
 }
 
@@ -178,11 +177,7 @@ fn unknown_native_input_blocks_buttons_forged_actions_and_submissions() {
     let (mut app, mut rx) = ready();
     let ui = *app.world().resource::<Ui>().unwrap();
     reset_prompt(app.world_mut(), ui.composer, "preserve this draft");
-    app.world_mut()
-        .resource_mut::<Model>()
-        .unwrap()
-        .recovery
-        .push(("s".into(), "recover me".into()));
+
     settle(&mut app);
     for action in ["send", "recover", "new", "recent", "reload"] {
         let e = app
@@ -222,8 +217,8 @@ fn unknown_native_input_blocks_buttons_forged_actions_and_submissions() {
     app.update();
     assert_eq!(app.world().get::<Label>(ui.composer).unwrap().text, "");
     let m = app.world().resource::<Model>().unwrap();
-    assert_eq!(m.recovery, vec![("s".into(), "recover me".into())]);
+
     assert_eq!(m.generation, 0);
-    assert!(!m.loading && !m.chat.busy);
+    assert!(!m.loading && !m.chat.busy());
     assert!(rx.try_recv().is_err());
 }

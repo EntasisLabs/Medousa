@@ -202,15 +202,16 @@ fn app() -> App {
         },
     );
     app.world_mut().insert_resource(Model {
+        #[cfg(test)]
+        fixture_rows: vec![],
+        #[cfg(test)]
+        last_fixture_rows: vec![],
         chat: Chat::offline(),
         commands: None,
         models: vec![],
         selection: None,
         loading: false,
         generation: 0,
-        recovery: Vec::new(),
-        pending_recovery: None,
-        history_messages: Vec::new(),
         mode: None,
         modes: Vec::new(),
         depth: "standard".into(),

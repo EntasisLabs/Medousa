@@ -46,15 +46,15 @@ pub(super) fn export(app: &mut App, dir: PathBuf) -> Result<(), Box<dyn std::err
             m.selection = Some(0);
         }
         if transcript {
-            app.world_mut().resource_mut::<Model>().unwrap().history_messages = vec![
+            app.world_mut().resource_mut::<Model>().unwrap().chat.set_fixture(vec![
                     ("user".into(), "Can we make this feel more like the current chat?".into()),
                     ("assistant".into(), "Yes — a conversation, not a document.\n\nThe composer now **grows with your draft**, and the model button opens a searchable menu instead of cycling.\n\n```sh\ncargo run --manifest-path apps/rndr-home/Cargo.toml -- --offline\n```\n\nMode changes use the same daemon contract as the Svelte app. Behavior supports next-turn response depth; external runtimes and the remaining controls are explicitly marked as not ported.\n\nThis is synthetic offline visual evidence. **No inference was sent.**".into()),
-                ];
+                ]);
         }
         if name.starts_with("history-") {
-            app.world_mut().resource_mut::<Model>().unwrap().history_messages = (0..40)
+            app.world_mut().resource_mut::<Model>().unwrap().chat.set_fixture((0..40)
                 .map(|i| ("assistant".into(), format!("Synthetic message {i}\n\nRead earlier history without losing your place. New replies do not pull you away.\n\n{}", "A bounded offline transcript paragraph. ".repeat(8))))
-                .collect();
+                .collect());
             reset_prompt(
                 app.world_mut(),
                 ui.composer,
@@ -146,9 +146,9 @@ pub(super) fn sync_observation(world: &mut World) {
                 .unwrap()
                 .text
                 .is_empty()
-            && m.history_messages.is_empty()
-            && m.chat.live_messages.is_empty()
-            && m.recovery.is_empty()
+            && m.chat.snapshot().is_none()
+            && m.chat.rows.is_empty()
+            && !m.chat.uncertain
             && world.get::<Label>(ui.composer).unwrap().text.is_empty();
         world.insert_resource(if public {
             ObservationContent::Public

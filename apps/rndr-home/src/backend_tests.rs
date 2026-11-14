@@ -1,6 +1,6 @@
 //! Test-only loopback HTTP fixtures. Never contact a daemon/provider or keychain.
 use super::*;
-use medousa_rndr_home::Chat;
+use crate::ui_tests::pairs;
 use rndr_core::{App, FeedConfig};
 use serde_json::{Value, json};
 use std::{
@@ -207,12 +207,16 @@ async fn sdk_create_history_admit_stream_reconnect_and_cancel() {
         .await
         .unwrap();
     let loaded = history(&client, &session.session_id).await.unwrap();
-    let Update::History(id, messages, None) = loaded else {
+    let Update::History(id, authority, messages, None) = loaded else {
         panic!("unexpected history")
     };
-    assert_eq!(messages, vec![("user".into(), "Existing message".into())]);
-    let mut chat = medousa_rndr_home::Chat::history(id, false);
-    chat.begin("hello").unwrap();
+    assert_eq!(
+        pairs(&messages),
+        vec![("user".into(), "Existing message".into())]
+    );
+    let mut chat = crate::ui_tests::history_chat(id.clone(), false);
+    chat.hydrate(id, authority, messages, None).unwrap();
+
     let ticket = client
         .interactive()
         .start_turn(&medousa_rndr_home::turn_request(
@@ -223,7 +227,7 @@ async fn sdk_create_history_admit_stream_reconnect_and_cancel() {
         ))
         .await
         .unwrap();
-    chat.admitted(ticket.turn_id);
+    chat.admitted(ticket.turn_id, "hello".into()).unwrap();
     let mut app = App::new();
     let (_feed, sender) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
     follow(client.clone(), ticket.stream_url, sender, 5, "s".into()).await;
@@ -233,17 +237,22 @@ async fn sdk_create_history_admit_stream_reconnect_and_cancel() {
     for reply in updates {
         assert_eq!(reply.generation, 5);
         match reply.update {
-            Update::Stream(e) => chat.apply(e),
-            Update::SettledHistory(_, messages) => {
-                assert!(!chat.busy);
-                assert_eq!(messages, vec![("user".into(), "Existing message".into())]);
+            Update::Stream(e) => {
+                chat.apply(e).unwrap();
+            }
+            Update::SettledHistory(_, _, messages) => {
+                assert!(!chat.busy());
+                assert_eq!(
+                    pairs(&messages),
+                    vec![("user".into(), "Existing message".into())]
+                );
             }
             Update::Mode(value) => assert_eq!(value, "general"),
             _ => panic!("unexpected error"),
         }
     }
-    assert_eq!(chat.live_messages.last().unwrap().1, "Hello world");
-    assert!(!chat.busy);
+    assert_eq!(chat.rows.last().unwrap().2, "Hello world");
+    assert!(!chat.busy());
     assert!(
         client
             .sessions()
@@ -264,11 +273,11 @@ async fn canonical_roles_preserve_heading_like_user_prose_without_inventing_turn
         json_wire("GET", "/v1/sessions/s/history", body),
         active_wire(false),
     ]);
-    let Update::History(_, messages, None) = history(&client, "s").await.unwrap() else {
+    let Update::History(_, _, messages, None) = history(&client, "s").await.unwrap() else {
         panic!("missing history")
     };
     assert_eq!(
-        messages,
+        pairs(&messages),
         vec![
             ("user".into(), prompt.into()),
             ("assistant".into(), "unique assistant prose".into())
@@ -339,41 +348,74 @@ async fn active_reattach_full_replay_terminal_has_no_duplicate_or_missing_prose(
             active_wire(false),
             mode_wire("general"),
         ]);
-        let Update::History(id, mut messages, Some(turn)) = history(&client, "s").await.unwrap()
+        let Update::History(id, authority, mut messages, Some(turn)) =
+            history(&client, "s").await.unwrap()
         else {
             panic!("missing active turn")
         };
-        assert!(
+        assert_eq!(
             messages
                 .iter()
-                .all(|(_, text)| text != "unique assistant prose")
+                .any(|row| row["content"] == "unique assistant prose"),
+            user_already_persisted
         );
-        let mut chat = Chat::history(id, true);
-        chat.resume(turn.turn_id);
+        let mut chat = crate::ui_tests::history_chat(id, true);
+        chat.hydrate(
+            "s".into(),
+            authority,
+            messages.clone(),
+            Some(medousa_app_core::TurnFact {
+                turn_id: turn.turn_id,
+                mode: "interactive".into(),
+                phase: "streaming".into(),
+                message_id: None,
+                workspace_card_id: None,
+                reusable_stream: true,
+                budget_request_id: None,
+                requested_rounds: None,
+            }),
+        )
+        .unwrap();
         let mut app = App::new();
         let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
         follow(client, turn.stream_url, tx, 1, "s".into()).await;
         app.update();
         for reply in rndr_core::events::<Reply>(app.world()).to_vec() {
             match reply.update {
-                Update::Stream(e) => chat.apply(e),
-                Update::SettledHistory(id, settled) => {
-                    messages = settled;
-                    chat = Chat::history(id, false);
+                Update::Stream(e) => {
+                    chat.apply(e).unwrap();
+                }
+                Update::SettledHistory(id, authority, settled) => {
+                    messages = settled.clone();
+                    chat.hydrate(id, authority, settled.clone(), None).unwrap();
                 }
                 Update::Mode(value) => assert_eq!(value, "general"),
                 _ => panic!("reattach failed"),
             }
         }
         assert_eq!(
-            messages,
+            pairs(&messages),
             vec![
                 ("user".into(), "unique user prose".into()),
                 ("assistant".into(), "unique assistant prose".into()),
             ]
         );
-        assert!(chat.live_messages.is_empty());
-        assert!(!chat.busy && !chat.uncertain);
+        assert_eq!(
+            chat.rows
+                .iter()
+                .filter(|(_, role, _)| role == "assistant")
+                .count(),
+            1
+        );
+        assert!(
+            chat.snapshot()
+                .unwrap()
+                .items
+                .iter()
+                .filter(|i| i.role == medousa_app_core::ChatItemRole::Assistant)
+                .all(|i| i.transcript.is_some())
+        );
+        assert!(!chat.busy() && !chat.uncertain);
         server.join().unwrap();
     }
 }
@@ -387,11 +429,11 @@ async fn completion_between_history_and_active_reads_retries_fresh_history() {
         history_wire(true),
         active_wire(false),
     ]);
-    let Update::History(_, messages, None) = history(&client, "s").await.unwrap() else {
+    let Update::History(_, _, messages, None) = history(&client, "s").await.unwrap() else {
         panic!("stale history")
     };
     assert_eq!(
-        messages,
+        pairs(&messages),
         vec![
             ("user".into(), "unique user prose".into()),
             ("assistant".into(), "unique assistant prose".into()),
@@ -424,7 +466,7 @@ async fn terminal_ticket_cleanup_retries_are_bounded_and_handoff_is_honest() {
     ]);
     assert!(matches!(
         settled_history(&client, "s").await,
-        Update::SettledHistory(_, _)
+        Update::SettledHistory(_, _, _)
     ));
     server.join().unwrap();
     let mut wires = vec![];
@@ -464,18 +506,21 @@ async fn fatal_terminal_never_replaces_live_text_with_incomplete_history() {
     )
     .await;
     app.update();
-    let mut chat = Chat::history("s".into(), false);
-    chat.begin("original user prose").unwrap();
-    chat.admitted("t".into());
+    let mut chat = crate::ui_tests::history_chat("s".into(), false);
+
+    chat.admitted("t".into(), "original user prose".into())
+        .unwrap();
     for reply in rndr_core::events::<Reply>(app.world()).to_vec() {
         match reply.update {
-            Update::Stream(e) => chat.apply(e),
+            Update::Stream(e) => {
+                chat.apply(e).unwrap();
+            }
             Update::Failure(message) => chat.fail(message),
             _ => panic!("must not reconcile away fatal unsaved text"),
         }
     }
-    assert_eq!(chat.live_messages[0].1, "original user prose");
-    assert_eq!(chat.live_messages[1].1, "unsaved assistant prose");
+    assert_eq!(chat.rows[0].2, "original user prose");
+    assert_eq!(chat.rows[1].2, "unsaved assistant prose");
     assert!(chat.uncertain);
     server.join().unwrap();
 }
@@ -535,7 +580,7 @@ async fn ui_reload_drives_real_worker_reattach_and_settlement() {
     let (commands, rx) = mpsc::unbounded_channel();
     let model = app.world_mut().resource_mut::<crate::Model>().unwrap();
     model.commands = Some(commands);
-    model.chat = Chat::history("s".into(), false);
+    model.chat = crate::ui_tests::history_chat("s".into(), false);
     let worker = tokio::spawn(serve(client, rx, tx));
     app.update();
     let reload = app
@@ -550,7 +595,15 @@ async fn ui_reload_drives_real_worker_reattach_and_settlement() {
         loop {
             app.update();
             let model = app.world().resource::<crate::Model>().unwrap();
-            if model.chat.status.contains("Completed · history reconciled") {
+            if model.chat.status.contains("History reconciled")
+                && !model.loading
+                && !model.chat.busy()
+                && !model.chat.uncertain
+                && model
+                    .chat
+                    .snapshot()
+                    .is_some_and(|s| s.last_seq_by_turn.get("t") == Some(&2))
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
@@ -560,15 +613,20 @@ async fn ui_reload_drives_real_worker_reattach_and_settlement() {
     .unwrap();
     let model = app.world().resource::<crate::Model>().unwrap();
     assert_eq!(model.generation, 1);
-    assert!(!model.chat.busy && !model.chat.uncertain && !model.loading);
+    assert!(!model.chat.busy() && !model.chat.uncertain && !model.loading);
     assert_eq!(
-        model.history_messages,
+        model
+            .chat
+            .rows
+            .iter()
+            .map(|(_, r, t)| (r.clone(), t.clone()))
+            .collect::<Vec<_>>(),
         vec![
             ("user".into(), "unique user prose".into()),
             ("assistant".into(), "unique assistant prose".into())
         ]
     );
-    assert!(model.chat.live_messages.is_empty());
+    assert!(model.chat.snapshot().unwrap().turns.is_empty());
     // Let the terminal mode refresh complete before shutting down the worker.
     tokio::task::spawn_blocking(move || server.join().unwrap())
         .await
@@ -687,7 +745,7 @@ async fn new_recent_and_open_refresh_effective_mode_after_canonical_history() {
         assert_eq!(pair[0].generation, index as u64 + 1);
         assert_eq!(pair[1].generation, index as u64 + 1);
         assert!(
-            matches!(&pair[0].update, Update::History(id, messages, None)
+            matches!(&pair[0].update, Update::History(id, authority, messages, None)
             if id == "s" && messages.len() == 2)
         );
         assert!(matches!(&pair[1].update, Update::Mode(value) if value == "instant"));

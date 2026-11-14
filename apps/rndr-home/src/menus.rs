@@ -224,7 +224,7 @@ pub fn open(world: &mut World, kind: Kind, anchor: Entity) {
             let m = world.resource::<Model>().unwrap();
             let modes = m.modes.clone();
             let selected = m.mode.clone();
-            let available = m.commands.is_some() && m.chat.session.is_some() && !m.loading;
+            let available = m.commands.is_some() && m.chat.session().is_some() && !m.loading;
             if modes.is_empty() {
                 muted(world, body, "Mode registry unavailable · connect to load");
             }

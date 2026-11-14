@@ -70,7 +70,7 @@ fn parley_markdown_hugs_remeasures_and_retains_streaming_view() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages = vec![("assistant".into(), body.clone())];
+        .fixture_rows = vec![("assistant".into(), body.clone())];
     for _ in 0..8 {
         app.update();
     }
@@ -94,7 +94,7 @@ fn parley_markdown_hugs_remeasures_and_retains_streaming_view() {
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
-        .history_messages[0]
+        .fixture_rows[0]
         .1
         .push_str(suffix);
     for _ in 0..8 {

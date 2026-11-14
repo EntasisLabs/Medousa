@@ -46,7 +46,7 @@ fn unknown_native_state_denies_even_empty_opted_in_fixture() {
 #[test]
 fn history_denies_observation() {
     assert_branch_denied(|world| {
-        world.resource_mut::<Model>().unwrap().history_messages =
+        world.resource_mut::<Model>().unwrap().fixture_rows =
             vec![("user".into(), "synthetic private history".into())];
     });
 }
@@ -54,8 +54,11 @@ fn history_denies_observation() {
 #[test]
 fn live_messages_deny_observation() {
     assert_branch_denied(|world| {
-        world.resource_mut::<Model>().unwrap().chat.live_messages =
-            vec![("assistant".into(), "synthetic live suffix".into())];
+        world
+            .resource_mut::<Model>()
+            .unwrap()
+            .chat
+            .set_fixture(vec![("assistant".into(), "synthetic live suffix".into())]);
     });
 }
 
@@ -63,9 +66,8 @@ fn live_messages_deny_observation() {
 fn recovery_denies_observation() {
     assert_branch_denied(|world| {
         let m = world.resource_mut::<Model>().unwrap();
-        m.recovery
-            .push(("synthetic-session".into(), "unconfirmed prompt".into()));
-        m.pending_recovery = Some(0);
+        m.chat
+            .fail("Unconfirmed admission · private draft preserved".into());
     });
 }
 

@@ -184,8 +184,7 @@ pub(super) fn sync(world: &mut World) {
     };
     let status = m
         .chat
-        .session
-        .as_ref()
+        .session()
         .map_or_else(|| status.clone(), |id| format!("Local · {id} · {status}"));
     let input_ready = crate::composer::native_input_ready(world);
     let status = if input_ready {
@@ -204,39 +203,30 @@ pub(super) fn sync(world: &mut World) {
         .and_then(|id| m.modes.iter().find(|(value, _, _)| value == id))
         .map(|(_, label, _)| format!("{label} v"))
         .unwrap_or_else(|| "Mode v".into());
-    let mut notices = Vec::new();
-    if !m.chat.busy {
-        for (session, prompt) in &m.recovery {
-            notices.push(("notice".into(), format!("Recoverable prompt · {session}\n\nAdmission not confirmed. Check history before restoring.\n\n{prompt}")));
-        }
-    }
-    let busy = m.chat.busy;
+    let busy = m.chat.busy();
     let uncertain = m.chat.uncertain;
     let connected = m.commands.is_some();
-    // Temporarily move ownership out of the resource so ECS mutation can borrow
-    // canonical strings. No full-history/live-text clones on an idle frame.
     let m = world.resource_mut::<Model>().unwrap();
-    let history = std::mem::take(&mut m.history_messages);
-    let live = std::mem::take(&mut m.chat.live_messages);
-    if history.is_empty() && live.is_empty() && notices.is_empty() {
+    #[cfg(test)]
+    if m.fixture_rows != m.last_fixture_rows {
+        m.chat.set_fixture(m.fixture_rows.clone());
+        m.last_fixture_rows = m.fixture_rows.clone();
+    }
+    let rows = std::mem::take(&mut m.chat.rows);
+    if rows.is_empty() {
         world.insert(ui.conversation, Hidden);
         world.remove::<Hidden>(ui.empty);
     } else {
         world.remove::<Hidden>(ui.conversation);
         world.insert(ui.empty, Hidden);
     }
-    conversation::sync_iter(
+    conversation::sync_items(
         world,
         ui.conversation,
-        history
-            .iter()
-            .chain(&live)
-            .chain(&notices)
-            .map(|(role, text)| (role.as_str(), text.as_str())),
+        rows.iter()
+            .map(|(id, role, text)| (id.as_str(), role.as_str(), text.as_str())),
     );
-    let m = world.resource_mut::<Model>().unwrap();
-    m.history_messages = history;
-    m.chat.live_messages = live;
+    world.resource_mut::<Model>().unwrap().chat.rows = rows;
     let away = conversation::away_from_latest(world, ui.conversation);
     world.get_mut::<Button>(ui.latest).unwrap().enabled = away;
     if away {
@@ -262,7 +252,7 @@ pub(super) fn sync(world: &mut World) {
     world.get_mut::<Layout>(ui.model).unwrap().width =
         Size::Px((center_width - 136.).clamp(100., 340.));
     let m = world.resource::<Model>().unwrap();
-    let has_session = m.chat.session.is_some();
+    let has_session = m.chat.session().is_some();
     let can_send = input_ready
         && connected
         && !busy
@@ -280,17 +270,9 @@ pub(super) fn sync(world: &mut World) {
     let can_settings = !busy && !m.loading;
     let can_select = !busy && !m.models.is_empty();
     let can_cancel = connected && !m.loading && has_session && (busy || uncertain);
-    let has_recovery = !m.recovery.is_empty();
-    let can_recover = input_ready
-        && has_recovery
-        && !busy
-        && !m.loading
-        && world.get::<Label>(ui.composer).unwrap().text.is_empty();
-    if has_recovery {
-        world.remove::<Hidden>(ui.recover);
-    } else {
-        world.insert(ui.recover, Hidden);
-    }
+    // Restore is still denied; RNDR no longer keeps a parallel prompt ledger.
+    let can_recover = false;
+    world.insert(ui.recover, Hidden);
     for e in world.entities_with::<Button>() {
         let b = world.get_mut::<Button>(e).unwrap();
         b.enabled = match b.action.as_str() {

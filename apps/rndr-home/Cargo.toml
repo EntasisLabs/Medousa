@@ -18,6 +18,7 @@ rndr_ui = { path = "/Users/theelevators/rndr/crates/rndr_ui" }
 rndr_paint = { path = "/Users/theelevators/rndr/crates/rndr_paint", features = ["highlight"] }
 rndr_render = { path = "/Users/theelevators/rndr/crates/rndr_render", default-features = false, features = ["parley", "accesskit"] }
 medousa-sdk = { path = "../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
+medousa-app-core = { path = "../../crates/medousa-app-core" }
 medousa-types = { path = "../../crates/medousa-types" }
 medousa-local-credential = { path = "../../crates/medousa-local-credential" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

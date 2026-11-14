@@ -126,12 +126,7 @@ fn chooser_keyboard_current_name_escape_and_selection_preserve_chat() {
             "draft 👋"
         );
         assert_eq!(
-            a.world()
-                .resource::<Model>()
-                .unwrap()
-                .chat
-                .session
-                .as_deref(),
+            a.world().resource::<Model>().unwrap().chat.session(),
             Some("s")
         );
         assert!(commands.try_recv().is_err());

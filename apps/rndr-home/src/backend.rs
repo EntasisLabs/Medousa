@@ -25,9 +25,14 @@ pub struct Request {
 }
 #[derive(Clone)]
 pub enum Update {
-    History(String, Vec<(String, String)>, Option<ActiveSessionTurn>),
-    SettledHistory(String, Vec<(String, String)>),
-    Admitted(String),
+    History(
+        String,
+        String,
+        Vec<serde_json::Value>,
+        Option<ActiveSessionTurn>,
+    ),
+    SettledHistory(String, String, Vec<serde_json::Value>),
+    Admitted(String, String),
     Stream(TurnStreamEnvelopeV3),
     Models(Vec<(String, String)>),
     Mode(String),
@@ -81,26 +86,19 @@ async fn history(client: &MedousaClient, id: &str) -> Result<Update, medousa_sdk
         if before.turn.as_ref().map(|t| &t.turn_id) != active.turn.as_ref().map(|t| &t.turn_id) {
             continue;
         }
-        // The daemon persists user and finalized assistant entries with caused_by
-        // = execution_ref(session, turn_id). Replay owns ALL assistant prose for
-        // this active execution; committed users remain in canonical history.
-        // Never deduplicate by text, timestamp, or segment-id guesses.
-        let messages = history
+        // Forward the full ledger wire contract. ChatCore owns projection,
+        // history/live overlap and durable identity, not the transport.
+        let turns = history
             .turns
             .into_iter()
-            .filter(|entry| {
-                !(entry.turn.role == "assistant"
-                    && active.turn.as_ref().is_some_and(|turn| {
-                        entry.caused_by.as_ref().is_some_and(|cause| {
-                            cause.authority_id == history.authority_id
-                                && cause.session_id.as_str() == id
-                                && cause.execution_id.as_str() == turn.turn_id
-                        })
-                    }))
-            })
-            .map(|entry| (entry.turn.role, entry.turn.content))
-            .collect::<Vec<_>>();
-        return Ok(Update::History(id.into(), messages, active.turn));
+            .map(|entry| serde_json::to_value(entry).expect("ledger entry serializes"))
+            .collect();
+        return Ok(Update::History(
+            id.into(),
+            history.authority_id.to_string(),
+            turns,
+            active.turn,
+        ));
     }
     Ok(Update::Failure("History changed during three reconciliation attempts. Reload again; sending remains blocked. No atomic snapshot is available.".into()))
 }
@@ -143,11 +141,11 @@ async fn settled_history(client: &MedousaClient, session: &str) -> Update {
     // Retry reads only, never admission, and do not claim the ticket has cleared.
     for attempt in 0..3 {
         match history(client, session).await {
-            Ok(Update::History(id, messages, None)) => return Update::SettledHistory(id, messages),
-            Ok(Update::History(_, _, Some(_))) if attempt < 2 => {
+            Ok(Update::History(id, authority, messages, None)) => return Update::SettledHistory(id, authority, messages),
+            Ok(Update::History(_, _, _, Some(_))) if attempt < 2 => {
                 tokio::time::sleep(std::time::Duration::from_millis(25 << attempt)).await;
             }
-            Ok(Update::History(_, _, Some(_))) => return Update::Failure("Stream settled but daemon still reports an active turn after bounded reads (possibly a handoff). Reload to reconcile/reattach; no automatic submission.".into()),
+            Ok(Update::History(_, _, _, Some(_))) => return Update::Failure("Stream settled but daemon still reports an active turn after bounded reads (possibly a handoff). Reload to reconcile/reattach; no automatic submission.".into()),
             Ok(other) => return other,
             Err(_) => return Update::Failure("Turn settled, but history reconciliation failed. Live in-memory text retained; reload before sending.".into()),
         }
@@ -197,7 +195,7 @@ async fn follow(
                     } else {
                         settled_history(&client, &session).await
                     };
-                    let reconciled = matches!(update, Update::SettledHistory(_, _));
+                    let reconciled = matches!(update, Update::SettledHistory(_, _, _));
                     if !emit(&tx, generation, update) {
                         return;
                     }
@@ -351,7 +349,11 @@ async fn serve(
                             return;
                         }
                     };
-                    emit(&out, generation, Update::Admitted(response.turn_id));
+                    emit(
+                        &out,
+                        generation,
+                        Update::Admitted(response.turn_id, request.prompt.clone()),
+                    );
                     if let Some(notice) = response.daemon_notice {
                         emit(&out, generation, Update::Notice(notice));
                     }
@@ -370,11 +372,11 @@ async fn serve(
         // Avoid raw server response bodies: they can carry sensitive diagnostics.
         let update = result.unwrap_or_else(|_| Update::Failure("Daemon request failed. Check local URL, data directory, authentication and runtime in existing Medousa app.".into()));
         let mode_session = match &update {
-            Update::History(id, _, _) => Some(id.clone()),
+            Update::History(id, _, _, _) => Some(id.clone()),
             _ => None,
         };
         let resume = match &update {
-            Update::History(id, _, Some(turn)) => Some((id.clone(), turn.clone())),
+            Update::History(id, _, _, Some(turn)) => Some((id.clone(), turn.clone())),
             _ => None,
         };
         if !emit(&tx, generation, update) {

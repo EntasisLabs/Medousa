@@ -370,10 +370,7 @@ mod correction_tests {
     fn resized_admin_updates_preserve_retained_chat_draft_session_and_scroll() {
         let (mut a, mut chat_rx) = ui_tests::ready_unverified();
         let ui = *a.world().resource::<Ui>().unwrap();
-        a.world_mut()
-            .resource_mut::<Model>()
-            .unwrap()
-            .history_messages = (0..1000)
+        a.world_mut().resource_mut::<Model>().unwrap().fixture_rows = (0..1000)
             .map(|i| {
                 (
                     "assistant".into(),
@@ -420,12 +417,7 @@ mod correction_tests {
             before
         );
         assert_eq!(
-            a.world()
-                .resource::<Model>()
-                .unwrap()
-                .chat
-                .session
-                .as_deref(),
+            a.world().resource::<Model>().unwrap().chat.session(),
             Some("s")
         );
         assert!(!composer::native_input_ready(a.world()));
