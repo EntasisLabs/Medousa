@@ -61,6 +61,47 @@ reports remain the billing authority.
 
 ## Context selection and replaceable projections
 
+Context uses a hybrid policy. At turn start, whole older chat exchanges may be
+selected out toward a soft working target of 280,000 estimated tokens, bounded
+by the route's available input budget. That selected baseline stays fixed through
+the tool loop. A new turn or checkpoint resume can select again from the stored
+source prefix. Stickies, work projections and the HUD remain replaceable tails.
+Crossing the working target requests maintenance; it is not an admission failure.
+The separate hard budget follows the route's input/shared limits, output reserve,
+safety and observation headroom. Required input above the soft target can still
+run when it fits the hard budget.
+
+Observation lane budgets are fixed for the turn rather than shrinking after each
+inference. Under pressure, the runtime can archive complete older successful tool
+batches, including their arguments and model-visible results. The four newest
+results, failures, user guidance and governing state stay resident. Rollover needs
+a durable evidence retrieval receipt and a successfully saved checkpoint before
+the loop continues with a compact archive pointer. Storage or checkpoint failure
+preserves the resident history. Full invocation receipts remain unchanged.
+If the hard budget still cannot fit a growing loop, an available checkpoint sink
+saves a recoverable continuation and the principal receives a checkpoint outcome,
+not a completion claim. Initial irreducible input or missing checkpoint storage
+still produces an explicit overflow rather than silent truncation.
+
+ChatGPT sign-in (`openai-codex`) retains the account catalog's `context_window`
+(or `max_context_window` when absent), bounded by `max_context_window`, and applies
+`effective_context_window_percent` (95% when absent). These account-route limits
+are independent of API-key catalogs. Older cached GPT-5/GPT-6 account entries
+without limits use an explicit estimated 272,000-token shared window until the
+account catalog refreshes. Other unknown routes retain the conservative 8,000
+shared-window assumption. Neither estimate is advertised as provider metadata.
+The sign-in bridge does not send an output cap; it reserves an advertised output
+maximum when available, otherwise an estimated 4,096 tokens.
+
+Recognized GPT-4o/4.1, GPT-5/6 and o1/o3/o4 routes on OpenAI, Codex and Azure use
+an offline `o200k_base` tokenizer proxy plus 25% text headroom. In particular,
+GPT-6's exact encoding is not assumed known. Other routes retain an explicit
+conservative UTF-8 byte estimate. Both add protocol framing and media allowances;
+neither claims exact provider-rendered tokenization. Extra dispatch payload uses
+the same route accounting. Layer-only character/4 telemetry is a different
+measure; the inference report's total and hard `input_budget` govern dispatch.
+Deferred session history remains stored and retrievable.
+
 The inference window report includes typed `deferred_pointers` with source scope,
 provenance, selection reasons, and native retrieval routes. Chat-history routes
 retain their exact session IDs; engineering routes retain their undertaking and
@@ -413,3 +454,16 @@ Prefer typed, ranged source reads and digest-fenced `code.write` edits, batching
 independent reads where useful. Shell remains available for builds, tests and
 commands. A truncated output is incomplete evidence: narrow subsequent reads
 instead of replaying the same large output.
+
+## Memory schema compatibility
+
+Persistent Locus startup applies targeted object-field repairs even when the
+large graph initialization/backfill is skipped. In particular, older SurrealDB
+schemas can retain a strict `semantic_links.*` array-item definition after its
+parent is made flexible. Startup explicitly repairs both definitions so typed
+link fields such as `confidence` persist with their relation and target. The
+surrounding memory table remains schemafull. An existing empty graph is detected
+from table metadata, rather than treating a successful empty read as a table.
+Restart an updated daemon to apply the repair; forcing a full graph backfill is
+not required for this compatibility issue. Pending memory promotions retain
+their normal retry path.

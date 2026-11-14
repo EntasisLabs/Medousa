@@ -500,13 +500,15 @@ impl MedousaToolLoopPipeline {
             .as_ref()
             .and_then(|gate| gate.runtime_ports.perception_evidence());
         let mut perception_governor = ToolPerceptionGovernor::new(perception_evidence);
-        let window_budget = self.window_policy.input_budget() as usize;
+        // Static observation lanes for the turn; do not shrink them after every
+        // inference by subtracting bytes from token estimates.
+        let window_bytes = self.window_policy.observation_byte_budget();
         perception_governor.set_budgets(crate::perception::PerceptionBudgets {
-            tool_results_chars: window_budget / 2,
-            result_chars: window_budget / 3,
-            context_chars: window_budget / 8,
-            history_high_bytes: window_budget / 2,
-            history_low_bytes: window_budget / 3,
+            tool_results_chars: (window_bytes / 2).min(72 * 1024),
+            result_chars: (window_bytes / 3).min(48 * 1024),
+            context_chars: (window_bytes / 8).min(24 * 1024),
+            history_high_bytes: (window_bytes / 2).min(256 * 1024),
+            history_low_bytes: (window_bytes / 3).min(128 * 1024),
         });
         let tool_observation_hydration = completion_gate
             .as_ref()
@@ -545,6 +547,9 @@ impl MedousaToolLoopPipeline {
         );
 
         let mut previous_request = None;
+        // This is a request projection only. Checkpoints retain the full source
+        // prefix so a later turn or route can make a fresh baseline selection.
+        let mut selected_baseline: Option<Vec<ChatMessage>> = None;
         let mut repeated_tool_failures = RepeatedToolFailureGuard::default();
         let mut repeated_successes = RepeatedSuccessfulCallGuard::default();
         let mut past_budget_noted = false;
@@ -663,10 +668,66 @@ impl MedousaToolLoopPipeline {
                         context,
                     );
                 }
-                let mut messages =
-                    turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
+                let systems = usize::from(
+                    shared_inputs
+                        .system_prompt
+                        .as_deref()
+                        .is_some_and(|s| !s.trim().is_empty()),
+                );
+                let baseline = selected_baseline
+                    .as_ref()
+                    .unwrap_or(&turn_ctx.user_lane_prefix);
+                let prefix_len = baseline.len();
+                let mut messages = Vec::new();
+                if systems > 0 {
+                    messages.push(ChatMessage::system(
+                        shared_inputs
+                            .system_prompt
+                            .as_deref()
+                            .expect("system prompt")
+                            .to_string(),
+                    ));
+                }
+                messages.extend(baseline.clone());
+                messages.extend(turn_ctx.tool_lane.messages.clone());
                 ensure_assistant_tool_turn_reasoning(&mut messages);
                 let mut chat_request = ChatRequest::new(messages).with_tools(tools.clone());
+                if self.window_policy.estimate(&chat_request).total_tokens
+                    > self.window_policy.working_budget()
+                {
+                    let original_lane = turn_ctx.tool_lane.messages.clone();
+                    // Reclaim in batches toward the low watermark. The evidence
+                    // archive and checkpoint both precede any model dispatch.
+                    let mut fixed_request = chat_request.clone();
+                    fixed_request.messages.truncate(systems + prefix_len);
+                    let fixed_tokens = self.window_policy.estimate(&fixed_request).total_tokens;
+                    let low_water = self.window_policy.working_budget().saturating_mul(9) / 10;
+                    let keep_bytes = self
+                        .window_policy
+                        .observation_bytes_for_tokens(low_water.saturating_sub(fixed_tokens));
+                    if perception_governor
+                        .rollover_tool_history(&mut turn_ctx.tool_lane.messages, keep_bytes)
+                    {
+                        rounds_executed = rounds_executed.saturating_sub(1);
+                        let saved = persist_checkpoint!(
+                            SafeCheckpointBoundary::ToolBatchCompleted,
+                            ActiveTurnCheckpointStatus::Active,
+                            Some("context_window_rollover"),
+                            None,
+                            &[],
+                            &[]
+                        );
+                        rounds_executed += 1;
+                        if saved {
+                            chat_request.messages.truncate(systems + prefix_len);
+                            chat_request
+                                .messages
+                                .extend(turn_ctx.tool_lane.messages.clone());
+                        } else {
+                            turn_ctx.tool_lane.messages = original_lane;
+                        }
+                    }
+                }
                 let work = if let Some(provider) = completion_gate
                     .as_ref()
                     .and_then(|gate| gate.round_context_provider.as_ref())
@@ -676,55 +737,74 @@ impl MedousaToolLoopPipeline {
                 } else {
                     None
                 };
-                let window_report = crate::context::ContextCoordinator::compile_inference_with_hud(
+                let window_result = crate::context::ContextCoordinator::compile_inference_with_hud(
                     &mut chat_request,
                     &self.window_policy,
-                    usize::from(
-                        shared_inputs
-                            .system_prompt
-                            .as_deref()
-                            .is_some_and(|s| !s.trim().is_empty()),
-                    ),
-                    turn_ctx.user_lane_prefix.len(),
+                    systems,
+                    prefix_len,
                     self.first_request_context.assembly.as_ref(),
                     &mut perception_governor,
                     work,
                     previous_request.as_ref().and_then(
                         |p: &crate::inference_usage::RequestFootprint| p.inference_window.as_ref(),
                     ),
-                )
-                .map_err(|overflow| {
-                    StasisError::PortFailure(
-                        serde_json::to_string(&overflow).expect("overflow serializes"),
-                    )
-                })?;
+                );
+                let window_report = match window_result {
+                    Ok(report) => report,
+                    Err(overflow) if previous_request.is_some() => {
+                        rounds_executed = rounds_executed.saturating_sub(1);
+                        let saved = persist_checkpoint!(
+                            SafeCheckpointBoundary::RecoverableFailure,
+                            ActiveTurnCheckpointStatus::RecoverableFailure,
+                            Some("context_window_checkpoint"),
+                            None,
+                            &[],
+                            &[]
+                        );
+                        if !saved {
+                            return Err(StasisError::PortFailure(
+                                serde_json::to_string(&overflow).expect("overflow serializes"),
+                            ));
+                        }
+                        if let Some(gate) = completion_gate.as_ref() {
+                            persist_gate_ledger(
+                                gate,
+                                &record_finalized(
+                                    gate.stream_turn_id,
+                                    "context_window_checkpoint",
+                                    rounds_executed,
+                                    &collect_tool_names(&invocations),
+                                ),
+                            );
+                        }
+                        return Ok(ToolLoopExecutionResponse {
+                            text: "The context window needs a continuation. Progress is saved in a recoverable checkpoint.".into(),
+                            metadata: shared_inputs.context_clone(),
+                            tool_name: String::new(), tool_output: Value::Null,
+                            tool_invocations: invocations, rounds_executed,
+                            termination_reason: "context_window_checkpoint".into(),
+                        });
+                    }
+                    Err(overflow) => {
+                        return Err(StasisError::PortFailure(
+                            serde_json::to_string(&overflow).expect("overflow serializes"),
+                        ));
+                    }
+                };
+                if selected_baseline.is_none() {
+                    selected_baseline = Some(
+                        chat_request.messages[systems
+                            ..systems
+                                + prefix_len
+                                    .saturating_sub(window_report.deferred_history_messages)]
+                            .to_vec(),
+                    );
+                }
                 let mut footprint = crate::inference_usage::RequestFootprint::new(
                     &chat_request,
                     shared_inputs.context.model_hint.clone(),
                     shared_inputs.context.reasoning_effort.clone(),
                 );
-                let response_bytes: usize = chat_request
-                    .messages
-                    .iter()
-                    .flat_map(|m| m.content.parts())
-                    .filter_map(|part| {
-                        if let ContentPart::ToolResponse(r) = part {
-                            Some(r.content.len())
-                        } else {
-                            None
-                        }
-                    })
-                    .sum();
-                let fixed =
-                    (window_report.estimate.total_tokens as usize).saturating_sub(response_bytes);
-                let available = (window_report.input_budget as usize).saturating_sub(fixed);
-                perception_governor.set_budgets(crate::perception::PerceptionBudgets {
-                    tool_results_chars: available.min(72 * 1024),
-                    result_chars: available.min(48 * 1024),
-                    context_chars: (available / 4).min(24 * 1024),
-                    history_high_bytes: available,
-                    history_low_bytes: available.saturating_mul(3) / 4,
-                });
                 if previous_request.is_none() {
                     // Compiled lane offsets can differ after history deferral.
                     let prefix_len = turn_ctx

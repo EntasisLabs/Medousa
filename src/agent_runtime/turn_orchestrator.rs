@@ -1794,7 +1794,10 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 emit_orchestration_summary(&sink, &orchestration_state).await;
                 return;
             }
-            if response.termination_reason == "cognition_turn_checkpoint" {
+            if matches!(
+                response.termination_reason.as_str(),
+                "cognition_turn_checkpoint" | "context_window_checkpoint"
+            ) {
                 let tool_names = collect_tool_names(&combined_invocations);
                 stream_bridge.drain().await;
                 sink.tool_invoked(

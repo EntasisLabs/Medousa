@@ -43,7 +43,9 @@ impl medousa_runtime::PerceptionEvidencePort for DaemonPerceptionEvidencePort {
         &self,
         request: medousa_runtime::PerceptionEvidenceRequest<'_>,
     ) -> Result<medousa_runtime::PersistedPerceptionEvidence, String> {
-        let retention = if request.failed {
+        // Rollover archives contain exact arguments and mutation receipts that
+        // cannot be reconstructed by querying current state.
+        let retention = if request.failed || request.tool_name == "context_window_rollover" {
             super::coder_evidence::EvidenceRetention::FailedOrNonReproducible
         } else {
             super::coder_evidence::EvidenceRetention::SuccessfulOrReproducible

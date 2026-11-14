@@ -1070,6 +1070,14 @@ hard/inactivity policy expires; access sessions are short-lived and rotate.
 | PUT | `/pair/{pairing_id}/policy` — `admin.identity`; replace hard/inactivity expiration and expire the current access session |
 | DELETE | `/pair/{pairing_id}` — `admin.identity`, or the paired bearer revoking itself |
 
+Outbound daemon worker queries, mesh messages and pairing removal also renew an
+expired paired bearer through the existing challenge/refresh routes. Renewal
+proves the saved device key, verifies the issued credential with the pinned
+workshop key, persists it privately, and retries the same rejected request once.
+Only `401` with `code: "invalid_credential"` starts this flow; permission denials
+are not renewed. Concurrent renewals share a rotation, and removed or revoked
+pairings are never recreated automatically.
+
 `POST /qr/rotate` accepts `profileId` or `profile_id`. That owner stays on the
 active invite: `GET /qr`, `GET /qr/image`, `GET /qr.png`, and `medousa pair qr`
 keep the `p` parameter when a used or expired invite is replaced. A completed

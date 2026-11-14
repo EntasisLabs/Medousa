@@ -17,12 +17,22 @@ pub fn inference_window_policy(
     let record = crate::model_capability_registry::registry()
         .resolve(provider, model)
         .model;
+    policy_for_record(provider, model, record.as_ref())
+}
+
+fn policy_for_record(
+    provider: &str,
+    model: &str,
+    record: Option<&crate::model_capability_registry::types::ModelCapabilityRecord>,
+) -> medousa_runtime::inference_window::InferenceWindowPolicy {
+    // Older cached account catalogs contain names/reasoning but no limits. Keep
+    // this an explicit policy estimate rather than inventing catalog metadata.
+    let codex = provider.trim().eq_ignore_ascii_case("openai-codex");
+    let codex_fallback = codex && (model.starts_with("gpt-5") || model.starts_with("gpt-6"));
     let input = record
-        .as_ref()
         .and_then(|r| r.max_input_tokens)
         .map(|limit| limit.min(u32::MAX as u64) as u32);
     let output = record
-        .as_ref()
         .and_then(|r| r.max_output_tokens)
         .map(|limit| limit.min(u32::MAX as u64) as u32)
         .unwrap_or(medousa_runtime::inference_window::DEFAULT_OUTPUT_RESERVE);
@@ -30,17 +40,20 @@ pub fn inference_window_policy(
         target: format!("{provider}:{model}"),
         input_tokens: input,
         shared_tokens: if record
-            .as_ref()
             .is_some_and(|r| matches!(r.source.as_str(), "anthropic.models" | "google.models"))
         {
             None
         } else {
-            Some(input.unwrap_or(medousa_runtime::inference_window::UNKNOWN_INPUT_TOKENS))
+            Some(input.unwrap_or(if codex_fallback {
+                272_000
+            } else {
+                medousa_runtime::inference_window::UNKNOWN_INPUT_TOKENS
+            }))
         },
         // ChatGPT plan bridge deliberately rejects max_output_tokens. Reserving
         // the catalog maximum keeps its generation behavior unchanged; unknown
         // limits remain explicit estimates, never a claimed hard guarantee.
-        enforce_output_limit: !provider.eq_ignore_ascii_case("openai-codex"),
+        enforce_output_limit: !codex,
         output_reserve: output,
         ..Default::default()
     }
@@ -531,6 +544,54 @@ fn format_tokens(n: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn codex_account_budget_handles_old_caches_and_advertised_limits() {
+        use crate::model_capability_registry::heuristic::{
+            chatgpt_catalog_record, infer_capability,
+        };
+        let old = infer_capability("openai-codex", "gpt-6.1-sol");
+        for record in [None, Some(&old)] {
+            let policy = super::policy_for_record("openai-codex", "gpt-6.1-sol", record);
+            assert_eq!(policy.input_tokens, None); // fallback is not provider metadata
+            assert_eq!(policy.input_budget(), 266880);
+            assert!(!policy.enforce_output_limit); // bridge rejects output caps
+            let mut request =
+                genai::chat::ChatRequest::new(vec![genai::chat::ChatMessage::user("hello")])
+                    .with_system("s".repeat(9000))
+                    .with_tools(vec![genai::chat::Tool::new("read").with_schema(
+                        serde_json::json!({
+                            "description": "x".repeat(50000), "type": "object"
+                        }),
+                    )]);
+            let report = medousa_runtime::context::ContextCoordinator::compile_inference(
+                &mut request,
+                &policy,
+                0,
+                1,
+                None,
+                &mut medousa_runtime::perception::ToolPerceptionGovernor::default(),
+            )
+            .unwrap();
+            assert!(report.estimate.total_tokens < 20000);
+            assert!(report.accounting.contains("o200k_proxy"));
+            assert_eq!(report.deferred_history_messages, 0);
+        }
+        let small = chatgpt_catalog_record(&serde_json::json!({
+            "slug": "gpt-6.1-sol", "context_window": 32000,
+            "effective_context_window_percent": 100, "max_output_tokens": 8192
+        }));
+        let policy = super::policy_for_record("openai-codex", "gpt-6.1-sol", Some(&small));
+        assert_eq!(policy.input_budget(), 22784);
+        assert_eq!(
+            super::policy_for_record("other", "unknown", None).input_budget(),
+            2880
+        );
+        assert_eq!(
+            super::policy_for_record("openai-codex", "unknown", None).input_budget(),
+            2880
+        );
+    }
+
     use super::*;
 
     #[test]

@@ -48,6 +48,27 @@ fn history() -> ChatRequest {
 }
 
 #[test]
+fn soft_working_window_is_separate_from_hard_provider_limits() {
+    assert_eq!(policy(1_000_000).input_budget(), 1_000_000);
+    assert_eq!(policy(1_000_000).working_budget(), WORKING_INPUT_TOKENS);
+    assert_eq!(policy(32_000).input_budget(), 32_000);
+    let shared = InferenceWindowPolicy {
+        input_tokens: None,
+        shared_tokens: Some(272_000),
+        ..Default::default()
+    };
+    assert_eq!(shared.input_budget(), 266_880);
+    assert_eq!(
+        InferenceWindowPolicy {
+            input_tokens: Some(16_000),
+            ..shared
+        }
+        .input_budget(),
+        14_976
+    );
+}
+
+#[test]
 fn deferred_history_route_preserves_chat_scope_and_never_relabels_work_scope() {
     use crate::context::{
         ContextContribution, ContextCost, ContextOwner, ContextProvenance, Retention,
@@ -250,6 +271,90 @@ fn protected_overflow_is_structured_and_does_not_truncate_policy_user_or_sticky(
     );
 }
 
+#[test]
+fn codex_proxy_does_not_treat_code_bytes_as_tokens_and_soft_target_is_not_fatal() {
+    let policy = InferenceWindowPolicy {
+        target: "openai-codex:gpt-6.1-sol".into(),
+        input_tokens: Some(475000),
+        shared_tokens: Some(475000),
+        enforce_output_limit: false,
+        ..Default::default()
+    };
+    let source: String = (0..6000)
+        .map(|i| format!("let entry_{i} = read_record(\"source/path/{i}\");\n"))
+        .collect();
+    let request = ChatRequest::new(vec![ChatMessage::user(source)]);
+    assert!(estimate(&request).total_tokens > 250000);
+    let measured = policy.estimate(&request);
+    assert!(measured.total_tokens < 160000);
+    assert_eq!(policy.input_budget(), 469880);
+    assert_eq!(policy.working_budget(), 280000);
+    assert!(policy.accounting().contains("o200k_proxy"));
+    // Exact governing input may exceed the soft target and still be admitted.
+    let mut required = ChatRequest::new(vec![ChatMessage::user("z".repeat(285000))]);
+    let report = ContextCoordinator::compile_inference(
+        &mut required,
+        &self::policy(475000),
+        0,
+        1,
+        None,
+        &mut ToolPerceptionGovernor::default(),
+    )
+    .unwrap();
+    assert!(report.estimate.total_tokens > report.policy.working_budget());
+    assert!(report.estimate.total_tokens < report.input_budget);
+}
+
+#[test]
+fn tokenizer_proxy_bounds_repetitive_input_and_handles_multibyte_chunk_boundaries() {
+    let policy = InferenceWindowPolicy {
+        target: "openai-codex:gpt-6.1-sol".into(),
+        ..Default::default()
+    };
+    let repeated = "x".repeat(50000);
+    let unicode = format!("{}{}", "a".repeat(2047), "🚀日本語".repeat(1000));
+    for text in [&repeated, &unicode] {
+        let tokens = policy.text_tokens(text);
+        assert!(tokens > 0);
+        assert!(tokens < text.len() as u32);
+    }
+}
+
+#[test]
+fn stable_baseline_is_not_reselected_when_tool_lane_grows() {
+    let mut original = history();
+    let first = ContextCoordinator::compile_inference_for_round(
+        &mut original,
+        &policy(10000),
+        1,
+        5,
+        None,
+        &mut ToolPerceptionGovernor::default(),
+        true,
+    )
+    .unwrap();
+    assert_eq!(first.deferred_history_messages, 0);
+    let baseline = crate::context::prepared_messages_digest(&original.messages[..6]);
+    original
+        .messages
+        .push(ChatMessage::system("protected tool work".repeat(500)));
+    let error = ContextCoordinator::compile_inference_for_round(
+        &mut original,
+        &policy(10000),
+        1,
+        5,
+        None,
+        &mut ToolPerceptionGovernor::default(),
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(error.report.deferred_history_messages, 0);
+    assert_eq!(
+        crate::context::prepared_messages_digest(&original.messages[..6]),
+        baseline
+    );
+}
+
 #[derive(Default)]
 struct Evidence(Mutex<Vec<(String, Value)>>);
 impl PerceptionEvidencePort for Evidence {
@@ -291,6 +396,10 @@ fn compaction_keeps_pairs_and_scoped_authoritative_nonreplayable_evidence() {
     let mut governor = ToolPerceptionGovernor::new(Some(evidence.clone()));
     let mut messages = vec![ChatMessage::user("run in scope-a only")];
     messages.extend(exchange(1, "cognition_coder_shell_run", output.clone()));
+    for index in 2..6 {
+        messages.extend(exchange(index, "cognition_store_read", json!({"ok":true})));
+    }
+
     let mut request = ChatRequest::new(messages);
     let report = ContextCoordinator::compile_inference(
         &mut request,
@@ -365,7 +474,7 @@ fn growing_tool_rounds_recheck_every_request_and_never_drop_protocol_pairs() {
         let mut request = authoritative.clone();
         match ContextCoordinator::compile_inference(
             &mut request,
-            &policy(12000),
+            &policy(24000),
             0,
             1,
             None,

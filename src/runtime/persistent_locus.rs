@@ -27,6 +27,9 @@ use crate::surreal_startup::{timed_step, verify_surreal_responsive};
 const LOCUS_SCHEMA_COMPATIBILITY_STATEMENTS: &[&str] = &[
     "DEFINE FIELD OVERWRITE source_metadata ON TABLE temporal_node TYPE option<object> FLEXIBLE",
     "DEFINE FIELD OVERWRITE semantic_links ON TABLE temporal_node TYPE option<array<object>> FLEXIBLE",
+    // Older Surreal versions retain the generated strict array-item definition
+    // when only its parent is overwritten. Repair that definition explicitly.
+    "DEFINE FIELD OVERWRITE semantic_links.* ON TABLE temporal_node TYPE object FLEXIBLE",
 ];
 
 fn parse_env_flag(key: &str) -> Option<bool> {
@@ -41,10 +44,13 @@ fn parse_env_flag(key: &str) -> Option<bool> {
 async fn surreal_locus_node_table_exists(
     db: &surrealdb::Surreal<surrealdb::engine::any::Any>,
 ) -> bool {
-    match db.query("SELECT * FROM temporal_node LIMIT 1").await {
-        Ok(response) => response.check().is_ok(),
-        Err(_) => false,
-    }
+    let Ok(mut response) = db.query("INFO FOR DB").await else {
+        return false;
+    };
+    let Ok(Some(info)) = response.take::<Option<serde_json::Value>>(0) else {
+        return false;
+    };
+    info["tables"].get("temporal_node").is_some()
 }
 
 async fn ensure_locus_schema_compatibility(
@@ -135,4 +141,53 @@ pub async fn build_persistent_locus_memory(
         node_store: node_store as Arc<dyn NodeStore>,
         semantic_index,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn table_probe_requires_an_existing_table_even_when_it_has_no_rows() {
+        let db = surrealdb::engine::any::connect("mem://").await.unwrap();
+        db.use_ns("compatibility").use_db("probe").await.unwrap();
+        assert!(!surreal_locus_node_table_exists(&db).await);
+        db.query("DEFINE TABLE temporal_node SCHEMAFULL")
+            .await
+            .unwrap()
+            .check()
+            .unwrap();
+        assert!(surreal_locus_node_table_exists(&db).await);
+    }
+
+    #[tokio::test]
+    async fn compatibility_repairs_existing_nested_array_schema_and_preserves_links() {
+        let db = surrealdb::engine::any::connect("mem://").await.unwrap();
+        db.use_ns("compatibility").use_db("existing").await.unwrap();
+        db.query("DEFINE TABLE temporal_node SCHEMAFULL; DEFINE FIELD semantic_links ON temporal_node TYPE option<array<object>>; DEFINE FIELD source_metadata ON temporal_node TYPE option<object>; DEFINE FIELD OVERWRITE semantic_links.* ON temporal_node TYPE object;")
+            .await.unwrap().check().unwrap();
+        ensure_locus_schema_compatibility(&db).await.unwrap();
+        ensure_locus_schema_compatibility(&db).await.unwrap();
+        let links = serde_json::json!([{"rel":"related_to","target":"concept:memory-schema","confidence":0.88}]);
+        db.query(
+            "CREATE temporal_node:compat SET semantic_links = $links, source_metadata = $metadata",
+        )
+        .bind(("links", links.clone()))
+        .bind((
+            "metadata",
+            serde_json::json!({"source":"test","nested":{"kept":true}}),
+        ))
+        .await
+        .unwrap()
+        .check()
+        .unwrap();
+        let mut response = db
+            .query("SELECT semantic_links, source_metadata FROM ONLY temporal_node:compat")
+            .await
+            .unwrap();
+        let row: Option<serde_json::Value> = response.take(0).unwrap();
+        let row = row.unwrap();
+        assert_eq!(row["semantic_links"], links);
+        assert_eq!(row["source_metadata"]["nested"]["kept"], true);
+    }
 }

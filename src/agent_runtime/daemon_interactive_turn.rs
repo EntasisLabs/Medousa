@@ -2505,26 +2505,18 @@ async fn run_agent_turn_inner(
     let resolved_prompt =
         truncate_text_for_budget(&prepared.resolved_prompt, MAX_REQUEST_PROMPT_CHARS);
     let resolved_prompt_for_accounting = resolved_prompt.clone();
-    let context_limit_tokens = final_route.as_ref().and_then(|route| {
-        crate::model_capability_registry::registry()
-            .resolve(&route.provider, &route.model)
-            .model
-            .and_then(|record| record.max_input_tokens)
-            .and_then(|limit| u32::try_from(limit).ok())
-    });
-    // Fallback targets can have smaller ceilings. Unknown metadata uses an
-    // explicit conservative 8k assumption, never the largest lane hard cap.
+    // Use the same effective input budget as inference, including account-route
+    // estimates and output reserves for smaller fallback targets.
     let sticky_input_tokens = inference_targets
         .iter()
         .map(|target| {
-            crate::model_capability_registry::registry()
-                .resolve(&target.provider, &target.model)
-                .model
-                .and_then(|record| record.max_input_tokens)
-                .and_then(|limit| u32::try_from(limit).ok())
-                .unwrap_or(8_000)
+            super::context_usage::inference_window_policy(&target.provider, &target.model)
+                .input_budget()
         })
-        .chain(context_limit_tokens)
+        .chain(final_route.as_ref().map(|route| {
+            super::context_usage::inference_window_policy(&route.provider, &route.model)
+                .input_budget()
+        }))
         .min();
     let sticky_store = match agent_rt.runtime.as_ref() {
         stasis::prelude::RuntimeComposition::Surreal(runtime) => Some(

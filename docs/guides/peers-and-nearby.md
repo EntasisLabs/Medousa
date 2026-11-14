@@ -25,6 +25,11 @@ Same pairing crypto. Different scope.
 Already-paired clients keep working over the private tunnel when you’re away
 from the LAN.
 
+Paired workers also renew expired access sessions automatically, so a completed
+remote task can return its result after an access token expires. This keeps the
+existing pairing and permissions. If device trust was revoked or expired, pair
+the worker again; renewal cannot restore revoked access.
+
 ---
 
 ## Phone as portal

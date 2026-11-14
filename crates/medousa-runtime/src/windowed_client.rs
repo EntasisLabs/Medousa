@@ -1,7 +1,7 @@
 //! Final dispatch guard for prompt-only, legacy synthesis and tool pipelines.
 //! The compiler selects earlier with producer-owned lane offsets; this boundary
 //! never guesses which messages are expendable and never mutates the request.
-use crate::inference_window::{InferenceWindowPolicy, estimate};
+use crate::inference_window::InferenceWindowPolicy;
 use async_trait::async_trait;
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
 use stasis::domain::errors::{Result, StasisError};
@@ -61,19 +61,18 @@ impl WindowedChatClient {
                 .to_string(),
             ));
         }
-        let estimate = estimate(request);
+        let estimate = policy.estimate(request);
         // Extra provider payload can add input outside the typed ChatRequest.
         // Account it rather than leaving an invisible append after selection.
-        let extra = options.extra_body.as_ref().map_or(0, |value| {
-            u32::try_from(value.to_string().len()).unwrap_or(u32::MAX)
-        });
+        let extra = options
+            .extra_body
+            .as_ref()
+            .map_or(0, |value| policy.text_tokens(&value.to_string()));
         let format_cost = options.response_format.as_ref().map_or(0, |value| {
-            u32::try_from(serde_json::to_vec(value).expect("format serializes").len())
-                .unwrap_or(u32::MAX)
+            policy.text_tokens(&serde_json::to_string(value).expect("format serializes"))
         });
         let choice_cost = options.tool_choice.as_ref().map_or(0, |value| {
-            u32::try_from(serde_json::to_vec(value).expect("choice serializes").len())
-                .unwrap_or(u32::MAX)
+            policy.text_tokens(&serde_json::to_string(value).expect("choice serializes"))
         });
         let tokens = estimate
             .total_tokens
@@ -89,7 +88,7 @@ impl WindowedChatClient {
                     "extra_body_tokens_estimate": extra,
                     "response_format_tokens_estimate": format_cost,
                     "tool_choice_tokens_estimate": choice_cost,
-                    "accounting": "estimated_utf8_bytes_protocol_media8192_framing32",
+                    "accounting": policy.accounting(),
                     "protected_material_unchanged": true,
                 })
                 .to_string(),
