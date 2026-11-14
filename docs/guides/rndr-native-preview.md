@@ -73,11 +73,12 @@ remain distinct; none claims continuous service liveness.
 For read-only service data, follow the [launch instructions](../../apps/rndr-home/README.md)
 and launch without flags to use the same configured local workshop as Tauri.
 Optional `--daemon` and `--data-dir` provide an explicit matching **loopback**
-origin/engine-root override; `--daemon` is attach-only. Data-root precedence is
+origin/engine-root override; **either flag is attach-only** (no process start/stop).
+The overridden engine must already be running. Data-root precedence is
 `MEDOUSA_DATA_DIR` → platform bootstrap redirect → platform local-data `medousa`;
 the active local registry bind supplies the URL (personal defaults to port 7419).
 The shared manager waits for health before credential loading and can bootstrap a
-missing configured engine; no downloads or engine rebuild occur. Missing auth,
+missing configured engine only with neither override flag; no downloads or engine rebuild occur. Missing auth,
 invalid config and unavailable engines are reported, not bypassed. Offline, export
 and help skip env overlays and all connection discovery/effects.
 Existing first-party credentials are read through the

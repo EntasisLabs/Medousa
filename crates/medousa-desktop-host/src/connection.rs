@@ -41,13 +41,15 @@ pub struct LocalConnection {
     pub origin: String,
     pub data_dir: PathBuf,
     pub workshop: WorkshopServer,
-    /// Explicit origins are attach-only: never spawn/restart a process at an arbitrary override.
+    /// Explicit origins or data roots are attach-only: their process ownership is not established.
     pub allow_bootstrap: bool,
 }
 
 /// `root` is the canonical environment/redirect/platform root, NOT an arbitrary search path.
 /// An explicit data directory selects a separate local engine; it does not import a registry.
 pub fn resolve_local(root: &Path, overrides: Overrides) -> Result<LocalConnection, String> {
+    // An arbitrary root must never reuse canonical personal PID/log/sidecar ownership.
+    let allow_bootstrap = overrides.daemon.is_none() && overrides.data_dir.is_none();
     let mut workshop = if overrides.data_dir.is_some() {
         default_personal_workshop()
     } else {
@@ -83,7 +85,6 @@ pub fn resolve_local(root: &Path, overrides: Overrides) -> Result<LocalConnectio
             .map(PathBuf::from)
             .unwrap_or_else(|| root.to_path_buf())
     });
-    let allow_bootstrap = overrides.daemon.is_none();
     let origin = overrides
         .daemon
         .unwrap_or_else(|| resolve_workshop_url(&workshop));
@@ -105,6 +106,23 @@ pub fn discover(overrides: Overrides) -> Result<LocalConnection, String> {
 impl LocalConnection {
     /// Called only by connected startup, before any authenticated SDK clients exist.
     pub async fn ensure_ready(&self) -> Result<(), String> {
+        self.ensure_ready_with(
+            || async { Ok(ensure_local_engine(&self.workshop, false).await?.ok) },
+            || async { Ok(wait_engine_healthy(&self.origin, 45, 500).await?.0) },
+        )
+        .await
+    }
+
+    /// Dispatch seam: attach-only plans cannot invoke the process-management future.
+    pub(crate) async fn ensure_ready_with<B, W>(
+        &self,
+        bootstrap: impl FnOnce() -> B,
+        wait: impl FnOnce() -> W,
+    ) -> Result<(), String>
+    where
+        B: std::future::Future<Output = Result<bool, String>>,
+        W: std::future::Future<Output = Result<bool, String>>,
+    {
         // Revalidate before any network/process effect, even for manually constructed plans.
         local_url(&self.origin)?;
         if self.allow_bootstrap {
@@ -114,15 +132,14 @@ impl LocalConnection {
             {
                 return Err("Local connection/bootstrap binding mismatch".into());
             }
-            let result = ensure_local_engine(&self.workshop, false).await?;
-            if !result.ok {
+            if !bootstrap().await? {
                 return Err(
                     "Local daemon did not become ready; inspect the selected workshop engine log"
                         .into(),
                 );
             }
-        } else if !wait_engine_healthy(&self.origin, 45, 500).await?.0 {
-            return Err("Explicit local daemon is unavailable; check --daemon and --data-dir (no process started)".into());
+        } else if !wait().await? {
+            return Err("Attach-only local daemon is unavailable; check --daemon and --data-dir (overrides never start or stop processes)".into());
         }
         Ok(())
     }

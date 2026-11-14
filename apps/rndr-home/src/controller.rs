@@ -25,7 +25,9 @@ fn dispatch(world: &mut World, command: Command) {
             model.commands = None;
         }
     } else {
-        model.chat.status = "Offline preview · restart with --data-dir to connect".into();
+        model.chat.status =
+            "Offline preview · restart without --offline to use the configured local workshop"
+                .into();
         model.loading = false;
     }
 }

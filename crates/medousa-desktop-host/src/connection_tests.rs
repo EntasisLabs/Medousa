@@ -359,3 +359,90 @@ fn forged_or_mismatched_bootstrap_plans_fail_before_any_effect() {
     );
     assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn override_readiness_never_enters_process_management_even_when_unhealthy() {
+    let temp = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    for data_dir in [
+        None,
+        Some(temp.path().into()),
+        Some(temp.path().join("other")),
+    ] {
+        for daemon in [None, Some("http://localhost:9999".into())] {
+            if data_dir.is_none() && daemon.is_none() {
+                continue;
+            }
+            let c = resolve_local(
+                temp.path(),
+                Overrides {
+                    data_dir: data_dir.clone(),
+                    daemon,
+                },
+            )
+            .unwrap();
+            assert!(!c.allow_bootstrap);
+            for healthy in [true, false] {
+                let mut waits = 0;
+                let result = rt.block_on(c.ensure_ready_with(
+                    || async {
+                        panic!("override entered process management: stop/spawn/PID/sidecars")
+                    },
+                    || {
+                        waits += 1;
+                        async move { Ok(healthy) }
+                    },
+                ));
+                assert_eq!(waits, 1);
+                assert_eq!(result.is_ok(), healthy);
+                if !healthy {
+                    assert!(
+                        result
+                            .unwrap_err()
+                            .contains("overrides never start or stop processes")
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn no_override_dispatch_retains_automatic_bootstrap() {
+    let temp = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let c = resolve_local(temp.path(), Overrides::default()).unwrap();
+    let mut fake = Fake {
+        healthy: false,
+        reachable: true,
+        waits: vec![false, true].into(),
+        fail_spawn: false,
+        calls: vec![],
+    };
+    rt.block_on(c.ensure_ready_with(
+        || async {
+            Ok(matches!(
+                ensure_engine_ready_with(&mut fake).await?,
+                EngineReadiness::Started { healthy: true, .. }
+            ))
+        },
+        || async { panic!("configured startup incorrectly dispatched attach-only") },
+    ))
+    .unwrap();
+    assert_eq!(
+        fake.calls,
+        [
+            "health",
+            "reachable",
+            "wait",
+            "stop+pause",
+            "spawn-core-only",
+            "wait"
+        ]
+    );
+}

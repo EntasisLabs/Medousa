@@ -7,7 +7,8 @@ pub const HELP: &str = "Medousa (rndr)
   [--data-dir PATH] [--daemon http://127.0.0.1:7419] [--session ID]
   Normal startup uses the configured local workshop (same paths/registry as Tauri).
   A missing local engine may be started; readiness is checked before credentials are loaded.
-  --daemon is attach-only; supply its matching --data-dir for another workshop.
+  --daemon or --data-dir makes startup attach-only (no process start/stop).
+  For another workshop, supply its matching origin and engine data directory.
   --offline  No config/credential discovery, network or bootstrap
   --light / --high-contrast  Explicit window appearance (default: dark)
   --export DIRECTORY  Offline chat GPU PNG evidence
@@ -161,6 +162,16 @@ mod tests {
             .unwrap();
         assert_eq!(conn.data_dir, root);
         assert_eq!(conn.origin, "http://127.0.0.1:7419/");
+        assert!(conn.allow_bootstrap);
+        let root_only =
+            Cli::parse(["--data-dir", "/synthetic/root-only"].map(str::to_string)).unwrap();
+        let conn = root_only
+            .connection_with(|o| medousa_desktop_host::connection::resolve_local(root, o))
+            .unwrap()
+            .unwrap();
+        assert_eq!(conn.data_dir, std::path::Path::new("/synthetic/root-only"));
+        assert_eq!(conn.origin, "http://127.0.0.1:7419/");
+        assert!(!conn.allow_bootstrap);
         let cli = Cli::parse(
             [
                 "--data-dir",

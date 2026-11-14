@@ -18,5 +18,8 @@ tokio = { version = "1", features = ["sync", "time"] }
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 medousa-host = { path = "../medousa-host" }
 
+[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"

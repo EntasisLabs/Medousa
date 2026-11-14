@@ -102,8 +102,10 @@ then PATH, exactly as the reference. There is no speculative installation search
 or Cargo/build fallback. Optional component binaries retain their existing policy.
 
 `--data-dir` explicitly selects an engine root instead of importing the registry.
-`--daemon` overrides the origin and is **attach-only** (no process stop/start),
-while retaining the selected credential root; pair both flags for another engine.
+`--daemon` overrides the origin while retaining the selected credential root.
+**Either explicit flag makes startup attach-only** (no process stop/start), even
+when the supplied root equals the canonical root: override process ownership is
+not established. Pair both flags for another engine; it must already be running.
 Readiness is checked before authenticated SDK clients are created. Origins must
 be loopback HTTP(S), with no userinfo, path, query or fragment. Authenticated and
 health transports bypass proxies and refuse redirects. Existing first-party local

@@ -284,7 +284,7 @@ fn settings(world: &mut World, parent: Entity, index: usize) {
                 world,
                 parent,
                 "Active workshop",
-                "Only an explicitly configured loopback daemon is supported. Launch with --data-dir and --daemon to use the existing local credential boundary; offline mode never discovers credentials.",
+                "Normal startup uses the configured local workshop. Either --data-dir or --daemon is attach-only (no process start/stop); pair matching root and loopback origin for another running engine. Offline mode never discovers credentials.",
             );
             band(
                 world,
