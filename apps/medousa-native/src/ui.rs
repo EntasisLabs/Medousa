@@ -74,6 +74,9 @@ pub struct Model {
     pending_draft: Option<(DocumentId, rndr_core::editing::Revision)>,
 }
 impl Model {
+    pub(crate) fn document_id(&self) -> DocumentId {
+        self.document
+    }
     fn new(document: DocumentId) -> Self {
         Model {
             chat: Chat::connecting(),
@@ -165,6 +168,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Startup, setup);
     app.add_system(Schedule::Update, update);
     app.add_system(Schedule::Layout, workspace::chrome);
+    app.add_system(Schedule::Layout, crate::surfaces::chrome);
     app
 }
 fn container(world: &mut World, parent: Option<Entity>, layout: Layout) -> Entity {
@@ -231,7 +235,8 @@ fn setup(world: &mut World) {
             ..Layout::row()
         },
     );
-    let (navigation_split, details_split) = workspace::mount(world, root);
+    let chat_root = crate::surfaces::mount(world, root);
+    let (navigation_split, details_split) = workspace::mount(world, chat_root);
     let prefs = world.resource::<workspace::Workspace>().unwrap().prefs;
     let model = world.resource_mut::<Model>().unwrap();
     model.sidebar_open = prefs.sidebar_open;
@@ -851,15 +856,24 @@ fn update(world: &mut World) {
     for reply in events::<Reply>(world).to_vec() {
         apply_reply(world, reply);
     }
-    conversations::focus_from_input(world);
+    crate::surfaces::remember_focus(world);
+    let chat_active = crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat;
+    if chat_active {
+        conversations::focus_from_input(world);
+    }
     let ui = *world.resource::<Ui>().unwrap();
-    if world
-        .resource::<KeymapFired>()
-        .is_some_and(|k| k.actions.iter().any(|a| a == "chat.send"))
+    if chat_active
+        && world
+            .resource::<KeymapFired>()
+            .is_some_and(|k| k.actions.iter().any(|a| a == "chat.send"))
     {
         action(world, SEND);
     }
-    for event in events::<SelectionChange>(world).to_vec() {
+    for event in events::<SelectionChange>(world)
+        .to_vec()
+        .into_iter()
+        .filter(|_| chat_active)
+    {
         conversations::focus_entity(world, event.control);
         let ui = *world.resource::<Ui>().unwrap();
         let SelectionValue::Selected(ids) = event.value else {
@@ -888,8 +902,23 @@ fn update(world: &mut World) {
             }
         }
     }
-    conversations::tab_events(world);
+    if chat_active {
+        conversations::tab_events(world);
+    }
     for intent in take_action_intents(world) {
+        let host = controls::host_intent(world, &intent);
+        if host
+            .as_ref()
+            .is_some_and(|h| crate::surfaces::action(world, h))
+        {
+            continue;
+        }
+        if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Notes {
+            if let Some(host) = host {
+                crate::notes::action(world, &host);
+            }
+            continue;
+        }
         conversations::focus_entity(world, intent.entity);
         if approvals::action(world, &intent)
             || attachments::action(world, &intent)
@@ -911,9 +940,10 @@ fn update(world: &mut World) {
             }
         }
     }
-    if events::<Submitted>(world)
-        .iter()
-        .any(|s| s.entity == ui.search)
+    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat
+        && events::<Submitted>(world)
+            .iter()
+            .any(|s| s.entity == ui.search)
     {
         action(world, SEARCH);
     }
@@ -924,6 +954,7 @@ fn update(world: &mut World) {
         world.resource_mut::<Model>().unwrap().chat.status = error;
     }
     conversations::sync_all(world);
+    crate::notes::tick(world);
     auxiliary::dispatch(world);
 }
 fn action(world: &mut World, id: u64) {
@@ -1789,6 +1820,35 @@ mod tests {
         app.update();
     }
     #[test]
+    fn notes_surface_cannot_dispatch_chat_shortcuts_or_hidden_send_actions() {
+        let (mut app, mut rx) = idle_fixture();
+        draft(&mut app, "do not send this while editing Notes");
+        while rx.try_recv().is_ok() {}
+        let ui = *app.world().resource::<Ui>().unwrap();
+        crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+        app.world_mut().insert_resource(KeymapFired {
+            actions: vec!["chat.send".into()],
+        });
+        // A stale keymap event must not cross the active surface boundary.
+        update(app.world_mut());
+        assert!(!app.world().resource::<Model>().unwrap().chat.busy());
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            app.world()
+                .resource::<SourceDocuments>()
+                .unwrap()
+                .get(app.world().resource::<Model>().unwrap().document)
+                .unwrap()
+                .text(),
+            "do not send this while editing Notes"
+        );
+        assert_eq!(
+            try_activate(app.world_mut(), ui.composer.editor),
+            ActivationResult::Rejected
+        );
+        assert!(app.world().resource::<Focus>().unwrap().entity.is_none());
+    }
+    #[test]
     fn composer_has_cohesive_editor_and_secondary_controls_below_card() {
         let (mut app, _rx) = idle_fixture();
         for width in [1200., 760.] {
@@ -1979,7 +2039,9 @@ mod tests {
         for _ in 0..5 {
             app.update();
         }
-        assert!(app.world().get::<Rect>(ui.compose).unwrap().x < 260.);
+        assert!(
+            app.world().get::<Rect>(ui.compose).unwrap().x < 260. + crate::surfaces::RAIL_WIDTH
+        );
         action(app.world_mut(), SIDEBAR);
         for _ in 0..5 {
             app.update();

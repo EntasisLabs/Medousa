@@ -12,8 +12,10 @@ pub enum Command {
     Attachment(attachments::AttachmentCommand),
     Runtime(runtimes::RuntimeCommand),
     Stream(runtimes::RuntimeStream),
+    Note(crate::notes::NoteCommand),
 }
 enum Update {
+    Note(crate::notes::NoteUpdate),
     Preview(media_preview::PreviewUpdate),
     Context(context::ContextUpdate),
     Approval(approvals::ApprovalUpdate),
@@ -77,6 +79,7 @@ impl Auxiliary {
                     }
                     let result=match command {
                     Command::Preview(c)=> { let _permit=previews.acquire_owned().await.expect("preview semaphore"); Ok(Update::Preview(media_preview::execute(&client,c).await)) },
+                    Command::Note(c)=>Ok(Update::Note(crate::notes::execute(&client,c).await)),
                     Command::Context(c)=>context::execute(&client,c).await.map(Update::Context),
                     Command::Approval(c)=>approvals::execute(&client,c).await.map(Update::Approval),
                     Command::Attachment(c)=>attachments::execute(&client,c).await.map(Update::Attachment),
@@ -103,6 +106,7 @@ pub fn tick(world: &mut World) {
         .unwrap_or_default();
     for update in updates {
         match update {
+            Update::Note(u) => crate::notes::apply(world, u),
             Update::Preview(u) => media_preview::apply(world, u),
             Update::Context(u) => context::apply(world, u),
             Update::Approval(u) => approvals::apply(world, u),
@@ -135,9 +139,14 @@ pub fn tick(world: &mut World) {
 // dispatch before the event-driven window parks, not on a future user event.
 pub fn dispatch(world: &mut World) {
     media_preview::tick(world);
-    let commands = media_preview::drain_commands(world)
+    let commands = crate::notes::drain_commands(world)
         .into_iter()
-        .map(Command::Preview)
+        .map(Command::Note)
+        .chain(
+            media_preview::drain_commands(world)
+                .into_iter()
+                .map(Command::Preview),
+        )
         .chain(
             context::drain_commands(world)
                 .into_iter()

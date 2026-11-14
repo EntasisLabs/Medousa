@@ -133,7 +133,7 @@ pub fn mount(world: &mut World, root: Entity) -> (SplitSashHandle, SplitSashHand
         world,
         outer.trailing,
         UiId(0x5753_0002),
-        details_props(false),
+        details_props(false, 1200.),
         1.,
     )
     .unwrap();
@@ -153,9 +153,11 @@ fn sidebar_props(width: f32, visible: bool) -> SplitSashProps {
     props.enabled = visible;
     props
 }
-fn details_props(visible: bool) -> SplitSashProps {
+fn details_props(visible: bool, width: f32) -> SplitSashProps {
     let mut props = SplitSashProps::new("Conversation details width");
-    props.min_leading = 440.;
+    // Reserve the dock's usable minimum after the fixed app rail. At the
+    // smallest supported window the chat yields 22px, not the dock controls.
+    props.min_leading = (width - 286.).clamp(360., 440.);
     props.min_trailing = if visible { 280. } else { 0. };
     props.step = 0.025;
     props.default_ratio = 0.68;
@@ -172,10 +174,7 @@ fn show(world: &mut World, e: Entity, visible: bool) {
 /// Return the effective chat width. Responsive collapse does not overwrite the
 /// user's sidebar preference or saved ratios, and no content is remounted.
 pub fn sync(world: &mut World, sidebar_open: bool, details_open: bool) -> f32 {
-    let width = world
-        .resource::<Viewport>()
-        .map(|v| v.width)
-        .unwrap_or(1200.);
+    let width = crate::surfaces::chat_width(world);
     let sidebar = sidebar_open && (!details_open || width >= 1100.);
     let changes = events::<SplitSashChange>(world).to_vec();
     let state = world.resource_mut::<Workspace>().unwrap();
@@ -208,6 +207,12 @@ pub fn sync(world: &mut World, sidebar_open: bool, details_open: bool) -> f32 {
         state.last_sent = state.prefs;
     }
     let prefs = state.prefs;
+    let available = width
+        - if sidebar {
+            ((width - 6.) * prefs.sidebar_ratio as f32).clamp(200., 360.) + 6.
+        } else {
+            0.
+        };
     // Nested split and reading-column measurements use the preceding Rect.
     // Pump a bounded convergence window; idle must not need a pointer wiggle.
     let needs_frame = state.settling > 0 || !events::<SplitSashChange>(world).is_empty();
@@ -229,7 +234,7 @@ pub fn sync(world: &mut World, sidebar_open: bool, details_open: bool) -> f32 {
             world,
             outer.trailing,
             UiId(0x5753_0002),
-            details_props(details_open),
+            details_props(details_open, available),
             if details_open { prefs.chat_ratio } else { 1. },
         )
         .unwrap();
@@ -242,14 +247,10 @@ pub fn sync(world: &mut World, sidebar_open: bool, details_open: bool) -> f32 {
     for split in [outer, inner] {
         world.get_mut::<Layout>(split.sash).unwrap().width = Size::Px(6.);
     }
-    let available = width
-        - if sidebar {
-            ((width - 6.) * prefs.sidebar_ratio as f32).clamp(200., 360.) + 6.
-        } else {
-            0.
-        };
     if details_open {
-        ((available - 6.) * prefs.chat_ratio as f32).clamp(440., (available - 286.).max(440.))
+        let min_chat = (available - 286.).clamp(360., 440.);
+        ((available - 6.) * prefs.chat_ratio as f32)
+            .clamp(min_chat, (available - 286.).max(min_chat))
     } else {
         available
     }

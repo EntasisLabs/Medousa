@@ -997,6 +997,55 @@ mod tests {
         assert_eq!(current(app.world()), b);
     }
     #[test]
+    fn notes_switch_retains_split_routes_drafts_and_background_replies() {
+        use crate::surfaces::{self, SurfaceId};
+        let mut app = fixture();
+        let a = loaded(&mut app, "a");
+        text(app.world_mut(), "draft a");
+        let view_a = *app.world().resource::<Ui>().unwrap();
+        let b = loaded(&mut app, "b");
+        text(app.world_mut(), "draft b");
+        let view_b = *app.world().resource::<Ui>().unwrap();
+        action(app.world_mut(), SPLIT);
+        for _ in 0..6 {
+            app.update();
+        }
+        let layout = snapshot(app.world()).layout;
+        surfaces::select(app.world_mut(), SurfaceId::Notes);
+        reply(
+            app.world_mut(),
+            Reply {
+                generation: a,
+                update: Update::Notice("Background update".into()),
+            },
+        );
+        for _ in 0..6 {
+            app.update();
+        }
+        assert_eq!(surfaces::active(app.world()), SurfaceId::Notes);
+        assert_eq!(current(app.world()), b);
+        assert_eq!(draft(app.world()), "draft b");
+        surfaces::select(app.world_mut(), SurfaceId::Chat);
+        for _ in 0..6 {
+            app.update();
+        }
+        assert_eq!(snapshot(app.world()).layout, layout);
+        assert_eq!(
+            app.world().resource::<Ui>().unwrap().composer,
+            view_b.composer
+        );
+        open(app.world_mut(), Some("a".into()));
+        assert_eq!(draft(app.world()), "draft a");
+        assert_eq!(
+            app.world().resource::<Ui>().unwrap().composer,
+            view_a.composer
+        );
+        assert_eq!(
+            app.world().resource::<Model>().unwrap().chat.status,
+            "Background update"
+        );
+    }
+    #[test]
     fn focusing_other_pane_clears_previous_editor_focus() {
         let mut app = fixture();
         let a = loaded(&mut app, "a");
