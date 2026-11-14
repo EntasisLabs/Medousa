@@ -839,6 +839,7 @@ async fn golden_first_request_attributes_runtime_layers_and_unknown_media() {
     )
     .with_window_policy(golden_window_policy())
     .with_first_request_context(crate::request_context::FirstRequestContextConfig {
+        inference_observer: None,
         assembly: None,
         observer: Some(Arc::new(move |footprint| {
             captured.lock().unwrap().push(footprint);

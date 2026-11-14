@@ -32,6 +32,28 @@ struct CognitionContextFollowPointerTool {
     turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
+async fn pointer_profile(
+    turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
+    session: &str,
+) -> StasisResult<String> {
+    let scope = crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope)
+        .await
+        .ok_or_else(|| StasisError::PortFailure("context pointers require active scope".into()))?;
+    let profile = scope
+        .identity_user_id
+        .and_then(|p| TrimmedText::new(p).ok())
+        .map(TrimmedText::into_string)
+        .ok_or_else(|| {
+            StasisError::PortFailure("context pointers require admitted principal identity".into())
+        })?;
+    if !crate::session_history::session_visible_to_profile(session, &profile) {
+        return Err(StasisError::PortFailure(
+            "context pointer source not visible to active profile".into(),
+        ));
+    }
+    Ok(profile)
+}
+
 fn default_pointer_scope() -> String {
     "last_5_turns".to_string()
 }
@@ -137,21 +159,32 @@ impl CognitionContextFollowPointerTool {
         )
         .await?;
 
-        let sessions = crate::session_history::list_sessions(20);
+        let profile = pointer_profile(&self.turn_scope, &active_session).await?;
+        let sessions = if crate::session_history::session_visible_to_profile(&pointer_id, &profile)
+        {
+            crate::session_catalog::get_summary(&pointer_id)
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         let env = environment_hub().get(&resolve_profile_id(None)).await.ok();
-        let digest = crate::context_pointer_index::build_pointer_digest(
+        let candidates = crate::context_pointer_index::build_pointer_candidates(
             &active_session,
             &sessions,
             env.as_ref(),
             &crate::context_pointer_index::collect_work_card_hints(&active_session),
+            chrono::Utc::now(),
         );
-        let pointer = digest
+        let pointer = candidates
             .pointers
             .iter()
             .find(|p| p.id == pointer_id.as_str())
             .cloned()
             .ok_or_else(|| {
-                StasisError::PortFailure(format!("pointer not found in digest: {pointer_id}"))
+                StasisError::PortFailure(format!(
+                    "pointer not found in authorized sources: {pointer_id}"
+                ))
             })?;
 
         let history = if pointer.kind == POINTER_KIND_SESSION {
@@ -199,7 +232,8 @@ impl CognitionContextListPointersTool {
             COGNITION_CONTEXT_LIST_POINTERS,
         )
         .await?;
-        let sessions = crate::session_history::list_sessions(20);
+        let profile = pointer_profile(&self.turn_scope, &active_session).await?;
+        let sessions = crate::session_history::list_sessions_for_profile(&profile, 20);
         let env = environment_hub().get(&resolve_profile_id(None)).await.ok();
         let digest = crate::context_pointer_index::build_pointer_digest(
             &active_session,

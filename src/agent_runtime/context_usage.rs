@@ -221,6 +221,7 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageC
     }
     ContextUsageCompilation {
         usage: ContextUsageReport {
+            hud: None,
             layers,
             total_tokens_estimate: decisions.text_tokens_estimate,
             total_chars: u32::try_from(decisions.cost.text_chars).unwrap_or(u32::MAX),
@@ -261,6 +262,10 @@ pub fn first_request_usage_report(
         }
     }
     Some(ContextUsageReport {
+        hud: footprint
+            .inference_window
+            .as_ref()
+            .and_then(|w| w.hud.clone()),
         layers,
         total_chars: u32::try_from(report.decisions.cost.text_chars).unwrap_or(u32::MAX),
         total_tokens_estimate: report.decisions.text_tokens_estimate,
@@ -386,7 +391,91 @@ pub fn operator_summary(report: &ContextUsageReport) -> String {
         .find(|l| l.id == "tool_definitions")
         .map(|l| format_tokens(l.tokens_estimate))
         .unwrap_or_else(|| "?".to_string());
-    format!("Context {total}{limit} · system {system} · tools {tools}")
+    let accounting = format!("Context ~{total}{limit} · system ~{system} · tools ~{tools}");
+    let Some(hud) = &report.hud else {
+        return accounting;
+    };
+    let mut parts = Vec::new();
+    if let Some(work) = &hud.work {
+        parts.push(format!(
+            "Work {}: {} (authoritative lifecycle, not task verification)",
+            work.work_id, work.phase
+        ));
+        if let Some(progress) = &work.progress {
+            parts.push(progress.clone());
+        }
+        parts.extend(work.blockers.iter().map(|b| format!("Blocker: {b}")));
+        parts.extend(
+            work.decisions
+                .iter()
+                .map(|d| format!("Decision accounting: {d}")),
+        );
+    }
+    if hud.deferred_items > 0 {
+        parts.push(format!(
+            "{} context items deferred; native retrieval retained where available",
+            hud.deferred_items
+        ));
+    }
+    parts.push(accounting);
+    parts.join(" · ")
+}
+
+/// Latest inference accounting and safe projections, also for non-first rounds.
+pub fn inference_usage_report(
+    footprint: &medousa_runtime::inference_usage::RequestFootprint,
+) -> Option<ContextUsageReport> {
+    let window = footprint.inference_window.as_ref()?;
+    let mut layers: Vec<ContextUsageLayer> = Vec::new();
+    for item in &window.decisions.contributions {
+        if matches!(
+            item.decision,
+            medousa_runtime::context::ContextDecision::Omitted { .. }
+                | medousa_runtime::context::ContextDecision::Excluded { .. }
+        ) {
+            continue;
+        }
+        if let Some(existing) = layers.iter_mut().find(|l| l.id == item.id) {
+            existing.chars = existing
+                .chars
+                .saturating_add(u32::try_from(item.cost.text_chars).unwrap_or(u32::MAX));
+            existing.tokens_estimate = chars_to_tokens(existing.chars as usize);
+        } else {
+            layers.push(layer(&item.id, layer_label(&item.id), item.cost.text_chars));
+        }
+    }
+    Some(ContextUsageReport {
+        hud: window.hud.clone(),
+        layers,
+        total_chars: u32::try_from(window.decisions.cost.text_chars).unwrap_or(u32::MAX),
+        total_tokens_estimate: window.estimate.total_tokens,
+        context_limit_tokens: window.policy.input_tokens,
+        tool_count: u32::try_from(footprint.tool_count.unwrap_or(0)).unwrap_or(u32::MAX),
+        estimator: format!(
+            "{}; estimated_total_including_protocol_and_media; layer_estimates_text_only; input_budget={}; reconciled={}",
+            window.accounting, window.input_budget, window.reconciled
+        ),
+    })
+}
+
+/// Ephemeral per-turn semantic coalescer, never authoritative work state.
+#[derive(Default)]
+pub struct ContextUpdateCoalescer {
+    previous: Option<medousa_types::context_hud::UserContextProjection>,
+    published: bool,
+}
+impl ContextUpdateCoalescer {
+    pub fn should_publish(&mut self, report: &ContextUsageReport) -> bool {
+        let changed = !self.published
+            || match (&report.hud, &self.previous) {
+                (Some(next), Some(previous)) => next.meaningful_change_from(previous),
+                (None, None) => false,
+                _ => true,
+            };
+        self.previous = report.hud.clone();
+        self.published = true;
+        changed
+    }
 }
 
 /// Fill percentage when `context_limit_tokens` is known.
@@ -402,6 +491,9 @@ pub fn usage_fill_percent(report: &ContextUsageReport) -> Option<u32> {
 /// Human-readable multiline breakdown for TUI, WhatsApp, Telegram, etc.
 pub fn format_context_usage_text(report: &ContextUsageReport) -> String {
     let mut lines = Vec::new();
+    if report.hud.is_some() {
+        lines.push(operator_summary(report));
+    }
     if let Some(pct) = usage_fill_percent(report) {
         let total = format_tokens(report.total_tokens_estimate);
         let limit = report
@@ -440,6 +532,63 @@ fn format_tokens(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_updates_coalesce_accounting_but_preserve_work_blockers_and_decisions() {
+        use medousa_types::context_hud::{UserContextProjection, WorkContextProjection};
+        let mut report = ContextUsageReport {
+            hud: Some(UserContextProjection {
+                work: Some(WorkContextProjection {
+                    work_id: "work-1".into(),
+                    phase: "executing".into(),
+                    progress: Some("one recorded attempt".into()),
+                    blockers: vec![],
+                    decisions: vec![],
+                }),
+                pressure: "normal".into(),
+                deferred_items: 0,
+                accounting: "estimated".into(),
+            }),
+            layers: Vec::new(),
+            total_chars: 100,
+            total_tokens_estimate: 25,
+            context_limit_tokens: Some(8000),
+            tool_count: 1,
+            estimator: "estimated".into(),
+        };
+        let mut coalescer = ContextUpdateCoalescer::default();
+        assert!(coalescer.should_publish(&report));
+        report.total_tokens_estimate = 40;
+        report.hud.as_mut().unwrap().pressure = "high".into();
+        assert!(!coalescer.should_publish(&report));
+        report
+            .hud
+            .as_mut()
+            .unwrap()
+            .work
+            .as_mut()
+            .unwrap()
+            .blockers
+            .push("awaiting_owner_decision".into());
+        assert!(coalescer.should_publish(&report));
+        assert!(operator_summary(&report).contains("Blocker: awaiting_owner_decision"));
+        assert!(!coalescer.should_publish(&report));
+        report
+            .hud
+            .as_mut()
+            .unwrap()
+            .work
+            .as_mut()
+            .unwrap()
+            .decisions
+            .push("review_decision_recorded".into());
+        assert!(coalescer.should_publish(&report));
+        assert!(!operator_summary(&report).contains("completed"));
+        assert_eq!(
+            report.hud.as_ref().unwrap().work.as_ref().unwrap().phase,
+            "executing"
+        );
+    }
 
     #[tokio::test]
     async fn first_request_reports_effective_profile_schemas_and_empty_catalog() {
@@ -558,6 +707,7 @@ mod tests {
                 registry,
             )
             .with_first_request_context(FirstRequestContextConfig {
+                inference_observer: None,
                 assembly: Some({
                     let mut report = seed.report(Default::default());
                     report.prepared_messages_digest =

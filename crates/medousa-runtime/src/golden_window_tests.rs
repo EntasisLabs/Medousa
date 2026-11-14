@@ -39,6 +39,8 @@ async fn adaptive_window_rechecks_growing_real_tool_loop_with_streaming_and_repo
         let client = Arc::new(ScriptedClient::new(steps));
         let observed = Arc::new(Mutex::new(Vec::new()));
         let captured = observed.clone();
+        let all_observed = Arc::new(Mutex::new(Vec::new()));
+        let all_captured = all_observed.clone();
         let policy = window(6000);
         let pipeline = MedousaToolLoopPipeline::new(
             PromptExecutionPipeline::new(client.clone()),
@@ -46,6 +48,10 @@ async fn adaptive_window_rechecks_growing_real_tool_loop_with_streaming_and_repo
         )
         .with_window_policy(policy.clone())
         .with_first_request_context(crate::request_context::FirstRequestContextConfig {
+            inference_observer: Some(Arc::new(move |request| {
+                all_captured.lock().unwrap().push(request);
+                Box::pin(async {})
+            })),
             assembly: None,
             observer: Some(Arc::new(move |footprint| {
                 captured.lock().unwrap().push(footprint);
@@ -103,10 +109,28 @@ async fn adaptive_window_rechecks_growing_real_tool_loop_with_streaming_and_repo
             })
             .collect();
         assert_eq!(requests.len(), 9);
+        assert_eq!(all_observed.lock().unwrap().len(), requests.len());
         assert_eq!(reports.len(), requests.len());
         for (request, footprint) in requests.iter().zip(reports.iter()) {
             let report = footprint.inference_window.as_ref().unwrap();
             assert!(report.reconciled);
+            assert!(report.hud.is_some());
+            assert_eq!(
+                request
+                    .messages
+                    .iter()
+                    .filter(|m| m.role == genai::chat::ChatRole::System
+                        && m.content
+                            .first_text()
+                            .is_some_and(|s| s.starts_with(crate::context_hud::MODEL_HUD_PREFIX)))
+                    .count(),
+                1
+            );
+            assert!(
+                !serde_json::to_string(&report.hud)
+                    .unwrap()
+                    .contains("fresh protected exact-note-id")
+            );
             if let Some(first) = &footprint.first_request_context {
                 assert_eq!(first.decisions, report.decisions);
                 assert_eq!(first.decisions.capacity.input_tokens, policy.input_tokens);

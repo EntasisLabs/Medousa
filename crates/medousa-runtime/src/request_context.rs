@@ -17,6 +17,9 @@ pub type FirstRequestObserver = Arc<dyn Fn(RequestFootprint) -> RequestContextFu
 pub struct FirstRequestContextConfig {
     pub assembly: Option<ContextDecisionReport>,
     pub observer: Option<FirstRequestObserver>,
+    /// Every compiled request, including growing/resumed loops. Consumers must
+    /// coalesce semantic updates separately from volatile accounting snapshots.
+    pub inference_observer: Option<FirstRequestObserver>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,7 +85,9 @@ pub fn compile_first_request(
         } else {
             let text = message.content.first_text().unwrap_or("");
             if message.role == genai::chat::ChatRole::System {
-                if text.starts_with(crate::turn_context::STICKY_CONTEXT_PREFIX) {
+                if text.starts_with(crate::context_hud::MODEL_HUD_PREFIX) {
+                    ("model_context_hud", ContextOwner::Host, Retention::Flexible)
+                } else if text.starts_with(crate::turn_context::STICKY_CONTEXT_PREFIX) {
                     ("chat_stickies", ContextOwner::Chat, Retention::Protected)
                 } else if text.starts_with(crate::turn_context::SCRATCH_PREFIX) {
                     (

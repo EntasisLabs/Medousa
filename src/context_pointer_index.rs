@@ -1,20 +1,16 @@
-//! Context pointer index — ranked breadcrumbs for turn bootstrap.
-
+//! Domain-owned breadcrumbs. Selection never grants retrieval permissions.
+use crate::environment_store::EnvironmentRecord;
 use chrono::{DateTime, Duration, Utc};
+use medousa_types::context_selection::{
+    PointerRepresentation, PointerResolution, PointerRetrieval, PointerSelection,
+};
 use medousa_types::daemon_api::WorkBoardColumn;
 use medousa_types::environment::{
-    ContextPointer, ContextPointerDigest, DIGEST_MAX_POINTERS, DIGEST_MIN_CONFIDENCE,
-    POINTER_KIND_COMPONENT, POINTER_KIND_SESSION, POINTER_KIND_WORK_CARD, STALENESS_ARCHIVED,
-    STALENESS_FRESH, STALENESS_RECENT, STALENESS_STALE,
+    ContextPointer, ContextPointerDigest, DIGEST_MAX_POINTERS, POINTER_KIND_COMPONENT,
+    POINTER_KIND_SESSION, POINTER_KIND_WORK_CARD, STALENESS_ARCHIVED, STALENESS_FRESH,
+    STALENESS_RECENT, STALENESS_STALE,
 };
 use medousa_types::session::SessionHistorySummary;
-
-use crate::environment_store::EnvironmentRecord;
-
-const SESSION_HALF_LIFE_HOURS: f64 = 48.0;
-const COMPONENT_HALF_LIFE_HOURS: f64 = 168.0;
-const WORK_CARD_HALF_LIFE_HOURS: f64 = 12.0;
-const RECENT_ACTIVITY_WINDOW: Duration = Duration::hours(1);
 
 #[derive(Debug, Clone)]
 pub struct WorkCardHint {
@@ -25,192 +21,201 @@ pub struct WorkCardHint {
     pub column: WorkBoardColumn,
 }
 
-/// Ranked work-card breadcrumbs from the materialized workspace snapshot.
+/// Only cards linked to this chat are context-relevant. A workspace snapshot is
+/// not authorization to advertise unrelated profile work.
 pub fn collect_work_card_hints(active_session_id: &str) -> Vec<WorkCardHint> {
     #[cfg(not(feature = "full-daemon"))]
     {
         let _ = active_session_id;
-        return Vec::new();
+        Vec::new()
     }
     #[cfg(feature = "full-daemon")]
     {
-    let Some(hub) = crate::workspace::projector::workspace_hub() else {
-        return Vec::new();
-    };
-    let snapshot = hub.snapshot();
-    let active_session_id = active_session_id.trim();
-    let mut hints = Vec::new();
-
-    for item in snapshot.items.values() {
-        if item.detail.terminal {
-            continue;
-        }
-        let linked_to_active = item
-            .detail
-            .session_id
-            .as_deref()
-            .is_some_and(|session_id| session_id == active_session_id);
-        let in_motion = matches!(
-            item.card.column,
-            WorkBoardColumn::InFlight
-                | WorkBoardColumn::WrappingUp
-                | WorkBoardColumn::Blocked
-                | WorkBoardColumn::Backlog
-        );
-        if !linked_to_active && !in_motion {
-            continue;
-        }
-        hints.push(WorkCardHint {
-            id: item.card.id.0.clone(),
-            label: item.card.title.clone(),
-            last_active_at: item.card.updated_at_utc,
-            session_id: item.detail.session_id.clone(),
-            column: item.card.column,
-        });
-    }
-
-    hints.sort_by_key(|b| std::cmp::Reverse(b.last_active_at));
-    hints
+        let Some(hub) = crate::workspace::projector::workspace_hub() else {
+            return Vec::new();
+        };
+        hub.snapshot()
+            .items
+            .values()
+            .filter(|item| {
+                !item.detail.terminal
+                    && item.detail.session_id.as_deref() == Some(active_session_id)
+            })
+            .map(|item| WorkCardHint {
+                id: item.card.id.0.clone(),
+                label: item.card.title.clone(),
+                last_active_at: item.card.updated_at_utc,
+                session_id: item.detail.session_id.clone(),
+                column: item.card.column,
+            })
+            .collect()
     }
 }
 
 pub fn build_pointer_digest(
-    active_session_id: &str,
+    active: &str,
     sessions: &[SessionHistorySummary],
-    environment: Option<&EnvironmentRecord>,
-    work_card_hints: &[WorkCardHint],
+    env: Option<&EnvironmentRecord>,
+    work: &[WorkCardHint],
+) -> ContextPointerDigest {
+    let mut digest = build_pointer_candidates(active, sessions, env, work, Utc::now());
+    digest
+        .pointers
+        .retain(|p| p.staleness != STALENESS_ARCHIVED);
+    digest.pointers.truncate(DIGEST_MAX_POINTERS);
+    digest
+}
+
+/// Unreduced authorized candidates for follow, independent of ambient ranking.
+/// Inputs must be profile-visible; source membership, not selection, admits reads.
+pub fn build_pointer_candidates(
+    active: &str,
+    sessions: &[SessionHistorySummary],
+    env: Option<&EnvironmentRecord>,
+    work: &[WorkCardHint],
+    now: DateTime<Utc>,
 ) -> ContextPointerDigest {
     let mut pointers = Vec::new();
-    let now = Utc::now();
-
-    for summary in sessions {
-        if summary.session_id == active_session_id {
-            continue;
-        }
+    for summary in sessions.iter().filter(|s| s.session_id != active) {
         let last = summary
             .last_timestamp
             .or(summary.last_verification_timestamp)
             .unwrap_or(now);
-        let mut activity_boost = 0.0_f32;
-        if (now - last) < RECENT_ACTIVITY_WINDOW {
-            activity_boost += 0.15;
-        }
-        let relevance = summary
-            .last_verification_confidence
-            .map(|value| value.clamp(0.6, 1.0))
-            .unwrap_or(0.85);
-        let confidence = score_pointer(
-            last,
-            SESSION_HALF_LIFE_HOURS,
-            1.0,
-            activity_boost,
-            relevance,
-        );
-        let staleness = staleness_band(&last, now);
-        pointers.push(ContextPointer {
-            id: summary.session_id.clone(),
-            kind: POINTER_KIND_SESSION.to_string(),
-            label: summary
+        pointers.push(pointer(
+            active,
+            &summary.session_id,
+            POINTER_KIND_SESSION,
+            summary
                 .display_name
-                .clone()
-                .unwrap_or_else(|| summary.session_id.clone()),
-            topic: topic_from_preview(&summary.preview),
-            last_active_at: last,
-            confidence,
-            staleness: staleness.to_string(),
-            age_human: human_age(last, now),
-            turn_count: Some(summary.turns as u32),
-            metadata: None,
-        });
+                .as_deref()
+                .unwrap_or(&summary.session_id),
+            topic_from_preview(&summary.preview),
+            last,
+            now,
+            summary
+                .last_verification_confidence
+                .unwrap_or(0.85)
+                .clamp(0.0, 1.0),
+            500,
+            48.0,
+            "chat_catalog",
+            Some(summary.turns as u32),
+        ));
     }
-
-    if let Some(env) = environment {
+    if let Some(env) = env {
         for component in &env.spec.components {
-            let last = component.updated_at.unwrap_or(env.spec.updated_at);
-            let confidence = score_pointer(last, COMPONENT_HALF_LIFE_HOURS, 0.85, 0.0, 0.85);
-            let staleness = staleness_band(&last, now);
-            pointers.push(ContextPointer {
-                id: component.id.clone(),
-                kind: POINTER_KIND_COMPONENT.to_string(),
-                label: component
-                    .label
-                    .clone()
-                    .unwrap_or_else(|| component.id.clone()),
-                topic: None,
-                last_active_at: last,
-                confidence,
-                staleness: staleness.to_string(),
-                age_human: human_age(last, now),
-                turn_count: None,
-                metadata: None,
-            });
+            pointers.push(pointer(
+                active,
+                &component.id,
+                POINTER_KIND_COMPONENT,
+                component.label.as_deref().unwrap_or(&component.id),
+                None,
+                component.updated_at.unwrap_or(env.spec.updated_at),
+                now,
+                0.85,
+                300,
+                168.0,
+                "environment",
+                None,
+            ));
         }
     }
-
-    for hint in work_card_hints {
-        let mut activity_boost = 0.0_f32;
-        if hint
-            .session_id
-            .as_deref()
-            .is_some_and(|session_id| session_id == active_session_id)
-            && matches!(
-                hint.column,
-                WorkBoardColumn::InFlight | WorkBoardColumn::WrappingUp | WorkBoardColumn::Blocked
-            )
-        {
-            activity_boost += 0.20;
-        }
-        if (now - hint.last_active_at) < RECENT_ACTIVITY_WINDOW {
-            activity_boost += 0.15;
-        }
-        let confidence = score_pointer(
-            hint.last_active_at,
-            WORK_CARD_HALF_LIFE_HOURS,
-            0.9,
-            activity_boost,
-            0.85,
-        );
-        let staleness = staleness_band(&hint.last_active_at, now);
-        pointers.push(ContextPointer {
-            id: hint.id.clone(),
-            kind: POINTER_KIND_WORK_CARD.to_string(),
-            label: hint.label.clone(),
-            topic: None,
-            last_active_at: hint.last_active_at,
-            confidence,
-            staleness: staleness.to_string(),
-            age_human: human_age(hint.last_active_at, now),
-            turn_count: None,
-            metadata: None,
-        });
-    }
-
-    pointers.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    pointers.retain(|p| p.staleness != STALENESS_ARCHIVED && p.confidence >= DIGEST_MIN_CONFIDENCE);
-    pointers.truncate(DIGEST_MAX_POINTERS);
-
-    let session_gap_human = sessions
+    for hint in work
         .iter()
-        .find(|s| s.session_id == active_session_id)
-        .and_then(|s| s.last_timestamp)
-        .map(|last| human_age(last, now));
-
-    let canvas_summary = environment.map(|env| {
-        format!(
-            "{} ({} components)",
-            env.spec.active_preset_id.as_deref().unwrap_or("default"),
-            env.spec.components.len()
+        .filter(|h| h.session_id.as_deref() == Some(active))
+    {
+        pointers.push(pointer(
+            active,
+            &hint.id,
+            POINTER_KIND_WORK_CARD,
+            &hint.label,
+            None,
+            hint.last_active_at,
+            now,
+            0.85,
+            1000,
+            12.0,
+            "workspace_projector",
+            None,
+        ));
+    }
+    pointers.sort_by(|a, b| {
+        a.selection.as_ref().expect("selection").compare(
+            &a.id,
+            b.selection.as_ref().expect("selection"),
+            &b.id,
         )
     });
-
     ContextPointerDigest {
-        session_gap_human,
+        session_gap_human: sessions
+            .iter()
+            .find(|s| s.session_id == active)
+            .and_then(|s| s.last_timestamp)
+            .map(|last| human_age(last, now)),
         pointers,
-        canvas_summary,
+        canvas_summary: env.map(|e| {
+            format!(
+                "{} ({} components)",
+                e.spec.active_preset_id.as_deref().unwrap_or("default"),
+                e.spec.components.len()
+            )
+        }),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn pointer(
+    scope: &str,
+    id: &str,
+    kind: &str,
+    label: &str,
+    topic: Option<String>,
+    last: DateTime<Utc>,
+    now: DateTime<Utc>,
+    confidence: f32,
+    relevance: u16,
+    half_life: f64,
+    source: &str,
+    turns: Option<u32>,
+) -> ContextPointer {
+    let hours = (now - last).num_minutes().max(0) as f64 / 60.0;
+    ContextPointer {
+        id: id.into(),
+        kind: kind.into(),
+        label: label.into(),
+        topic,
+        last_active_at: last,
+        confidence,
+        selection: Some(PointerSelection {
+            provenance: source.into(),
+            scope: scope.into(),
+            relevance,
+            recency: ((-std::f64::consts::LN_2 * hours / half_life).exp() * 1000.0) as u16,
+            activity: if hours < 1.0 { 150 } else { 0 },
+            reasons: vec![
+                if relevance == 1000 {
+                    "active_session_work_link"
+                } else {
+                    "visible_source_activity"
+                }
+                .into(),
+            ],
+            representation: PointerRepresentation::Breadcrumb,
+            retrieval: if kind == POINTER_KIND_SESSION {
+                PointerRetrieval::ChatHistory {
+                    session_id: id.into(),
+                }
+            } else {
+                PointerRetrieval::ContextFollow {
+                    pointer_id: id.into(),
+                }
+            },
+            resolution: PointerResolution::Unknown,
+        }),
+        staleness: staleness_band(&last, now).into(),
+        age_human: human_age(last, now),
+        turn_count: turns,
+        metadata: None,
     }
 }
 
@@ -219,19 +224,13 @@ pub fn format_pointer_digest_block(digest: &ContextPointerDigest) -> String {
     if let Some(gap) = &digest.session_gap_human {
         lines.push(format!("session_gap={gap}"));
     }
-    if !digest.pointers.is_empty() {
-        lines.push(format!("active_chats={}", digest.pointers.len()));
-        lines.push("pointers:".to_string());
-        for pointer in &digest.pointers {
-            lines.push(format!(
-                "  - id={} confidence={:.2} staleness={} age={} topic=\"{}\"",
-                pointer.id,
-                pointer.confidence,
-                pointer.staleness,
-                pointer.age_human,
-                pointer.topic.as_deref().unwrap_or(&pointer.label)
-            ));
-        }
+    lines.push(format!("selected_pointers={}", digest.pointers.len()));
+    for p in &digest.pointers {
+        // JSON quoting keeps source prose data rather than prompt syntax.
+        lines.push(format!(
+            "pointer={}",
+            serde_json::to_string(p).expect("pointer serializes")
+        ));
     }
     if let Some(canvas) = &digest.canvas_summary {
         lines.push(format!("canvas={canvas}"));
@@ -244,38 +243,29 @@ pub fn resolve_pointer_slice(
     scope: &str,
     session_history: Option<&[medousa_types::session::ConversationTurn]>,
 ) -> (String, bool) {
-    let max_turns = parse_turn_scope(scope).unwrap_or(5);
+    let max_turns = parse_turn_scope(scope).unwrap_or(5).clamp(1, 100);
     match pointer.kind.as_str() {
         POINTER_KIND_SESSION => {
             if let Some(turns) = session_history {
                 let start = turns.len().saturating_sub(max_turns);
-                let slice = &turns[start..];
-                let mut out = String::new();
-                for turn in slice {
-                    out.push_str(&format!("[{}] {}\n", turn.role, turn.content));
-                }
-                let truncated = turns.len() > max_turns;
-                return (out, truncated);
+                let out = turns[start..]
+                    .iter()
+                    .map(|t| format!("[{}] {}\n", t.role, t.content))
+                    .collect::<String>();
+                return (out, turns.len() > max_turns);
             }
             (
                 format!(
-                    "Pointer {} ({}) — no session history loaded. Use session id to open thread.",
-                    pointer.id, pointer.label
+                    "Session {} history not loaded; use cognition_chat_history_read with session_id.",
+                    pointer.id
                 ),
                 false,
             )
         }
-        POINTER_KIND_COMPONENT => (
+        POINTER_KIND_COMPONENT | POINTER_KIND_WORK_CARD => (
             format!(
-                "Component '{}' on canvas (confidence {:.2}, age {}).",
-                pointer.label, pointer.confidence, pointer.age_human
-            ),
-            false,
-        ),
-        POINTER_KIND_WORK_CARD => (
-            format!(
-                "Work card '{}' (confidence {:.2}, age {}).",
-                pointer.label, pointer.confidence, pointer.age_human
+                "{} '{}' (source projection only; not task completion, age {}).",
+                pointer.kind, pointer.label, pointer.age_human
             ),
             false,
         ),
@@ -283,22 +273,8 @@ pub fn resolve_pointer_slice(
     }
 }
 
-fn score_pointer(
-    last_active: DateTime<Utc>,
-    half_life_hours: f64,
-    base: f32,
-    activity_boost: f32,
-    relevance: f32,
-) -> f32 {
-    let hours = (Utc::now() - last_active).num_minutes().max(0) as f64 / 60.0;
-    let lambda = std::f64::consts::LN_2 / half_life_hours;
-    let recency = (-lambda * hours).exp() as f32;
-    let activity = (1.0 + activity_boost).min(1.35);
-    (base * recency * activity * relevance).clamp(0.0, 1.0)
-}
-
-fn staleness_band(last_active: &DateTime<Utc>, now: DateTime<Utc>) -> &'static str {
-    let age = now - *last_active;
+fn staleness_band(last: &DateTime<Utc>, now: DateTime<Utc>) -> &'static str {
+    let age = now - *last;
     if age < Duration::hours(1) {
         STALENESS_FRESH
     } else if age < Duration::hours(24) {
@@ -309,118 +285,108 @@ fn staleness_band(last_active: &DateTime<Utc>, now: DateTime<Utc>) -> &'static s
         STALENESS_ARCHIVED
     }
 }
-
-fn human_age(last_active: DateTime<Utc>, now: DateTime<Utc>) -> String {
-    let mins = (now - last_active).num_minutes().max(0);
+fn human_age(last: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let mins = (now - last).num_minutes().max(0);
     if mins < 60 {
         format!("{mins}m")
-    } else if mins < 60 * 48 {
+    } else if mins < 2880 {
         format!("{}h", mins / 60)
     } else {
-        format!("{}d", mins / (60 * 24))
+        format!("{}d", mins / 1440)
     }
 }
-
 fn topic_from_preview(preview: &str) -> Option<String> {
     let line = preview.lines().next()?.trim();
-    if line.is_empty() {
-        None
-    } else {
-        Some(line.chars().take(64).collect())
-    }
+    (!line.is_empty()).then(|| line.chars().take(64).collect())
 }
-
 fn parse_turn_scope(scope: &str) -> Option<usize> {
-    let scope = scope.trim().to_ascii_lowercase();
-    if let Some(rest) = scope.strip_prefix("last_")
-        && let Some(num) = rest.strip_suffix("_turns")
-    {
-        return num.parse().ok();
-    }
-    None
+    scope
+        .trim()
+        .to_ascii_lowercase()
+        .strip_prefix("last_")?
+        .strip_suffix("_turns")?
+        .parse()
+        .ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn archived_pointers_filtered_from_digest() {
-        let old = Utc::now() - Duration::days(30);
-        let digest = build_pointer_digest(
-            "active",
-            &[SessionHistorySummary {
-                session_id: "old".to_string(),
-                display_name: Some("Old".to_string()),
-                turns: 1,
-                verification_runs: 0,
-                last_timestamp: Some(old),
-                last_verification_timestamp: None,
-                last_verification_confidence: None,
-                last_verification_coverage: None,
-                last_verification_verified: None,
-                preview: "runtime".to_string(),
-                catalog: None,
-                origin_surface: None,
-                has_code_work: false,
-            }],
-            None,
-            &[],
-        );
-        assert!(digest.pointers.is_empty());
+    fn hint(id: &str, session: &str, now: DateTime<Utc>) -> WorkCardHint {
+        WorkCardHint {
+            id: id.into(),
+            label: id.into(),
+            last_active_at: now,
+            session_id: Some(session.into()),
+            column: WorkBoardColumn::InFlight,
+        }
     }
-
     #[test]
-    fn recent_session_activity_boosts_confidence() {
-        let recent = Utc::now() - Duration::minutes(10);
-        let digest = build_pointer_digest(
-            "active",
-            &[SessionHistorySummary {
-                session_id: "recent-thread".to_string(),
-                display_name: Some("Recent".to_string()),
-                turns: 4,
-                verification_runs: 0,
-                last_timestamp: Some(recent),
-                last_verification_timestamp: None,
-                last_verification_confidence: None,
-                last_verification_coverage: None,
-                last_verification_verified: None,
-                preview: "runtime tuning".to_string(),
-                catalog: None,
-                origin_surface: None,
-                has_code_work: false,
-            }],
-            None,
-            &[],
+    fn selection_is_deterministic_scoped_and_deferral_does_not_remove_native_candidates() {
+        let now = Utc::now();
+        let mut hints = (0..20)
+            .map(|i| hint(&format!("card-{i:02}"), "active", now))
+            .collect::<Vec<_>>();
+        hints.push(hint("private", "other", now));
+        let all = build_pointer_candidates("active", &[], None, &hints, now);
+        hints.reverse();
+        let reversed = build_pointer_candidates("active", &[], None, &hints, now);
+        assert_eq!(
+            serde_json::to_value(&all).unwrap(),
+            serde_json::to_value(&reversed).unwrap()
         );
-        let pointer = digest
-            .pointers
-            .iter()
-            .find(|pointer| pointer.id == "recent-thread")
-            .expect("recent session pointer");
-        assert!(pointer.confidence > 0.9);
+        assert!(!all.pointers.iter().any(|p| p.id == "private"));
+        let digest = build_pointer_digest("active", &[], None, &hints);
+        assert!(digest.pointers.len() < all.pointers.len());
+        let deferred = all.pointers.last().unwrap();
+        assert_eq!(
+            deferred.selection.as_ref().unwrap().retrieval,
+            PointerRetrieval::ContextFollow {
+                pointer_id: deferred.id.clone()
+            }
+        );
+        assert!(
+            resolve_pointer_slice(deferred, "last_5_turns", None)
+                .0
+                .contains("source projection only")
+        );
     }
-
     #[test]
-    fn work_card_hints_rank_in_digest() {
-        let digest = build_pointer_digest(
-            "sess-active",
-            &[],
+    fn confidence_is_not_recency_activity_or_relevance() {
+        let now = Utc::now();
+        let fresh = pointer(
+            "s",
+            "x",
+            POINTER_KIND_SESSION,
+            "x",
             None,
-            &[WorkCardHint {
-                id: "card-1".to_string(),
-                label: "Bound workshop".to_string(),
-                last_active_at: Utc::now() - Duration::minutes(5),
-                session_id: Some("sess-active".to_string()),
-                column: WorkBoardColumn::InFlight,
-            }],
+            now,
+            now,
+            0.1,
+            900,
+            48.0,
+            "catalog",
+            None,
         );
-        let pointer = digest
-            .pointers
-            .iter()
-            .find(|pointer| pointer.kind == POINTER_KIND_WORK_CARD)
-            .expect("work card pointer");
-        assert_eq!(pointer.label, "Bound workshop");
-        assert!(pointer.confidence > 0.85);
+        let old = pointer(
+            "s",
+            "y",
+            POINTER_KIND_SESSION,
+            "y",
+            None,
+            now - Duration::days(10),
+            now,
+            0.99,
+            100,
+            48.0,
+            "catalog",
+            None,
+        );
+        assert!(fresh.selection.as_ref().unwrap().rank() > old.selection.as_ref().unwrap().rank());
+        assert_eq!(fresh.confidence, 0.1);
+        assert_eq!(
+            fresh.selection.as_ref().unwrap().resolution,
+            PointerResolution::Unknown
+        );
     }
 }

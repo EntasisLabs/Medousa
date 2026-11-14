@@ -11,6 +11,8 @@ pub mod browser;
 pub mod capability;
 pub mod component_runtime;
 pub mod component_store;
+pub mod context_hud;
+pub mod context_selection;
 pub mod coordination;
 pub mod creative;
 pub mod daemon_api;

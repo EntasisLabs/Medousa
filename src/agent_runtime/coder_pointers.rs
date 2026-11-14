@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::coder_activity::{CoderActivityEvent, CoderActivityKind};
+use medousa_types::context_selection::{
+    PointerRepresentation, PointerResolution, PointerRetrieval, PointerSelection,
+};
 
 pub const MAX_AMBIENT_POINTERS: usize = 6;
 pub const MAX_HISTORY_EVENTS: usize = 50;
@@ -44,7 +47,9 @@ pub struct CoderEngineeringPointer {
     pub pointer_id: String,
     pub kind: CoderPointerKind,
     pub label: String,
+    /// Selection rank, not evidence confidence or task state.
     pub score: f32,
+    pub selection: PointerSelection,
     pub age_human: String,
     pub revision: u64,
     pub agent_id: String,
@@ -73,6 +78,7 @@ pub struct CoderPointerDetail {
 
 pub fn rank_engineering_pointers(
     events: &[CoderActivityEvent],
+    work_id: &str,
     self_agent_id: &str,
     focus_targets: &[String],
     limit: usize,
@@ -85,6 +91,9 @@ pub fn rank_engineering_pointers(
         .collect::<Vec<_>>();
     let mut latest_by_cause = HashMap::<String, &CoderActivityEvent>::new();
     for event in events {
+        if event.work_id != work_id {
+            continue;
+        }
         if !matches!(
             event.kind,
             CoderActivityKind::ToolPlanned
@@ -101,7 +110,7 @@ pub fn rank_engineering_pointers(
         latest_by_cause
             .entry(cause)
             .and_modify(|current| {
-                if event.revision > current.revision {
+                if (event.revision, &event.event_id) > (current.revision, &current.event_id) {
                     *current = event;
                 }
             })
@@ -127,36 +136,47 @@ pub fn rank_engineering_pointers(
                     .iter()
                     .any(|focus| target.contains(focus) || focus.contains(&target))
             });
-            let score = (0.30 * recency
-                + status
-                + if focused { 0.22 } else { 0.0 }
-                + if event.agent_id != self_agent_id {
-                    0.08
-                } else {
-                    0.0
-                }
-                + if matches!(
-                    kind,
-                    CoderPointerKind::Verification | CoderPointerKind::DiagnosticSet
-                ) {
-                    0.08
-                } else {
-                    0.0
-                })
-            .clamp(0.0, 1.0);
-            CoderEngineeringPointer {
-                pointer_id: if event.call_id.is_some() {
-                    format!("engineering:call:{cause}")
-                } else {
-                    format!("engineering:event:{cause}")
+            let pointer_id = if event.call_id.is_some() {
+                format!("engineering:call:{cause}")
+            } else {
+                format!("engineering:event:{cause}")
+            };
+            let selection = PointerSelection {
+                provenance: event.event_id.clone(),
+                scope: work_id.into(),
+                relevance: if focused { 1000 } else { 400 },
+                recency: (recency * 1000.0) as u16,
+                activity: (status * 1000.0) as u16
+                    + if event.agent_id != self_agent_id {
+                        80
+                    } else {
+                        0
+                    },
+                reasons: vec![
+                    if focused {
+                        "focus_target_match"
+                    } else {
+                        "undertaking_activity"
+                    }
+                    .into(),
+                    format!("tool_lifecycle:{:?}; not_work_resolution", event.kind),
+                ],
+                representation: PointerRepresentation::Breadcrumb,
+                retrieval: PointerRetrieval::EngineeringFollow {
+                    pointer_id: pointer_id.clone(),
                 },
+                resolution: PointerResolution::Unknown,
+            };
+            CoderEngineeringPointer {
+                pointer_id,
+                score: selection.rank() as f32 / 7000.0,
+                selection,
                 kind,
                 label: event
                     .intent
                     .clone()
                     .or_else(|| event.tool.clone())
                     .unwrap_or_else(|| "Engineering activity".to_string()),
-                score,
                 age_human: human_age(event.occurred_at_utc, now),
                 revision: event.revision,
                 agent_id: event.agent_id.clone(),
@@ -168,10 +188,8 @@ pub fn rank_engineering_pointers(
         })
         .collect::<Vec<_>>();
     pointers.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.revision.cmp(&a.revision))
+        a.selection
+            .compare(&a.pointer_id, &b.selection, &b.pointer_id)
     });
     pointers.truncate(limit.clamp(1, 24));
     pointers
@@ -183,7 +201,7 @@ pub fn engineering_pointer_prompt_appendix(pointers: &[CoderEngineeringPointer])
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "⊕⟨ ⏣0{{ trigger: threshold, response_format: temporal_node, origin_session: \"medousa-coder-engineering-pointers\", compression_depth: 1, parent_node: ref:⏣0, prime: {{ attractor_config: {{ stability: 0.95, friction: 0.14, logic: 0.99, autonomy: 0.85 }}, context_summary: \"Ranked references to recent or unresolved engineering state in the active undertaking.\", relevant_tier: raw, retrieval_budget: 8 }} }} ⟩"
+        "⊕⟨ ⏣0{{ trigger: threshold, response_format: temporal_node, origin_session: \"medousa-coder-engineering-pointers\", compression_depth: 1, parent_node: ref:⏣0, prime: {{ attractor_config: {{ stability: 0.95, friction: 0.14, logic: 0.99, autonomy: 0.85 }}, context_summary: \"Ranked references to undertaking activity; tool status is not an unresolved obligation or proof of completion.\", relevant_tier: raw, retrieval_budget: 8 }} }} ⟩"
     );
     let _ = writeln!(
         out,
@@ -374,6 +392,38 @@ mod tests {
     }
 
     #[test]
+    fn scope_and_order_survive_permutation_and_success_is_not_work_resolution() {
+        let mut a = event(
+            1,
+            CoderActivityKind::ToolCompleted,
+            "cognition_coder_shell_run",
+        );
+        a.call_id = Some("a".into());
+        let mut b = a.clone();
+        b.call_id = Some("b".into());
+        b.event_id = "evt-b".into();
+        let mut private = a.clone();
+        private.work_id = "other-work".into();
+        private.revision = 999;
+        let first = rank_engineering_pointers(
+            &[b.clone(), private.clone(), a.clone()],
+            "work-1",
+            "agent-a",
+            &[],
+            6,
+        );
+        let second = rank_engineering_pointers(&[a, private, b], "work-1", "agent-a", &[], 6);
+        assert_eq!(
+            first.iter().map(|p| &p.pointer_id).collect::<Vec<_>>(),
+            second.iter().map(|p| &p.pointer_id).collect::<Vec<_>>()
+        );
+        assert_eq!(first.len(), 2);
+        assert_eq!(first[0].pointer_id, "engineering:call:a");
+        assert!(first.iter().all(|p| p.selection.scope == "work-1"
+            && p.selection.resolution == PointerResolution::Unknown));
+    }
+
+    #[test]
     fn pointers_are_causal_stable_ranked_and_followable() {
         let events = vec![
             event(
@@ -387,8 +437,13 @@ mod tests {
                 "cognition_shell_session_run",
             ),
         ];
-        let pointers =
-            rank_engineering_pointers(&events, "agent-b", &["src/parser.rs".to_string()], 6);
+        let pointers = rank_engineering_pointers(
+            &events,
+            "work-1",
+            "agent-b",
+            &["src/parser.rs".to_string()],
+            6,
+        );
         assert_eq!(pointers.len(), 1);
         assert_eq!(pointers[0].pointer_id, "engineering:call:call-1");
         assert_eq!(pointers[0].kind, CoderPointerKind::Verification);
@@ -401,17 +456,18 @@ mod tests {
     }
 
     #[test]
-    fn blocked_claim_becomes_a_ranked_unresolved_pointer() {
+    fn blocked_call_remains_activity_not_unresolved_work() {
         let mut blocked = event(
             1,
             CoderActivityKind::ToolBlocked,
             "cognition_code_apply_patch",
         );
         blocked.detail = Some("hazardous shared resource is already claimed".into());
-        let pointers = rank_engineering_pointers(&[blocked], "agent-b", &[], 4);
+        let pointers = rank_engineering_pointers(&[blocked], "work-1", "agent-b", &[], 4);
         assert_eq!(pointers.len(), 1);
         assert_eq!(pointers[0].status, CoderActivityKind::ToolBlocked);
         assert_eq!(pointers[0].kind, CoderPointerKind::ChangeSet);
+        assert_eq!(pointers[0].selection.resolution, PointerResolution::Unknown);
     }
 
     #[test]

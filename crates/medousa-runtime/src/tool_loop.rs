@@ -171,13 +171,22 @@ impl MedousaToolLoopPipeline {
         );
         let mut chat =
             ChatRequest::new(context.build_model_messages(request.system_prompt.as_deref()));
-        let report = crate::context::ContextCoordinator::compile_inference(
+        let work = if let Some(provider) =
+            completion_gate.and_then(|gate| gate.round_context_provider.as_ref())
+        {
+            await_turn_result("work context refresh", provider.work_context_projection()).await?
+        } else {
+            None
+        };
+        let report = crate::context::ContextCoordinator::compile_inference_with_hud(
             &mut chat,
             &self.window_policy,
             systems,
             context.user_lane_prefix.len(),
             self.first_request_context.assembly.as_ref(),
             perception,
+            work,
+            None,
         )
         .map_err(|overflow| {
             StasisError::PortFailure(serde_json::to_string(&overflow).expect("overflow serializes"))
@@ -188,6 +197,9 @@ impl MedousaToolLoopPipeline {
             None,
         );
         footprint.inference_window = Some(report);
+        if let Some(observer) = &self.first_request_context.inference_observer {
+            observer(footprint.clone()).await;
+        }
         let mut observation = crate::inference_usage::InferenceObservation::start(
             completion_gate,
             rounds_executed,
@@ -655,7 +667,16 @@ impl MedousaToolLoopPipeline {
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
                 ensure_assistant_tool_turn_reasoning(&mut messages);
                 let mut chat_request = ChatRequest::new(messages).with_tools(tools.clone());
-                let window_report = crate::context::ContextCoordinator::compile_inference(
+                let work = if let Some(provider) = completion_gate
+                    .as_ref()
+                    .and_then(|gate| gate.round_context_provider.as_ref())
+                {
+                    await_turn_result("work context refresh", provider.work_context_projection())
+                        .await?
+                } else {
+                    None
+                };
+                let window_report = crate::context::ContextCoordinator::compile_inference_with_hud(
                     &mut chat_request,
                     &self.window_policy,
                     usize::from(
@@ -667,6 +688,10 @@ impl MedousaToolLoopPipeline {
                     turn_ctx.user_lane_prefix.len(),
                     self.first_request_context.assembly.as_ref(),
                     &mut perception_governor,
+                    work,
+                    previous_request.as_ref().and_then(
+                        |p: &crate::inference_usage::RequestFootprint| p.inference_window.as_ref(),
+                    ),
                 )
                 .map_err(|overflow| {
                     StasisError::PortFailure(
@@ -722,6 +747,9 @@ impl MedousaToolLoopPipeline {
                 if previous_request.is_none()
                     && let Some(observer) = &self.first_request_context.observer
                 {
+                    observer(footprint.clone()).await;
+                }
+                if let Some(observer) = &self.first_request_context.inference_observer {
                     observer(footprint.clone()).await;
                 }
                 let mut observation = crate::inference_usage::InferenceObservation::start(

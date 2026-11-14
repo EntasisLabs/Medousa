@@ -2123,6 +2123,9 @@ pub struct ContextUsageLayer {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ContextUsageReport {
+    /// Derived from the same compiled request and authoritative work state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hud: Option<crate::context_hud::UserContextProjection>,
     pub layers: Vec<ContextUsageLayer>,
     pub total_tokens_estimate: u32,
     pub total_chars: u32,

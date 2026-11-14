@@ -47,6 +47,9 @@ fn section(value: &impl Serialize) -> RequestSection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestFootprint {
     pub tools: RequestSection,
+    /// Actual filtered tool catalog on this inference, not an assembly guess.
+    #[serde(default)]
+    pub tool_count: Option<usize>,
     /// Text-only estimate and explicitly unknown protocol/media parts. Kept
     /// separate from serialized bytes and provider-reported/billed tokens.
     #[serde(default)]
@@ -84,6 +87,7 @@ impl RequestFootprint {
         }
         Self {
             tools: section(&request.tools),
+            tool_count: request.tools.as_ref().map(Vec::len),
             content_cost: Some(content_cost),
             first_request_context: None,
             inference_window: None,

@@ -166,9 +166,25 @@ export interface ContextUsageLayer {
   tokens_estimate: number;
 }
 
+export interface WorkContextProjection {
+  blockers: string[];
+  decisions: string[];
+  phase: string;
+  progress?: string | null;
+  work_id: string;
+}
+
+export interface UserContextProjection {
+  accounting: string;
+  deferred_items: number;
+  pressure: string;
+  work?: WorkContextProjection | null;
+}
+
 export interface ContextUsageReport {
   context_limit_tokens?: number | null;
   estimator: string;
+  hud?: UserContextProjection | null;
   layers: ContextUsageLayer[];
   tool_count: number;
   total_chars: number;

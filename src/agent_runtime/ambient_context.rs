@@ -148,7 +148,13 @@ pub fn append_ambient_context(prompt: &str, input: AmbientContextInput<'_>) -> S
 /// Pointer digest + canvas summary for turn bootstrap.
 #[cfg(feature = "full-daemon")]
 pub async fn build_environment_ambient_extras(session_id: &str) -> String {
-    let sessions = crate::session_catalog::list_sessions(20);
+    let profile = crate::agent_runtime::execution_context::active_turn_execution_context()
+        .and_then(|context| context.legacy_scope().identity_user_id.clone());
+    let sessions = profile
+        .as_deref()
+        .filter(|p| crate::session_history::session_visible_to_profile(session_id, p))
+        .map(|p| crate::session_history::list_sessions_for_profile(p, 20))
+        .unwrap_or_default();
     let env = crate::environment_store::environment_hub()
         .get(&crate::environment_store::resolve_profile_id(None))
         .await

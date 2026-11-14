@@ -10,6 +10,17 @@ pub const ROUND_CONTEXT_PREFIX: &str = "[MEDOUSA_ROUND_CONTEXT]";
 pub const SCRATCH_PREFIX: &str = "[MEDOUSA_SCRATCH]";
 pub const STICKY_CONTEXT_PREFIX: &str = "[MEDOUSA_CHAT_STICKIES]";
 
+pub type WorkContextFuture<'a> = std::pin::Pin<
+    Box<
+        dyn std::future::Future<
+                Output = stasis::prelude::Result<
+                    Option<medousa_types::context_hud::WorkContextProjection>,
+                >,
+            > + Send
+            + 'a,
+    >,
+>;
+
 pub type StickyContextFuture<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = stasis::prelude::Result<Option<String>>> + Send + 'a>,
 >;
@@ -44,6 +55,11 @@ pub struct ToolLaneState {
 /// replaceable pointer refreshed immediately before each inference.
 pub trait ToolRoundContextProvider: Send + Sync {
     fn context_for_next_round(&self) -> stasis::prelude::Result<Option<String>>;
+
+    /// Domain-owned authoritative state, separate from tool lifecycle activity.
+    fn work_context_projection(&self) -> WorkContextFuture<'_> {
+        Box::pin(async { Ok(None) })
+    }
 
     /// A separately budgeted, replaceable data lane. Async so durable storage
     /// never blocks an executor thread. Called before the FIRST and every later

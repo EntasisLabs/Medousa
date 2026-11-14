@@ -525,6 +525,7 @@ mod tests {
             height_px: Some(240),
         };
         let report = ContextUsageReport {
+            hud: None,
             layers: Vec::new(),
             total_tokens_estimate: 10,
             total_chars: 40,

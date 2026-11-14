@@ -59,6 +59,43 @@ sums, and leaves incomplete totals and cache ratios `null`. Use it to compare
 tool rounds and generated edit payloads across equivalent tasks. Provider usage
 reports remain the billing authority.
 
+## Context selection and replaceable projections
+
+The inference window report includes typed `deferred_pointers` with source scope,
+provenance, selection reasons, and native retrieval routes. Chat-history routes
+retain their exact session IDs; engineering routes retain their undertaking and
+call/event IDs. Context-pointer follow checks the admitted principal's visibility
+and reads the requested native source independently of ambient top-N ranking.
+Deferral or archival in the digest is not deletion and grants no new permissions.
+Ranking separates relevance, recency and activity from source confidence. A failed
+call is activity, not an unresolved obligation; a successful call is not work
+completion. Without an authoritative resolution relationship, resolution is
+`unknown`.
+
+The model receives a replaceable `[MEDOUSA_CONTEXT_HUD]` system tail on the
+inference request copy, not an appended conversation turn. It carries available
+work focus/lifecycle, meaningful changes, pressure and deferred-history retrieval.
+Its bounded footprint is accounted before dispatch. If it cannot fit, the HUD is
+omitted rather than cutting policy, current input, protected stickies or tool
+pairs. Stable request prefixes are unchanged.
+
+Existing `context_usage` stream events and `ContextUsageReport` now have an
+optional `hud` projection. Older clients may ignore it. It contains available
+`work` facts (`work_id`, authoritative `phase`, safe progress/blocker/decision
+accounting), a `pressure` band, a `deferred_items` count and the accounting label.
+Work facts are absent when no authoritative work projection is available. Private
+prompt/evidence/review prose is not copied into the projection. A lifecycle phase
+or executor result is not proof that the user's goal is verified or accepted.
+
+Daemon accounting snapshots are replaced on every inference, including resumed
+and growing tool loops. User-facing events coalesce work/selection changes;
+changes to estimated token counts or pressure alone do not emit another update.
+The existing operator summary renders the safe projection, with accounting detail
+available in the report. Totals remain conservative estimates including protocol
+and media allowances; per-layer estimates are text-only, and provider-reported
+usage remains a separate authority. These views do not introduce another work
+store, change retrieval admission, or expand tool permissions.
+
 ## Batch replacements through `code.write`
 
 `cognition_store_write` accepts `action: "code.write"` with an `edits` array.

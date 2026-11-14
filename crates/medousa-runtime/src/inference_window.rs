@@ -4,7 +4,7 @@
 use genai::chat::{ChatRequest, ChatRole, ContentPart};
 use serde::{Deserialize, Serialize};
 
-use crate::context::{ContextCapacity, ContextCoordinator, ContextDecisionReport};
+use crate::context::{ContextCapacity, ContextCoordinator, ContextDecisionReport, ContextOwner};
 use crate::perception::ToolPerceptionGovernor;
 
 #[cfg(test)]
@@ -143,6 +143,12 @@ pub struct InferenceWindowReport {
     pub request_messages_digest: String,
     pub reconciled: bool,
     pub decisions: ContextDecisionReport,
+    #[serde(default)]
+    pub deferred_pointers: Vec<medousa_types::context_selection::PointerSelection>,
+    #[serde(default)]
+    pub hud: Option<medousa_types::context_hud::UserContextProjection>,
+    #[serde(default)]
+    pub meaningful_changes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
@@ -299,7 +305,12 @@ impl ContextCoordinator {
                     owner: crate::context::ContextOwner::Chat,
                     provenance: crate::context::ContextProvenance {
                         source: "prepared_chat_history".into(),
-                        scope: None,
+                        scope: assembly.and_then(|a| {
+                            a.contributions
+                                .iter()
+                                .filter(|c| c.owner == ContextOwner::Chat)
+                                .find_map(|c| c.provenance.scope.clone())
+                        }),
                     },
                     retention: crate::context::Retention::Flexible,
                     decision: crate::context::ContextDecision::Omitted {
@@ -310,8 +321,40 @@ impl ContextCoordinator {
                     budget_chars: None,
                 });
         }
+        // Only Chat owns a session-history route. A work/tool scope is not a
+        // session ID, even when it happens to look like one.
+        let scope = assembly.and_then(|a| {
+            a.contributions
+                .iter()
+                .filter(|c| c.owner == ContextOwner::Chat)
+                .find_map(|c| c.provenance.scope.clone())
+        });
+        let deferred_pointers = scope
+            .filter(|_| deferred > 0)
+            .map(|session_id| {
+                vec![medousa_types::context_selection::PointerSelection {
+                    provenance: "prepared_chat_history".into(),
+                    scope: session_id.clone(),
+                    relevance: 1000,
+                    recency: 0,
+                    activity: 0,
+                    reasons: vec![
+                        "inference_budget_deferral; original_session_history_retained".into(),
+                    ],
+                    representation:
+                        medousa_types::context_selection::PointerRepresentation::Deferred,
+                    retrieval: medousa_types::context_selection::PointerRetrieval::ChatHistory {
+                        session_id,
+                    },
+                    resolution: medousa_types::context_selection::PointerResolution::Unknown,
+                }]
+            })
+            .unwrap_or_default();
         let report = InferenceWindowReport {
             policy: policy.clone(),
+            deferred_pointers,
+            hud: None,
+            meaningful_changes: Vec::new(),
             input_budget: budget,
             estimate: measured.clone(),
             accounting:

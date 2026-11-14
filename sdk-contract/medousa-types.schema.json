@@ -30022,6 +30022,17 @@
             "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
             "type": "string"
           },
+          "hud": {
+            "description": "Derived from the same compiled request and authoritative work state.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UserContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "layers": {
             "type": "array",
             "items": {
@@ -30215,6 +30226,73 @@
             "type": "boolean"
           },
           "value": {
+            "type": "string"
+          }
+        }
+      },
+      "UserContextProjection": {
+        "type": "object",
+        "required": [
+          "accounting",
+          "deferred_items",
+          "pressure"
+        ],
+        "properties": {
+          "accounting": {
+            "type": "string"
+          },
+          "deferred_items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "pressure": {
+            "type": "string"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "WorkContextProjection": {
+        "type": "object",
+        "required": [
+          "blockers",
+          "decisions",
+          "phase",
+          "work_id"
+        ],
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phase": {
+            "description": "Exact authoritative lifecycle label, never a claim that the user's goal passed.",
+            "type": "string"
+          },
+          "progress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_id": {
             "type": "string"
           }
         }
@@ -42689,6 +42767,17 @@
             "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
             "type": "string"
           },
+          "hud": {
+            "description": "Derived from the same compiled request and authoritative work state.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UserContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "layers": {
             "type": "array",
             "items": {
@@ -43586,6 +43675,73 @@
           }
         ]
       },
+      "UserContextProjection": {
+        "type": "object",
+        "required": [
+          "accounting",
+          "deferred_items",
+          "pressure"
+        ],
+        "properties": {
+          "accounting": {
+            "type": "string"
+          },
+          "deferred_items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "pressure": {
+            "type": "string"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "WorkContextProjection": {
+        "type": "object",
+        "required": [
+          "blockers",
+          "decisions",
+          "phase",
+          "work_id"
+        ],
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phase": {
+            "description": "Exact authoritative lifecycle label, never a claim that the user's goal passed.",
+            "type": "string"
+          },
+          "progress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
       "WorkerAckKind": {
         "type": "string",
         "enum": [
@@ -43705,6 +43861,17 @@
           "estimator": {
             "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
             "type": "string"
+          },
+          "hud": {
+            "description": "Derived from the same compiled request and authoritative work state.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UserContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "layers": {
             "type": "array",
@@ -44632,6 +44799,73 @@
           }
         ]
       },
+      "UserContextProjection": {
+        "type": "object",
+        "required": [
+          "accounting",
+          "deferred_items",
+          "pressure"
+        ],
+        "properties": {
+          "accounting": {
+            "type": "string"
+          },
+          "deferred_items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "pressure": {
+            "type": "string"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "WorkContextProjection": {
+        "type": "object",
+        "required": [
+          "blockers",
+          "decisions",
+          "phase",
+          "work_id"
+        ],
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phase": {
+            "description": "Exact authoritative lifecycle label, never a claim that the user's goal passed.",
+            "type": "string"
+          },
+          "progress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
+      },
       "WorkerAckKind": {
         "type": "string",
         "enum": [
@@ -45459,6 +45693,17 @@
             "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
             "type": "string"
           },
+          "hud": {
+            "description": "Derived from the same compiled request and authoritative work state.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UserContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "layers": {
             "type": "array",
             "items": {
@@ -45610,6 +45855,73 @@
             "type": "boolean"
           },
           "value": {
+            "type": "string"
+          }
+        }
+      },
+      "UserContextProjection": {
+        "type": "object",
+        "required": [
+          "accounting",
+          "deferred_items",
+          "pressure"
+        ],
+        "properties": {
+          "accounting": {
+            "type": "string"
+          },
+          "deferred_items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "pressure": {
+            "type": "string"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "WorkContextProjection": {
+        "type": "object",
+        "required": [
+          "blockers",
+          "decisions",
+          "phase",
+          "work_id"
+        ],
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phase": {
+            "description": "Exact authoritative lifecycle label, never a claim that the user's goal passed.",
+            "type": "string"
+          },
+          "progress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_id": {
             "type": "string"
           }
         }
@@ -46406,6 +46718,17 @@
             "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
             "type": "string"
           },
+          "hud": {
+            "description": "Derived from the same compiled request and authoritative work state.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UserContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "layers": {
             "type": "array",
             "items": {
@@ -46624,6 +46947,73 @@
             ]
           }
         ]
+      },
+      "UserContextProjection": {
+        "type": "object",
+        "required": [
+          "accounting",
+          "deferred_items",
+          "pressure"
+        ],
+        "properties": {
+          "accounting": {
+            "type": "string"
+          },
+          "deferred_items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "pressure": {
+            "type": "string"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "WorkContextProjection": {
+        "type": "object",
+        "required": [
+          "blockers",
+          "decisions",
+          "phase",
+          "work_id"
+        ],
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phase": {
+            "description": "Exact authoritative lifecycle label, never a claim that the user's goal passed.",
+            "type": "string"
+          },
+          "progress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        }
       },
       "WorkerAckKind": {
         "type": "string",

@@ -788,6 +788,7 @@ pub(crate) async fn start_prompt_run(
     }
     tracing::debug!(decisions = ?compiled_context.decisions, reconciled = compiled_context.reconciled, "TUI turn context (assembly snapshot incomplete; first request pending)");
     let first_request_context = medousa_runtime::request_context::FirstRequestContextConfig {
+        inference_observer: None,
         assembly: Some(compiled_context.decisions.clone()),
         observer: Some(Arc::new(move |footprint| {
             Box::pin(async move {

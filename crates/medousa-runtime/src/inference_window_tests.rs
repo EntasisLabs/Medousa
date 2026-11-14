@@ -48,6 +48,56 @@ fn history() -> ChatRequest {
 }
 
 #[test]
+fn deferred_history_route_preserves_chat_scope_and_never_relabels_work_scope() {
+    use crate::context::{
+        ContextContribution, ContextCost, ContextOwner, ContextProvenance, Retention,
+    };
+    use medousa_types::context_selection::{PointerRepresentation, PointerRetrieval};
+    for owner in [ContextOwner::Chat, ContextOwner::UnitOfWork] {
+        let mut request = history();
+        let contribution = ContextContribution {
+            id: "prior_conversation".into(),
+            owner,
+            provenance: ContextProvenance {
+                source: "prior_conversation".into(),
+                scope: Some("native-session-exact".into()),
+            },
+            retention: Retention::Flexible,
+            decision: crate::context::ContextDecision::Included,
+            cost: ContextCost::default(),
+            budget_chars: None,
+        };
+        let mut coordinator = crate::context::ContextCoordinator::default();
+        coordinator.include(contribution);
+        let prepared = coordinator.report(crate::context::ContextCapacity::default());
+        let report = ContextCoordinator::compile_inference(
+            &mut request,
+            &policy(1100),
+            1,
+            5,
+            Some(&prepared),
+            &mut ToolPerceptionGovernor::default(),
+        )
+        .unwrap();
+        assert_eq!(report.deferred_history_messages, 2);
+        if owner == ContextOwner::Chat {
+            assert_eq!(
+                report.deferred_pointers[0].retrieval,
+                PointerRetrieval::ChatHistory {
+                    session_id: "native-session-exact".into()
+                }
+            );
+            assert_eq!(
+                report.deferred_pointers[0].representation,
+                PointerRepresentation::Deferred
+            );
+        } else {
+            assert!(report.deferred_pointers.is_empty());
+        }
+    }
+}
+
+#[test]
 fn separate_shared_unknown_and_zero_limits_are_distinct() {
     assert_eq!(policy(10000).input_budget(), 10000); // separate input limit
     assert_eq!(

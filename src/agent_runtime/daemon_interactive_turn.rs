@@ -54,6 +54,16 @@ impl super::turn_context::ToolRoundContextProvider for InteractiveStickyContext 
             .map_or(Ok(None), |inner| inner.context_for_next_round())
     }
 
+    fn work_context_projection(&self) -> medousa_runtime::turn_context::WorkContextFuture<'_> {
+        Box::pin(async move {
+            if let Some(inner) = &self.inner {
+                inner.work_context_projection().await
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
     fn replaces_previous_context(&self) -> bool {
         self.inner
             .as_ref()
@@ -2651,20 +2661,20 @@ async fn run_agent_turn_inner(
     tracing::debug!(target: "medousa::context_usage", turn_id = %turn_id,
         decisions = ?context_compilation.decisions, reconciled = context_compilation.reconciled,
         "turn context decisions (assembly snapshot incomplete; first request pending)");
-    let published = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let coalescer = Arc::new(std::sync::Mutex::new(
+        crate::agent_runtime::context_usage::ContextUpdateCoalescer::default(),
+    ));
     let final_telemetry = context_telemetry.clone();
     assembled.execution.first_request_context =
         medousa_runtime::request_context::FirstRequestContextConfig {
             assembly: Some(context_compilation.decisions.clone()),
-            observer: Some(Arc::new(move |footprint| {
+            observer: None,
+            inference_observer: Some(Arc::new(move |footprint| {
                 let stream_sink = final_telemetry.clone();
-                let first = !published.swap(true, std::sync::atomic::Ordering::SeqCst);
+                let coalescer = coalescer.clone();
                 Box::pin(async move {
-                    if !first {
-                        return;
-                    }
                     let Some(report) =
-                        crate::agent_runtime::context_usage::first_request_usage_report(&footprint)
+                        crate::agent_runtime::context_usage::inference_usage_report(&footprint)
                     else {
                         return;
                     };
@@ -2676,6 +2686,15 @@ async fn run_agent_turn_inner(
                                 .write()
                                 .await
                                 .insert(stream_sink.session_id.clone(), report.clone());
+                        }
+                        // Replace cached accounting on every inference, but publish only
+                        // meaningful work/selection changes, not token fluctuations.
+                        if !coalescer
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .should_publish(&report)
+                        {
+                            return;
                         }
                         let operator_summary = Some(
                             crate::agent_runtime::context_usage::operator_summary(&report),
@@ -2691,7 +2710,6 @@ async fn run_agent_turn_inner(
             })),
         };
     let context_report = context_compilation.usage;
-    let context_summary = crate::agent_runtime::context_usage::operator_summary(&context_report);
     tracing::info!(
         target: "medousa::context_usage",
         turn_id = %turn_id,
@@ -2726,21 +2744,8 @@ async fn run_agent_turn_inner(
         largest_tool_schema_chars = ?largest_tool_schema_chars,
         "turn prompt footprint constituents"
     );
-    if let Some(stream_sink) = context_telemetry {
-        if let Some(cache) = &stream_sink.session_hooks.context_usage_by_session {
-            let session_id = stream_sink.session_id.clone();
-            cache
-                .write()
-                .await
-                .insert(session_id, context_report.clone());
-        }
-        stream_sink
-            .publish_tracked(TurnStreamEventV3::ContextUsage {
-                report: context_report,
-                operator_summary: Some(context_summary),
-            })
-            .await;
-    }
+    // Assembly telemetry is incomplete: do not publish it as a competing HUD.
+    // The per-inference observer above owns replaceable user accounting.
 
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
     if let Some(registry) = coder_registry {

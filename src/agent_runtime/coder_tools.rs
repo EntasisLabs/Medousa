@@ -1203,6 +1203,51 @@ impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
         Ok(Some(format!("Coder runtime context: {pointer}")))
     }
 
+    fn work_context_projection(&self) -> medousa_runtime::turn_context::WorkContextFuture<'_> {
+        Box::pin(async move {
+            let authority = self.authority()?;
+            let Some(execution) = authority.forge.execution() else {
+                return Ok(None);
+            };
+            let work_id = authority.lease.work_id.clone();
+            let forge = authority.forge.clone();
+            let item = execution
+                .run(
+                    medousa_forge::execution::ExecutionClass::StoreIo,
+                    64 * 1024,
+                    move || forge.load(&work_id),
+                )
+                .await
+                .map_err(|err| {
+                    StasisError::PortFailure(format!(
+                        "cannot read authoritative work projection: {err}"
+                    ))
+                })?;
+            Ok(Some(medousa_types::context_hud::WorkContextProjection {
+                work_id: item.id.to_string(),
+                phase: item.state.to_string(),
+                progress: Some(format!(
+                    "{} recorded attempts; executor results require owner review",
+                    item.attempts.len()
+                )),
+                // Historical change requests are NOT current blockers. No private prose.
+                blockers: if item.state == medousa_forge::model::WorkState::Failed {
+                    vec!["authoritative_work_state_failed".into()]
+                } else {
+                    Vec::new()
+                },
+                decisions: if item.review_decisions.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![format!(
+                        "{} recorded review decisions; validity remains authority-checked",
+                        item.review_decisions.len()
+                    )]
+                },
+            }))
+        })
+    }
+
     fn replaces_previous_context(&self) -> bool {
         true
     }
@@ -1494,6 +1539,7 @@ impl CoderBoundToolRegistry {
         let authority = self.authority()?;
         Ok(super::coder_pointers::rank_engineering_pointers(
             &self.engineering_events()?,
+            &self.entry.work_id,
             &authority.identity.agent_id,
             &self.focus_targets(),
             limit,

@@ -314,7 +314,10 @@ pub struct ContextPointer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topic: Option<String>,
     pub last_active_at: DateTime<Utc>,
+    /// Source confidence only; ranking features live in selection.
     pub confidence: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<crate::context_selection::PointerSelection>,
     pub staleness: String,
     pub age_human: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
