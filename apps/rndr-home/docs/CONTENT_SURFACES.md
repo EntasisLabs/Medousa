@@ -53,13 +53,23 @@ Labels are bounded to 240 characters and plain native `Label`/`Button` text, not
 Markdown/HTML, URL openers or executable content. Control and bidi/invisible format
 characters are removed from titles. Paths reject traversal, absolute/URL/drive,
 backslash, empty/dot segments, controls/bidi, percent-encoding and query/fragment
-syntax; duplicate identifiers or unsafe paths make the page incompatible without
+syntax. Notes additionally rejects paths over 240 Unicode scalar characters (and
+over 512 UTF-8 bytes), so accepted paths survive the unchanged generic display
+limit in full. This fails the entire first page, before exclusions, rather than
+silently aliasing common prefixes or providing partial success. Titles still have
+the existing 240-character display cap; filtering searches only projected text,
+including the entire accepted path, not omitted title suffixes. No path opening or
+body access exists. Notes path labels add visual line breaks every 24 characters
+(continuation lines, not inserted path bytes); Record/filter identity stays unchanged,
+so queries spanning a visual break still match. Long details require scrolling.
+Duplicate identifiers or unsafe paths make the page incompatible without
 echoing them. Paths are never used for a second HTTP read or filesystem operation.
 
 The default production Library hides system/developer and Ask/link-test notes.
 This preview is intentionally stricter: hidden paths, `system/`, `bugs/`,
 `medousa-daemon`, Ask/link-test and chat/session/profile-tagged notes are excluded,
-without an opt-in. Tags are inspected only for exclusion and never projected.
+without an opt-in. Tags are trimmed with Unicode whitespace handling and lowercased for every existing
+exclusion category (`session`, `session:`, `chat:`, `profile:`); they are never projected.
 `src/vault/semantic_tags.rs` shows that profile/session tags can be applied
 automatically to ordinary authored notes. Therefore this deliberately conservative
 preview can omit legitimate notes, especially on a non-default profile; it is not
@@ -69,7 +79,16 @@ Bodies, backlinks, arbitrary kind strings, cursors, diagnostics and extra respon
 fields are not retained in the presentation. Note titles themselves are user
 content; this is not a general secret detector or data-loss-prevention system.
 
+The endpoint enumerates the daemon's active vault root, not a per-chat vault or
+chat attachments. This correction adds no root switching, profile opt-in or new
+grants. Ordinary non-default-profile exclusions remain in force.
+
 The query and projection are capped at **100 summaries before exclusions**.
+**This is a row/display bound, not an HTTP byte or allocation bound.** The inherited
+SDK reads the full response text and deserializes it before projection, including
+extra fields and strings. The timeout is not a memory cap. Scope remains a trusted
+local canonical service, not a hostile/custom-service hardening claim; no shared
+SDK/daemon/transport refactor is part of this pass.
 Only the first page is loaded; cursors are not followed. Every state says it is
 not the whole vault, even for older adapters without pagination metadata.
 `reset_required` fails incompatible; Refresh retries the head page. No claim that
@@ -120,7 +139,8 @@ remain historical evidence, not expanded qualification.
 
 ## Verification, remaining human checks and next priorities
 
-See [exact checks, sample paths and inspected-pixel ledger](content-evidence/REPORT.md).
+Prior candidate evidence remains [historical and unchanged](content-evidence/REPORT.md).
+See [correction checks, provenance and inspected pixels](notes-correction-evidence/REPORT.md).
 Synthetic checks are not native device/live-service/IME/accessibility proof.
 
 1. **Next content increment:** bounded Notes pagination with generation/root identity

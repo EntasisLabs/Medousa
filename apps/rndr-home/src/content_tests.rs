@@ -339,3 +339,37 @@ fn notes_refresh_serial_fence_clears_detail_and_preserves_query_without_cross_re
             .contains_key(&Resource::Notes)
     );
 }
+
+#[test]
+fn notes_long_paths_wrap_visually_without_changing_filter_identity() {
+    for width in [480., 1120.] {
+        let mut a = app();
+        a.update();
+        a.world_mut()
+            .insert_resource(std::sync::Arc::new(rndr_render::ParleyText::new())
+                as std::sync::Arc<dyn TextEngine>);
+        a.world_mut().insert_resource(Viewport::new(width, 650.));
+        let path = format!("{}x.md", "a".repeat(236));
+        let rows = content::notes(serde_json::from_value(serde_json::json!({"notes":[{"path":path,"title":"Long path", "modified_at_utc":"2026-11-13T00:00:00Z"}]})).unwrap()).unwrap();
+        assert!(rows[0].matches(&path));
+        a.world_mut()
+            .resource_mut::<Desktop>()
+            .unwrap()
+            .reads
+            .insert(Resource::Notes, ReadState::Ready(rows));
+        desktop::navigate(a.world_mut(), Route::Data(Resource::Notes));
+        settle(&mut a);
+        activate(&mut a, "record:0");
+        let e = a
+            .world()
+            .entities_with::<Label>()
+            .into_iter()
+            .find(|e| a.world().get::<Label>(*e).unwrap().text.replace('\n', "") == path)
+            .unwrap();
+        let value = &a.world().get::<Label>(e).unwrap().text;
+        assert!(value.lines().all(|line| line.chars().count() <= 24));
+        let rect = a.world().get::<Rect>(e).unwrap();
+        assert!(rect.x + rect.w <= width, "path escapes viewport: {rect:?}");
+        assert!(a.world().entities_with::<MarkdownView>().is_empty());
+    }
+}

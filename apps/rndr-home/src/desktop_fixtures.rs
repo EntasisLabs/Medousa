@@ -279,7 +279,19 @@ fn cases() -> Vec<Case> {
             {"path":"projects/desktop.md", "title":"Desktop ideas · synthetic", "modified_at_utc":"2026-11-12T00:00:00Z"}
         ], "truncated": true
     })).unwrap()).unwrap();
+    let long_notes = crate::content::notes(serde_json::from_value(serde_json::json!({
+        "notes": [
+            {"path":format!("{}x.md", "a".repeat(236)), "title":format!("Synthetic long label · {}", "界 journal ".repeat(30)), "modified_at_utc":"2026-11-13T00:00:00Z"},
+            {"path":format!("{}y.md", "a".repeat(236)), "title":"Synthetic common-prefix second note", "modified_at_utc":"2026-11-13T00:00:00Z"}
+        ]
+    })).unwrap()).unwrap();
     for (name, state, detail) in [
+        (
+            "notes-long-list",
+            ReadState::Ready(long_notes.clone()),
+            None,
+        ),
+        ("notes-long-detail", ReadState::Ready(long_notes), Some(0)),
         ("notes-list", ReadState::Ready(notes.clone()), None),
         ("notes-detail", ReadState::Ready(notes.clone()), Some(0)),
         ("notes-no-match", ReadState::Ready(notes), None),

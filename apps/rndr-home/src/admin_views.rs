@@ -5,6 +5,18 @@ use crate::presentation::label;
 use crate::shell::{muted, row};
 use rndr_core::*;
 
+/// Notes-only visual line breaks: retain the complete original path in Record
+/// for filtering. Never use this presentation string as an identifier or action.
+fn notes_path_lines(value: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in value.chars().enumerate() {
+        if i > 0 && i % 24 == 0 {
+            out.push('\n');
+        }
+        out.push(c);
+    }
+    out
+}
 pub fn render(world: &mut World, h: &Handles, route: Route, narrow: bool) {
     crate::settings_views::render(world, h, route, narrow);
 }
@@ -40,7 +52,7 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
         world,
         parent,
         if resource == Resource::Notes {
-            "First page only · up to 100 summaries before exclusions · not the whole vault · refresh explicitly"
+            "First page only · up to 100 summaries before exclusions · not the whole vault · paths over 240 characters reject page · refresh explicitly"
         } else if resource == Resource::Activity {
             "Read-only snapshot · refresh explicitly · maximum 100 work cards · no operations executed"
         } else {
@@ -86,7 +98,11 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
                 label(world, parent, &record.title, true);
                 for (key, value) in &record.fields {
                     label(world, parent, key, true);
-                    muted(world, parent, value);
+                    if resource == Resource::Notes && *key == "Vault-relative path" {
+                        muted(world, parent, &notes_path_lines(value));
+                    } else {
+                        muted(world, parent, value);
+                    }
                 }
                 muted(
                     world,
@@ -140,7 +156,15 @@ pub fn dataset(world: &mut World, parent: Entity, resource: Resource) {
                         },
                     );
                     if let Some((key, value)) = record.fields.first() {
-                        muted(world, parent, &format!("{key}: {value}"));
+                        if resource == Resource::Notes && *key == "Vault-relative path" {
+                            muted(
+                                world,
+                                parent,
+                                &format!("{key}:\n{}", notes_path_lines(value)),
+                            );
+                        } else {
+                            muted(world, parent, &format!("{key}: {value}"));
+                        }
                     }
                 }
             }
