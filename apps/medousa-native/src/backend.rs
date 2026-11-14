@@ -10,7 +10,7 @@ use medousa_types::{
     SetSessionAgentModeRequest, TurnStreamEnvelopeV3,
 };
 use rndr_core::{Event, feed};
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::mpsc;
 
 pub enum Command {
@@ -27,6 +27,7 @@ pub enum Command {
     SetMode(String, AgentModeId),
 }
 pub struct Request {
+    /// Opaque, stable session route allocated by the UI, not focus order.
     pub generation: u64,
     pub command: Command,
 }
@@ -507,47 +508,42 @@ async fn serve(
             timing("modes", started);
         });
     }
-    let mut stream_task: Option<tokio::task::JoinHandle<()>> = None;
-    let mut mode_task: Option<tokio::task::JoinHandle<()>> = None;
-    let mut view_generation = 0;
+    // Generation is an opaque UI-owned session route, not a global navigation
+    // counter. Background sessions retain their admission/follow and reply route.
+    let mut stream_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
+    let mut mode_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     while let Some(Request {
         generation,
         command,
     }) = commands.recv().await
     {
         while metadata_tasks.try_join_next().is_some() {}
-        if !matches!(command, Command::List(_) | Command::More { .. }) {
-            if generation < view_generation {
-                // Never admit queued stale mutations after navigation.
-                continue;
-            }
-            view_generation = generation;
-        }
-        // A read launched by Open must not overwrite a newer mode mutation,
-        // even when both commands belong to the same view generation.
-        if matches!(
-            command,
-            Command::New | Command::Open(_) | Command::SetMode(_, _)
-        ) && let Some(task) = mode_task.take()
+        stream_tasks.retain(|_, task| !task.is_finished());
+        mode_tasks.retain(|_, task| !task.is_finished());
+        // A read launched by Open must not overwrite a newer mode mutation in
+        // that session. Opening another session must leave this read untouched.
+        let mode_session = match &command {
+            Command::Open(id) | Command::SetMode(id, _) => Some(id),
+            _ => None,
+        };
+        if let Some(session) = mode_session
+            && let Some(task) = mode_tasks.remove(session)
         {
             task.abort();
             let _ = task.await;
         }
-        if matches!(command, Command::Send(_))
-            && stream_task.as_ref().is_some_and(|task| !task.is_finished())
+        if let Command::Send(request) = &command
+            && stream_tasks.contains_key(&request.session_id)
         {
             emit(
                 &tx,
                 generation,
-                Update::Notice("A turn is already active. Cancel or wait before sending.".into()),
+                Update::Notice(
+                    "A turn is already active in this conversation. Cancel or wait before sending."
+                        .into(),
+                ),
             );
             continue;
-        }
-        if matches!(command, Command::New | Command::Open(_))
-            && let Some(task) = stream_task.take()
-        {
-            task.abort();
-            let _ = task.await;
         }
         let metadata = matches!(command, Command::List(_) | Command::More { .. });
         let mutation = matches!(
@@ -615,7 +611,7 @@ async fn serve(
             Command::Send(request) => {
                 let c = client.clone();
                 let out = tx.clone();
-                stream_task = Some(tokio::spawn(async move {
+                stream_tasks.insert(request.session_id.clone(), tokio::spawn(async move {
                     let response = match c.interactive().start_turn(&request).await {
                         Ok(r) => r,
                         Err(_) => {
@@ -667,24 +663,40 @@ async fn serve(
         if let Some(session) = mode_session {
             let client = client.clone();
             let tx = tx.clone();
-            mode_task = Some(tokio::spawn(async move {
-                emit(&tx, generation, mode(&client, &session).await);
-            }));
+            mode_tasks.insert(
+                session.clone(),
+                tokio::spawn(async move {
+                    emit(&tx, generation, mode(&client, &session).await);
+                }),
+            );
         }
         if let Some((session, turn)) = resume {
-            stream_task = Some(tokio::spawn(follow(
-                client.clone(),
-                turn.stream_url,
-                tx.clone(),
-                generation,
-                session,
-            )));
+            // Reopening a live session must not replay the same turn through a
+            // second subscription, or replace an admission still in flight.
+            // The previous follow may have finished during the history read.
+            if stream_tasks
+                .get(&session)
+                .is_none_or(|task| task.is_finished())
+            {
+                stream_tasks.insert(
+                    session.clone(),
+                    tokio::spawn(follow(
+                        client.clone(),
+                        turn.stream_url,
+                        tx.clone(),
+                        generation,
+                        session,
+                    )),
+                );
+            }
         }
     }
-    if let Some(task) = stream_task {
+    // Shutdown cancels every owned stream/admission, never the daemon's turns.
+    // As with startup catalogs, drain independent read-only mode metadata.
+    for task in stream_tasks.values() {
         task.abort();
     }
-    if let Some(task) = mode_task {
+    for (_, task) in stream_tasks.into_iter().chain(mode_tasks) {
         let _ = task.await;
     }
     while metadata_tasks.join_next().await.is_some() {}

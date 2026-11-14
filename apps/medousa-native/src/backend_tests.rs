@@ -496,34 +496,25 @@ async fn terminal_stream_reconciles_canonical_history_and_mode() {
 }
 
 #[tokio::test]
-async fn stale_navigation_and_mutations_are_not_dispatched() {
+async fn lower_session_route_is_not_rejected_after_a_higher_route() {
     let (client, server) = fixture(vec![
         list_wire(),
         json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
         registry_wire(),
-        active_wire(false),
-        history_wire(false),
-        active_wire(false),
-        mode_wire("general"),
+        json_wire("PUT", "/v1/sessions/b/agent-mode", mode_body("teacher")),
+        json_wire("PUT", "/v1/sessions/a/agent-mode", mode_body("general")),
     ]);
     let mut app = App::new();
     let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
     let (commands, rx) = mpsc::unbounded_channel();
-    commands
-        .send(Request {
-            generation: 2,
-            command: Command::Open("s".into()),
-        })
-        .unwrap();
-    for command in [
-        Command::Open("old".into()),
-        Command::Cancel("old".into()),
-        Command::SetMode("old".into(), AgentModeId::Coder),
+    for (generation, id, mode) in [
+        (2, "b", AgentModeId::Teacher),
+        (1, "a", AgentModeId::General),
     ] {
         commands
             .send(Request {
-                generation: 1,
-                command,
+                generation,
+                command: Command::SetMode(id.into(), mode),
             })
             .unwrap();
     }
@@ -531,8 +522,16 @@ async fn stale_navigation_and_mutations_are_not_dispatched() {
     serve(client, rx, tx).await;
     app.update();
     let replies = observed(&app);
-    assert_eq!(replies.len(), 5);
-    assert!(replies[3..].iter().all(|reply| reply.generation == 2));
+    assert!(
+        replies
+            .iter()
+            .any(|r| r.generation == 2 && matches!(&r.update, Update::Mode(m) if m == "teacher"))
+    );
+    assert!(
+        replies
+            .iter()
+            .any(|r| r.generation == 1 && matches!(&r.update, Update::Mode(m) if m == "general"))
+    );
     server.join().unwrap();
 }
 
@@ -577,7 +576,7 @@ async fn startup_lists_generation_zero_even_when_model_catalog_fails() {
 }
 
 #[tokio::test]
-async fn rename_delete_and_search_do_not_replace_view_generation_or_replay_mutations() {
+async fn rename_delete_and_search_preserve_routes_and_do_not_replay_mutations() {
     let mut rename = json_wire(
         "PUT",
         "/v1/sessions/s/name",
@@ -604,6 +603,11 @@ async fn rename_delete_and_search_do_not_replace_view_generation_or_replay_mutat
             json!({"sessions":[]}),
         ),
         delete,
+        json_wire(
+            "PUT",
+            "/v1/sessions/background/name",
+            json!({"session_id":"background","display_name":"Background title"}),
+        ),
     ]);
     let mut app = App::new();
     let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
@@ -621,8 +625,8 @@ async fn rename_delete_and_search_do_not_replace_view_generation_or_replay_mutat
         (
             1,
             Command::Rename {
-                session: "stale".into(),
-                title: "must not send".into(),
+                session: "background".into(),
+                title: "Background title".into(),
             },
         ),
     ] {
@@ -644,7 +648,11 @@ async fn rename_delete_and_search_do_not_replace_view_generation_or_replay_mutat
     assert!(
         matches!(&replies[5].update, Update::Notice(message) if message.contains("outcome may be unknown") && !message.contains("private"))
     );
-    assert_eq!(replies.len(), 6);
+    assert_eq!(replies.len(), 7);
+    assert!(
+        replies[6].generation == 1
+            && matches!(&replies[6].update, Update::Renamed {session, ..} if session == "background")
+    );
     server.join().unwrap();
 }
 
@@ -831,6 +839,243 @@ async fn paging_keeps_search_query_even_with_same_view_generation() {
     assert!(
         matches!(&replies[5].update, Update::SessionsPage {query,append:true,..} if query == "first")
     );
+    server.join().unwrap();
+}
+
+fn admission_wire(turn: &str) -> Wire {
+    json_wire(
+        "POST",
+        "/v1/interactive/turn",
+        json!({
+            "turn_id":turn,"accepted_at_utc":"2026-11-07T00:00:00Z",
+            "stream_url":format!("/v1/interactive/turn/{turn}/stream"),
+            "stream_ready":true,"fallback_to_local":false
+        }),
+    )
+}
+fn stream_wire(turn: &str, outcome: &str) -> Wire {
+    Wire {
+        method: "GET",
+        path: format!("/v1/interactive/turn/{turn}/stream"),
+        status: 200,
+        content_type: "text/event-stream",
+        check: None,
+        body: sse(
+            1,
+            json!({"type":"turn_completed","outcome":outcome,"aggregate_text":"done"}),
+        )
+        .replace("\"turn_id\":\"t\"", &format!("\"turn_id\":\"{turn}\"")),
+    }
+}
+fn send_command(session: &str) -> Command {
+    Command::Send(Box::new(
+        serde_json::from_value(json!({
+            "session_id":session,"prompt":"fixture draft","persist_user_turn":true,
+            "response_depth_mode":"normal","provider":"fixture","model":"fixture",
+            "stage_routing":medousa_types::StageRoutingMatrix::default_for("fixture", "fixture")
+        }))
+        .unwrap(),
+    ))
+}
+fn open_wires(session: &str, active: bool) -> Vec<Wire> {
+    let mut wires = vec![
+        active_wire(active),
+        history_wire(false),
+        active_wire(active),
+        mode_wire("general"),
+    ];
+    for wire in &mut wires {
+        wire.path = wire
+            .path
+            .replace("/sessions/s/", &format!("/sessions/{session}/"));
+        wire.body = wire.body.replace(
+            "\"session_id\":\"s\"",
+            &format!("\"session_id\":\"{session}\""),
+        );
+    }
+    wires
+}
+async fn collect_until(
+    app: &mut App,
+    replies: &mut Vec<Reply>,
+    predicate: impl Fn(&[Reply]) -> bool,
+) {
+    for _ in 0..400 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        app.update();
+        replies.extend(observed(app).into_iter().cloned());
+        if predicate(replies) {
+            return;
+        }
+    }
+    panic!("expected backend replies did not arrive");
+}
+
+#[tokio::test]
+async fn opening_other_and_same_session_preserves_follow_and_allows_parallel_send() {
+    let (release, wait) = std::sync::mpsc::channel();
+    let (started, requested) = std::sync::mpsc::channel();
+    let mut wires = vec![
+        list_wire(),
+        json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
+        registry_wire(),
+    ];
+    wires.extend(open_wires("s", true));
+    wires.push(stream_wire("t", "completed"));
+    wires.extend(open_wires("b", false));
+    wires.extend(open_wires("s", true));
+    wires.push(admission_wire("tb"));
+    wires.push(stream_wire("tb", "fatal"));
+    wires.extend([
+        active_wire(false),
+        history_wire(true),
+        active_wire(false),
+        mode_wire("teacher"),
+    ]);
+    let (client, server) = fixture_gated(
+        wires,
+        Some(("/v1/interactive/turn/t/stream", wait, started)),
+    );
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(128));
+    let (commands, rx) = mpsc::unbounded_channel();
+    commands
+        .send(Request {
+            generation: 1,
+            command: Command::Open("s".into()),
+        })
+        .unwrap();
+    let task = tokio::spawn(serve(client, rx, tx));
+    let mut replies = vec![];
+    collect_until(&mut app, &mut replies, |rs| {
+        rs.iter()
+            .any(|r| r.generation == 1 && matches!(r.update, Update::Mode(_)))
+    })
+    .await;
+    assert!(requested.recv_timeout(Duration::from_secs(1)).is_ok());
+    // Opening B and reopening A must neither abort A nor create a second SSE
+    // request. The fixture has exactly one stream response for A.
+    for (generation, command) in [
+        (2, Command::Open("b".into())),
+        (1, Command::Open("s".into())),
+        (1, send_command("s")),
+        (2, send_command("b")),
+    ] {
+        commands
+            .send(Request {
+                generation,
+                command,
+            })
+            .unwrap();
+    }
+    collect_until(&mut app, &mut replies, |rs| {
+        rs.iter()
+            .any(|r| r.generation == 2 && matches!(r.update, Update::Failure(_)))
+    })
+    .await;
+    assert!(replies.iter().any(|r| r.generation == 1
+        && matches!(&r.update, Update::Notice(n) if n.contains("already active"))));
+    assert!(
+        replies.iter().any(
+            |r| r.generation == 2 && matches!(&r.update, Update::Admitted(id, _) if id == "tb")
+        )
+    );
+    release.send(()).unwrap();
+    collect_until(&mut app, &mut replies, |rs| {
+        rs.iter()
+            .any(|r| r.generation == 1 && matches!(&r.update, Update::Mode(m) if m == "teacher"))
+    })
+    .await;
+    assert!(
+        replies.iter().any(|r| r.generation == 1
+            && matches!(&r.update, Update::SettledHistory(id, _, _) if id == "s"))
+    );
+    assert!(
+        replies.iter().any(
+            |r| r.generation == 1 && matches!(&r.update, Update::Stream(e) if e.turn_id == "t")
+        )
+    );
+    assert!(
+        !replies.iter().any(
+            |r| r.generation == 2 && matches!(&r.update, Update::Stream(e) if e.turn_id == "t")
+        )
+    );
+    drop(commands);
+    task.await.unwrap();
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn pending_admission_survives_navigation_and_does_not_block_another_session() {
+    let (release, wait) = std::sync::mpsc::channel();
+    let (started, requested) = std::sync::mpsc::channel();
+    let mut wires = vec![
+        list_wire(),
+        json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
+        registry_wire(),
+        admission_wire("t"),
+        stream_wire("t", "fatal"),
+    ];
+    wires.extend(open_wires("b", false));
+    wires.extend([admission_wire("tb"), stream_wire("tb", "fatal")]);
+    let (client, server) = fixture_gated(wires, Some(("/v1/interactive/turn", wait, started)));
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(128));
+    let (commands, rx) = mpsc::unbounded_channel();
+    commands
+        .send(Request {
+            generation: 1,
+            command: send_command("s"),
+        })
+        .unwrap();
+    let task = tokio::spawn(serve(client, rx, tx));
+    // Let the runtime dispatch A's POST, without blocking its single test thread.
+    for _ in 0..200 {
+        if requested.try_recv().is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    commands
+        .send(Request {
+            generation: 2,
+            command: Command::Open("b".into()),
+        })
+        .unwrap();
+    commands
+        .send(Request {
+            generation: 1,
+            command: send_command("s"),
+        })
+        .unwrap();
+    commands
+        .send(Request {
+            generation: 2,
+            command: send_command("b"),
+        })
+        .unwrap();
+    let mut replies = vec![];
+    collect_until(&mut app, &mut replies, |rs| {
+        rs.iter()
+            .any(|r| r.generation == 2 && matches!(r.update, Update::Failure(_)))
+    })
+    .await;
+    assert!(
+        !replies
+            .iter()
+            .any(|r| r.generation == 1 && matches!(r.update, Update::Admitted(_, _)))
+    );
+    assert!(replies.iter().any(|r| r.generation == 1
+        && matches!(&r.update, Update::Notice(n) if n.contains("already active"))));
+    release.send(()).unwrap();
+    collect_until(&mut app, &mut replies, |rs| {
+        rs.iter()
+            .any(|r| r.generation == 1 && matches!(r.update, Update::Failure(_)))
+    })
+    .await;
+    assert!(replies.iter().any(|r| r.generation == 1 && matches!(&r.update, Update::Admitted(id, _) if id == "t")));
+    drop(commands);
+    task.await.unwrap();
     server.join().unwrap();
 }
 

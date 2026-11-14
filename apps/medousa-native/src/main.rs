@@ -9,6 +9,7 @@ mod provider_timeline;
 mod runtimes;
 mod timeline;
 mod ui;
+mod workspace;
 
 use rndr_core::*;
 
@@ -16,6 +17,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     medousa_desktop_host::paths::load_env_overlay();
     let connection = medousa_desktop_host::connection::discover(Default::default());
     let mut app = ui::app();
+    // Native window preferences belong to this device, even for a remote workshop.
+    app.world_mut().insert_resource(workspace::Workspace::local(
+        medousa_desktop_host::paths::medousa_config_dir().join("native-workspace.json"),
+    ));
     let _feed = match connection {
         Ok(connection) => {
             match backend::client(&connection.origin, &connection.data_dir) {

@@ -3,7 +3,7 @@ use crate::{
     approvals, attachments, auxiliary,
     backend::{Command, Reply, Request, Update},
     chat::Chat,
-    context, provider_timeline, runtimes, timeline,
+    context, provider_timeline, runtimes, timeline, workspace,
 };
 use medousa_app_core::TurnFact;
 use rndr_core::{
@@ -19,6 +19,8 @@ use rndr_ui::{
     *,
 };
 use std::collections::HashMap;
+#[path = "conversations.rs"]
+mod conversations;
 
 const BEHAVIOR: u64 = 33;
 const DETAILS: u64 = 30;
@@ -45,6 +47,7 @@ pub struct Model {
     pub chat: Chat,
     pub commands: Option<tokio::sync::mpsc::UnboundedSender<Request>>,
     generation: u64,
+    requested_session: Option<String>,
     loading: bool,
     models: Vec<(String, String)>,
     selected: Option<usize>,
@@ -70,8 +73,43 @@ pub struct Model {
     document: DocumentId,
     pending_draft: Option<(DocumentId, rndr_core::editing::Revision)>,
 }
+impl Model {
+    fn new(document: DocumentId) -> Self {
+        Model {
+            chat: Chat::connecting(),
+            commands: None,
+            generation: 0,
+            requested_session: None,
+            loading: false,
+            models: vec![],
+            selected: None,
+            sessions: vec![],
+            modes: vec![],
+            mode: None,
+            depth: 1,
+            search_query: String::new(),
+            session_cursor: None,
+            delete_target: None,
+            pending_media: vec![],
+            model_filter: String::new(),
+            model_page: 0,
+            drafts: HashMap::new(),
+            external_drafts: HashMap::new(),
+            approval_refresh: std::time::Instant::now(),
+            selectors_key: String::new(),
+            sidebar_key: String::new(),
+            details_open: false,
+            model_search_open: false,
+            behavior_open: false,
+            sidebar_open: true,
+            document,
+            pending_draft: None,
+        }
+    }
+}
 #[derive(Clone, Copy)]
 struct Ui {
+    content: Entity,
     sidebar: Entity,
     details: Entity,
     filter_row: Entity,
@@ -117,35 +155,7 @@ pub fn app() -> App {
     let mut docs = SourceDocuments::default();
     let document = docs.open("");
     app.world_mut().insert_resource(docs);
-    app.world_mut().insert_resource(Model {
-        chat: Chat::connecting(),
-        commands: None,
-        generation: 0,
-        loading: false,
-        models: vec![],
-        selected: None,
-        sessions: vec![],
-        modes: vec![],
-        mode: None,
-        depth: 1,
-        search_query: String::new(),
-        session_cursor: None,
-        delete_target: None,
-        pending_media: vec![],
-        model_filter: String::new(),
-        model_page: 0,
-        drafts: HashMap::new(),
-        external_drafts: HashMap::new(),
-        approval_refresh: std::time::Instant::now(),
-        selectors_key: String::new(),
-        sidebar_key: String::new(),
-        details_open: false,
-        model_search_open: false,
-        behavior_open: false,
-        sidebar_open: true,
-        document,
-        pending_draft: None,
-    });
+    app.world_mut().insert_resource(Model::new(document));
     app.world_mut().insert_resource(WindowConfig {
         title: "Medousa".into(),
         size: LogicalSize::new(1200., 850.),
@@ -154,6 +164,7 @@ pub fn app() -> App {
     });
     app.add_system(Schedule::Startup, setup);
     app.add_system(Schedule::Update, update);
+    app.add_system(Schedule::Layout, workspace::chrome);
     app
 }
 fn container(world: &mut World, parent: Option<Entity>, layout: Layout) -> Entity {
@@ -175,6 +186,8 @@ fn button(
     props.name = match id {
         SEND => Some("Send message".into()),
         STOP => Some("Stop response".into()),
+        SIDEBAR => Some("Toggle conversation sidebar".into()),
+        DETAILS => Some("Toggle conversation details".into()),
         _ => None,
     };
     props.variant = if id == SEND || id == STOP {
@@ -190,7 +203,8 @@ fn button(
     {
         world.get_mut::<Layout>(h.root).unwrap().width = Size::Px(match id {
             SEND | STOP => 54.,
-            DETAILS | SIDEBAR => 36.,
+            DETAILS | SIDEBAR => 64.,
+            40 | 41 => 48.,
             MODEL_PREV | MODEL_NEXT => 70.,
             MODEL_SEARCH => 150.,
             _ => 90.,
@@ -217,9 +231,16 @@ fn setup(world: &mut World) {
             ..Layout::row()
         },
     );
-    let sidebar = Surface::Navigation.mount(world, root, UiId(1)).unwrap();
+    let (navigation_split, details_split) = workspace::mount(world, root);
+    let prefs = world.resource::<workspace::Workspace>().unwrap().prefs;
+    let model = world.resource_mut::<Model>().unwrap();
+    model.sidebar_open = prefs.sidebar_open;
+    model.details_open = prefs.details_open;
+    let sidebar = Surface::Navigation
+        .mount(world, navigation_split.leading, UiId(1))
+        .unwrap();
     *world.get_mut::<Layout>(sidebar.root).unwrap() = Layout {
-        width: Size::Px(230.),
+        width: Size::Fill,
         height: Size::Fill,
         ..Layout::column()
     };
@@ -264,56 +285,45 @@ fn setup(world: &mut World) {
         },
     );
     world.insert(sessions, Scroll::default());
-    let content = Surface::Content.mount(world, root, UiId(2)).unwrap();
-    *world.get_mut::<Layout>(content.root).unwrap() = Layout {
-        width: Size::Fill,
-        height: Size::Fill,
-        ..Layout::column()
-    };
-    *world.get_mut::<Layout>(content.content).unwrap() = Layout {
-        width: Size::Fill,
-        height: Size::Fill,
-        gap: 4.,
-        ..Layout::column()
-    };
-    plane(world, content.root, Color::rgb(0.035, 0.035, 0.04));
-    let header_row = container(
-        world,
-        Some(content.content),
-        Layout {
-            width: Size::Fill,
-            height: Size::Px(42.),
-            padding: 4.,
-            gap: 8.,
-            ..Layout::row()
-        },
-    );
-    plane(world, header_row, Color::rgb(0.065, 0.065, 0.075));
-    button(world, header_row, SIDEBAR, "☰", true);
-    let header = text(world, header_row, "Today", Typography::Label).unwrap();
-    world.get_mut::<Layout>(header).unwrap().width = Size::Fill;
-    world.get_mut::<Label>(header).unwrap().overflow = TextOverflow::Ellipsis;
-    button(world, header_row, DETAILS, "⋯", true);
     let details = container(
         world,
-        Some(content.content),
+        Some(details_split.trailing),
         Layout {
             width: Size::Fill,
-            height: Size::Px(220.),
+            height: Size::Fill,
             padding: 8.,
             gap: 6.,
             ..Layout::column()
         },
     );
     world.insert(details, Scroll::default());
-    world.insert(details, Hidden);
+    plane(world, details, Color::rgb(0.055, 0.055, 0.065));
+    let dock_header = container(
+        world,
+        Some(details),
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(36.),
+            gap: 4.,
+            ..Layout::row()
+        },
+    );
+    let dock_title = text(
+        world,
+        dock_header,
+        "Conversation details",
+        Typography::Label,
+    )
+    .unwrap();
+    world.get_mut::<Layout>(dock_title).unwrap().width = Size::Fill;
+    button(world, dock_header, DETAILS, "×", true);
     let session_actions = container(
         world,
         Some(details),
         Layout {
             width: Size::Fill,
             gap: 4.,
-            ..Layout::row()
+            ..Layout::column()
         },
     );
     let rename = world.spawn((
@@ -342,6 +352,82 @@ fn setup(world: &mut World) {
     button(world, details, RELOAD, "Reload conversation", true);
     let context = context::setup(world, details);
     let runtime = runtimes::setup(world, details);
+    let shared = Shared {
+        sidebar: sidebar.root,
+        sessions,
+        search,
+        details,
+        rename,
+        session_actions,
+        context,
+        runtime,
+    };
+    let parent = conversations::mount(world, details_split.leading);
+    let ui = mount_view(world, parent, shared);
+    world.insert_resource(ui);
+}
+
+#[derive(Clone, Copy)]
+struct Shared {
+    sidebar: Entity,
+    sessions: Entity,
+    search: Entity,
+    details: Entity,
+    rename: Entity,
+    session_actions: Entity,
+    context: Entity,
+    runtime: Entity,
+}
+fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
+    let Shared {
+        sidebar,
+        sessions,
+        search,
+        details,
+        rename,
+        session_actions,
+        context,
+        runtime,
+    } = shared;
+    let parent = container(
+        world,
+        Some(parent),
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            ..Layout::column()
+        },
+    );
+    let content = Surface::Content.mount(world, parent, UiId(2)).unwrap();
+    *world.get_mut::<Layout>(content.root).unwrap() = Layout {
+        width: Size::Fill,
+        height: Size::Fill,
+        ..Layout::column()
+    };
+    *world.get_mut::<Layout>(content.content).unwrap() = Layout {
+        width: Size::Fill,
+        height: Size::Fill,
+        gap: 4.,
+        ..Layout::column()
+    };
+    plane(world, content.root, Color::rgb(0.035, 0.035, 0.04));
+    let header_row = container(
+        world,
+        Some(content.content),
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(42.),
+            padding: 4.,
+            gap: 4.,
+            ..Layout::row()
+        },
+    );
+    plane(world, header_row, Color::rgb(0.065, 0.065, 0.075));
+    button(world, header_row, SIDEBAR, "Chats", true);
+    let header = text(world, header_row, "Today", Typography::Label).unwrap();
+    world.get_mut::<Layout>(header).unwrap().width = Size::Fill;
+    world.get_mut::<Label>(header).unwrap().overflow = TextOverflow::Ellipsis;
+    button(world, header_row, DETAILS, "Info", true);
     let timeline = timeline::setup(world, content.content);
     let approvals = approvals::setup(world, content.content);
     let composer_row = container(
@@ -562,8 +648,9 @@ fn setup(world: &mut World) {
     .unwrap();
     world.get_mut::<Layout>(status).unwrap().height = Size::Px(22.);
     world.get_mut::<Layout>(status).unwrap().padding = 3.;
-    world.insert_resource(Ui {
-        sidebar: sidebar.root,
+    Ui {
+        content: parent,
+        sidebar,
         details,
         filter_row,
         compose: composer_shell,
@@ -589,7 +676,7 @@ fn setup(world: &mut World) {
         model_caption,
         model_filter,
         model_pages,
-    });
+    }
 }
 fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> EditorSurfaceHandle {
     let mut props = EditorSurfaceProps::new(document, "Message Medousa");
@@ -764,6 +851,7 @@ fn update(world: &mut World) {
     for reply in events::<Reply>(world).to_vec() {
         apply_reply(world, reply);
     }
+    conversations::focus_from_input(world);
     let ui = *world.resource::<Ui>().unwrap();
     if world
         .resource::<KeymapFired>()
@@ -772,6 +860,8 @@ fn update(world: &mut World) {
         action(world, SEND);
     }
     for event in events::<SelectionChange>(world).to_vec() {
+        conversations::focus_entity(world, event.control);
+        let ui = *world.resource::<Ui>().unwrap();
         let SelectionValue::Selected(ids) = event.value else {
             continue;
         };
@@ -798,7 +888,9 @@ fn update(world: &mut World) {
             }
         }
     }
+    conversations::tab_events(world);
     for intent in take_action_intents(world) {
+        conversations::focus_entity(world, intent.entity);
         if approvals::action(world, &intent)
             || attachments::action(world, &intent)
             || runtimes::action(world, &intent)
@@ -813,7 +905,9 @@ fn update(world: &mut World) {
                 continue;
             }
             if let HostIntent::Command(id) = host {
-                action(world, id);
+                if !conversations::action(world, id) {
+                    action(world, id);
+                }
             }
         }
     }
@@ -829,7 +923,7 @@ fn update(world: &mut World) {
     {
         world.resource_mut::<Model>().unwrap().chat.status = error;
     }
-    sync(world);
+    conversations::sync_all(world);
     auxiliary::dispatch(world);
 }
 fn action(world: &mut World, id: u64) {
@@ -924,38 +1018,7 @@ fn action(world: &mut World, id: u64) {
             dispatch(world, Command::List(query));
         }
         NEW | RELOAD | SESSION.. => {
-            let m = world.resource::<Model>().unwrap();
-            if m.loading {
-                return;
-            }
-            let doc = world
-                .resource::<SourceDocuments>()
-                .unwrap()
-                .get(m.document)
-                .unwrap();
-            if doc.is_composing() {
-                world.resource_mut::<Model>().unwrap().chat.status =
-                    "Finish composing before switching conversations.".into();
-                return;
-            }
-            let command = match id {
-                NEW => Command::New,
-                RELOAD => match m.chat.session() {
-                    Some(s) => Command::Open(s.into()),
-                    None => Command::List(String::new()),
-                },
-                _ => match m.sessions.get((id - SESSION) as usize) {
-                    Some((s, _)) => Command::Open(s.clone()),
-                    None => return,
-                },
-            };
-            let m = world.resource_mut::<Model>().unwrap();
-            m.generation += 1;
-            m.loading = true;
-            m.chat.status = "Loading conversation…".into();
-            m.mode = None;
-            m.pending_draft = None;
-            dispatch(world, command);
+            conversations::navigate(world, id);
         }
         SEND => {
             let session = world
@@ -1061,6 +1124,9 @@ fn action(world: &mut World, id: u64) {
     }
 }
 fn apply_reply(world: &mut World, reply: Reply) {
+    conversations::reply(world, reply);
+}
+fn apply_current_reply(world: &mut World, reply: Reply) {
     let m = world.resource::<Model>().unwrap();
     if reply.generation != m.generation
         && !matches!(
@@ -1109,9 +1175,8 @@ fn apply_reply(world: &mut World, reply: Reply) {
         }
         Update::Forked { source: _, session } => {
             let m = world.resource_mut::<Model>().unwrap();
-            m.generation += 1;
-            m.loading = true;
-            dispatch(world, Command::Open(session));
+            let _ = m;
+            conversations::open(world, Some(session));
         }
         Update::History(session, authority, turns, active) => {
             if let Err(e) = switch_document(world, &session) {
@@ -1581,7 +1646,8 @@ fn sync(world: &mut World) {
             let h =
                 controls::NavigationRow::mount(world, ui.sessions, UiId(key), props, meta).unwrap();
             world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
-            world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(34.);
+            world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(36.);
+            world.insert(h.root, Radius(7.));
             world.remove::<Hidden>(h.root);
         }
         // Keep keyed control ownership intact; hidden stale results cannot activate.
@@ -1603,11 +1669,6 @@ fn sync(world: &mut World) {
         ui.timeline,
         provider.as_ref().or_else(|| m.chat.snapshot()),
     );
-    let width = world
-        .resource::<Viewport>()
-        .map(|v| v.width)
-        .unwrap_or(1200.);
-    world.get_mut::<Layout>(ui.sidebar).unwrap().width = Size::Px(230.);
     let state = world.resource::<Model>().unwrap();
     let (details, filter, sidebar) = (
         state.details_open,
@@ -1618,7 +1679,6 @@ fn sync(world: &mut World) {
         (ui.details, details),
         (ui.behavior, state.behavior_open),
         (ui.filter_row, filter),
-        (ui.sidebar, sidebar),
     ] {
         if visible {
             world.remove::<Hidden>(entity);
@@ -1626,9 +1686,18 @@ fn sync(world: &mut World) {
             world.insert(entity, Hidden);
         }
     }
-    world.get_mut::<Layout>(ui.compose).unwrap().width =
-        Size::Px((width - if sidebar { 230. } else { 0. } - 24.).clamp(300., 700.));
+    let width = workspace::sync(world, sidebar, details);
+    let width = world
+        .get::<Rect>(ui.content)
+        .map(|r| r.w)
+        .filter(|w| *w > 0.)
+        .unwrap_or(width)
+        .min(width);
+    world.get_mut::<Layout>(ui.compose).unwrap().width = Size::Px((width - 48.).clamp(240., 700.));
     world.resource_mut::<Model>().unwrap().chat = m.chat;
+    if let Some(error) = workspace::error(world) {
+        world.resource_mut::<Model>().unwrap().chat.status = error;
+    }
 }
 
 // RNDR's bounded selectors deliberately accept at most 256 entries. Filter and
@@ -1873,6 +1942,154 @@ mod tests {
         );
     }
     #[test]
+    fn workspace_keyboard_resize_collapse_and_narrow_dock_keep_the_draft() {
+        let (mut app, _rx) = idle_fixture();
+        draft(&mut app, "Keep this unsent draft");
+        for _ in 0..5 {
+            app.update();
+        }
+        let ui = *app.world().resource::<Ui>().unwrap();
+        let document = app.world().resource::<Model>().unwrap().document;
+        let sash = app
+            .world()
+            .entities_with::<Semantics>()
+            .into_iter()
+            .find(|e| {
+                app.world().get::<Semantics>(*e).unwrap().name.as_deref()
+                    == Some("Conversation sidebar width")
+            })
+            .unwrap();
+        let before = app.world().get::<Rect>(ui.sidebar).unwrap().w;
+        request_focus(app.world_mut(), sash);
+        app.world_mut().resource_mut::<Input>().unwrap().keys =
+            vec![KeyEvent::named(NamedKey::ArrowRight, Modifiers::default())];
+        app.update();
+        for _ in 0..4 {
+            app.update();
+        }
+        let after = app.world().get::<Rect>(ui.sidebar).unwrap().w;
+        assert!(after > before + 5., "{before} -> {after}");
+        let ratio = app
+            .world()
+            .resource::<workspace::Workspace>()
+            .unwrap()
+            .prefs
+            .sidebar_ratio;
+        action(app.world_mut(), SIDEBAR);
+        for _ in 0..5 {
+            app.update();
+        }
+        assert!(app.world().get::<Rect>(ui.compose).unwrap().x < 260.);
+        action(app.world_mut(), SIDEBAR);
+        for _ in 0..5 {
+            app.update();
+        }
+        assert!((app.world().get::<Rect>(ui.sidebar).unwrap().w - after).abs() < 2.);
+        action(app.world_mut(), DETAILS);
+        app.world_mut().resource_mut::<Viewport>().unwrap().width = 760.;
+        for _ in 0..8 {
+            app.update();
+        }
+        let editor = app.world().get::<Rect>(ui.composer.editor).unwrap();
+        let dock = app.world().get::<Rect>(ui.details).unwrap();
+        assert!(
+            editor.w > 340. && editor.x + editor.w <= dock.x,
+            "editor {editor:?}, dock {dock:?}"
+        );
+        assert!(dock.w >= 280. && dock.x + dock.w <= 761., "{dock:?}");
+        assert_eq!(app.world().resource::<Model>().unwrap().document, document);
+        assert_eq!(
+            app.world()
+                .resource::<SourceDocuments>()
+                .unwrap()
+                .get(document)
+                .unwrap()
+                .text(),
+            "Keep this unsent draft"
+        );
+        assert_eq!(
+            app.world()
+                .resource::<workspace::Workspace>()
+                .unwrap()
+                .prefs
+                .sidebar_ratio,
+            ratio
+        );
+        action(app.world_mut(), DETAILS);
+        app.world_mut().resource_mut::<Viewport>().unwrap().width = 1200.;
+        for _ in 0..8 {
+            app.update();
+        }
+        assert!((app.world().get::<Rect>(ui.sidebar).unwrap().w - after).abs() < 2.);
+    }
+    #[test]
+    fn workspace_continuous_pointer_drag_tracks_every_delta() {
+        let (mut app, _rx) = idle_fixture();
+        for _ in 0..8 {
+            app.update();
+        }
+        let ui = *app.world().resource::<Ui>().unwrap();
+        let before = app.world().get::<Rect>(ui.sidebar).unwrap().w;
+        let sash = app
+            .world()
+            .entities_with::<Semantics>()
+            .into_iter()
+            .find(|e| {
+                app.world().get::<Semantics>(*e).unwrap().name.as_deref()
+                    == Some("Conversation sidebar width")
+            })
+            .unwrap();
+        let rect = *app.world().get::<Rect>(sash).unwrap();
+        let at = [rect.x + rect.w / 2., rect.y + rect.h / 2.];
+        let input = app.world_mut().resource_mut::<Input>().unwrap();
+        input.pointer.position = at;
+        input.pointer.press_at = Some(at);
+        input.pointer.pressed = true;
+        input.pointer.down = true;
+        input.pointer.button = PointerButton::Left;
+        app.update();
+        for i in 1..=10 {
+            let input = app.world_mut().resource_mut::<Input>().unwrap();
+            input.pointer.position = [at[0] + i as f32 * 5., at[1]];
+            input.pointer.press_at = None;
+            input.pointer.pressed = false;
+            input.pointer.down = true;
+            app.update();
+        }
+        app.world_mut()
+            .resource_mut::<Input>()
+            .unwrap()
+            .pointer
+            .down = false;
+        app.update();
+        let after = app.world().get::<Rect>(ui.sidebar).unwrap().w;
+        assert!((after - before - 50.).abs() < 2., "{before} -> {after}");
+    }
+    #[test]
+    fn workspace_details_actions_fit_in_the_dock() {
+        let (mut app, _rx) = idle_fixture();
+        action(app.world_mut(), DETAILS);
+        for _ in 0..8 {
+            app.update();
+        }
+        let ui = *app.world().resource::<Ui>().unwrap();
+        let dock = app.world().get::<Rect>(ui.details).unwrap();
+        assert!(
+            dock.w >= 280. && dock.h > 700. && dock.x + dock.w <= 1201.,
+            "{dock:?}"
+        );
+        let rename = app.world().get::<Rect>(ui.rename).unwrap();
+        assert!(
+            rename.x >= dock.x && rename.x + rename.w <= dock.x + dock.w,
+            "{rename:?}, {dock:?}"
+        );
+        let compose = app.world().get::<Rect>(ui.compose).unwrap();
+        assert!(
+            compose.x + compose.w <= dock.x - 12.,
+            "composer {compose:?}, dock {dock:?}"
+        );
+    }
+    #[test]
     fn a_large_catalog_never_exceeds_rndr_native_selection_capacity() {
         let models = (0..600)
             .map(|i| ("fixture".into(), format!("model {i}")))
@@ -1913,6 +2130,11 @@ mod tests {
 }
 
 pub fn external_admitted(world: &mut World, session: &str) {
+    conversations::with_session(world, session, |world| {
+        external_admitted_current(world, session)
+    });
+}
+fn external_admitted_current(world: &mut World, session: &str) {
     let draft = world
         .resource_mut::<Model>()
         .unwrap()
@@ -1926,6 +2148,11 @@ pub fn external_admitted(world: &mut World, session: &str) {
     }
 }
 pub fn runtime_event(world: &mut World, session: &str, command: medousa_app_core::ChatCommand) {
+    conversations::with_session(world, session, |world| {
+        runtime_event_current(world, session, command)
+    });
+}
+fn runtime_event_current(world: &mut World, session: &str, command: medousa_app_core::ChatCommand) {
     let m = world.resource_mut::<Model>().unwrap();
     if let Err(error) = m.chat.dispatch(command) {
         if m.chat.session() == Some(session) {
@@ -1934,6 +2161,11 @@ pub fn runtime_event(world: &mut World, session: &str, command: medousa_app_core
     }
 }
 pub fn runtime_error(world: &mut World, session: &str, error: String) {
+    conversations::with_session(world, session, |world| {
+        runtime_error_current(world, session, error)
+    });
+}
+fn runtime_error_current(world: &mut World, session: &str, error: String) {
     let m = world.resource_mut::<Model>().unwrap();
     if m.chat.session() == Some(session) {
         m.chat.status = error;
