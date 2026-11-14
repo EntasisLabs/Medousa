@@ -108,9 +108,20 @@ pub fn render_sticky_context(board: &crate::chat_stickies::StickyBoard, budget: 
         .filter(|note| note.status == StickyStatus::Active)
         .collect::<Vec<_>>();
     active.sort_by_key(|note| (!note.pinned, !note.exact));
-    let mut included = Vec::new();
+    // This domain reserve is advisory for protected state. Keep pinned/exact
+    // notes whole even when they exceed it; the per-inference compiler must see
+    // their real cost and either borrow capacity or emit structured overflow.
+    let mut included = active
+        .iter()
+        .copied()
+        .filter(|note| note.pinned || note.exact)
+        .collect::<Vec<_>>();
+    let protected_count = included.len();
     let mut omitted = Vec::new();
-    for note in active {
+    for note in active
+        .into_iter()
+        .filter(|note| !note.pinned && !note.exact)
+    {
         included.push(note);
         let candidate = sticky_envelope(board.revision, &included, &omitted, true);
         if candidate.len() > budget {
@@ -124,14 +135,14 @@ pub fn render_sticky_context(board: &crate::chat_stickies::StickyBoard, budget: 
         if rendered.len() <= budget {
             return rendered;
         }
-        if let Some(note) = included.pop() {
-            omitted.push(note.id.as_str());
+        if included.len() > protected_count {
+            omitted.push(included.pop().expect("optional note exists").id.as_str());
         } else {
             break;
         }
     }
     let rendered = sticky_envelope(board.revision, &included, &omitted, false);
-    if rendered.len() <= budget {
+    if rendered.len() <= budget || protected_count > 0 {
         return rendered;
     }
     // Exceptionally small models still get a visible failure, never clipped data.
@@ -249,8 +260,70 @@ mod tests {
         assert!(!output.contains(&"x".repeat(20)));
         assert_eq!(board, before);
         let tiny = render_sticky_context(&board, 256);
-        assert!(tiny.len() <= 256);
+        assert!(tiny.len() > 256); // protected content is not silently deferred
+        assert!(tiny.contains(&exact.text));
         assert!(tiny.contains("overflow"));
+    }
+
+    #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
+    #[test]
+    fn protected_stickies_reach_window_compiler_intact() {
+        use genai::chat::{ChatMessage, ChatRequest};
+        use medousa_runtime::{
+            context::ContextCoordinator, inference_window::InferenceWindowPolicy,
+            perception::ToolPerceptionGovernor,
+        };
+        let mut pinned = sticky("exact-pinned-id:scope-a", &"pinned".repeat(1500));
+        pinned.pinned = true;
+        let mut exact = sticky("exact-note-id:scope-a", &"é日本語".repeat(300));
+        exact.exact = true;
+        let board = crate::chat_stickies::StickyBoard {
+            revision: 9,
+            notes: vec![pinned.clone(), exact.clone()],
+        };
+        let rendered = render_sticky_context(&board, 256);
+        let (_, payload) = rendered.split_once('\n').unwrap();
+        let payload: serde_json::Value = serde_json::from_str(payload).unwrap();
+        assert_eq!(payload["notes"], serde_json::json!([pinned, exact]));
+        let original = ChatRequest::new(vec![
+            ChatMessage::system("policy"),
+            ChatMessage::user("current"),
+            ChatMessage::system(rendered),
+        ]);
+        let mut small = original.clone();
+        let error = ContextCoordinator::compile_inference(
+            &mut small,
+            &InferenceWindowPolicy {
+                input_tokens: Some(2000),
+                ..Default::default()
+            },
+            1,
+            1,
+            None,
+            &mut ToolPerceptionGovernor::default(),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind, "context_window_overflow");
+        assert_eq!(
+            serde_json::to_value(&small).unwrap(),
+            serde_json::to_value(&original).unwrap()
+        );
+        let mut large = original;
+        assert!(
+            ContextCoordinator::compile_inference(
+                &mut large,
+                &InferenceWindowPolicy {
+                    input_tokens: Some(100000),
+                    ..Default::default()
+                },
+                1,
+                1,
+                None,
+                &mut ToolPerceptionGovernor::default()
+            )
+            .is_ok()
+        );
+        assert_eq!(board.notes, vec![pinned, exact]);
     }
 
     #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]

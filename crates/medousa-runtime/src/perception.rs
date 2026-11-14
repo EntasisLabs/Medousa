@@ -52,6 +52,28 @@ pub struct ToolPerceptionGovernor {
     failure_occurrences: HashMap<String, usize>,
     round_metrics: PerceptionMetricsSnapshot,
     evidence_port: Option<Arc<dyn PerceptionEvidencePort>>,
+    budgets: PerceptionBudgets,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PerceptionBudgets {
+    pub tool_results_chars: usize,
+    pub result_chars: usize,
+    pub context_chars: usize,
+    pub history_high_bytes: usize,
+    pub history_low_bytes: usize,
+}
+
+impl Default for PerceptionBudgets {
+    fn default() -> Self {
+        Self {
+            tool_results_chars: PERCEPTION_TOOL_RESULTS_MAX_CHARS,
+            result_chars: PERCEPTION_RESULT_MAX_CHARS,
+            context_chars: PERCEPTION_CONTEXT_RESERVE_CHARS,
+            history_high_bytes: 256 * 1024,
+            history_low_bytes: 128 * 1024,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -187,10 +209,28 @@ impl ToolPerceptionGovernor {
     /// Reclaim cold observations in batches, preserving call/response pairing and
     /// all assistant arguments, user guidance, errors, and the four newest results.
     /// Never discard a non-queryable observation without a retrievable receipt.
+    pub fn set_budgets(&mut self, budgets: PerceptionBudgets) {
+        self.budgets = budgets;
+    }
+
     pub fn compact_tool_history(&mut self, messages: &mut [ChatMessage]) {
-        const HIGH_WATER: usize = 256 * 1024;
-        const LOW_WATER: usize = 128 * 1024;
-        const COLD_RESULT: usize = 2048;
+        self.compact_tool_history_with_budget(
+            messages,
+            self.budgets.history_high_bytes,
+            self.budgets.history_low_bytes,
+            4,
+            2048,
+        );
+    }
+
+    pub fn compact_tool_history_with_budget(
+        &mut self,
+        messages: &mut [ChatMessage],
+        high_water: usize,
+        low_water: usize,
+        protected_results: usize,
+        cold_result: usize,
+    ) {
         let mut calls = HashMap::new();
         let mut count = 0usize;
         let mut total = 0usize;
@@ -208,13 +248,13 @@ impl ToolPerceptionGovernor {
                 }
             }
         }
-        if total <= HIGH_WATER {
+        if total <= high_water {
             return;
         }
-        let cold_count = count.saturating_sub(4);
+        let cold_count = count.saturating_sub(protected_results);
         let mut index = 0usize;
         for message in messages.iter_mut() {
-            if total <= LOW_WATER {
+            if total <= low_water {
                 break;
             }
             let mut parts = message.content.parts().to_vec();
@@ -224,7 +264,7 @@ impl ToolPerceptionGovernor {
                     continue;
                 };
                 index += 1;
-                if index > cold_count || response.content.len() <= COLD_RESULT {
+                if index > cold_count || response.content.len() <= cold_result {
                     continue;
                 }
                 let Ok(output) = serde_json::from_str::<Value>(&response.content) else {
@@ -266,7 +306,7 @@ impl ToolPerceptionGovernor {
                     tool,
                     &output,
                     response.content.clone(),
-                    COLD_RESULT,
+                    cold_result,
                     receipt.as_ref(),
                 );
                 bounded["history_compacted"] = json!(true);
@@ -290,7 +330,7 @@ impl ToolPerceptionGovernor {
     /// Equal allocation means parallel completion order cannot change budgets.
     pub fn result_budget_for_batch(&self, result_count: usize) -> usize {
         let result_count = result_count.max(1);
-        (PERCEPTION_TOOL_RESULTS_MAX_CHARS / result_count).min(PERCEPTION_RESULT_MAX_CHARS)
+        (self.budgets.tool_results_chars / result_count).min(self.budgets.result_chars)
     }
 
     /// Compile one authoritative tool output into its ephemeral model-facing
@@ -440,22 +480,23 @@ impl ToolPerceptionGovernor {
     /// refresh from escaping the global round envelope.
     pub fn observe_round_context(&mut self, context: &str) -> String {
         let original_chars = context.chars().count();
-        if original_chars <= PERCEPTION_CONTEXT_RESERVE_CHARS {
+        let context_limit = self.budgets.context_chars.max(1024);
+        if original_chars <= context_limit {
             return context.to_string();
         }
-        let mut preview_chars = PERCEPTION_CONTEXT_RESERVE_CHARS / 3;
+        let mut preview_chars = context_limit / 3;
         loop {
             let bounded = json!({
                 "perception_status": "bounded_round_context",
                 "reason": "mode_context_exceeds_round_reserve",
                 "original_chars": original_chars,
-                "context_limit_chars": PERCEPTION_CONTEXT_RESERVE_CHARS,
+                "context_limit_chars": context_limit,
                 "preview_head": take_chars(context, preview_chars),
                 "preview_tail": take_last_chars(context, preview_chars),
                 "next_decision": "Use the visible pointers and focused discovery tools to resolve omitted world context; do not request the same broad refresh again.",
             })
             .to_string();
-            if bounded.chars().count() <= PERCEPTION_CONTEXT_RESERVE_CHARS {
+            if bounded.chars().count() <= context_limit {
                 let omitted = original_chars.saturating_sub(bounded.chars().count());
                 self.round_metrics.bounded_round_contexts =
                     self.round_metrics.bounded_round_contexts.saturating_add(1);

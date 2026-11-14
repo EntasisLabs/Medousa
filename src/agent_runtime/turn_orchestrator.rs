@@ -1345,8 +1345,35 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                     text.starts_with(medousa_runtime::turn_context::STICKY_CONTEXT_PREFIX)
                 })
         }));
-        let chat_request = ChatRequest::new(messages);
-        let footprint = medousa_runtime::inference_usage::RequestFootprint::new(
+        let mut chat_request = ChatRequest::new(messages);
+        let policy = super::context_usage::inference_window_policy(&provider, &model);
+        let prefix_len = prefix_messages.saturating_sub(sticky_count);
+        let window_report = match medousa_runtime::context::ContextCoordinator::compile_inference(
+            &mut chat_request,
+            &policy,
+            1,
+            prefix_len,
+            first_request_context.assembly.as_ref(),
+            &mut medousa_runtime::perception::ToolPerceptionGovernor::default(),
+        ) {
+            Ok(report) => report,
+            Err(overflow) => {
+                let error = serde_json::to_string(&overflow).expect("overflow serializes");
+                mark_active_turn_checkpoint(
+                    active_turn_checkpoint_sink.as_ref(),
+                    super::coder_turn_checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure,
+                    super::coder_turn_checkpoint::SafeCheckpointBoundary::RecoverableFailure,
+                    &error,
+                    &orchestration_state,
+                );
+                sink.agent_error(turn_id, error).await;
+                stream_bridge.drain().await;
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+                return;
+            }
+        };
+        let selected_prefix = prefix_len.saturating_sub(window_report.deferred_history_messages);
+        let mut footprint = medousa_runtime::inference_usage::RequestFootprint::new(
             &chat_request,
             Some(model.clone()),
             Some(reasoning_effort.clone()),
@@ -1354,9 +1381,10 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         .with_first_request_context(
             &chat_request,
             1,
-            prefix_messages.saturating_sub(sticky_count),
+            selected_prefix,
             first_request_context.assembly.as_ref(),
         );
+        footprint = footprint.with_inference_window(window_report);
         if let Some(observer) = &first_request_context.observer {
             observer(footprint).await;
         }
@@ -1644,9 +1672,11 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 &target.provider,
                 &target.model,
             );
+            let mut target_request = request.clone();
+            target_request.context.model_hint = Some(target.model.clone());
             let attempt_result = attempt_pipeline
                 .execute_with_stream_prior_messages_max_rounds(
-                    request.clone(),
+                    target_request,
                     target_prior_messages,
                     Some(attempt_stream.sender()),
                     loop_max_rounds,

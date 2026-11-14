@@ -687,6 +687,11 @@ pub fn build_prompt_pipeline_for_target(
 ) -> PromptExecutionPipeline {
     let chat_client: Arc<dyn AiChatClient> =
         Arc::new(crate::build_genai_chat_client(provider, model, base_url));
+    let policy = super::context_usage::inference_window_policy(provider, model);
+    let chat_client = Arc::new(medousa_runtime::windowed_client::WindowedChatClient::new(
+        chat_client,
+        policy,
+    ));
     PromptExecutionPipeline::new(chat_client)
 }
 

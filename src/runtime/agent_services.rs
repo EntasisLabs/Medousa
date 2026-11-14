@@ -38,8 +38,17 @@ pub(crate) fn build_tool_loop_pipeline_for_target(
         &resolved_model,
         resolved_base_url.as_deref(),
     ));
+    let window_policy = crate::agent_runtime::context_usage::inference_window_policy(
+        &resolved_provider,
+        &resolved_model,
+    );
+    let chat_client = Arc::new(medousa_runtime::windowed_client::WindowedChatClient::new(
+        chat_client,
+        window_policy.clone(),
+    ));
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry)
+        .with_window_policy(window_policy)
         .with_parallel_execution_settings_provider(Arc::new(
             crate::execution_policy::load_parallel_execution_settings,
         ))
@@ -287,6 +296,14 @@ pub(crate) async fn assemble_agent_runtime_with_delegation(
     crate::tool_catalog::compile_general_surface(&tool_catalog)?;
     catalog_handle.initialize(tool_catalog.clone())?;
 
+    let window_policy = crate::agent_runtime::context_usage::inference_window_policy(
+        &resolved_provider,
+        &resolved_model,
+    );
+    let chat_client = Arc::new(medousa_runtime::windowed_client::WindowedChatClient::new(
+        chat_client,
+        window_policy.clone(),
+    ));
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     let base_registry: Arc<dyn ToolRegistry> = Arc::new(tool_registry);
     let client_tool_registry: Arc<dyn ToolRegistry> = Arc::new(ClientToolRegistry::new(
@@ -301,6 +318,7 @@ pub(crate) async fn assemble_agent_runtime_with_delegation(
     ));
     let tool_loop_pipeline =
         MedousaToolLoopPipeline::new(prompt_pipeline, guarded_registry.clone())
+            .with_window_policy(window_policy)
             .with_parallel_execution_settings_provider(Arc::new(
                 crate::execution_policy::load_parallel_execution_settings,
             ));

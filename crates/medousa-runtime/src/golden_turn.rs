@@ -557,6 +557,17 @@ fn golden_execution_boundary() -> Arc<TurnExecutionBoundary> {
 /// Run the real tool loop against a scripted model and capture the observable
 /// port events + outcome. `stream` toggles the streaming code path and the
 /// host-side delta bridge used by the full daemon.
+#[path = "golden_window_tests.rs"]
+mod window_tests;
+
+fn golden_window_policy() -> crate::inference_window::InferenceWindowPolicy {
+    crate::inference_window::InferenceWindowPolicy {
+        target: "scripted:large-test-window".into(),
+        input_tokens: Some(1_000_000),
+        ..Default::default()
+    }
+}
+
 async fn run_golden(
     user_prompt: &str,
     steps: Vec<ChatResponse>,
@@ -573,7 +584,8 @@ async fn run_golden(
     let pipeline = MedousaToolLoopPipeline::new(
         PromptExecutionPipeline::new(client.clone()),
         Arc::new(registry),
-    );
+    )
+    .with_window_policy(golden_window_policy());
 
     let capturing_ports = Arc::new(CapturingPorts::default());
     let runtime_ports = RuntimePorts::new()
@@ -757,7 +769,8 @@ async fn golden_screenshot_pixels_are_transient_between_model_rounds() {
     let pipeline = MedousaToolLoopPipeline::new(
         PromptExecutionPipeline::new(client.clone()),
         Arc::new(registry),
-    );
+    )
+    .with_window_policy(golden_window_policy());
     let runtime_ports = RuntimePorts::new()
         .with_tool_observation_hydration(Arc::new(GoldenScreenshotHydrationPort));
     let mut gate = ToolLoopCompletionGate::new_for_execution(1, runtime_ports, 4);
@@ -824,6 +837,7 @@ async fn golden_first_request_attributes_runtime_layers_and_unknown_media() {
         PromptExecutionPipeline::new(client.clone()),
         Arc::new(registry),
     )
+    .with_window_policy(golden_window_policy())
     .with_first_request_context(crate::request_context::FirstRequestContextConfig {
         assembly: None,
         observer: Some(Arc::new(move |footprint| {
@@ -1033,7 +1047,8 @@ async fn golden_large_tool_output_is_bounded_for_model_but_preserved_in_receipt(
     let pipeline = MedousaToolLoopPipeline::new(
         PromptExecutionPipeline::new(client.clone()),
         Arc::new(registry),
-    );
+    )
+    .with_window_policy(golden_window_policy());
     let request = ToolLoopExecutionRequest {
         user_prompt: "inspect the large probe".to_string(),
         system_prompt: None,

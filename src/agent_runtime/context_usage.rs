@@ -7,6 +7,45 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use super::turn_services::PriorMessageBuild;
 use crate::daemon_api::{ContextUsageLayer, ContextUsageReport};
 
+/// The current catalog conflates separate input ceilings and shared context
+/// limits. Until it distinguishes them, reserve output against both: conservative
+/// on separate-input providers, necessary for shared-window targets.
+pub fn inference_window_policy(
+    provider: &str,
+    model: &str,
+) -> medousa_runtime::inference_window::InferenceWindowPolicy {
+    let record = crate::model_capability_registry::registry()
+        .resolve(provider, model)
+        .model;
+    let input = record
+        .as_ref()
+        .and_then(|r| r.max_input_tokens)
+        .map(|limit| limit.min(u32::MAX as u64) as u32);
+    let output = record
+        .as_ref()
+        .and_then(|r| r.max_output_tokens)
+        .map(|limit| limit.min(u32::MAX as u64) as u32)
+        .unwrap_or(medousa_runtime::inference_window::DEFAULT_OUTPUT_RESERVE);
+    medousa_runtime::inference_window::InferenceWindowPolicy {
+        target: format!("{provider}:{model}"),
+        input_tokens: input,
+        shared_tokens: if record
+            .as_ref()
+            .is_some_and(|r| matches!(r.source.as_str(), "anthropic.models" | "google.models"))
+        {
+            None
+        } else {
+            Some(input.unwrap_or(medousa_runtime::inference_window::UNKNOWN_INPUT_TOKENS))
+        },
+        // ChatGPT plan bridge deliberately rejects max_output_tokens. Reserving
+        // the catalog maximum keeps its generation behavior unchanged; unknown
+        // limits remain explicit estimates, never a claimed hard guarantee.
+        enforce_output_limit: !provider.eq_ignore_ascii_case("openai-codex"),
+        output_reserve: output,
+        ..Default::default()
+    }
+}
+
 pub const ESTIMATOR_LABEL: &str = "chars_div_4";
 
 pub fn chars_to_tokens(chars: usize) -> u32 {

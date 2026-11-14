@@ -54,6 +54,9 @@ pub struct RequestFootprint {
     /// Present only at the actual first ChatRequest boundary, not assembly time.
     #[serde(default)]
     pub first_request_context: Option<crate::request_context::FirstRequestContextReport>,
+    /// Recomputed on every inference, including resumed loops.
+    #[serde(default)]
+    pub inference_window: Option<crate::inference_window::InferenceWindowReport>,
     pub system: RequestSection,
     pub messages: Vec<RequestSection>,
     pub model: Option<String>,
@@ -83,6 +86,7 @@ impl RequestFootprint {
             tools: section(&request.tools),
             content_cost: Some(content_cost),
             first_request_context: None,
+            inference_window: None,
             system: section(&request.system),
             messages: request.messages.iter().map(section).collect(),
             model,
@@ -105,6 +109,18 @@ impl RequestFootprint {
             self.content_cost
                 .expect("new request has measured content cost"),
         ));
+        self
+    }
+
+    pub fn with_inference_window(
+        mut self,
+        report: crate::inference_window::InferenceWindowReport,
+    ) -> Self {
+        if let Some(first) = &mut self.first_request_context {
+            first.decisions = report.decisions.clone();
+            first.reconciled = report.reconciled;
+        }
+        self.inference_window = Some(report);
         self
     }
 

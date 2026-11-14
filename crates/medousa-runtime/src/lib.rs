@@ -13,6 +13,7 @@ pub mod credentialed_ai;
 pub mod execution_boundary;
 pub mod execution_policy;
 pub mod inference_usage;
+pub mod inference_window;
 pub mod loop_gate;
 pub mod loop_state;
 pub mod perception;
@@ -23,6 +24,7 @@ pub mod tool_loop;
 pub mod turn_context;
 pub mod turn_control;
 pub mod turn_presentation;
+pub mod windowed_client;
 pub mod work_environment;
 
 /// Maximum user prompt admitted to one foreground production turn.

@@ -91,6 +91,7 @@ pub struct MedousaToolLoopPipeline {
     tool_registry: Arc<dyn ToolRegistry>,
     parallel_execution_settings_provider: Arc<dyn ParallelExecutionSettingsProvider>,
     first_request_context: crate::request_context::FirstRequestContextConfig,
+    window_policy: crate::inference_window::InferenceWindowPolicy,
 }
 
 #[derive(Clone)]
@@ -123,7 +124,109 @@ impl MedousaToolLoopPipeline {
             tool_registry,
             parallel_execution_settings_provider: Arc::new(ParallelExecutionSettings::default),
             first_request_context: Default::default(),
+            window_policy: Default::default(),
         }
+    }
+
+    async fn execute_prompt_in_window(
+        &self,
+        request: PromptExecutionRequest,
+        turn_ctx: &HostTurnContext,
+        completion_gate: Option<&ToolLoopCompletionGate<'_>>,
+        perception: &mut ToolPerceptionGovernor,
+        rounds_executed: usize,
+    ) -> Result<stasis::application::orchestration::prompt_pipeline::PromptExecutionResponse> {
+        // Legacy synthesis still gets the original principal/protected lanes.
+        // The draft/synthesis appendix is part of the request being compiled.
+        let mut context = turn_ctx.clone();
+        if let Some(provider) =
+            completion_gate.and_then(|gate| gate.round_context_provider.as_deref())
+        {
+            if let Some(world) = provider.context_for_next_round()? {
+                push_round_context(
+                    &mut context.tool_lane.messages,
+                    perception.observe_round_context(&world),
+                    provider.replaces_previous_context(),
+                );
+            }
+            let sticky = provider.sticky_context_for_next_round().await?;
+            crate::turn_context::replace_sticky_context(&mut context.user_lane_prefix, None);
+            crate::turn_context::replace_sticky_context(&mut context.tool_lane.messages, sticky);
+        }
+        let is_current = context.user_lane_prefix.last().is_some_and(|message| {
+            message.role == ChatRole::User
+                && message.content.first_text() == Some(request.user_prompt.as_str())
+        });
+        if !is_current {
+            context
+                .tool_lane
+                .messages
+                .push(ChatMessage::user(request.user_prompt));
+        }
+        let systems = usize::from(
+            request
+                .system_prompt
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty()),
+        );
+        let mut chat =
+            ChatRequest::new(context.build_model_messages(request.system_prompt.as_deref()));
+        let report = crate::context::ContextCoordinator::compile_inference(
+            &mut chat,
+            &self.window_policy,
+            systems,
+            context.user_lane_prefix.len(),
+            self.first_request_context.assembly.as_ref(),
+            perception,
+        )
+        .map_err(|overflow| {
+            StasisError::PortFailure(serde_json::to_string(&overflow).expect("overflow serializes"))
+        })?;
+        let mut footprint = crate::inference_usage::RequestFootprint::new(
+            &chat,
+            request.context.model_hint.clone(),
+            None,
+        );
+        footprint.inference_window = Some(report);
+        let mut observation = crate::inference_usage::InferenceObservation::start(
+            completion_gate,
+            rounds_executed,
+            footprint,
+            None,
+        );
+        let response = match self
+            .prompt_pipeline
+            .complete_chat(chat, request.context.clone())
+            .await
+        {
+            Ok(completion) => {
+                observation.complete(&completion.response);
+                completion.response
+            }
+            Err(error) => {
+                observation.fail_with(false, Some(&error.to_string()));
+                return Err(error);
+            }
+        };
+        let text = response
+            .into_first_text()
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("chat response was empty".into()))?;
+        Ok(
+            stasis::application::orchestration::prompt_pipeline::PromptExecutionResponse {
+                text,
+                metadata: request.context,
+            },
+        )
+    }
+
+    pub fn with_window_policy(
+        mut self,
+        policy: crate::inference_window::InferenceWindowPolicy,
+    ) -> Self {
+        self.window_policy = policy;
+        self
     }
 
     pub fn with_first_request_context(
@@ -385,6 +488,14 @@ impl MedousaToolLoopPipeline {
             .as_ref()
             .and_then(|gate| gate.runtime_ports.perception_evidence());
         let mut perception_governor = ToolPerceptionGovernor::new(perception_evidence);
+        let window_budget = self.window_policy.input_budget() as usize;
+        perception_governor.set_budgets(crate::perception::PerceptionBudgets {
+            tool_results_chars: window_budget / 2,
+            result_chars: window_budget / 3,
+            context_chars: window_budget / 8,
+            history_high_bytes: window_budget / 2,
+            history_low_bytes: window_budget / 3,
+        });
         let tool_observation_hydration = completion_gate
             .as_ref()
             .and_then(|gate| gate.runtime_ports.tool_observation_hydration());
@@ -543,13 +654,58 @@ impl MedousaToolLoopPipeline {
                 let mut messages =
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
                 ensure_assistant_tool_turn_reasoning(&mut messages);
-                let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
+                let mut chat_request = ChatRequest::new(messages).with_tools(tools.clone());
+                let window_report = crate::context::ContextCoordinator::compile_inference(
+                    &mut chat_request,
+                    &self.window_policy,
+                    usize::from(
+                        shared_inputs
+                            .system_prompt
+                            .as_deref()
+                            .is_some_and(|s| !s.trim().is_empty()),
+                    ),
+                    turn_ctx.user_lane_prefix.len(),
+                    self.first_request_context.assembly.as_ref(),
+                    &mut perception_governor,
+                )
+                .map_err(|overflow| {
+                    StasisError::PortFailure(
+                        serde_json::to_string(&overflow).expect("overflow serializes"),
+                    )
+                })?;
                 let mut footprint = crate::inference_usage::RequestFootprint::new(
                     &chat_request,
                     shared_inputs.context.model_hint.clone(),
                     shared_inputs.context.reasoning_effort.clone(),
                 );
+                let response_bytes: usize = chat_request
+                    .messages
+                    .iter()
+                    .flat_map(|m| m.content.parts())
+                    .filter_map(|part| {
+                        if let ContentPart::ToolResponse(r) = part {
+                            Some(r.content.len())
+                        } else {
+                            None
+                        }
+                    })
+                    .sum();
+                let fixed =
+                    (window_report.estimate.total_tokens as usize).saturating_sub(response_bytes);
+                let available = (window_report.input_budget as usize).saturating_sub(fixed);
+                perception_governor.set_budgets(crate::perception::PerceptionBudgets {
+                    tool_results_chars: available.min(72 * 1024),
+                    result_chars: available.min(48 * 1024),
+                    context_chars: (available / 4).min(24 * 1024),
+                    history_high_bytes: available,
+                    history_low_bytes: available.saturating_mul(3) / 4,
+                });
                 if previous_request.is_none() {
+                    // Compiled lane offsets can differ after history deferral.
+                    let prefix_len = turn_ctx
+                        .user_lane_prefix
+                        .len()
+                        .saturating_sub(window_report.deferred_history_messages);
                     footprint = footprint.with_first_request_context(
                         &chat_request,
                         usize::from(
@@ -558,12 +714,15 @@ impl MedousaToolLoopPipeline {
                                 .as_deref()
                                 .is_some_and(|text| !text.trim().is_empty()),
                         ),
-                        turn_ctx.user_lane_prefix.len(),
+                        prefix_len,
                         self.first_request_context.assembly.as_ref(),
                     );
-                    if let Some(observer) = &self.first_request_context.observer {
-                        observer(footprint.clone()).await;
-                    }
+                }
+                footprint = footprint.with_inference_window(window_report);
+                if previous_request.is_none()
+                    && let Some(observer) = &self.first_request_context.observer
+                {
+                    observer(footprint.clone()).await;
                 }
                 let mut observation = crate::inference_usage::InferenceObservation::start(
                     completion_gate.as_deref(),
@@ -838,7 +997,10 @@ impl MedousaToolLoopPipeline {
 
                 let use_parallel = parallel_tool_batch_allowed(&batch, &parallel_settings).is_ok();
                 let model_result_budget =
-                    perception_governor.result_budget_for_batch(tool_calls.len());
+                    // A tiny placeholder cannot retain authoritative receipts.
+                    // Keep an actionable envelope and let the next compiler
+                    // report overflow if a batch is irreducibly too wide.
+                    perception_governor.result_budget_for_batch(tool_calls.len()).max(1024);
 
                 let round_tool_names: Vec<String> =
                     tool_calls.iter().map(|call| call.fn_name.clone()).collect();
@@ -1646,7 +1808,13 @@ impl MedousaToolLoopPipeline {
             }
             await_turn_result(
                 "fallback draft completion",
-                self.prompt_pipeline.execute(first_request),
+                self.execute_prompt_in_window(
+                    first_request,
+                    &turn_ctx,
+                    completion_gate.as_deref(),
+                    &mut perception_governor,
+                    rounds_executed,
+                ),
             )
             .await?
             .text
@@ -1674,7 +1842,13 @@ impl MedousaToolLoopPipeline {
 
         let final_response = await_turn_result(
             "fallback synthesis completion",
-            self.prompt_pipeline.execute(final_request),
+            self.execute_prompt_in_window(
+                final_request,
+                &turn_ctx,
+                completion_gate.as_deref(),
+                &mut perception_governor,
+                rounds_executed,
+            ),
         )
         .await?;
 
