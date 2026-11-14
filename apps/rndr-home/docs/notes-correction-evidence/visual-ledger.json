@@ -1,0 +1,27 @@
+{
+  "exported_png_count": 132,
+  "inspected": [
+    {
+      "delivered_png_sha256": "f95f2c0c0611c0b654b5e7ccdd12771790f8b5a57333c1431f53e4015e1c59f9",
+      "export_sha256": "f35cb1d56fe41f225860a862b58a199be1781dc0126dd8e22acca79918ea31fd",
+      "exported_original": "renders/high-contrast-narrow-650-notes-long-list.png",
+      "height": 650,
+      "inspected_path": "inspection/minimum.jpg",
+      "jpeg_sha256": "ca7bc2fb2326c9ab6d707c2d21c28720f845b266cb9a726c3ce80c9c47d8d2ce",
+      "status": "actual delivered JPEG-derived pixels inspected; not original-PNG byte equivalence",
+      "width": 480
+    },
+    {
+      "delivered_png_sha256": "c8f6b3f6735adf26feef36ab08e7d2b44d21bc7afd613a748ae90694204068cf",
+      "export_sha256": "cd3b19f161e542ce4a725966a4119418c3ab3eba95d4a52d35610051af4a0978",
+      "exported_original": "renders/dark-wide-notes-long-detail.png",
+      "height": 820,
+      "inspected_path": "inspection/wide.jpg",
+      "jpeg_sha256": "dac746b91fdfad0cdf7561a9c7d8cffd32c6da9dfd9e976b12e656e8206d402d",
+      "status": "actual delivered JPEG-derived pixels inspected; not original-PNG byte equivalence",
+      "width": 1120
+    }
+  ],
+  "inspected_rendition_count": 2,
+  "uninspected_original_png_count": 132
+}
