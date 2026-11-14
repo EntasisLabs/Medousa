@@ -6,19 +6,18 @@ use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline
 use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
+use super::context_assembly::contribution;
+use super::context_assembly::{ChatContext, ToolContext};
 use crate::learning_artifacts::{
     DEFAULT_LEARNING_RECALL_BLOCK_CHARS, DEFAULT_SCRIPT_RECALL_BLOCK_CHARS,
-    build_grapheme_script_recall_block, build_runtime_learnings_block,
 };
 use crate::runtime::settings::RuntimeSettings;
 use crate::session::ConversationTurn;
 use crate::stage_routing::StageRoute;
-use crate::tool_bootstrap::{DEFAULT_TOOL_HINTS_BLOCK_CHARS, build_tool_hints_block};
+use crate::tool_bootstrap::DEFAULT_TOOL_HINTS_BLOCK_CHARS;
 use crate::tools::TuiRuntime;
-use crate::turn_slice::{
-    DEFAULT_SLICE_BLOCK_CHARS, DEFAULT_SLICE_HOT_LINE_CHARS, build_tool_slices_block,
-    format_cold_history_line, prior_turn_content,
-};
+use crate::turn_slice::{DEFAULT_SLICE_BLOCK_CHARS, format_cold_history_line, prior_turn_content};
+use medousa_runtime::context::{ContextCoordinator, ContextCost, ContextOwner, Retention};
 
 pub(crate) fn requested_tool_allowlist(
     tools: Option<&[String]>,
@@ -54,6 +53,8 @@ pub struct PriorMessageBuild {
     pub learning_recall_chars: usize,
     pub tool_hints_chars: usize,
     pub total_chars: usize,
+    /// Actual included spans, distinct from legacy selection counters.
+    pub context: ContextCoordinator,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,18 +176,14 @@ pub fn build_prior_messages(
     cold_window_turns: usize,
     limits: PriorMessageLimits,
 ) -> PriorMessageBuild {
-    let mut selected: Vec<&ConversationTurn> = turns
-        .iter()
-        .filter(|turn| !crate::turn_failure::is_error_turn_excluded_from_model_context(turn))
-        .collect();
-
-    if current_user_persisted
-        && let Some(last) = selected.last()
-        && last.role == "user"
-    {
-        selected.pop();
-    }
-
+    let selected = ChatContext::prior_turns(turns, current_user_persisted);
+    let tool_context = ToolContext {
+        catalog: tool_catalog,
+        session_id,
+        prompt: current_prompt,
+        turns,
+    };
+    let mut context = ContextCoordinator::with_legacy_history_limit(limits.max_prior_total_chars);
     let mut accepted: Vec<ChatMessage> = Vec::new();
     let mut total_chars = 0usize;
 
@@ -204,16 +201,14 @@ pub fn build_prior_messages(
         .copied()
         .collect();
 
-    let mut hot_remaining = limits
-        .hot_window_char_budget
-        .min(limits.max_prior_total_chars);
+    let mut hot_remaining = context.history_allocation(limits.hot_window_char_budget);
     for turn in &hot_turns {
         if hot_remaining == 0 {
             break;
         }
 
-        let bounded = prior_turn_content(turn, limits.max_single_prior_message_chars);
-        let bounded = truncate_text_for_budget(&bounded, hot_remaining);
+        let content = prior_turn_content(turn, limits.max_single_prior_message_chars);
+        let bounded = truncate_text_for_budget(&content, hot_remaining);
         if bounded.trim().is_empty() {
             continue;
         }
@@ -221,11 +216,44 @@ pub fn build_prior_messages(
         let bounded_chars = bounded.chars().count();
         hot_remaining = hot_remaining.saturating_sub(bounded_chars);
         total_chars = total_chars.saturating_add(bounded_chars);
+        context.account_history_selection(bounded_chars);
         match turn.role.as_str() {
             "user" => accepted.push(ChatMessage::user(bounded)),
             "assistant" | "agent" => accepted.push(ChatMessage::assistant(bounded)),
-            _ => {}
+            _ => {
+                context.include(
+                    contribution(
+                        "unsupported_history_role",
+                        ContextOwner::Chat,
+                        session_id,
+                        ContextCost::text(content.chars().count()),
+                        Retention::Flexible,
+                        Some(
+                            limits
+                                .hot_window_char_budget
+                                .min(limits.max_prior_total_chars),
+                        ),
+                    )
+                    .project_text(0),
+                );
+                continue;
+            }
         }
+        context.include(
+            contribution(
+                "prior_conversation",
+                ContextOwner::Chat,
+                session_id,
+                ContextCost::text(content.chars().count()),
+                Retention::Flexible,
+                Some(
+                    limits
+                        .hot_window_char_budget
+                        .min(limits.max_prior_total_chars),
+                ),
+            )
+            .project_text(bounded_chars),
+        );
     }
 
     let cold_lines = cold_turns
@@ -254,80 +282,112 @@ pub fn build_prior_messages(
         })
         .collect::<Vec<_>>();
 
-    let cold_summary = if cold_lines.is_empty() {
+    let cold_source = if cold_lines.is_empty() {
         String::new()
     } else {
-        let cold_budget = limits
-            .cold_window_char_budget
-            .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-        truncate_text_for_budget(
-            &format!("[MEDOUSA_COLD_HISTORY_SUMMARY]\n{}", cold_lines.join("\n")),
-            cold_budget,
-        )
+        format!("[MEDOUSA_COLD_HISTORY_SUMMARY]\n{}", cold_lines.join("\n"))
     };
+    let cold_budget = context.history_allocation(limits.cold_window_char_budget);
+    let cold_summary = truncate_text_for_budget(&cold_source, cold_budget);
     let cold_summary_chars = cold_summary.chars().count();
     if !cold_summary.trim().is_empty() {
         total_chars = total_chars.saturating_add(cold_summary_chars);
+        context.account_history_selection(cold_summary_chars);
         accepted.push(ChatMessage::assistant(cold_summary));
+        context.include(
+            contribution(
+                "cold_history",
+                ContextOwner::Chat,
+                session_id,
+                ContextCost::text(cold_source.chars().count()),
+                Retention::Flexible,
+                Some(cold_budget),
+            )
+            .project_text(cold_summary_chars),
+        );
     }
 
     let (tool_slices_chars, script_recall_chars, learning_recall_chars, tool_hints_chars) =
         if limits.include_auxiliary_history {
-            let slice_budget = limits
-                .hot_window_char_budget
-                .min(DEFAULT_SLICE_BLOCK_CHARS)
-                .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-            let tool_slices_block = build_tool_slices_block(
-                turns,
-                &hot_turns,
-                slice_budget,
-                DEFAULT_SLICE_HOT_LINE_CHARS,
-            );
+            let slice_budget = context
+                .history_allocation(limits.hot_window_char_budget.min(DEFAULT_SLICE_BLOCK_CHARS));
+            let tool_slices_block = tool_context.slices(&hot_turns, slice_budget);
             let tool_slices_chars = tool_slices_block.chars().count();
             if !tool_slices_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(tool_slices_chars);
+                context.account_history_selection(tool_slices_chars);
                 accepted.push(ChatMessage::assistant(tool_slices_block));
+                context.include(contribution(
+                    "tool_slices",
+                    ContextOwner::Tool,
+                    session_id,
+                    ContextCost::text(tool_slices_chars),
+                    Retention::Flexible,
+                    Some(slice_budget),
+                ));
             }
 
-            let script_budget = limits
-                .hot_window_char_budget
-                .min(DEFAULT_SCRIPT_RECALL_BLOCK_CHARS)
-                .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-            let script_recall_block =
-                build_grapheme_script_recall_block(current_prompt, script_budget);
+            let script_budget = context.history_allocation(
+                limits
+                    .hot_window_char_budget
+                    .min(DEFAULT_SCRIPT_RECALL_BLOCK_CHARS),
+            );
+            let script_recall_block = tool_context.scripts(script_budget);
             let script_recall_chars = script_recall_block.chars().count();
             if !script_recall_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(script_recall_chars);
+                context.account_history_selection(script_recall_chars);
                 accepted.push(ChatMessage::assistant(script_recall_block));
+                context.include(contribution(
+                    "grapheme_scripts",
+                    ContextOwner::Tool,
+                    session_id,
+                    ContextCost::text(script_recall_chars),
+                    Retention::Flexible,
+                    Some(script_budget),
+                ));
             }
 
-            let learning_budget = limits
-                .hot_window_char_budget
-                .min(DEFAULT_LEARNING_RECALL_BLOCK_CHARS)
-                .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-            let learning_recall_block =
-                build_runtime_learnings_block(current_prompt, learning_budget);
+            let learning_budget = context.history_allocation(
+                limits
+                    .hot_window_char_budget
+                    .min(DEFAULT_LEARNING_RECALL_BLOCK_CHARS),
+            );
+            let learning_recall_block = tool_context.learnings(learning_budget);
             let learning_recall_chars = learning_recall_block.chars().count();
             if !learning_recall_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(learning_recall_chars);
+                context.account_history_selection(learning_recall_chars);
                 accepted.push(ChatMessage::assistant(learning_recall_block));
+                context.include(contribution(
+                    "runtime_learnings",
+                    ContextOwner::Tool,
+                    session_id,
+                    ContextCost::text(learning_recall_chars),
+                    Retention::Flexible,
+                    Some(learning_budget),
+                ));
             }
 
-            let hints_budget = limits
-                .hot_window_char_budget
-                .min(DEFAULT_TOOL_HINTS_BLOCK_CHARS)
-                .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-            let tool_hints_block = build_tool_hints_block(
-                tool_catalog,
-                session_id,
-                current_prompt,
-                turns,
-                hints_budget,
+            let hints_budget = context.history_allocation(
+                limits
+                    .hot_window_char_budget
+                    .min(DEFAULT_TOOL_HINTS_BLOCK_CHARS),
             );
+            let tool_hints_block = tool_context.hints(hints_budget);
             let tool_hints_chars = tool_hints_block.chars().count();
             if !tool_hints_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(tool_hints_chars);
+                context.account_history_selection(tool_hints_chars);
                 accepted.push(ChatMessage::assistant(tool_hints_block));
+                context.include(contribution(
+                    "tool_hints",
+                    ContextOwner::Tool,
+                    session_id,
+                    ContextCost::text(tool_hints_chars),
+                    Retention::Flexible,
+                    Some(hints_budget),
+                ));
             }
             (
                 tool_slices_chars,
@@ -353,6 +413,7 @@ pub fn build_prior_messages(
         learning_recall_chars,
         tool_hints_chars,
         total_chars,
+        context,
     }
 }
 
@@ -704,6 +765,165 @@ mod tests {
         assert!(!gated.enforce_no_tools);
         assert_eq!(gated.tool_call_mode, ToolCallMode::Auto);
         assert_eq!(gated.reason, "cheap_recall_first_no_verified_context");
+    }
+
+    #[test]
+    fn baseline_history_assembly_parity_matrix() {
+        // Frozen phase-1 reference: the 4def4274 text-selection algorithm.
+        // Domain rendering helpers are intentionally unchanged. Auxiliary pool
+        // formula parity is separately verified in the portable coordinator.
+        fn baseline(
+            turns: &[ConversationTurn],
+            persisted: bool,
+            hot: usize,
+            cold: usize,
+            limits: PriorMessageLimits,
+        ) -> (Vec<genai::chat::ChatMessage>, usize) {
+            let mut selected = turns
+                .iter()
+                .filter(|turn| {
+                    !crate::turn_failure::is_error_turn_excluded_from_model_context(turn)
+                })
+                .collect::<Vec<_>>();
+            if persisted && selected.last().is_some_and(|turn| turn.role == "user") {
+                selected.pop();
+            }
+            let hot_turns = selected.iter().rev().take(hot).copied().collect::<Vec<_>>();
+            let cold_turns = selected
+                .iter()
+                .rev()
+                .skip(hot)
+                .take(cold)
+                .copied()
+                .collect::<Vec<_>>();
+            let mut remaining = limits
+                .hot_window_char_budget
+                .min(limits.max_prior_total_chars);
+            let mut used = 0usize;
+            let mut messages = Vec::new();
+            for turn in &hot_turns {
+                if remaining == 0 {
+                    break;
+                }
+                let content =
+                    super::prior_turn_content(turn, limits.max_single_prior_message_chars);
+                let bounded = super::truncate_text_for_budget(&content, remaining);
+                if bounded.trim().is_empty() {
+                    continue;
+                }
+                let chars = bounded.chars().count();
+                remaining = remaining.saturating_sub(chars);
+                used = used.saturating_add(chars);
+                match turn.role.as_str() {
+                    "user" => messages.push(genai::chat::ChatMessage::user(bounded)),
+                    "agent" | "assistant" => {
+                        messages.push(genai::chat::ChatMessage::assistant(bounded))
+                    }
+                    _ => {}
+                }
+            }
+            let lines = cold_turns
+                .iter()
+                .rev()
+                .filter_map(|turn| {
+                    super::format_cold_history_line(turn, limits.cold_summary_line_chars).or_else(
+                        || match turn.role.as_str() {
+                            "user" | "assistant" | "agent" => {
+                                let line = super::truncate_text_for_budget(
+                                    &turn.content,
+                                    limits.cold_summary_line_chars,
+                                );
+                                if line.trim().is_empty() {
+                                    None
+                                } else {
+                                    let role = if turn.role == "agent" {
+                                        "assistant"
+                                    } else {
+                                        turn.role.as_str()
+                                    };
+                                    Some(format!("{}: {}", role, line.replace('\n', " ")))
+                                }
+                            }
+                            _ => None,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            if !lines.is_empty() {
+                let summary = super::truncate_text_for_budget(
+                    &format!("[MEDOUSA_COLD_HISTORY_SUMMARY]\n{}", lines.join("\n")),
+                    limits
+                        .cold_window_char_budget
+                        .min(limits.max_prior_total_chars.saturating_sub(used)),
+                );
+                if !summary.trim().is_empty() {
+                    used = used.saturating_add(summary.chars().count());
+                    messages.push(genai::chat::ChatMessage::assistant(summary));
+                }
+            }
+            messages.reverse();
+            (messages, used)
+        }
+        let turns = ["user", "agent", "system", "assistant", "user"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, role)| ConversationTurn {
+                role: role.into(),
+                content: format!("turn-{index} 🦀 {}", "x".repeat(32)),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+                parts: None,
+                slice_summary: None,
+                speaker_profile_id: None,
+                reactions: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        let catalog = crate::typed_tools::ToolCatalog::default();
+        for cap in [0, 1, 5, 12, 13, 64, 240] {
+            for single in [0, 12, 40] {
+                for hot in [0, 1, 3, 5] {
+                    for cold in [0, 2, 5] {
+                        for persisted in [false, true] {
+                            let limits = PriorMessageLimits {
+                                max_prior_total_chars: cap,
+                                max_single_prior_message_chars: single,
+                                hot_window_char_budget: 96,
+                                cold_window_char_budget: 96,
+                                cold_summary_line_chars: 24,
+                                include_auxiliary_history: false,
+                            };
+                            let expected = baseline(&turns, persisted, hot, cold, limits);
+                            let actual = build_prior_messages(
+                                &catalog,
+                                "parity-session",
+                                &turns,
+                                "current",
+                                persisted,
+                                hot,
+                                cold,
+                                limits,
+                            );
+                            assert_eq!(
+                                serde_json::to_value(&actual.messages).unwrap(),
+                                serde_json::to_value(expected.0).unwrap(),
+                                "cap={cap} single={single} hot={hot} cold={cold} persisted={persisted}"
+                            );
+                            assert_eq!(actual.total_chars, expected.1);
+                            let cost =
+                                medousa_runtime::context::ContextCost::messages(&actual.messages);
+                            assert_eq!(
+                                actual
+                                    .context
+                                    .report(medousa_runtime::context::ContextCapacity::default())
+                                    .cost,
+                                cost
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

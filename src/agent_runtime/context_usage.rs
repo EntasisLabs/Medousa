@@ -10,7 +10,7 @@ use crate::daemon_api::{ContextUsageLayer, ContextUsageReport};
 pub const ESTIMATOR_LABEL: &str = "chars_div_4";
 
 pub fn chars_to_tokens(chars: usize) -> u32 {
-    u32::try_from(chars.div_ceil(4)).unwrap_or(u32::MAX)
+    medousa_runtime::context::ContextCost::text(chars).tokens_estimate()
 }
 
 fn layer(id: &str, label: &str, chars: usize) -> ContextUsageLayer {
@@ -24,136 +24,193 @@ fn layer(id: &str, label: &str, chars: usize) -> ContextUsageLayer {
 }
 
 pub struct ContextUsageInput<'a> {
+    pub session_id: &'a str,
     pub system_prompt_chars: usize,
-    pub user_prompt_chars: usize,
-    pub resolved_prompt_chars: usize,
-    pub prompt_for_request_chars: usize,
-    pub ambient_chars: usize,
+    pub prompt_ledger: &'a super::context_assembly::PromptLedger,
+    pub resolved_prompt: &'a str,
+    pub prompt_for_request: &'a str,
+    pub current_user_message: &'a genai::chat::ChatMessage,
+    /// Initial refresh snapshot only; the runtime re-reads this protected lane.
     pub sticky_chars: usize,
     pub prior_build: &'a PriorMessageBuild,
     pub tool_count: usize,
     pub tool_schema_chars: usize,
+    pub tool_schema_known: bool,
     pub context_limit_tokens: Option<u32>,
 }
 
-pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageReport {
-    let injection_chars = input
-        .resolved_prompt_chars
-        .saturating_sub(input.user_prompt_chars);
-    let tool_policy_chars = input
-        .prompt_for_request_chars
-        .saturating_sub(input.resolved_prompt_chars);
+pub struct ContextUsageCompilation {
+    pub usage: ContextUsageReport,
+    pub decisions: medousa_runtime::context::ContextDecisionReport,
+    /// Independent assembly measurement must equal the contribution total.
+    pub reconciled: bool,
+}
 
-    let prior_hot_chars = input
-        .prior_build
-        .total_chars
-        .saturating_sub(input.prior_build.cold_summary_chars)
-        .saturating_sub(input.prior_build.tool_slices_chars)
-        .saturating_sub(input.prior_build.tool_hints_chars)
-        .saturating_sub(input.prior_build.script_recall_chars)
-        .saturating_sub(input.prior_build.learning_recall_chars);
-
-    let mut layers = vec![
-        layer("system_prompt", "System prompt", input.system_prompt_chars),
-        layer(
-            "tool_definitions",
-            "Tool definitions",
-            input.tool_schema_chars,
+pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageCompilation {
+    use super::context_assembly::contribution;
+    use medousa_runtime::context::{
+        ContextCapacity, ContextCoordinator, ContextCost, ContextOwner, Retention,
+    };
+    let mut coordinator = ContextCoordinator::default();
+    for (id, owner, chars, retention) in [
+        (
+            "system_prompt",
+            ContextOwner::Host,
+            input.system_prompt_chars,
+            Retention::Required,
         ),
-    ];
-
-    if input.ambient_chars > 0 {
-        layers.push(layer("ambient", "Ambient context", input.ambient_chars));
-    }
-
-    if input.sticky_chars > 0 {
-        layers.push(layer(
+        (
+            "tool_definitions",
+            ContextOwner::Tool,
+            input.tool_schema_chars,
+            Retention::Required,
+        ),
+        (
             "chat_stickies",
-            "Chat sticky notes",
+            ContextOwner::Chat,
             input.sticky_chars,
+            Retention::Protected,
+        ),
+    ] {
+        coordinator.include(contribution(
+            id,
+            owner,
+            input.session_id,
+            ContextCost::text(chars),
+            retention,
+            None,
         ));
     }
-
-    let other_injection = injection_chars.saturating_sub(input.ambient_chars);
-    if other_injection > 0 {
-        layers.push(layer(
-            "memory_identity",
-            "Memory & identity",
-            other_injection,
+    if !input.tool_schema_known {
+        coordinator.include(contribution(
+            "unknown_tool_schemas",
+            ContextOwner::Tool,
+            input.session_id,
+            ContextCost {
+                text_chars: 0,
+                unknown_parts: 1,
+            },
+            Retention::Required,
+            None,
         ));
     }
-
-    if tool_policy_chars > 0 {
-        layers.push(layer("tool_policy", "Tool policy", tool_policy_chars));
-    }
-
-    if input.prior_build.tool_hints_chars > 0 {
-        layers.push(layer(
-            "tool_hints",
-            "Tool hints",
-            input.prior_build.tool_hints_chars,
+    coordinator
+        .contributions
+        .extend(input.prior_build.context.contributions.clone());
+    input
+        .prompt_ledger
+        .contribute(input.resolved_prompt, &mut coordinator);
+    if let Some(policy) = input.prompt_for_request.strip_prefix(input.resolved_prompt) {
+        coordinator.include(contribution(
+            "tool_policy",
+            ContextOwner::Tool,
+            input.session_id,
+            ContextCost::text(policy.chars().count()),
+            Retention::Required,
+            None,
+        ));
+    } else {
+        // This would be a new renderer contract, not permission to invent source
+        // attribution. Leave the independent reconciliation visibly false.
+        coordinator.include(contribution(
+            "unattributed_tool_policy",
+            ContextOwner::Tool,
+            input.session_id,
+            ContextCost {
+                text_chars: 0,
+                unknown_parts: 1,
+            },
+            Retention::Required,
+            None,
         ));
     }
-    if input.prior_build.tool_slices_chars > 0 {
-        layers.push(layer(
-            "tool_slices",
-            "Prior tool slices",
-            input.prior_build.tool_slices_chars,
+    let current_cost = ContextCost::messages(std::slice::from_ref(input.current_user_message));
+    if current_cost.unknown_parts > 0 {
+        coordinator.include(contribution(
+            "current_media",
+            ContextOwner::Chat,
+            input.session_id,
+            ContextCost {
+                text_chars: 0,
+                unknown_parts: current_cost.unknown_parts,
+            },
+            Retention::Required,
+            None,
         ));
     }
-    if input.prior_build.script_recall_chars > 0 {
-        layers.push(layer(
-            "grapheme_scripts",
-            "Grapheme scripts",
-            input.prior_build.script_recall_chars,
-        ));
+    let expected = ContextCost::messages(&input.prior_build.messages)
+        .saturating_add(current_cost)
+        .saturating_add(ContextCost::text(input.system_prompt_chars))
+        .saturating_add(ContextCost::text(input.tool_schema_chars))
+        .saturating_add(ContextCost::text(input.sticky_chars))
+        .saturating_add(ContextCost {
+            text_chars: 0,
+            unknown_parts: usize::from(!input.tool_schema_known),
+        });
+    let decisions = coordinator.report(ContextCapacity {
+        input_tokens: input.context_limit_tokens,
+    });
+    let reconciled = decisions.cost == expected
+        && !decisions
+            .contributions
+            .iter()
+            .any(|item| item.id.starts_with("unattributed"));
+    let mut layers: Vec<ContextUsageLayer> = Vec::new();
+    // Stable first-source order, merging repeated manuscript/history spans.
+    for item in &decisions.contributions {
+        if matches!(
+            item.decision,
+            medousa_runtime::context::ContextDecision::Excluded { .. }
+        ) {
+            continue;
+        }
+        let chars = u32::try_from(item.cost.text_chars).unwrap_or(u32::MAX);
+        if let Some(existing) = layers.iter_mut().find(|layer| layer.id == item.id) {
+            existing.chars = existing.chars.saturating_add(chars);
+            existing.tokens_estimate = chars_to_tokens(existing.chars as usize);
+        } else {
+            layers.push(layer(&item.id, layer_label(&item.id), item.cost.text_chars));
+        }
     }
-    if input.prior_build.learning_recall_chars > 0 {
-        layers.push(layer(
-            "runtime_learnings",
-            "Runtime learnings",
-            input.prior_build.learning_recall_chars,
-        ));
-    }
-    if input.prior_build.cold_summary_chars > 0 {
-        layers.push(layer(
-            "cold_history",
-            "Summarized history",
-            input.prior_build.cold_summary_chars,
-        ));
-    }
-    if prior_hot_chars > 0 {
-        layers.push(layer("prior_conversation", "Conversation", prior_hot_chars));
-    }
-
-    if input.user_prompt_chars > 0 {
-        layers.push(layer(
-            "user_message",
-            "Your message",
-            input.user_prompt_chars,
-        ));
-    }
-
-    let total_chars = layers.iter().map(|l| l.chars as usize).sum::<usize>();
-    let total_tokens_estimate = chars_to_tokens(total_chars);
-
-    ContextUsageReport {
-        layers,
-        total_tokens_estimate,
-        total_chars: u32::try_from(total_chars).unwrap_or(u32::MAX),
-        context_limit_tokens: input.context_limit_tokens,
-        tool_count: u32::try_from(input.tool_count).unwrap_or(u32::MAX),
-        estimator: ESTIMATOR_LABEL.to_string(),
+    ContextUsageCompilation {
+        usage: ContextUsageReport {
+            layers,
+            total_tokens_estimate: decisions.text_tokens_estimate,
+            total_chars: u32::try_from(decisions.cost.text_chars).unwrap_or(u32::MAX),
+            context_limit_tokens: input.context_limit_tokens,
+            tool_count: u32::try_from(input.tool_count).unwrap_or(u32::MAX),
+            estimator: format!(
+                "{ESTIMATOR_LABEL}_text_only; framing_unknown; unknown_parts={}; initial_snapshot",
+                decisions.cost.unknown_parts
+            ),
+        },
+        decisions,
+        reconciled,
     }
 }
 
-pub async fn estimate_tool_schema_chars(registry: &Arc<dyn ToolRegistry>) -> (usize, usize) {
-    let footprint = measure_tool_schema_footprint(registry).await;
-    (footprint.tool_count, footprint.total_chars)
+fn layer_label(id: &str) -> &str {
+    match id {
+        "system_prompt" => "System prompt",
+        "tool_definitions" => "Tool definitions",
+        "chat_stickies" => "Chat sticky notes",
+        "prior_conversation" => "Conversation",
+        "cold_history" => "Summarized history",
+        "tool_slices" => "Prior tool slices",
+        "grapheme_scripts" => "Grapheme scripts",
+        "runtime_learnings" => "Runtime learnings",
+        "tool_hints" => "Tool hints",
+        "user_message" => "Your message",
+        "history_media" => "Prior attachments (text only)",
+        "current_media" => "Current attachments (unknown cost)",
+        _ => id,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolSchemaFootprint {
+    /// False means registry enumeration failed, NOT an empty tool catalog.
+    pub known: bool,
     pub tool_count: usize,
     /// Sum of the individually serialized tool contracts. Provider-specific
     /// request-envelope punctuation is deliberately excluded.
@@ -176,6 +233,7 @@ pub async fn measure_tool_schema_footprint(
         Ok(tools) => tools,
         Err(_) => {
             return ToolSchemaFootprint {
+                known: false,
                 tool_count: 0,
                 total_chars: 0,
                 tools: Vec::new(),
@@ -206,6 +264,7 @@ pub(crate) fn measure_tool_schema_footprint_for_tools(
             .then_with(|| left.name.cmp(&right.name))
     });
     ToolSchemaFootprint {
+        known: true,
         tool_count: tools.len(),
         total_chars: entries.iter().map(|entry| entry.chars).sum(),
         tools: entries,
@@ -292,74 +351,148 @@ mod tests {
     use super::*;
 
     #[test]
-    fn layers_sum_to_total() {
+    fn complete_layers_reconcile_with_actual_text_and_unknown_media() {
+        use super::super::context_assembly::{PromptLedger, contribution};
+        use genai::chat::{ChatMessage, ContentPart, MessageContent};
+        use medousa_runtime::context::{ContextCoordinator, ContextCost, ContextOwner, Retention};
+        let mut ledger = PromptLedger::new("session-a", "  🦀 request  ");
+        let mut resolved = "  🦀 request  ".to_string();
+        for (id, owner) in [
+            ("context_pack", ContextOwner::Host),
+            ("memory_recall", ContextOwner::Host),
+            ("identity_manuscript", ContextOwner::Host),
+            ("bot_profile", ContextOwner::Host),
+            ("world_references", ContextOwner::Host),
+            ("voice", ContextOwner::Host),
+            ("suggested_capabilities", ContextOwner::Tool),
+            ("identity", ContextOwner::Host),
+            ("active_work", ContextOwner::UnitOfWork),
+            ("compiler_metadata", ContextOwner::Host),
+            ("ambient", ContextOwner::Host),
+            ("admitted_goal_and_work", ContextOwner::UnitOfWork),
+        ] {
+            resolved = format!("{}\n\n{id}", resolved.trim());
+            ledger.observe(id, owner, &resolved);
+        }
+        let request = format!("{resolved}\n\npolicy");
+        let current = ChatMessage::user(MessageContent::from_parts(vec![
+            ContentPart::Text(request.clone()),
+            ContentPart::from_binary_base64("image/png", "AAAA", None),
+        ]));
+        let mut context = ContextCoordinator::default();
+        let mut messages = Vec::new();
+        for (id, owner) in [
+            ("prior_conversation", ContextOwner::Chat),
+            ("cold_history", ContextOwner::Chat),
+            ("tool_slices", ContextOwner::Tool),
+            ("grapheme_scripts", ContextOwner::Tool),
+            ("runtime_learnings", ContextOwner::Tool),
+            ("tool_hints", ContextOwner::Tool),
+            ("history_media", ContextOwner::Chat),
+        ] {
+            messages.push(ChatMessage::assistant(id));
+            context.include(contribution(
+                id,
+                owner,
+                "session-a",
+                ContextCost::text(id.chars().count()),
+                Retention::Flexible,
+                Some(100),
+            ));
+        }
         let prior = PriorMessageBuild {
-            messages: Vec::new(),
-            hot_turns_included: 0,
-            cold_turns_summarized: 0,
-            cold_summary_chars: 100,
-            tool_slices_chars: 200,
-            script_recall_chars: 0,
-            learning_recall_chars: 0,
-            tool_hints_chars: 50,
-            total_chars: 500,
-        };
-        let report = build_context_usage_report(ContextUsageInput {
-            system_prompt_chars: 16_000,
-            user_prompt_chars: 10,
-            resolved_prompt_chars: 1_200,
-            prompt_for_request_chars: 1_600,
-            ambient_chars: 600,
-            sticky_chars: 250,
-            prior_build: &prior,
-            tool_count: 28,
-            tool_schema_chars: 36_000,
-            context_limit_tokens: Some(200_000),
-        });
-        assert!(report.total_tokens_estimate > 0);
-        assert_eq!(report.tool_count, 28);
-        assert!(report.layers.iter().any(|l| l.id == "system_prompt"));
-        assert_eq!(
-            report
-                .layers
-                .iter()
-                .find(|l| l.id == "chat_stickies")
-                .unwrap()
-                .chars,
-            250
-        );
-        assert!(operator_summary(&report).contains("Context"));
-    }
-
-    #[test]
-    fn format_context_usage_text_includes_layers() {
-        let prior = PriorMessageBuild {
-            messages: Vec::new(),
-            hot_turns_included: 0,
-            cold_turns_summarized: 0,
+            messages,
+            context,
+            hot_turns_included: 1,
+            cold_turns_summarized: 1,
             cold_summary_chars: 0,
             tool_slices_chars: 0,
             script_recall_chars: 0,
             learning_recall_chars: 0,
             tool_hints_chars: 0,
-            total_chars: 0,
+            // Deliberately wrong legacy counters must NOT drive accounting.
+            total_chars: 999_999,
         };
-        let report = build_context_usage_report(ContextUsageInput {
-            system_prompt_chars: 2_000,
-            user_prompt_chars: 100,
-            resolved_prompt_chars: 100,
-            prompt_for_request_chars: 100,
-            ambient_chars: 0,
-            sticky_chars: 0,
-            prior_build: &prior,
-            tool_count: 5,
-            tool_schema_chars: 9_000,
-            context_limit_tokens: Some(200_000),
-        });
-        let text = format_context_usage_text(&report);
-        assert!(text.contains("System prompt"));
-        assert!(text.contains("Tool definitions"));
-        assert!(text.contains('%'));
+        for limit in [None, Some(1), Some(200_000)] {
+            let compiled = build_context_usage_report(ContextUsageInput {
+                session_id: "session-a",
+                system_prompt_chars: 16_000,
+                prompt_ledger: &ledger,
+                resolved_prompt: &resolved,
+                prompt_for_request: &request,
+                current_user_message: &current,
+                sticky_chars: 250,
+                prior_build: &prior,
+                tool_count: 28,
+                tool_schema_chars: 36_000,
+                tool_schema_known: true,
+                context_limit_tokens: limit,
+            });
+            assert!(compiled.reconciled);
+            let report = compiled.usage;
+            assert_eq!(
+                report.layers.iter().map(|layer| layer.chars).sum::<u32>(),
+                report.total_chars
+            );
+            assert_eq!(compiled.decisions.cost.unknown_parts, 1);
+            assert!(!compiled.decisions.complete_token_cost_known);
+            assert_eq!(
+                compiled.decisions.text_estimate_exceeds_capacity,
+                limit.map(|limit| report.total_tokens_estimate > limit)
+            );
+            assert!(
+                compiled.decisions.contributions.iter().all(|item| item
+                    .provenance
+                    .scope
+                    .as_deref()
+                    == Some("session-a"))
+            );
+            for id in [
+                "system_prompt",
+                "tool_definitions",
+                "chat_stickies",
+                "ambient",
+                "admitted_goal_and_work",
+                "history_media",
+                "current_media",
+                "tool_policy",
+            ] {
+                assert!(
+                    report.layers.iter().any(|layer| layer.id == id),
+                    "missing {id}"
+                );
+            }
+            assert!(operator_summary(&report).contains("Context"));
+            let text = format_context_usage_text(&report);
+            assert!(text.contains("System prompt"));
+            assert!(text.contains("Tool definitions"));
+            assert!(report.estimator.contains("text_only"));
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_catalog_enumeration_is_unknown_not_empty() {
+        struct FailingRegistry;
+        #[async_trait::async_trait]
+        impl ToolRegistry for FailingRegistry {
+            async fn list_tools(&self) -> stasis::prelude::Result<Vec<genai::chat::Tool>> {
+                Err(stasis::prelude::StasisError::PortFailure(
+                    "catalog unavailable".into(),
+                ))
+            }
+            async fn invoke_tool(
+                &self,
+                _: &str,
+                _: serde_json::Value,
+            ) -> stasis::prelude::Result<serde_json::Value> {
+                unreachable!("accounting does not execute tools")
+            }
+        }
+        let registry: Arc<dyn ToolRegistry> = Arc::new(FailingRegistry);
+        let footprint = measure_tool_schema_footprint(&registry).await;
+        assert!(!footprint.known);
+        assert_eq!(footprint.total_chars, 0);
+        assert!(measure_tool_schema_footprint_for_tools(&[]).known);
     }
 
     #[test]

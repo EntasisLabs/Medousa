@@ -540,10 +540,14 @@ pub(crate) async fn start_prompt_run(
             .expect("General agent mode is always available");
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         agent_mode,
-        mode_context_appendix: None,
+        context_appendices: &[],
         session_id: &state.session_id,
         memory_session_id: &state.session_id,
         prompt: &prompt,
+        input_context: medousa::agent_runtime::context_assembly::PromptLedger::new(
+            &state.session_id,
+            &prompt,
+        ),
         selected_context_pack_query: state.selected_context_pack_query.as_deref(),
         settings: &state.settings,
         verifier_route: verifier_route.as_ref(),
@@ -697,8 +701,8 @@ pub(crate) async fn start_prompt_run(
         .as_ref()
         .map(|route| route.model.as_str())
         .unwrap_or(state.settings.model.as_str());
-    medousa::media_vision::append_recent_history_images(
-        &mut prior_build.messages,
+    medousa::agent_runtime::context_assembly::ChatContext::append_history_media(
+        &mut prior_build,
         &state.session_id,
         &state.conversation,
         &[],
@@ -737,7 +741,6 @@ pub(crate) async fn start_prompt_run(
             prior_build.total_chars,
         ),
     );
-    let prior_messages = prior_build.messages;
     let prompt_for_request = if activation.enforce_no_tools {
         format!(
             "{resolved_prompt}\n\n[MEDOUSA_TOOL_POLICY]\nmode=no_tools\ninstruction=Do not call tools for this turn unless the user explicitly requests external lookup, execution, or fresh evidence. Answer directly from current context."
@@ -750,6 +753,41 @@ pub(crate) async fn start_prompt_run(
     };
     let current_turn_user_message =
         medousa::media_vision::TurnMediaVisionPlan::empty().build_user_message(&prompt_for_request);
+    let (tool_count, tool_schema_chars, tool_schema_known) = if activation.enforce_no_tools {
+        (0, 0, true)
+    } else {
+        let footprint = medousa::agent_runtime::context_usage::measure_tool_schema_footprint(
+            &tui_rt.tool_registry,
+        )
+        .await;
+        (footprint.tool_count, footprint.total_chars, footprint.known)
+    };
+    let compiled_context = medousa::agent_runtime::context_usage::build_context_usage_report(
+        medousa::agent_runtime::context_usage::ContextUsageInput {
+            session_id: &state.session_id,
+            system_prompt_chars: medousa::agent_runtime::modes::system_prompt_for_mode(&agent_mode)
+                .chars()
+                .count(),
+            prompt_ledger: &prepared.context_ledger,
+            resolved_prompt: &resolved_prompt,
+            prompt_for_request: &prompt_for_request,
+            current_user_message: &current_turn_user_message,
+            // This direct TUI path has no round-context provider.
+            sticky_chars: 0,
+            prior_build: &prior_build,
+            tool_count,
+            tool_schema_chars,
+            tool_schema_known,
+            // Do not invent a capacity from display settings; model-aware
+            // per-inference allocation belongs to a later phase.
+            context_limit_tokens: None,
+        },
+    );
+    if !compiled_context.reconciled {
+        tracing::error!(decisions = ?compiled_context.decisions, "TUI context attribution does not reconcile");
+    }
+    tracing::debug!(decisions = ?compiled_context.decisions, reconciled = compiled_context.reconciled, "TUI turn context (initial snapshot, text estimates only)");
+    let prior_messages = prior_build.messages;
     let retry_max_retries = medousa::tui::settings::parse_usize_with_bounds(
         &state.settings.retry_runtime_max_retries,
         DEFAULT_RETRY_RUNTIME_MAX_RETRIES,

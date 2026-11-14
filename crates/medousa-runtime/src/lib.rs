@@ -8,6 +8,7 @@
 pub mod budget;
 pub mod checkpoint;
 pub mod completion_fsm;
+pub mod context;
 pub mod credentialed_ai;
 pub mod execution_boundary;
 pub mod execution_policy;

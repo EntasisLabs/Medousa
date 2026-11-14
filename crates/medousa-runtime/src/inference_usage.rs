@@ -47,6 +47,10 @@ fn section(value: &impl Serialize) -> RequestSection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestFootprint {
     pub tools: RequestSection,
+    /// Text-only estimate and explicitly unknown protocol/media parts. Kept
+    /// separate from serialized bytes and provider-reported/billed tokens.
+    #[serde(default)]
+    pub content_cost: Option<crate::context::ContextCost>,
     pub system: RequestSection,
     pub messages: Vec<RequestSection>,
     pub model: Option<String>,
@@ -59,8 +63,22 @@ impl RequestFootprint {
         model: Option<String>,
         reasoning_effort: Option<String>,
     ) -> Self {
+        let mut content_cost = crate::context::ContextCost::messages(&request.messages)
+            .saturating_add(crate::context::ContextCost::text(
+                request
+                    .system
+                    .as_ref()
+                    .map_or(0, |system| system.chars().count()),
+            ));
+        for tool in request.tools.iter().flatten() {
+            let serialized = serde_json::to_string(tool).expect("GenAI tool serializes");
+            content_cost = content_cost.saturating_add(crate::context::ContextCost::text(
+                serialized.chars().count(),
+            ));
+        }
         Self {
             tools: section(&request.tools),
+            content_cost: Some(content_cost),
             system: section(&request.system),
             messages: request.messages.iter().map(section).collect(),
             model,
@@ -375,6 +393,27 @@ mod tests {
             assert!(usage.generated.requested_batch_operations.is_none());
         }
         assert_eq!(ledger.0.lock().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn request_cost_keeps_media_protocol_and_legacy_unknown_without_inventing_usage() {
+        let request = ChatRequest::new(vec![ChatMessage::user(
+            genai::chat::MessageContent::from_parts(vec![
+                ContentPart::Text("αβ🦀".into()),
+                ContentPart::from_binary_base64("image/png", "AAAA", None),
+            ]),
+        )]);
+        let footprint = RequestFootprint::new(&request, None, None);
+        let cost = footprint.content_cost.unwrap();
+        assert_eq!(cost.text_chars, 3);
+        assert_eq!(cost.unknown_parts, 1);
+        assert_eq!(cost.tokens_estimate(), 1);
+        assert!(footprint.messages[0].bytes > cost.text_chars);
+        let mut legacy = serde_json::to_value(&footprint).unwrap();
+        legacy.as_object_mut().unwrap().remove("content_cost");
+        let restored: RequestFootprint = serde_json::from_value(legacy).unwrap();
+        assert!(restored.content_cost.is_none());
+        assert!(ReportedTokens::default().input.is_none());
     }
 
     #[test]

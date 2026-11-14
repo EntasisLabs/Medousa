@@ -294,6 +294,7 @@ mod tests {
             handoff_vibe_signature: "Evening focus".to_string(),
             handoff_model_avec: super::super::vibe_signature::default_handoff_model_avec(),
             ambient_appendix: "[MEDOUSA_AMBIENT]\nlocal_time=12:00".to_string(),
+            context_ledger: super::super::context_assembly::PromptLedger::default(),
         }
     }
 

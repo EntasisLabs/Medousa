@@ -42,6 +42,7 @@ pub mod coder_semantic_actions;
 pub mod coder_setup_tools;
 pub mod coder_tools;
 pub mod coder_turn_checkpoint;
+pub mod context_assembly;
 pub mod context_usage;
 pub mod continuation;
 pub mod heartbeat_turn;

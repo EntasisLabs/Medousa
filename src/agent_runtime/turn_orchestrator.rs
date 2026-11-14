@@ -31,6 +31,9 @@ use crate::tools::TuiRuntime;
 use medousa_types::MessageReaction;
 use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 
+use super::context_assembly::{PromptLedger, UnitOfWorkContext};
+use medousa_runtime::context::ContextOwner;
+
 use super::continuation::{
     build_continuation_prior_messages, build_continuation_prompt, collect_tool_names,
     should_run_continuation,
@@ -125,17 +128,22 @@ pub struct PreparedTurnPrompt {
     pub handoff_vibe_signature: String,
     pub handoff_model_avec: MemoryAvecState,
     pub ambient_appendix: String,
+    pub context_ledger: PromptLedger,
 }
 
 pub struct PrepareTurnPromptParams<'a> {
     pub agent_mode: super::modes::ResolvedAgentMode,
-    /// Immutable, daemon-compiled context for the selected mode.
-    pub mode_context_appendix: Option<&'a str>,
+    /// Immutable producer-owned appendices. Keep host evidence separate from
+    /// admitted work context even though both retain their original placement.
+    pub context_appendices: &'a [super::context_assembly::ContextAppendix],
     pub session_id: &'a str,
     /// Stable memory continuity scope. This differs from `session_id` only for
     /// a daemon-resolved Bot turn.
     pub memory_session_id: &'a str,
     pub prompt: &'a str,
+    /// Source spans for admission-time attachments and surface controls, before
+    /// retrieval adds any further context. Must describe `prompt` unchanged.
+    pub input_context: PromptLedger,
     pub selected_context_pack_query: Option<&'a str>,
     pub settings: &'a RuntimeSettings,
     pub verifier_route: Option<&'a StageRoute>,
@@ -158,6 +166,8 @@ pub struct PrepareTurnPromptParams<'a> {
 }
 
 pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> PreparedTurnPrompt {
+    let mut context_ledger = params.input_context;
+    context_ledger.observe("input_projection", ContextOwner::Host, params.prompt);
     let verifier_policy =
         verifier_policy_from_settings_and_route(params.settings, params.verifier_route);
     let (mut resolved_prompt, pack_note, verification_state) = resolve_prompt_with_context_pack(
@@ -167,6 +177,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         &verifier_policy,
     );
 
+    context_ledger.observe("context_pack", ContextOwner::Host, &resolved_prompt);
     let recall_probe =
         cheap_memory_recall_probe(params.tui_rt, params.memory_session_id, params.prompt).await;
     let manuscript_ctx = params
@@ -194,7 +205,9 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
     .await;
 
     resolved_prompt = append_memory_recall_hint(&resolved_prompt, &recall_probe);
+    context_ledger.observe("memory_recall", ContextOwner::Host, &resolved_prompt);
     resolved_prompt = append_manuscript_hint(&resolved_prompt, manuscript_ctx.as_ref());
+    context_ledger.observe("identity_manuscript", ContextOwner::Host, &resolved_prompt);
     if let Some(ids) = params.additional_manuscript_ids {
         for id in ids {
             let trimmed = id.trim();
@@ -206,6 +219,11 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
             }
             if let Ok(ctx) = crate::identity_manuscript::build_manuscript_context(trimmed) {
                 resolved_prompt = append_manuscript_hint(&resolved_prompt, Some(&ctx));
+                context_ledger.observe(
+                    "additional_manuscript",
+                    ContextOwner::Host,
+                    &resolved_prompt,
+                );
             }
         }
     }
@@ -215,6 +233,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         .filter(|value| !value.is_empty())
     {
         resolved_prompt = format!("{resolved_prompt}\n\n{bot_profile_appendix}");
+        context_ledger.observe("bot_profile", ContextOwner::Host, &resolved_prompt);
     }
     if let Some(world_prompt_appendix) = params
         .world_prompt_appendix
@@ -222,20 +241,26 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         .filter(|value| !value.is_empty())
     {
         resolved_prompt = format!("{resolved_prompt}\n\n{world_prompt_appendix}");
+        context_ledger.observe("world_references", ContextOwner::Host, &resolved_prompt);
     }
     if let Some(ids) = params.suggested_capability_ids {
         resolved_prompt = append_suggested_capabilities_hint(&resolved_prompt, ids);
+        context_ledger.observe(
+            "suggested_capabilities",
+            ContextOwner::Tool,
+            &resolved_prompt,
+        );
     }
     resolved_prompt = append_voice_preset_hint(
         &resolved_prompt,
         params.voice_preset_id,
         params.voice_appendix,
     );
+    context_ledger.observe("voice", ContextOwner::Host, &resolved_prompt);
     resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
-    resolved_prompt = crate::agent_runtime::turn_worker::append_active_workers_hint(
-        &resolved_prompt,
-        params.session_id,
-    );
+    context_ledger.observe("identity", ContextOwner::Host, &resolved_prompt);
+    resolved_prompt = UnitOfWorkContext::append_workers(&resolved_prompt, params.session_id);
+    context_ledger.observe("active_work", ContextOwner::UnitOfWork, &resolved_prompt);
     let recall_readiness = derive_recall_readiness(
         verification_state,
         recall_probe.attempted,
@@ -249,6 +274,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         recall_readiness,
     );
     resolved_prompt = compiler_output.compiled_prompt.clone();
+    context_ledger.observe("compiler_metadata", ContextOwner::Host, &resolved_prompt);
     let ambient_block = super::ambient_context::build_ambient_context(
         super::ambient_context::AmbientContextInput {
             session_id: params.session_id,
@@ -264,8 +290,14 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         format!("{}\n\n{environment_extras}", ambient_block.appendix)
     };
     resolved_prompt = format!("{resolved_prompt}\n\n{ambient_appendix}");
-    if let Some(mode_context_appendix) = params.mode_context_appendix {
-        resolved_prompt = format!("{resolved_prompt}\n\n{mode_context_appendix}");
+    context_ledger.observe("ambient", ContextOwner::Host, &resolved_prompt);
+    for appendix in params.context_appendices {
+        resolved_prompt = if appendix.owner == ContextOwner::UnitOfWork {
+            UnitOfWorkContext::append_admitted_snapshot(&resolved_prompt, &appendix.text)
+        } else {
+            format!("{resolved_prompt}\n\n{}", appendix.text)
+        };
+        context_ledger.observe(appendix.source, appendix.owner, &resolved_prompt);
     }
 
     let handoff_model_avec = super::vibe_signature::default_handoff_model_avec();
@@ -288,6 +320,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         handoff_vibe_signature,
         handoff_model_avec,
         ambient_appendix,
+        context_ledger,
     }
 }
 
@@ -517,8 +550,8 @@ pub async fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> Assembl
         .map(|target| target.model.as_str())
         .or_else(|| params.final_route.map(|route| route.model.as_str()))
         .unwrap_or(&execution_model);
-    crate::media_vision::append_recent_history_images(
-        &mut prior_build.messages,
+    super::context_assembly::ChatContext::append_history_media(
+        &mut prior_build,
         params.session_id,
         params.conversation,
         &params.media_refs,

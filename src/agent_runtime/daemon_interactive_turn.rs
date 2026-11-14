@@ -2105,16 +2105,27 @@ async fn run_agent_turn_inner(
         media_vision::TurnMediaVisionPlan::empty()
     };
 
+    let mut input_context = super::context_assembly::PromptLedger::new(&session_id, &prompt);
     let effective_prompt = merge_media_refs_into_prompt(
         &prompt,
         &session_id,
         &request.media_refs,
         &vision_plan.merge_options,
     );
+    input_context.observe(
+        "current_attachment_metadata",
+        medousa_runtime::context::ContextOwner::Chat,
+        &effective_prompt,
+    );
     let effective_prompt = crate::liquid_interactions::append_to_prompt(
         &effective_prompt,
         &session_id,
         &request.liquid_interactions,
+    );
+    input_context.observe(
+        "surface_interactions",
+        medousa_runtime::context::ContextOwner::Host,
+        &effective_prompt,
     );
     let effective_prompt = if request.code_project_setup_authorized
         && agent_mode.id == crate::daemon_api::AgentModeId::Coder
@@ -2127,6 +2138,11 @@ async fn run_agent_turn_inner(
         effective_prompt
     };
 
+    input_context.observe(
+        "project_setup_authority",
+        medousa_runtime::context::ContextOwner::UnitOfWork,
+        &effective_prompt,
+    );
     if has_vision_media
         && let Some(notice) = vision_plan.stream_notice(
             &active_inference_target.provider,
@@ -2387,23 +2403,38 @@ async fn run_agent_turn_inner(
 
     let identity_user_id = speaker_profile_id.clone();
 
-    let mut context_appendices = mode_context_appendix.into_iter().collect::<Vec<_>>();
+    use super::context_assembly::ContextAppendix;
+    use medousa_runtime::context::ContextOwner;
+    let mut context_appendices = mode_context_appendix
+        .into_iter()
+        .map(|text| ContextAppendix {
+            source: "admitted_goal_and_work",
+            owner: ContextOwner::UnitOfWork,
+            text,
+        })
+        .collect::<Vec<_>>();
     if let Some(context) = host_context.as_ref() {
-        context_appendices
-            .push(crate::agent_runtime::host_context::format_host_context_block(context));
+        context_appendices.push(ContextAppendix {
+            source: "host_evidence",
+            owner: ContextOwner::Host,
+            text: crate::agent_runtime::host_context::format_host_context_block(context),
+        });
     }
     #[cfg(feature = "full-daemon")]
-    if let Some(guidance) = crate::creative_jobs::turn_guidance().await {
-        context_appendices.push(guidance);
+    if let Some(text) = crate::creative_jobs::turn_guidance().await {
+        context_appendices.push(ContextAppendix {
+            source: "creative_work_guidance",
+            owner: ContextOwner::UnitOfWork,
+            text,
+        });
     }
-    let mode_context_appendix =
-        (!context_appendices.is_empty()).then(|| context_appendices.join("\n\n"));
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         agent_mode,
-        mode_context_appendix: mode_context_appendix.as_deref(),
+        context_appendices: &context_appendices,
         session_id: &session_id,
         memory_session_id: &memory_session_id,
         prompt: &effective_prompt,
+        input_context,
         selected_context_pack_query: None,
         settings: &settings,
         verifier_route: verifier_route.as_ref(),
@@ -2463,7 +2494,7 @@ async fn run_agent_turn_inner(
 
     let resolved_prompt =
         truncate_text_for_budget(&prepared.resolved_prompt, MAX_REQUEST_PROMPT_CHARS);
-    let resolved_prompt_chars = resolved_prompt.chars().count();
+    let resolved_prompt_for_accounting = resolved_prompt.clone();
     let context_limit_tokens = final_route.as_ref().and_then(|route| {
         crate::model_capability_registry::registry()
             .resolve(&route.provider, &route.model)
@@ -2580,10 +2611,14 @@ async fn run_agent_turn_inner(
 
     let compiled_policy = super::modes::compiled_system_policy_for_mode(&agent_mode);
     let system_prompt = &compiled_policy.rendered;
-    let tool_footprint = crate::agent_runtime::context_usage::measure_tool_schema_footprint(
-        &assembled.execution.tool_registry,
-    )
-    .await;
+    let tool_footprint = if assembled.execution.activation.enforce_no_tools {
+        crate::agent_runtime::context_usage::measure_tool_schema_footprint_for_tools(&[])
+    } else {
+        crate::agent_runtime::context_usage::measure_tool_schema_footprint(
+            &assembled.execution.tool_registry,
+        )
+        .await
+    };
     let tool_count = tool_footprint.tool_count;
     let tool_schema_chars = tool_footprint.total_chars;
     let context_limit_tokens = final_route.as_ref().and_then(|route| {
@@ -2593,20 +2628,30 @@ async fn run_agent_turn_inner(
             .and_then(|record| record.max_input_tokens)
             .and_then(|limit| u32::try_from(limit).ok())
     });
-    let context_report = crate::agent_runtime::context_usage::build_context_usage_report(
+    let context_compilation = crate::agent_runtime::context_usage::build_context_usage_report(
         crate::agent_runtime::context_usage::ContextUsageInput {
             system_prompt_chars: system_prompt.chars().count(),
-            user_prompt_chars: effective_prompt.chars().count(),
-            resolved_prompt_chars,
-            prompt_for_request_chars: assembled.execution.prompt_for_request.chars().count(),
-            ambient_chars: prepared.ambient_appendix.chars().count(),
+            session_id: &session_id,
+            prompt_ledger: &prepared.context_ledger,
+            resolved_prompt: &resolved_prompt_for_accounting,
+            prompt_for_request: &assembled.execution.prompt_for_request,
+            current_user_message: &assembled.execution.current_turn_user_message,
             sticky_chars,
             prior_build: &assembled.prior_build,
             tool_count,
             tool_schema_chars,
+            tool_schema_known: tool_footprint.known,
             context_limit_tokens,
         },
     );
+    if !context_compilation.reconciled {
+        tracing::error!(target: "medousa::context_usage", turn_id = %turn_id,
+            decisions = ?context_compilation.decisions, "turn context attribution does not reconcile");
+    }
+    tracing::debug!(target: "medousa::context_usage", turn_id = %turn_id,
+        decisions = ?context_compilation.decisions, reconciled = context_compilation.reconciled,
+        "turn context decisions (initial snapshot, text estimates only)");
+    let context_report = context_compilation.usage;
     let context_summary = crate::agent_runtime::context_usage::operator_summary(&context_report);
     tracing::info!(
         target: "medousa::context_usage",
