@@ -138,12 +138,36 @@ pub struct ContextCapacity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextDecisionReport {
     pub contributions: Vec<ContextContribution>,
+    /// Producer-bound identity of the ordered prepared messages, not a cost estimate.
+    /// Missing on legacy reports: they cannot vouch for prepared attribution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prepared_messages_digest: Option<String>,
     pub capacity: ContextCapacity,
     pub cost: ContextCost,
     pub text_tokens_estimate: u32,
     /// Framing and media are not measured by chars/4, even with known capacity.
     pub complete_token_cost_known: bool,
     pub text_estimate_exceeds_capacity: Option<bool>,
+}
+
+/// Hash the complete serialized message structure (roles, order, parts, media
+/// identity and options) directly into SHA-256. Reports retain only the digest,
+/// never raw text, URIs or binary payload. Cost reconciliation is independent.
+pub fn prepared_messages_digest(messages: &[ChatMessage]) -> String {
+    use sha2::{Digest, Sha256};
+    struct HashWriter(Sha256);
+    impl std::io::Write for HashWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.update(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut writer = HashWriter(Sha256::new());
+    serde_json::to_writer(&mut writer, messages).expect("GenAI messages serialize");
+    format!("{:x}", writer.0.finalize())
 }
 
 /// Concrete coordinator, intentionally not a producer trait hierarchy. Contributions
@@ -192,6 +216,7 @@ impl ContextCoordinator {
         let text_tokens_estimate = cost.tokens_estimate();
         ContextDecisionReport {
             contributions: self.contributions,
+            prepared_messages_digest: None,
             capacity,
             cost,
             text_tokens_estimate,

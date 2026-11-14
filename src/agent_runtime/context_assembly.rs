@@ -80,12 +80,12 @@ impl ToolContext<'_> {
         )
     }
 
-    pub fn scripts(&self, budget: usize) -> String {
-        crate::learning_artifacts::build_grapheme_script_recall_block(self.prompt, budget)
+    pub fn scripts(&self, budget: usize) -> crate::learning_artifacts::RecallBlock {
+        crate::learning_artifacts::grapheme_script_recall_outcome(self.prompt, budget)
     }
 
-    pub fn learnings(&self, budget: usize) -> String {
-        crate::learning_artifacts::build_runtime_learnings_block(self.prompt, budget)
+    pub fn learnings(&self, budget: usize) -> crate::learning_artifacts::RecallBlock {
+        crate::learning_artifacts::runtime_learnings_outcome(self.prompt, budget)
     }
 
     pub fn hints(&self, budget: usize) -> String {

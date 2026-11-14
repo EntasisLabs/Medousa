@@ -979,7 +979,14 @@ impl VaultStore {
     }
 
     pub fn all_entries(&self) -> Vec<VaultIndexEntry> {
-        let _ = self.ensure_index_fresh();
+        self.all_entries_with_outcome().0
+    }
+
+    /// Preserve the legacy resident fallback on refresh failure, while allowing
+    /// recall producers to report errors or an uncertified partial refresh. One
+    /// freshness pass only; no additional scan or change to returned ordering.
+    pub fn all_entries_with_outcome(&self) -> (Vec<VaultIndexEntry>, bool) {
+        let refresh_failed = self.ensure_index_fresh().is_err() || PROJECTION.needs_reconcile(); // Includes skipped dirty payload reads.
         let mut entries = self
             .index
             .read()
@@ -988,6 +995,6 @@ impl VaultStore {
             .cloned()
             .collect::<Vec<_>>();
         entries.sort_by(|left, right| left.path.cmp(&right.path));
-        entries
+        (entries, refresh_failed)
     }
 }

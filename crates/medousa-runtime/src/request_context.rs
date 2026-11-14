@@ -24,7 +24,8 @@ pub struct FirstRequestContextReport {
     pub decisions: ContextDecisionReport,
     pub reconciled: bool,
     /// None for callers without an assembly seed; false leaves the actual
-    /// prepared lane explicitly unreconciled instead of inheriting stale spans.
+    /// prepared lane unattributed instead of inheriting stale spans.
+    /// Independent of cost reconciliation, including for equal-cost mutations.
     pub prepared_provenance_preserved: Option<bool>,
     /// None distinguishes no-tools requests from an explicitly empty catalog.
     pub tool_count: Option<usize>,
@@ -155,7 +156,13 @@ pub fn compile_first_request(
             .fold(ContextCost::default(), |sum, item| {
                 sum.saturating_add(item.cost)
             });
-        provenance_matches = offered == actual
+        let actual_digest = system_messages
+            .checked_add(prefix_messages)
+            .and_then(|end| request.messages.get(system_messages..end))
+            .map(crate::context::prepared_messages_digest);
+        provenance_matches = assembly.prepared_messages_digest.is_some()
+            && assembly.prepared_messages_digest == actual_digest
+            && offered == actual
             && !prepared
                 .iter()
                 .any(|item| item.decision == ContextDecision::Unattributed);
@@ -164,12 +171,18 @@ pub fn compile_first_request(
                 .contributions
                 .retain(|item| item.id != "prepared_conversation");
             coordinator.contributions.extend(prepared);
+        } else {
+            for item in &mut coordinator.contributions {
+                if item.id == "prepared_conversation" {
+                    item.decision = ContextDecision::Unattributed;
+                }
+            }
         }
     }
     let decisions =
         coordinator.report(assembly.map_or(ContextCapacity::default(), |report| report.capacity));
     FirstRequestContextReport {
-        reconciled: decisions.cost == expected && provenance_matches,
+        reconciled: decisions.cost == expected,
         prepared_provenance_preserved: assembly.map(|_| provenance_matches),
         decisions,
         tool_count: request.tools.as_ref().map(Vec::len),
@@ -223,6 +236,100 @@ mod tests {
     }
 
     #[test]
+    fn prepared_identity_rejects_equal_cost_content_role_order_and_media_changes() {
+        use genai::chat::{ContentPart, MessageContent};
+        let media = |payload: &str| {
+            ChatMessage::user(MessageContent::from_parts(vec![
+                ContentPart::from_binary_base64("image/png", payload, None),
+            ]))
+        };
+        let baseline = vec![
+            ChatMessage::user("alpha"),
+            ChatMessage::assistant("bravo"),
+            media("AAAA"),
+        ];
+        let mut seed = ContextCoordinator::default();
+        seed.include(ContextContribution {
+            id: "original_projection".into(),
+            owner: ContextOwner::Chat,
+            provenance: ContextProvenance {
+                source: "producer".into(),
+                scope: Some("session".into()),
+            },
+            retention: Retention::Required,
+            decision: ContextDecision::Included,
+            cost: ContextCost::messages(&baseline),
+            budget_chars: None,
+        });
+        let mut seed = seed.report(Default::default());
+        seed.prepared_messages_digest = Some(crate::context::prepared_messages_digest(&baseline));
+        let mut text = baseline.clone();
+        text[0] = ChatMessage::user("other");
+        let mut role = baseline.clone();
+        role[0] = ChatMessage::assistant("alpha");
+        let mut order = baseline.clone();
+        order.swap(0, 1);
+        let mut image = baseline.clone();
+        image[2] = media("BBBB");
+        for (prepared, preserved) in [
+            (baseline.clone(), true),
+            (text, false),
+            (role, false),
+            (order, false),
+            (image, false),
+        ] {
+            assert_eq!(ContextCost::messages(&prepared), seed.cost);
+            // Runtime-owned additions and the system lane are outside this identity.
+            let mut messages = vec![ChatMessage::system("policy")];
+            messages.extend(prepared);
+            messages.push(ChatMessage::system(format!(
+                "{}\ngoal",
+                crate::turn_context::SCRATCH_PREFIX
+            )));
+            let request = ChatRequest::new(messages);
+            let footprint = RequestFootprint::new(&request, None, None).with_first_request_context(
+                &request,
+                1,
+                baseline.len(),
+                Some(&seed),
+            );
+            let report = footprint.first_request_context.unwrap();
+            assert!(
+                report.reconciled,
+                "cost remains balanced regardless of provenance"
+            );
+            assert_eq!(report.prepared_provenance_preserved, Some(preserved));
+            assert_eq!(
+                report
+                    .decisions
+                    .contributions
+                    .iter()
+                    .any(|item| item.id == "original_projection"),
+                preserved
+            );
+            assert_eq!(
+                report
+                    .decisions
+                    .contributions
+                    .iter()
+                    .any(|item| item.id == "prepared_conversation"
+                        && item.decision == ContextDecision::Unattributed),
+                !preserved
+            );
+            let serialized = serde_json::to_string(&report).unwrap();
+            for payload in ["alpha", "bravo", "AAAA", "BBBB", "other"] {
+                assert!(!serialized.contains(payload));
+            }
+        }
+        // Legacy seeds with no identity cannot prove even a matching projection.
+        seed.prepared_messages_digest = None;
+        let request = ChatRequest::new(baseline);
+        let report = compile_first_request(&request, 0, 3, Some(&seed), seed.cost);
+        assert!(report.reconciled);
+        assert_eq!(report.prepared_provenance_preserved, Some(false));
+    }
+
+    #[test]
     fn changed_prepared_projection_never_inherits_stale_provenance() {
         let request = ChatRequest::from_user("new projection");
         let mut seed = ContextCoordinator::default();
@@ -245,7 +352,7 @@ mod tests {
             Some(&seed.report(Default::default())),
         );
         let report = footprint.first_request_context.unwrap();
-        assert!(!report.reconciled);
+        assert!(report.reconciled);
         assert_eq!(report.prepared_provenance_preserved, Some(false));
         assert_eq!(Some(report.decisions.cost), footprint.content_cost);
         assert!(

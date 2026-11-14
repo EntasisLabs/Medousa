@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 use anyhow::{Context, Result, bail};
@@ -100,12 +101,16 @@ pub fn grapheme_script_store() -> &'static GraphemeScriptStore {
 
 pub struct GraphemeScriptStore {
     index: RwLock<HashMap<String, GraphemeScriptEntry>>,
+    // Paired with the index lock: this describes the loaded snapshot, not a
+    // second disk query or a promise that body reads will succeed.
+    index_read_failures: AtomicUsize,
 }
 
 impl GraphemeScriptStore {
     fn new() -> Self {
         let store = Self {
             index: RwLock::new(HashMap::new()),
+            index_read_failures: AtomicUsize::new(0),
         };
         store.reload_from_disk();
         store
@@ -152,22 +157,38 @@ impl GraphemeScriptStore {
     }
 
     pub fn reload_from_disk(&self) {
-        let _ = fs::create_dir_all(Self::scripts_dir());
+        let mut failures = usize::from(fs::create_dir_all(Self::scripts_dir()).is_err());
         let mut map = HashMap::new();
-        if let Ok(file) = File::open(Self::index_path()) {
-            for line in BufReader::new(file).lines().map_while(Result::ok) {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                if let Ok(entry) = serde_json::from_str::<GraphemeScriptEntry>(trimmed)
-                    && GraphemeScriptId::parse(&entry.id).is_ok()
-                {
-                    map.insert(entry.id.clone(), entry);
+        match File::open(Self::index_path()) {
+            Ok(file) => {
+                for line in BufReader::new(file).lines() {
+                    let line = match line {
+                        Ok(line) => line,
+                        Err(_) => {
+                            failures += 1;
+                            break; // Preserve legacy map_while's stop-on-read-error.
+                        }
+                    };
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if let Ok(entry) = serde_json::from_str::<GraphemeScriptEntry>(trimmed)
+                        && GraphemeScriptId::parse(&entry.id).is_ok()
+                    {
+                        map.insert(entry.id.clone(), entry);
+                    } else {
+                        failures += 1;
+                    }
                 }
             }
+            // A library with no saved index is a successful empty snapshot.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => failures += 1,
         }
-        *self.index.write().expect("grapheme script index") = map;
+        let mut index = self.index.write().expect("grapheme script index");
+        *index = map;
+        self.index_read_failures.store(failures, Ordering::Relaxed);
     }
 
     fn persist_index(&self) -> Result<()> {
@@ -185,15 +206,15 @@ impl GraphemeScriptStore {
     }
 
     pub fn all_entries(&self) -> Vec<GraphemeScriptEntry> {
-        let mut entries = self
-            .index
-            .read()
-            .expect("grapheme script index")
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+        self.all_entries_with_outcome().0
+    }
+
+    pub fn all_entries_with_outcome(&self) -> (Vec<GraphemeScriptEntry>, usize) {
+        let index = self.index.read().expect("grapheme script index");
+        let mut entries = index.values().cloned().collect::<Vec<_>>();
+        let failures = self.index_read_failures.load(Ordering::Relaxed);
         entries.sort_by_key(|b| std::cmp::Reverse(b.updated_at_utc));
-        entries
+        (entries, failures)
     }
 
     pub fn get(&self, id: &str) -> Option<GraphemeScriptEntry> {

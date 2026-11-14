@@ -149,9 +149,14 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageC
             text_chars: 0,
             unknown_parts: usize::from(!input.tool_schema_known),
         });
-    let decisions = coordinator.report(ContextCapacity {
+    let mut decisions = coordinator.report(ContextCapacity {
         input_tokens: input.context_limit_tokens,
     });
+    let mut prepared = input.prior_build.messages.clone();
+    prepared.push(input.current_user_message.clone());
+    decisions.prepared_messages_digest = Some(medousa_runtime::context::prepared_messages_digest(
+        &prepared,
+    ));
     let assembly_reconciled = decisions.cost == expected
         && !decisions
             .contributions
@@ -223,9 +228,10 @@ pub fn first_request_usage_report(
         context_limit_tokens: report.decisions.capacity.input_tokens,
         tool_count: u32::try_from(report.tool_count.unwrap_or(0)).unwrap_or(u32::MAX),
         estimator: format!(
-            "{ESTIMATOR_LABEL}_text_only; framing_unknown; unknown_parts={}; first_request; reconciled={}; tools={}",
+            "{ESTIMATOR_LABEL}_text_only; framing_unknown; unknown_parts={}; first_request; reconciled={}; prepared_provenance_preserved={:?}; tools={}",
             report.decisions.cost.unknown_parts,
             report.reconciled,
+            report.prepared_provenance_preserved,
             if report.tool_count.is_some() {
                 "catalog_known"
             } else {
@@ -513,7 +519,14 @@ mod tests {
                 registry,
             )
             .with_first_request_context(FirstRequestContextConfig {
-                assembly: Some(seed.report(Default::default())),
+                assembly: Some({
+                    let mut report = seed.report(Default::default());
+                    report.prepared_messages_digest =
+                        Some(medousa_runtime::context::prepared_messages_digest(&[
+                            genai::chat::ChatMessage::user("question"),
+                        ]));
+                    report
+                }),
                 observer: Some(Arc::new(move |footprint| {
                     captured.lock().unwrap().push(footprint);
                     Box::pin(async {})
@@ -727,6 +740,34 @@ mod tests {
             });
             assert!(compiled.assembly_reconciled);
             assert!(!compiled.reconciled);
+            let mut prepared = prior.messages.clone();
+            prepared.push(current.clone());
+            assert_eq!(
+                compiled.decisions.prepared_messages_digest,
+                Some(medousa_runtime::context::prepared_messages_digest(
+                    &prepared
+                ))
+            );
+            let prepared_count = prepared.len();
+            prepared.push(ChatMessage::system(format!(
+                "{}\ngoal",
+                medousa_runtime::turn_context::SCRATCH_PREFIX
+            )));
+            let actual_request = genai::chat::ChatRequest::new(prepared);
+            let footprint = medousa_runtime::inference_usage::RequestFootprint::new(
+                &actual_request,
+                None,
+                None,
+            )
+            .with_first_request_context(
+                &actual_request,
+                0,
+                prepared_count,
+                Some(&compiled.decisions),
+            );
+            let first = footprint.first_request_context.as_ref().unwrap();
+            assert!(first.reconciled);
+            assert_eq!(first.prepared_provenance_preserved, Some(true));
             let report = compiled.usage;
             assert_eq!(
                 report.layers.iter().map(|layer| layer.chars).sum::<u32>(),

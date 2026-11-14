@@ -83,12 +83,23 @@ impl GraphemeScriptService {
         tag: Option<&str>,
         limit: usize,
     ) -> Vec<GraphemeScriptHit> {
+        Self::search_ranked_with_outcome(query, module, tag, limit).0
+    }
+
+    /// Search the existing in-memory index once. Failed body reads still use the
+    /// legacy empty-body scoring, but are exposed rather than claimed successful.
+    pub fn search_ranked_with_outcome(
+        query: &str,
+        module: Option<&str>,
+        tag: Option<&str>,
+        limit: usize,
+    ) -> (Vec<GraphemeScriptHit>, usize) {
         let query = query.trim();
         let module = module.map(str::trim).filter(|value| !value.is_empty());
         let tag = tag.map(str::trim).filter(|value| !value.is_empty());
         let terms = tokenize(query);
         let store = grapheme_script_store();
-        let entries = store.all_entries();
+        let (entries, index_read_failures) = store.all_entries_with_outcome();
         let newest = entries
             .iter()
             .map(|entry| entry.updated_at_utc)
@@ -96,12 +107,16 @@ impl GraphemeScriptService {
             .unwrap_or_else(Utc::now);
 
         let mut hits = Vec::new();
+        let mut unavailable_reads = index_read_failures;
         for entry in entries {
             if !module_filter(&entry, module) || !tag_filter(&entry, tag) {
                 continue;
             }
 
-            let body = store.read_body(&entry).unwrap_or_default();
+            let body = store.read_body(&entry).unwrap_or_else(|_| {
+                unavailable_reads += 1;
+                String::new()
+            });
             let mut score = 0.0f32;
             if terms.is_empty() {
                 score = 0.2;
@@ -163,7 +178,7 @@ impl GraphemeScriptService {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         hits.truncate(limit.clamp(1, 50));
-        hits
+        (hits, unavailable_reads)
     }
 }
 

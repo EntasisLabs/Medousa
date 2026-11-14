@@ -28,9 +28,36 @@ pub struct RuntimeLearningHit {
     pub line: String,
 }
 
+/// Outcome of this recall against the native index. Failed index refresh/body
+/// reads are unmeasured omissions, including when resident hits still render.
+/// This does not assert that the index represents every file on disk.
+#[derive(Debug, Default)]
+pub struct RecallBlock {
+    pub text: String,
+    pub unavailable_reads: usize,
+}
+
 pub fn build_grapheme_script_recall_block(prompt: &str, char_budget: usize) -> String {
-    let hits =
-        GraphemeScriptService::search_ranked(prompt, None, None, DEFAULT_SCRIPT_RECALL_LIMIT);
+    grapheme_script_recall_outcome(prompt, char_budget).text
+}
+
+pub fn grapheme_script_recall_outcome(prompt: &str, char_budget: usize) -> RecallBlock {
+    let (hits, unavailable_reads) = GraphemeScriptService::search_ranked_with_outcome(
+        prompt,
+        None,
+        None,
+        DEFAULT_SCRIPT_RECALL_LIMIT,
+    );
+    RecallBlock {
+        text: render_script_hits(&hits, char_budget),
+        unavailable_reads,
+    }
+}
+
+fn render_script_hits(
+    hits: &[crate::grapheme_script::service::GraphemeScriptHit],
+    char_budget: usize,
+) -> String {
     if hits.is_empty() {
         return String::new();
     }
@@ -51,9 +78,16 @@ pub fn build_grapheme_script_recall_block(prompt: &str, char_budget: usize) -> S
 }
 
 pub fn rank_runtime_learning_notes(query: &str, limit: usize) -> Vec<RuntimeLearningHit> {
+    rank_runtime_learning_notes_with_outcome(query, limit).0
+}
+
+fn rank_runtime_learning_notes_with_outcome(
+    query: &str,
+    limit: usize,
+) -> (Vec<RuntimeLearningHit>, usize) {
     let terms = tokenize(query);
     let store = vault_store();
-    let entries = store.all_entries();
+    let (entries, index_refresh_failed) = store.all_entries_with_outcome();
     let newest = entries
         .iter()
         .map(|entry| entry.modified_at_utc)
@@ -61,6 +95,7 @@ pub fn rank_runtime_learning_notes(query: &str, limit: usize) -> Vec<RuntimeLear
         .unwrap_or_else(Utc::now);
 
     let mut hits = Vec::new();
+    let mut unavailable_reads = usize::from(index_refresh_failed);
     for entry in entries {
         if !entry_has_runtime_learning_tag(&entry.tags) {
             continue;
@@ -68,7 +103,10 @@ pub fn rank_runtime_learning_notes(query: &str, limit: usize) -> Vec<RuntimeLear
 
         let body = match store.read_content(&entry.path) {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(_) => {
+                unavailable_reads += 1;
+                continue;
+            }
         };
         let (content, _) = strip_frontmatter(&body);
         let title = entry.title.to_ascii_lowercase();
@@ -107,11 +145,23 @@ pub fn rank_runtime_learning_notes(query: &str, limit: usize) -> Vec<RuntimeLear
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     hits.truncate(limit.clamp(1, 20));
-    hits
+    (hits, unavailable_reads)
 }
 
 pub fn build_runtime_learnings_block(prompt: &str, char_budget: usize) -> String {
-    let hits = rank_runtime_learning_notes(prompt, DEFAULT_LEARNING_RECALL_LIMIT);
+    runtime_learnings_outcome(prompt, char_budget).text
+}
+
+pub fn runtime_learnings_outcome(prompt: &str, char_budget: usize) -> RecallBlock {
+    let (hits, unavailable_reads) =
+        rank_runtime_learning_notes_with_outcome(prompt, DEFAULT_LEARNING_RECALL_LIMIT);
+    RecallBlock {
+        text: render_learning_hits(&hits, char_budget),
+        unavailable_reads,
+    }
+}
+
+fn render_learning_hits(hits: &[RuntimeLearningHit], char_budget: usize) -> String {
     if hits.is_empty() {
         return String::new();
     }

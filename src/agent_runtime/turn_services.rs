@@ -165,9 +165,8 @@ pub fn parse_tool_call_mode(value: &str) -> ToolCallMode {
     }
 }
 
-/// A rendered empty block is a no-result, not proof of source availability.
-/// Producers that expose unavailability pass None; legacy String-only producers
-/// cannot distinguish swallowed retrieval failures, so lengths remain unknown.
+/// In-memory renderers have no retrieval failure; native recall producers pass
+/// their observed read outcomes through record_auxiliary_outcome below.
 fn record_auxiliary_omission(
     context: &mut ContextCoordinator,
     session_id: &str,
@@ -199,6 +198,35 @@ fn record_auxiliary_omission(
         source_text_chars: None,
     };
     context.include(item);
+}
+
+/// Keep successfully rendered spans even on partial retrieval failure. Record
+/// the unmeasured missing portion separately, never charge invented lengths or
+/// relabel successful empty reads as unavailable. Budget precedence is unchanged.
+fn record_auxiliary_outcome(
+    context: &mut ContextCoordinator,
+    session_id: &str,
+    id: &str,
+    outcome: &crate::learning_artifacts::RecallBlock,
+    budget: usize,
+) {
+    let has_text = !outcome.text.trim().is_empty();
+    record_auxiliary_omission(
+        context,
+        session_id,
+        id,
+        (outcome.unavailable_reads == 0 || has_text).then_some(outcome.text.as_str()),
+        budget,
+    );
+    if outcome.unavailable_reads > 0 && has_text {
+        record_auxiliary_omission(
+            context,
+            session_id,
+            &format!("{id}_unavailable_reads"),
+            None,
+            budget,
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // prior-message windows travel together
@@ -420,15 +448,16 @@ pub fn build_prior_messages(
                     .hot_window_char_budget
                     .min(DEFAULT_SCRIPT_RECALL_BLOCK_CHARS),
             );
-            let script_recall_block = tool_context.scripts(script_budget);
-            let script_recall_chars = script_recall_block.chars().count();
-            record_auxiliary_omission(
+            let scripts = tool_context.scripts(script_budget);
+            record_auxiliary_outcome(
                 &mut context,
                 session_id,
                 "grapheme_scripts",
-                Some(&script_recall_block),
+                &scripts,
                 script_budget,
             );
+            let script_recall_block = scripts.text;
+            let script_recall_chars = script_recall_block.chars().count();
             if !script_recall_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(script_recall_chars);
                 context.account_history_selection(script_recall_chars);
@@ -448,15 +477,16 @@ pub fn build_prior_messages(
                     .hot_window_char_budget
                     .min(DEFAULT_LEARNING_RECALL_BLOCK_CHARS),
             );
-            let learning_recall_block = tool_context.learnings(learning_budget);
-            let learning_recall_chars = learning_recall_block.chars().count();
-            record_auxiliary_omission(
+            let learnings = tool_context.learnings(learning_budget);
+            record_auxiliary_outcome(
                 &mut context,
                 session_id,
                 "runtime_learnings",
-                Some(&learning_recall_block),
+                &learnings,
                 learning_budget,
             );
+            let learning_recall_block = learnings.text;
+            let learning_recall_chars = learning_recall_block.chars().count();
             if !learning_recall_block.trim().is_empty() {
                 total_chars = total_chars.saturating_add(learning_recall_chars);
                 context.account_history_selection(learning_recall_chars);
@@ -1227,6 +1257,260 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn auxiliary_build_reports_partial_native_index_loads() {
+        use medousa_runtime::context::{ContextDecision, ContextOmissionReason};
+        crate::vault::service::with_temp_vault(|| {
+            crate::grapheme_script::store::with_temp_grapheme_scripts(|| {
+                use crate::grapheme_script::{GraphemeScriptService, store::GraphemeScriptStore};
+                let prompt = "snapshotoutcomeneedle";
+                let catalog = crate::typed_tools::ToolCatalog::default();
+                let build = || {
+                    build_prior_messages(
+                        &catalog,
+                        "snapshot-outcome",
+                        &[],
+                        prompt,
+                        false,
+                        2,
+                        2,
+                        sample_limits(),
+                    )
+                };
+                GraphemeScriptService::save(
+                    Some("good"),
+                    "Good",
+                    prompt,
+                    vec![],
+                    vec![],
+                    None,
+                    None,
+                )
+                .unwrap();
+                let index_path = GraphemeScriptStore::root_dir().join("index.jsonl");
+                let valid = std::fs::read_to_string(&index_path).unwrap();
+                std::fs::write(&index_path, format!("{valid}\ninvalid-index-entry\n")).unwrap();
+                crate::grapheme_script::grapheme_script_store().reload_from_disk();
+                let partial = build();
+                assert!(
+                    partial
+                        .context
+                        .contributions
+                        .iter()
+                        .any(|item| item.id == "grapheme_scripts"
+                            && item.decision == ContextDecision::Included)
+                );
+                assert!(partial.context.contributions.iter().any(|item| item.id
+                    == "grapheme_scripts_unavailable_reads"
+                    && item.decision
+                        == ContextDecision::Omitted {
+                            reason: ContextOmissionReason::Unavailable,
+                            source_text_chars: None
+                        }));
+                std::fs::write(&index_path, "invalid-index-entry\n").unwrap();
+                crate::grapheme_script::grapheme_script_store().reload_from_disk();
+                // An undecodable dirty note is skipped by the existing freshness
+                // pass, which leaves its certification fence open. No extra scan.
+                std::fs::write(
+                    crate::vault::path::user_vault_root().join("unreadable.md"),
+                    [0xff, 0xfe],
+                )
+                .unwrap();
+                crate::vault::store::PROJECTION.mark_stale_reconciling();
+                let unavailable = build();
+                for id in ["grapheme_scripts", "runtime_learnings"] {
+                    let item = unavailable
+                        .context
+                        .contributions
+                        .iter()
+                        .find(|item| item.id == id)
+                        .unwrap();
+                    assert_eq!(
+                        item.decision,
+                        ContextDecision::Omitted {
+                            reason: ContextOmissionReason::Unavailable,
+                            source_text_chars: None
+                        }
+                    );
+                }
+            });
+        });
+    }
+
+    #[test]
+    fn auxiliary_build_reports_failed_vault_enumeration_not_successful_empty() {
+        use medousa_runtime::context::{ContextDecision, ContextOmissionReason};
+        crate::vault::service::with_temp_vault(|| {
+            let root = crate::vault::path::user_vault_root();
+            let blocked = root.join("not-a-directory");
+            std::fs::write(&blocked, "not a vault directory").unwrap();
+            crate::vault::roots::set_test_vault_root_override(Some(blocked));
+            crate::vault::path::clear_vault_root_capabilities();
+            crate::vault::store::PROJECTION.mark_stale_reconciling();
+            let built = build_prior_messages(
+                &crate::typed_tools::ToolCatalog::default(),
+                "enumeration-failure",
+                &[],
+                "current",
+                false,
+                2,
+                2,
+                sample_limits(),
+            );
+            let item = built
+                .context
+                .contributions
+                .iter()
+                .find(|item| item.id == "runtime_learnings")
+                .unwrap();
+            assert_eq!(
+                item.decision,
+                ContextDecision::Omitted {
+                    reason: ContextOmissionReason::Unavailable,
+                    source_text_chars: None
+                }
+            );
+            // Reset fixture authority before its normal teardown scan.
+            crate::vault::roots::set_test_vault_root_override(Some(root));
+            crate::vault::path::clear_vault_root_capabilities();
+        });
+    }
+
+    #[test]
+    fn auxiliary_producer_adapter_build_preserves_success_partial_and_failed_reads() {
+        use crate::grapheme_script::{GraphemeScriptService, store::GraphemeScriptStore};
+        use medousa_runtime::context::{ContextCost, ContextDecision, ContextOmissionReason};
+        crate::vault::service::with_temp_vault(|| {
+            crate::grapheme_script::store::with_temp_grapheme_scripts(|| {
+                let prompt = "outcomeidentityneedle";
+                let catalog = crate::typed_tools::ToolCatalog::default();
+                let mut limits = sample_limits();
+                limits.max_prior_total_chars = 20_000;
+                limits.hot_window_char_budget = 10_000;
+                let build = || {
+                    build_prior_messages(&catalog, "outcome-test", &[], prompt, false, 2, 2, limits)
+                };
+                let omission = |built: &super::PriorMessageBuild, id: &str, reason| {
+                    let item = built
+                        .context
+                        .contributions
+                        .iter()
+                        .find(|item| item.id == id)
+                        .unwrap();
+                    assert_eq!(item.cost, ContextCost::default());
+                    assert_eq!(
+                        item.decision,
+                        ContextDecision::Omitted {
+                            reason,
+                            source_text_chars: None
+                        }
+                    );
+                };
+                let empty = build();
+                for id in ["runtime_learnings", "grapheme_scripts"] {
+                    omission(&empty, id, ContextOmissionReason::NoResult);
+                }
+                let mut script_paths = Vec::new();
+                for (id, name) in [("first", "First"), ("second", "Second")] {
+                    let path = format!("learnings/{id}.md");
+                    crate::vault::VaultService::write_note(
+                        Some(&path),
+                        &crate::daemon_api::VaultWriteRequest {
+                            path: Some(path.clone()),
+                            content: format!(
+                                "---\ntags: [runtime-learning]\n---\n# {name}\n{prompt}"
+                            ),
+                            ..Default::default()
+                        },
+                        None,
+                    )
+                    .unwrap();
+                    let entry = GraphemeScriptService::save(
+                        Some(id),
+                        name,
+                        prompt,
+                        vec![],
+                        vec![],
+                        None,
+                        None,
+                    )
+                    .unwrap();
+                    script_paths.push(GraphemeScriptStore::root_dir().join(entry.body_path));
+                }
+                let complete = build();
+                let scripts = crate::learning_artifacts::build_grapheme_script_recall_block(
+                    prompt,
+                    crate::learning_artifacts::DEFAULT_SCRIPT_RECALL_BLOCK_CHARS,
+                );
+                assert!(!scripts.is_empty());
+                assert!(
+                    complete
+                        .messages
+                        .iter()
+                        .any(|message| message.content.first_text() == Some(scripts.as_str()))
+                );
+                assert!(
+                    !complete
+                        .context
+                        .contributions
+                        .iter()
+                        .any(|item| item.id.ends_with("_unavailable_reads"))
+                );
+                // Delete payloads without refreshing native indexes. This exercises
+                // real read errors through producer -> ToolContext -> build, no mock
+                // omission helper or second retrieval path.
+                for (index, id) in ["second", "first"].into_iter().enumerate() {
+                    std::fs::remove_file(
+                        crate::vault::path::user_vault_root().join(format!("learnings/{id}.md")),
+                    )
+                    .unwrap();
+                    std::fs::remove_file(&script_paths[1 - index]).unwrap();
+                    let built = build();
+                    for source in ["runtime_learnings", "grapheme_scripts"] {
+                        if index == 0 {
+                            assert!(
+                                built
+                                    .context
+                                    .contributions
+                                    .iter()
+                                    .any(|item| item.id == source
+                                        && item.decision == ContextDecision::Included)
+                            );
+                            omission(
+                                &built,
+                                &format!("{source}_unavailable_reads"),
+                                ContextOmissionReason::Unavailable,
+                            );
+                        } else {
+                            omission(&built, source, ContextOmissionReason::Unavailable);
+                            assert!(
+                                !built
+                                    .context
+                                    .contributions
+                                    .iter()
+                                    .any(|item| item.id == source
+                                        && item.decision == ContextDecision::Included)
+                            );
+                        }
+                    }
+                    let expected_scripts =
+                        crate::learning_artifacts::build_grapheme_script_recall_block(
+                            prompt,
+                            crate::learning_artifacts::DEFAULT_SCRIPT_RECALL_BLOCK_CHARS,
+                        );
+                    assert_eq!(
+                        built
+                            .messages
+                            .iter()
+                            .filter_map(|message| message.content.first_text())
+                            .find(|text| text.starts_with("[MEDOUSA_GRAPHEME_SCRIPTS]")),
+                        (!expected_scripts.is_empty()).then_some(expected_scripts.as_str())
+                    );
+                }
+            });
+        });
     }
 
     #[test]
