@@ -714,7 +714,9 @@ fn source_tab_activation_during_composition_keeps_current_document() {
 #[ignore = "Synthetic Code offscreen acceptance; writes verification PNGs"]
 fn code_visual_acceptance() {
     use std::sync::Arc;
-    let mut app = fixture();
+    let mut app = crate::ui::app();
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
     rndr_ui::apply_theme_bridge(
         app.world_mut(),
         rndr_ui::UiTheme {
@@ -792,6 +794,76 @@ fn code_visual_acceptance() {
         )
         .unwrap();
     }
+}
+
+#[test]
+fn integrated_code_band_retains_editor_and_fits_actions() {
+    let mut app = crate::ui::app();
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
+    load(app.world_mut(), "one", "a.rs", "fn main() {}", "v1");
+    load(app.world_mut(), "one", "b.rs", "fn other() {}", "v2");
+    session(app.world_mut(), "one");
+    edit(app.world_mut(), &key("one", "b.rs"), "fn local_draft() {}");
+    let document = app.world().resource::<Code>().unwrap().views[&key("one", "b.rs")].document;
+    for width in [1200., 760., 1600.] {
+        app.world_mut().insert_resource(Viewport::new(width, 850.));
+        for _ in 0..8 {
+            app.update();
+        }
+        let w = app.world();
+        let c = w.resource::<Code>().unwrap();
+        let strip = c.strip.unwrap();
+        assert!(w.has::<Hidden>(strip.root));
+        for tab in children_of(w, strip.list) {
+            if w.has::<Tab>(tab) {
+                let r = w.get::<Rect>(tab).unwrap();
+                assert!(r.y >= 0. && r.y + r.h <= crate::ui::chrome::HEIGHT);
+            }
+        }
+        let toolbar = c.toolbar.unwrap();
+        assert!(w.get::<Rect>(toolbar).unwrap().y >= crate::ui::chrome::HEIGHT);
+        let actions = children_of(w, toolbar)[0];
+        for child in children_of(w, actions) {
+            let r = w.get::<Rect>(child).unwrap();
+            assert!(r.x + r.w <= width + 1., "code action clipped: {r:?}");
+        }
+    }
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+    for _ in 0..3 {
+        app.update();
+    }
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
+    for _ in 0..3 {
+        app.update();
+    }
+    assert_eq!(
+        app.world().resource::<Code>().unwrap().views[&key("one", "b.rs")].document,
+        document
+    );
+}
+
+#[test]
+fn switching_to_unopened_project_hides_previous_band() {
+    let mut app = crate::ui::app();
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
+    load(app.world_mut(), "one", "a.rs", "fn main() {}", "v1");
+    for _ in 0..4 {
+        app.update();
+    }
+    let strip = app.world().resource::<Code>().unwrap().strip.unwrap();
+    let bar = app.world().get::<Parent>(strip.scroll).unwrap().entity;
+    click(app.world_mut(), Action::Project("empty".into()));
+    for _ in 0..4 {
+        app.update();
+    }
+    assert!(app.world().has::<Hidden>(bar));
+    click(app.world_mut(), Action::Project("one".into()));
+    for _ in 0..4 {
+        app.update();
+    }
+    assert!(!app.world().has::<Hidden>(bar));
 }
 
 /// Production text engine + integrated shell; CPU update/layout/paint only.

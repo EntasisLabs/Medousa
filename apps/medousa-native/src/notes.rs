@@ -1,5 +1,6 @@
 //! Retained daemon-backed notes. SourceDocuments owns editor history;
 //! VaultBufferCore owns unsaved buffers and opaque daemon save baselines.
+use crate::native_style as visual;
 use medousa_app_core::{NoteBufferFact, VaultBufferCommand, VaultBufferCore};
 use medousa_sdk::MedousaClient;
 use medousa_types::{
@@ -191,19 +192,7 @@ fn button(
     enabled: bool,
 ) {
     let id = next();
-    let mut props = ButtonProps::new(label, HostIntent::Command(id));
-    props.enabled = enabled;
-    props.variant = controls::ButtonVariant::Quiet;
-    let h = controls::Button::mount(world, parent, UiId(id), props).expect("notes button");
-    *world.get_mut::<Layout>(h.root).unwrap() = Layout {
-        width: Size::Px(if label.chars().count() > 28 {
-            270.
-        } else {
-            90.
-        }),
-        height: Size::Px(30.),
-        ..Layout::row()
-    };
+    visual::document_action(world, parent, id, label, enabled);
     n.actions.insert(id, action);
 }
 pub fn mount(world: &mut World, parent: Entity) {
@@ -218,14 +207,14 @@ pub fn mount(world: &mut World, parent: Entity) {
     },));
     set_parent(world, root, parent);
     let sidebar = column(world, root, Size::Px(288.), Size::Fill);
-    world.insert(sidebar, Color::rgb(0.037, 0.037, 0.043));
+    visual::navigation_frame(world, sidebar);
     let heading = column(world, sidebar, Size::Fill, Size::Px(40.));
     world.get_mut::<Layout>(heading).unwrap().padding = 10.;
-    text(world, heading, "All notes", Typography::Label).expect("notes title");
+    text(world, heading, "Notes", Typography::Emphasis).expect("notes title");
     let search = world.spawn((
         Layout {
             width: Size::Fill,
-            height: Size::Px(32.),
+            height: Size::Px(36.),
             ..Layout::row()
         },
         Label::new(""),
@@ -241,10 +230,19 @@ pub fn mount(world: &mut World, parent: Entity) {
         },
     ));
     set_parent(world, search, sidebar);
+    visual::plane(world, search, visual::rail());
+    world.insert(search, Radius(visual::CONTROL_RADIUS));
+    world.insert(
+        search,
+        Border {
+            color: visual::stroke(),
+            width: 1.,
+        },
+    );
     let rows = column(world, sidebar, Size::Fill, Size::Fill);
     world.insert(rows, Scroll::default());
     let content = column(world, root, Size::Fill, Size::Fill);
-    world.insert(content, Color::rgb(0.018, 0.018, 0.022));
+    visual::flat(world, content, visual::canvas());
     world.insert(content, ResolvedColor);
     let tabs = column(world, content, Size::Fill, Size::Px(34.));
     *world.get_mut::<Layout>(tabs).unwrap() = Layout {
@@ -360,6 +358,7 @@ fn sync_document(world: &mut World, n: &Notes, path: &str) {
     }
 }
 fn render(world: &mut World, n: &mut Notes) {
+    crate::ui::chrome::clear_document_tabs(world, true);
     let (Some(rows), Some(toolbar)) = (n.rows, n.toolbar) else {
         return;
     };
@@ -488,6 +487,8 @@ fn render(world: &mut World, n: &mut Notes) {
         )
         .unwrap();
         world.get_mut::<Layout>(strip.root).unwrap().height = Size::Px(34.);
+        world.insert(strip.body, Hidden);
+        crate::ui::chrome::document_tabs(world, strip, true);
         n.tabstrip = Some(strip.root);
     }
     let crumb = text(
@@ -916,18 +917,21 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                         world.insert(
                             handle.editor,
                             UiStyle {
-                                background: Some(UiColor::Explicit(Color::rgb(0.075, 0.075, 0.09))),
+                                background: Some(UiColor::Explicit(visual::canvas())),
+                                foreground: Some(UiColor::Explicit(visual::text())),
                                 ..Default::default()
                             },
                         );
                         world.insert(handle.editor, ResolvedColor);
-                        world.insert(handle.editor, Color::rgb(0.075, 0.075, 0.09));
+                        world.insert(handle.editor, visual::canvas());
+                        visual::flat(world, handle.root, visual::canvas());
                         let preview = markdown_view(
                             world,
                             document_body(&n.core.get(&path).unwrap().content),
                         );
                         set_parent(world, preview, parent);
-                        world.get_mut::<Layout>(preview).unwrap().padding = 32.;
+                        world.insert(preview, visual::ReadingDocument);
+                        world.get_mut::<Layout>(preview).unwrap().padding = 16.;
                         world
                             .get_mut::<MarkdownView>(preview)
                             .unwrap()

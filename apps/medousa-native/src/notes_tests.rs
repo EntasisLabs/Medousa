@@ -450,8 +450,9 @@ fn frontmatter_is_hidden_only_when_delimited_and_never_mutates_source() {
 #[ignore = "Explicit synthetic offscreen visual acceptance; writes verification PNGs"]
 fn notes_visual_acceptance() {
     use std::sync::Arc;
-    let mut app = fixture();
-    app.add_plugin(MarkdownPlugin);
+    let mut app = crate::ui::app();
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
     rndr_ui::apply_theme_bridge(
         app.world_mut(),
         rndr_ui::UiTheme {
@@ -464,7 +465,7 @@ fn notes_visual_acceptance() {
     app.world_mut().insert_resource(engine);
     app.world_mut().insert_resource(MarkdownTheme {
         surface: Color::rgba(0., 0., 0., 0.),
-        text: Color::rgb(0.76, 0.76, 0.79),
+        text: visual::text(),
         ..MarkdownTheme::default()
     });
     app.world_mut().insert_resource(Viewport::new(1200., 850.));
@@ -532,6 +533,52 @@ fn notes_visual_acceptance() {
         image::ColorType::Rgba8,
     )
     .unwrap();
+}
+
+#[test]
+fn integrated_note_band_preserves_documents_across_surface_switches() {
+    let mut app = crate::ui::app();
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+    load(app.world_mut(), "a.md", "# Alpha", Some("v1"));
+    load(app.world_mut(), "b.md", "# Beta", Some("v2"));
+    let document = app.world().resource::<Notes>().unwrap().views["b.md"].document;
+    for width in [1200., 760., 1600.] {
+        app.world_mut().insert_resource(Viewport::new(width, 850.));
+        for _ in 0..8 {
+            app.update();
+        }
+        let w = app.world();
+        let n = w.resource::<Notes>().unwrap();
+        let tabs = n.tabstrip.unwrap();
+        assert!(w.has::<Hidden>(tabs));
+        let tab = w
+            .query::<Tab>()
+            .iter()
+            .find(|(_, t)| t.id == n.views["b.md"].tab)
+            .unwrap()
+            .0;
+        let r = w.get::<Rect>(tab).unwrap();
+        assert!(r.y >= 0. && r.y + r.h <= crate::ui::chrome::HEIGHT);
+        let toolbar = w.get::<Rect>(n.toolbar.unwrap()).unwrap();
+        assert!(toolbar.y >= crate::ui::chrome::HEIGHT);
+        for child in children_of(w, n.toolbar.unwrap()) {
+            let r = w.get::<Rect>(child).unwrap();
+            assert!(r.x + r.w <= width + 1., "note action clipped: {r:?}");
+        }
+    }
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Chat);
+    for _ in 0..3 {
+        app.update();
+    }
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+    for _ in 0..3 {
+        app.update();
+    }
+    assert_eq!(
+        app.world().resource::<Notes>().unwrap().views["b.md"].document,
+        document
+    );
 }
 
 #[test]

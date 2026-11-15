@@ -1,12 +1,13 @@
 //! Native adapter over the canonical Forge source API. SourceDocuments owns
 //! per-file history/selection/scroll; the daemon owns project files and leases.
+use crate::native_style as visual;
 use medousa_sdk::{MedousaClient, operations as ops};
 use rndr_core::{
     editing::{DocumentId, Revision, SourceDocuments},
     *,
 };
 use rndr_ui::{
-    Corner, Token, Typography, UiColor, UiId, UiRecipe, UiStyle,
+    Corner, Typography, UiColor, UiId, UiRecipe, UiStyle,
     controls::{self, ButtonProps, HostIntent},
     editing::{EditorSurface, EditorSurfaceHandle, EditorSurfaceProps},
     tabs::{
@@ -283,15 +284,7 @@ fn compact(w: &mut World, h: controls::ControlHandle, width: Size) {
 }
 fn button(w: &mut World, p: Entity, c: &mut Code, s: &str, a: Action, enabled: bool) {
     let id = next();
-    let mut props = ButtonProps::new(s, HostIntent::Command(id));
-    props.enabled = enabled;
-    props.variant = controls::ButtonVariant::Quiet;
-    let h = controls::Button::mount(w, p, UiId(id), props).expect("code button");
-    compact(
-        w,
-        h,
-        Size::Px((s.chars().count() as f32 * 7. + 24.).clamp(64., 180.)),
-    );
+    visual::document_action(w, p, id, s, enabled);
     c.actions.insert(id, a);
 }
 fn tree_row(w: &mut World, p: Entity, c: &mut Code, s: &str, a: Action, selected: bool) {
@@ -322,13 +315,13 @@ fn row(w: &mut World, p: Entity) -> Entity {
     e
 }
 fn style_editor(w: &mut World, handle: EditorSurfaceHandle) {
-    w.insert(handle.root, Color::rgb(0.067, 0.067, 0.082));
+    visual::flat(w, handle.root, visual::canvas());
     // No parallel text projection: core retains composition, selection and undo.
     w.insert(
         handle.editor,
         UiRecipe(UiStyle {
-            background: Some(UiColor::Explicit(Color::rgb(0.067, 0.067, 0.082))),
-            foreground: Some(Token::Text.into()),
+            background: Some(UiColor::Explicit(visual::canvas())),
+            foreground: Some(UiColor::Explicit(visual::text())),
             typography: Some(Typography::Code),
             corner: Some(Corner::Square),
             padding: Some(rndr_ui::Space::Zero),
@@ -340,8 +333,8 @@ fn style_editor(w: &mut World, handle: EditorSurfaceHandle) {
             w.insert(
                 child,
                 UiRecipe(UiStyle {
-                    background: Some(UiColor::Explicit(Color::rgb(0.067, 0.067, 0.082))),
-                    foreground: Some(Token::Secondary.into()),
+                    background: Some(UiColor::Explicit(visual::canvas())),
+                    foreground: Some(UiColor::Explicit(visual::secondary())),
                     typography: Some(Typography::Code),
                     ..UiStyle::default()
                 }),
@@ -371,13 +364,15 @@ pub fn mount(w: &mut World, parent: Entity) {
     },));
     set_parent(w, root, parent);
     let sidebar = column(w, root, Size::Px(300.), Size::Fill);
-    w.insert(sidebar, Color::rgb(0.067, 0.067, 0.082));
+    visual::navigation_frame(w, sidebar);
     let heading = row(w, sidebar);
-    caption(w, heading, "EXPLORER");
+    text(w, heading, "Explorer", Typography::Emphasis).unwrap();
+    w.get_mut::<Layout>(heading).unwrap().height = Size::Px(40.);
     let rows = column(w, sidebar, Size::Fill, Size::Fill);
     w.get_mut::<Layout>(rows).unwrap().padding = 4.;
     w.insert(rows, Scroll::default());
     let content = column(w, root, Size::Fill, Size::Fill);
+    visual::flat(w, content, visual::canvas());
     let tabs = column(w, content, Size::Fill, Size::Hug);
     let toolbar = column(w, content, Size::Fill, Size::Hug);
     let editors = column(w, content, Size::Fill, Size::Fill);
@@ -506,6 +501,7 @@ fn ensure_view(w: &mut World, c: &mut Code, key: &Key) {
     );
 }
 fn render(w: &mut World, c: &mut Code) {
+    crate::ui::chrome::clear_document_tabs(w, false);
     let (Some(rows), Some(toolbar)) = (c.rows, c.toolbar) else {
         return;
     };
@@ -616,13 +612,14 @@ fn render(w: &mut World, c: &mut Code) {
     if let Some(key) = c.key() {
         let crumb = text(
             w,
-            toolbar,
-            &key.1.replace('/', "  /  "),
+            actions,
+            &key.1.replace('/', "  ›  "),
             Typography::Secondary,
         )
         .expect("source breadcrumb");
         w.get_mut::<Label>(crumb).unwrap().overflow = TextOverflow::Ellipsis;
         w.get_mut::<Layout>(crumb).unwrap().height = Size::Px(24.);
+        w.get_mut::<Layout>(crumb).unwrap().width = Size::Fill;
         if let Some(b) = c.buffers.get(&key) {
             let status = if b.baseline.readonly {
                 "Read-only preview · binary, lossy or truncated content"
@@ -635,7 +632,7 @@ fn render(w: &mut World, c: &mut Code) {
             } else {
                 "Up to date"
             };
-            caption(w, actions, status);
+            caption(w, toolbar, status);
             let saveable = b.saveable()
                 && c.sessions
                     .get(&key.0)
@@ -745,6 +742,7 @@ fn render(w: &mut World, c: &mut Code) {
                 },
             );
             w.insert(strip.body, Hidden);
+            crate::ui::chrome::document_tabs(w, strip, false);
             c.strip = Some(strip);
         }
     }

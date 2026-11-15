@@ -13,6 +13,7 @@ struct Chrome {
     tabs: Entity,
     fallback: Entity,
     destination: Entity,
+    documents: [Entity; 2],
     caption: Entity,
 }
 
@@ -87,6 +88,17 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     button(world, chat, DETAILS, "Info", true);
     let destination = text(world, band, "Notes", Typography::Emphasis).unwrap();
     world.get_mut::<Layout>(destination).unwrap().width = Size::Fill;
+    let documents = std::array::from_fn(|_| {
+        container(
+            world,
+            Some(band),
+            Layout {
+                width: Size::Fill,
+                height: Size::Fill,
+                ..Layout::row()
+            },
+        )
+    });
     let caption = container(
         world,
         Some(band),
@@ -136,6 +148,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         tabs,
         fallback,
         destination,
+        documents,
         caption,
     });
     container(
@@ -197,6 +210,44 @@ pub(super) fn place_tabs(world: &mut World, strip: TabStripHandle) {
     world.insert(bar, Color::rgba(0., 0., 0., 0.));
     world.insert(bar, ResolvedColor);
 }
+/// Keep the strip root in its surface for event identity; only its bar moves.
+/// Standalone editor fixtures without a window host retain the local tab row.
+pub(crate) fn clear_document_tabs(world: &mut World, notes: bool) {
+    let Some(state) = world.resource::<Chrome>() else {
+        return;
+    };
+    let host = state.documents[if notes { 0 } else { 1 }];
+    for bar in children_of(world, host) {
+        world.insert(bar, Hidden);
+    }
+}
+
+pub(crate) fn document_tabs(world: &mut World, strip: TabStripHandle, notes: bool) {
+    let Some(state) = world.resource::<Chrome>() else {
+        return;
+    };
+    let host = state.documents[if notes { 0 } else { 1 }];
+    let bar = world.get::<Parent>(strip.scroll).unwrap().entity;
+    set_parent(world, bar, host);
+    world.remove::<Hidden>(bar);
+    world.insert(bar, BandStrip(strip));
+    *world.get_mut::<Layout>(bar).unwrap() = Layout {
+        width: Size::Fill,
+        height: Size::Fill,
+        gap: 4.,
+        ..Layout::row()
+    };
+    world.insert(bar, WindowDrag);
+    visual::flat(world, bar, visual::navigation());
+    world.get_mut::<Layout>(strip.scroll).unwrap().height = Size::Px(32.);
+    world.insert(strip.scroll, Color::rgba(0., 0., 0., 0.));
+    world.insert(strip.scroll, ResolvedColor);
+    world.insert(strip.root, Hidden);
+    if let Some(parent) = world.get::<Parent>(strip.root).map(|p| p.entity) {
+        world.get_mut::<Layout>(parent).unwrap().height = Size::Px(0.);
+    }
+}
+
 pub(super) fn pane_commands(world: &mut World, multiple: bool, split: bool) {
     let host = world.resource::<Chrome>().unwrap().tabs;
     for bar in children_of(world, host) {
@@ -236,10 +287,25 @@ pub fn polish(world: &mut World) {
     show(world, caption, frame.draws_controls);
     let active = crate::surfaces::active(world);
     show(world, chat, active == crate::surfaces::SurfaceId::Chat);
+    let documents = world.resource::<Chrome>().unwrap().documents;
+    let mut has_document = false;
+    for (i, host) in documents.into_iter().enumerate() {
+        let selected = active
+            == if i == 0 {
+                crate::surfaces::SurfaceId::Notes
+            } else {
+                crate::surfaces::SurfaceId::Code
+            };
+        let populated = children_of(world, host)
+            .iter()
+            .any(|e| !world.has::<Hidden>(*e));
+        show(world, host, selected && populated);
+        has_document |= selected && populated;
+    }
     show(
         world,
         destination,
-        active != crate::surfaces::SurfaceId::Chat,
+        active != crate::surfaces::SurfaceId::Chat && !has_document,
     );
     world.get_mut::<Label>(destination).unwrap().text = match active {
         crate::surfaces::SurfaceId::Notes => "Notes",
@@ -249,7 +315,11 @@ pub fn polish(world: &mut World) {
     .into();
     // A fine boundary, not another rounded wrapper around the workspace.
     visual::flat(world, band, visual::navigation());
-    for bar in children_of(world, tabs) {
+    let bars: Vec<_> = [tabs, documents[0], documents[1]]
+        .into_iter()
+        .flat_map(|host| children_of(world, host))
+        .collect();
+    for bar in bars {
         let Some(strip) = world.get::<BandStrip>(bar).map(|s| s.0) else {
             continue;
         };
@@ -272,7 +342,10 @@ pub fn polish(world: &mut World) {
             show(world, control, overflow);
         }
     }
-    let mut stack = children_of(world, tabs);
+    let mut stack: Vec<_> = [tabs, documents[0], documents[1]]
+        .into_iter()
+        .flat_map(|host| children_of(world, host))
+        .collect();
     let focus = world.resource::<Focus>().and_then(|f| f.entity);
     let pointer = world
         .resource::<Input>()
