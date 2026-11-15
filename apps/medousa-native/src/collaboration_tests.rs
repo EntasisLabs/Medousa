@@ -111,12 +111,8 @@ fn exchange_back_retains_parent_draft_document_scroll_and_focus() {
         app.world().resource::<Model>().unwrap().chat.session(),
         Some("parent")
     );
-    assert_eq!(
-        app.world().get::<Scroll>(ui.timeline).unwrap().offset,
-        scroll
-    );
-    super::super::action(app.world_mut(), SEND); // stale hidden send cannot execute
-    assert!(!app.world().resource::<Model>().unwrap().chat.busy());
+    assert!(!app.world().has::<Hidden>(ui.timeline));
+
     activate(&mut app, ui.exchange.back);
     assert!(
         !app.world()
@@ -139,9 +135,10 @@ fn exchange_back_retains_parent_draft_document_scroll_and_focus() {
         .unwrap();
     assert_eq!(doc.text(), "Keep this parent draft");
     assert_eq!(doc.revision(), revision);
-    assert_eq!(
-        app.world().get::<Scroll>(ui.timeline).unwrap().offset,
-        scroll
+    let retained = app.world().get::<Scroll>(ui.timeline).unwrap().offset;
+    assert!(
+        (retained[1] - scroll[1]).abs() <= 4.,
+        "same reading location after split reflow: {retained:?} vs {scroll:?}"
     );
 }
 #[test]
@@ -352,6 +349,11 @@ fn tool_disclosure_uses_worker_snapshot_and_closes_on_return() {
     let mut app = fixture();
     let marker = target(&app, "worker-1");
     activate(&mut app, marker);
+    let timeline = app.world().resource::<Ui>().unwrap().exchange.timeline;
+    app.world_mut().get_mut::<Scroll>(timeline).unwrap().offset[1] = -10000.;
+    for _ in 0..8 {
+        app.update();
+    }
     let trigger = app
         .world()
         .query::<Semantics>()
@@ -409,10 +411,20 @@ fn exchange_refresh_is_single_flight_and_failures_preserve_recorded_text() {
         .collaboration
         .refreshed = None;
     app.update();
-    assert!(matches!(
+    let commands = [
         rx.try_recv().unwrap().command,
-        Command::Collaboration { .. }
-    ));
+        rx.try_recv().unwrap().command,
+    ];
+    assert!(
+        commands
+            .iter()
+            .any(|c| matches!(c, Command::Collaboration { .. }))
+    );
+    assert!(
+        commands
+            .iter()
+            .any(|c| matches!(c, Command::PeerCollaboration { .. }))
+    );
     for _ in 0..8 {
         app.update();
     }
@@ -490,4 +502,196 @@ fn collaboration_visual_acceptance() {
         )
         .unwrap();
     }
+}
+
+fn reply_text(app: &mut App, value: &str) -> DocumentId {
+    let document = app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .collaboration
+        .reply_document
+        .unwrap();
+    let mut doc = app
+        .world_mut()
+        .resource_mut::<SourceDocuments>()
+        .unwrap()
+        .get_mut(document)
+        .unwrap();
+    doc.commit(rndr_core::editing::SourceBatch {
+        document,
+        base: doc.revision(),
+        origin: rndr_core::editing::EditOrigin::Host(99),
+        changes: vec![rndr_core::editing::SourceChange {
+            range: 0..doc.text().len(),
+            replacement: value.into(),
+        }],
+    })
+    .unwrap();
+    app.update();
+    document
+}
+
+#[test]
+fn work_thread_retains_two_lanes_wide_and_uses_one_lane_narrow() {
+    let mut app = fixture();
+    app.world_mut().insert_resource(Viewport::new(1600., 850.));
+    for _ in 0..8 {
+        app.update();
+    }
+    let marker = target(&app, "worker-1");
+    activate(&mut app, marker);
+    let ui = *app.world().resource::<Ui>().unwrap();
+    assert!(!app.world().has::<Hidden>(ui.exchange.main));
+    let main = app.world().get::<Rect>(ui.exchange.main).unwrap();
+    let thread = app.world().get::<Rect>(ui.exchange.root).unwrap();
+    assert!(thread.x >= main.x + main.w - 1., "{main:?} {thread:?}");
+    assert!(main.w > 600. && thread.w >= 340.);
+    app.world_mut().insert_resource(Viewport::new(760., 850.));
+    for _ in 0..8 {
+        app.update();
+    }
+    assert!(app.world().has::<Hidden>(ui.exchange.main));
+    super::super::action(app.world_mut(), SEND);
+    assert!(!app.world().resource::<Model>().unwrap().chat.busy());
+    activate(&mut app, ui.exchange.back);
+    assert!(!app.world().has::<Hidden>(ui.exchange.main));
+}
+
+#[test]
+fn task_reply_is_scoped_and_retains_each_draft_without_touching_parent() {
+    let mut app = fixture();
+    receive(
+        app.world_mut(),
+        "parent",
+        Ok(vec![
+            row("worker-1", Some("turn-1")),
+            row("worker-2", Some("turn-1")),
+        ]),
+    );
+    for _ in 0..8 {
+        app.update();
+    }
+    text(&mut app, "parent draft");
+    let main = app.world().resource::<Model>().unwrap().document;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.world_mut().resource_mut::<Model>().unwrap().commands = Some(tx);
+    let marker = target(&app, "worker-1");
+    activate(&mut app, marker);
+    let first = reply_text(&mut app, "reply for first worker");
+    let ui = *app.world().resource::<Ui>().unwrap();
+    activate(&mut app, ui.exchange.back);
+    let marker = target(&app, "worker-2");
+    activate(&mut app, marker);
+    let second = reply_text(&mut app, "second worker draft");
+    assert_ne!(first, second);
+    activate(&mut app, ui.exchange.back);
+    let marker = target(&app, "worker-1");
+    activate(&mut app, marker);
+    assert_eq!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .reply_document,
+        Some(first)
+    );
+    let send = app.world().resource::<Ui>().unwrap().exchange.reply_send;
+    activate(&mut app, send);
+    let mut commands = vec![];
+    while let Ok(request) = rx.try_recv() {
+        commands.push(request.command);
+    }
+    let nonce = commands
+        .into_iter()
+        .find_map(|c| match c {
+            Command::ThreadReply {
+                session,
+                work_id,
+                message,
+                nonce,
+            } => {
+                assert_eq!(
+                    (session.as_str(), work_id.as_str(), message.as_str()),
+                    ("parent", "worker-1", "reply for first worker")
+                );
+                Some(nonce)
+            }
+            _ => None,
+        })
+        .expect("one task-scoped reply");
+    reply_received(app.world_mut(), "parent", "worker-1", nonce, Ok(()));
+    assert_eq!(
+        app.world()
+            .resource::<SourceDocuments>()
+            .unwrap()
+            .get(first)
+            .unwrap()
+            .text(),
+        ""
+    );
+    assert_eq!(
+        app.world()
+            .resource::<SourceDocuments>()
+            .unwrap()
+            .get(second)
+            .unwrap()
+            .text(),
+        "second worker draft"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<SourceDocuments>()
+            .unwrap()
+            .get(main)
+            .unwrap()
+            .text(),
+        "parent draft"
+    );
+}
+
+#[test]
+fn late_reply_ack_preserves_new_edits_and_unknown_delivery_blocks_replay() {
+    let mut app = fixture();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.world_mut().resource_mut::<Model>().unwrap().commands = Some(tx);
+    let marker = target(&app, "worker-1");
+    activate(&mut app, marker);
+    let document = reply_text(&mut app, "original reply");
+    send_reply(app.world_mut());
+    let nonce = app.world().resource::<Model>().unwrap().collaboration.nonce;
+    reply_text(&mut app, "new edits while sending");
+    reply_received(app.world_mut(), "parent", "worker-1", nonce, Ok(()));
+    assert_eq!(
+        app.world()
+            .resource::<SourceDocuments>()
+            .unwrap()
+            .get(document)
+            .unwrap()
+            .text(),
+        "new edits while sending"
+    );
+    send_reply(app.world_mut());
+    let nonce = app.world().resource::<Model>().unwrap().collaboration.nonce;
+    reply_received(
+        app.world_mut(),
+        "parent",
+        "worker-1",
+        nonce,
+        Err("Delivery unresolved. Inspect thread before retrying.".into()),
+    );
+    send_reply(app.world_mut());
+    let mut count = 0;
+    while let Ok(request) = rx.try_recv() {
+        count += usize::from(matches!(request.command, Command::ThreadReply { .. }));
+    }
+    assert_eq!(count, 2);
+    assert!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .reply_pending
+            .is_some()
+    );
 }

@@ -256,6 +256,67 @@ fn core_filters_empty_handoff_shells_and_renders_failures() {
 }
 
 #[test]
+fn assistant_tool_images_are_inline_chronological_deduplicated_and_retained() {
+    let run = serde_json::json!({"runId":"r", "toolName":"cognition_image_view", "status":"succeeded", "round":1,
+    "artifactRefs":[
+        {"role":"input","contentType":"image/png","byteSize":10,"hash64":"h","artifactId":"art:input"},
+        {"role":"output","contentType":"application/json","byteSize":10,"hash64":"h","artifactId":"art:json"},
+        {"role":"output","contentType":"image/png","byteSize":10,"hash64":"h","artifactId":"art:pixels","label":"Concept.png"}
+    ]});
+    let mut assistant = item("a", "assistant", "Here are the concepts.");
+    assistant.tool_runs = Some(vec![serde_json::from_value(run.clone()).unwrap()]);
+    assistant.segments = Some(
+        serde_json::from_value(serde_json::json!([
+            {"kind":"text","segmentId":"intro","markdown":"Two concepts","committed":true},
+            {"kind":"tool_group","groupId":"g","toolRound":1,"runs":[run]},
+            {"kind":"text","segmentId":"end","markdown":"Which works?","committed":true}
+        ]))
+        .unwrap(),
+    );
+    let projected = project(&assistant);
+    let image = projected.iter().position(|p| p.image.is_some()).unwrap();
+    assert_eq!(projected[image].image.as_ref().unwrap().0, "art:pixels");
+    assert_eq!(projected[image + 1].id, "text:end");
+    assert_eq!(projected.iter().filter(|p| p.image.is_some()).count(), 1);
+    let (mut world, root) = fixture();
+    sync(
+        &mut world,
+        root,
+        Some(&snapshot(vec![assistant.clone()], 1)),
+    );
+    let entity = world.get::<Timeline>(root).unwrap().rows[0]
+        .parts
+        .iter()
+        .find(|p| p.id == "artifact:art:pixels")
+        .unwrap()
+        .entity;
+    sync(
+        &mut world,
+        root,
+        Some(&snapshot(vec![assistant.clone()], 2)),
+    );
+    assert_eq!(
+        entity,
+        world.get::<Timeline>(root).unwrap().rows[0]
+            .parts
+            .iter()
+            .find(|p| p.id == "artifact:art:pixels")
+            .unwrap()
+            .entity
+    );
+    assistant.segments = None;
+    assert_eq!(
+        project(&assistant)
+            .iter()
+            .filter(|p| p.image.is_some())
+            .count(),
+        1
+    );
+    assistant.tool_runs.as_mut().unwrap()[0].status = "failed".into();
+    assert!(!project(&assistant).iter().any(|p| p.image.is_some()));
+}
+
+#[test]
 fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
     let (mut world, root) = fixture();
     let mut user = item("u", "user", "Attached screenshot");

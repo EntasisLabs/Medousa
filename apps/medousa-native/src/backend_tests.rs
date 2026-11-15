@@ -10,6 +10,81 @@ use std::{
 };
 
 #[tokio::test]
+async fn linked_execution_transport_uses_binding_not_requested_or_agent_session() {
+    use crate::ui::collaboration::peers;
+    let row = peers::tests::row();
+    let authority = row.proposal.request.owner_session.authority_id.as_str();
+    let selected = format!(
+        "peer:{}",
+        serde_json::to_string(&(&row.proposal.request.channel, &row.proposal.proposal_id)).unwrap()
+    );
+    let active = json!({"active":true,"turn":{"turn_id":"live","session_id":"execution","stream_url":"/v1/interactive/turn/live/stream","phase":"running","composer_handoff":false,"started_at":"2026-11-15T00:00:00Z"}});
+    let (client, server) = fixture(vec![
+        json_wire(
+            "GET",
+            "/v1/coordination/proposals?session_id=parent",
+            json!({"proposals":[row],"next_cursor":"page two"}),
+        ),
+        json_wire(
+            "GET",
+            "/v1/coordination/proposals?session_id=parent&after=page%20two",
+            json!({"proposals":[],"next_cursor":null}),
+        ),
+        json_wire("GET", "/v1/sessions/execution/active-turn", active.clone()),
+        json_wire(
+            "GET",
+            "/v1/sessions/execution/history",
+            json!({"session_id":"execution","authority_id":authority,"turns":[]}),
+        ),
+        json_wire("GET", "/v1/sessions/execution/active-turn", active),
+    ]);
+    let reading = peers::fetch(&client, "parent", authority, Some(&selected))
+        .await
+        .unwrap();
+    assert_eq!(
+        reading.stream(),
+        Some((
+            selected,
+            "live".into(),
+            "/v1/interactive/turn/live/stream".into()
+        ))
+    );
+    server.join().unwrap();
+}
+#[tokio::test]
+async fn linked_execution_transport_never_follows_foreign_or_unbound_sessions() {
+    use crate::ui::collaboration::peers;
+    for unbound in [false, true] {
+        let mut row = peers::tests::row();
+        let authority = row.proposal.request.owner_session.authority_id.to_string();
+        let selected = format!(
+            "peer:{}",
+            serde_json::to_string(&(&row.proposal.request.channel, &row.proposal.proposal_id))
+                .unwrap()
+        );
+        if unbound {
+            row.binding = None;
+        } else {
+            row.binding.as_mut().unwrap().execution_session.authority_id =
+                format!("auth_{}", "b".repeat(64)).parse().unwrap();
+        }
+        let (client, server) = fixture(vec![json_wire(
+            "GET",
+            "/v1/coordination/proposals?session_id=parent",
+            json!({"proposals":[row],"next_cursor":null}),
+        )]);
+        assert!(
+            peers::fetch(&client, "parent", &authority, Some(&selected))
+                .await
+                .unwrap()
+                .stream()
+                .is_none()
+        );
+        server.join().unwrap();
+    }
+}
+
+#[tokio::test]
 async fn collaboration_reads_are_session_bound_and_changed_card_only() {
     let card = json!({"id":"worker","column":"in_flight","title":"Review","status_label":"running","created_at_utc":"2026-11-15T00:00:00Z","updated_at_utc":"2026-11-15T00:01:00Z"});
     let page = json!({"workspace_revision":1,"cards":[card.clone()]});
@@ -52,6 +127,106 @@ async fn collaboration_transport_rejects_cross_session_transcript_identity() {
             .unwrap_err()
             .contains("identity")
     );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn thread_reply_uses_exact_session_work_and_verified_queue_receipt() {
+    let mut wire = json_wire(
+        "POST",
+        "/v1/sessions/parent%20room/workshop/steer",
+        json!({"ok":true,"work_id":"worker","queued":1,"speaker_profile_id":"person"}),
+    );
+    wire.check = Some(|raw| {
+        let body: Value = serde_json::from_str(raw.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(body, json!({"work_id":"worker","message":"reply"}));
+    });
+    let (client, server) = fixture(vec![wire]);
+    assert!(
+        thread_reply(&client, "parent room", "worker", "reply")
+            .await
+            .is_ok()
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn thread_reply_unknown_delivery_is_redacted_and_never_replayed() {
+    for body in [
+        json!({"ok":true}),
+        json!({"ok":true,"work_id":"other","queued":1,"speaker_profile_id":null}),
+        json!({"ok":true,"work_id":"worker","queued":0,"speaker_profile_id":null}),
+        json!({"ok":false,"error":"secret credential"}),
+    ] {
+        let (client, server) = fixture(vec![json_wire(
+            "POST",
+            "/v1/sessions/parent/workshop/steer",
+            body,
+        )]);
+        let error = thread_reply(&client, "parent", "worker", "reply")
+            .await
+            .unwrap_err();
+        assert!(error.contains("unconfirmed"));
+        assert!(!error.contains("secret"));
+        server.join().unwrap();
+    }
+    let mut wire = json_wire(
+        "POST",
+        "/v1/sessions/parent/workshop/steer",
+        json!({"error":"secret"}),
+    );
+    wire.status = 500;
+    let (client, server) = fixture(vec![wire]);
+    assert!(
+        !thread_reply(&client, "parent", "worker", "reply")
+            .await
+            .unwrap_err()
+            .contains("secret")
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn thread_reply_preserves_generation_nonce_and_lower_session_routes() {
+    let mut wires = vec![
+        list_wire(),
+        json_wire("GET", "/v1/models/catalog", json!({"models":[]})),
+        registry_wire(),
+    ];
+    for session in ["b", "a"] {
+        wires.push(json_wire(
+            "POST",
+            &format!("/v1/sessions/{session}/workshop/steer"),
+            json!({"ok":true,"work_id":"worker","queued":1,"speaker_profile_id":null}),
+        ));
+    }
+    let (client, server) = fixture(wires);
+    let mut app = App::new();
+    let (_feed, tx) = feed::open::<Reply>(app.world_mut(), FeedConfig::queue(32));
+    let (commands, rx) = mpsc::unbounded_channel();
+    for (generation, session, nonce) in [(9, "b", 80), (2, "a", 81)] {
+        commands
+            .send(Request {
+                generation,
+                command: Command::ThreadReply {
+                    session: session.into(),
+                    work_id: "worker".into(),
+                    message: "reply".into(),
+                    nonce,
+                },
+            })
+            .unwrap();
+    }
+    drop(commands);
+    serve(client, rx, tx).await;
+    app.update();
+    let replies = observed(&app);
+    for (generation, expected, expected_nonce) in [(9, "b", 80), (2, "a", 81)] {
+        assert!(replies.iter().any(|r| r.generation == generation
+            && matches!(&r.update,
+            Update::ThreadReply { session, work_id, nonce, result: Ok(()) }
+            if session == expected && work_id == "worker" && *nonce == expected_nonce)));
+    }
     server.join().unwrap();
 }
 

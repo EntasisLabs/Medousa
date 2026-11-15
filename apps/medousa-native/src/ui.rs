@@ -201,7 +201,7 @@ fn button(
         SEND => Some("Send message".into()),
         STOP => Some("Stop response".into()),
         SIDEBAR => Some("Toggle conversation sidebar".into()),
-        DETAILS if title == "Info" => Some("Toggle conversation details".into()),
+        DETAILS if title == "Info" => Some("Open work threads".into()),
         DETAILS => Some("Runtime and conversation details".into()),
         _ => None,
     };
@@ -212,7 +212,7 @@ fn button(
     };
     let icon = match (id, title) {
         (SIDEBAR, "Chats") => Some((Icon::PanelLeft, "Toggle conversation sidebar")),
-        (DETAILS, "Info") => Some((Icon::Info, "Toggle conversation details")),
+        (DETAILS, "Info") => Some((Icon::Info, "Open work threads")),
         (NEW, "New chat") => Some((Icon::Plus, "New chat")),
         (40, "Split") => Some((Icon::PanelLeft, "Split conversation pane")),
         (41, "Join") => Some((Icon::PanelLeft, "Join conversation panes")),
@@ -479,13 +479,25 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         ..Layout::column()
     };
     visual::flat(world, content.root, visual::canvas());
-    // Conversation navigation is owned by the shared window band.
-    let exchange = collaboration::mount(world, content.content);
-    let timeline = timeline::setup(world, content.content);
-    let approvals = approvals::setup(world, content.content);
-    let composer_row = container(
+    // Both lanes retain their entities and source documents across thread toggles.
+    world.get_mut::<Layout>(content.content).unwrap().axis = Axis::Row;
+    let main = container(
         world,
         Some(content.content),
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            gap: 4.,
+            ..Layout::column()
+        },
+    );
+    let exchange = collaboration::mount(world, main, content.content);
+    let timeline = timeline::setup(world, main);
+    let approvals = approvals::setup(world, main);
+    approvals::thread_host(world, approvals, exchange.approvals);
+    let composer_row = container(
+        world,
+        Some(main),
         Layout {
             width: Size::Fill,
             height: Size::Hug,
@@ -723,7 +735,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     button(world, filter_row, MODEL_NEXT, "Next", true);
     let status = text(
         world,
-        content.content,
+        main,
         "Connecting to local daemon…",
         Typography::Secondary,
     )
@@ -1146,7 +1158,7 @@ fn action(world: &mut World, id: u64) {
             conversations::navigate(world, id);
         }
         SEND => {
-            if world.resource::<Model>().unwrap().collaboration.is_open() {
+            if world.has::<Hidden>(ui.exchange.main) {
                 return;
             }
             let session = world
@@ -1225,6 +1237,9 @@ fn action(world: &mut World, id: u64) {
             dispatch(world, Command::Send(Box::new(request)));
         }
         STOP => {
+            if world.has::<Hidden>(ui.exchange.main) {
+                return;
+            }
             if let Some(session) = world
                 .resource::<Model>()
                 .unwrap()
@@ -1265,6 +1280,24 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
         return;
     }
     match reply.update {
+        Update::PeerStream {
+            session,
+            key,
+            event,
+        } => {
+            collaboration::peers::stream_event(world, &session, &key, event);
+        }
+        Update::PeerCollaboration { session, result } => {
+            collaboration::peers::receive(world, &session, result);
+        }
+        Update::ThreadReply {
+            session,
+            work_id,
+            nonce,
+            result,
+        } => {
+            collaboration::reply_received(world, &session, &work_id, nonce, result);
+        }
         Update::Collaboration { session, result } => {
             collaboration::receive(world, &session, result);
         }
@@ -1812,13 +1845,11 @@ fn sync(world: &mut World) {
         .session()
         .and_then(|session| runtimes::conversation(world, session))
         .map(provider_timeline::project);
-    if !world.resource::<Model>().unwrap().collaboration.is_open() {
-        timeline::sync(
-            world,
-            ui.timeline,
-            provider.as_ref().or_else(|| m.chat.snapshot()),
-        );
-    }
+    timeline::sync(
+        world,
+        ui.timeline,
+        provider.as_ref().or_else(|| m.chat.snapshot()),
+    );
     let state = world.resource::<Model>().unwrap();
     let (details, filter, sidebar) = (
         state.details_open,
@@ -1834,11 +1865,9 @@ fn sync(world: &mut World) {
     }
     let width = workspace::sync(world, sidebar, details);
     let width = world
-        .get::<Rect>(ui.content)
-        .map(|r| r.w)
-        .filter(|w| *w > 0.)
-        .unwrap_or(width)
-        .min(width);
+        .get::<Rect>(ui.exchange.main)
+        .map(|r| width.min(r.w))
+        .unwrap_or(width);
     world.get_mut::<Layout>(ui.compose).unwrap().width = Size::Px(visual::column_width(width));
     collaboration::sync(world, ui, m.chat.snapshot());
     world.resource_mut::<Model>().unwrap().chat = m.chat;
@@ -2246,7 +2275,7 @@ mod tests {
         let editor = app.world().get::<Rect>(ui.composer.editor).unwrap();
         let dock = app.world().get::<Rect>(ui.details).unwrap();
         assert!(
-            editor.w > 340. && editor.x + editor.w <= dock.x,
+            editor.w > 320. && editor.x + editor.w <= dock.x,
             "editor {editor:?}, dock {dock:?}"
         );
         assert!(dock.w >= 280. && dock.x + dock.w <= 761., "{dock:?}");

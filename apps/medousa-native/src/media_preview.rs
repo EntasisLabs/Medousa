@@ -8,6 +8,7 @@ use std::collections::HashMap;
 pub struct Key {
     session: String,
     media: String,
+    detailed: bool,
 }
 struct Pixels {
     width: u32,
@@ -64,6 +65,7 @@ pub fn mount(
             key: Key {
                 session: session.into(),
                 media: media.into(),
+                detailed: false,
             },
             compact,
             rendered: false,
@@ -92,6 +94,7 @@ pub fn mount(
 }
 
 pub fn tick(world: &mut World) {
+    sync_viewer(world);
     if !world.has_resource::<Cache>() {
         world.insert_resource(Cache::default());
     }
@@ -111,11 +114,15 @@ pub fn tick(world: &mut World) {
         cache.clock += 1;
         if !cache.entries.contains_key(&key) {
             // Never evict an in-flight request. At most three decode at once.
-            if cache.entries.len() >= MAX_CACHE {
+            if cache.entries.len() >= MAX_CACHE
+                || (key.detailed && cache.entries.keys().filter(|k| k.detailed).count() >= 2)
+            {
                 let victim = cache
                     .entries
                     .iter()
-                    .filter(|(_, e)| !matches!(e.state, State::Pending))
+                    .filter(|(k, e)| {
+                        !matches!(e.state, State::Pending) && (!key.detailed || k.detailed)
+                    })
                     .min_by_key(|(_, e)| e.used)
                     .map(|(k, _)| k.clone());
                 if let Some(victim) = victim {
@@ -166,6 +173,26 @@ pub fn tick(world: &mut World) {
                     },
                 ));
                 set_parent(world, image, root);
+                if !key.detailed {
+                    world.insert(
+                        image,
+                        OpenImage {
+                            key: key.clone(),
+                            anchor: root,
+                        },
+                    );
+                    world.insert(image, Button::new("expand-image"));
+                    world.insert(image, ReleaseActivation);
+                    world.insert(image, Focusable);
+                    world.insert(
+                        image,
+                        Semantics {
+                            name: Some("Expand image preview".into()),
+                            ..Default::default()
+                        },
+                    );
+                    world.insert(image, ActivationHandler(open_image));
+                }
                 world.get_mut::<Preview>(root).unwrap().rendered = true;
             }
             State::Failed(error) => {
@@ -192,7 +219,9 @@ pub fn tick(world: &mut World) {
         .map(|(e, _)| *e)
         .collect::<Vec<_>>()
     {
-        let compact = world.get::<Preview>(root).unwrap().compact;
+        let view = world.get::<Preview>(root).unwrap();
+        let compact = view.compact;
+        let detailed = view.key.detailed;
         let width = world.get::<Rect>(root).map(|r| r.w).unwrap_or(400.).max(1.);
         for image in children_of(world, root)
             .into_iter()
@@ -200,9 +229,30 @@ pub fn tick(world: &mut World) {
             .collect::<Vec<_>>()
         {
             let ratio = world.get::<AspectRatio>(image).unwrap().0;
-            let w = width
-                .min(if compact { 80. } else { 400. })
-                .min((if compact { 64. } else { 280. }) * ratio);
+            let w = if detailed {
+                let v = world.resource::<Viewport>().copied().unwrap_or_default();
+                let zoom = world
+                    .resource::<Option<Viewer>>()
+                    .and_then(Option::as_ref)
+                    .map(|v| v.zoom)
+                    .unwrap_or(1.);
+                let port = world
+                    .get::<Parent>(root)
+                    .and_then(|p| world.get::<Rect>(p.entity))
+                    .map(|r| r.w)
+                    .unwrap_or(width);
+                port.min((v.height - 160.).max(1.) * ratio) * zoom
+            } else {
+                width
+                    .min(if compact { 80. } else { 400. })
+                    .min((if compact { 64. } else { 280. }) * ratio)
+            };
+            if detailed {
+                world.remove::<MaxSize>(image);
+                // Scroll measures its direct child: make the preview own the
+                // zoomed extent instead of merely painting beyond a Fill box.
+                world.get_mut::<Layout>(root).unwrap().width = Size::Px(w);
+            }
             let layout = world.get::<Layout>(image).unwrap();
             if layout.width != Size::Px(w) || layout.height != Size::Px(w / ratio) {
                 let layout = world.get_mut::<Layout>(image).unwrap();
@@ -212,6 +262,189 @@ pub fn tick(world: &mut World) {
         }
     }
     world.insert_resource(cache);
+}
+
+// The viewer owns a modal root, never the transcript subtree. Its request uses
+// the same session-authorized endpoint but a separate, bounded detail cache.
+#[derive(Clone)]
+struct OpenImage {
+    key: Key,
+    anchor: Entity,
+}
+impl Component for OpenImage {}
+struct Viewer {
+    root: Entity,
+    sheet: Entity,
+    anchor: Entity,
+    focus: Entity,
+    zoom: f32,
+}
+fn close_viewer(world: &mut World) {
+    let Some(v) = world
+        .resource_mut::<Option<Viewer>>()
+        .and_then(Option::take)
+    else {
+        return;
+    };
+    if world.is_alive(v.root) {
+        despawn(world, v.root);
+    }
+    if world.is_alive(v.focus) {
+        let _ = request_focus(world, v.focus);
+    }
+}
+fn viewer_button(
+    world: &mut World,
+    parent: Entity,
+    id: u64,
+    label: &str,
+    handler: fn(&mut World, Entity),
+) -> Entity {
+    use rndr_ui::{
+        UiId,
+        controls::{ButtonProps, HostIntent},
+    };
+    let props = ButtonProps::new(label, HostIntent::Command(id));
+    let h =
+        rndr_ui::controls::Button::mount(world, parent, UiId(id), props).expect("viewer control");
+    world.insert(h.root, ActivationHandler(handler));
+    world.insert(
+        h.root,
+        Semantics {
+            name: Some(
+                match label {
+                    "+" => "Zoom in",
+                    "−" => "Zoom out",
+                    "Fit" => "Fit image to window",
+                    _ => "Close image preview",
+                }
+                .into(),
+            ),
+            ..Default::default()
+        },
+    );
+    h.root
+}
+fn open_image(world: &mut World, entity: Entity) {
+    let Some(source) = world.get::<OpenImage>(entity).cloned() else {
+        return;
+    };
+    close_viewer(world);
+    let root = world.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            ..Layout::column()
+        },
+        Layer(180),
+        Modal,
+        Color::rgba(0., 0., 0., 0.85),
+        Semantics {
+            name: Some("Image preview".into()),
+            ..Default::default()
+        },
+    ));
+    let backdrop = world.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            ..Layout::column()
+        },
+        Absolute::fill(0.),
+        Button::new("close-image-backdrop"),
+        ReleaseActivation,
+        ActivationHandler(|w, _| close_viewer(w)),
+    ));
+    set_parent(world, backdrop, root);
+    let sheet = world.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            padding: 12.,
+            gap: 8.,
+            ..Layout::column()
+        },
+        Absolute::fill(16.),
+        Color::rgb(0.04, 0.04, 0.045),
+        Radius(12.),
+    ));
+    set_parent(world, sheet, root);
+    let bar = world.spawn((Layout {
+        width: Size::Fill,
+        gap: 8.,
+        ..Layout::row()
+    },));
+    set_parent(world, bar, sheet);
+    viewer_button(world, bar, 0x494d01, "−", |w, _| {
+        if let Some(v) = w.resource_mut::<Option<Viewer>>().and_then(Option::as_mut) {
+            v.zoom = (v.zoom / 1.5).max(1.);
+        }
+    });
+    viewer_button(world, bar, 0x494d02, "+", |w, _| {
+        if let Some(v) = w.resource_mut::<Option<Viewer>>().and_then(Option::as_mut) {
+            v.zoom = (v.zoom * 1.5).min(6.);
+        }
+    });
+    viewer_button(world, bar, 0x494d03, "Fit", |w, _| {
+        if let Some(v) = w.resource_mut::<Option<Viewer>>().and_then(Option::as_mut) {
+            v.zoom = 1.;
+        }
+    });
+    let close = viewer_button(world, bar, 0x494d04, "Close", |w, _| close_viewer(w));
+    let body = world.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            ..Layout::column()
+        },
+        Scroll::default(),
+    ));
+    set_parent(world, body, sheet);
+    let preview = mount(
+        world,
+        body,
+        &source.key.session,
+        &source.key.media,
+        "Image preview · zoom with + / − · scroll to pan · Esc to close",
+        false,
+    );
+    world.get_mut::<Preview>(preview).unwrap().key.detailed = true;
+    world.insert_resource(Some(Viewer {
+        root,
+        sheet,
+        anchor: source.anchor,
+        focus: entity,
+        zoom: 1.,
+    }));
+    let _ = request_focus(world, close);
+}
+fn sync_viewer(world: &mut World) {
+    let Some(v) = world.resource::<Option<Viewer>>().and_then(Option::as_ref) else {
+        return;
+    };
+    let stale = !world.is_alive(v.root) || !world.is_alive(v.anchor);
+    let escape = world.resource::<Input>().is_some_and(|i| {
+        i.key == Some(rndr_core::Key::Escape)
+            || i.keys.iter().any(|k| {
+                !k.released && !k.synthetic && k.logical == LogicalKey::Named(NamedKey::Escape)
+            })
+    });
+    if stale || escape {
+        close_viewer(world);
+        if escape {
+            if let Some(i) = world.resource_mut::<Input>() {
+                i.key = None;
+                i.keys
+                    .retain(|k| k.logical != LogicalKey::Named(NamedKey::Escape));
+            }
+        }
+        return;
+    }
+    let sheet = v.sheet;
+    let viewport = world.resource::<Viewport>().copied().unwrap_or_default();
+    let layout = world.get_mut::<Layout>(sheet).unwrap();
+    layout.width = Size::Px((viewport.width - 32.).max(1.));
+    layout.height = Size::Px((viewport.height - 32.).max(1.));
 }
 
 pub fn drain_commands(world: &mut World) -> Vec<Key> {
@@ -241,13 +474,14 @@ fn path(key: &Key) -> String {
 }
 pub async fn execute(client: &MedousaClient, key: Key) -> PreviewUpdate {
     let started = std::time::Instant::now();
+    let detailed = key.detailed;
     let result = async {
         let bytes = client
             .transport()
             .get_bytes(client.base_url(), &path(&key), 25 * 1024 * 1024)
             .await
             .map_err(|_| "Could not load image".to_string())?;
-        tokio::task::spawn_blocking(move || decode(&bytes))
+        tokio::task::spawn_blocking(move || decode_at(&bytes, detailed))
             .await
             .map_err(|_| "Image decoder unavailable".to_string())?
     }
@@ -259,7 +493,11 @@ pub async fn execute(client: &MedousaClient, key: Key) -> PreviewUpdate {
     );
     PreviewUpdate { key, result }
 }
+#[cfg(test)]
 fn decode(bytes: &[u8]) -> Result<Pixels, String> {
+    decode_at(bytes, false)
+}
+fn decode_at(bytes: &[u8], detailed: bool) -> Result<Pixels, String> {
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|_| "Unsupported image")?;
@@ -270,14 +508,44 @@ fn decode(bytes: &[u8]) -> Result<Pixels, String> {
     reader.limits(limits);
     let image = reader
         .decode()
-        .map_err(|_| "Unsupported, damaged, or oversized image")?
-        .thumbnail(800, 600)
+        .map_err(|_| "Unsupported, damaged, or oversized image")?;
+    // Never fabricate extra resolution for small images.
+    let image = image
+        .thumbnail(
+            image.width().min(if detailed { 4096 } else { 800 }),
+            image.height().min(if detailed { 4096 } else { 600 }),
+        )
         .to_rgba8();
     Ok(Pixels {
         width: image.width(),
         height: image.height(),
         rgba: image.into_raw(),
     })
+}
+
+#[cfg(test)]
+pub fn resolve_fixture(world: &mut World, bytes: &[u8]) -> usize {
+    tick(world);
+    let _ = drain_commands(world);
+    let keys: Vec<_> = world
+        .resource::<Cache>()
+        .unwrap()
+        .entries
+        .keys()
+        .cloned()
+        .collect();
+    let count = keys.len();
+    for key in keys {
+        apply(
+            world,
+            PreviewUpdate {
+                result: decode_at(bytes, key.detailed),
+                key,
+            },
+        );
+    }
+    tick(world);
+    count
 }
 
 #[cfg(test)]

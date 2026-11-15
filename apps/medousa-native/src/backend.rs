@@ -5,6 +5,8 @@ mod collaboration_transport;
 #[cfg(test)]
 #[path = "backend_tests.rs"]
 mod tests;
+#[path = "thread_reply.rs"]
+pub(crate) mod thread_reply;
 use futures_util::StreamExt;
 use medousa_sdk::{HttpTransport, MedousaClient};
 use medousa_types::{
@@ -37,6 +39,17 @@ pub enum Command {
         session: String,
         known: Vec<(String, String)>,
     },
+    PeerCollaboration {
+        session: String,
+        authority: String,
+        selected: Option<String>,
+    },
+    ThreadReply {
+        session: String,
+        work_id: String,
+        message: String,
+        nonce: u64,
+    },
     Send(Box<InteractiveTurnRequest>),
     Cancel(String),
     SetMode(String, AgentModeId),
@@ -58,6 +71,21 @@ pub enum Update {
     Collaboration {
         session: String,
         result: Result<Vec<medousa_types::WorkCardDetail>, String>,
+    },
+    PeerCollaboration {
+        session: String,
+        result: Result<crate::ui::collaboration::peers::Reading, String>,
+    },
+    PeerStream {
+        session: String,
+        key: String,
+        event: Result<TurnStreamEnvelopeV3, String>,
+    },
+    ThreadReply {
+        session: String,
+        work_id: String,
+        nonce: u64,
+        result: Result<(), String>,
     },
     Admitted(String, String),
     Stream(TurnStreamEnvelopeV3),
@@ -121,7 +149,7 @@ pub fn client(origin: &str, data_dir: &std::path::Path) -> Result<MedousaClient,
 
 // SDK stream URLs are relative to the authenticated local origin. Reject
 // traversal and URL forms that could escape it before the SDK sees them.
-fn stream_path<'a>(path: &'a str, origin: &str) -> Result<&'a str, ()> {
+pub(crate) fn stream_path<'a>(path: &'a str, origin: &str) -> Result<&'a str, ()> {
     // Never follow a ticket's advertised host: a local daemon can advertise its
     // LAN listener even when this client attached on loopback. Normalize only
     // the canonical interactive route back onto our authenticated SDK origin.
@@ -162,6 +190,47 @@ fn stream_path<'a>(path: &'a str, origin: &str) -> Result<&'a str, ()> {
         return Err(());
     }
     Ok(path)
+}
+
+/// A steer can be queued before the daemon fails to persist its transcript.
+/// Treat every unconfirmed response as unknown, redact errors, and never replay.
+async fn thread_reply(
+    client: &MedousaClient,
+    session: &str,
+    work_id: &str,
+    message: &str,
+) -> Result<(), String> {
+    const UNKNOWN: &str = "Reply delivery is unconfirmed. Refresh the thread before sending again; it may already have been queued. No automatic retry was made.";
+    if session.trim().is_empty() || work_id.trim().is_empty() || message.trim().is_empty() {
+        return Err("A conversation, active work item, and nonempty reply are required.".into());
+    }
+    let path = medousa_sdk::operations::SESSIONS_BY_SESSION_ID_WORKSHOP_STEER_POST
+        .path
+        .replace("{session_id}", &urlencoding::encode(session));
+    let value: serde_json::Value = client
+        .http()
+        .post(
+            &path,
+            &serde_json::json!({"work_id": work_id, "message": message}),
+        )
+        .await
+        .map_err(|_| UNKNOWN.to_string())?;
+    // WorkshopSteerOutput::Queued is untagged: ok, exact work id, queue
+    // count, and optional speaker identity. `ok` alone is not a receipt.
+    if value.get("ok").and_then(|v| v.as_bool()) == Some(true)
+        && value.get("work_id").and_then(|v| v.as_str()) == Some(work_id)
+        && value
+            .get("queued")
+            .and_then(|v| v.as_u64())
+            .is_some_and(|n| n > 0)
+        && value
+            .get("speaker_profile_id")
+            .is_some_and(|v| v.is_null() || v.is_string())
+    {
+        Ok(())
+    } else {
+        Err(UNKNOWN.into())
+    }
 }
 
 async fn sessions(
@@ -529,6 +598,7 @@ async fn serve(
     }
     // Generation is an opaque UI-owned session route, not a global navigation
     // counter. Background sessions retain their admission/follow and reply route.
+    let peer_subscriptions = Arc::new(crate::ui::collaboration::peers::Subscriptions::default());
     let mut stream_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     let mut mode_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     while let Some(Request {
@@ -564,12 +634,69 @@ async fn serve(
             );
             continue;
         }
+        if let Command::ThreadReply {
+            session,
+            work_id,
+            message,
+            nonce,
+        } = command
+        {
+            let client = client.clone();
+            let tx = tx.clone();
+            metadata_tasks.spawn(async move {
+                let result = thread_reply(&client, &session, &work_id, &message).await;
+                emit(
+                    &tx,
+                    generation,
+                    Update::ThreadReply {
+                        session,
+                        work_id,
+                        nonce,
+                        result,
+                    },
+                );
+            });
+            continue;
+        }
         if let Command::Collaboration { session, known } = command {
             let client = client.clone();
             let tx = tx.clone();
             metadata_tasks.spawn(async move {
                 let result = collaboration_transport::fetch(&client, &session, &known).await;
                 emit(&tx, generation, Update::Collaboration { session, result });
+            });
+            continue;
+        }
+        if let Command::PeerCollaboration {
+            session,
+            authority,
+            selected,
+        } = command
+        {
+            peer_subscriptions.select(generation, selected.clone());
+            let subscriptions = peer_subscriptions.clone();
+            let client = client.clone();
+            let tx = tx.clone();
+            metadata_tasks.spawn(async move {
+                let result = crate::ui::collaboration::peers::fetch(
+                    &client,
+                    &session,
+                    &authority,
+                    selected.as_deref(),
+                )
+                .await;
+                // Queue canonical history before any live event, on the same feed.
+                emit(
+                    &tx,
+                    generation,
+                    Update::PeerCollaboration {
+                        session: session.clone(),
+                        result: result.clone(),
+                    },
+                );
+                if let Ok(reading) = &result {
+                    subscriptions.attach(generation, session, reading, client, tx);
+                }
             });
             continue;
         }
@@ -629,7 +756,11 @@ async fn serve(
                 "{} {session}: pinning is a local UI preference; no daemon pin endpoint is available.",
                 if pinned { "Pin" } else { "Unpin" }
             ))),
-            Command::Collaboration { .. } => unreachable!("handled independently above"),
+            Command::Collaboration { .. }
+            | Command::PeerCollaboration { .. }
+            | Command::ThreadReply { .. } => {
+                unreachable!("handled independently above")
+            }
             Command::Open(id) => history(&client, &id).await,
             Command::SetMode(id, selected) => Ok(set_mode(&client, &id, selected).await),
             Command::Cancel(id) => client

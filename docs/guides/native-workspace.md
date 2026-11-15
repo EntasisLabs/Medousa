@@ -24,6 +24,18 @@ Switching to Notes or Code keeps chat tabs, split panes, unsent drafts, undo his
 background streams in this window. Returning restores the chat workspace. Chat
 send shortcuts do not send a message while Notes or Code is active.
 
+## Preview images
+
+Select an image thumbnail in Chat to open a window-sized preview. This works for
+both your attachments and images returned by Medousa. Use **+** / **−** to zoom,
+**Fit** to return to the fitted view, and scroll to pan when zoomed in. Close with
+**Close**, **Escape**, or a click outside the preview. Closing returns focus to
+the thumbnail without changing the conversation.
+
+Expanded previews load a higher-resolution copy through the same authenticated,
+session-scoped media endpoint; they do not open a local file or external URL.
+Very large images are downsampled to a bounded preview, not an original-file editor.
+
 ## Inspect delegated collaboration
 
 When Medousa delegates a turn worker, a compact **Working with…** marker appears
@@ -32,8 +44,16 @@ follow-ups, live output and persisted result in the same pane. **Back to Medousa
 returns to the retained parent draft, viewport and focus; the parent can continue
 working while you read. Opening this view does not create another chat.
 
-The exchange is **read-only**. There is no worker composer, and closing it does
-not cancel work. Recorded tool evidence is available behind the usual disclosure.
+The work item opens as a **thread on the right**, retaining the main chat and its
+composer on wide windows. Compact windows temporarily show just the thread; close
+it to return to the same parent conversation and draft. The task header identifies
+its status and participant. **Reply to this thread…** has a separate draft for each
+work item and routes through the daemon's governed worker steering endpoint, never
+the main chat or a guessed external-agent chat. Replies are available only when the
+recorded execution route supports them and work is active. Unsupported or terminal
+work remains readable with an explanation. A reply does not approve, start or widen
+permissions. Delivery uncertainty retains the draft and does not automatically retry.
+Closing a thread does not cancel work. Recorded tool evidence uses its normal disclosure.
 Private rolling reasoning is not copied into this view. Tool evidence may be a
 retained tail rather than a complete execution log; the persisted transcript's
 retention note explains that limit. If only a card preview is available, the view
@@ -53,8 +73,37 @@ work IDs and parent-turn bindings after reloading history or relaunching, subjec
 to daemon retention. Parent drafts and the currently open reading view remain
 window-lifetime state.
 
-This first slice covers native turn workers exposed by the daemon's workspace
-contracts, not arbitrary Bots, external runtime sessions or a general branch tree.
+Pending decisions are compact **work-item announcements** beside the conversation.
+Select one to open its thread; purpose, permissions and approval controls live there,
+not in a wall of instructions over the chat. Request details are collapsed by default.
+**Approve** and **Start** remain separate explicit actions. Opening, closing or replying
+to a thread never starts work. Historical pending requests remain reviewable and do
+not automatically open the side panel. Completed requests retain their collaboration
+history rather than showing obsolete action controls.
+
+### Linked execution chats
+
+Accepted native Coder assignments and external-runtime work with an independently
+addressable execution chat use the same compact marker → read-only exchange flow.
+The exchange shows the assignment, recorded progress, canonical chat history, live
+turn events while selected, and any recorded result. **Open execution chat** opens
+that exact chat in a retained tab (or focuses it if already open). Returning to the
+parent tab preserves its draft, viewport and the exchange you were inspecting.
+The execution tab uses the ordinary chat admission controls; the exchange itself
+has no composer and grants no new continuation or approval authority.
+
+Links require a durable accepted binding or receipt for the parent session and
+connected authority. A proposed session ID, runtime label or agent ID alone does
+not create a chat link. Cross-authority assignments and work without an addressable
+chat are not projected by this flow. Inbox pages are followed up to a defensive
+100-page bound; read failures preserve prior recorded content. Placement uses the
+canonical proposal-to-turn relationship where available; otherwise the link is in
+**Earlier collaborations**, never attached to a guessed parent turn. Live reads
+reconcile with persisted history and deduplicate replay through the shared chat
+core. Returning from an exchange only detaches its reader; it does not cancel work.
+A returned result remains separate from Medousa review, approval or integration.
+
+Arbitrary Bot-to-Bot messaging and general branch/tree navigation are not included.
 
 ## Read and edit notes
 

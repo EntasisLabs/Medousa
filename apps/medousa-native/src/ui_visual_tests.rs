@@ -80,7 +80,7 @@ fn cohesive_composer_geometry_and_header_accessibility() {
             "footer must stay inside frame"
         );
         assert!(shell.x + shell.w <= width);
-        for name in ["Toggle conversation sidebar", "Toggle conversation details"] {
+        for name in ["Toggle conversation sidebar", "Open work threads"] {
             assert!(
                 w.query::<Semantics>()
                     .iter()
@@ -120,6 +120,12 @@ fn behavior_overlay_is_anchored_stable_and_escape_returns_focus() {
         app.world_mut().insert_resource(Viewport::new(width, 650.));
         settle(&mut app);
         let before = *app.world().get::<Rect>(ui.compose).unwrap();
+        eprintln!(
+            "ANCHOR {:?} MAIN {:?} COMPOSE {:?}",
+            app.world().get::<Rect>(trigger),
+            app.world().get::<Rect>(ui.exchange.main),
+            app.world().get::<Rect>(ui.compose)
+        );
         assert_eq!(
             try_activate(app.world_mut(), trigger),
             ActivationResult::Accepted
@@ -197,6 +203,12 @@ fn outside_click_and_route_change_leave_no_behavior_modal() {
     let ui = *app.world().resource::<Ui>().unwrap();
     let trigger = behavior_trigger(app.world());
     for _ in 0..6 {
+        eprintln!(
+            "ANCHOR {:?} MAIN {:?} COMPOSE {:?}",
+            app.world().get::<Rect>(trigger),
+            app.world().get::<Rect>(ui.exchange.main),
+            app.world().get::<Rect>(ui.compose)
+        );
         assert_eq!(
             try_activate(app.world_mut(), trigger),
             ActivationResult::Accepted
@@ -265,6 +277,139 @@ fn shared_action_hints_preserve_focus_and_escape_suppression() {
         let editor = app.world().resource::<Ui>().unwrap().composer.editor;
         request_focus(app.world_mut(), editor);
         settle(&mut app);
+    }
+}
+
+#[test]
+#[ignore = "Assistant image persisted-history GPU acceptance"]
+fn assistant_image_visual_acceptance() {
+    let (mut app, _rx) = fixture();
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    app.world_mut().insert_resource(engine);
+    app.world_mut().resource_mut::<Model>().unwrap().chat.hydrate("s".into(), "a".into(), vec![
+        serde_json::json!({"entry_id":"u","entry_seq":1,"role":"user","content":"Can you show me what the calmer layout would look like?"}),
+        serde_json::json!({"entry_id":"a","entry_seq":2,"role":"assistant","content":"Here is the conversation-first concept.","parts":[
+            {"kind":"text","markdown":"Here is the **conversation-first** concept."},
+            {"kind":"tool_run","run_id":"image","tool_name":"cognition_image_view","status":"succeeded","input_summary":"Conversation-first concept","started_at":"2026-11-15T15:00:00Z","artifact_refs":[
+                {"role":"output","content_type":"image/png","byte_size":42,"hash64":"h","artifact_id":"art:fixture:concept","label":"Conversation first"}
+            ]}
+        ]}),
+    ], None).unwrap();
+    let bytes = std::fs::read("verification/concepts/01-conversation-first.png").unwrap();
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    for (width, height, suffix) in [(1200, 850, "wide"), (760, 650, "narrow")] {
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        for _ in 0..8 {
+            app.update();
+        }
+        crate::media_preview::resolve_fixture(app.world_mut(), &bytes);
+        for _ in 0..12 {
+            rndr_paint::frame(&mut app);
+        }
+        let images = app.world().entities_with::<ImageView>();
+        assert!(
+            !images.is_empty(),
+            "assistant output must produce pixels, not only a tool card"
+        );
+        for image in images {
+            let rect = app.world().get::<Rect>(image).unwrap();
+            assert!(rect.w > 0. && rect.h > 0. && rect.w <= 400.1 && rect.h <= 280.1);
+        }
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-assistant-image-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+        let thumbnail = app
+            .world()
+            .query::<Button>()
+            .iter()
+            .find(|(_, b)| b.action == "expand-image")
+            .map(|(e, _)| *e)
+            .unwrap();
+        assert_eq!(
+            try_activate(app.world_mut(), thumbnail),
+            ActivationResult::Accepted
+        );
+        settle(&mut app);
+        crate::media_preview::resolve_fixture(app.world_mut(), &bytes);
+        for _ in 0..12 {
+            rndr_paint::frame(&mut app);
+        }
+        let large = app
+            .world()
+            .query::<ImageView>()
+            .iter()
+            .filter_map(|(e, _)| app.world().get::<Rect>(*e))
+            .any(|r| r.w > 500. && r.h > 300.);
+        assert!(large, "expanded preview must use available window space");
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-image-viewer-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+        let zoom = app
+            .world()
+            .query::<Semantics>()
+            .iter()
+            .find(|(_, s)| s.name.as_deref() == Some("Zoom in"))
+            .map(|(e, _)| *e)
+            .unwrap();
+        for _ in 0..2 {
+            assert_eq!(
+                try_activate(app.world_mut(), zoom),
+                ActivationResult::Accepted
+            );
+            settle(&mut app);
+        }
+        for _ in 0..8 {
+            rndr_paint::frame(&mut app);
+        }
+        let scroll = app
+            .world()
+            .query::<Scroll>()
+            .iter()
+            .find(|(e, s)| {
+                app.world()
+                    .get::<Rect>(*e)
+                    .is_some_and(|r| s.content[0] > r.w + 100. && s.content[1] > r.h + 100.)
+            })
+            .map(|(e, _)| *e)
+            .expect("zoom must provide scrollable overflow on both axes");
+        app.world_mut().get_mut::<Scroll>(scroll).unwrap().offset = [-50., -50.];
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        assert_eq!(
+            app.world().get::<Scroll>(scroll).unwrap().offset,
+            [-50., -50.]
+        );
+        app.world_mut().resource_mut::<Input>().unwrap().keys =
+            vec![KeyEvent::named(NamedKey::Escape, Modifiers::default())];
+        settle(&mut app);
+        assert!(
+            !app.world()
+                .query::<Semantics>()
+                .iter()
+                .any(|(_, s)| s.name.as_deref() == Some("Image preview"))
+        );
     }
 }
 

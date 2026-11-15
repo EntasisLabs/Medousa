@@ -244,6 +244,10 @@ pub fn action(world: &mut World, intent: &ActionIntent) -> bool {
             };
             let mut state = take(world);
             restore(world, &mut state);
+            if let Some(session) = crate::timeline::owning_session(world, intent.entity) {
+                state.session = session;
+            }
+            state.revision = None;
             state.return_focus = Some(intent.entity);
             state.selected = Some(group);
             open(world, &mut state);
@@ -259,6 +263,32 @@ pub fn action(world: &mut World, intent: &ActionIntent) -> bool {
         _ => false,
     }
 }
+pub fn sync_scoped(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
+    if let Some(mut entity) = world.resource::<Inspector>().and_then(|s| s.return_focus) {
+        let mut belongs = false;
+        let mut hidden = false;
+        loop {
+            hidden |= world.has::<Hidden>(entity);
+            belongs |= entity == root;
+            let Some(parent) = world.get::<Parent>(entity) else {
+                break;
+            };
+            entity = parent.entity;
+        }
+        if hidden {
+            eprintln!("TOOL SOURCE HIDDEN root={root:?}");
+            let mut state = take(world);
+            restore(world, &mut state);
+            world.insert_resource(state);
+            return;
+        }
+        if !belongs {
+            return;
+        }
+    }
+    sync(world, snapshot);
+}
+
 pub fn sync(world: &mut World, snapshot: Option<&ChatSnapshot>) {
     let mut state = take(world);
     // Desktop input carries logical key events; core overlay dismissal still
@@ -281,6 +311,9 @@ pub fn sync(world: &mut World, snapshot: Option<&ChatSnapshot>) {
     }
     let session = snapshot.map(|s| s.session_id.as_str()).unwrap_or("");
     if state.session != session || state.root.is_some_and(|e| !world.is_alive(e)) {
+        if state.selected.is_some() {
+            eprintln!("TOOL SESSION RESTORE {} vs {}", state.session, session);
+        }
         restore(world, &mut state);
     }
     if state.selected.is_some() && state.revision != snapshot.map(|s| s.revision) {
@@ -298,6 +331,7 @@ pub fn sync(world: &mut World, snapshot: Option<&ChatSnapshot>) {
                 render_cards(world, &state);
             }
         } else {
+            eprintln!("TOOL MISSING ITEM {} in {}", selected.item, session);
             restore(world, &mut state);
         }
     }

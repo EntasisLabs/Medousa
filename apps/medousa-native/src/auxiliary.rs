@@ -146,7 +146,11 @@ pub fn dispatch(world: &mut World) {
     let commands = crate::notes::drain_commands(world)
         .into_iter()
         .map(Command::Note)
-        .chain(crate::code::take_commands(world).into_iter().map(Command::Code))
+        .chain(
+            crate::code::take_commands(world)
+                .into_iter()
+                .map(Command::Code),
+        )
         .chain(
             media_preview::drain_commands(world)
                 .into_iter()

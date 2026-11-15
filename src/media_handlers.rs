@@ -66,6 +66,61 @@ pub async fn upload_media(
     Ok(Json(response))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn assistant_image_bytes_are_exact_session_scoped_and_not_prefix_resolved() {
+        let session = "test-assistant-image-read";
+        let png = b"\x89PNG\r\n\x1a\nopaque-pixel-payload";
+        let record = crate::artifact_store::persist_binary_artifact(
+            session,
+            "cognition_image_view",
+            "output",
+            "image/png",
+            Some("Concept"),
+            png,
+        )
+        .unwrap();
+        let response = get_media(
+            Path(record.artifact_id.clone()),
+            Query(MediaSessionQuery {
+                session_id: session.into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), png);
+        for (session, id) in [
+            ("other-image-session", record.artifact_id.clone()),
+            (session, "art:test".into()),
+            (session, "art:missing".into()),
+        ] {
+            assert_eq!(
+                get_media(
+                    Path(id),
+                    Query(MediaSessionQuery {
+                        session_id: session.into()
+                    })
+                )
+                .await
+                .unwrap_err()
+                .0,
+                StatusCode::NOT_FOUND
+            );
+        }
+    }
+}
+
 pub async fn get_media(
     Path(media_id): Path<String>,
     Query(query): Query<MediaSessionQuery>,
@@ -77,15 +132,35 @@ pub async fn get_media(
         return Err((StatusCode::BAD_REQUEST, "media_id is required".to_string()));
     }
 
-    let record = crate::media_store::get_media_record(session_id, media_id)
-        .ok_or((StatusCode::NOT_FOUND, "media not found".to_string()))?;
-
-    let bytes = crate::media_store::open_media_payload(&record)
-        .map_err(|err| (StatusCode::NOT_FOUND, err))?;
+    // Tool-produced images are binary artifacts, not user uploads. Resolve exact
+    // IDs in this session only; never use the cross-chat presentation resolver.
+    let session_id = session_id.to_string();
+    let media_id = media_id.to_string();
+    let (mime, bytes) = tokio::task::spawn_blocking(move || {
+        if media_id.starts_with("art:") {
+            let image = crate::artifact_store::fetch_binary_artifact(&session_id, &media_id)
+                .ok_or((StatusCode::NOT_FOUND, "image not found".to_string()))?;
+            Ok((image.mime, image.bytes))
+        } else {
+            let record = crate::media_store::get_media_record(&session_id, &media_id)
+                .ok_or((StatusCode::NOT_FOUND, "media not found".to_string()))?;
+            let bytes = crate::media_store::open_media_payload(&record)
+                .map_err(|err| (StatusCode::NOT_FOUND, err))?;
+            Ok((record.mime, bytes))
+        }
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "media reader unavailable".to_string(),
+        )
+    })??;
 
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, record.mime.as_str())
+        .header(header::CONTENT_TYPE, mime.as_str())
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(header::CACHE_CONTROL, "private, max-age=3600")
         .header(header::CONTENT_LENGTH, bytes.len())
         .body(Body::from(bytes))

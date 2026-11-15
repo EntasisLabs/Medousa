@@ -103,9 +103,64 @@ struct Approvals {
     actions: HashMap<Entity, ApprovalCommand>,
     visible: Option<String>,
     rendered: u64,
+    selected: Option<String>,
 }
 struct Root;
 impl Component for Root {}
+struct ThreadHost(Entity);
+impl Component for ThreadHost {}
+struct OpenRequest(String);
+impl Component for OpenRequest {}
+const OPEN_THREAD: u64 = 0x61707001;
+pub(crate) fn thread_host(world: &mut World, root: Entity, detail: Entity) {
+    world.insert(root, ThreadHost(detail));
+}
+struct RequestDetails {
+    text: String,
+    view: Option<Entity>,
+}
+impl Component for RequestDetails {}
+const DETAILS: u64 = 0x617070726f76616c;
+
+// An inbox is a bounded accessory to the transcript, never a second transcript.
+fn size_inbox(world: &mut World, root: Entity) {
+    let available = world
+        .get::<Parent>(root)
+        .and_then(|p| world.get::<Rect>(p.entity))
+        .map_or(800., |r| r.h);
+    let has_content = !children_of(world, root).is_empty();
+    let compact = world.has::<ThreadHost>(root);
+    world.get_mut::<Layout>(root).unwrap().height = Size::Px(if has_content {
+        if compact {
+            (available * 0.12).clamp(44., 88.)
+        } else {
+            (available * 0.22).clamp(64., 176.)
+        }
+    } else {
+        0.
+    });
+}
+
+fn details(world: &mut World, parent: Entity, body: String) {
+    let node = world.spawn((
+        Layout {
+            width: Size::Fill,
+            ..Layout::column()
+        },
+        RequestDetails {
+            text: body,
+            view: None,
+        },
+    ));
+    set_parent(world, node, parent);
+    controls::Button::mount(
+        world,
+        node,
+        UiId(DETAILS),
+        ButtonProps::new("Show request details", HostIntent::Command(DETAILS)),
+    )
+    .unwrap();
+}
 
 pub fn setup(world: &mut World, parent: Entity) -> Entity {
     if world.resource::<Approvals>().is_none() {
@@ -119,6 +174,12 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
             ..Layout::column()
         },
         Root,
+        Scroll::default(),
+        Focusable,
+        Semantics {
+            name: Some("Pending decisions — scroll to review requests".into()),
+            ..Default::default()
+        },
     ));
     set_parent(world, root, parent);
     root
@@ -130,17 +191,32 @@ pub fn sync(
     session: Option<&str>,
     _snapshot: Option<&ChatSnapshot>,
 ) {
+    size_inbox(world, root);
+    let host = world.get::<ThreadHost>(root).map(|h| h.0);
+    let selected = host
+        .and_then(|_| crate::ui::collaboration::selected(world))
+        .and_then(|id| id.strip_prefix("approval:"))
+        .map(str::to_owned);
     let mut state = std::mem::take(world.resource_mut::<Approvals>().expect("approvals setup"));
     let revision = session
         .and_then(|s| state.sessions.get(s))
         .map_or(0, |s| s.revision);
-    if state.visible.as_deref() == session && state.rendered == revision {
+    if state.visible.as_deref() == session
+        && state.rendered == revision
+        && state.selected == selected
+    {
         *world.resource_mut::<Approvals>().unwrap() = state;
         return;
     }
     for child in children_of(world, root) {
         despawn(world, child);
     }
+    if let Some(detail) = host {
+        for child in children_of(world, detail) {
+            despawn(world, child);
+        }
+    }
+    state.selected = selected.clone();
     state.actions.clear();
     state.visible = session.map(str::to_owned);
     state.rendered = revision;
@@ -230,9 +306,15 @@ pub fn sync(
             let p = &row.proposal;
             let approved = row.decision.as_ref().is_some_and(|d| d.approved);
             let denied = row.decision.as_ref().is_some_and(|d| !d.approved);
-            let mut choices = vec![];
-            if !denied && row.binding.is_none() && row.receipt.is_none() {
-                choices.push((
+            // This sibling of the timeline is an action inbox, not delegation
+            // history. Full historical prompts can consume the entire chat pane
+            // when an older session's asynchronous inbox arrives. Accepted work
+            // belongs in the compact collaboration markers / exchange reader.
+            if denied || row.binding.is_some() || row.receipt.is_some() {
+                continue;
+            }
+            let choices = vec![
+                (
                     if approved { "Start" } else { "Approve" }.into(),
                     Operation::Proposal {
                         channel: p.request.channel.channel_id.clone(),
@@ -243,23 +325,17 @@ pub fn sync(
                             ProposalVerb::Approve
                         },
                     },
-                ));
-                choices.push((
+                ),
+                (
                     "Deny".into(),
                     Operation::Proposal {
                         channel: p.request.channel.channel_id.clone(),
                         id: p.proposal_id.clone(),
                         verb: ProposalVerb::Deny,
                     },
-                ));
-            }
-            let status = if row.receipt.is_some() {
-                "Completed"
-            } else if row.binding.is_some() {
-                "Dispatched"
-            } else if denied {
-                "Declined"
-            } else if approved {
+                ),
+            ];
+            let status = if approved {
                 "Approved — explicit Start required"
             } else {
                 "Review requested"
@@ -269,23 +345,78 @@ pub fn sync(
                     "proposal:{}:{}",
                     p.request.channel.channel_id, p.proposal_id
                 ),
-                format!("{status}\n{}", p.request.instructions),
+                format!(
+                    "{status} · {}\n{}",
+                    p.request
+                        .instructions
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .chars()
+                        .take(48)
+                        .collect::<String>(),
+                    p.request.instructions
+                ),
                 choices,
             ));
         }
+        if host.is_none() && !cards.is_empty() {
+            text(
+                world,
+                root,
+                &format!("{} pending decisions · Scroll to review", cards.len()),
+                Typography::Secondary,
+            )
+            .unwrap();
+        }
+        let mut selected_found = false;
         for (key, title, choices) in cards {
+            let destination = if let Some(detail) = host {
+                let heading = title.lines().next().unwrap_or("Work request");
+                let mut props = ButtonProps::new(
+                    format!(
+                        "{}  ·  Open thread ›",
+                        heading.chars().take(88).collect::<String>()
+                    ),
+                    HostIntent::Command(OPEN_THREAD),
+                );
+                props.variant = controls::ButtonVariant::Quiet;
+                let button = controls::Button::mount(world, root, UiId(serial()), props).unwrap();
+                world.get_mut::<Label>(button.label).unwrap().overflow = TextOverflow::Wrap;
+                world.insert(button.root, OpenRequest(format!("approval:{key}")));
+                if selected.as_deref() != Some(key.as_str()) {
+                    continue;
+                }
+                selected_found = true;
+                detail
+            } else {
+                root
+            };
             let card = Surface::Content
-                .mount(world, root, UiId(serial()))
+                .mount(world, destination, UiId(serial()))
                 .expect("approval card");
-            text(world, card.content, &title, Typography::Reading).unwrap();
+            // Keep even genuinely pending requests compact. Never discard or
+            // truncate instructions used to decide whether to approve/start.
+            let (heading, body) = title.split_once('\n').unwrap_or((&title, ""));
+            let heading: String = heading.chars().take(120).collect();
+            text(world, card.content, &heading, Typography::Secondary).unwrap();
+            if !body.is_empty() || title.chars().count() > 120 {
+                details(world, card.content, title);
+            }
             if let Some(error) = s.errors.get(&key) {
                 text(world, card.content, error, Typography::Secondary).unwrap();
             }
+            let buttons = world.spawn((Layout {
+                width: Size::Fill,
+                gap: 8.,
+                ..Layout::row()
+            },));
+            set_parent(world, buttons, card.content);
             for (label, operation) in choices {
                 let id = serial();
                 let mut props = ButtonProps::new(label, HostIntent::Command(id));
                 props.enabled = !s.pending.contains(&key);
-                let h = controls::Button::mount(world, card.content, UiId(id), props).unwrap();
+                let h = controls::Button::mount(world, buttons, UiId(id), props).unwrap();
                 state.actions.insert(
                     h.root,
                     ApprovalCommand {
@@ -294,6 +425,11 @@ pub fn sync(
                         operation,
                     },
                 );
+            }
+        }
+        if let Some(detail) = host {
+            if selected.is_some() && !selected_found {
+                text(world, detail, "This request is no longer pending. Started work is available from its Working with… entry in the conversation.", Typography::Reading).unwrap();
             }
         }
         for (key, error) in &s.errors {
@@ -309,10 +445,53 @@ pub fn sync(
             state.actions.insert(h.root, refresh(session));
         }
     }
+    size_inbox(world, root);
     *world.resource_mut::<Approvals>().unwrap() = state;
 }
 
 pub fn action(world: &mut World, intent: &ActionIntent) -> bool {
+    if controls::host_intent(world, intent) == Some(HostIntent::Command(OPEN_THREAD)) {
+        if let Some(id) = world.get::<OpenRequest>(intent.entity).map(|r| r.0.clone()) {
+            crate::ui::collaboration::open(world, id, intent.entity);
+        }
+        return true;
+    }
+    if controls::host_intent(world, intent) == Some(HostIntent::Command(DETAILS)) {
+        let Some(node) = world.get::<Parent>(intent.entity).map(|p| p.entity) else {
+            return false;
+        };
+        let Some(mut body) = world.remove::<RequestDetails>(node) else {
+            return false;
+        };
+        let open = if let Some(view) = body.view {
+            if world.has::<Hidden>(view) {
+                world.remove::<Hidden>(view);
+                true
+            } else {
+                world.insert(view, Hidden);
+                false
+            }
+        } else {
+            body.view = Some(text(world, node, &body.text, Typography::Reading).unwrap());
+            true
+        };
+        controls::Button::mount(
+            world,
+            node,
+            UiId(DETAILS),
+            ButtonProps::new(
+                if open {
+                    "Hide request details"
+                } else {
+                    "Show request details"
+                },
+                HostIntent::Command(DETAILS),
+            ),
+        )
+        .unwrap();
+        world.insert(node, body);
+        return true;
+    }
     if controls::host_intent(world, intent).is_none() {
         return false;
     }

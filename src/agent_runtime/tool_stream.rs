@@ -411,6 +411,44 @@ pub fn persist_and_enrich_artifact_refs(
             item.label = Some(format!("{tool_name} output"));
         }
     }
+    // Small image-view receipts never cross the large-JSON receipt threshold.
+    // Retain the already-persisted binary explicitly so live and saved turns
+    // carry the same renderable image reference, independent of JSON size.
+    if tool_name == crate::image_view_tools::COGNITION_IMAGE_VIEW
+        && tool_output.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
+        && tool_output
+            .get("session_id")
+            .and_then(serde_json::Value::as_str)
+            == Some(session_id)
+        && let Some(image) = tool_output.get("image")
+        && image.get("mime").and_then(serde_json::Value::as_str) == Some("image/png")
+        && let Some(id) = image.get("artifact_id").and_then(serde_json::Value::as_str)
+        && id.starts_with("art:")
+        && id.len() <= 256
+        && let Some(size) = image.get("byte_size").and_then(serde_json::Value::as_u64)
+        && size > 0
+        && size <= crate::media_vision::MAX_MODEL_IMAGE_BYTES as u64
+    {
+        refs.push(StreamToolArtifactRef {
+            role: "output".into(),
+            content_type: "image/png".into(),
+            byte_size: size as usize,
+            hash64: image
+                .get("sha256")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .into(),
+            artifact_id: Some(id.into()),
+            label: Some(
+                tool_input
+                    .get("path")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|path| path.rsplit('/').next())
+                    .unwrap_or("Workshop image")
+                    .into(),
+            ),
+        });
+    }
     refs
 }
 
@@ -533,6 +571,53 @@ impl medousa_runtime::ToolRunEventPort for DaemonToolRunEventPort {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn small_image_receipts_retain_binary_reference_without_large_json_receipt() {
+        let output = json!({"ok":true,"session_id":"image-session","image":{
+            "artifact_id":"art:image-session:preview","mime":"image/png","byte_size":42,"sha256":"abc"
+        }});
+        let input = json!({"path":"verification/concept.png"});
+        assert!(crate::payload_receipt::receipt_meta(&output, 8192).is_none());
+        let refs = persist_and_enrich_artifact_refs(
+            "image-session",
+            "cognition_image_view",
+            &input,
+            &output,
+            None,
+            None,
+            vec![],
+        );
+        assert_eq!(refs.len(), 1);
+        assert_eq!(
+            refs[0].artifact_id.as_deref(),
+            Some("art:image-session:preview")
+        );
+        assert_eq!(refs[0].content_type, "image/png");
+        assert_eq!(refs[0].label.as_deref(), Some("concept.png"));
+        for (session, tool, output) in [
+            ("other", "cognition_image_view", output.clone()),
+            ("image-session", "other_tool", output.clone()),
+            (
+                "image-session",
+                "cognition_image_view",
+                json!({"ok":false,"session_id":"image-session","image":output["image"]}),
+            ),
+        ] {
+            assert!(
+                persist_and_enrich_artifact_refs(
+                    session,
+                    tool,
+                    &input,
+                    &output,
+                    None,
+                    None,
+                    vec![]
+                )
+                .is_empty()
+            );
+        }
+    }
 
     #[test]
     fn summarize_tool_input_prefers_query_field() {

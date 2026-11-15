@@ -234,6 +234,16 @@ local disk. Keep generated images under the authorized root rather than `/tmp`.
 There is no special terminal escape sequence or base64-printing requirement:
 the terminal creates the file; the native tool opens it for the model.
 
+Successful image views also retain the binary PNG reference on the tool run,
+including receipts below the large-JSON threshold. Native chat renders that
+output inline using the authenticated `GET /v1/media/{media_id}?session_id=…`
+read path. This path accepts exact binary-image `art:` IDs from the specified
+session as well as uploaded-media IDs; it does not resolve cross-session or
+shortened artifact IDs. Non-image artifacts remain references, not embedded HTML.
+Older image-view runs saved without a binary reference cannot be paired safely
+with an image from the artifact index; view the file again after updating the
+daemon to publish a durable reference.
+
 Invoke `cognition_image_view` directly on externally supplied tool surfaces.
 Generic wrappers such as `multi_tool_use.parallel` may preserve the JSON receipt
 but drop binary image attachments. That wrapper is not a daemon tool or part of

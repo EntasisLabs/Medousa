@@ -128,7 +128,8 @@ fn opaque_media_path_cannot_escape_origin_and_session_is_required() {
     assert_eq!(
         path(&Key {
             session: "s&x=bad".into(),
-            media: "../../foo?x#bar".into()
+            media: "../../foo?x#bar".into(),
+            detailed: false
         }),
         "/v1/media/..%2F..%2Ffoo%3Fx%23bar?session_id=s%26x%3Dbad"
     );
@@ -203,4 +204,148 @@ async fn live_history_stream_keeps_partial_utf8_and_crlf_until_complete() {
         .await;
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0].as_ref().unwrap(), "{\"text\":\"quiet — image 🖼\"}");
+}
+
+#[test]
+fn expanding_uses_scoped_detail_request_and_escape_restores_focus() {
+    let (mut world, parent) = fixture();
+    world.insert_resource(Viewport::new(1200., 850.));
+    world.insert_resource(ActionIntents::default());
+    world.insert_resource(Focus::default());
+    let root = mount(&mut world, parent, "s", "m", "mock.png", false);
+    tick(&mut world);
+    let key = drain_commands(&mut world).remove(0);
+    ready(&mut world, key);
+    tick(&mut world);
+    let image = world.entities_with::<OpenImage>()[0];
+    assert_eq!(try_activate(&mut world, image), ActivationResult::Accepted);
+    tick(&mut world);
+    let keys = drain_commands(&mut world);
+    assert_eq!(keys.len(), 1);
+    assert!(keys[0].detailed);
+    assert_eq!(keys[0].session, "s");
+    assert_eq!(path(&keys[0]), "/v1/media/m?session_id=s");
+    let viewer = world
+        .resource::<Option<Viewer>>()
+        .unwrap()
+        .as_ref()
+        .unwrap();
+    assert!(world.has::<Modal>(viewer.root));
+    assert_eq!(viewer.anchor, root);
+    world.insert_resource(Input {
+        keys: vec![KeyEvent::named(NamedKey::Escape, Modifiers::default())],
+        ..Default::default()
+    });
+    tick(&mut world);
+    assert!(world.resource::<Option<Viewer>>().unwrap().is_none());
+    assert_eq!(world.resource::<Focus>().unwrap().entity, Some(image));
+    assert!(world.is_alive(root));
+    assert!(world.resource::<Input>().unwrap().keys.is_empty());
+    open_image(&mut world, image);
+    despawn(&mut world, root);
+    tick(&mut world);
+    assert!(world.resource::<Option<Viewer>>().unwrap().is_none());
+}
+
+#[test]
+fn detail_decode_keeps_readable_resolution_separate_from_thumbnail() {
+    let source = image::RgbaImage::from_pixel(1600, 1000, image::Rgba([10, 20, 30, 255]));
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    source
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .unwrap();
+    let thumb = decode_at(bytes.get_ref(), false).unwrap();
+    let detail = decode_at(bytes.get_ref(), true).unwrap();
+    assert_eq!((thumb.width, thumb.height), (800, 500));
+    assert_eq!((detail.width, detail.height), (1600, 1000));
+}
+
+#[test]
+fn zoom_controls_fit_bounds_close_and_detail_cache_are_bounded() {
+    let (mut world, parent) = fixture();
+    world.insert_resource(ActionIntents::default());
+    world.insert_resource(Viewport::new(900., 650.));
+    for i in 0..5 {
+        let root = mount(&mut world, parent, "s", &format!("m{i}"), "mock.png", false);
+        tick(&mut world);
+        for key in drain_commands(&mut world) {
+            ready(&mut world, key);
+        }
+        tick(&mut world);
+        let image = children_of(&world, root)
+            .into_iter()
+            .find(|e| world.has::<OpenImage>(*e))
+            .unwrap();
+        open_image(&mut world, image);
+        tick(&mut world);
+        for key in drain_commands(&mut world) {
+            ready(&mut world, key);
+        }
+        tick(&mut world);
+        let sheet = world
+            .resource::<Option<Viewer>>()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .sheet;
+        let bar = children_of(&world, sheet)[0];
+        let controls = children_of(&world, bar);
+        for _ in 0..10 {
+            assert_eq!(
+                try_activate(&mut world, controls[1]),
+                ActivationResult::Accepted
+            );
+        }
+        assert_eq!(
+            world
+                .resource::<Option<Viewer>>()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .zoom,
+            6.
+        );
+        assert_eq!(
+            try_activate(&mut world, controls[2]),
+            ActivationResult::Accepted
+        );
+        assert_eq!(
+            world
+                .resource::<Option<Viewer>>()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .zoom,
+            1.
+        );
+        assert_eq!(
+            try_activate(&mut world, controls[0]),
+            ActivationResult::Accepted
+        );
+        assert_eq!(
+            world
+                .resource::<Option<Viewer>>()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .zoom,
+            1.
+        );
+        assert_eq!(
+            try_activate(&mut world, controls[3]),
+            ActivationResult::Accepted
+        );
+        assert!(world.resource::<Option<Viewer>>().unwrap().is_none());
+        assert!(
+            world
+                .resource::<Cache>()
+                .unwrap()
+                .entries
+                .keys()
+                .filter(|k| k.detailed)
+                .count()
+                <= 2
+        );
+        despawn(&mut world, root);
+    }
 }

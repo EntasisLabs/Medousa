@@ -141,7 +141,7 @@ fn record_offset(world: &mut World, root: Entity) -> bool {
 /// Call each Update after input. Canonical IDs retain rows through insertion and
 /// reconciliation. Only nearby rows mount Markdown, bounding history parse cost.
 pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
-    tool_activity::sync(world, snapshot);
+    tool_activity::sync_scoped(world, root, snapshot);
     let Some(mut state) = world.remove::<Timeline>(root) else {
         return;
     };
@@ -613,7 +613,39 @@ fn tool(run: &ToolRunState) -> Part {
         image: None,
     }
 }
+fn tool_parts(run: &ToolRunState, parts: &mut Vec<Part>, images: &mut HashSet<String>) {
+    parts.push(tool(run));
+    if run.status != "succeeded" {
+        return;
+    }
+    for reference in run.artifact_refs.iter().flatten() {
+        if reference.role != "output" || !reference.content_type.starts_with("image/") {
+            continue;
+        }
+        let Some(id) = reference
+            .artifact_id
+            .as_ref()
+            .filter(|id| id.starts_with("art:"))
+        else {
+            continue;
+        };
+        if images.insert(id.clone()) {
+            let label = reference.label.as_deref().unwrap_or("Medousa image");
+            let mut part = plain(format!("artifact:{id}"), literal(label));
+            part.image = Some((id.clone(), label.into()));
+            parts.push(part);
+        }
+    }
+}
 fn artifact_part(artifact: &medousa_app_core::contract::UiArtifact) -> Part {
+    if artifact.mime.starts_with("image/") && artifact.artifact_id.starts_with("art:") {
+        let mut part = plain(
+            format!("artifact:{}", artifact.artifact_id),
+            literal(&artifact.label),
+        );
+        part.image = Some((artifact.artifact_id.clone(), artifact.label.clone()));
+        return part;
+    }
     plain(
         format!("artifact:{}", artifact.artifact_id),
         literal(&format!(
@@ -656,7 +688,7 @@ fn project(item: &ChatItem) -> Vec<Part> {
                 ChatSegment::ToolGroup { runs: group, .. } => {
                     for run in group {
                         if runs.insert(run.run_id.clone()) {
-                            parts.push(tool(run));
+                            tool_parts(run, &mut parts, &mut artifacts);
                         }
                     }
                 }
@@ -691,7 +723,7 @@ fn project(item: &ChatItem) -> Vec<Part> {
     }
     for run in item.tool_runs.iter().flatten() {
         if runs.insert(run.run_id.clone()) {
-            parts.push(tool(run));
+            tool_parts(run, &mut parts, &mut artifacts);
         }
     }
     for artifact in item.ui_artifacts.iter().flatten() {
@@ -760,3 +792,12 @@ fn project(item: &ChatItem) -> Vec<Part> {
 #[cfg(test)]
 #[path = "timeline_tests.rs"]
 mod tests;
+
+pub fn owning_session(world: &World, mut entity: Entity) -> Option<String> {
+    loop {
+        if let Some(timeline) = world.get::<Timeline>(entity) {
+            return Some(timeline.session.clone());
+        }
+        entity = world.get::<Parent>(entity)?.entity;
+    }
+}

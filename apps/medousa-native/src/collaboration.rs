@@ -1,6 +1,8 @@
 //! Conversation-local collaboration reading. Durable worker records own identity,
 //! placement and lifecycle; opening an exchange never navigates the parent Chat.
 use super::*;
+#[path = "collaboration_peers.rs"]
+pub(crate) mod peers;
 #[cfg(test)]
 #[path = "collaboration_tests.rs"]
 mod tests;
@@ -18,6 +20,7 @@ const EARLIER: u64 = 0x636f6c04;
 #[derive(Default)]
 pub(super) struct State {
     session: String,
+    peers: peers::State,
     rows: Vec<WorkCardDetail>,
     selected: Option<String>,
     inflight: bool,
@@ -27,6 +30,11 @@ pub(super) struct State {
     projection: Option<ChatSnapshot>,
     earlier_open: bool,
     force_selected: bool,
+    drafts: HashMap<String, DocumentId>,
+    reply_document: Option<DocumentId>,
+    reply_pending: Option<(String, u64, DocumentId, rndr_core::editing::Revision)>,
+    reply_notice: Option<String>,
+    nonce: u64,
 }
 #[derive(Clone, Copy)]
 pub(super) struct View {
@@ -38,6 +46,13 @@ pub(super) struct View {
     earlier_rows: Entity,
     earlier_label: Entity,
     back: Entity,
+    execution: Entity,
+    pub(super) approvals: Entity,
+    reply: Entity,
+    reply_editor: EditorSurfaceHandle,
+    reply_note: Entity,
+    reply_send: Entity,
+    pub(super) main: Entity,
 }
 impl State {
     pub(super) fn is_open(&self) -> bool {
@@ -109,7 +124,26 @@ fn label(world: &mut World, parent: Entity, text: &str) -> Entity {
     set_parent(world, e, parent);
     e
 }
-pub(super) fn mount(world: &mut World, parent: Entity) -> View {
+pub(crate) fn selected(world: &World) -> Option<&str> {
+    world.resource::<Model>()?.collaboration.selected.as_deref()
+}
+
+pub(crate) fn open(world: &mut World, id: String, origin: Entity) {
+    let ui = *world.resource::<Ui>().unwrap();
+    let state = &mut world.resource_mut::<Model>().unwrap().collaboration;
+    state.selected = Some(id);
+    state.projection = None;
+    state.force_selected = true;
+    state.return_focus = Some(origin);
+    state.refreshed = None;
+    state.peers.refreshed = None;
+    state.reply_notice = None;
+    close_popup(world, ui.behavior, false);
+    visible(world, ui.exchange.root, true);
+    world.resource_mut::<Focus>().unwrap().entity = Some(ui.exchange.back);
+}
+
+pub(super) fn mount(world: &mut World, parent: Entity, thread_parent: Entity) -> View {
     let earlier = container(
         world,
         Some(parent),
@@ -141,10 +175,10 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> View {
     );
     let root = container(
         world,
-        Some(parent),
+        Some(thread_parent),
         Layout {
-            width: Size::Fill,
-            height: Size::Fill,
+            width: Size::Px(0.),
+            height: Size::Px(0.),
             gap: 8.,
             ..Layout::column()
         },
@@ -165,11 +199,11 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> View {
         world,
         header,
         UiId(BACK),
-        ButtonProps::new("Back to Medousa", HostIntent::Command(BACK)),
+        ButtonProps::new("Close thread", HostIntent::Command(BACK)),
     )
     .unwrap()
     .root;
-    world.get_mut::<Layout>(back).unwrap().width = Size::Px(152.);
+    world.get_mut::<Layout>(back).unwrap().width = Size::Px(108.);
     let title = label(world, header, "Medousa ↔ Agent");
     world.get_mut::<Label>(title).unwrap().overflow = TextOverflow::Ellipsis;
     let status = label(world, root, "Read-only exchange");
@@ -183,6 +217,20 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> View {
             bottom: 0.,
         },
     );
+    visual::plane(world, root, visual::raised());
+    let approvals = container(
+        world,
+        Some(root),
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            padding: 12.,
+            gap: 10.,
+            ..Layout::column()
+        },
+    );
+    world.insert(approvals, Scroll::default());
+    world.insert(approvals, Hidden);
     let timeline = timeline::setup(world, root);
     world.insert(
         timeline,
@@ -191,6 +239,34 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> View {
             recipient: "Agent".into(),
         },
     );
+    let reply = container(
+        world,
+        Some(root),
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            padding: 12.,
+            gap: 6.,
+            ..Layout::column()
+        },
+    );
+    let reply_note = label(world, reply, "Reply to this thread…");
+    world.get_mut::<Label>(reply_note).unwrap().overflow = TextOverflow::Wrap;
+    let doc = world.resource_mut::<SourceDocuments>().unwrap().open("");
+    let mut props = EditorSurfaceProps::new(doc, "Reply to this thread");
+    props.gutter = false;
+    props.scrollbar = false;
+    let editor = EditorSurface::mount(world, reply, UiId(0x636f6c06), props).unwrap();
+    world.get_mut::<Layout>(editor.root).unwrap().height = Size::Px(72.);
+    world.insert(editor.editor, Placeholder::new("Reply to this thread…"));
+    let reply_send = controls::Button::mount(
+        world,
+        reply,
+        UiId(0x636f6c07),
+        ButtonProps::new("Send reply", HostIntent::Command(0x636f6c07)),
+    )
+    .unwrap()
+    .root;
     let footer = container(
         world,
         Some(root),
@@ -208,6 +284,16 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> View {
         "Read-only · Returned results are not automatically approved or applied.",
     );
     world.get_mut::<Label>(note).unwrap().overflow = TextOverflow::Wrap;
+    let execution = controls::Button::mount(
+        world,
+        footer,
+        UiId(peers::EXECUTION),
+        ButtonProps::new("Open execution chat", HostIntent::Command(peers::EXECUTION)),
+    )
+    .unwrap()
+    .root;
+    world.get_mut::<Layout>(execution).unwrap().width = Size::Px(174.);
+    world.insert(execution, Hidden);
     let refresh = controls::Button::mount(
         world,
         footer,
@@ -225,6 +311,13 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> View {
         earlier_rows,
         earlier_label: earlier_button.label,
         back,
+        execution,
+        approvals,
+        reply,
+        reply_editor: editor,
+        reply_note,
+        reply_send,
+        main: parent,
     }
 }
 
@@ -289,6 +382,14 @@ pub(super) fn action(world: &mut World, intent: &ActionIntent) -> bool {
     let Some(HostIntent::Command(command)) = controls::host_intent(world, intent) else {
         return false;
     };
+    if command == peers::EXECUTION {
+        peers::open_execution(world);
+        return true;
+    }
+    if command == 0x636f6c07 {
+        send_reply(world);
+        return true;
+    }
     if ![OPEN, BACK, RETRY, EARLIER].contains(&command) {
         return false;
     }
@@ -302,19 +403,11 @@ pub(super) fn action(world: &mut World, intent: &ActionIntent) -> bool {
         let Some(id) = world.get::<Target>(intent.entity).map(|t| t.0.clone()) else {
             return true;
         };
-        let state = &mut world.resource_mut::<Model>().unwrap().collaboration;
-        state.selected = Some(id);
-        state.projection = None;
-        state.force_selected = true;
-        state.return_focus = Some(intent.entity);
-        state.refreshed = None;
-        close_popup(world, ui.behavior, false);
-        // Focus a visible destination, not the now-hidden parent composer.
-        visible(world, ui.exchange.root, true);
-        world.resource_mut::<Focus>().unwrap().entity = Some(ui.exchange.back);
+        open(world, id, intent.entity);
     } else if command == BACK {
         let state = &mut world.resource_mut::<Model>().unwrap().collaboration;
         state.selected = None;
+        state.peers.refreshed = None;
         let focus = state.return_focus.take();
         visible(world, ui.exchange.root, false);
         if let Some(focus) = focus.filter(|e| world.get::<Layout>(*e).is_some()) {
@@ -326,6 +419,7 @@ pub(super) fn action(world: &mut World, intent: &ActionIntent) -> bool {
         let state = &mut world.resource_mut::<Model>().unwrap().collaboration;
         state.refreshed = None;
         state.force_selected = true;
+        state.peers.refreshed = None;
     }
     true
 }
@@ -351,8 +445,6 @@ fn anchor<'a>(snapshot: &'a ChatSnapshot, row: &WorkCardDetail) -> Option<&'a st
         .map(|item| item.id.as_str())
 }
 fn marker(world: &mut World, parent: Entity, row: &WorkCardDetail, earlier: bool) {
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    work_id(row).hash(&mut hash);
     let text = format!(
         "{}{} · {}  ›",
         if earlier {
@@ -363,9 +455,14 @@ fn marker(world: &mut World, parent: Entity, row: &WorkCardDetail, earlier: bool
         title(row),
         lifecycle(row)
     );
+    marker_entry(world, parent, work_id(row), text);
+}
+fn marker_entry(world: &mut World, parent: Entity, id: &str, text: String) {
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    id.hash(&mut hash);
     if let Some(existing) = children_of(world, parent)
         .into_iter()
-        .find(|e| world.get::<Target>(*e).is_some_and(|t| t.0 == work_id(row)))
+        .find(|e| world.get::<Target>(*e).is_some_and(|t| t.0 == id))
     {
         visible(world, existing, true);
         if world
@@ -379,7 +476,7 @@ fn marker(world: &mut World, parent: Entity, row: &WorkCardDetail, earlier: bool
     props.variant = controls::ButtonVariant::Quiet;
     let h = controls::Button::mount(world, parent, UiId(hash.finish()), props).unwrap();
     world.insert(h.root, MarkerStamp(text));
-    world.insert(h.root, Target(work_id(row).into()));
+    world.insert(h.root, Target(id.into()));
     world.get_mut::<Layout>(h.root).unwrap().width = Size::Fill;
     world.get_mut::<Layout>(h.root).unwrap().height = Size::Hug;
     world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Wrap;
@@ -413,6 +510,7 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
                 ..Default::default()
             };
         }
+        peers::request(&mut state.peers, state.selected.as_deref(), snapshot, model);
         let interval = if snapshot.active_turn_id.is_some() || state.selected.is_some() {
             3
         } else {
@@ -461,30 +559,63 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
         }
     }
     let open = selected.is_some();
-    // Retain, do not reparent or remount, the parent timeline and SourceDocument.
-    if let Some(parent) = world.get::<Parent>(ui.timeline).map(|p| p.entity) {
-        visible(world, parent, !open);
+    // Compact windows use one lane, but both lanes remain mounted. A wide
+    // window always keeps the main conversation and its composer usable.
+    let available = world
+        .get::<Parent>(ui.exchange.root)
+        .and_then(|p| world.get::<Rect>(p.entity))
+        .map_or(1000., |r| r.w);
+    if let Some(parent) = world.get::<Parent>(ui.exchange.root).map(|p| p.entity) {
+        world.get_mut::<Layout>(parent).unwrap().gap = if open { 4. } else { 0. };
     }
-    if let Some(parent) = world.get::<Parent>(ui.compose).map(|p| p.entity) {
-        visible(world, parent, !open);
+    let narrow = available < 860.;
+    let show_main = !open || !narrow;
+    visible(world, ui.exchange.main, show_main);
+    world.get_mut::<Layout>(ui.exchange.main).unwrap().width =
+        if show_main { Size::Fill } else { Size::Px(0.) };
+    world.get_mut::<Layout>(ui.exchange.main).unwrap().height =
+        if show_main { Size::Fill } else { Size::Px(0.) };
+    let layout = world.get_mut::<Layout>(ui.exchange.root).unwrap();
+    layout.width = if !open {
+        Size::Px(0.)
+    } else if narrow {
+        Size::Fill
+    } else {
+        Size::Px((available * 0.40).clamp(340., 480.))
+    };
+    layout.height = if open { Size::Fill } else { Size::Px(0.) };
+    let main_width = if open && !narrow {
+        available - (available * 0.40).clamp(340., 480.) - 4.
+    } else {
+        available
+    };
+    if open {
+        world.get_mut::<Layout>(ui.compose).unwrap().width =
+            Size::Px(visual::column_width(main_width));
     }
-    visible(world, ui.approvals, !open);
     visible(world, ui.exchange.root, open);
+    let approval = selected
+        .as_deref()
+        .is_some_and(|id| id.starts_with("approval:"));
+    visible(world, ui.exchange.approvals, approval);
+    if let Some(frame) = world.get::<Parent>(ui.exchange.timeline).map(|p| p.entity) {
+        visible(world, frame, !approval);
+    }
+    visible(world, ui.exchange.reply, open && !approval);
     let mut earlier = false;
     // An earlier marker may gain a canonical anchor after history reconciliation.
     for entity in children_of(world, ui.exchange.earlier_rows) {
         let keep = world.get::<Target>(entity).is_some_and(|target| {
             rows.iter()
                 .any(|row| work_id(row) == target.0 && anchor(snapshot, row).is_none())
+                || peers::earlier(&state.peers, snapshot, &target.0)
         });
         visible(world, entity, keep);
     }
     for row in rows {
         if let Some(id) = anchor(snapshot, row) {
-            if !open {
-                if let Some(parent) = timeline::mounted_row(world, ui.timeline, id) {
-                    marker(world, parent, row, false);
-                }
+            if let Some(parent) = timeline::mounted_row(world, ui.timeline, id) {
+                marker(world, parent, row, false);
             }
         } else {
             if state.earlier_open {
@@ -493,12 +624,15 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
             earlier = true;
         }
     }
-    visible(world, ui.exchange.earlier, earlier && !open);
+    let peer_count = peers::markers(world, ui, snapshot, &state.peers, false, state.earlier_open);
+    earlier |= peer_count > 0;
+    visible(world, ui.exchange.earlier, earlier);
     visible(world, ui.exchange.earlier_rows, state.earlier_open);
     let count = rows
         .iter()
         .filter(|row| anchor(snapshot, row).is_none())
-        .count();
+        .count()
+        + peer_count;
     let earlier_text = format!(
         "{} Earlier collaborations ({count})",
         if state.earlier_open { "▾" } else { "▸" }
@@ -509,17 +643,29 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
             .unwrap()
             .text = earlier_text;
     }
+    visible(world, ui.exchange.execution, false);
     if let Some(id) = selected {
-        if let Some(row) = rows.iter().find(|row| work_id(row) == id) {
-            set_label(
-                world,
-                ui.exchange.title,
-                format!("Medousa ↔ {}", title(row)),
-            );
+        if id.starts_with("approval:") {
+            set_label(world, ui.exchange.title, "Work request".into());
             set_label(
                 world,
                 ui.exchange.status,
-                error.unwrap_or_else(|| format!("{} · Read-only exchange", lifecycle(row))),
+                "Review this request · Approval never starts work".into(),
+            );
+        } else if id.starts_with("peer:") {
+            peers::render(world, ui, &state.peers, &id, snapshot);
+        } else if let Some(row) = rows.iter().find(|row| work_id(row) == id) {
+            set_label(world, ui.exchange.title, title(row).to_owned());
+            set_label(
+                world,
+                ui.exchange.status,
+                error.unwrap_or_else(|| {
+                    format!(
+                        "{} · Medousa + {}",
+                        lifecycle(row),
+                        row.execution_runtime_id.as_deref().unwrap_or("Worker")
+                    )
+                }),
             );
             if state.projection.is_none() {
                 world.insert(
@@ -540,7 +686,147 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
             );
         }
     }
+    sync_reply(world, ui, &mut state);
     world.resource_mut::<Model>().unwrap().collaboration = state;
+}
+
+fn sync_reply(world: &mut World, ui: Ui, state: &mut State) {
+    let Some(id) = state
+        .selected
+        .clone()
+        .filter(|s| !s.starts_with("approval:"))
+    else {
+        return;
+    };
+    let enabled = state
+        .rows
+        .iter()
+        .any(|row| work_id(row) == id && !row.terminal);
+    let document = *state
+        .drafts
+        .entry(id.clone())
+        .or_insert_with(|| world.resource_mut::<SourceDocuments>().unwrap().open(""));
+    let mut editor = ui.exchange.reply_editor;
+    if state.reply_document != Some(document) {
+        // Rebind the view, never the document: each work item keeps its own draft.
+        let _ = editor.destroy(world);
+        let mut props = EditorSurfaceProps::new(document, "Reply to this thread");
+        props.gutter = false;
+        props.scrollbar = false;
+        editor = EditorSurface::mount(world, ui.exchange.reply, UiId(0x636f6c06), props).unwrap();
+        world.get_mut::<Layout>(editor.root).unwrap().height = Size::Px(72.);
+        world.insert(editor.editor, Placeholder::new("Reply to this thread…"));
+        // Remounting appends; keep the reply button below the editor.
+        if let Some(children) = world.get_mut::<Children>(ui.exchange.reply) {
+            children.list.retain(|e| *e != ui.exchange.reply_send);
+            children.list.push(ui.exchange.reply_send);
+        }
+        world.resource_mut::<Ui>().unwrap().exchange.reply_editor = editor;
+        state.reply_document = Some(document);
+    }
+    visible(world, editor.root, enabled);
+    visible(
+        world,
+        ui.exchange.reply_send,
+        enabled && state.reply_pending.is_none(),
+    );
+    let notice = state.reply_notice.clone().unwrap_or_else(|| {
+        if state.reply_pending.is_some() { "Sending reply… Do not resend while delivery is unresolved." }
+        else if enabled { "Reply to this thread · Sent to this worker only" }
+        else if id.starts_with("peer:") { "Read-only thread · Use Open execution chat for supported agent controls. Opening does not grant permission." }
+        else { "Work finished · This thread is read-only." }.into()
+    });
+    set_label(world, ui.exchange.reply_note, notice);
+}
+
+fn send_reply(world: &mut World) {
+    let model = world.resource::<Model>().unwrap();
+    let state = &model.collaboration;
+    let Some(id) = state.selected.clone() else {
+        return;
+    };
+    if state.reply_pending.is_some() || !state.rows.iter().any(|r| work_id(r) == id && !r.terminal)
+    {
+        return;
+    }
+    let Some(document) = state.reply_document else {
+        return;
+    };
+    let Some(doc) = world.resource::<SourceDocuments>().unwrap().get(document) else {
+        return;
+    };
+    if doc.is_composing() || doc.text().trim().is_empty() {
+        return;
+    }
+    let message = doc.text().to_owned();
+    let revision = doc.revision();
+    let session = state.session.clone();
+    if model.commands.is_none() {
+        return;
+    }
+    let state = &mut world.resource_mut::<Model>().unwrap().collaboration;
+    state.nonce += 1;
+    let nonce = state.nonce;
+    state.reply_pending = Some((id.clone(), nonce, document, revision));
+    state.reply_notice = None;
+    dispatch(
+        world,
+        Command::ThreadReply {
+            session,
+            work_id: id,
+            message,
+            nonce,
+        },
+    );
+}
+
+pub(crate) fn reply_received(
+    world: &mut World,
+    session: &str,
+    id: &str,
+    nonce: u64,
+    result: Result<(), String>,
+) {
+    let state = &mut world.resource_mut::<Model>().unwrap().collaboration;
+    if state.session != session {
+        return;
+    }
+    let Some((pending_id, pending_nonce, document, revision)) = state.reply_pending.clone() else {
+        return;
+    };
+    if pending_id != id || pending_nonce != nonce {
+        return;
+    }
+    state.reply_pending = None;
+    state.refreshed = None;
+    match result {
+        Ok(()) => {
+            if state.selected.as_deref() == Some(id) {
+                state.reply_notice = Some("Reply delivered to this worker.".into());
+            }
+            let doc = world
+                .resource_mut::<SourceDocuments>()
+                .unwrap()
+                .get_mut(document)
+                .unwrap();
+            if doc.revision() == revision && !doc.is_composing() {
+                let _ = doc.commit(rndr_core::editing::SourceBatch {
+                    document,
+                    base: revision,
+                    origin: rndr_core::editing::EditOrigin::Host(0x636f6c07),
+                    changes: vec![rndr_core::editing::SourceChange {
+                        range: 0..doc.text().len(),
+                        replacement: String::new(),
+                    }],
+                });
+            }
+        }
+        Err(error) => {
+            // Unknown delivery must not expose a replay button for the same draft.
+            state.reply_pending = Some((pending_id, pending_nonce, document, revision));
+            state.reply_notice = Some(error);
+        }
+    }
 }
 
 /// Presentation-only snapshot. Never admitted to ChatCore, never sendable. IDs
