@@ -538,11 +538,25 @@ fn column_for_turn_worker_status(
         TurnWorkStatus::Pending => Some((WorkBoardColumn::Backlog, "pending", Vec::new(), false)),
         TurnWorkStatus::Running => Some((WorkBoardColumn::InFlight, "running", Vec::new(), false)),
         TurnWorkStatus::Completed => {
-            if record.synthesis_delivered || wrapping_up_stale(record.updated_at) {
-                if !include_terminal && wrapping_up_stale(record.updated_at) {
+            if record.synthesis_delivered
+                || record.disposition
+                    == crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
+            {
+                if !include_terminal && terminal_turn_worker_stale(record.updated_at, hide_ttl) {
                     return None;
                 }
                 return Some((WorkBoardColumn::Done, "completed", Vec::new(), true));
+            }
+            if wrapping_up_stale(record.updated_at) {
+                return Some((
+                    WorkBoardColumn::Blocked,
+                    "synthesis delayed",
+                    vec![
+                        "synthesis_pending".to_string(),
+                        "synthesis_delayed".to_string(),
+                    ],
+                    false,
+                ));
             }
             Some((
                 WorkBoardColumn::WrappingUp,
@@ -1068,5 +1082,43 @@ mod tests {
             record.live_tool_activity = vec![tool_activity("web_search", false)];
             assert!(live_status_line_for_worker(&record).is_none());
         }
+    }
+    #[test]
+    fn completed_workers_need_delivery_not_an_age_based_false_success() {
+        let mut record: crate::agent_runtime::turn_worker::TurnWorkRecord =
+            serde_json::from_value(serde_json::json!({
+                "work_id":"worker-test", "session_id":"session-test", "intent":"coder",
+                "task_prompt":"Review", "status":"completed", "tool_names":[],
+                "user_ack":"reviewing", "provider":"test", "model":"test",
+                "response_depth_mode":"standard", "created_at":"2026-01-01T00:00:00Z",
+                "updated_at":"2026-01-01T00:00:00Z"
+            }))
+            .unwrap();
+        let ttl = Duration::hours(24);
+        let pending = column_for_turn_worker_status(&record, record.status, true, ttl).unwrap();
+        assert_eq!(pending.0, WorkBoardColumn::Blocked);
+        assert_eq!(pending.1, "synthesis delayed");
+        record.updated_at = Utc::now();
+        assert_eq!(
+            column_for_turn_worker_status(&record, record.status, false, ttl)
+                .unwrap()
+                .0,
+            WorkBoardColumn::WrappingUp
+        );
+        record.disposition = crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated;
+        assert_eq!(
+            column_for_turn_worker_status(&record, record.status, false, ttl)
+                .unwrap()
+                .0,
+            WorkBoardColumn::Done
+        );
+        record.disposition = crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel;
+        record.synthesis_delivered = true;
+        assert_eq!(
+            column_for_turn_worker_status(&record, record.status, false, ttl)
+                .unwrap()
+                .0,
+            WorkBoardColumn::Done
+        );
     }
 }

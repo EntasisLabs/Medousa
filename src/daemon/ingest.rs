@@ -1657,6 +1657,11 @@ impl AgentStreamSink for ApiAgentStreamSink {
             tracing::error!(session_id = %self.session_id, %error, "API terminal turn persistence failed");
             return;
         }
+        crate::agent_runtime::turn_worker::acknowledge_observed_worker_results(
+            &self.session_id,
+            &text,
+        )
+        .await;
 
         if crate::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
             crate::workspace::ask_job_store::ask_job_store()

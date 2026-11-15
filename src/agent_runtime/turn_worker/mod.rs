@@ -1,6 +1,9 @@
 //! In-process host/worker turn bus (Phase 1).
 
 mod host_resume;
+mod intake;
+pub use intake::acknowledge_observed_worker_results;
+pub(crate) use intake::{RESULT_PAGE_CHARS, observe_worker_result_page};
 mod model_routing;
 mod policy;
 mod prompts;

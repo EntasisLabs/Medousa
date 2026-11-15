@@ -294,7 +294,10 @@ impl TurnWorkerSummary {
     fn from_record(record: TurnWorkRecord, offset: usize) -> Self {
         fn bounded(value: &str) -> String {
             let mut chars = value.chars();
-            let mut text: String = chars.by_ref().take(1200).collect();
+            let mut text: String = chars
+                .by_ref()
+                .take(super::turn_worker::RESULT_PAGE_CHARS)
+                .collect();
             if chars.next().is_some() {
                 text.push('…');
             }
@@ -305,11 +308,15 @@ impl TurnWorkerSummary {
             .as_deref()
             .map_or(0, |text| text.chars().count());
         let result_offset = offset.min(result_total_chars);
-        let result_end = result_offset.saturating_add(1200).min(result_total_chars);
-        let result_text = record
-            .result_text
-            .as_deref()
-            .map(|text| text.chars().skip(result_offset).take(1200).collect());
+        let result_end = result_offset
+            .saturating_add(super::turn_worker::RESULT_PAGE_CHARS)
+            .min(result_total_chars);
+        let result_text = record.result_text.as_deref().map(|text| {
+            text.chars()
+                .skip(result_offset)
+                .take(super::turn_worker::RESULT_PAGE_CHARS)
+                .collect()
+        });
         Self {
             work_id: record.work_id,
             session_id: record.session_id,
@@ -357,6 +364,13 @@ impl CognitionTurnWorkerStatusTool {
             let record = store
                 .get(work_id)
                 .ok_or_else(|| StasisError::PortFailure(format!("work_id not found: {work_id}")))?;
+            if let Some(session) = active_control_session(&self.scheduler).await {
+                super::turn_worker::observe_worker_result_page(
+                    &record,
+                    input.result_offset,
+                    &session,
+                );
+            }
             return Ok(TurnWorkerStatusOutput::Record {
                 ok: true,
                 record: Box::new(TurnWorkerSummary::from_record(record, input.result_offset)),
@@ -384,6 +398,7 @@ impl CognitionTurnWorkerStatusTool {
                 })?,
         };
         let records = store.list_for_session(&session_id);
+        // Listing status is discovery, not deliberate receipt intake.
         let active = records
             .iter()
             .filter(|record| {

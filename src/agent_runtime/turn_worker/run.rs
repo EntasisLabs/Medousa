@@ -614,8 +614,12 @@ pub async fn with_worker_parent_scope<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    ACTIVE_WORKER_PARENT
-        .scope(WorkerParentHandle::new(), future)
+    super::intake::OBSERVED_RESULTS
+        .scope(super::intake::ObservedResults::default(), async {
+            ACTIVE_WORKER_PARENT
+                .scope(WorkerParentHandle::new(), future)
+                .await
+        })
         .await
 }
 

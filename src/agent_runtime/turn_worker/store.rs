@@ -928,6 +928,7 @@ impl TurnWorkerStore {
                         record.status,
                         TurnWorkStatus::Pending | TurnWorkStatus::Running
                     ) || (!record.synthesis_delivered
+                        && record.disposition != TurnWorkDisposition::Delegated
                         && (record.status == TurnWorkStatus::Completed
                             || (record.disposition == TurnWorkDisposition::Parallel
                                 && matches!(
@@ -975,6 +976,20 @@ impl TurnWorkerStore {
     where
         F: FnOnce(&mut TurnWorkRecord),
     {
+        self.try_update_when(work_id, |record| {
+            update(record);
+            true
+        })
+    }
+
+    pub(super) fn try_update_when<F>(
+        &self,
+        work_id: &str,
+        update: F,
+    ) -> Result<Option<TurnWorkRecord>, crate::persistence::PersistenceError>
+    where
+        F: FnOnce(&mut TurnWorkRecord) -> bool,
+    {
         let Some(current) = self.get(work_id) else {
             return Ok(None);
         };
@@ -992,7 +1007,9 @@ impl TurnWorkerStore {
         let Some(record) = candidate.get_mut(work_id) else {
             return Ok(None);
         };
-        update(record);
+        if !update(record) {
+            return Ok(None);
+        }
         record.updated_at = Utc::now();
         let snapshot = record.clone();
         self.persist_candidate(&mut candidate, work_id)?;
@@ -1718,6 +1735,33 @@ mod tests {
     }
 
     #[test]
+    fn conditional_update_rejects_stale_receipt_without_persistence_or_publication() {
+        let store = TurnWorkerStore::with_admitter(Arc::new(|_| {
+            panic!("a rejected condition must not enqueue persistence")
+        }));
+        let record = test_record(
+            "work-stale",
+            "session-stale-intake",
+            1,
+            TurnWorkStatus::Completed,
+        );
+        let updated_at = record.updated_at;
+        seed(&store, record);
+        assert!(
+            store
+                .try_update_when("work-stale", |candidate| {
+                    candidate.synthesis_delivered = true;
+                    false
+                })
+                .unwrap()
+                .is_none()
+        );
+        let current = store.get("work-stale").unwrap();
+        assert!(!current.synthesis_delivered);
+        assert_eq!(current.updated_at, updated_at);
+    }
+
+    #[test]
     fn parallel_cohort_waits_while_a_sibling_is_running() {
         let store = TurnWorkerStore::empty_for_tests();
         seed(
@@ -1862,6 +1906,9 @@ mod tests {
         let mut delivered = test_record("work-d", "sess-c", 2, TurnWorkStatus::Failed);
         delivered.synthesis_delivered = true;
         seed(&store, delivered);
+        let mut delegated = test_record("work-delegated", "sess-c", 3, TurnWorkStatus::Completed);
+        delegated.disposition = TurnWorkDisposition::Delegated;
+        seed(&store, delegated);
         let ids: Vec<String> = store
             .list_incomplete()
             .into_iter()
@@ -1870,6 +1917,7 @@ mod tests {
         assert!(ids.contains(&"work-f".to_string()));
         assert!(!ids.contains(&"work-bf".to_string()));
         assert!(!ids.contains(&"work-d".to_string()));
+        assert!(!ids.contains(&"work-delegated".to_string()));
     }
 
     #[test]

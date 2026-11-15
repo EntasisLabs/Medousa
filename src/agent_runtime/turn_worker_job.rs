@@ -53,6 +53,15 @@ pub async fn enqueue_turn_worker_job(
     work_id: &str,
     stream_turn_id: u64,
 ) -> StasisResult<()> {
+    enqueue_turn_worker_job_with_id(composition, work_id, stream_turn_id, work_id).await
+}
+
+async fn enqueue_turn_worker_job_with_id(
+    composition: &RuntimeComposition,
+    work_id: &str,
+    stream_turn_id: u64,
+    job_id: &str,
+) -> StasisResult<()> {
     let payload = TurnWorkerJobPayload {
         work_id: work_id.to_string(),
         stream_turn_id,
@@ -60,7 +69,7 @@ pub async fn enqueue_turn_worker_job(
     let payload_ref = payload.to_payload_ref()?;
     let now = Utc::now();
     let mut job = ToolJobSpec::new(
-        work_id,
+        job_id,
         crate::daemon::worker_host::AGENT_QUEUE,
         TURN_WORKER_JOB_TYPE,
         payload_ref,
@@ -75,7 +84,7 @@ pub async fn enqueue_turn_worker_job(
     let job = job.build();
 
     turn_worker_store().update(work_id, |record| {
-        record.stasis_job_id = Some(work_id.to_string());
+        record.stasis_job_id = Some(job_id.to_string());
     });
 
     composition.enqueue_job(job).await?;
@@ -160,7 +169,21 @@ pub async fn reconcile_durable_turn_workers(
                     "medousa-daemon: resume synthesis for work_id={}",
                     record.work_id
                 );
+                let work_id = record.work_id.clone();
+                let stream_turn_id = record.parent_stream_turn_id;
                 resume_pending_synthesis(agent.clone(), record).await;
+                if pending_continuation_outcome(store.get(&work_id).as_ref()).is_some()
+                    && job_needs_enqueue(composition, &work_id).await
+                    && let Err(error) = enqueue_turn_worker_job_with_id(
+                        composition,
+                        &work_id,
+                        stream_turn_id,
+                        &format!("{work_id}:continuation:{}", uuid::Uuid::new_v4()),
+                    )
+                    .await
+                {
+                    tracing::warn!(%work_id, %error, "failed to restore host continuation");
+                }
             }
             TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
                 if !record.synthesis_delivered
@@ -171,7 +194,21 @@ pub async fn reconcile_durable_turn_workers(
                     "medousa-daemon: resume host intake for work_id={}",
                     record.work_id
                 );
+                let work_id = record.work_id.clone();
+                let stream_turn_id = record.parent_stream_turn_id;
                 resume_pending_synthesis(agent.clone(), record).await;
+                if pending_continuation_outcome(store.get(&work_id).as_ref()).is_some()
+                    && job_needs_enqueue(composition, &work_id).await
+                    && let Err(error) = enqueue_turn_worker_job_with_id(
+                        composition,
+                        &work_id,
+                        stream_turn_id,
+                        &format!("{work_id}:continuation:{}", uuid::Uuid::new_v4()),
+                    )
+                    .await
+                {
+                    tracing::warn!(%work_id, %error, "failed to restore host continuation");
+                }
             }
             _ => {}
         }
@@ -179,7 +216,11 @@ pub async fn reconcile_durable_turn_workers(
 }
 
 async fn job_needs_enqueue(composition: &RuntimeComposition, work_id: &str) -> bool {
-    let job = composition.get_job(work_id).await;
+    let job_id = turn_worker_store()
+        .get(work_id)
+        .and_then(|record| record.stasis_job_id)
+        .unwrap_or_else(|| work_id.to_string());
+    let job = composition.get_job(&job_id).await;
     let Ok(job) = job else {
         return true;
     };
@@ -677,7 +718,7 @@ fn truncate_line(value: &str, max: usize) -> String {
     trimmed.chars().take(max).collect::<String>() + "…"
 }
 
-/// Stasis retries continuation using the job's existing bounded retry policy.
+/// Waiting for host continuation does not spend worker execution retries.
 /// Terminal-record handling above keeps these attempts from rerunning worker effects.
 fn pending_continuation_outcome(record: Option<&TurnWorkRecord>) -> Option<JobExecutionOutcome> {
     let record = record?;
@@ -689,7 +730,8 @@ fn pending_continuation_outcome(record: Option<&TurnWorkRecord>) -> Option<JobEx
         record.synthesis_delivered,
         parallel_intake_needs_retry,
     ))
-    .then(|| JobExecutionOutcome::RetryableFailure {
+    .then(|| JobExecutionOutcome::Deferred {
+        scheduled_at: Utc::now() + chrono::Duration::seconds(15),
         message: format!("host continuation pending for {}", record.work_id),
         execution_id: None,
         diagnostics: None,
@@ -857,5 +899,28 @@ mod tests {
             false,
             false,
         ));
+    }
+    #[test]
+    fn pending_host_continuation_defers_without_spending_execution_retry_budget() {
+        let mut record: TurnWorkRecord = serde_json::from_value(serde_json::json!({
+            "work_id":"worker-test", "session_id":"session-test", "intent":"coder",
+            "task_prompt":"Review", "status":"completed", "tool_names":[],
+            "user_ack":"reviewing", "provider":"test", "model":"test",
+            "response_depth_mode":"standard", "created_at":"2026-01-01T00:00:00Z",
+            "updated_at":"2026-01-01T00:00:00Z"
+        }))
+        .unwrap();
+        // This isolated record models bound synthesis, not an unregistered
+        // parallel cohort (whose retry decision belongs to the store).
+        record.disposition = TurnWorkDisposition::Bound;
+        assert!(matches!(
+            pending_continuation_outcome(Some(&record)),
+            Some(JobExecutionOutcome::Deferred { .. })
+        ));
+        record.synthesis_delivered = true;
+        assert!(pending_continuation_outcome(Some(&record)).is_none());
+        record.synthesis_delivered = false;
+        record.disposition = TurnWorkDisposition::Delegated;
+        assert!(pending_continuation_outcome(Some(&record)).is_none());
     }
 }
