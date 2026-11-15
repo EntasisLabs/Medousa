@@ -24,6 +24,38 @@ Switching to Notes or Code keeps chat tabs, split panes, unsent drafts, undo his
 background streams in this window. Returning restores the chat workspace. Chat
 send shortcuts do not send a message while Notes or Code is active.
 
+## Inspect delegated collaboration
+
+When Medousa delegates a turn worker, a compact **Working with…** marker appears
+with the matching assistant turn. Select it to inspect the assignment, recorded
+follow-ups, live output and persisted result in the same pane. **Back to Medousa**
+returns to the retained parent draft, viewport and focus; the parent can continue
+working while you read. Opening this view does not create another chat.
+
+The exchange is **read-only**. There is no worker composer, and closing it does
+not cancel work. Recorded tool evidence is available behind the usual disclosure.
+Private rolling reasoning is not copied into this view. Tool evidence may be a
+retained tail rather than a complete execution log; the persisted transcript's
+retention note explains that limit. If only a card preview is available, the view
+says so instead of presenting it as the complete history.
+
+A returned worker result is not evidence that Medousa has reviewed, approved or
+applied changes. **Result ready · Awaiting Medousa summary** and **Result recorded**
+are distinct from approval or integration. Use the ordinary review flow for that.
+
+Activity refreshes periodically while Chat is visible; **Refresh** retries an
+unavailable exchange without sending another task. Recorded content remains
+available after a read error. Discovery uses the latest 100 workspace cards for
+this parent session, including retained terminal cards. If the parent turn is
+outside loaded history, use the collapsed **Earlier collaborations** group;
+the app never attaches it to an unrelated turn. Placement is rebuilt from durable
+work IDs and parent-turn bindings after reloading history or relaunching, subject
+to daemon retention. Parent drafts and the currently open reading view remain
+window-lifetime state.
+
+This first slice covers native turn workers exposed by the daemon's workspace
+contracts, not arbitrary Bots, external runtime sessions or a general branch tree.
+
 ## Read and edit notes
 
 Notes uses the connected daemon's active vault, never an assumed folder on the

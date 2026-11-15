@@ -1,5 +1,7 @@
 //! Attach-only SDK transport for the native chat host.
 //! Projection and execution state belong to app-core; this module only moves wire facts.
+#[path = "collaboration_transport.rs"]
+mod collaboration_transport;
 #[cfg(test)]
 #[path = "backend_tests.rs"]
 mod tests;
@@ -16,12 +18,25 @@ use tokio::sync::mpsc;
 pub enum Command {
     New,
     List(String),
-    More { query: String, cursor: String },
-    Rename { session: String, title: String },
+    More {
+        query: String,
+        cursor: String,
+    },
+    Rename {
+        session: String,
+        title: String,
+    },
     Delete(String),
     Fork(String),
-    Pin { session: String, pinned: bool },
+    Pin {
+        session: String,
+        pinned: bool,
+    },
     Open(String),
+    Collaboration {
+        session: String,
+        known: Vec<(String, String)>,
+    },
     Send(Box<InteractiveTurnRequest>),
     Cancel(String),
     SetMode(String, AgentModeId),
@@ -40,6 +55,10 @@ pub enum Update {
         Option<ActiveSessionTurn>,
     ),
     SettledHistory(String, String, Vec<serde_json::Value>),
+    Collaboration {
+        session: String,
+        result: Result<Vec<medousa_types::WorkCardDetail>, String>,
+    },
     Admitted(String, String),
     Stream(TurnStreamEnvelopeV3),
     Models(Vec<(String, String)>),
@@ -545,6 +564,15 @@ async fn serve(
             );
             continue;
         }
+        if let Command::Collaboration { session, known } = command {
+            let client = client.clone();
+            let tx = tx.clone();
+            metadata_tasks.spawn(async move {
+                let result = collaboration_transport::fetch(&client, &session, &known).await;
+                emit(&tx, generation, Update::Collaboration { session, result });
+            });
+            continue;
+        }
         let metadata = matches!(command, Command::List(_) | Command::More { .. });
         let mutation = matches!(
             command,
@@ -601,6 +629,7 @@ async fn serve(
                 "{} {session}: pinning is a local UI preference; no daemon pin endpoint is available.",
                 if pinned { "Pin" } else { "Unpin" }
             ))),
+            Command::Collaboration { .. } => unreachable!("handled independently above"),
             Command::Open(id) => history(&client, &id).await,
             Command::SetMode(id, selected) => Ok(set_mode(&client, &id, selected).await),
             Command::Cancel(id) => client

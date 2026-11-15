@@ -21,6 +21,8 @@ use rndr_ui::{
 use std::collections::HashMap;
 #[path = "window_chrome.rs"]
 pub(crate) mod chrome;
+#[path = "collaboration.rs"]
+pub(crate) mod collaboration;
 #[path = "conversations.rs"]
 mod conversations;
 
@@ -46,6 +48,7 @@ const DELETE_CONFIRM: u64 = 24;
 const DELETE_CANCEL: u64 = 25;
 
 pub struct Model {
+    collaboration: collaboration::State,
     pub chat: Chat,
     pub commands: Option<tokio::sync::mpsc::UnboundedSender<Request>>,
     generation: u64,
@@ -80,6 +83,7 @@ impl Model {
     }
     fn new(document: DocumentId) -> Self {
         Model {
+            collaboration: collaboration::State::default(),
             chat: Chat::connecting(),
             commands: None,
             generation: 0,
@@ -124,6 +128,7 @@ struct Ui {
     session_actions: Entity,
     timeline: Entity,
     composer_parent: Entity,
+    exchange: collaboration::View,
     composer: EditorSurfaceHandle,
     model: Entity,
     mode: Entity,
@@ -475,6 +480,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     };
     visual::flat(world, content.root, visual::canvas());
     // Conversation navigation is owned by the shared window band.
+    let exchange = collaboration::mount(world, content.content);
     let timeline = timeline::setup(world, content.content);
     let approvals = approvals::setup(world, content.content);
     let composer_row = container(
@@ -743,6 +749,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         rename,
         session_actions,
         timeline,
+        exchange,
         composer_parent,
         composer,
         model,
@@ -990,6 +997,9 @@ fn update(world: &mut World) {
         {
             continue;
         }
+        if collaboration::action(world, &intent) {
+            continue;
+        }
         if timeline::action(world, &intent) {
             continue;
         }
@@ -1136,6 +1146,9 @@ fn action(world: &mut World, id: u64) {
             conversations::navigate(world, id);
         }
         SEND => {
+            if world.resource::<Model>().unwrap().collaboration.is_open() {
+                return;
+            }
             let session = world
                 .resource::<Model>()
                 .unwrap()
@@ -1252,6 +1265,9 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
         return;
     }
     match reply.update {
+        Update::Collaboration { session, result } => {
+            collaboration::receive(world, &session, result);
+        }
         Update::SessionsPage {
             query,
             rows,
@@ -1796,11 +1812,13 @@ fn sync(world: &mut World) {
         .session()
         .and_then(|session| runtimes::conversation(world, session))
         .map(provider_timeline::project);
-    timeline::sync(
-        world,
-        ui.timeline,
-        provider.as_ref().or_else(|| m.chat.snapshot()),
-    );
+    if !world.resource::<Model>().unwrap().collaboration.is_open() {
+        timeline::sync(
+            world,
+            ui.timeline,
+            provider.as_ref().or_else(|| m.chat.snapshot()),
+        );
+    }
     let state = world.resource::<Model>().unwrap();
     let (details, filter, sidebar) = (
         state.details_open,
@@ -1822,6 +1840,7 @@ fn sync(world: &mut World) {
         .unwrap_or(width)
         .min(width);
     world.get_mut::<Layout>(ui.compose).unwrap().width = Size::Px(visual::column_width(width));
+    collaboration::sync(world, ui, m.chat.snapshot());
     world.resource_mut::<Model>().unwrap().chat = m.chat;
     if let Some(error) = workspace::error(world) {
         world.resource_mut::<Model>().unwrap().chat.status = error;

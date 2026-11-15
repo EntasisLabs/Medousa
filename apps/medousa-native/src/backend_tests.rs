@@ -9,6 +9,52 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[tokio::test]
+async fn collaboration_reads_are_session_bound_and_changed_card_only() {
+    let card = json!({"id":"worker","column":"in_flight","title":"Review","status_label":"running","created_at_utc":"2026-11-15T00:00:00Z","updated_at_utc":"2026-11-15T00:01:00Z"});
+    let page = json!({"workspace_revision":1,"cards":[card.clone()]});
+    let detail = json!({"card":card,"kind":"turn_worker","session_id":"parent","work_id":"worker","terminal":false,"live_output":"Working"});
+    let path = "/v1/workspace/cards?session_id=parent&limit=100&include_terminal=true";
+    let (client, server) = fixture(vec![
+        json_wire("GET", path, page.clone()),
+        json_wire("GET", "/v1/workspace/cards/worker", detail),
+        json_wire("GET", path, page),
+    ]);
+    let rows = collaboration_transport::fetch(&client, "parent", &[])
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    let known = vec![("worker".into(), rows[0].card.updated_at_utc.to_rfc3339())];
+    assert!(
+        collaboration_transport::fetch(&client, "parent", &known)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn collaboration_transport_rejects_cross_session_transcript_identity() {
+    let card = json!({"id":"worker","column":"in_flight","title":"Review","status_label":"running","created_at_utc":"2026-11-15T00:00:00Z","updated_at_utc":"2026-11-15T00:01:00Z"});
+    let detail = json!({"card":card.clone(),"kind":"turn_worker","session_id":"parent","work_id":"worker","terminal":false,"worker_transcript":{"work_id":"worker","session_id":"other","parent_runtime_id":"native","execution_runtime_id":"native","task_prompt":"wrong conversation","steer_messages":[],"retention_note":""}});
+    let (client, server) = fixture(vec![
+        json_wire(
+            "GET",
+            "/v1/workspace/cards?session_id=parent&limit=100&include_terminal=true",
+            json!({"workspace_revision":1,"cards":[card]}),
+        ),
+        json_wire("GET", "/v1/workspace/cards/worker", detail),
+    ]);
+    assert!(
+        collaboration_transport::fetch(&client, "parent", &[])
+            .await
+            .unwrap_err()
+            .contains("identity")
+    );
+    server.join().unwrap();
+}
+
 struct Wire {
     method: &'static str,
     path: String,

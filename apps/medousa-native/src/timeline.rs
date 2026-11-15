@@ -16,6 +16,23 @@ struct Part {
     tools: Vec<ToolRunState>,
     image: Option<(String, String)>,
 }
+pub struct ReadingIdentity {
+    pub sender: String,
+    pub recipient: String,
+}
+impl Component for ReadingIdentity {}
+
+/// Returns only mounted rows; offscreen collaboration markers are mounted with
+/// their parent when it enters the viewport, not moved to a different turn.
+pub fn mounted_row(world: &World, root: Entity, item_id: &str) -> Option<Entity> {
+    world
+        .get::<Timeline>(root)?
+        .rows
+        .iter()
+        .find(|row| row.id == item_id && row.mounted)
+        .map(|row| row.entity)
+}
+
 struct MountedPart {
     id: String,
     entity: Entity,
@@ -129,7 +146,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
         return;
     };
     let rect = world.get::<Rect>(root).copied().unwrap_or_default();
-    let scroll = world.get::<Scroll>(root).copied().unwrap_or_default();
+    let mut scroll = world.get::<Scroll>(root).copied().unwrap_or_default();
     let view = [
         rect.w,
         rect.h,
@@ -167,7 +184,12 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
         }
         state.session = snapshot.map(|s| s.session_id.clone()).unwrap_or_default();
         state.revision = None;
-        state.following = true;
+        state.following = world.get::<ReadingIdentity>(root).is_none();
+        if !state.following {
+            scroll.offset = [0., 0.];
+            world.get_mut::<Scroll>(root).unwrap().offset = scroll.offset;
+            state.layout_offset = 0.;
+        }
     } else if (scroll.offset[1] - state.layout_offset).abs() > 1.5 {
         // A user wheel/key/scrollbar movement, not a content-height change.
         let bottom = (scroll.content[1] - rect.h).max(0.);
@@ -291,7 +313,16 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
 }
 
 fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
-    let parts = project(item);
+    let mut parts = project(item);
+    if let Some(root) = world.get::<Parent>(row.entity).map(|p| p.entity) {
+        if let Some(identity) = world.get::<ReadingIdentity>(root) {
+            parts[0].text = literal(match item.role {
+                ChatItemRole::User => &identity.sender,
+                ChatItemRole::Assistant => &identity.recipient,
+                ChatItemRole::System => "Recorded activity",
+            });
+        }
+    }
     let mut old: HashMap<_, _> = row.parts.drain(..).map(|p| (p.id.clone(), p)).collect();
     for part in parts {
         let retained = old.remove(&part.id);
