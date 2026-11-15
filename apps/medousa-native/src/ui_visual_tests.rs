@@ -544,3 +544,111 @@ fn native_polish_visual_acceptance() {
         .unwrap();
     }
 }
+
+#[test]
+#[ignore = "Composer long-draft Parley/GPU acceptance"]
+fn composer_long_draft_visual_acceptance() {
+    let (mut app, _rx) = fixture();
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    app.world_mut().insert_resource(engine);
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    for (width, suffix) in [(1200, "wide"), (760, "narrow")] {
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, 850.));
+        for _ in 0..8 {
+            rndr_paint::frame(&mut app);
+        }
+        let ui = *app.world().resource::<Ui>().unwrap();
+        request_focus(app.world_mut(), ui.composer.editor);
+        app.world_mut().resource_mut::<Input>().unwrap().chars = "This is a longer composer draft that should wrap naturally inside the message box, keeping every word and the insertion point visible while I continue typing. ".repeat(3);
+        rndr_paint::frame(&mut app);
+        app.world_mut()
+            .resource_mut::<Input>()
+            .unwrap()
+            .chars
+            .clear();
+        for _ in 0..8 {
+            rndr_paint::frame(&mut app);
+        }
+        let w = app.world();
+        let editor = w.get::<Rect>(ui.composer.editor).unwrap();
+        let shell = w.get::<Rect>(ui.compose).unwrap();
+        assert!(
+            editor.h > 80. && editor.h <= 140.,
+            "bounded growth: {editor:?}"
+        );
+        assert!(editor.x >= shell.x && editor.x + editor.w <= shell.x + shell.w);
+        let caret = w.get::<Caret>(ui.composer.editor).unwrap();
+        let layout = w.get::<TextLayout>(ui.composer.editor).unwrap();
+        let row = layout
+            .lines
+            .iter()
+            .position(|l| caret.index >= l.start && caret.index <= l.end)
+            .expect("caret in visible source window");
+        assert!(
+            layout.lines[row].y + layout.lines[row].h <= editor.h - 8. + 0.5,
+            "caret row {row} outside {editor:?}"
+        );
+        assert!(layout.lines.iter().all(|l| l.width <= editor.w + 0.5));
+        assert!(
+            w.get::<Label>(ui.composer.editor)
+                .unwrap()
+                .text
+                .ends_with("typing. ")
+        );
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, 850, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-composer-wrap-{suffix}.png"),
+            &image.rgba,
+            width,
+            850,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn composer_grows_with_draft_then_shrinks_without_replacing_document() {
+    let (mut app, _rx) = fixture();
+    let document = app.world().resource::<Model>().unwrap().document;
+    let editor = app.world().resource::<Ui>().unwrap().composer;
+    request_focus(app.world_mut(), editor.editor);
+    app.world_mut().resource_mut::<Input>().unwrap().chars =
+        "A long naturally wrapped draft. ".repeat(80);
+    for _ in 0..8 {
+        app.update();
+    }
+    let grown = app.world().get::<Rect>(editor.editor).unwrap().h;
+    assert!(
+        grown > 80. && grown <= 140.,
+        "bounded editor height {grown}"
+    );
+    {
+        let doc = app
+            .world_mut()
+            .resource_mut::<SourceDocuments>()
+            .unwrap()
+            .get_mut(document)
+            .unwrap();
+        doc.reload(doc.revision(), "short draft").unwrap();
+    }
+    for _ in 0..8 {
+        app.update();
+    }
+    assert_eq!(app.world().resource::<Model>().unwrap().document, document);
+    assert!(app.world().get::<Rect>(editor.editor).unwrap().h <= 60.);
+    assert_eq!(
+        app.world()
+            .resource::<SourceDocuments>()
+            .unwrap()
+            .get(document)
+            .unwrap()
+            .text(),
+        "short draft"
+    );
+}

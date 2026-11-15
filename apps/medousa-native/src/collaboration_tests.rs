@@ -695,3 +695,54 @@ fn late_reply_ack_preserves_new_edits_and_unknown_delivery_blocks_replay() {
             .is_some()
     );
 }
+
+#[test]
+fn thread_reply_wraps_incremental_appends_and_scrolls_caret_after_resize() {
+    let mut app = fixture();
+    let marker = target(&app, "worker-1");
+    activate(&mut app, marker);
+    for width in [1600., 760.] {
+        app.world_mut().insert_resource(Viewport::new(width, 850.));
+        for _ in 0..8 {
+            app.update();
+        }
+        let editor = app
+            .world()
+            .resource::<Ui>()
+            .unwrap()
+            .exchange
+            .reply_editor
+            .editor;
+        request_focus(app.world_mut(), editor);
+        for _ in 0..4 {
+            app.world_mut().resource_mut::<Input>().unwrap().chars =
+                "A longer worker reply should wrap without losing the caret outside the view. "
+                    .into();
+            app.update();
+            app.world_mut()
+                .resource_mut::<Input>()
+                .unwrap()
+                .chars
+                .clear();
+            for _ in 0..4 {
+                app.update();
+            }
+            let w = app.world();
+            let rect = w.get::<Rect>(editor).unwrap();
+            let caret = w.get::<Caret>(editor).unwrap();
+            let label = w.get::<Label>(editor).unwrap();
+            let layout = w.get::<TextLayout>(editor).unwrap();
+            assert_eq!(caret.index, label.text.len());
+            assert!(layout.lines.iter().all(|line| line.width <= rect.w + 0.5));
+            let (_, y) = w.get::<CaretRow>(editor).map_or_else(
+                || layout.caret_xy(caret.index),
+                |hint| layout.caret_xy_on_line(caret.index, hint.row),
+            );
+            let line = layout.lines.iter().find(|line| line.y == y).unwrap();
+            assert!(
+                y >= 0. && y + line.h + 2. * TEXT_ORIGIN_Y <= rect.h + 0.5,
+                "reply caret clipped at {y} in {rect:?}"
+            );
+        }
+    }
+}

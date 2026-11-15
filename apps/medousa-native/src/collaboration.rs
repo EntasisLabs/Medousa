@@ -255,10 +255,11 @@ pub(super) fn mount(world: &mut World, parent: Entity, thread_parent: Entity) ->
     let doc = world.resource_mut::<SourceDocuments>().unwrap().open("");
     let mut props = EditorSurfaceProps::new(doc, "Reply to this thread");
     props.gutter = false;
-    props.scrollbar = false;
+    props.scrollbar = true;
     let editor = EditorSurface::mount(world, reply, UiId(0x636f6c06), props).unwrap();
     world.get_mut::<Layout>(editor.root).unwrap().height = Size::Px(72.);
     world.insert(editor.editor, Placeholder::new("Reply to this thread…"));
+    world.get_mut::<Label>(editor.editor).unwrap().overflow = TextOverflow::Wrap;
     let reply_send = controls::Button::mount(
         world,
         reply,
@@ -712,10 +713,11 @@ fn sync_reply(world: &mut World, ui: Ui, state: &mut State) {
         let _ = editor.destroy(world);
         let mut props = EditorSurfaceProps::new(document, "Reply to this thread");
         props.gutter = false;
-        props.scrollbar = false;
+        props.scrollbar = true;
         editor = EditorSurface::mount(world, ui.exchange.reply, UiId(0x636f6c06), props).unwrap();
         world.get_mut::<Layout>(editor.root).unwrap().height = Size::Px(72.);
         world.insert(editor.editor, Placeholder::new("Reply to this thread…"));
+        world.get_mut::<Label>(editor.editor).unwrap().overflow = TextOverflow::Wrap;
         // Remounting appends; keep the reply button below the editor.
         if let Some(children) = world.get_mut::<Children>(ui.exchange.reply) {
             children.list.retain(|e| *e != ui.exchange.reply_send);

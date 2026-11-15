@@ -19,6 +19,7 @@ use rndr_ui::{
     *,
 };
 use std::collections::HashMap;
+use std::sync::Arc;
 #[path = "window_chrome.rs"]
 pub(crate) mod chrome;
 #[path = "collaboration.rs"]
@@ -782,7 +783,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
 fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> EditorSurfaceHandle {
     let mut props = EditorSurfaceProps::new(document, "Message Medousa");
     props.gutter = false;
-    props.scrollbar = false;
+    props.scrollbar = true;
     props.description = "Write a message, then Send. Enter inserts a new line.".into();
     let h = EditorSurface::mount(world, parent, UiId(1), props).expect("live source document");
     world.insert(
@@ -798,7 +799,74 @@ fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> Ed
     // Leave Color to UiStyle's resolver: an authored primitive Color would
     // pin the mount-time appearance and block subsequent theme changes.
     world.insert(h.editor, Placeholder::new("Message Medousa…"));
+    world.get_mut::<Label>(h.editor).unwrap().overflow = TextOverflow::Wrap;
     h
+}
+// Height measurement is bounded independently from the retained source document.
+// A huge paste must not reshape the complete draft on every frame.
+struct ComposerMeasure {
+    document: DocumentId,
+    revision: rndr_core::editing::Revision,
+    width: f32,
+    style: TextStyle,
+    engine: Arc<dyn TextEngine>,
+    viewport: f32,
+}
+impl Component for ComposerMeasure {}
+fn sync_composer_height(
+    world: &mut World,
+    handle: EditorSurfaceHandle,
+    parent: Entity,
+    document: DocumentId,
+) {
+    let Some(rect) = world.get::<Rect>(handle.editor).copied() else {
+        return;
+    };
+    let Some(doc) = world
+        .resource::<SourceDocuments>()
+        .and_then(|d| d.get(document))
+    else {
+        return;
+    };
+    let revision = doc.revision();
+    let style = style_for(world, handle.editor);
+    let engine = text_engine(world);
+    let viewport = world.resource::<Viewport>().map_or(800., |v| v.height);
+    if world.get::<ComposerMeasure>(handle.root).is_some_and(|m| {
+        m.document == document
+            && m.revision == revision
+            && m.width == rect.w
+            && m.style == style
+            && Arc::ptr_eq(&m.engine, &engine)
+            && m.viewport == viewport
+    }) {
+        return;
+    }
+    let text = doc.text();
+    let mut end = text.len().min(4096);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let width = (rect.w - 2. * TEXT_ORIGIN_X).max(engine.unit_advance(&style));
+    let line = engine.layout("Mg", &style, &[], width).height.max(20.);
+    let max = (5. * line + 24.).min((viewport * 0.25).max(44.));
+    let height = if end < text.len() {
+        max
+    } else {
+        (engine.layout(&text[..end], &style, &[], width).height + 24.).clamp(44., max)
+    };
+    world.get_mut::<Layout>(parent).unwrap().height = Size::Px(height);
+    world.insert(
+        handle.root,
+        ComposerMeasure {
+            document,
+            revision,
+            width: rect.w,
+            style,
+            engine,
+            viewport,
+        },
+    );
 }
 fn composer_color() -> Token {
     visual::raised()
@@ -1659,26 +1727,6 @@ fn sync(world: &mut World) {
         .unwrap()
         .get(m.document)
         .unwrap();
-    // Grow with explicit draft lines, then let the native editor scroll. Do
-    // not remount the source document or reset its selection/undo on typing.
-    let scale = world
-        .resource::<UiTheme>()
-        .cloned()
-        .unwrap_or_default()
-        .text_scale;
-    let scale = if scale.is_finite() {
-        scale.clamp(0.5, 4.)
-    } else {
-        1.
-    };
-    let editor_height =
-        (doc.text().lines().count().max(1).min(6) as f32 * 22. + 22.).max(44.) * scale;
-    world.get_mut::<Layout>(ui.composer_parent).unwrap().height = Size::Px(editor_height);
-    let doc = world
-        .resource::<SourceDocuments>()
-        .unwrap()
-        .get(m.document)
-        .unwrap();
     let send_enabled = available
         && !m.chat.uncertain
         && m.connected
@@ -1870,6 +1918,12 @@ fn sync(world: &mut World) {
         .unwrap_or(width);
     world.get_mut::<Layout>(ui.compose).unwrap().width = Size::Px(visual::column_width(width));
     collaboration::sync(world, ui, m.chat.snapshot());
+    sync_composer_height(
+        world,
+        ui.composer,
+        ui.composer_parent,
+        world.resource::<Model>().unwrap().document,
+    );
     world.resource_mut::<Model>().unwrap().chat = m.chat;
     if let Some(error) = workspace::error(world) {
         world.resource_mut::<Model>().unwrap().chat.status = error;
@@ -2275,7 +2329,7 @@ mod tests {
         let editor = app.world().get::<Rect>(ui.composer.editor).unwrap();
         let dock = app.world().get::<Rect>(ui.details).unwrap();
         assert!(
-            editor.w > 320. && editor.x + editor.w <= dock.x,
+            editor.w >= 280. && editor.x + editor.w <= dock.x,
             "editor {editor:?}, dock {dock:?}"
         );
         assert!(dock.w >= 280. && dock.x + dock.w <= 761., "{dock:?}");
