@@ -463,9 +463,10 @@ fn notes_visual_acceptance() {
     );
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
     app.world_mut().insert_resource(engine);
+    let text_color = visual::color(app.world(), visual::text());
     app.world_mut().insert_resource(MarkdownTheme {
         surface: Color::rgba(0., 0., 0., 0.),
-        text: visual::text(),
+        text: text_color,
         ..MarkdownTheme::default()
     });
     app.world_mut().insert_resource(Viewport::new(1200., 850.));
@@ -495,7 +496,23 @@ fn notes_visual_acceptance() {
     load(w, "Backlog/note-0.md", body, Some("v1"));
     let mut exporter = rndr_render::Exporter::new().unwrap();
     std::fs::create_dir_all("verification").unwrap();
-    for (width, height, suffix) in [(1200, 850, "wide"), (760, 540, "narrow")] {
+    for (width, height, suffix) in [
+        (1200, 850, "wide"),
+        (760, 540, "narrow"),
+        (1200, 850, "light"),
+        (760, 650, "light-zoom"),
+    ] {
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(!suffix.starts_with("light")),
+                ..Default::default()
+            },
+        );
+        app.world_mut()
+            .resource_mut::<rndr_ui::UiTheme>()
+            .unwrap()
+            .reading_scale = if suffix.ends_with("zoom") { 1.5 } else { 1. };
         app.world_mut()
             .insert_resource(Viewport::new(width as f32, height as f32));
         for _ in 0..4 {

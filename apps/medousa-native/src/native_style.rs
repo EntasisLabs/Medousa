@@ -7,35 +7,127 @@ pub const COLUMN: f32 = 720.;
 pub const ROW_GAP: f32 = 24.;
 pub const INSET: f32 = 20.;
 pub const CONTROL_RADIUS: f32 = 6.;
+pub const ACTION_SIZE: f32 = 32.;
+
+/// One tooltip recipe for app-owned icon actions. RNDR owns visibility, Escape,
+/// focus and pointer-leave suppression; the app only supplies readable geometry.
+pub fn action_hint(world: &mut World, target: Entity, label: &str) -> Entity {
+    let tip = rndr_ui::inputs::Tooltip::attach(world, target, label).unwrap();
+    world.insert(tip.root, PopupPlacement::Below);
+    let scale = world.resource::<UiTheme>().map_or(1., |t| t.text_scale);
+    world.get_mut::<Layout>(tip.root).unwrap().width =
+        Size::Px((label.chars().count() as f32 * 7. * scale + 20.).clamp(120., 360.));
+    world.get_mut::<Label>(tip.root).unwrap().overflow = TextOverflow::Wrap;
+    tip.root
+}
 pub const COMPOSER_RADIUS: f32 = 14.;
 
-pub fn canvas() -> Color {
-    UiTheme {
-        appearance: rndr_ui::Appearance::Dark,
-        ..Default::default()
+pub fn canvas() -> Token {
+    Token::Content
+}
+pub fn navigation() -> Token {
+    Token::Navigation
+}
+pub fn rail() -> Token {
+    Token::Canvas
+}
+pub fn raised() -> Token {
+    Token::Raised
+}
+pub fn stroke() -> Token {
+    Token::SubtleStroke
+}
+pub fn text() -> Token {
+    Token::Text
+}
+pub fn secondary() -> Token {
+    Token::Secondary
+}
+pub fn user() -> Token {
+    Token::Selected
+}
+
+pub fn color(world: &World, token: Token) -> Color {
+    world
+        .resource::<UiTheme>()
+        .cloned()
+        .unwrap_or_default()
+        .color(token)
+}
+
+/// Reapply the explicit RNDR bridge only when effective settings change.
+/// Preserve independent UI/reading scales, contrast and font choices. RNDR
+/// currently reports light/dark and reduced motion, not OS text size/contrast.
+pub fn sync_appearance(world: &mut World) {
+    let current = world.resource::<UiTheme>().cloned().unwrap_or_default();
+    let effective = current.clone().follow_system(&system_appearance(world));
+    let previous = world.resource::<AppliedTheme>().map(|p| &p.0);
+    if previous != Some(&effective) {
+        rndr_ui::apply_theme_bridge(world, effective.clone());
+        // Markdown is embedded in app-owned reading planes and user bubbles.
+        world.resource_mut::<MarkdownTheme>().unwrap().surface = Color::rgba(0., 0., 0., 0.);
+        crate::code::refresh_appearance(world);
+        world.insert_resource(AppliedTheme(effective));
     }
-    .color(Token::Content)
 }
-pub fn navigation() -> Color {
-    Color::rgb(0.075, 0.082, 0.098)
+struct AppliedTheme(UiTheme);
+
+/// Reading zoom uses the existing keymap; it never edits document content or
+/// steals the editor's undo stack. Keep chrome and reading scales independent.
+pub fn install_zoom(world: &mut World) {
+    let keymap = world.resource_mut::<Keymap>().unwrap();
+    for (action, key) in [
+        ("reading.zoom-in", '='),
+        ("reading.zoom-in", '+'),
+        ("reading.zoom-out", '-'),
+        ("reading.zoom-reset", '0'),
+    ] {
+        keymap.bind(KeyBinding::new(
+            action,
+            [Keystroke::character(key).primary()],
+        ));
+    }
+    keymap.bind(KeyBinding::new(
+        "reading.zoom-in",
+        [Keystroke::character('+').primary().shift()],
+    ));
 }
-pub fn rail() -> Color {
-    Color::rgb(0.060, 0.067, 0.080)
+
+pub fn reading_zoom(world: &mut World) {
+    let actions = world
+        .resource::<KeymapFired>()
+        .map(|k| k.actions.clone())
+        .unwrap_or_default();
+    let Some(theme) = world.resource_mut::<UiTheme>() else {
+        return;
+    };
+    for action in actions {
+        match action.as_str() {
+            "reading.zoom-in" => theme.reading_scale = (theme.reading_scale + 0.1).min(2.),
+            "reading.zoom-out" => theme.reading_scale = (theme.reading_scale - 0.1).max(0.8),
+            "reading.zoom-reset" => theme.reading_scale = 1.,
+            _ => {}
+        }
+    }
 }
-pub fn raised() -> Color {
-    Color::rgb(0.155, 0.166, 0.190)
-}
-pub fn stroke() -> Color {
-    Color::rgb(0.225, 0.240, 0.275)
-}
-pub fn text() -> Color {
-    Color::rgb(0.93, 0.94, 0.96)
-}
-pub fn secondary() -> Color {
-    Color::rgb(0.64, 0.68, 0.74)
-}
-pub fn user() -> Color {
-    Color::rgb(0.20, 0.28, 0.43)
+
+pub struct SemanticBorder(pub Token);
+impl Component for SemanticBorder {}
+
+/// Border is a core primitive, so keep app-owned decorative borders in sync.
+/// Never attach to RNDR focus rings: those belong to its interaction system.
+pub fn borders(world: &mut World) {
+    let borders = world
+        .query::<SemanticBorder>()
+        .iter()
+        .map(|(e, b)| (*e, b.0))
+        .collect::<Vec<_>>();
+    for (e, token) in borders {
+        let color = color(world, token);
+        if let Some(border) = world.get_mut::<Border>(e) {
+            border.color = color;
+        }
+    }
 }
 
 /// Same horizontal measure for the message lane and composer, including splits.
@@ -43,17 +135,17 @@ pub fn column_width(available: f32) -> f32 {
     (available - 2. * INSET).clamp(200., COLUMN)
 }
 
-pub fn plane(world: &mut World, entity: Entity, color: Color) {
+pub fn plane(world: &mut World, entity: Entity, color: Token) {
     world.insert(
         entity,
         UiStyle {
-            background: Some(UiColor::Explicit(color)),
+            background: Some(UiColor::Token(color)),
             ..Default::default()
         },
     );
 }
 /// Passive frames only. Never flatten an operating control's focus/hover layers.
-pub fn flat(world: &mut World, entity: Entity, color: Color) {
+pub fn flat(world: &mut World, entity: Entity, color: Token) {
     plane(world, entity, color);
     world.insert(entity, Radius(0.));
 }
@@ -122,21 +214,19 @@ pub fn document_action(
     let h = if let Some(icon) = icon {
         let h = IconButton::icon(world, parent, UiId(id), icon, label, props).unwrap();
         world.insert(h.label, LabelBox::CONTENT);
-        let tip = rndr_ui::inputs::Tooltip::attach(world, h.root, label).unwrap();
-        world.insert(tip.root, PopupPlacement::Below);
-        world.get_mut::<Layout>(tip.root).unwrap().width = Size::Px(180.);
+        action_hint(world, h.root, label);
         h
     } else {
         Button::mount(world, parent, UiId(id), props).unwrap()
     };
     let width = if icon.is_some() {
-        30.
+        ACTION_SIZE
     } else {
         (label.chars().count() as f32 * 7. + 20.).clamp(56., 300.)
     };
     *world.get_mut::<Layout>(h.root).unwrap() = Layout {
         width: Size::Px(width),
-        height: Size::Px(30.),
+        height: Size::Px(ACTION_SIZE),
         ..Layout::row()
     };
     world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
@@ -146,6 +236,81 @@ pub fn document_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn appearance_updates_existing_surfaces_and_preserves_settings() {
+        let mut app = crate::ui::app();
+        app.update();
+        let w = app.world_mut();
+        let e = w.spawn((Layout::column(),));
+        plane(w, e, canvas());
+        w.insert(
+            e,
+            Border {
+                color: Color::rgb(1., 0., 0.),
+                width: 1.,
+            },
+        );
+        w.insert(e, SemanticBorder(stroke()));
+        let mut settings = w.resource::<UiTheme>().unwrap().clone();
+        settings.text_scale = 1.25;
+        settings.reading_scale = 1.5;
+        settings.contrast = rndr_ui::Contrast::High;
+        w.insert_resource(settings);
+        for dark in [true, false, true] {
+            publish_system_appearance(
+                w,
+                SystemAppearance {
+                    dark: Some(dark),
+                    reduced_motion: true,
+                    ..Default::default()
+                },
+            );
+            sync_appearance(w);
+            borders(w);
+            rndr_ui::resolve_styles(w);
+            let theme = w.resource::<UiTheme>().unwrap();
+            assert_eq!(theme.appearance == rndr_ui::Appearance::Dark, dark);
+            assert_eq!(theme.text_scale, 1.25);
+            assert_eq!(theme.reading_scale, 1.5);
+            assert_eq!(theme.contrast, rndr_ui::Contrast::High);
+            assert_eq!(w.get::<Color>(e), Some(&theme.color(canvas())));
+            assert_eq!(w.get::<Border>(e).unwrap().color, theme.color(stroke()));
+            assert_eq!(w.resource::<Theme>().unwrap().text, theme.color(text()));
+            assert!(system_appearance(w).reduced_motion);
+        }
+        // A platform with no preference does not force an arbitrary mode.
+        publish_system_appearance(w, SystemAppearance::default());
+        sync_appearance(w);
+        assert_eq!(
+            w.resource::<UiTheme>().unwrap().appearance,
+            rndr_ui::Appearance::Dark
+        );
+    }
+
+    #[test]
+    fn reading_zoom_is_bounded_independent_and_reversible() {
+        let mut app = crate::ui::app();
+        app.update();
+        let w = app.world_mut();
+        w.resource_mut::<UiTheme>().unwrap().text_scale = 1.25;
+        for (action, expected) in [
+            ("reading.zoom-in", 2.),
+            ("reading.zoom-out", 0.8),
+            ("reading.zoom-reset", 1.),
+        ] {
+            for _ in 0..30 {
+                w.insert_resource(KeymapFired {
+                    actions: vec![action.into()],
+                });
+                reading_zoom(w);
+            }
+            sync_appearance(w);
+            let theme = w.resource::<UiTheme>().unwrap();
+            assert!((theme.reading_scale - expected).abs() < 0.001);
+            assert_eq!(theme.text_scale, 1.25);
+        }
+    }
+
     #[test]
     fn shared_column_is_bounded_and_responsive() {
         assert_eq!(column_width(1200.), COLUMN);

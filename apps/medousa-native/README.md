@@ -25,6 +25,14 @@ composition, typed history/stream rendering, attachments, runtime controls,
 approvals, and session context use the existing daemon contracts. RNDR owns
 editing, selection, controls, layout, Markdown, and platform rendering.
 
+**Behavior** opens an anchored native popover without shifting the composer.
+Depth selection nests inside it; Escape closes the inner selector first, then
+returns focus to the Behavior trigger when closing the outer popover. Clicking
+outside dismisses it without activating the underlying control. **Search models**
+closes the popover and reveals the existing model filter. Icon toolbar actions
+share wrapping keyboard/pointer hints; Code and Notes use the same compact
+32-point refresh/check action targets. No new motion or window materials are added.
+
 The workspace has native draggable dividers for the conversation sidebar and
 optional details dock. Focus a divider and use arrow keys to resize, or
 double-click it to reset. The header buttons hide/show each pane. Opening the
@@ -89,6 +97,21 @@ cargo test
 The test suite uses fixture transports and headless RNDR frames. Passing it is
 not evidence that every workflow has been manually exercised against a live
 daemon or that arbitrary web/HTML content has native parity.
+
+## Native appearance and reading size
+
+The native shell follows the platform light/dark preference, including changes
+while the window is open. If the platform reports no preference, the current
+appearance is retained. Editors and reading surfaces stay opaque.
+
+Use **Cmd/Ctrl + Plus** (or **Cmd/Ctrl + =**) and **Cmd/Ctrl + Minus** to adjust
+reading/source size; **Cmd/Ctrl + 0** resets it. This window-local setting adjusts
+Chat, Notes reading/source, and Code without changing navigation text, drafts,
+selection or undo. It is not persisted across launches. RNDR's independent UI
+text scale and contrast settings are preserved when appearance changes; current
+platform reporting does not provide OS text-size, contrast or transparency
+preferences. Existing RNDR motion continues to honor reduced motion; this pass
+does not introduce new transitions or translucent materials.
 
 ## Interactive performance
 

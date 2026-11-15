@@ -305,7 +305,10 @@ fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
         .find(|p| p.id == "body")
         .unwrap()
         .entity;
-    assert_eq!(world.get::<TextStyle>(body).unwrap().size, 14.);
+    assert_eq!(
+        world.get::<rndr_ui::UiStyle>(body).unwrap().typography,
+        Some(rndr_ui::Typography::Reading)
+    );
     assert_eq!(
         rows[0]
             .parts

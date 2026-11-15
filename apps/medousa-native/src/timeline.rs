@@ -59,7 +59,7 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
         .copied()
         .unwrap_or_else(|| MarkdownTheme::from_theme(&theme_of(world)));
     theme.surface = Color::rgba(0., 0., 0., 0.);
-    theme.text = visual::text();
+    theme.text = visual::color(world, visual::text());
     world.insert_resource(theme);
     let frame = world.spawn((Layout {
         width: Size::Fill,
@@ -265,11 +265,11 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
         world.insert(
             row.entity,
             rndr_ui::UiStyle {
-                background: Some(rndr_ui::UiColor::Explicit(if user {
-                    visual::user()
+                background: Some(if user {
+                    visual::user().into()
                 } else {
-                    Color::rgba(0., 0., 0., 0.)
-                })),
+                    rndr_ui::UiColor::Explicit(Color::rgba(0., 0., 0., 0.))
+                }),
                 ..Default::default()
             },
         );
@@ -356,10 +356,17 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                     node
                 } else {
                     let view = markdown_view(world, &part.text);
-                    let mut style = style_of(world);
-                    style.size = if part.id == "header" { 11. } else { 14. };
-                    style.line_height = Some(1.5);
-                    world.insert(view, style);
+                    world.insert(
+                        view,
+                        rndr_ui::UiStyle {
+                            typography: Some(if part.id == "header" {
+                                rndr_ui::Typography::Secondary
+                            } else {
+                                rndr_ui::Typography::Reading
+                            }),
+                            ..Default::default()
+                        },
+                    );
                     world.remove::<Scroll>(view);
                     world.get_mut::<Layout>(view).unwrap().height = Size::Hug;
                     world.get_mut::<Layout>(view).unwrap().padding = 0.;
@@ -476,7 +483,7 @@ fn timeline_button(
         world.insert(
             h.label,
             rndr_ui::UiStyle {
-                foreground: Some(rndr_ui::UiColor::Explicit(visual::secondary())),
+                foreground: Some(visual::secondary().into()),
                 ..Default::default()
             },
         );

@@ -54,7 +54,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Layout::column()
         },
     );
-    world.insert(rail, crate::native_style::rail());
+    crate::native_style::plane(world, rail, crate::native_style::rail());
     world.insert(rail, ResolvedColor);
     world.insert(
         rail,
@@ -239,12 +239,13 @@ pub fn chrome(world: &mut World) {
     let tiles = host.tiles;
     let buttons = host.buttons;
     let rail = host.rail;
-    world.insert(rail, crate::native_style::rail());
+    crate::native_style::plane(world, rail, crate::native_style::rail());
     for i in 0..SURFACE_COUNT {
-        world.insert(
+        crate::native_style::plane(
+            world,
             tiles[i],
             if i == active {
-                crate::native_style::raised()
+                rndr_ui::Token::Selected
             } else {
                 crate::native_style::rail()
             },
@@ -252,11 +253,14 @@ pub fn chrome(world: &mut World) {
         world.insert(
             buttons[i].label,
             UiStyle {
-                foreground: Some(UiColor::Explicit(if i == active {
-                    crate::native_style::text()
-                } else {
-                    crate::native_style::secondary()
-                })),
+                foreground: Some(
+                    (if i == active {
+                        crate::native_style::text()
+                    } else {
+                        crate::native_style::secondary()
+                    })
+                    .into(),
+                ),
                 ..Default::default()
             },
         );

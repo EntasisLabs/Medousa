@@ -364,14 +364,17 @@ pub fn polish(world: &mut World) {
                     && pointer[1] >= r.y
                     && pointer[1] < r.y + r.h
             });
-            world.insert(
-                entity,
-                if selected || hovered {
-                    visual::raised()
-                } else {
-                    visual::navigation()
-                },
-            );
+            let pressed = hovered && world.resource::<Input>().is_some_and(|i| i.pointer.down);
+            let token = if pressed {
+                Token::ControlPressed
+            } else if selected {
+                Token::Selected
+            } else if hovered {
+                Token::ControlHover
+            } else {
+                visual::navigation()
+            };
+            world.insert(entity, visual::color(world, token));
             world.insert(entity, Radius(visual::CONTROL_RADIUS));
             let layout = world.get_mut::<Layout>(entity).unwrap();
             layout.width = Size::Px(218.);
@@ -380,10 +383,13 @@ pub fn polish(world: &mut World) {
             for child in children_of(world, entity) {
                 if world.has::<Label>(child) {
                     world.insert(child, LabelBox::CONTENT);
-                    world.get_mut::<Layout>(child).unwrap().height = Size::Px(18.);
-                    if let Some(style) = world.get_mut::<TextStyle>(child) {
-                        style.size = 13.;
-                    }
+                    let style = world
+                        .resource::<UiTheme>()
+                        .cloned()
+                        .unwrap_or_default()
+                        .typography(Typography::Label);
+                    world.get_mut::<Layout>(child).unwrap().height = Size::Hug;
+                    world.insert(child, style);
                 }
             }
             // RNDR's tab focus border stays authoritative.

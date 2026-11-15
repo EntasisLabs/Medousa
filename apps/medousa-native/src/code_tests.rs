@@ -538,10 +538,29 @@ fn dense_source_geometry_and_live_token_colors_preserve_editor_identity() {
     assert!(!w.get::<Spans>(view.editor).unwrap().runs.is_empty());
     edit(w, &k, "// updated\nlet value = 9;");
     assert_eq!(w.resource::<Code>().unwrap().views[&k].handle, view);
+    let runs = &w.get::<Spans>(view.editor).unwrap().runs;
+    let original = code_token_spans("// updated\nlet value = 9;");
     assert_eq!(
-        w.get::<Spans>(view.editor).unwrap().runs,
-        code_token_spans("// updated\nlet value = 9;")
+        runs.iter().map(|r| (r.start, r.end)).collect::<Vec<_>>(),
+        original
+            .iter()
+            .map(|r| (r.start, r.end))
+            .collect::<Vec<_>>()
     );
+    let palette = rndr_ui::UiTheme::default().markdown_theme();
+    assert_eq!(runs[0].color, palette.comment);
+    assert_eq!(runs[1].color, palette.keyword);
+    assert_eq!(runs[2].color, palette.number);
+    let document = w.resource::<Code>().unwrap().views[&k].document;
+    let mut theme = rndr_ui::UiTheme::default();
+    theme.appearance = rndr_ui::Appearance::Dark;
+    rndr_ui::apply_theme_bridge(w, theme.clone());
+    refresh_appearance(w);
+    assert_eq!(
+        w.get::<Spans>(view.editor).unwrap().runs[0].color,
+        theme.markdown_theme().comment
+    );
+    assert_eq!(w.resource::<Code>().unwrap().views[&k].document, document);
     let style = &w.get::<UiRecipe>(view.editor).unwrap().0;
     assert_eq!(style.corner, Some(Corner::Square));
     assert_eq!(style.padding, Some(rndr_ui::Space::Zero));
@@ -774,7 +793,23 @@ fn code_visual_acceptance() {
     );
     let mut exporter = rndr_render::Exporter::new().unwrap();
     std::fs::create_dir_all("verification").unwrap();
-    for (width, height, suffix) in [(1200, 850, "wide"), (760, 540, "narrow")] {
+    for (width, height, suffix) in [
+        (1200, 850, "wide"),
+        (760, 540, "narrow"),
+        (1200, 850, "light"),
+        (760, 650, "light-zoom"),
+    ] {
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(!suffix.starts_with("light")),
+                ..Default::default()
+            },
+        );
+        app.world_mut()
+            .resource_mut::<rndr_ui::UiTheme>()
+            .unwrap()
+            .reading_scale = if suffix.ends_with("zoom") { 1.5 } else { 1. };
         app.world_mut()
             .insert_resource(Viewport::new(width as f32, height as f32));
         for _ in 0..4 {

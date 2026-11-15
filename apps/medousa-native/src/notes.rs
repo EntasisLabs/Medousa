@@ -12,7 +12,7 @@ use rndr_core::{
     *,
 };
 use rndr_ui::{
-    Typography, UiColor, UiId, UiStyle,
+    Typography, UiId, UiStyle,
     controls::{self, ButtonProps, HostIntent},
     editing::{EditorSurface, EditorSurfaceHandle, EditorSurfaceProps},
     tabs::{TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripProps},
@@ -231,11 +231,13 @@ pub fn mount(world: &mut World, parent: Entity) {
     ));
     set_parent(world, search, sidebar);
     visual::plane(world, search, visual::rail());
+    world.get_mut::<UiStyle>(search).unwrap().typography = Some(Typography::Label);
+    world.insert(search, visual::SemanticBorder(visual::stroke()));
     world.insert(search, Radius(visual::CONTROL_RADIUS));
     world.insert(
         search,
         Border {
-            color: visual::stroke(),
+            color: visual::color(world, visual::stroke()),
             width: 1.,
         },
     );
@@ -917,13 +919,14 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                         world.insert(
                             handle.editor,
                             UiStyle {
-                                background: Some(UiColor::Explicit(visual::canvas())),
-                                foreground: Some(UiColor::Explicit(visual::text())),
+                                background: Some(visual::canvas().into()),
+                                foreground: Some(visual::text().into()),
+                                typography: Some(rndr_ui::Typography::Code),
                                 ..Default::default()
                             },
                         );
                         world.insert(handle.editor, ResolvedColor);
-                        world.insert(handle.editor, visual::canvas());
+                        // UiStyle owns the background across appearance changes.
                         visual::flat(world, handle.root, visual::canvas());
                         let preview = markdown_view(
                             world,
@@ -931,6 +934,13 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                         );
                         set_parent(world, preview, parent);
                         world.insert(preview, visual::ReadingDocument);
+                        world.insert(
+                            preview,
+                            UiStyle {
+                                typography: Some(Typography::Reading),
+                                ..Default::default()
+                            },
+                        );
                         world.get_mut::<Layout>(preview).unwrap().padding = 16.;
                         world
                             .get_mut::<MarkdownView>(preview)

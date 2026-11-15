@@ -7,7 +7,7 @@ use rndr_core::{
     *,
 };
 use rndr_ui::{
-    Corner, Typography, UiColor, UiId, UiRecipe, UiStyle,
+    Corner, Typography, UiId, UiRecipe, UiStyle,
     controls::{self, ButtonProps, HostIntent},
     editing::{EditorSurface, EditorSurfaceHandle, EditorSurfaceProps},
     tabs::{
@@ -320,8 +320,8 @@ fn style_editor(w: &mut World, handle: EditorSurfaceHandle) {
     w.insert(
         handle.editor,
         UiRecipe(UiStyle {
-            background: Some(UiColor::Explicit(visual::canvas())),
-            foreground: Some(UiColor::Explicit(visual::text())),
+            background: Some(visual::canvas().into()),
+            foreground: Some(visual::text().into()),
             typography: Some(Typography::Code),
             corner: Some(Corner::Square),
             padding: Some(rndr_ui::Space::Zero),
@@ -333,8 +333,8 @@ fn style_editor(w: &mut World, handle: EditorSurfaceHandle) {
             w.insert(
                 child,
                 UiRecipe(UiStyle {
-                    background: Some(UiColor::Explicit(visual::canvas())),
-                    foreground: Some(UiColor::Explicit(visual::secondary())),
+                    background: Some(visual::canvas().into()),
+                    foreground: Some(visual::secondary().into()),
                     typography: Some(Typography::Code),
                     ..UiStyle::default()
                 }),
@@ -345,12 +345,30 @@ fn style_editor(w: &mut World, handle: EditorSurfaceHandle) {
 fn highlight(w: &mut World, editor: Entity, content: &str) {
     // Reuse RNDR's bounded generic code-token colors, not a second parser/editor.
     // Full language-aware semantic tokens remain outside this presentation pass.
-    w.insert(
-        editor,
-        Spans {
-            runs: code_token_spans(content),
-        },
-    );
+    let palette = w
+        .resource::<rndr_ui::UiTheme>()
+        .cloned()
+        .unwrap_or_default()
+        .markdown_theme();
+    let original = MarkdownTheme::default();
+    let mut runs = code_token_spans(content);
+    // RNDR's public generic lexer currently uses its default palette. Keep its
+    // byte ranges and remap only its documented four token colors.
+    for run in &mut runs {
+        let color = run.color;
+        run.color = if color == original.keyword {
+            palette.keyword
+        } else if color == original.string {
+            palette.string
+        } else if color == original.number {
+            palette.number
+        } else if color == original.comment {
+            palette.comment
+        } else {
+            color
+        };
+    }
+    w.insert(editor, Spans { runs });
 }
 pub fn mount(w: &mut World, parent: Entity) {
     if w.resource::<Code>().is_some() {
@@ -755,6 +773,26 @@ fn render(w: &mut World, c: &mut Code) {
         }
     }
 }
+/// Called only when the effective theme changes, including retained hidden files.
+pub fn refresh_appearance(w: &mut World) {
+    let views = w
+        .resource::<Code>()
+        .map(|c| {
+            c.views
+                .iter()
+                .filter_map(|(key, v)| {
+                    c.buffers
+                        .get(key)
+                        .map(|b| (v.handle.editor, b.content.clone()))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for (editor, content) in views {
+        highlight(w, editor, &content);
+    }
+}
+
 pub fn sync(w: &mut World) {
     let Some(r) = w.resource_mut::<Code>() else {
         return;

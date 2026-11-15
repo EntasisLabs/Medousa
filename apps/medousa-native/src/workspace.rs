@@ -265,7 +265,10 @@ pub fn chrome(world: &mut World) {
     let drag = world.resource::<Drag>().and_then(|d| d.entity);
     for handle in handles.into_iter().flatten() {
         if focus != Some(handle.sash) && drag != Some(handle.sash) {
-            world.insert(handle.sash, crate::native_style::stroke());
+            world.insert(
+                handle.sash,
+                crate::native_style::color(world, crate::native_style::stroke()),
+            );
         }
     }
 }

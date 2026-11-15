@@ -70,7 +70,6 @@ pub struct Model {
     sidebar_key: String,
     details_open: bool,
     model_search_open: bool,
-    behavior_open: bool,
     sidebar_open: bool,
     document: DocumentId,
     pending_draft: Option<(DocumentId, rndr_core::editing::Revision)>,
@@ -105,7 +104,6 @@ impl Model {
             sidebar_key: String::new(),
             details_open: false,
             model_search_open: false,
-            behavior_open: false,
             sidebar_open: true,
             document,
             pending_draft: None,
@@ -151,11 +149,11 @@ pub fn app() -> App {
             .context("Chat composer"),
     );
     let theme = UiTheme {
-        appearance: Appearance::Dark,
         density: Density::Compact,
         ..Default::default()
     };
     rndr_ui::apply_theme_bridge(app.world_mut(), theme);
+    visual::install_zoom(app.world_mut());
     let mut docs = SourceDocuments::default();
     let document = docs.open("");
     app.world_mut().insert_resource(docs);
@@ -168,11 +166,14 @@ pub fn app() -> App {
         ..Default::default()
     });
     app.add_system(Schedule::Startup, setup);
+    app.add_system(Schedule::Update, visual::reading_zoom);
+    app.add_system(Schedule::Update, visual::sync_appearance);
     app.add_system(Schedule::Update, update);
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
     app.add_system(Schedule::Layout, visual::document_layouts);
     app.add_system(Schedule::Layout, chrome::polish);
+    app.add_system(Schedule::Layout, visual::borders);
     app
 }
 fn container(world: &mut World, parent: Option<Entity>, layout: Layout) -> Entity {
@@ -195,7 +196,8 @@ fn button(
         SEND => Some("Send message".into()),
         STOP => Some("Stop response".into()),
         SIDEBAR => Some("Toggle conversation sidebar".into()),
-        DETAILS => Some("Toggle conversation details".into()),
+        DETAILS if title == "Info" => Some("Toggle conversation details".into()),
+        DETAILS => Some("Runtime and conversation details".into()),
         _ => None,
     };
     props.variant = if id == SEND || id == STOP {
@@ -215,12 +217,7 @@ fn button(
         let handle = controls::IconButton::icon(world, parent, UiId(id), icon, name, props)
             .expect("stable icon control");
         world.get_mut::<LabelBox>(handle.label).unwrap().inset_x = 0.;
-        let tip = rndr_ui::inputs::Tooltip::attach(world, handle.root, name).unwrap();
-        // Keep short toolbar hints on one line, below the band rather than
-        // covering its adjacent title. The full accessible name stays intact.
-        world.insert(tip.root, PopupPlacement::Below);
-        world.get_mut::<Layout>(tip.root).unwrap().width = Size::Px(220.);
-        world.get_mut::<Label>(tip.root).unwrap().overflow = TextOverflow::Ellipsis;
+        visual::action_hint(world, handle.root, name);
         handle
     } else {
         controls::Button::mount(world, parent, UiId(id), props).expect("stable control")
@@ -247,11 +244,11 @@ fn button(
     }
     h
 }
-fn plane(world: &mut World, entity: Entity, color: Color) {
+fn plane(world: &mut World, entity: Entity, color: Token) {
     world.insert(
         entity,
         UiStyle {
-            background: Some(UiColor::Explicit(color)),
+            background: Some(color.into()),
             ..Default::default()
         },
     );
@@ -323,11 +320,13 @@ fn setup(world: &mut World) {
     ));
     set_parent(world, search, sidebar.content);
     plane(world, search, visual::rail());
+    world.get_mut::<UiStyle>(search).unwrap().typography = Some(Typography::Label);
+    world.insert(search, visual::SemanticBorder(visual::stroke()));
     world.insert(search, Radius(visual::CONTROL_RADIUS));
     world.insert(
         search,
         Border {
-            color: visual::stroke(),
+            color: visual::color(world, visual::stroke()),
             width: 1.,
         },
     );
@@ -524,17 +523,18 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     world.insert(
         compose.root,
         UiStyle {
-            background: Some(UiColor::Explicit(composer_color())),
+            background: Some(composer_color().into()),
             padding: Some(Space::Zero),
             gap: Some(Space::Zero),
             ..Default::default()
         },
     );
     world.insert(compose.root, Radius(visual::COMPOSER_RADIUS));
+    world.insert(compose.root, visual::SemanticBorder(visual::stroke()));
     world.insert(
         compose.root,
         Border {
-            color: visual::stroke(),
+            color: visual::color(world, visual::stroke()),
             width: 1.,
         },
     );
@@ -607,7 +607,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     world.insert(
         model_caption,
         UiStyle {
-            foreground: Some(UiColor::Explicit(visual::secondary())),
+            foreground: Some(visual::secondary().into()),
             ..Default::default()
         },
     );
@@ -642,18 +642,39 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             ..Layout::column()
         },
     );
-    button(world, footer, BEHAVIOR, "Behavior  ⌄", true);
+    let behavior_trigger = button(world, footer, BEHAVIOR, "Behavior  ⌄", true);
+    // Detached native popup: opening it must not relayout the writing lane.
     let behavior = container(
         world,
-        Some(compose.content),
+        None,
         Layout {
-            width: Size::Fill,
+            width: Size::Px(260.),
             height: Size::Hug,
-            gap: 8.,
-            ..Layout::row()
+            padding: 8.,
+            gap: 4.,
+            ..Layout::column()
         },
     );
     world.insert(behavior, Hidden);
+    world.insert(
+        behavior,
+        AnchoredPopup {
+            anchor: behavior_trigger.root,
+            max_height: 240.,
+            closed: |_, _| {},
+        },
+    );
+    world.insert(behavior, PopupPlacement::Below);
+    visual::plane(world, behavior, visual::raised());
+    world.insert(behavior, Radius(visual::CONTROL_RADIUS));
+    world.insert(
+        behavior,
+        Border {
+            color: visual::color(world, visual::stroke()),
+            width: 1.,
+        },
+    );
+    world.insert(behavior, visual::SemanticBorder(visual::stroke()));
     let depth = SingleSelect::mount(
         world,
         behavior,
@@ -706,7 +727,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     world.insert(
         status,
         UiStyle {
-            foreground: Some(UiColor::Explicit(visual::secondary())),
+            foreground: Some(visual::secondary().into()),
             ..Default::default()
         },
     );
@@ -748,18 +769,19 @@ fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> Ed
     world.insert(
         h.editor,
         UiStyle {
-            background: Some(UiColor::Explicit(composer_color())),
+            background: Some(composer_color().into()),
             typography: Some(Typography::Label),
             ..Default::default()
         },
     );
     // Core editor paint otherwise supplies its own gray input background.
     world.insert(h.editor, ResolvedColor);
-    world.insert(h.editor, composer_color());
+    // Leave Color to UiStyle's resolver: an authored primitive Color would
+    // pin the mount-time appearance and block subsequent theme changes.
     world.insert(h.editor, Placeholder::new("Message Medousa…"));
     h
 }
-fn composer_color() -> Color {
+fn composer_color() -> Token {
     visual::raised()
 }
 
@@ -798,11 +820,7 @@ fn quiet_selector(
     world.get_mut::<Label>(handle.label).unwrap().overflow = TextOverflow::Ellipsis;
     // Selectors remain visually quiet even while disabled during a turn.
     // Keep the native outer focus ring and the popup untouched.
-    let face = world.get::<Parent>(handle.label).unwrap().entity;
-    let border = world.get::<Parent>(face).unwrap().entity;
-    let color = composer_color();
-    plane(world, face, color);
-    plane(world, border, color);
+    // RNDR owns hover/pressed/disabled/focus layers; do not flatten them.
 }
 fn round_send(world: &mut World, handle: controls::ControlHandle, enabled: bool) {
     let mut nodes = vec![handle.root];
@@ -822,15 +840,8 @@ fn round_send(world: &mut World, handle: controls::ControlHandle, enabled: bool)
         padding: 2.,
         ..Layout::column()
     };
-    let face = world.get::<Parent>(handle.label).unwrap().entity;
-    let border = world.get::<Parent>(face).unwrap().entity;
-    let color = if enabled {
-        Color::rgb(0.94, 0.93, 0.90)
-    } else {
-        Color::rgb(0.25, 0.25, 0.28)
-    };
-    plane(world, face, color);
-    plane(world, border, color);
+    // Preserve the native primary recipe and its state feedback.
+    let _ = enabled;
     // Fill the circular face with centered label content, rather than using
     // a short Hug-height face (which produces an over-rounded diamond).
     world.get_mut::<Layout>(handle.label).unwrap().height = Size::Fill;
@@ -838,17 +849,6 @@ fn round_send(world: &mut World, handle: controls::ControlHandle, enabled: bool)
         metrics.inset_x = 7.;
         metrics.inset_y = 3.;
     }
-    world.insert(
-        handle.label,
-        UiStyle {
-            foreground: Some(UiColor::Explicit(if enabled {
-                Color::rgb(0.07, 0.07, 0.08)
-            } else {
-                Color::rgb(0.55, 0.55, 0.59)
-            })),
-            ..Default::default()
-        },
-    );
 }
 fn depth_options() -> Vec<SelectOption> {
     ["Concise", "Standard", "Deep"]
@@ -914,6 +914,9 @@ fn update(world: &mut World) {
         conversations::focus_from_input(world);
     }
     let ui = *world.resource::<Ui>().unwrap();
+    if !chat_active {
+        close_popup(world, ui.behavior, false);
+    }
     if chat_active
         && world
             .resource::<KeymapFired>()
@@ -1036,14 +1039,20 @@ fn action(world: &mut World, id: u64) {
     let ui = *world.resource::<Ui>().unwrap();
     match id {
         BEHAVIOR => {
-            let m = world.resource_mut::<Model>().unwrap();
-            m.behavior_open = !m.behavior_open;
+            if world.has::<Hidden>(ui.behavior) {
+                if open_popup(world, ui.behavior) {
+                    request_focus(world, ui.depth);
+                }
+            } else {
+                close_popup(world, ui.behavior, true);
+            }
         }
         DETAILS => {
             let m = world.resource_mut::<Model>().unwrap();
             m.details_open = !m.details_open;
         }
         MODEL_SEARCH => {
+            close_popup(world, ui.behavior, true);
             let m = world.resource_mut::<Model>().unwrap();
             m.model_search_open = !m.model_search_open;
         }
@@ -1603,7 +1612,18 @@ fn sync(world: &mut World) {
         .unwrap();
     // Grow with explicit draft lines, then let the native editor scroll. Do
     // not remount the source document or reset its selection/undo on typing.
-    let editor_height = (doc.text().lines().count().max(1).min(6) as f32 * 22. + 22.).max(44.);
+    let scale = world
+        .resource::<UiTheme>()
+        .cloned()
+        .unwrap_or_default()
+        .text_scale;
+    let scale = if scale.is_finite() {
+        scale.clamp(0.5, 4.)
+    } else {
+        1.
+    };
+    let editor_height =
+        (doc.text().lines().count().max(1).min(6) as f32 * 22. + 22.).max(44.) * scale;
     world.get_mut::<Layout>(ui.composer_parent).unwrap().height = Size::Px(editor_height);
     let doc = world
         .resource::<SourceDocuments>()
@@ -1667,6 +1687,19 @@ fn sync(world: &mut World) {
         .unwrap_or_default();
     let behavior_button = button(world, ui.footer, BEHAVIOR, "Behavior  ⌄", true);
     world.get_mut::<Layout>(behavior_button.root).unwrap().width = Size::Px(118.);
+    let open = !world.has::<Hidden>(ui.behavior);
+    world.insert(
+        behavior_button.root,
+        SelectionAccess {
+            role: AccessRole::Button,
+            checked: None,
+            expanded: Some(open),
+            multiselect: false,
+            controls: open.then_some(ui.behavior),
+            labelled_by: None,
+            active_descendant: None,
+        },
+    );
     let busy = m.chat.busy() || runtimes::busy(world);
     if busy {
         world.insert(send.root, Hidden);
@@ -1774,11 +1807,7 @@ fn sync(world: &mut World) {
         state.model_search_open,
         state.sidebar_open,
     );
-    for (entity, visible) in [
-        (ui.details, details),
-        (ui.behavior, state.behavior_open),
-        (ui.filter_row, filter),
-    ] {
+    for (entity, visible) in [(ui.details, details), (ui.filter_row, filter)] {
         if visible {
             world.remove::<Hidden>(entity);
         } else {
@@ -2007,7 +2036,10 @@ mod tests {
                 "{editor:?}"
             );
             assert!(w.has::<ResolvedColor>(ui.composer.editor));
-            assert_eq!(w.get::<Color>(ui.composer.editor), Some(&composer_color()));
+            assert_eq!(
+                w.get::<Color>(ui.composer.editor),
+                Some(&visual::color(w, composer_color()))
+            );
             assert!(w.has::<Hidden>(ui.behavior));
         }
     }
@@ -2030,7 +2062,9 @@ mod tests {
         app.update();
         app.update();
         let w = app.world();
-        assert!(!w.has::<Hidden>(ui.behavior));
+        // Search hands focus back to the composer area rather than leaving
+        // an unrelated modal scope open above the filter.
+        assert!(w.has::<Hidden>(ui.behavior));
         assert!(!w.has::<Hidden>(ui.filter_row));
         assert_eq!(w.resource::<Model>().unwrap().document, id);
         assert_eq!(
