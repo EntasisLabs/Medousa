@@ -89,3 +89,29 @@ cargo test
 The test suite uses fixture transports and headless RNDR frames. Passing it is
 not evidence that every workflow has been manually exercised against a live
 daemon or that arbitrary web/HTML content has native parity.
+
+## Interactive performance
+
+`cargo run` now uses an optimized dev profile: application opt-level 1,
+dependencies (including RNDR and text shaping) opt-level 3. Debug assertions
+remain enabled. The first build/rebuild after changing profiles takes longer;
+fully unoptimized builds are not representative of interactive performance.
+
+Hidden Chat presentation is not reconciled on every Notes/Code interaction;
+background transport/model updates continue and the view catches up on return.
+Retained source adapters use canonical document revisions to avoid comparing
+unchanged file contents. Source notifications are acknowledged after capture so
+long typing sessions do not exhaust RNDR's bounded event queue.
+
+Repeat explicit CPU probes with:
+
+```sh
+cargo test performance_probe -- --ignored --nocapture --test-threads=1
+```
+
+The loaded Code probe uses the production Parley text engine, an integrated shell,
+and synthetic source edits/editor offsets. The small shell probe uses the default
+headless text engine. Both measure CPU update/layout/paint, not GPU submission,
+platform input latency or display presentation. They do not replace a foreground
+check with a real loaded conversation/project. Save window-only drafts before
+relaunching to evaluate the new executable.

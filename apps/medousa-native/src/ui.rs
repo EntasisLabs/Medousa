@@ -926,7 +926,7 @@ fn update(world: &mut World) {
                 }
                 continue;
             }
-            crate::surfaces::SurfaceId::Chat => {},
+            crate::surfaces::SurfaceId::Chat => {}
         }
         conversations::focus_entity(world, intent.entity);
         if approvals::action(world, &intent)
@@ -962,10 +962,23 @@ fn update(world: &mut World) {
     {
         world.resource_mut::<Model>().unwrap().chat.status = error;
     }
-    conversations::sync_all(world);
+    // Hidden chat transport/model updates above remain live; presentation catches
+    // up on return instead of reconciling all chat controls on every Code keystroke.
+    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Chat {
+        conversations::sync_all(world);
+    }
     crate::notes::tick(world);
     crate::code::sync(world);
     auxiliary::dispatch(world);
+    // Every adapter above reads canonical SourceSession text/revision, not its
+    // notification queue. Acknowledge after capture, including parked drafts:
+    // RNDR intentionally refuses input once an undrained queue reaches 256.
+    if let Some(documents) = world.resource_mut::<SourceDocuments>() {
+        let ids: Vec<_> = documents.ids().collect();
+        for id in ids {
+            documents.get_mut(id).unwrap().drain_events().for_each(drop);
+        }
+    }
 }
 fn action(world: &mut World, id: u64) {
     let ui = *world.resource::<Ui>().unwrap();
@@ -1808,6 +1821,67 @@ mod tests {
         app.update();
         (app, rx)
     }
+    #[test]
+    fn sustained_composer_typing_acknowledges_source_events() {
+        let (mut app, _rx) = idle_fixture();
+        let document = app.world().resource::<Model>().unwrap().document;
+        for _ in 0..300 {
+            let d = app
+                .world_mut()
+                .resource_mut::<SourceDocuments>()
+                .unwrap()
+                .get_mut(document)
+                .unwrap();
+            let end = d.text().len();
+            d.commit(rndr_core::editing::SourceBatch {
+                document,
+                base: d.revision(),
+                origin: rndr_core::editing::EditOrigin::Host(99),
+                changes: vec![rndr_core::editing::SourceChange {
+                    range: end..end,
+                    replacement: "x".into(),
+                }],
+            })
+            .expect("typing must not hit event backpressure");
+            update(app.world_mut());
+        }
+        assert_eq!(
+            app.world()
+                .resource::<SourceDocuments>()
+                .unwrap()
+                .get(document)
+                .unwrap()
+                .text(),
+            "x".repeat(300)
+        );
+    }
+    /// Reproducible CPU-side frame benchmark; excludes GPU/presentation and daemon IO.
+    #[test]
+    #[ignore = "explicit performance measurement"]
+    fn native_frame_performance_probe() {
+        let (mut app, _rx) = idle_fixture();
+        for surface in [
+            crate::surfaces::SurfaceId::Chat,
+            crate::surfaces::SurfaceId::Notes,
+            crate::surfaces::SurfaceId::Code,
+        ] {
+            crate::surfaces::select(app.world_mut(), surface);
+            for _ in 0..12 {
+                rndr_paint::frame(&mut app);
+            }
+            let mut samples = Vec::new();
+            for _ in 0..80 {
+                let start = std::time::Instant::now();
+                rndr_paint::frame(&mut app);
+                samples.push(start.elapsed().as_secs_f64() * 1000.);
+            }
+            samples.sort_by(f64::total_cmp);
+            eprintln!(
+                "native CPU frame {surface:?}: median={:.3}ms p95={:.3}ms",
+                samples[40], samples[76]
+            );
+        }
+    }
     fn draft(app: &mut App, text: &str) {
         let id = app.world().resource::<Model>().unwrap().document;
         let doc = app
@@ -1831,33 +1905,36 @@ mod tests {
     }
     #[test]
     fn nonchat_surfaces_cannot_dispatch_chat_shortcuts_or_hidden_send_actions() {
-        for surface in [crate::surfaces::SurfaceId::Notes, crate::surfaces::SurfaceId::Code] {
-        let (mut app, mut rx) = idle_fixture();
-        draft(&mut app, "do not send this while editing Notes");
-        while rx.try_recv().is_ok() {}
-        let ui = *app.world().resource::<Ui>().unwrap();
-        crate::surfaces::select(app.world_mut(), surface);
-        app.world_mut().insert_resource(KeymapFired {
-            actions: vec!["chat.send".into()],
-        });
-        // A stale keymap event must not cross the active surface boundary.
-        update(app.world_mut());
-        assert!(!app.world().resource::<Model>().unwrap().chat.busy());
-        assert!(rx.try_recv().is_err());
-        assert_eq!(
-            app.world()
-                .resource::<SourceDocuments>()
-                .unwrap()
-                .get(app.world().resource::<Model>().unwrap().document)
-                .unwrap()
-                .text(),
-            "do not send this while editing Notes"
-        );
-        assert_eq!(
-            try_activate(app.world_mut(), ui.composer.editor),
-            ActivationResult::Rejected
-        );
-        assert!(app.world().resource::<Focus>().unwrap().entity.is_none());
+        for surface in [
+            crate::surfaces::SurfaceId::Notes,
+            crate::surfaces::SurfaceId::Code,
+        ] {
+            let (mut app, mut rx) = idle_fixture();
+            draft(&mut app, "do not send this while editing Notes");
+            while rx.try_recv().is_ok() {}
+            let ui = *app.world().resource::<Ui>().unwrap();
+            crate::surfaces::select(app.world_mut(), surface);
+            app.world_mut().insert_resource(KeymapFired {
+                actions: vec!["chat.send".into()],
+            });
+            // A stale keymap event must not cross the active surface boundary.
+            update(app.world_mut());
+            assert!(!app.world().resource::<Model>().unwrap().chat.busy());
+            assert!(rx.try_recv().is_err());
+            assert_eq!(
+                app.world()
+                    .resource::<SourceDocuments>()
+                    .unwrap()
+                    .get(app.world().resource::<Model>().unwrap().document)
+                    .unwrap()
+                    .text(),
+                "do not send this while editing Notes"
+            );
+            assert_eq!(
+                try_activate(app.world_mut(), ui.composer.editor),
+                ActivationResult::Rejected
+            );
+            assert!(app.world().resource::<Focus>().unwrap().entity.is_none());
         }
     }
     #[test]

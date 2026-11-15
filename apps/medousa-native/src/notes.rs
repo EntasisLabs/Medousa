@@ -7,7 +7,7 @@ use medousa_types::{
     VaultPutQuery, VaultWriteResponse,
 };
 use rndr_core::{
-    editing::{DocumentId, SourceDocuments},
+    editing::{DocumentId, Revision, SourceDocuments},
     *,
 };
 use rndr_ui::{
@@ -67,6 +67,7 @@ enum Action {
 }
 struct View {
     document: DocumentId,
+    captured_revision: Option<Revision>,
     handle: EditorSurfaceHandle,
     preview: Entity,
     tab: u64,
@@ -324,11 +325,15 @@ pub fn activate(world: &mut World) {
     }
 }
 fn capture(world: &World, n: &mut Notes) {
-    for (path, v) in &n.views {
+    for (path, v) in &mut n.views {
         if let Some(d) = world
             .resource::<SourceDocuments>()
             .and_then(|s| s.get(v.document))
         {
+            if v.captured_revision == Some(d.revision()) {
+                continue;
+            }
+            v.captured_revision = Some(d.revision());
             if n.core.get(path).is_some_and(|b| b.content != d.text()) {
                 let before = n.core.get(path).map(|b| (b.dirty, b.conflict));
                 let _ = n.core.dispatch(VaultBufferCommand::ApplyEdit {
@@ -931,6 +936,7 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                             path.clone(),
                             View {
                                 document,
+                                captured_revision: None,
                                 handle,
                                 preview,
                                 tab: next(),

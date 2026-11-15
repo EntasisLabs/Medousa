@@ -6,7 +6,9 @@ use medousa_app_core::shell::SplitEdge;
 use medousa_app_core::{ShellCommand, ShellCore, ShellTab};
 use rndr_ui::{
     split::{SplitSash, SplitSashHandle, SplitSashProps},
-    tabs::{TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripProps},
+    tabs::{
+        TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripHandle, TabStripProps,
+    },
 };
 
 const SPLIT: u64 = 40;
@@ -26,6 +28,7 @@ struct Deck {
     settling: u8,
     ratio: f64,
     strips: [Option<Entity>; 2],
+    strip_cache: [Option<(Vec<TabSpec>, TabId, bool, TabStripHandle)>; 2],
     closed: std::collections::HashSet<u64>,
     empty: Entity,
 }
@@ -123,6 +126,7 @@ pub(super) fn mount(world: &mut World, parent: Entity) -> Entity {
         settling: 3,
         ratio: 0.5,
         strips: [None, None],
+        strip_cache: [None, None],
         closed: Default::default(),
         empty,
     });
@@ -535,6 +539,14 @@ pub(super) fn tab_events(world: &mut World) {
         {
             continue;
         }
+        // RNDR may optimistically change selection before the host rejects a
+        // request (e.g. IME). Reassert host state on the next reconciliation.
+        let deck = world.resource_mut::<Deck>().unwrap();
+        for i in 0..2 {
+            if deck.strips[i] == Some(event.strip) {
+                deck.strip_cache[i] = None;
+            }
+        }
         match event.kind {
             TabStripEventKind::Activated(t) => focus(world, t.0),
             TabStripEventKind::CloseRequested(t) => {
@@ -750,15 +762,30 @@ pub(super) fn sync_all(world: &mut World) {
                 })
                 .collect();
             if let Some(selected) = g.active_tab_id.as_deref().and_then(route) {
-                let strip = TabStrip::mount(
-                    world,
-                    parents[i],
-                    UiId(0x5441_4200 + i as u64),
-                    TabStripProps::new("Conversation tabs").active(i == active_group),
-                    &specs,
-                    TabId(selected),
-                )
-                .unwrap();
+                let selected = TabId(selected);
+                let active = i == active_group;
+                let cached = world.resource::<Deck>().unwrap().strip_cache[i]
+                    .as_ref()
+                    .filter(|(previous, tab, engaged, _)| {
+                        *previous == specs && *tab == selected && *engaged == active
+                    })
+                    .map(|(_, _, _, handle)| *handle);
+                let strip = if let Some(handle) = cached {
+                    handle
+                } else {
+                    let handle = TabStrip::mount(
+                        world,
+                        parents[i],
+                        UiId(0x5441_4200 + i as u64),
+                        TabStripProps::new("Conversation tabs").active(active),
+                        &specs,
+                        selected,
+                    )
+                    .unwrap();
+                    world.resource_mut::<Deck>().unwrap().strip_cache[i] =
+                        Some((specs.clone(), selected, active, handle));
+                    handle
+                };
                 world.get_mut::<Layout>(strip.root).unwrap().height = Size::Fill;
                 world.remove::<Hidden>(strip.root);
                 world.resource_mut::<Deck>().unwrap().strips[i] = Some(strip.root);

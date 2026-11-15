@@ -30,10 +30,17 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 tempfile = "3"
 bytes = "1"
 
+# Interactive builds must optimize the renderer/text stack too. Debug assertions
+# remain on; this is not a substitute for application hot-path fixes.
 [profile.dev]
+opt-level = 1
 debug = 0
 incremental = false
 
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.test]
+opt-level = 1
 debug = 0
 incremental = false

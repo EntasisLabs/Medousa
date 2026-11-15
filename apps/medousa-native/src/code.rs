@@ -2,7 +2,7 @@
 //! per-file history/selection/scroll; the daemon owns project files and leases.
 use medousa_sdk::{MedousaClient, operations as ops};
 use rndr_core::{
-    editing::{DocumentId, SourceDocuments},
+    editing::{DocumentId, Revision, SourceDocuments},
     *,
 };
 use rndr_ui::{
@@ -147,6 +147,7 @@ impl Buffer {
 }
 struct View {
     document: DocumentId,
+    captured_revision: Option<Revision>,
     handle: EditorSurfaceHandle,
     id: UiId,
 }
@@ -415,12 +416,19 @@ fn composing(w: &World, c: &Code) -> bool {
 }
 fn capture(w: &mut World, c: &mut Code) {
     let mut changed = Vec::new();
-    for (key, v) in &c.views {
+    for (key, v) in &mut c.views {
         if let (Some(b), Some(d)) = (
             c.buffers.get_mut(key),
             w.resource_mut::<SourceDocuments>()
                 .and_then(|s| s.get_mut(v.document)),
         ) {
+            // Selection/scroll frames do not require a full source comparison.
+            // Still drain the adapter's document events on unchanged revisions.
+            if v.captured_revision == Some(d.revision()) {
+                d.drain_events().for_each(drop);
+                continue;
+            }
+            v.captured_revision = Some(d.revision());
             if !b.baseline.readonly && b.content != d.text() {
                 let before = b.dirty();
                 b.content = d.text().into();
@@ -491,6 +499,7 @@ fn ensure_view(w: &mut World, c: &mut Code, key: &Key) {
         key.clone(),
         View {
             document,
+            captured_revision: None,
             handle,
             id,
         },

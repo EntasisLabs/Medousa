@@ -793,3 +793,63 @@ fn code_visual_acceptance() {
         .unwrap();
     }
 }
+
+/// Production text engine + integrated shell; CPU update/layout/paint only.
+#[test]
+#[ignore = "explicit performance measurement"]
+fn loaded_code_performance_probe() {
+    use std::sync::Arc;
+    let mut app = crate::ui::app();
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    app.world_mut().insert_resource(engine);
+    app.world_mut().insert_resource(Viewport::new(1200., 850.));
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
+    load(
+        app.world_mut(),
+        "one",
+        "code.rs",
+        include_str!("code.rs"),
+        "v1",
+    );
+    let k = key("one", "code.rs");
+    let view = &app.world().resource::<Code>().unwrap().views[&k];
+    let (document, editor) = (view.document, view.handle.editor);
+    for _ in 0..10 {
+        rndr_paint::frame(&mut app);
+    }
+    for mode in ["settled", "scroll", "typing"] {
+        let mut samples = Vec::new();
+        for i in 0..40 {
+            let start = Instant::now();
+            if mode == "scroll" {
+                app.world_mut().get_mut::<Editor>(editor).unwrap().offset = i as f32 * 18.;
+            } else if mode == "typing" {
+                let d = app
+                    .world_mut()
+                    .resource_mut::<SourceDocuments>()
+                    .unwrap()
+                    .get_mut(document)
+                    .unwrap();
+                let end = d.text().len();
+                d.commit(editing::SourceBatch {
+                    document,
+                    base: d.revision(),
+                    origin: editing::EditOrigin::Host(99),
+                    changes: vec![editing::SourceChange {
+                        range: end..end,
+                        replacement: "x".into(),
+                    }],
+                })
+                .unwrap();
+            }
+            rndr_paint::frame(&mut app);
+            samples.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        samples.sort_by(f64::total_cmp);
+        eprintln!(
+            "loaded Code / Parley {mode}: median={:.3}ms p95={:.3}ms",
+            samples[20], samples[38]
+        );
+    }
+}

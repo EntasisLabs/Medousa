@@ -73,3 +73,12 @@ are not automatically retried.
 Source drafts, like chat and note drafts, are retained only for this window—not
 recovered after quitting. This first Code milestone does not add language
 intelligence, terminal/tasks, changes/review tools, or project creation.
+
+### Interactive build performance
+
+The native app's normal development build optimizes the application and RNDR/text
+dependencies while retaining debug assertions. A fully unoptimized build can feel
+substantially slower and is not the interactive baseline. Hidden chat views keep
+background model updates without reconciling their presentation on every Notes or
+Code interaction. Before relaunching an updated build, save window-only drafts.
+CPU fixture timings are not a guarantee of GPU/display or end-to-end input latency.

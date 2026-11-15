@@ -563,3 +563,70 @@ fn native_note_tabs_activate_only_their_own_retained_document() {
     assert!(!w.has::<Hidden>(preview));
     assert!(drain_commands(w).is_empty());
 }
+
+#[test]
+fn revision_capture_tracks_edits_reverts_and_remote_reload() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "alpha", Some("v1"));
+    tick(w);
+    let document = w.resource::<Notes>().unwrap().views["a.md"].document;
+    let revision = w
+        .resource::<SourceDocuments>()
+        .unwrap()
+        .get(document)
+        .unwrap()
+        .revision();
+    assert_eq!(
+        w.resource::<Notes>().unwrap().views["a.md"].captured_revision,
+        Some(revision)
+    );
+    for _ in 0..4 {
+        tick(w);
+    }
+    edit(w, "a.md", "draft");
+    assert!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("a.md")
+            .unwrap()
+            .dirty
+    );
+    edit(w, "a.md", "alpha");
+    assert!(
+        !w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("a.md")
+            .unwrap()
+            .dirty
+    );
+    click(w, Action::Check);
+    let command = drain_commands(w).pop().unwrap();
+    apply(
+        w,
+        NoteUpdate {
+            command,
+            result: Ok(Response::Loaded(response("a.md", "remote", Some("v2")))),
+        },
+    );
+    tick(w);
+    assert_eq!(
+        w.resource::<SourceDocuments>()
+            .unwrap()
+            .get(document)
+            .unwrap()
+            .text(),
+        "remote"
+    );
+    assert_eq!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("a.md")
+            .unwrap()
+            .content,
+        "remote"
+    );
+}
