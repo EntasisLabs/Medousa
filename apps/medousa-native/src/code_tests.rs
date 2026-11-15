@@ -1,0 +1,795 @@
+use super::*;
+fn fixture() -> App {
+    let mut app = App::new();
+    app.add_plugin(rndr_ui::UiPlugin);
+    let w = app.world_mut();
+    let root = w.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Fill,
+        ..Layout::row()
+    },));
+    mount(w, root);
+    app
+}
+fn click(w: &mut World, a: Action) {
+    let id = next();
+    w.resource_mut::<Code>().unwrap().actions.insert(id, a);
+    assert!(action(w, &HostIntent::Command(id)));
+}
+fn key(work: &str, path: &str) -> Key {
+    (work.into(), path.into())
+}
+fn file(work: &str, path: &str, content: &str, digest: &str) -> Value {
+    json!({"work_id":work,"path":path,"content":content,"digest":digest,"encoding":"utf-8","byte_size":content.len()})
+}
+fn load(w: &mut World, work: &str, path: &str, content: &str, digest: &str) {
+    w.resource_mut::<Code>().unwrap().selected = Some(work.into());
+    click(w, Action::File(path.into()));
+    let c = take_commands(w)
+        .into_iter()
+        .find(|c| matches!(c.operation, Operation::Load(_)))
+        .unwrap();
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Ok(file(work, path, content, digest)),
+        },
+    );
+}
+fn edit(w: &mut World, k: &Key, content: &str) {
+    let id = w.resource::<Code>().unwrap().views[k].document;
+    let d = w
+        .resource_mut::<SourceDocuments>()
+        .unwrap()
+        .get_mut(id)
+        .unwrap();
+    d.reload(d.revision(), content).unwrap();
+    sync(w);
+}
+fn session(w: &mut World, work: &str) {
+    w.resource_mut::<Code>().unwrap().sessions.insert(
+        work.into(),
+        Session {
+            lease: Lease {
+                id: "human-lease".into(),
+                generation: 7,
+            },
+            checked: Instant::now(),
+        },
+    );
+}
+#[test]
+fn activation_only_reads_and_is_idempotent() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    assert!(take_commands(w).is_empty());
+    activate(w);
+    activate(w);
+    let q = take_commands(w);
+    assert_eq!(q.len(), 1);
+    assert!(matches!(q[0].operation, Operation::Projects));
+}
+#[test]
+fn retained_files_and_projects_keep_distinct_documents_and_drafts() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    let k = key("one", "src/lib.rs");
+    load(w, "one", "src/lib.rs", "one", "d1");
+    edit(w, &k, "draft one");
+    let first = w.resource::<Code>().unwrap().views[&k].handle;
+    load(w, "two", "src/lib.rs", "two", "d2");
+    edit(w, &key("two", "src/lib.rs"), "draft two");
+    assert!(w.has::<Hidden>(first.root));
+    click(w, Action::Project("one".into()));
+    assert!(!w.has::<Hidden>(first.root));
+    assert_eq!(
+        w.resource::<Code>().unwrap().buffers[&k].content,
+        "draft one"
+    );
+    assert_eq!(w.resource::<Code>().unwrap().views[&k].handle, first);
+}
+#[test]
+fn save_requires_local_human_lease_and_digest_fence() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    let k = key("one", "a.rs");
+    load(w, "one", "a.rs", "base", "opaque-digest");
+    edit(w, &k, "draft");
+    click(w, Action::Save);
+    assert!(take_commands(w).is_empty());
+    session(w, "one");
+    click(w, Action::Save);
+    let c = take_commands(w).pop().unwrap();
+    let Operation::Save {
+        key,
+        content,
+        digest,
+        lease,
+    } = c.operation
+    else {
+        panic!("not save")
+    };
+    assert_eq!(key, k);
+    assert_eq!(content, "draft");
+    assert_eq!(digest, "opaque-digest");
+    assert_eq!(lease.id, "human-lease");
+    assert_eq!(lease.generation, 7);
+}
+#[test]
+fn save_preserves_edits_made_while_request_in_flight() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    let k = key("one", "a.rs");
+    load(w, "one", "a.rs", "base", "v1");
+    session(w, "one");
+    edit(w, &k, "sent");
+    click(w, Action::Save);
+    let c = take_commands(w).pop().unwrap();
+    edit(w, &k, "later edit");
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Ok(file("one", "a.rs", "sent", "v2")),
+        },
+    );
+    let b = &w.resource::<Code>().unwrap().buffers[&k];
+    assert_eq!(b.content, "later edit");
+    assert_eq!(b.baseline.content, "sent");
+    assert_eq!(b.baseline.digest, "v2");
+    assert!(b.dirty());
+}
+#[test]
+fn unknown_save_blocks_retry_until_latest_read() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    let k = key("one", "a.rs");
+    load(w, "one", "a.rs", "base", "v1");
+    session(w, "one");
+    edit(w, &k, "sent");
+    click(w, Action::Save);
+    let c = take_commands(w).pop().unwrap();
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Err("connection lost".into()),
+        },
+    );
+    click(w, Action::Save);
+    assert!(take_commands(w).is_empty());
+    assert!(w.resource::<Code>().unwrap().buffers[&k].uncertain);
+    click(w, Action::Check);
+    let c = take_commands(w).pop().unwrap();
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Ok(file("one", "a.rs", "sent", "v2")),
+        },
+    );
+    let b = &w.resource::<Code>().unwrap().buffers[&k];
+    assert!(!b.uncertain);
+    assert!(!b.dirty());
+}
+#[test]
+fn remote_change_requires_explicit_acknowledgement_before_save() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    let k = key("one", "a.rs");
+    load(w, "one", "a.rs", "base", "v1");
+    session(w, "one");
+    edit(w, &k, "local");
+    click(w, Action::Check);
+    let c = take_commands(w).pop().unwrap();
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Ok(file("one", "a.rs", "remote", "v2")),
+        },
+    );
+    assert_eq!(w.resource::<Code>().unwrap().buffers[&k].content, "local");
+    click(w, Action::Save);
+    assert!(take_commands(w).is_empty());
+    click(w, Action::Acknowledge);
+    click(w, Action::Save);
+    assert!(matches!(&take_commands(w)[0].operation,Operation::Save{digest,..} if digest=="v2"));
+}
+#[test]
+fn preview_binary_lossy_and_truncated_are_readonly() {
+    for extra in [
+        json!({"encoding":"binary"}),
+        json!({"encoding":"utf-8-lossy"}),
+        json!({"preview":true}),
+        json!({"truncated":true}),
+    ] {
+        let mut v = file("one", "a.rs", "preview", "v1");
+        v.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let s = source(&v, &key("one", "a.rs")).unwrap();
+        assert!(s.readonly);
+        let b = Buffer {
+            baseline: s,
+            content: "edited".into(),
+            remote: None,
+            uncertain: false,
+            error: String::new(),
+        };
+        assert!(!b.saveable());
+    }
+    let mut a = fixture();
+    let w = a.world_mut();
+    w.resource_mut::<Code>().unwrap().selected = Some("one".into());
+    click(w, Action::File("a.rs".into()));
+    let c = take_commands(w).pop().unwrap();
+    let mut v = file("one", "a.rs", "preview", "v1");
+    v["preview"] = json!(true);
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Ok(v),
+        },
+    );
+    let id = w.resource::<Code>().unwrap().views[&key("one", "a.rs")].document;
+    assert!(
+        w.resource::<SourceDocuments>()
+            .unwrap()
+            .get(id)
+            .unwrap()
+            .is_readonly()
+    );
+}
+#[test]
+fn identity_mismatch_and_missing_digest_fail_closed() {
+    let k = key("one", "a.rs");
+    assert!(source(&file("other", "a.rs", "x", "v"), &k).is_err());
+    assert!(source(&file("one", "other.rs", "x", "v"), &k).is_err());
+    assert!(source(&file("one", "a.rs", "x", ""), &k).is_err());
+}
+#[test]
+fn human_begin_requires_affordance_and_unknown_begin_cannot_blind_retry() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    w.resource_mut::<Code>().unwrap().selected = Some("one".into());
+    click(w, Action::Begin);
+    assert!(take_commands(w).is_empty());
+    w.resource_mut::<Code>().unwrap().projects.push(Project {
+        id: "one".into(),
+        title: "One".into(),
+        begin: false,
+        resume: true,
+    });
+    click(w, Action::Begin);
+    let c = take_commands(w).pop().unwrap();
+    assert!(matches!(
+        &c.operation,
+        Operation::Begin { resume: true, .. }
+    ));
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Err("unknown outcome".into()),
+        },
+    );
+    click(w, Action::Begin);
+    assert!(take_commands(w).is_empty());
+}
+#[test]
+fn heartbeat_loss_revokes_local_save_authority_not_drafts() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    let k = key("one", "a.rs");
+    load(w, "one", "a.rs", "base", "v1");
+    edit(w, &k, "draft");
+    session(w, "one");
+    w.resource_mut::<Code>()
+        .unwrap()
+        .sessions
+        .get_mut("one")
+        .unwrap()
+        .checked = Instant::now() - Duration::from_secs(21);
+    sync(w);
+    let c = take_commands(w).pop().unwrap();
+    assert!(matches!(c.operation, Operation::Heartbeat { .. }));
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Err("lease revoked".into()),
+        },
+    );
+    click(w, Action::Save);
+    assert!(take_commands(w).is_empty());
+    assert_eq!(w.resource::<Code>().unwrap().buffers[&k].content, "draft");
+}
+#[test]
+fn stale_updates_do_not_clear_live_request() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    activate(w);
+    let c = take_commands(w).pop().unwrap();
+    let mut stale = c.clone();
+    stale.serial += 1;
+    apply(
+        w,
+        CodeUpdate {
+            command: stale,
+            result: Ok(json!([])),
+        },
+    );
+    assert_eq!(w.resource::<Code>().unwrap().pending["projects"], c.serial);
+}
+#[test]
+fn generated_routes_encode_identity_as_one_path_component() {
+    assert_eq!(
+        route(ops::FORGE_ITEMS_BY_WORK_ID_SOURCE_GET, "a/b"),
+        "/v1/forge/items/a%2Fb/source"
+    );
+}
+#[test]
+fn source_reads_wait_for_composition_and_switching_is_blocked() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    let k = key("one", "a.rs");
+    load(w, "one", "a.rs", "base", "v1");
+    click(w, Action::Check);
+    let c = take_commands(w).pop().unwrap();
+    let editor = w.resource::<Code>().unwrap().views[&k].handle.editor;
+    w.insert_resource(Focus {
+        entity: Some(editor),
+    });
+    let mut input = Input::default();
+    input.ime_preedit = "漢".into();
+    w.insert_resource(input);
+    rndr_core::editing::prepare_source_input(w);
+    assert!(!can_deactivate(w));
+    click(w, Action::Project("two".into()));
+    assert_eq!(
+        w.resource::<Code>().unwrap().selected.as_deref(),
+        Some("one")
+    );
+    apply(
+        w,
+        CodeUpdate {
+            command: c,
+            result: Ok(file("one", "a.rs", "latest", "v2")),
+        },
+    );
+    assert_eq!(w.resource::<Code>().unwrap().deferred.len(), 1);
+    assert_eq!(w.resource::<Code>().unwrap().buffers[&k].content, "base");
+    w.resource_mut::<Input>().unwrap().ime_preedit.clear();
+    rndr_core::editing::prepare_source_input(w);
+    sync(w);
+    assert!(can_deactivate(w));
+    assert!(w.resource::<Code>().unwrap().deferred.is_empty());
+    assert_eq!(w.resource::<Code>().unwrap().buffers[&k].content, "latest");
+}
+/// Exercise the real SDK HTTP transport against an isolated loopback fixture,
+/// never a user's daemon, project or execution lease.
+#[tokio::test]
+async fn sdk_wire_uses_human_executor_fenced_put_and_empty_heartbeat() {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let mut requests = Vec::new();
+        for reply in [
+            json!({"lease":{"work_id":"fixture","lease_id":"human","generation":8}}).to_string(),
+            file("fixture", "src/a b.rs", "saved", "v2").to_string(),
+            String::new(),
+        ] {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            let mut buf = [0; 4096];
+            let end = loop {
+                let n = stream.read(&mut buf).unwrap();
+                assert!(n > 0);
+                bytes.extend_from_slice(&buf[..n]);
+                if let Some(i) = bytes.windows(4).position(|s| s == b"\r\n\r\n") {
+                    break i + 4;
+                }
+            };
+            let header = String::from_utf8_lossy(&bytes[..end]).into_owned();
+            let len: usize = header
+                .lines()
+                .find_map(|s| {
+                    s.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .and_then(|s| s.trim().parse().ok())
+                })
+                .unwrap_or(0);
+            while bytes.len() < end + len {
+                let n = stream.read(&mut buf).unwrap();
+                assert!(n > 0);
+                bytes.extend_from_slice(&buf[..n]);
+            }
+            let body: Value = serde_json::from_slice(&bytes[end..end + len]).unwrap();
+            requests.push((header.lines().next().unwrap().to_owned(), body));
+            write!(stream,"HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",if reply.is_empty(){"204 No Content"}else{"200 OK"},reply.len(),reply).unwrap();
+        }
+        requests
+    });
+    let client = MedousaClient::new(format!("http://{address}"));
+    let begin = execute(
+        &client,
+        CodeCommand {
+            serial: 1,
+            operation: Operation::Begin {
+                work: "fixture".into(),
+                resume: false,
+            },
+        },
+    )
+    .await;
+    assert!(begin.result.is_ok());
+    let lease = Lease {
+        id: "human".into(),
+        generation: 8,
+    };
+    let save = execute(
+        &client,
+        CodeCommand {
+            serial: 2,
+            operation: Operation::Save {
+                key: key("fixture", "src/a b.rs"),
+                content: "saved".into(),
+                digest: "v1".into(),
+                lease: lease.clone(),
+            },
+        },
+    )
+    .await;
+    assert!(save.result.is_ok());
+    let beat = execute(
+        &client,
+        CodeCommand {
+            serial: 3,
+            operation: Operation::Heartbeat {
+                work: "fixture".into(),
+                lease,
+            },
+        },
+    )
+    .await;
+    assert!(beat.result.is_ok());
+    let requests = server.join().unwrap();
+    assert_eq!(
+        requests[0].0,
+        "POST /v1/forge/items/fixture/attempts HTTP/1.1"
+    );
+    assert_eq!(requests[0].1["executor"]["kind"], "human");
+    assert_eq!(requests[1].0, "PUT /v1/forge/items/fixture/source HTTP/1.1");
+    assert_eq!(
+        requests[1].1,
+        json!({"path":"src/a b.rs","content":"saved","expected_digest":"v1","lease_id":"human","generation":8})
+    );
+    assert_eq!(
+        requests[2].0,
+        "POST /v1/forge/leases/human/heartbeat HTTP/1.1"
+    );
+    assert_eq!(requests[2].1, json!({"generation":8}));
+}
+
+#[test]
+fn leases_arm_idle_deadline_and_cancel_it_while_heartbeat_is_pending() {
+    let mut app = fixture();
+    session(app.world_mut(), "work");
+    sync(app.world_mut());
+    assert!(app.next_deadline().is_some());
+    assert!(app.world().resource::<Code>().unwrap().lease_wake.is_some());
+    app.world_mut()
+        .resource_mut::<Code>()
+        .unwrap()
+        .sessions
+        .get_mut("work")
+        .unwrap()
+        .checked = Instant::now() - Duration::from_secs(21);
+    sync(app.world_mut());
+    let command = take_commands(app.world_mut())
+        .into_iter()
+        .find(|c| matches!(c.operation, Operation::Heartbeat { .. }))
+        .unwrap();
+    assert!(app.world().resource::<Code>().unwrap().lease_wake.is_none());
+    apply(
+        app.world_mut(),
+        CodeUpdate {
+            command,
+            result: Ok(Value::Null),
+        },
+    );
+    assert!(app.world().resource::<Code>().unwrap().lease_wake.is_some());
+    app.world_mut()
+        .resource_mut::<Code>()
+        .unwrap()
+        .sessions
+        .clear();
+    sync(app.world_mut());
+    assert!(app.world().resource::<Code>().unwrap().lease_wake.is_none());
+}
+
+#[test]
+fn dense_source_geometry_and_live_token_colors_preserve_editor_identity() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    load(w, "one", "src/lib.rs", "fn main() { let x = 42; }", "d1");
+    let k = key("one", "src/lib.rs");
+    let c = w.resource::<Code>().unwrap();
+    let view = c.views[&k].handle;
+    let editors = c.editors.unwrap();
+    let rows = c.rows.unwrap();
+    assert_eq!(w.get::<Layout>(editors).unwrap().padding, 0.);
+    assert_eq!(w.get::<Layout>(editors).unwrap().gap, 0.);
+    assert_eq!(w.get::<Layout>(view.root).unwrap().height, Size::Fill);
+    assert_eq!(w.get::<Layout>(rows).unwrap().gap, 0.);
+    assert_eq!(
+        w.get::<Layout>(w.get::<Parent>(rows).unwrap().entity)
+            .unwrap()
+            .width,
+        Size::Px(300.)
+    );
+    assert!(!w.get::<Spans>(view.editor).unwrap().runs.is_empty());
+    edit(w, &k, "// updated\nlet value = 9;");
+    assert_eq!(w.resource::<Code>().unwrap().views[&k].handle, view);
+    assert_eq!(
+        w.get::<Spans>(view.editor).unwrap().runs,
+        code_token_spans("// updated\nlet value = 9;")
+    );
+    let style = &w.get::<UiRecipe>(view.editor).unwrap().0;
+    assert_eq!(style.corner, Some(Corner::Square));
+    assert_eq!(style.padding, Some(rndr_ui::Space::Zero));
+}
+
+#[test]
+fn explorer_rows_are_compact_clipped_and_use_supported_icons() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    load(w, "one", "src/lib.rs", "one", "d1");
+    {
+        let c = w.resource_mut::<Code>().unwrap();
+        c.files.insert("one".into(), vec!["src/lib.rs".into()]);
+        c.expanded.insert(("one".into(), "src".into()));
+        c.redraw = true;
+    }
+    sync(w);
+    let c = w.resource::<Code>().unwrap();
+    let mut labels = Vec::new();
+    fn collect(w: &World, e: Entity, labels: &mut Vec<Entity>) {
+        if w.has::<Label>(e) {
+            labels.push(e);
+        }
+        for child in children_of(w, e) {
+            collect(w, child, labels);
+        }
+    }
+    collect(w, c.rows.unwrap(), &mut labels);
+    let file = labels
+        .iter()
+        .find(|e| w.get::<Label>(**e).unwrap().text.contains("lib.rs"))
+        .unwrap();
+    assert_eq!(
+        w.get::<Label>(*file).unwrap().overflow,
+        TextOverflow::Ellipsis
+    );
+    assert!(
+        w.get::<Label>(*file)
+            .unwrap()
+            .text
+            .contains(Icon::FileCode.scalar())
+    );
+    assert!(labels.iter().any(|e| {
+        w.get::<Label>(*e)
+            .unwrap()
+            .text
+            .contains(Icon::ChevronDown.scalar())
+    }));
+}
+
+#[test]
+fn source_tabs_are_retained_nonclosable_and_hide_when_project_has_no_file() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    load(w, "one", "a.rs", "a", "d1");
+    load(w, "one", "b.rs", "b", "d2");
+    let c = w.resource::<Code>().unwrap();
+    let strip = c.strip.unwrap();
+    let first = c.views[&key("one", "a.rs")].id.0;
+    let second = c.views[&key("one", "b.rs")].id.0;
+    assert!(strip.tab(w, TabId(first)).is_some());
+    assert_eq!(strip.selected(w), Some(TabId(second)));
+    assert!(w.has::<Hidden>(strip.body));
+    click(w, Action::File("a.rs".into()));
+    assert_eq!(
+        w.resource::<Code>().unwrap().strip.unwrap().root,
+        strip.root
+    );
+    assert_eq!(strip.selected(w), Some(TabId(first)));
+    assert!(take_commands(w).is_empty());
+    click(w, Action::Project("empty".into()));
+    assert!(w.has::<Hidden>(w.resource::<Code>().unwrap().tabs.unwrap()));
+}
+
+#[test]
+fn tab_activation_routes_only_owned_strip_and_preserves_drafts_without_reads() {
+    let mut a = fixture();
+    load(a.world_mut(), "one", "a.rs", "a", "d1");
+    edit(a.world_mut(), &key("one", "a.rs"), "draft a");
+    load(a.world_mut(), "one", "b.rs", "b", "d2");
+    let c = a.world().resource::<Code>().unwrap();
+    let strip = c.strip.unwrap();
+    let id = TabId(c.views[&key("one", "a.rs")].id.0);
+    let other = a.world_mut().spawn((Layout::row(),));
+    send(
+        a.world_mut(),
+        TabStripEvent {
+            strip: other,
+            kind: TabStripEventKind::Activated(id),
+        },
+    );
+    a.update();
+    sync(a.world_mut());
+    assert_eq!(
+        a.world().resource::<Code>().unwrap().key(),
+        Some(key("one", "b.rs"))
+    );
+    send(
+        a.world_mut(),
+        TabStripEvent {
+            strip: strip.root,
+            kind: TabStripEventKind::Activated(id),
+        },
+    );
+    a.update();
+    sync(a.world_mut());
+    let c = a.world().resource::<Code>().unwrap();
+    assert_eq!(c.key(), Some(key("one", "a.rs")));
+    assert_eq!(c.buffers[&key("one", "a.rs")].content, "draft a");
+    assert_eq!(strip.selected(a.world()), Some(id));
+    assert!(take_commands(a.world_mut()).is_empty());
+    send(
+        a.world_mut(),
+        TabStripEvent {
+            strip: strip.root,
+            kind: TabStripEventKind::CloseRequested(id),
+        },
+    );
+    a.update();
+    sync(a.world_mut());
+    assert_eq!(a.world().resource::<Code>().unwrap().views.len(), 2);
+}
+
+#[test]
+fn source_tab_activation_during_composition_keeps_current_document() {
+    let mut a = fixture();
+    load(a.world_mut(), "one", "a.rs", "a", "d1");
+    load(a.world_mut(), "one", "b.rs", "b", "d2");
+    let w = a.world_mut();
+    let c = w.resource::<Code>().unwrap();
+    let strip = c.strip.unwrap();
+    let first = TabId(c.views[&key("one", "a.rs")].id.0);
+    let current = c.views[&key("one", "b.rs")].handle.editor;
+    w.insert_resource(Focus {
+        entity: Some(current),
+    });
+    let mut input = Input::default();
+    input.ime_preedit = "漢".into();
+    w.insert_resource(input);
+    rndr_core::editing::prepare_source_input(w);
+    assert!(!can_deactivate(w));
+    send(
+        w,
+        TabStripEvent {
+            strip: strip.root,
+            kind: TabStripEventKind::Activated(first),
+        },
+    );
+    // Flip the queued tab event into this frame, then establish preedit
+    // again before the host adapter reads the activation request.
+    a.update();
+    let w = a.world_mut();
+    w.insert_resource(Focus {
+        entity: Some(current),
+    });
+    let mut input = Input::default();
+    input.ime_preedit = "漢".into();
+    w.insert_resource(input);
+    rndr_core::editing::prepare_source_input(w);
+    assert_eq!(events::<TabStripEvent>(w).len(), 1);
+    sync(w);
+    assert_eq!(
+        w.resource::<Code>().unwrap().key(),
+        Some(key("one", "b.rs"))
+    );
+    assert_eq!(w.resource::<Focus>().unwrap().entity, Some(current));
+}
+
+#[test]
+#[ignore = "Synthetic Code offscreen acceptance; writes verification PNGs"]
+fn code_visual_acceptance() {
+    use std::sync::Arc;
+    let mut app = fixture();
+    rndr_ui::apply_theme_bridge(
+        app.world_mut(),
+        rndr_ui::UiTheme {
+            appearance: rndr_ui::Appearance::Dark,
+            density: rndr_ui::Density::Compact,
+            ..Default::default()
+        },
+    );
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    app.world_mut().insert_resource(engine);
+    let w = app.world_mut();
+    let c = w.resource_mut::<Code>().unwrap();
+    c.projects = vec![Project {
+        id: "one".into(),
+        title: "Medousa / do proper migration".into(),
+        begin: true,
+        resume: false,
+    }];
+    c.files.insert(
+        "one".into(),
+        [
+            ".cargo/config.toml",
+            ".cursor/settings.json",
+            ".github/workflows/ci.yml",
+            "apps/medousa-native/src/main.rs",
+            "apps/medousa-native/src/code.rs",
+            "apps/medousa-native/src/notes.rs",
+            "apps/medousa-native/src/ui.rs",
+            "apps/medousa-native/Cargo.toml",
+            "crates/medousa-app-core/src/lib.rs",
+            "AGENTS.md",
+            "Cargo.toml",
+            "README.md",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect(),
+    );
+    for p in ["apps", "apps/medousa-native", "apps/medousa-native/src"] {
+        c.expanded.insert(("one".into(), p.into()));
+    }
+    load(
+        w,
+        "one",
+        "apps/medousa-native/src/main.rs",
+        "// Medousa native desktop\nuse rndr_core::*;\n\nfn main() {\n    let mut app = ui::app();\n    rndr_render::run(app);\n}\n",
+        "v1",
+    );
+    load(
+        w,
+        "one",
+        "apps/medousa-native/src/code.rs",
+        include_str!("code.rs"),
+        "v2",
+    );
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    for (width, height, suffix) in [(1200, 850, "wide"), (760, 540, "narrow")] {
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-code-polish-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+}

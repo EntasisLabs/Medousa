@@ -25,7 +25,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
-| [Native workspace: Chat and Notes](guides/native-workspace.md) | Retained conversation tabs/splits, app navigation, and version-checked vault note editing in the new native app |
+| [Native workspace: Chat, Notes, and Code](guides/native-workspace.md) | Retained chats, app navigation, vault notes, and project source editing with ownership- and version-checked saves |
 | [Native rndr desktop preview](guides/rndr-native-preview.md) | Browse grouped shell, Settings, read-only Activity/admin snapshots and bounded Notes summaries; sensitive chat actions remain gated |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, legacy or registered ChatGPT sign-in, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |

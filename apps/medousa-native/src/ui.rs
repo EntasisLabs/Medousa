@@ -913,11 +913,20 @@ fn update(world: &mut World) {
         {
             continue;
         }
-        if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Notes {
-            if let Some(host) = host {
-                crate::notes::action(world, &host);
+        match crate::surfaces::active(world) {
+            crate::surfaces::SurfaceId::Notes => {
+                if let Some(host) = host {
+                    crate::notes::action(world, &host);
+                }
+                continue;
             }
-            continue;
+            crate::surfaces::SurfaceId::Code => {
+                if let Some(host) = host {
+                    crate::code::action(world, &host);
+                }
+                continue;
+            }
+            crate::surfaces::SurfaceId::Chat => {},
         }
         conversations::focus_entity(world, intent.entity);
         if approvals::action(world, &intent)
@@ -955,6 +964,7 @@ fn update(world: &mut World) {
     }
     conversations::sync_all(world);
     crate::notes::tick(world);
+    crate::code::sync(world);
     auxiliary::dispatch(world);
 }
 fn action(world: &mut World, id: u64) {
@@ -1820,12 +1830,13 @@ mod tests {
         app.update();
     }
     #[test]
-    fn notes_surface_cannot_dispatch_chat_shortcuts_or_hidden_send_actions() {
+    fn nonchat_surfaces_cannot_dispatch_chat_shortcuts_or_hidden_send_actions() {
+        for surface in [crate::surfaces::SurfaceId::Notes, crate::surfaces::SurfaceId::Code] {
         let (mut app, mut rx) = idle_fixture();
         draft(&mut app, "do not send this while editing Notes");
         while rx.try_recv().is_ok() {}
         let ui = *app.world().resource::<Ui>().unwrap();
-        crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+        crate::surfaces::select(app.world_mut(), surface);
         app.world_mut().insert_resource(KeymapFired {
             actions: vec!["chat.send".into()],
         });
@@ -1847,6 +1858,7 @@ mod tests {
             ActivationResult::Rejected
         );
         assert!(app.world().resource::<Focus>().unwrap().entity.is_none());
+        }
     }
     #[test]
     fn composer_has_cohesive_editor_and_secondary_controls_below_card() {

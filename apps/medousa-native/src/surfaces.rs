@@ -10,26 +10,30 @@ use rndr_ui::{
 pub const RAIL_WIDTH: f32 = 56.;
 const CHAT: u64 = 0x5355_0001;
 const NOTES: u64 = 0x5355_0002;
+const CODE: u64 = 0x5355_0003;
+const SURFACE_COUNT: usize = 3;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SurfaceId {
     Chat,
     Notes,
+    Code,
 }
 impl SurfaceId {
     fn index(self) -> usize {
         match self {
             Self::Chat => 0,
             Self::Notes => 1,
+            Self::Code => 2,
         }
     }
 }
 struct SurfaceHost {
     active: SurfaceId,
-    roots: [Entity; 2],
+    roots: [Entity; SURFACE_COUNT],
     rail: Entity,
-    tiles: [Entity; 2],
-    buttons: [controls::ControlHandle; 2],
-    focus: [Option<Entity>; 2],
+    tiles: [Entity; SURFACE_COUNT],
+    buttons: [controls::ControlHandle; SURFACE_COUNT],
+    focus: [Option<Entity>; SURFACE_COUNT],
 }
 fn panel(world: &mut World, parent: Entity, layout: Layout) -> Entity {
     let entity = world.spawn((layout,));
@@ -64,6 +68,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     for (command, icon, name) in [
         (CHAT, Icon::MessageCircle, "Chat"),
         (NOTES, Icon::Book, "Notes"),
+        (CODE, Icon::Code, "Code"),
     ] {
         let tile = panel(
             world,
@@ -100,7 +105,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Layout::column()
         },
     );
-    let roots = ["Chat", "Notes"].map(|name| {
+    let roots = ["Chat", "Notes", "Code"].map(|name| {
         let entity = panel(
             world,
             content,
@@ -114,14 +119,17 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         entity
     });
     crate::notes::mount(world, roots[1]);
-    world.insert(roots[1], Hidden);
+    crate::code::mount(world, roots[2]);
+    for root in &roots[1..] {
+        world.insert(*root, Hidden);
+    }
     world.insert_resource(SurfaceHost {
         active: SurfaceId::Chat,
         roots,
         rail,
-        tiles: [tiles[0], tiles[1]],
-        buttons: [buttons[0], buttons[1]],
-        focus: [None, None],
+        tiles: tiles.try_into().ok().expect("one tile per surface"),
+        buttons: buttons.try_into().ok().expect("one button per surface"),
+        focus: [None; SURFACE_COUNT],
     });
     roots[0]
 }
@@ -171,6 +179,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
                 .is_some_and(|d| d.is_composing())
         }
         SurfaceId::Notes => !crate::notes::can_deactivate(world),
+        SurfaceId::Code => !crate::code::can_deactivate(world),
     };
     if composing {
         return;
@@ -179,8 +188,13 @@ pub fn select(world: &mut World, target: SurfaceId) {
     let host = world.resource::<SurfaceHost>().unwrap();
     let roots = host.roots;
     let restore = host.focus[target.index()];
-    world.insert(roots[1 - target.index()], Hidden);
-    world.remove::<Hidden>(roots[target.index()]);
+    for (index, root) in roots.iter().enumerate() {
+        if index == target.index() {
+            world.remove::<Hidden>(*root);
+        } else {
+            world.insert(*root, Hidden);
+        }
+    }
     world.resource_mut::<SurfaceHost>().unwrap().active = target;
     // Clear focus from the now-hidden editor, but preserve its document, undo,
     // selection and scroll. Do not leave chat shortcuts armed on another screen.
@@ -188,8 +202,10 @@ pub fn select(world: &mut World, target: SurfaceId) {
         world.get::<Layout>(*e).is_some() && descendant(world, *e, roots[target.index()])
     });
     world.resource_mut::<Focus>().unwrap().entity = focus;
-    if target == SurfaceId::Notes {
-        crate::notes::activate(world);
+    match target {
+        SurfaceId::Chat => {},
+        SurfaceId::Notes => crate::notes::activate(world),
+        SurfaceId::Code => crate::code::activate(world),
     }
     frame_wake(world).wake();
 }
@@ -197,6 +213,7 @@ pub fn action(world: &mut World, intent: &HostIntent) -> bool {
     let target = match intent {
         HostIntent::Command(CHAT) => SurfaceId::Chat,
         HostIntent::Command(NOTES) => SurfaceId::Notes,
+        HostIntent::Command(CODE) => SurfaceId::Code,
         _ => return false,
     };
     select(world, target);
@@ -223,7 +240,7 @@ pub fn chrome(world: &mut World) {
     let buttons = host.buttons;
     let rail = host.rail;
     world.insert(rail, Color::rgb(0.035, 0.035, 0.042));
-    for i in 0..2 {
+    for i in 0..SURFACE_COUNT {
         world.insert(
             tiles[i],
             if i == active {
@@ -314,6 +331,44 @@ mod tests {
                 .document_id(),
             doc
         );
+    }
+    #[test]
+    fn three_way_switch_has_one_visible_root_and_restores_each_surface_focus() {
+        let mut app = app();
+        let roots = app.world().resource::<SurfaceHost>().unwrap().roots;
+        let chat_focus = panel(app.world_mut(), roots[0], Layout::column());
+        let notes_focus = panel(app.world_mut(), roots[1], Layout::column());
+        let code_focus = panel(app.world_mut(), roots[2], Layout::column());
+        app.world_mut().resource_mut::<Focus>().unwrap().entity = Some(chat_focus);
+        select(app.world_mut(), SurfaceId::Notes);
+        app.world_mut().resource_mut::<Focus>().unwrap().entity = Some(notes_focus);
+        select(app.world_mut(), SurfaceId::Code);
+        app.world_mut().resource_mut::<Focus>().unwrap().entity = Some(code_focus);
+        for (target, expected_focus) in [
+            (SurfaceId::Chat, chat_focus),
+            (SurfaceId::Notes, notes_focus),
+            (SurfaceId::Code, code_focus),
+            (SurfaceId::Notes, notes_focus),
+            (SurfaceId::Chat, chat_focus),
+        ] {
+            select(app.world_mut(), target);
+            assert_eq!(app.world().resource::<Focus>().unwrap().entity, Some(expected_focus));
+            for (index, root) in roots.iter().enumerate() {
+                assert_eq!(app.world().has::<Hidden>(*root), index != target.index());
+            }
+            app.update();
+            assert_eq!(active(app.world()), target);
+        }
+    }
+    #[test]
+    fn code_fetch_is_lazy_and_returning_does_not_restart_it() {
+        let mut app = app();
+        assert!(crate::code::take_commands(app.world_mut()).is_empty());
+        select(app.world_mut(), SurfaceId::Code);
+        assert!(!crate::code::take_commands(app.world_mut()).is_empty());
+        select(app.world_mut(), SurfaceId::Notes);
+        select(app.world_mut(), SurfaceId::Code);
+        assert!(crate::code::take_commands(app.world_mut()).is_empty());
     }
     #[test]
     fn rail_is_fixed_width_and_does_not_fetch_notes_until_selected() {

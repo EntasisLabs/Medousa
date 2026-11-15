@@ -64,6 +64,7 @@ fn retained_editors_keep_distinct_drafts_history_and_entities() {
     click(w, Action::Open("a.md".into()));
     assert!(drain_commands(w).is_empty());
     assert_eq!(w.resource::<Notes>().unwrap().views["a.md"].handle, a);
+    click(w, Action::ToggleSource);
     assert!(!w.has::<Hidden>(a.root));
     assert_eq!(
         w.resource::<Notes>()
@@ -393,4 +394,172 @@ fn reverting_conflicted_buffer_does_not_bypass_explicit_acknowledgement() {
     click(w, Action::Acknowledge);
     click(w, Action::Save);
     assert_eq!(drain_commands(w).len(), 1);
+}
+
+#[test]
+fn reading_view_is_default_and_source_toggle_preserves_exact_document() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    let content = "---\ntags: [native, notes]\n---\n# Hello\n\n**Readable** document.";
+    load(w, "hello.md", content, Some("version"));
+    let v = &w.resource::<Notes>().unwrap().views["hello.md"];
+    let (handle, preview, document) = (v.handle, v.preview, v.document);
+    assert!(w.has::<Hidden>(handle.root));
+    assert!(!w.has::<Hidden>(preview));
+    assert_eq!(
+        w.get::<MarkdownView>(preview).unwrap().source(),
+        "# Hello\n\n**Readable** document."
+    );
+    click(w, Action::ToggleSource);
+    assert!(!w.has::<Hidden>(handle.root));
+    assert!(w.has::<Hidden>(preview));
+    edit(w, "hello.md", "# New title\n\nLocal draft");
+    click(w, Action::ToggleSource);
+    assert_eq!(
+        w.get::<MarkdownView>(preview).unwrap().source(),
+        "# New title\n\nLocal draft"
+    );
+    click(w, Action::ToggleSource);
+    assert_eq!(
+        w.resource::<Notes>().unwrap().views["hello.md"].document,
+        document
+    );
+    assert_eq!(
+        w.resource::<SourceDocuments>()
+            .unwrap()
+            .get(document)
+            .unwrap()
+            .text(),
+        "# New title\n\nLocal draft"
+    );
+    assert!(drain_commands(w).is_empty());
+}
+
+#[test]
+fn frontmatter_is_hidden_only_when_delimited_and_never_mutates_source() {
+    assert_eq!(document_body("---\ntags: []\n---\n# Note"), "# Note");
+    assert_eq!(document_body("---\r\ntags: []\r\n---\r\n# Note"), "# Note");
+    assert_eq!(
+        document_body("---\nnot closed\n# Note"),
+        "---\nnot closed\n# Note"
+    );
+    assert_eq!(document_body("Body\n---\nBody"), "Body\n---\nBody");
+}
+
+#[test]
+#[ignore = "Explicit synthetic offscreen visual acceptance; writes verification PNGs"]
+fn notes_visual_acceptance() {
+    use std::sync::Arc;
+    let mut app = fixture();
+    app.add_plugin(MarkdownPlugin);
+    rndr_ui::apply_theme_bridge(
+        app.world_mut(),
+        rndr_ui::UiTheme {
+            appearance: rndr_ui::Appearance::Dark,
+            density: rndr_ui::Density::Compact,
+            ..Default::default()
+        },
+    );
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    app.world_mut().insert_resource(engine);
+    app.world_mut().insert_resource(MarkdownTheme {
+        surface: Color::rgba(0., 0., 0., 0.),
+        text: Color::rgb(0.76, 0.76, 0.79),
+        ..MarkdownTheme::default()
+    });
+    app.world_mut().insert_resource(Viewport::new(1200., 850.));
+    let w = app.world_mut();
+    let titles = [
+        "Medousa backlog — Encrypted secret sharing via MCP",
+        "rndr UI Library — Council Review",
+        "What Makes a Great Code Editor",
+        "Chinese Elm — Indoor Bonsai Care Guide",
+        "Medousa fleet rollout — 2026-10-29",
+        "Your Cache Hit Rate Is Killing Your Context",
+        "Your Cache Optimization Is Damaging the Context Window",
+        "Fleet recovery and retry repair",
+        "Offline knowledge library",
+        "Science, math and art starter kit",
+    ];
+    w.resource_mut::<Notes>().unwrap().list = titles
+        .iter()
+        .enumerate()
+        .map(|(i, title)| {
+            let mut note = response(&format!("Backlog/note-{i}.md"), "", Some("v1")).note;
+            note.title = (*title).into();
+            serde_json::from_value::<VaultNoteSummary>(serde_json::to_value(note).unwrap()).unwrap()
+        })
+        .collect();
+    let body = "---\ntags: [backlog, mcp, security]\n---\n# Medousa backlog — Encrypted secret sharing via MCP\n\n- **Status:** Backlog / not implemented\n- **Captured:** 2026-10-29\n- **Source:** Pairing-ticket encryption workflow; user confirmed the local setup worked.\n\n## Outcome\n\nMake sharing a pairing ticket or other authorized secret from another agent to Medousa a native tool workflow, without plaintext secrets in chat or manual script/key/file exchange.\n\n## Proposed flow\n\n1. Medousa host creates a recipient encryption keypair in secure local storage.\n2. The sender invokes the proposed `encrypt_and_share_secret` tool with the authorized secret and recipient.\n3. The tool encrypts the payload and returns an opaque retrieval handle.\n\n**Key ownership:** Medousa host holds the private key. No private key or AES key is shared in chat.\n\n## Requirements / acceptance criteria\n\n- Preserve the existing ownership and approval boundaries.\n- Never expose plaintext to model context by default.\n";
+    load(w, "Backlog/note-0.md", body, Some("v1"));
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    for (width, height, suffix) in [(1200, 850, "wide"), (760, 540, "narrow")] {
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        for _ in 0..4 {
+            rndr_paint::frame(&mut app);
+        }
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-notes-polish-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+    click(app.world_mut(), Action::ToggleSource);
+    app.world_mut().insert_resource(Viewport::new(1200., 850.));
+    for _ in 0..4 {
+        rndr_paint::frame(&mut app);
+    }
+    let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+        exporter
+            .render_frame(Some(world), frame, 1200, 850, 1.)
+            .unwrap()
+    });
+    image::save_buffer(
+        "verification/native-notes-polish-source.png",
+        &image.rgba,
+        image.width,
+        image.height,
+        image::ColorType::Rgba8,
+    )
+    .unwrap();
+}
+
+#[test]
+fn native_note_tabs_activate_only_their_own_retained_document() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "# Alpha", Some("v1"));
+    load(w, "b.md", "# Beta", Some("v2"));
+    let n = w.resource::<Notes>().unwrap();
+    let (strip, tab, preview) = (
+        n.tabstrip.unwrap(),
+        n.views["a.md"].tab,
+        n.views["a.md"].preview,
+    );
+    send(
+        w,
+        TabStripEvent {
+            strip,
+            kind: TabStripEventKind::Activated(TabId(tab)),
+        },
+    );
+    app.add_system(Schedule::Update, tick);
+    app.update();
+    let w = app.world_mut();
+    assert_eq!(
+        w.resource::<Notes>().unwrap().selected.as_deref(),
+        Some("a.md")
+    );
+    assert!(!w.has::<Hidden>(preview));
+    assert!(drain_commands(w).is_empty());
 }

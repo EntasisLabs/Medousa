@@ -3,6 +3,7 @@ mod attachments;
 mod auxiliary;
 mod backend;
 mod chat;
+mod code;
 mod context;
 mod media_preview;
 mod notes;

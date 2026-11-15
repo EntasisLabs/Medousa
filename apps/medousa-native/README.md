@@ -13,10 +13,11 @@ attempts to attach to the configured local daemon using the existing local
 credentials. It does **not** start, install, or restart a daemon. An unavailable
 daemon is an ordinary connection error, not a separate preview application.
 
-The shell has a slim app-level rail for **Chat** and **Notes**, separate from the
+The shell has a slim app-level rail for **Chat**, **Notes**, and **Code**, separate from the
 contextual sidebar. Only mounted destinations appear; there are no placeholder
 screens. Switching surfaces retains chat tabs, splits, drafts, scroll, and ongoing
-streams. Notes has its own editor focus; chat send shortcuts are inactive there.
+streams. Notes and Code have their own editor focus; chat send shortcuts are
+inactive in either editor.
 
 The Chat surface contains a left conversation sidebar and native chat workspace.
 Session search/paging and mutations, model/mode/depth controls, source-document
@@ -52,15 +53,34 @@ application relaunch; only the sidebar/details preferences above are persisted.
 
 Choose the book icon in the rail. Notes lists the connected daemon's active vault,
 not a folder on the app device. Filter the loaded page locally, use **Load more**
-when available, and select a note to edit its Markdown source. Drafts and undo
+when available, and select a note to read its rendered Markdown. **Edit source**
+opens its retained source editor; **Read** returns to the rendered document.
+Compact open-note tabs and a breadcrumb toolbar keep navigation separate from
+the document. Delimited frontmatter stays in source but is hidden in reading mode. Drafts and undo
 history remain in this window when switching notes or returning to Chat.
 
 Saving is explicit and version-checked. A changed or unconfirmed daemon version
 leaves your edits intact and blocks another save until you check the latest
 version and resolve the baseline. There is no automatic overwrite or retry.
 Notes drafts are not persisted across application relaunch. This first surface
-does not include vault-root management, note creation/deletion, or a rich preview.
+does not include vault-root management, note creation/deletion, or inline rich-text editing.
 It uses the current native app connection; it does not add remote pairing.
+
+## Code
+
+Choose the code icon in the rail. Projects and source files belong to the connected
+workshop's Forge workspace, not a local folder picker. The native editor reuses
+app-core project bindings and RNDR source documents; Forge remains authoritative
+for project ownership and source-file versions.
+
+The first milestone covers project selection, source browsing, retained per-file
+editing, and explicit version-checked saves with human edit ownership. Partial,
+binary, or lossy previews are read-only. Switching files or surfaces does not
+replace a dirty draft. Unconfirmed writes are not blindly retried. Source drafts
+are window-lifetime state; save before quitting.
+
+Language intelligence, terminal/tasks, and changes/review UI remain separate next
+steps; this surface does not claim parity with all Svelte Code features.
 
 ```sh
 cargo test

@@ -527,6 +527,14 @@ pub(super) fn action(world: &mut World, action: u64) -> bool {
 }
 pub(super) fn tab_events(world: &mut World) {
     for event in events::<TabStripEvent>(world).to_vec() {
+        if !world
+            .resource::<Deck>()
+            .unwrap()
+            .strips
+            .contains(&Some(event.strip))
+        {
+            continue;
+        }
         match event.kind {
             TabStripEventKind::Activated(t) => focus(world, t.0),
             TabStripEventKind::CloseRequested(t) => {
@@ -933,6 +941,28 @@ mod tests {
         );
     }
     #[test]
+    fn foreign_source_tab_events_cannot_close_chat_tabs() {
+        let mut app = fixture();
+        let route = loaded(&mut app, "chat");
+        let other = app.world_mut().spawn((Layout::row(),));
+        send(
+            app.world_mut(),
+            TabStripEvent {
+                strip: other,
+                kind: TabStripEventKind::CloseRequested(TabId(route)),
+            },
+        );
+        app.update();
+        assert_eq!(snapshot(app.world()).layout.tabs.len(), 1);
+        assert!(
+            !app.world()
+                .resource::<Deck>()
+                .unwrap()
+                .closed
+                .contains(&route)
+        );
+    }
+    #[test]
     fn close_is_not_delete_and_reopening_restores_draft() {
         let mut app = fixture();
         let a = loaded(&mut app, "a");
@@ -997,53 +1027,55 @@ mod tests {
         assert_eq!(current(app.world()), b);
     }
     #[test]
-    fn notes_switch_retains_split_routes_drafts_and_background_replies() {
+    fn nonchat_switch_retains_split_routes_drafts_and_background_replies() {
         use crate::surfaces::{self, SurfaceId};
-        let mut app = fixture();
-        let a = loaded(&mut app, "a");
-        text(app.world_mut(), "draft a");
-        let view_a = *app.world().resource::<Ui>().unwrap();
-        let b = loaded(&mut app, "b");
-        text(app.world_mut(), "draft b");
-        let view_b = *app.world().resource::<Ui>().unwrap();
-        action(app.world_mut(), SPLIT);
-        for _ in 0..6 {
-            app.update();
+        for surface in [SurfaceId::Notes, SurfaceId::Code] {
+            let mut app = fixture();
+            let a = loaded(&mut app, "a");
+            text(app.world_mut(), "draft a");
+            let view_a = *app.world().resource::<Ui>().unwrap();
+            let b = loaded(&mut app, "b");
+            text(app.world_mut(), "draft b");
+            let view_b = *app.world().resource::<Ui>().unwrap();
+            action(app.world_mut(), SPLIT);
+            for _ in 0..6 {
+                app.update();
+            }
+            let layout = snapshot(app.world()).layout;
+            surfaces::select(app.world_mut(), surface);
+            reply(
+                app.world_mut(),
+                Reply {
+                    generation: a,
+                    update: Update::Notice("Background update".into()),
+                },
+            );
+            for _ in 0..6 {
+                app.update();
+            }
+            assert_eq!(surfaces::active(app.world()), surface);
+            assert_eq!(current(app.world()), b);
+            assert_eq!(draft(app.world()), "draft b");
+            surfaces::select(app.world_mut(), SurfaceId::Chat);
+            for _ in 0..6 {
+                app.update();
+            }
+            assert_eq!(snapshot(app.world()).layout, layout);
+            assert_eq!(
+                app.world().resource::<Ui>().unwrap().composer,
+                view_b.composer
+            );
+            open(app.world_mut(), Some("a".into()));
+            assert_eq!(draft(app.world()), "draft a");
+            assert_eq!(
+                app.world().resource::<Ui>().unwrap().composer,
+                view_a.composer
+            );
+            assert_eq!(
+                app.world().resource::<Model>().unwrap().chat.status,
+                "Background update"
+            );
         }
-        let layout = snapshot(app.world()).layout;
-        surfaces::select(app.world_mut(), SurfaceId::Notes);
-        reply(
-            app.world_mut(),
-            Reply {
-                generation: a,
-                update: Update::Notice("Background update".into()),
-            },
-        );
-        for _ in 0..6 {
-            app.update();
-        }
-        assert_eq!(surfaces::active(app.world()), SurfaceId::Notes);
-        assert_eq!(current(app.world()), b);
-        assert_eq!(draft(app.world()), "draft b");
-        surfaces::select(app.world_mut(), SurfaceId::Chat);
-        for _ in 0..6 {
-            app.update();
-        }
-        assert_eq!(snapshot(app.world()).layout, layout);
-        assert_eq!(
-            app.world().resource::<Ui>().unwrap().composer,
-            view_b.composer
-        );
-        open(app.world_mut(), Some("a".into()));
-        assert_eq!(draft(app.world()), "draft a");
-        assert_eq!(
-            app.world().resource::<Ui>().unwrap().composer,
-            view_a.composer
-        );
-        assert_eq!(
-            app.world().resource::<Model>().unwrap().chat.status,
-            "Background update"
-        );
     }
     #[test]
     fn focusing_other_pane_clears_previous_editor_focus() {
