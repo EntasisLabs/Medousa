@@ -1,5 +1,6 @@
 //! Retained native timeline. App-core owns chronology and visibility; this module
 //! owns only projection, viewport mounting, and presentation-only clipboard actions.
+use crate::native_style as visual;
 use medousa_app_core::contract::{ChatSegment, ToolRunState};
 use medousa_app_core::{ChatItem, ChatItemRole, ChatSnapshot, present_chat_items};
 use rndr_core::*;
@@ -58,7 +59,7 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
         .copied()
         .unwrap_or_else(|| MarkdownTheme::from_theme(&theme_of(world)));
     theme.surface = Color::rgba(0., 0., 0., 0.);
-    theme.text = Color::rgb(0.76, 0.76, 0.79);
+    theme.text = visual::text();
     world.insert_resource(theme);
     let frame = world.spawn((Layout {
         width: Size::Fill,
@@ -70,8 +71,8 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
         Layout {
             width: Size::Fill,
             height: Size::Fill,
-            padding: 16.,
-            gap: 18.,
+            padding: visual::INSET,
+            gap: visual::ROW_GAP,
             ..Layout::column()
         },
         Scroll::default(),
@@ -147,6 +148,18 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
         return;
     }
     state.last_view = Some(view);
+    // Center in the whole pane, including the 20-point native scroll rail.
+    let lane = visual::column_width(rect.w + 20.);
+    let inset = ((rect.w + 20. - lane) / 2.).max(0.);
+    world.insert(
+        root,
+        Padding {
+            top: visual::INSET,
+            bottom: visual::INSET,
+            left: inset,
+            right: (inset - 20.).max(0.),
+        },
+    );
     let switched = snapshot.map(|s| s.session_id.as_str()).unwrap_or("") != state.session;
     if switched {
         for row in state.rows.drain(..) {
@@ -193,7 +206,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
     }
     // Correct the anchor when previously estimated rows above the viewport gain
     // measured heights. Following uses the layout's normal bottom clamp.
-    let mut y = 16.;
+    let mut y = visual::INSET;
     let mut correction = 0.;
     for row in &mut state.rows {
         if row.mounted {
@@ -206,24 +219,19 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
                 }
             }
         }
-        y += row.height + 18.;
+        y += row.height + visual::ROW_GAP;
     }
     let offset = scroll.offset[1] - correction;
     let top = if state.following {
-        (y + 16. - rect.h).max(0.)
+        (y + visual::INSET - rect.h).max(0.)
     } else {
         -offset
     };
     let overscan = rect.h.max(500.);
-    let mut y = 16.;
-    let theme = world
-        .resource::<rndr_ui::UiTheme>()
-        .cloned()
-        .unwrap_or_default();
-    let width = rndr_ui::reading_layout_at_measure((rect.w - 32.).max(200.), 80., &theme).width;
+    let mut y = visual::INSET;
     for (row, item) in state.rows.iter_mut().zip(items) {
         let visible = y + row.height >= top - overscan && y <= top + rect.h + overscan;
-        y += row.height + 18.;
+        y += row.height + visual::ROW_GAP;
         if !visible {
             if row.mounted {
                 for child in children_of(world, row.entity) {
@@ -241,10 +249,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
             row.mounted = true;
             world.get_mut::<Layout>(row.entity).unwrap().height = Size::Hug;
         }
-        let available = match width {
-            Size::Px(w) => w,
-            _ => (rect.w - 32.).max(200.),
-        };
+        let available = lane;
         let user = item.role == ChatItemRole::User;
         world.get_mut::<Layout>(row.entity).unwrap().width = Size::Px(if user {
             (available * 0.88).min(620.)
@@ -255,15 +260,15 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
             row.entity,
             AlignSelf(if user { Items::End } else { Items::Start }),
         );
-        world.insert(row.entity, Padding::all(14.));
-        world.insert(row.entity, Radius(16.));
+        world.insert(row.entity, Padding::all(if user { 12. } else { 0. }));
+        world.insert(row.entity, Radius(if user { 12. } else { 0. }));
         world.insert(
             row.entity,
             rndr_ui::UiStyle {
                 background: Some(rndr_ui::UiColor::Explicit(if user {
-                    Color::rgb(0.13, 0.13, 0.16)
+                    visual::user()
                 } else {
-                    Color::rgb(0.065, 0.065, 0.075)
+                    Color::rgba(0., 0., 0., 0.)
                 })),
                 ..Default::default()
             },
@@ -353,7 +358,7 @@ fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {
                     let view = markdown_view(world, &part.text);
                     let mut style = style_of(world);
                     style.size = if part.id == "header" { 11. } else { 14. };
-                    style.line_height = Some(1.45);
+                    style.line_height = Some(1.5);
                     world.insert(view, style);
                     world.remove::<Scroll>(view);
                     world.get_mut::<Layout>(view).unwrap().height = Size::Hug;
@@ -455,9 +460,33 @@ fn timeline_button(
     );
     props.name = Some(label.into());
     props.variant = rndr_ui::controls::ButtonVariant::Quiet;
-    rndr_ui::controls::Button::mount(world, parent, rndr_ui::UiId(id), props)
-        .expect("timeline owns a live layout parent and nonempty button label")
-        .root
+    if command == COPY {
+        let h = rndr_ui::controls::IconButton::icon(
+            world,
+            parent,
+            rndr_ui::UiId(id),
+            Icon::Copy,
+            label,
+            props,
+        )
+        .expect("timeline copy control");
+        world.get_mut::<Layout>(h.root).unwrap().width = Size::Px(28.);
+        world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(28.);
+        world.get_mut::<LabelBox>(h.label).unwrap().inset_x = 0.;
+        world.insert(
+            h.label,
+            rndr_ui::UiStyle {
+                foreground: Some(rndr_ui::UiColor::Explicit(visual::secondary())),
+                ..Default::default()
+            },
+        );
+        rndr_ui::inputs::Tooltip::attach(world, h.root, label).unwrap();
+        h.root
+    } else {
+        rndr_ui::controls::Button::mount(world, parent, rndr_ui::UiId(id), props)
+            .expect("timeline owns a live layout parent and nonempty button label")
+            .root
+    }
 }
 
 // RNDR owns disclosure state and button interaction. Body is a lazily mounted

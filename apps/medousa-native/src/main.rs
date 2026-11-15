@@ -6,6 +6,7 @@ mod chat;
 mod code;
 mod context;
 mod media_preview;
+mod native_style;
 mod notes;
 mod provider_timeline;
 mod runtimes;

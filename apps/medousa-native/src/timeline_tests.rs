@@ -273,6 +273,32 @@ fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
     );
     assert!(world.has::<Radius>(rows[0].entity));
     assert!(world.has::<rndr_ui::UiStyle>(rows[1].entity));
+    assert_eq!(world.get::<Padding>(rows[1].entity).unwrap().left, 0.);
+    assert_eq!(world.get::<Radius>(rows[1].entity).unwrap().0, 0.);
+    assert_eq!(
+        world
+            .get::<rndr_ui::UiStyle>(rows[1].entity)
+            .unwrap()
+            .background,
+        Some(rndr_ui::UiColor::Explicit(Color::rgba(0., 0., 0., 0.)))
+    );
+    // A quiet icon remains a real focusable, named action, not hover-only text.
+    let copy = children_of(&world, rows[1].entity)
+        .into_iter()
+        .find(|e| world.has::<CopyText>(*e))
+        .unwrap();
+    assert!(world.has::<Focusable>(copy));
+    assert_eq!(
+        world.get::<Semantics>(copy).unwrap().name.as_deref(),
+        Some("Copy message")
+    );
+    let padding = world.get::<Padding>(root).unwrap();
+    let lane = visual::column_width(820.);
+    assert_eq!(padding.left, (820. - lane) / 2.);
+    assert_eq!(
+        world.get::<Layout>(rows[1].entity).unwrap().width,
+        Size::Px(lane)
+    );
     let body = rows[1]
         .parts
         .iter()

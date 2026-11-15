@@ -13,6 +13,8 @@ use rndr_ui::{
 
 const SPLIT: u64 = 40;
 const JOIN: u64 = 41;
+struct BandRoute(u64);
+impl Component for BandRoute {}
 struct Parked {
     model: Model,
     ui: Ui,
@@ -253,6 +255,10 @@ pub(super) fn focus_entity(world: &mut World, mut entity: Entity) {
             .map(|(r, p)| (*r, p.ui.content)),
     );
     loop {
+        if let Some(route) = world.get::<BandRoute>(entity).map(|r| r.0) {
+            focus(world, route);
+            return;
+        }
         if let Some((r, _)) = roots.iter().find(|(_, e)| *e == entity) {
             focus(world, *r);
             return;
@@ -725,6 +731,7 @@ pub(super) fn sync_all(world: &mut World) {
         frame_wake(world).wake();
     }
 
+    chrome::begin_tabs(world);
     for i in 0..2 {
         let visible = if two { true } else { i == active_group };
         if visible {
@@ -758,7 +765,11 @@ pub(super) fn sync_all(world: &mut World) {
                         .unwrap()
                         .get(m.document)
                         .is_some_and(|d| !d.text().is_empty());
-                    Some(TabSpec::new(r, tab.title()).dirty(dirty))
+                    Some(
+                        TabSpec::new(r, tab.title())
+                            .icon(Icon::MessageCircle)
+                            .dirty(dirty),
+                    )
                 })
                 .collect();
             if let Some(selected) = g.active_tab_id.as_deref().and_then(route) {
@@ -786,6 +797,11 @@ pub(super) fn sync_all(world: &mut World) {
                         Some((specs.clone(), selected, active, handle));
                     handle
                 };
+                if visible {
+                    let bar = world.get::<Parent>(strip.scroll).unwrap().entity;
+                    world.insert(bar, BandRoute(selected.0));
+                    chrome::place_tabs(world, strip);
+                }
                 world.get_mut::<Layout>(strip.root).unwrap().height = Size::Fill;
                 world.remove::<Hidden>(strip.root);
                 world.resource_mut::<Deck>().unwrap().strips[i] = Some(strip.root);
@@ -838,36 +854,11 @@ pub(super) fn sync_all(world: &mut World) {
         }
     }
     // Compact explicit commands supplement RNDR's drag-to-split gestures.
-    let mut headers: Vec<_> = world
-        .resource::<Deck>()
-        .unwrap()
-        .parked
-        .values()
-        .map(|p| p.ui.header)
-        .collect();
-    headers.push(world.resource::<Ui>().unwrap().header);
-    for header in headers {
-        let row = world.get::<Parent>(header).unwrap().entity;
-        let split_button = button(
-            world,
-            row,
-            SPLIT,
-            "Split",
-            snap.layout.tabs.len() > 1 && snap.layout.groups.len() == 1,
-        );
-        let join_button = button(world, row, JOIN, "Join", snap.layout.groups.len() > 1);
-        for (e, visible) in [
-            (split_button.root, snap.layout.groups.len() == 1),
-            (join_button.root, snap.layout.groups.len() > 1),
-        ] {
-            world.get_mut::<Layout>(e).unwrap().width = Size::Px(52.);
-            if visible {
-                world.remove::<Hidden>(e);
-            } else {
-                world.insert(e, Hidden);
-            }
-        }
-    }
+    chrome::pane_commands(
+        world,
+        snap.layout.tabs.len() > 1,
+        snap.layout.groups.len() > 1,
+    );
 }
 
 #[cfg(test)]
@@ -918,6 +909,71 @@ mod tests {
             .unwrap()
             .text()
             .to_string()
+    }
+    #[test]
+    fn integrated_tab_band_survives_splits_route_focus_and_overflow() {
+        let mut app = fixture();
+        let a = loaded(&mut app, "a");
+        let b = loaded(&mut app, "b");
+        let strip = app.world().resource::<Deck>().unwrap().strip_cache[0]
+            .as_ref()
+            .unwrap()
+            .3;
+        let bar = app.world().get::<Parent>(strip.scroll).unwrap().entity;
+        assert_ne!(app.world().get::<Parent>(bar).unwrap().entity, strip.root);
+        let t = children_of(app.world(), strip.list)[0];
+        let r = app.world().get::<Rect>(t).unwrap();
+        assert!(r.y >= 0. && r.y + r.h <= chrome::HEIGHT);
+        for child in children_of(app.world(), t) {
+            if app.world().has::<Label>(child) && !app.world().has::<Hidden>(child) {
+                assert_eq!(
+                    *app.world().get::<LabelBox>(child).unwrap(),
+                    LabelBox::CONTENT
+                );
+            }
+        }
+        focus(app.world_mut(), a);
+        action(app.world_mut(), SPLIT);
+        for _ in 0..8 {
+            app.update();
+        }
+        let deck = app.world().resource::<Deck>().unwrap();
+        assert_eq!(snapshot(app.world()).layout.groups.len(), 2);
+        let first = deck.strip_cache[0].as_ref().unwrap().3;
+        let first_bar = app.world().get::<Parent>(first.scroll).unwrap().entity;
+        let route = app.world().get::<BandRoute>(first_bar).unwrap().0;
+        focus(app.world_mut(), a);
+        focus_entity(app.world_mut(), first_bar);
+        assert_eq!(current(app.world()), route);
+        assert!(route == a || route == b);
+        for width in [760., 1400.] {
+            app.world_mut().insert_resource(Viewport::new(width, 850.));
+            for _ in 0..8 {
+                app.update();
+            }
+            let w = app.world();
+            for (tab, _) in w.query::<Tab>() {
+                let r = w.get::<Rect>(tab).unwrap();
+                assert!(r.h <= chrome::HEIGHT);
+            }
+        }
+        action(app.world_mut(), JOIN);
+        for _ in 0..8 {
+            app.update();
+        }
+        for i in 0..6 {
+            loaded(&mut app, &format!("extra-{i}"));
+        }
+        let strip = app.world().resource::<Deck>().unwrap().strip_cache[0]
+            .as_ref()
+            .unwrap()
+            .3;
+        let overflow = strip.overflow_button(app.world()).unwrap();
+        assert!(!app.world().has::<Hidden>(overflow));
+        assert!(app.world().get::<Button>(overflow).unwrap().enabled);
+        // Existing route/document identity wasn't replaced by the window host.
+        open(app.world_mut(), Some("a".into()));
+        assert_eq!(current(app.world()), a);
     }
     #[test]
     fn routes_retain_distinct_editor_timeline_and_draft_without_refetch() {

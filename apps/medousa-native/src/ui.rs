@@ -3,7 +3,7 @@ use crate::{
     approvals, attachments, auxiliary,
     backend::{Command, Reply, Request, Update},
     chat::Chat,
-    context, provider_timeline, runtimes, timeline, workspace,
+    context, native_style as visual, provider_timeline, runtimes, timeline, workspace,
 };
 use medousa_app_core::TurnFact;
 use rndr_core::{
@@ -19,6 +19,8 @@ use rndr_ui::{
     *,
 };
 use std::collections::HashMap;
+#[path = "window_chrome.rs"]
+pub(crate) mod chrome;
 #[path = "conversations.rs"]
 mod conversations;
 
@@ -122,7 +124,6 @@ struct Ui {
     status: Entity,
     rename: Entity,
     session_actions: Entity,
-    header: Entity,
     timeline: Entity,
     composer_parent: Entity,
     composer: EditorSurfaceHandle,
@@ -163,12 +164,14 @@ pub fn app() -> App {
         title: "Medousa".into(),
         size: LogicalSize::new(1200., 850.),
         min_size: Some(LogicalSize::new(760., 540.)),
+        titlebar: Some(Titlebar::new(chrome::HEIGHT).traffic_lights(14., 18.)),
         ..Default::default()
     });
     app.add_system(Schedule::Startup, setup);
     app.add_system(Schedule::Update, update);
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
+    app.add_system(Schedule::Layout, chrome::polish);
     app
 }
 fn container(world: &mut World, parent: Option<Entity>, layout: Layout) -> Entity {
@@ -199,7 +202,28 @@ fn button(
     } else {
         controls::ButtonVariant::Quiet
     };
-    let h = controls::Button::mount(world, parent, UiId(id), props).expect("stable control");
+    let icon = match (id, title) {
+        (SIDEBAR, "Chats") => Some((Icon::PanelLeft, "Toggle conversation sidebar")),
+        (DETAILS, "Info") => Some((Icon::Info, "Toggle conversation details")),
+        (NEW, "New chat") => Some((Icon::Plus, "New chat")),
+        (40, "Split") => Some((Icon::PanelLeft, "Split conversation pane")),
+        (41, "Join") => Some((Icon::PanelLeft, "Join conversation panes")),
+        _ => None,
+    };
+    let h = if let Some((icon, name)) = icon {
+        let handle = controls::IconButton::icon(world, parent, UiId(id), icon, name, props)
+            .expect("stable icon control");
+        world.get_mut::<LabelBox>(handle.label).unwrap().inset_x = 0.;
+        let tip = rndr_ui::inputs::Tooltip::attach(world, handle.root, name).unwrap();
+        // Keep short toolbar hints on one line, below the band rather than
+        // covering its adjacent title. The full accessible name stays intact.
+        world.insert(tip.root, PopupPlacement::Below);
+        world.get_mut::<Layout>(tip.root).unwrap().width = Size::Px(220.);
+        world.get_mut::<Label>(tip.root).unwrap().overflow = TextOverflow::Ellipsis;
+        handle
+    } else {
+        controls::Button::mount(world, parent, UiId(id), props).expect("stable control")
+    };
     world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
     if world
         .get::<Layout>(parent)
@@ -207,8 +231,14 @@ fn button(
     {
         world.get_mut::<Layout>(h.root).unwrap().width = Size::Px(match id {
             SEND | STOP => 54.,
-            DETAILS | SIDEBAR => 64.,
-            40 | 41 => 48.,
+            DETAILS | SIDEBAR => {
+                if icon.is_some() {
+                    32.
+                } else {
+                    64.
+                }
+            }
+            40 | 41 | NEW => 32.,
             MODEL_PREV | MODEL_NEXT => 70.,
             MODEL_SEARCH => 150.,
             _ => 90.,
@@ -232,10 +262,11 @@ fn setup(world: &mut World) {
         Layout {
             width: Size::Fill,
             height: Size::Fill,
-            ..Layout::row()
+            ..Layout::column()
         },
     );
-    let chat_root = crate::surfaces::mount(world, root);
+    let body = chrome::mount(world, root);
+    let chat_root = crate::surfaces::mount(world, body);
     let (navigation_split, details_split) = workspace::mount(world, chat_root);
     let prefs = world.resource::<workspace::Workspace>().unwrap().prefs;
     let model = world.resource_mut::<Model>().unwrap();
@@ -256,9 +287,27 @@ fn setup(world: &mut World) {
         gap: 8.,
         ..Layout::column()
     };
-    plane(world, sidebar.root, Color::rgb(0.065, 0.065, 0.075));
-    text(world, sidebar.content, "Medousa", Typography::Heading).unwrap();
-    button(world, sidebar.content, NEW, "＋  New chat", true);
+    visual::flat(world, sidebar.root, visual::navigation());
+    let sidebar_header = container(
+        world,
+        Some(sidebar.content),
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(32.),
+            gap: 8.,
+            ..Layout::row()
+        },
+    );
+    world.insert(
+        sidebar_header,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
+    let title = text(world, sidebar_header, "Conversations", Typography::Emphasis).unwrap();
+    world.get_mut::<Layout>(title).unwrap().width = Size::Fill;
+    button(world, sidebar_header, NEW, "New chat", true);
     let search = world.spawn((
         Layout {
             width: Size::Fill,
@@ -272,6 +321,15 @@ fn setup(world: &mut World) {
         Placeholder::new("Search conversations…"),
     ));
     set_parent(world, search, sidebar.content);
+    plane(world, search, visual::rail());
+    world.insert(search, Radius(visual::CONTROL_RADIUS));
+    world.insert(
+        search,
+        Border {
+            color: visual::stroke(),
+            width: 1.,
+        },
+    );
     world.insert(
         search,
         Semantics {
@@ -302,7 +360,7 @@ fn setup(world: &mut World) {
         },
     );
     world.insert(details, Scroll::default());
-    plane(world, details, Color::rgb(0.055, 0.055, 0.065));
+    plane(world, details, visual::navigation());
     let dock_header = container(
         world,
         Some(details),
@@ -415,24 +473,8 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         gap: 4.,
         ..Layout::column()
     };
-    plane(world, content.root, Color::rgb(0.035, 0.035, 0.04));
-    let header_row = container(
-        world,
-        Some(content.content),
-        Layout {
-            width: Size::Fill,
-            height: Size::Px(42.),
-            padding: 4.,
-            gap: 4.,
-            ..Layout::row()
-        },
-    );
-    plane(world, header_row, Color::rgb(0.065, 0.065, 0.075));
-    button(world, header_row, SIDEBAR, "Chats", true);
-    let header = text(world, header_row, "Today", Typography::Label).unwrap();
-    world.get_mut::<Layout>(header).unwrap().width = Size::Fill;
-    world.get_mut::<Label>(header).unwrap().overflow = TextOverflow::Ellipsis;
-    button(world, header_row, DETAILS, "Info", true);
+    visual::flat(world, content.root, visual::canvas());
+    // Conversation navigation is owned by the shared window band.
     let timeline = timeline::setup(world, content.content);
     let approvals = approvals::setup(world, content.content);
     let composer_row = container(
@@ -457,7 +499,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         world,
         Some(composer_row),
         Layout {
-            width: Size::Px(700.),
+            width: Size::Px(visual::COLUMN),
             height: Size::Hug,
             gap: 4.,
             ..Layout::column()
@@ -487,11 +529,11 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
             ..Default::default()
         },
     );
-    world.insert(compose.root, Radius(24.));
+    world.insert(compose.root, Radius(visual::COMPOSER_RADIUS));
     world.insert(
         compose.root,
         Border {
-            color: Color::rgb(0.22, 0.22, 0.25),
+            color: visual::stroke(),
             width: 1.,
         },
     );
@@ -561,10 +603,17 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     .unwrap()
     .root;
     let model_caption = text(world, model_stack, "Choose a model", Typography::Secondary).unwrap();
+    world.insert(
+        model_caption,
+        UiStyle {
+            foreground: Some(UiColor::Explicit(visual::secondary())),
+            ..Default::default()
+        },
+    );
     world.get_mut::<Layout>(model_caption).unwrap().padding = 0.;
     let footer = container(
         world,
-        Some(composer_shell),
+        Some(compose.content),
         Layout {
             width: Size::Fill,
             height: Size::Hug,
@@ -595,7 +644,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     button(world, footer, BEHAVIOR, "Behavior  ⌄", true);
     let behavior = container(
         world,
-        Some(composer_shell),
+        Some(compose.content),
         Layout {
             width: Size::Fill,
             height: Size::Hug,
@@ -619,7 +668,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     button(world, controls, SEND, "↑", false);
     let filter_row = container(
         world,
-        Some(composer_shell),
+        Some(compose.content),
         Layout {
             width: Size::Fill,
             height: Size::Px(32.),
@@ -653,6 +702,13 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     .unwrap();
     world.get_mut::<Layout>(status).unwrap().height = Size::Px(22.);
     world.get_mut::<Layout>(status).unwrap().padding = 3.;
+    world.insert(
+        status,
+        UiStyle {
+            foreground: Some(UiColor::Explicit(visual::secondary())),
+            ..Default::default()
+        },
+    );
     Ui {
         content: parent,
         sidebar,
@@ -664,7 +720,6 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         status,
         rename,
         session_actions,
-        header,
         timeline,
         composer_parent,
         composer,
@@ -692,7 +747,7 @@ fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> Ed
     world.insert(
         h.editor,
         UiStyle {
-            background: Some(UiColor::Explicit(Color::rgb(0.085, 0.085, 0.105))),
+            background: Some(UiColor::Explicit(composer_color())),
             typography: Some(Typography::Label),
             ..Default::default()
         },
@@ -704,7 +759,7 @@ fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> Ed
     h
 }
 fn composer_color() -> Color {
-    Color::rgb(0.085, 0.085, 0.105)
+    visual::raised()
 }
 
 fn model_display_name(name: &str) -> String {
@@ -744,11 +799,7 @@ fn quiet_selector(
     // Keep the native outer focus ring and the popup untouched.
     let face = world.get::<Parent>(handle.label).unwrap().entity;
     let border = world.get::<Parent>(face).unwrap().entity;
-    let color = if id == 10 {
-        composer_color()
-    } else {
-        Color::rgb(0.035, 0.035, 0.04)
-    };
+    let color = composer_color();
     plane(world, face, color);
     plane(world, border, color);
 }
@@ -1430,12 +1481,6 @@ fn sync(world: &mut World) {
         connected,
     };
     world.get_mut::<Label>(ui.status).unwrap().text = m.chat.status.clone();
-    let title = m
-        .chat
-        .session()
-        .and_then(|id| m.sessions.iter().find(|(s, _)| s == id))
-        .map(|(_, title)| title.as_str())
-        .unwrap_or("Today");
     approvals::sync(world, ui.approvals, m.chat.session(), m.chat.snapshot());
     runtimes::sync(world, ui.runtime, m.chat.session());
     context::sync(world, ui.context, m.chat.session());
@@ -1457,7 +1502,6 @@ fn sync(world: &mut World) {
     }
 
     attachments::sync(world, ui.attachments, m.chat.session());
-    world.get_mut::<Label>(ui.header).unwrap().text = title.into();
     let external = !matches!(runtimes::active(world), runtimes::ActiveRuntime::Native);
     let available = !m.loading && !m.chat.busy() && !runtimes::busy(world);
     let query = world
@@ -1588,7 +1632,7 @@ fn sync(world: &mut World) {
         10,
         &format!("{model_title}  ⌄"),
         available,
-        Size::Px(260.),
+        Size::Fill,
     );
     let mode_title = m
         .mode
@@ -1701,7 +1745,7 @@ fn sync(world: &mut World) {
                 controls::NavigationRow::mount(world, ui.sessions, UiId(key), props, meta).unwrap();
             world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
             world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(36.);
-            world.insert(h.root, Radius(7.));
+            world.insert(h.root, Radius(visual::CONTROL_RADIUS));
             world.remove::<Hidden>(h.root);
         }
         // Keep keyed control ownership intact; hidden stale results cannot activate.
@@ -1747,7 +1791,7 @@ fn sync(world: &mut World) {
         .filter(|w| *w > 0.)
         .unwrap_or(width)
         .min(width);
-    world.get_mut::<Layout>(ui.compose).unwrap().width = Size::Px((width - 48.).clamp(240., 700.));
+    world.get_mut::<Layout>(ui.compose).unwrap().width = Size::Px(visual::column_width(width));
     world.resource_mut::<Model>().unwrap().chat = m.chat;
     if let Some(error) = workspace::error(world) {
         world.resource_mut::<Model>().unwrap().chat.status = error;
@@ -1788,6 +1832,10 @@ fn model_options(
         page,
     )
 }
+
+#[cfg(test)]
+#[path = "ui_visual_tests.rs"]
+mod visual_tests;
 
 #[cfg(test)]
 mod tests {

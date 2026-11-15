@@ -54,7 +54,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Layout::column()
         },
     );
-    world.insert(rail, Color::rgb(0.035, 0.035, 0.042));
+    world.insert(rail, crate::native_style::rail());
     world.insert(rail, ResolvedColor);
     world.insert(
         rail,
@@ -203,7 +203,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
     });
     world.resource_mut::<Focus>().unwrap().entity = focus;
     match target {
-        SurfaceId::Chat => {},
+        SurfaceId::Chat => {}
         SurfaceId::Notes => crate::notes::activate(world),
         SurfaceId::Code => crate::code::activate(world),
     }
@@ -239,23 +239,23 @@ pub fn chrome(world: &mut World) {
     let tiles = host.tiles;
     let buttons = host.buttons;
     let rail = host.rail;
-    world.insert(rail, Color::rgb(0.035, 0.035, 0.042));
+    world.insert(rail, crate::native_style::rail());
     for i in 0..SURFACE_COUNT {
         world.insert(
             tiles[i],
             if i == active {
-                Color::rgb(0.13, 0.13, 0.15)
+                crate::native_style::raised()
             } else {
-                Color::rgb(0.035, 0.035, 0.042)
+                crate::native_style::rail()
             },
         );
         world.insert(
             buttons[i].label,
             UiStyle {
                 foreground: Some(UiColor::Explicit(if i == active {
-                    Color::rgb(0.95, 0.94, 0.91)
+                    crate::native_style::text()
                 } else {
-                    Color::rgb(0.56, 0.56, 0.60)
+                    crate::native_style::secondary()
                 })),
                 ..Default::default()
             },
@@ -352,7 +352,10 @@ mod tests {
             (SurfaceId::Chat, chat_focus),
         ] {
             select(app.world_mut(), target);
-            assert_eq!(app.world().resource::<Focus>().unwrap().entity, Some(expected_focus));
+            assert_eq!(
+                app.world().resource::<Focus>().unwrap().entity,
+                Some(expected_focus)
+            );
             for (index, root) in roots.iter().enumerate() {
                 assert_eq!(app.world().has::<Hidden>(*root), index != target.index());
             }
