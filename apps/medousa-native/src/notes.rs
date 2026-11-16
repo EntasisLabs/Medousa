@@ -22,6 +22,9 @@ use std::{
     collections::HashMap,
     sync::atomic::{AtomicU64, Ordering},
 };
+#[path = "notes_management.rs"]
+mod management;
+
 static NEXT: AtomicU64 = AtomicU64::new(0x4e4f_0000);
 fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
@@ -34,6 +37,7 @@ pub struct NoteCommand {
 }
 #[derive(Clone, Debug)]
 enum Operation {
+    Manage(management::Command),
     List {
         cursor: Option<String>,
         generation: Option<u64>,
@@ -52,12 +56,14 @@ pub struct NoteUpdate {
 }
 #[derive(Debug)]
 enum Response {
+    Managed(serde_json::Value),
     List(VaultNotesListResponse),
     Loaded(VaultNoteContentResponse),
     Saved(VaultWriteResponse),
 }
 #[derive(Clone)]
 enum Action {
+    Manage(management::Action),
     Refresh,
     More,
     Open(String),
@@ -75,6 +81,7 @@ struct View {
 }
 #[derive(Default)]
 struct Notes {
+    management: management::Management,
     toolbar: Option<Entity>,
     tabs: Option<Entity>,
     tabstrip: Option<Entity>,
@@ -137,7 +144,8 @@ impl Notes {
         let Some(path) = self.selected.clone() else {
             return;
         };
-        if self.saves.contains_key(&path)
+        if self.management.pending.is_some()
+            || self.saves.contains_key(&path)
             || self.loads.contains_key(&path)
             || self.uncertain.contains(&path)
             || self.remote.contains_key(&path)
@@ -241,6 +249,8 @@ pub fn mount(world: &mut World, parent: Entity) {
             width: 1.,
         },
     );
+    let manager = column(world, sidebar, Size::Fill, Size::Hug);
+    world.insert(manager, Hidden);
     let rows = column(world, sidebar, Size::Fill, Size::Fill);
     world.insert(rows, Scroll::default());
     let content = column(world, root, Size::Fill, Size::Fill);
@@ -269,6 +279,7 @@ pub fn mount(world: &mut World, parent: Entity) {
         "Select a note to begin. Drafts stay here when you switch surfaces.",
     );
     world.insert_resource(Notes {
+        management: management::Management::new(manager),
         toolbar: Some(toolbar),
         tabs: Some(tabs),
         notice: Some(notice),
@@ -321,7 +332,7 @@ pub fn activate(world: &mut World) {
     };
     if !n.started {
         n.started = true;
-        n.list_page(false);
+        management::initialize(n);
     }
 }
 fn capture(world: &World, n: &mut Notes) {
@@ -380,6 +391,7 @@ fn render(world: &mut World, n: &mut Notes) {
         Action::Refresh,
         n.list_pending.is_none(),
     );
+    management::navigation(world, rows, n);
     if n.list_pending.is_some() {
         caption(world, rows, "Loading vault notes…");
     }
@@ -605,6 +617,9 @@ fn render(world: &mut World, n: &mut Notes) {
     }
 }
 fn open_note(world: &mut World, n: &mut Notes, path: String) {
+    if n.management.pending.is_some() {
+        return;
+    }
     let composing = n.views.values().any(|v| {
         world
             .resource::<SourceDocuments>()
@@ -674,14 +689,19 @@ pub fn action(world: &mut World, host: &HostIntent) -> bool {
     };
     let Some(a) = world
         .resource::<Notes>()
-        .and_then(|n| n.actions.get(id))
+        .and_then(|n| n.actions.get(id).or_else(|| n.management.actions.get(id)))
         .cloned()
     else {
         return false;
     };
     let mut n = std::mem::take(world.resource_mut::<Notes>().unwrap());
     capture(world, &mut n);
+    if n.management.pending.is_some() && !matches!(a, Action::Manage(_)) {
+        *world.resource_mut::<Notes>().unwrap() = n;
+        return true;
+    }
     match a {
+        Action::Manage(a) => management::action(world, &mut n, a),
         Action::Refresh => n.list_page(false),
         Action::More => {
             if n.cursor.is_some() {
@@ -743,7 +763,14 @@ fn version(opaque: Option<String>, hash: String) -> Option<String> {
         .or_else(|| (!hash.is_empty()).then_some(hash))
 }
 pub async fn execute(client: &MedousaClient, c: NoteCommand) -> NoteUpdate {
+    if let Operation::Manage(command) = &c.operation {
+        let result = management::execute(client, command)
+            .await
+            .map(Response::Managed);
+        return NoteUpdate { command: c, result };
+    }
     let result = match &c.operation {
+        Operation::Manage(_) => unreachable!(),
         Operation::List { cursor, generation } => client
             .vault()
             .list_notes(&VaultNotesQuery {
@@ -802,7 +829,15 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
     let mut n = std::mem::take(resource);
     capture(world, &mut n);
     let NoteUpdate { command: c, result } = u;
+    if let Operation::Manage(command) = &c.operation {
+        management::apply(world, &mut n, c.serial, command, result);
+        n.redraw = true;
+        *world.resource_mut::<Notes>().unwrap() = n;
+        tick(world);
+        return;
+    }
     let valid = match &c.operation {
+        Operation::Manage(_) => false,
         Operation::List { .. } => n.list_pending == Some(c.serial),
         Operation::Load(path) => n.loads.get(path) == Some(&c.serial),
         Operation::Save { path, .. } => n.saves.get(path) == Some(&c.serial),
@@ -812,6 +847,7 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
         return;
     }
     match c.operation {
+        Operation::Manage(_) => unreachable!(),
         Operation::List { cursor, .. } => {
             n.list_pending = None;
             match result {

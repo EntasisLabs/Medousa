@@ -3313,6 +3313,13 @@ pub const VAULT_GIT_WORKTREES_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const VAULT_MOVE_POST: Operation = Operation {
+    id: "vault.move.post",
+    method: "POST",
+    path: "/v1/vault/move",
+    streaming: false,
+};
+
 pub const VAULT_NOTES_BY_NOTE_PATH_DELETE: Operation = Operation {
     id: "vault.notes.by_note_path.delete",
     method: "DELETE",
@@ -4129,6 +4136,7 @@ pub static ALL: &[Operation] = &[
     VAULT_GIT_RESTORE_POST,
     VAULT_GIT_STATUS_GET,
     VAULT_GIT_WORKTREES_GET,
+    VAULT_MOVE_POST,
     VAULT_NOTES_BY_NOTE_PATH_DELETE,
     VAULT_NOTES_BY_NOTE_PATH_GET,
     VAULT_NOTES_BY_NOTE_PATH_PUT,

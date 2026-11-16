@@ -26,6 +26,8 @@ fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 type Key = (String, String);
+#[path = "code_workbench.rs"]
+mod workbench;
 #[derive(Clone, Debug)]
 pub struct CodeCommand {
     serial: u64,
@@ -33,6 +35,7 @@ pub struct CodeCommand {
 }
 #[derive(Clone, Debug)]
 enum Operation {
+    Workbench(workbench::Command),
     Projects,
     Tree(String),
     Load(Key),
@@ -154,6 +157,7 @@ struct View {
 }
 #[derive(Clone)]
 enum Action {
+    Workbench(workbench::Action),
     Refresh,
     Project(String),
     File(String),
@@ -165,6 +169,7 @@ enum Action {
 }
 #[derive(Default)]
 struct Code {
+    workbench: workbench::Workbench,
     rows: Option<Entity>,
     toolbar: Option<Entity>,
     editors: Option<Entity>,
@@ -191,6 +196,7 @@ struct Code {
 }
 fn tag(op: &Operation) -> String {
     match op {
+        Operation::Workbench(c) => format!("workbench:{}", c.work),
         Operation::Projects => "projects".into(),
         Operation::Tree(w) => format!("tree:{w}"),
         Operation::Load((w, p)) => format!("load:{w}:{p}"),
@@ -393,6 +399,9 @@ pub fn mount(w: &mut World, parent: Entity) {
     visual::flat(w, content, visual::canvas());
     let tabs = column(w, content, Size::Fill, Size::Hug);
     let toolbar = column(w, content, Size::Fill, Size::Hug);
+    let panel = column(w, content, Size::Fill, Size::Px(240.));
+    w.insert(panel, Hidden);
+    w.insert(panel, Scroll::default());
     let editors = column(w, content, Size::Fill, Size::Fill);
     caption(
         w,
@@ -400,6 +409,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         "Select a project and file. Drafts remain here while you switch surfaces.",
     );
     w.insert_resource(Code {
+        workbench: workbench::Workbench::new(panel),
         rows: Some(rows),
         toolbar: Some(toolbar),
         editors: Some(editors),
@@ -548,6 +558,8 @@ fn render(w: &mut World, c: &mut Code) {
     if c.projects.is_empty() && c.started && !c.pending.contains_key("projects") {
         caption(w, rows, "No projects loaded. Refresh to retry.");
     }
+    let tools = row(w, toolbar);
+    workbench::navigation(w, tools, c);
     let actions = row(w, toolbar);
     if let Some(work) = c.selected.clone() {
         if c.pending.contains_key(&format!("tree:{work}")) {
@@ -871,7 +883,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
     };
     let Some(a) = w
         .resource::<Code>()
-        .and_then(|c| c.actions.get(id))
+        .and_then(|c| c.actions.get(id).or_else(|| c.workbench.actions.get(id)))
         .cloned()
     else {
         return false;
@@ -879,6 +891,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
     let mut c = std::mem::take(w.resource_mut::<Code>().unwrap());
     capture(w, &mut c);
     match a {
+        Action::Workbench(a) => workbench::action(w, &mut c, a),
         Action::Refresh => {
             c.enqueue(Operation::Projects);
             if let Some(work) = c.selected.clone() {
@@ -984,6 +997,7 @@ fn route(op: ops::Operation, work: &str) -> String {
 pub async fn execute(client: &MedousaClient, command: CodeCommand) -> CodeUpdate {
     let http = client.http();
     let result:Result<Value,medousa_sdk::SdkError>=match &command.operation {
+        Operation::Workbench(c)=>workbench::execute(client,c).await,
         Operation::Projects=>list_projects(client).await,
         Operation::Tree(work)=>http.get(&route(ops::FORGE_ITEMS_BY_WORK_ID_TREE_GET,work)).await,
         Operation::Load((work,path))=>http.get_query(&route(ops::FORGE_ITEMS_BY_WORK_ID_SOURCE_GET,work),&[("path",path.clone())]).await,
@@ -1056,6 +1070,7 @@ pub fn apply(w: &mut World, u: CodeUpdate) {
     }
     c.pending.remove(&pending);
     match command.operation {
+        Operation::Workbench(command) => workbench::apply(w, &mut c, command, u.result),
         Operation::Projects => match u.result {
             Ok(v) => {
                 if let Some(items) = v.as_array() {
@@ -1122,6 +1137,7 @@ pub fn apply(w: &mut World, u: CodeUpdate) {
                     );
                 }
                 ensure_view(w, &mut c, &key);
+                workbench::apply_jump(w, &mut c);
                 c.status.clear();
             }
             Err(e) => {

@@ -3069,6 +3069,15 @@ impl Default for VaultWriteRequest {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct VaultMoveRequest {
+    /// Stable daemon vault identity, not the mutable active-root selection.
+    pub root_id: String,
+    pub from_path: String,
+    pub to_path: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultPutQuery {
     pub session_id: Option<String>,
     #[serde(default)]

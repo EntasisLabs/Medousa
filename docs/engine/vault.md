@@ -13,6 +13,7 @@ The vault is Medousa's markdown note store with wikilinks, backlinks, tags, and 
 | GET/POST | `/v1/vault/roots` | List / register roots |
 | PUT | `/v1/vault/active` | Set active root for writes |
 | GET/POST | `/v1/vault/notes` | List (`VaultNoteSummary[]`) / create |
+| POST | `/v1/vault/move` | `VaultMoveRequest { root_id, from_path, to_path }` → `VaultWriteResponse`; same-root journaled relocation, destination create-only, content-write authority |
 | GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | CRUD single note (`VaultNote` + body) |
 | GET | `/v1/vault/tags` | Tag index |
 | GET | `/v1/vault/search` | Active-root full-text search (`q`), or root-qualified title/path search (`root_id`) |

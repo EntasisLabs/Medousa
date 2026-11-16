@@ -26,7 +26,7 @@ Assistant runtime: [Batch-stop workers, jobs and follow-ups](engine/agent-tools.
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
-| [Native workspace: Chat, Notes, and Code](guides/native-workspace.md) | Retained chats, delegated-worker exchanges, app navigation, vault notes, and project source editing with ownership- and version-checked saves |
+| [Native workspace: Chat, Notes, and Code](guides/native-workspace.md) | Retained chats, vault note lifecycle/search/roots, and project editing, language results, changes and tasks with ownership- and version-checked saves |
 | [Native rndr desktop preview](guides/rndr-native-preview.md) | Browse grouped shell, Settings, read-only Activity/admin snapshots and bounded Notes summaries; sensitive chat actions remain gated |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, legacy or registered ChatGPT sign-in, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create Bots, continue their memory, and exchange messages between native agent chats across paired workshops |

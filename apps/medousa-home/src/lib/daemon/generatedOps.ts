@@ -481,6 +481,7 @@ export const OPERATIONS = {
   "vault.git.restore.post": { id: "vault.git.restore.post", method: "POST", path: "/v1/vault/git/restore", streaming: false },
   "vault.git.status.get": { id: "vault.git.status.get", method: "GET", path: "/v1/vault/git/status", streaming: false },
   "vault.git.worktrees.get": { id: "vault.git.worktrees.get", method: "GET", path: "/v1/vault/git/worktrees", streaming: false },
+  "vault.move.post": { id: "vault.move.post", method: "POST", path: "/v1/vault/move", streaming: false },
   "vault.notes.by_note_path.delete": { id: "vault.notes.by_note_path.delete", method: "DELETE", path: "/v1/vault/notes/{*note_path}", streaming: false },
   "vault.notes.by_note_path.get": { id: "vault.notes.by_note_path.get", method: "GET", path: "/v1/vault/notes/{*note_path}", streaming: false },
   "vault.notes.by_note_path.put": { id: "vault.notes.by_note_path.put", method: "PUT", path: "/v1/vault/notes/{*note_path}", streaming: false },

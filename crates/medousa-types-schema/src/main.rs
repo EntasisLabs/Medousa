@@ -667,6 +667,7 @@ fn main() {
     );
     export_type!(schemas, VaultNotesListResponse, "VaultNotesListResponse");
     export_type!(schemas, VaultWriteRequest, "VaultWriteRequest");
+    export_type!(schemas, VaultMoveRequest, "VaultMoveRequest");
     export_type!(schemas, VaultWriteResponse, "VaultWriteResponse");
     export_type!(
         schemas,

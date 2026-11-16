@@ -11,11 +11,11 @@ use crate::daemon::route_policy::{
 };
 use crate::daemon_api::{
     VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultChangesQuery,
-    VaultChangesResponse, VaultDeleteResponse, VaultFileContentResponse, VaultNoteContentResponse,
-    VaultNotesListResponse, VaultNotesQuery, VaultPutQuery, VaultRootsResponse, VaultSearchQuery,
-    VaultSearchResponse, VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery,
-    VaultTrashListResponse, VaultTrashRestoreRequest, VaultTrashRestoreResponse, VaultWriteRequest,
-    VaultWriteResponse,
+    VaultChangesResponse, VaultDeleteResponse, VaultFileContentResponse, VaultMoveRequest,
+    VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery, VaultPutQuery,
+    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest,
+    VaultTagsListResponse, VaultTagsQuery, VaultTrashListResponse, VaultTrashRestoreRequest,
+    VaultTrashRestoreResponse, VaultWriteRequest, VaultWriteResponse,
 };
 use crate::vault::VaultService;
 use crate::vault::io::{VaultIoClass, vault_io};
@@ -44,6 +44,10 @@ pub fn vault_surface() -> DeclaredRouter {
                 post(post_vault_note),
             ),
         ])
+        .route(
+            vault_write_policy(axum::http::Method::POST, "/v1/vault/move", 64 * 1024),
+            post(move_vault_note),
+        )
         .route(vault_read_policy("/v1/vault/tags"), get(list_vault_tags))
         .route(
             vault_read_policy("/v1/vault/search"),
@@ -447,6 +451,20 @@ pub async fn list_vault_trash(
         .map_err(map_vault_error)
 }
 
+/// Relocate through the journaled owner, preserving note identity. Explicit
+/// root identity prevents another client's active-root switch retargeting this move.
+pub async fn move_vault_note(
+    Json(request): Json<VaultMoveRequest>,
+) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::move_note_in_root(&request.root_id, &request.from_path, &request.to_path)
+        })
+        .await
+        .map(Json)
+        .map_err(map_vault_error)
+}
+
 pub async fn restore_vault_trash(
     Json(request): Json<VaultTrashRestoreRequest>,
 ) -> Result<Json<VaultTrashRestoreResponse>, (StatusCode, String)> {
@@ -466,7 +484,7 @@ mod tests {
     #[test]
     fn vault_inventory_separates_content_and_host_authority() {
         let entries = vault_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 25);
+        assert_eq!(entries.len(), 26);
         assert_eq!(
             entries
                 .iter()
@@ -479,7 +497,7 @@ mod tests {
                 .iter()
                 .filter(|entry| entry.required_capability == Some("content.write"))
                 .count(),
-            4
+            5
         );
         assert_eq!(
             entries

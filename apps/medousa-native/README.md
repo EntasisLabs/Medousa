@@ -70,8 +70,11 @@ history remain in this window when switching notes or returning to Chat.
 Saving is explicit and version-checked. A changed or unconfirmed daemon version
 leaves your edits intact and blocks another save until you check the latest
 version and resolve the baseline. There is no automatic overwrite or retry.
-Notes drafts are not persisted across application relaunch. This first surface
-does not include vault-root management, note creation/deletion, or inline rich-text editing.
+Notes drafts are not persisted across application relaunch. Native controls now
+cover creation, root-qualified rename/move, confirmed trash deletion, restore,
+daemon-index search, vault listing/linking/switching, and clean document closure.
+Vault switches require all documents closed; drafts cannot silently cross roots.
+Editing remains retained Markdown source, not inline rich-text.
 It uses the current native app connection; it does not add remote pairing.
 
 ## Code
@@ -87,8 +90,12 @@ binary, or lossy previews are read-only. Switching files or surfaces does not
 replace a dirty draft. Unconfirmed writes are not blindly retried. Source drafts
 are window-lifetime state; save before quitting.
 
-Language intelligence, terminal/tasks, and changes/review UI remain separate next
-steps; this surface does not claim parity with all Svelte Code features.
+The native workbench now includes bounded daemon-backed content search,
+Problems/Outline/Hover/Definition for saved files, changes/diffs/history, and
+configured tasks with lease-checked starts, run history, output, source jumps and
+explicit cancellation. It does not add an interactive terminal emulator, project
+creation, workspace-edit refactors or the separate review approval lifecycle.
+See [native workflow guide](../../docs/guides/native-workspace.md).
 
 ```sh
 cargo test

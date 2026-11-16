@@ -145,6 +145,17 @@ impl VaultApi<'_> {
         decode(value).await
     }
 
+    /// Rename or move within an explicit daemon vault, preserving note identity.
+    pub async fn move_note(
+        &self,
+        request: &medousa_types::VaultMoveRequest,
+    ) -> Result<VaultWriteResponse, crate::SdkError> {
+        self.client
+            .http()
+            .post(ops::VAULT_MOVE_POST.path, request)
+            .await
+    }
+
     pub async fn create_note(
         &self,
         request: &VaultWriteRequest,

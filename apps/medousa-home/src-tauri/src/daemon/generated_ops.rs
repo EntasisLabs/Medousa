@@ -948,6 +948,8 @@ pub enum DaemonOperation {
     VaultGitStatusGet,
     #[serde(rename = "vault.git.worktrees.get")]
     VaultGitWorktreesGet,
+    #[serde(rename = "vault.move.post")]
+    VaultMovePost,
     #[serde(rename = "vault.notes.by_note_path.delete")]
     VaultNotesByNotePathDelete,
     #[serde(rename = "vault.notes.by_note_path.get")]
@@ -1523,6 +1525,7 @@ impl DaemonOperation {
             Self::VaultGitRestorePost => "vault.git.restore.post",
             Self::VaultGitStatusGet => "vault.git.status.get",
             Self::VaultGitWorktreesGet => "vault.git.worktrees.get",
+            Self::VaultMovePost => "vault.move.post",
             Self::VaultNotesByNotePathDelete => "vault.notes.by_note_path.delete",
             Self::VaultNotesByNotePathGet => "vault.notes.by_note_path.get",
             Self::VaultNotesByNotePathPut => "vault.notes.by_note_path.put",

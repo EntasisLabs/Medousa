@@ -455,6 +455,7 @@ destination's current execution policy.
 | `set_active_root(request)` | `PUT /v1/vault/active` | `VaultSetActiveRootRequest` |
 | `list_notes(query)` | `GET /v1/vault/notes` | `VaultNotesListResponse` |
 | `create_note(request)` | `POST /v1/vault/notes` | `VaultWriteRequest` |
+| `move_note(request)` | `POST /v1/vault/move` | `VaultMoveRequest` → `VaultWriteResponse`; root-qualified journaled rename/move |
 | `get_note(path)` | `GET /v1/vault/notes/{path}` | `VaultNoteContentResponse` |
 | `update_note(path, request)` | `PUT /v1/vault/notes/{path}` | `VaultWriteRequest` |
 | `delete_note(path)` | `DELETE /v1/vault/notes/{path}` | `VaultDeleteResponse` |

@@ -1,4 +1,6 @@
 use super::*;
+#[path = "notes_management_tests.rs"]
+mod management_tests;
 use serde_json::json;
 fn fixture() -> App {
     let mut app = App::new();
@@ -272,7 +274,29 @@ fn activation_and_pagination_are_explicit_and_fenced() {
     activate(w);
     let commands = drain_commands(w);
     assert_eq!(commands.len(), 1);
-    let c = commands[0].clone();
+    let identity = commands[0].clone();
+    assert!(matches!(
+        identity.operation,
+        Operation::Manage(management::Command::Identity)
+    ));
+    apply(
+        w,
+        NoteUpdate {
+            command: identity,
+            result: Ok(Response::Managed(
+                serde_json::to_value(medousa_types::VaultRootsResponse {
+                    active_root_id: "vault-a".into(),
+                    roots: vec![],
+                })
+                .unwrap(),
+            )),
+        },
+    );
+    assert_eq!(
+        w.resource::<Notes>().unwrap().core.workshop_scope_id(),
+        "vault-a"
+    );
+    let c = drain_commands(w).pop().unwrap();
     let page = VaultNotesListResponse {
         notes: vec![],
         vault_generation: Some(7),

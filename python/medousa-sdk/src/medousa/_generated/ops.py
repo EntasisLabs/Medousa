@@ -484,6 +484,7 @@ OPERATIONS: dict[str, Operation] = {
     "vault.git.restore.post": Operation("vault.git.restore.post", "POST", "/v1/vault/git/restore", False),
     "vault.git.status.get": Operation("vault.git.status.get", "GET", "/v1/vault/git/status", False),
     "vault.git.worktrees.get": Operation("vault.git.worktrees.get", "GET", "/v1/vault/git/worktrees", False),
+    "vault.move.post": Operation("vault.move.post", "POST", "/v1/vault/move", False),
     "vault.notes.by_note_path.delete": Operation("vault.notes.by_note_path.delete", "DELETE", "/v1/vault/notes/{*note_path}", False),
     "vault.notes.by_note_path.get": Operation("vault.notes.by_note_path.get", "GET", "/v1/vault/notes/{*note_path}", False),
     "vault.notes.by_note_path.put": Operation("vault.notes.by_note_path.put", "PUT", "/v1/vault/notes/{*note_path}", False),

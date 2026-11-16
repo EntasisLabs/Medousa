@@ -47511,6 +47511,28 @@
       }
     }
   },
+  "VaultMoveRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultMoveRequest",
+    "type": "object",
+    "required": [
+      "from_path",
+      "root_id",
+      "to_path"
+    ],
+    "properties": {
+      "from_path": {
+        "type": "string"
+      },
+      "root_id": {
+        "description": "Stable daemon vault identity, not the mutable active-root selection.",
+        "type": "string"
+      },
+      "to_path": {
+        "type": "string"
+      }
+    }
+  },
   "VaultNoteContentResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "VaultNoteContentResponse",

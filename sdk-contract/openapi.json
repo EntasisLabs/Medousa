@@ -2263,6 +2263,17 @@
             "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
             "type": "string"
           },
+          "hud": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Derived from the same compiled request and authoritative work state."
+          },
           "layers": {
             "items": {
               "$ref": "#/components/schemas/ContextUsageLayer"
@@ -13415,6 +13426,37 @@
         "title": "UpdateBotRequest",
         "type": "object"
       },
+      "UserContextProjection": {
+        "properties": {
+          "accounting": {
+            "type": "string"
+          },
+          "deferred_items": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "pressure": {
+            "type": "string"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkContextProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "accounting",
+          "deferred_items",
+          "pressure"
+        ],
+        "type": "object"
+      },
       "VaultAddRootRequest": {
         "properties": {
           "id": {
@@ -13471,6 +13513,27 @@
           "path"
         ],
         "title": "VaultDeleteResponse",
+        "type": "object"
+      },
+      "VaultMoveRequest": {
+        "properties": {
+          "from_path": {
+            "type": "string"
+          },
+          "root_id": {
+            "description": "Stable daemon vault identity, not the mutable active-root selection.",
+            "type": "string"
+          },
+          "to_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_path",
+          "root_id",
+          "to_path"
+        ],
+        "title": "VaultMoveRequest",
         "type": "object"
       },
       "VaultNote": {
@@ -14162,6 +14225,42 @@
             "type": "object"
           }
         ]
+      },
+      "WorkContextProjection": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "decisions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "phase": {
+            "description": "Exact authoritative lifecycle label, never a claim that the user's goal passed.",
+            "type": "string"
+          },
+          "progress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "blockers",
+          "decisions",
+          "phase",
+          "work_id"
+        ],
+        "type": "object"
       },
       "WorkCoordinationInput": {
         "additionalProperties": false,
@@ -44200,6 +44299,66 @@
           "feature_profile": "core",
           "rate_limit_class": "administration",
           "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/vault/move": {
+      "post": {
+        "operationId": "vault.move.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaultMoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VaultWriteResponse"
+                }
+              }
+            },
+            "description": "vault.move.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "vault.move.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "vault.move.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
         }
       }
     },

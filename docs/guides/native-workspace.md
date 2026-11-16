@@ -125,9 +125,22 @@ or retry an uncertain write.
 
 Save before quitting: open tabs and unsaved chat/note drafts are window-lifetime
 state, not recovered after relaunch. Only Chat sidebar/details layout preferences
-are saved on the device. This Notes surface does not yet manage vault roots,
-create/delete notes, or provide inline rich-text editing. The reading view uses
-the existing native Markdown renderer, not the Svelte rich-note editor.
+are saved on the device. The reading view uses the native Markdown renderer;
+editing uses retained Markdown source rather than the Svelte rich-note editor.
+
+Use **New note** with a relative `.md` path to create a note on the workshop.
+**Rename / move…** moves a clean saved note within its explicit vault using the
+daemon's journaled relocation service, preserving note identity and links.
+**Move to trash…** requires confirmation; **Trash** offers explicit restore.
+Save or resolve drafts before moving, deleting, or closing a note. If you type
+after starting a move, the newer local draft is retained and blocked from saving
+to the obsolete path; copy that draft to the moved note before closing it.
+Mutations are single-flight and never automatically retried after an uncertain result.
+
+**Search vault** searches the daemon index (up to 100 results), unlike the sidebar's
+loaded-page filter. **Vaults** lists workshop directories and links an existing
+absolute directory on the daemon—not a folder on this device. Save and close all
+open notes before switching vaults; relative note paths are never rebound across roots.
 
 ## Read and edit project source
 
@@ -152,8 +165,27 @@ Acknowledging is not a save; saving remains a separate action. Uncertain writes
 are not automatically retried.
 
 Source drafts, like chat and note drafts, are retained only for this window—not
-recovered after quitting. This first Code milestone does not add language
-intelligence, terminal/tasks, changes/review tools, or project creation.
+recovered after quitting.
+
+### Search, language results, changes, and tasks
+
+**Search** queries saved project files on the daemon with a literal query and a
+100-hit limit. Select a result to open that project's file at its line.
+**Problems**, **Outline**, **Hover**, and **Definition** query the coding engine
+for a clean saved file; hover/definition use the current cursor's UTF-16 position.
+Results for an edited/replaced baseline are discarded instead of being presented
+as current. Language-server availability and supported languages follow the daemon.
+
+**Changes** lists project changes, opens bounded file diffs, and offers recorded
+change history. These are inspection controls, not review approval or integration.
+**Tasks** lists the daemon's configured tasks. Starting a task requires current
+human editing ownership and saved project drafts. **Run history** recovers runs;
+select one for bounded stdout/stderr, parsed source locations, explicit refresh,
+and cancellation while active. An unconfirmed task start is never replayed
+automatically. This is task output, not an interactive terminal emulator.
+
+These native workflows do not add project creation, arbitrary shell sessions,
+workspace-edit refactors, rich-text note editing, or the separate Reviews lifecycle.
 
 ### Interactive build performance
 
