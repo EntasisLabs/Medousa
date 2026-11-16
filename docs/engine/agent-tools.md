@@ -26,6 +26,44 @@ See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search
 
 ---
 
+## Batch stop (full daemon)
+
+For a user-requested batch stop, use one `cognition_runtime_mutate` call rather
+than a loop over `workshop.cancel` and `job.cancel`:
+
+```json
+{"action":"runtime.stop","scope":"chat","request_key":"stop-request-unique-key"}
+```
+
+Fetch its typed parameters with `cognition_schema types=["runtime.stop"]`.
+`chat` uses the admitted chat and authenticated profile, never a model-supplied
+session/owner. `project` requires `project_id` (the Forge work ID) and
+`admin.runtime`; it selects durable workers linked to that project and their
+jobs. `workshop` also requires `admin.runtime` and includes active durable jobs
+across the workshop. Workers, peers, anonymous and external-agent principals
+cannot use this owner control.
+
+The caller is always excluded, including its active synthesis/host-resume
+cohort. Children of an interactive caller are still eligible. The first call
+persists a frozen target set. Retry with the **same request key and parameters**
+to finish that batch; a new key takes a new snapshot. A key cannot be reused for
+a different scope/project. Each target receives a status/error and the receipt
+includes a failed count. A partial failure is not an all-clear.
+
+Worker stop fences suppress execution admission, restart recovery and automatic
+result intake without falsely setting `synthesis_delivered`. Live worker and
+intake cancellation tokens are signalled; pending job continuations are
+abandoned before job cancellation. Worker persistence is flushed before success
+is reported. Completed results remain available as results, not acknowledged
+messages. Cancellation is cooperative: `stop_requested` is not evidence that
+all processes have exited, nor does it undo tools already executed.
+
+This is a batch of existing work, **not a permanent workshop pause**: it does
+not disable recurring schedules, prohibit future explicit requests, terminate
+unmanaged shell processes, or cancel unrelated native Forge executor assignments.
+Use the dedicated controls for those resources. Building the source does not
+enable the action in an already-running daemon; it must be deployed separately.
+
 ## Discover domains
 
 `cognition_tools_discover` returns grouped tool catalogs. Domains include:

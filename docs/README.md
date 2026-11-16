@@ -8,6 +8,7 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 
 Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
+Assistant runtime: [Batch-stop workers, jobs and follow-ups](engine/agent-tools.md#batch-stop-full-daemon).
 
 ## The two-layer product
 

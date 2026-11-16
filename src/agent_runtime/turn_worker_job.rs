@@ -234,7 +234,7 @@ async fn job_needs_enqueue(composition: &RuntimeComposition, work_id: &str) -> b
 }
 
 pub async fn resume_pending_synthesis(agent: Arc<TuiRuntime>, record: TurnWorkRecord) {
-    if record.synthesis_delivered {
+    if record.synthesis_delivered || record.stop_request_id.is_some() {
         return;
     }
     let terminal_parallel = record.disposition
@@ -294,7 +294,7 @@ impl JobHandler for TurnWorkerJobHandler {
             ));
         }
 
-        if record.synthesis_delivered {
+        if record.synthesis_delivered || record.stop_request_id.is_some() {
             return Ok(success_outcome(format!(
                 "work_id={} already completed",
                 payload.work_id
@@ -722,6 +722,9 @@ fn truncate_line(value: &str, max: usize) -> String {
 /// Terminal-record handling above keeps these attempts from rerunning worker effects.
 fn pending_continuation_outcome(record: Option<&TurnWorkRecord>) -> Option<JobExecutionOutcome> {
     let record = record?;
+    if record.stop_request_id.is_some() {
+        return None;
+    }
     let parallel_intake_needs_retry = record.disposition == TurnWorkDisposition::Parallel
         && turn_worker_store().parallel_intake_needs_retry(record);
     (continuation_needs_retry(

@@ -1205,6 +1205,7 @@ pub async fn job_succeeded(runtime: &RuntimeComposition, job_id: &str) -> bool {
 }
 
 pub async fn maybe_resume_agent_turn_from_child_job(state: &AppState, child_job_id: &str) -> bool {
+    let _admission = crate::turn_continuation::RESUME_ADMISSION.lock().await;
     let store = crate::turn_continuation::turn_continuation_store();
     let Some(record) = store.get(child_job_id).await else {
         return false;
@@ -1347,6 +1348,7 @@ async fn spawn_continuation_agent_turn(
         .admit(execution)
         .map_err(|error| error.to_string())?;
     let execution_context = execution_lease.context().clone();
+    crate::turn_continuation::register_live_resume(record.child_job_id.clone(), &execution_context);
 
     if let Some(target) = record
         .delivery_target

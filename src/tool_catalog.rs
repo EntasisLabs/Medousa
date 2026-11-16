@@ -252,7 +252,7 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_runtime_mutate",
-        "Enqueue, cancel, register, pause, run, schedule, or plan by typed action name",
+        "Batch-stop workers/jobs/follow-ups with runtime.stop, or enqueue, cancel, register, pause, run, schedule, or plan by typed action name",
     ),
     (
         "cognition_tool_history_summary",

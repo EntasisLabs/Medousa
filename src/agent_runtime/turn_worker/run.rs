@@ -1067,6 +1067,7 @@ impl TurnWorkerScheduler {
             handoff_capsule: Some(handoff),
             worker_scratch: None,
             synthesis_delivered: false,
+            stop_request_id: None,
             stasis_job_id: None,
             thread_id: None,
             stage_role: resolved_stage_role.clone(),
@@ -1291,6 +1292,7 @@ impl TurnWorkerScheduler {
             handoff_capsule: Some(handoff),
             worker_scratch: None,
             synthesis_delivered: false,
+            stop_request_id: None,
             stasis_job_id: None,
             thread_id: None,
             stage_role: None,
@@ -2206,6 +2208,13 @@ pub async fn resume_synthesis_if_needed(
     sink: SharedAgentStreamSink,
     agent: Option<&TuiRuntime>,
 ) {
+    if record.stop_request_id.is_some()
+        || turn_worker_store()
+            .get(&record.work_id)
+            .is_some_and(|current| current.stop_request_id.is_some())
+    {
+        return;
+    }
     if record.disposition == TurnWorkDisposition::Delegated {
         return;
     }
@@ -2242,11 +2251,15 @@ pub async fn resume_synthesis_if_needed(
         tracing::warn!(work_id = %record.work_id, "refusing synthesis resume after authority revocation");
         return;
     }
+    let store = turn_worker_store();
+    let Some(continuation) = store.register_continuation(&[record.work_id.clone()]) else {
+        return;
+    };
     let scope = worker_turn_scope(&record);
     let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
         format!("{}-synthesis", record.work_id),
         crate::request_principal::RequestPrincipal::worker(identity_user_id),
-        tokio_util::sync::CancellationToken::new(),
+        continuation.cancellation(),
         None::<std::time::Instant>,
         scope,
     ) {
@@ -2490,6 +2503,9 @@ pub(crate) async fn deliver_synthesis_response(
     synthesis_turn_id: u64,
     text: String,
 ) {
+    if turn_worker_store().is_work_cancelled(&record.work_id) {
+        return;
+    }
     let tool_names = record.tool_names.clone();
     // Worker synthesis must commit explicit finish prose, not stale host/worker stream draft.
     sink.reset_streamed_markdown().await;
@@ -2800,6 +2816,7 @@ mod tests {
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,
+            stop_request_id: None,
             stasis_job_id: None,
             thread_id: None,
             stage_role: None,

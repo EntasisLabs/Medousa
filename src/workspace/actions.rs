@@ -447,6 +447,7 @@ mod tests {
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,
+            stop_request_id: None,
             stasis_job_id: None,
             thread_id: None,
             stage_role: None,

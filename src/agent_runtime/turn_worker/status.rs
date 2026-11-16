@@ -107,6 +107,7 @@ mod tests {
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,
+            stop_request_id: None,
             stasis_job_id: Some("work-status-test".to_string()),
             thread_id: None,
             stage_role: Some("extractor".to_string()),

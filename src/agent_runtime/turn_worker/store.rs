@@ -229,6 +229,9 @@ pub struct TurnWorkRecord {
     /// Host synthesis delivered the worker result to the parent turn.
     #[serde(default)]
     pub synthesis_delivered: bool,
+    /// Explicit operator stop, independent of delivery acknowledgement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stasis_job_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -331,6 +334,7 @@ impl TurnWorkRecord {
             handoff_capsule: Some(handoff_capsule),
             worker_scratch: None,
             synthesis_delivered: false,
+            stop_request_id: None,
             stasis_job_id: None,
             thread_id: None,
             stage_role: None,
@@ -360,6 +364,7 @@ pub struct TurnWorkerStore {
     records: Mutex<HashMap<String, TurnWorkRecord>>,
     live_cancellations: Mutex<HashMap<String, Arc<CancellationToken>>>,
     parallel_intakes: Mutex<HashSet<ParallelCohortKey>>,
+    live_continuations: Mutex<HashMap<String, Arc<CancellationToken>>>,
     admit_mutations: MutationAdmitter,
 }
 
@@ -537,6 +542,7 @@ impl TurnWorkerStore {
             records: Mutex::new(HashMap::new()),
             live_cancellations: Mutex::new(HashMap::new()),
             parallel_intakes: Mutex::new(HashSet::new()),
+            live_continuations: Mutex::new(HashMap::new()),
             admit_mutations,
         }
     }
@@ -865,6 +871,9 @@ impl TurnWorkerStore {
                     TurnWorkStatus::Pending | TurnWorkStatus::Running
                 )
             })
+            || records
+                .iter()
+                .any(|record| record.stop_request_id.is_some())
             || records.iter().all(|record| record.synthesis_delivered)
         {
             return None;
@@ -903,6 +912,7 @@ impl TurnWorkerStore {
             .filter(|worker| key.matches(worker))
             .collect();
         !cohort.is_empty()
+            && cohort.iter().all(|worker| worker.stop_request_id.is_none())
             && cohort.iter().any(|worker| !worker.synthesis_delivered)
             && cohort.iter().all(|worker| {
                 !matches!(
@@ -924,6 +934,7 @@ impl TurnWorkerStore {
             .values()
             .filter(|record| {
                 !record.archived
+                    && record.stop_request_id.is_none()
                     && (matches!(
                         record.status,
                         TurnWorkStatus::Pending | TurnWorkStatus::Running
@@ -955,7 +966,9 @@ impl TurnWorkerStore {
             crate::session_deletion::acquire_mutation_for_str(&session_id).ok()?;
         let mut guard = self.records.lock().expect("turn worker records");
         let record = guard.get_mut(work_id)?;
+        let previous = record.stop_request_id.as_ref().map(|_| record.clone());
         update(record);
+        preserve_stop_fence(record, previous.as_ref());
         record.updated_at = Utc::now();
         let cloned = record.clone();
         drop(guard);
@@ -1007,9 +1020,11 @@ impl TurnWorkerStore {
         let Some(record) = candidate.get_mut(work_id) else {
             return Ok(None);
         };
+        let previous = record.stop_request_id.as_ref().map(|_| record.clone());
         if !update(record) {
             return Ok(None);
         }
+        preserve_stop_fence(record, previous.as_ref());
         record.updated_at = Utc::now();
         let snapshot = record.clone();
         self.persist_candidate(&mut candidate, work_id)?;
@@ -1342,10 +1357,12 @@ impl TurnWorkerStore {
         let record = records
             .get(work_id)
             .ok_or(WorkerExecutionRegistrationError::MissingWork)?;
-        if !matches!(
-            record.status,
-            TurnWorkStatus::Pending | TurnWorkStatus::Running
-        ) {
+        if record.stop_request_id.is_some()
+            || !matches!(
+                record.status,
+                TurnWorkStatus::Pending | TurnWorkStatus::Running
+            )
+        {
             return Err(WorkerExecutionRegistrationError::NotActive);
         }
         let mut live = self
@@ -1388,8 +1405,112 @@ impl TurnWorkerStore {
     }
 
     pub fn is_work_cancelled(&self, work_id: &str) -> bool {
-        self.get(work_id)
-            .is_some_and(|record| record.status == TurnWorkStatus::Cancelled)
+        self.get(work_id).is_some_and(|record| {
+            record.stop_request_id.is_some() || record.status == TurnWorkStatus::Cancelled
+        })
+    }
+
+    /// Persist the stop fence before signalling live execution. Completed results
+    /// remain completed and undelivered; a stop never fabricates acknowledgement.
+    pub fn stop_exact(
+        &self,
+        session_id: &str,
+        work_id: &str,
+        request_id: &str,
+    ) -> Result<TurnWorkRecord, TurnWorkerMutationError> {
+        let (_session, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)
+            .map_err(|_| TurnWorkerMutationError::SessionDeleting)?;
+        let mut guard = self.records.lock().expect("turn worker records");
+        let mut candidate = guard.clone();
+        let record = candidate
+            .get_mut(work_id)
+            .ok_or(TurnWorkerMutationError::MissingWork)?;
+        if record.session_id != session_id {
+            return Err(TurnWorkerMutationError::ForeignSession);
+        }
+        if record.stop_request_id.is_none() {
+            record.stop_request_id = Some(request_id.to_string());
+        }
+        if matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        ) {
+            record.status = TurnWorkStatus::Cancelled;
+        }
+        record.updated_at = Utc::now();
+        let updated = record.clone();
+        self.persist_candidate(&mut candidate, work_id)
+            .map_err(|error| TurnWorkerMutationError::Persistence(error.to_string()))?;
+        *guard = candidate;
+        // Registration takes records before cancellation maps too.
+        for map in [&self.live_cancellations, &self.live_continuations] {
+            if let Some(token) = map.lock().expect("worker cancellation map").get(work_id) {
+                token.cancel();
+            }
+        }
+        drop(guard);
+        Self::notify_turn_worker_changed(work_id, updated.stasis_job_id.as_deref());
+        Ok(updated)
+    }
+
+    /// Registration and stop share the records lock, closing the check/start race.
+    pub fn register_continuation(
+        self: &Arc<Self>,
+        work_ids: &[String],
+    ) -> Option<ContinuationExecutionLease> {
+        let records = self.records.lock().expect("turn worker records");
+        if work_ids.is_empty()
+            || work_ids.iter().any(|id| {
+                records
+                    .get(id)
+                    .is_none_or(|record| record.stop_request_id.is_some())
+            })
+        {
+            return None;
+        }
+        let mut live = self.live_continuations.lock().expect("live continuations");
+        if work_ids.iter().any(|id| live.contains_key(id)) {
+            return None;
+        }
+        let token = Arc::new(CancellationToken::new());
+        for id in work_ids {
+            live.insert(id.clone(), token.clone());
+        }
+        Some(ContinuationExecutionLease {
+            store: self.clone(),
+            work_ids: work_ids.to_vec(),
+            token,
+        })
+    }
+}
+
+pub struct ContinuationExecutionLease {
+    store: Arc<TurnWorkerStore>,
+    work_ids: Vec<String>,
+    token: Arc<CancellationToken>,
+}
+
+impl ContinuationExecutionLease {
+    pub fn cancellation(&self) -> CancellationToken {
+        self.token.as_ref().clone()
+    }
+}
+
+impl Drop for ContinuationExecutionLease {
+    fn drop(&mut self) {
+        let mut live = self
+            .store
+            .live_continuations
+            .lock()
+            .expect("live continuations");
+        for id in &self.work_ids {
+            if live
+                .get(id)
+                .is_some_and(|token| Arc::ptr_eq(token, &self.token))
+            {
+                live.remove(id);
+            }
+        }
     }
 }
 
@@ -1406,6 +1527,14 @@ impl medousa_runtime::DelegationControlPort for TurnWorkerStore {
                 speaker_profile_id: message.speaker_profile_id,
             })
             .collect()
+    }
+}
+
+fn preserve_stop_fence(record: &mut TurnWorkRecord, previous: Option<&TurnWorkRecord>) {
+    if let Some(previous) = previous {
+        record.stop_request_id = previous.stop_request_id.clone();
+        record.status = previous.status;
+        record.synthesis_delivered = previous.synthesis_delivered;
     }
 }
 
@@ -1678,6 +1807,7 @@ mod tests {
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,
+            stop_request_id: None,
             stasis_job_id: None,
             thread_id: None,
             stage_role: None,
@@ -1724,6 +1854,115 @@ mod tests {
             record.execution_placement.resolution_reason,
             crate::workshop_contract::ExecutionResolutionReason::LegacyUnknown
         );
+    }
+
+    #[test]
+    fn batch_stop_fences_live_worker_and_late_completion() {
+        let store = Arc::new(TurnWorkerStore::empty_for_tests());
+        seed(
+            &store,
+            test_record("stop-live", "sess-stop", 1, TurnWorkStatus::Running),
+        );
+        let worker = store.register_execution("stop-live").unwrap();
+        let token = worker.cancellation().clone();
+        store
+            .stop_exact("sess-stop", "stop-live", "request-1")
+            .unwrap();
+        assert!(token.is_cancelled());
+        assert!(store.register_execution("stop-live").is_err());
+        store.update("stop-live", |record| {
+            record.status = TurnWorkStatus::Completed;
+            record.synthesis_delivered = true;
+            record.stop_request_id = None;
+        });
+        let stopped = store.get("stop-live").unwrap();
+        assert_eq!(stopped.status, TurnWorkStatus::Cancelled);
+        assert!(!stopped.synthesis_delivered);
+        assert_eq!(stopped.stop_request_id.as_deref(), Some("request-1"));
+        assert!(store.list_incomplete().is_empty());
+    }
+
+    #[test]
+    fn batch_stop_cancels_cohort_continuation_without_acknowledging_results() {
+        let store = Arc::new(TurnWorkerStore::empty_for_tests());
+        for id in ["stop-a", "stop-b"] {
+            seed(
+                &store,
+                test_record(id, "sess-stop-cohort", 2, TurnWorkStatus::Completed),
+            );
+        }
+        let ids = vec!["stop-a".into(), "stop-b".into()];
+        let continuation = store.register_continuation(&ids).unwrap();
+        let token = continuation.cancellation();
+        store
+            .stop_exact("sess-stop-cohort", "stop-b", "request-2")
+            .unwrap();
+        assert!(token.is_cancelled());
+        drop(continuation);
+        assert!(store.register_continuation(&ids).is_none());
+        assert!(
+            store
+                .try_claim_parallel_cohort_intake("sess-stop-cohort", 2, None)
+                .is_none()
+        );
+        for id in &ids {
+            let record = store.get(id).unwrap();
+            assert_eq!(record.status, TurnWorkStatus::Completed);
+            assert!(!record.synthesis_delivered);
+        }
+        let recovered = Arc::new(TurnWorkerStore::empty_for_tests());
+        for id in &ids {
+            let bytes = serde_json::to_vec(&store.get(id).unwrap()).unwrap();
+            seed(&recovered, serde_json::from_slice(&bytes).unwrap());
+        }
+        assert!(recovered.register_continuation(&ids).is_none());
+        assert!(!recovered.parallel_intake_needs_retry(&recovered.get("stop-a").unwrap()));
+    }
+
+    #[test]
+    fn batch_stop_retries_keep_original_fence_and_require_exact_session() {
+        let store = TurnWorkerStore::empty_for_tests();
+        seed(
+            &store,
+            test_record("stop-retry", "sess-stop-retry", 1, TurnWorkStatus::Pending),
+        );
+        assert!(matches!(
+            store.stop_exact("foreign", "stop-retry", "bad"),
+            Err(TurnWorkerMutationError::ForeignSession)
+        ));
+        assert!(store.get("stop-retry").unwrap().stop_request_id.is_none());
+        store
+            .stop_exact("sess-stop-retry", "stop-retry", "first")
+            .unwrap();
+        store
+            .stop_exact("sess-stop-retry", "stop-retry", "retry")
+            .unwrap();
+        assert_eq!(
+            store.get("stop-retry").unwrap().stop_request_id.as_deref(),
+            Some("first")
+        );
+    }
+
+    #[test]
+    fn batch_stop_persistence_rejection_does_not_publish_or_cancel() {
+        let store = Arc::new(TurnWorkerStore::with_admitter(Arc::new(|_| {
+            Err(crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Overloaded,
+                "test stop full",
+            ))
+        })));
+        seed(
+            &store,
+            test_record("stop-full", "sess-stop-full", 1, TurnWorkStatus::Running),
+        );
+        let lease = store.register_execution("stop-full").unwrap();
+        assert!(
+            store
+                .stop_exact("sess-stop-full", "stop-full", "request")
+                .is_err()
+        );
+        assert!(!lease.cancellation().is_cancelled());
+        assert!(store.get("stop-full").unwrap().stop_request_id.is_none());
     }
 
     fn seed(store: &TurnWorkerStore, record: TurnWorkRecord) {

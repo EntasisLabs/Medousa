@@ -307,6 +307,14 @@ async fn run_host_resume_turn(
         "resuming host with parent continuation route"
     );
 
+    let store = turn_worker_store();
+    let work_ids = cohort
+        .iter()
+        .map(|record| record.work_id.clone())
+        .collect::<Vec<_>>();
+    let Some(continuation) = store.register_continuation(&work_ids) else {
+        return false;
+    };
     let ports = HOST_RESUME_PORTS.get();
     let backend = ports
         .map(|ports| ports.backend.as_str())
@@ -335,7 +343,7 @@ async fn run_host_resume_turn(
     let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
         turn_id.clone(),
         crate::request_principal::RequestPrincipal::continuation(identity_user_id),
-        tokio_util::sync::CancellationToken::new(),
+        continuation.cancellation(),
         None::<std::time::Instant>,
         scope.clone(),
     ) {
@@ -883,6 +891,7 @@ mod tests {
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,
+            stop_request_id: None,
             stasis_job_id: None,
             thread_id: None,
             stage_role: None,

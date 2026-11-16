@@ -17,6 +17,31 @@ use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 pub use crate::turn_scope::TurnContinuationScope;
 
+// Serialize continuation admission with owner batch stop. Weak contexts avoid
+// retaining finished executions; snapshots prune dead entries.
+pub(crate) static RESUME_ADMISSION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+type LiveResume = std::sync::Weak<crate::agent_runtime::execution_context::TurnExecutionContext>;
+static LIVE_RESUMES: Lazy<std::sync::Mutex<HashMap<String, LiveResume>>> =
+    Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+
+pub(crate) fn register_live_resume(
+    child_job_id: String,
+    execution: &Arc<crate::agent_runtime::execution_context::TurnExecutionContext>,
+) {
+    let mut live = LIVE_RESUMES.lock().expect("continuation registry poisoned");
+    live.retain(|_, execution| execution.strong_count() > 0);
+    live.insert(child_job_id, Arc::downgrade(execution));
+}
+
+pub(crate) fn live_resumes()
+-> HashMap<String, Arc<crate::agent_runtime::execution_context::TurnExecutionContext>> {
+    let mut live = LIVE_RESUMES.lock().expect("continuation registry poisoned");
+    live.retain(|_, execution| execution.strong_count() > 0);
+    live.iter()
+        .filter_map(|(id, execution)| execution.upgrade().map(|execution| (id.clone(), execution)))
+        .collect()
+}
+
 const TABLE: &str = "turn_continuation_record";
 pub const TURN_CONTINUATION_VERSION: u16 = 2;
 

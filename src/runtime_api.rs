@@ -5,6 +5,12 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "full-daemon")]
+#[path = "runtime_stop.rs"]
+mod runtime_stop;
+#[cfg(feature = "full-daemon")]
+use runtime_stop::RuntimeStop;
+
 use schemars::JsonSchema;
 use schemars::schema::Schema;
 use serde::Deserialize;
@@ -188,6 +194,9 @@ pub enum RuntimeMutateAction {
     JobEnqueue(JobEnqueue),
     #[serde(rename = "job.cancel")]
     JobCancel(JobCancel),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "runtime.stop")]
+    RuntimeStop(RuntimeStop),
     #[serde(rename = "recurring.register")]
     RecurringRegister(Box<RecurringRegister>),
     #[serde(rename = "recurring.pause")]
@@ -470,6 +479,7 @@ impl JsonSchema for RuntimeMutateAction {
         ];
         #[cfg(feature = "full-daemon")]
         let actions = [
+            "runtime.stop",
             "ssh.run",
             "ssh.open_terminal",
             "ssh.terminal_input",
@@ -529,6 +539,12 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
             "Enqueue a job: Grapheme script, MCP server_id+tool_name, or job_type+payload_ref",
         ),
         typed_action_schema::<JobCancel>(MUTATE_ID, "job.cancel", "Cancel a durable job"),
+        #[cfg(feature = "full-daemon")]
+        typed_action_schema::<RuntimeStop>(
+            MUTATE_ID,
+            "runtime.stop",
+            "Stop workers, durable jobs and automatic follow-ups in one chat, project, or workshop. Excludes the caller; request_key freezes the target set for retries.",
+        ),
         typed_action_schema::<RecurringRegister>(
             MUTATE_ID,
             "recurring.register",
@@ -1021,6 +1037,11 @@ async fn dispatch_mutate(
         }
         RuntimeMutateAction::JobEnqueue(params) => params.execute(tool).await,
         RuntimeMutateAction::JobCancel(params) => params.execute(tool).await,
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::RuntimeStop(params) => {
+            let receipt = runtime_stop::execute(params, tool.runtime.clone()).await?;
+            serialize_output(CognitionRuntimeMutateTool::tool_id(), receipt)
+        }
         RuntimeMutateAction::RecurringRegister(params) => params.execute(tool).await,
         RuntimeMutateAction::RecurringPause(params) => params.execute(tool).await,
         RuntimeMutateAction::RecurringCancel(params) => params.execute(tool).await,
