@@ -1,21 +1,21 @@
 //! Native adapter over the canonical Forge source API. SourceDocuments owns
 //! per-file history/selection/scroll; the daemon owns project files and leases.
 use crate::native_style as visual;
-use medousa_sdk::{MedousaClient, operations as ops};
+use medousa_sdk::{operations as ops, MedousaClient};
 use rndr_core::{
     editing::{DocumentId, Revision, SourceDocuments},
     *,
 };
 use rndr_ui::{
-    Corner, Typography, UiId, UiRecipe, UiStyle,
     controls::{self, ButtonProps, HostIntent},
     editing::{EditorSurface, EditorSurfaceHandle, EditorSurfaceProps},
     tabs::{
-        TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripHandle, TabStripProps,
+        reorder_tabs, TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripHandle,
+        TabStripProps,
     },
-    text,
+    text, Corner, Typography, UiId, UiRecipe, UiStyle,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::{AtomicU64, Ordering},
@@ -154,10 +154,12 @@ struct View {
     captured_revision: Option<Revision>,
     handle: EditorSurfaceHandle,
     id: UiId,
+    find: Option<rndr_ui::source_tools::FindBar>,
 }
 #[derive(Clone)]
 enum Action {
     Workbench(workbench::Action),
+    Find,
     Refresh,
     Project(String),
     File(String),
@@ -176,6 +178,8 @@ struct Code {
     rows: Option<Entity>,
     toolbar: Option<Entity>,
     editors: Option<Entity>,
+    find_tools: Option<Entity>,
+    find_open: HashSet<Key>,
     tabs: Option<Entity>,
     strip: Option<TabStripHandle>,
     projects: Vec<Project>,
@@ -184,6 +188,8 @@ struct Code {
     truncated: HashSet<String>,
     expanded: HashSet<(String, String)>,
     current: HashMap<String, String>,
+    // Visible tabs are independent of retained documents: closing never discards a draft.
+    open_tabs: Vec<Key>,
     buffers: HashMap<Key, Buffer>,
     views: HashMap<Key, View>,
     sessions: HashMap<String, Session>,
@@ -218,6 +224,25 @@ impl Code {
         self.pending.insert(key, serial);
         self.queue.push(CodeCommand { serial, operation });
         self.redraw = true;
+    }
+    fn open_tab(&mut self, key: &Key) {
+        if !self.open_tabs.contains(key) {
+            self.open_tabs.push(key.clone());
+        }
+    }
+    fn tab_specs(&self) -> Vec<TabSpec> {
+        self.open_tabs
+            .iter()
+            .filter(|k| Some(&k.0) == self.selected.as_ref())
+            .filter_map(|k| {
+                let view = self.views.get(k)?;
+                Some(
+                    TabSpec::new(view.id.0, k.1.rsplit('/').next().unwrap_or(&k.1))
+                        .icon(Icon::FileCode)
+                        .dirty(self.buffers[k].dirty()),
+                )
+            })
+            .collect()
     }
     fn key(&self) -> Option<Key> {
         let w = self.selected.as_ref()?;
@@ -405,6 +430,7 @@ pub fn mount(w: &mut World, parent: Entity) {
     let panel = column(w, content, Size::Fill, Size::Px(240.));
     w.insert(panel, Hidden);
     w.insert(panel, Scroll::default());
+    let find_tools = column(w, content, Size::Fill, Size::Hug);
     let editors = column(w, content, Size::Fill, Size::Fill);
     caption(
         w,
@@ -416,6 +442,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         rows: Some(rows),
         toolbar: Some(toolbar),
         editors: Some(editors),
+        find_tools: Some(find_tools),
         tabs: Some(tabs),
         redraw: true,
         ..Default::default()
@@ -528,6 +555,7 @@ fn ensure_view(w: &mut World, c: &mut Code, key: &Key) {
             captured_revision: None,
             handle,
             id,
+            find: None,
         },
     );
 }
@@ -644,6 +672,8 @@ fn render(w: &mut World, c: &mut Code) {
     let tools = row(w, toolbar);
     workbench::navigation(w, tools, c);
     let actions = row(w, toolbar);
+    let has_editor = c.key().is_some_and(|k| c.views.contains_key(&k));
+    button(w, actions, c, "Find / Replace", Action::Find, has_editor);
     if let Some(work) = c.selected.clone() {
         if c.pending.contains_key(&format!("tree:{work}")) {
             caption(w, rows, "Loading source tree…");
@@ -823,28 +853,14 @@ fn render(w: &mut World, c: &mut Code) {
     if !c.status.is_empty() {
         caption(w, toolbar, &c.status);
     }
-    let mut keys: Vec<_> = c
-        .views
-        .keys()
-        .filter(|k| Some(&k.0) == c.selected.as_ref())
-        .cloned()
-        .collect();
-    keys.sort();
+
     if let Some(parent) = c.tabs {
         w.insert(parent, Hidden);
     }
     if let (Some(parent), Some(key)) = (c.tabs, c.key()) {
         if c.views.contains_key(&key) {
             w.remove::<Hidden>(parent);
-            let specs: Vec<_> = keys
-                .iter()
-                .map(|k| {
-                    TabSpec::new(c.views[k].id.0, k.1.rsplit('/').next().unwrap_or(&k.1))
-                        .icon(Icon::FileCode)
-                        .dirty(c.buffers[k].dirty())
-                        .closable(false)
-                })
-                .collect();
+            let specs = c.tab_specs();
             let strip = TabStrip::mount(
                 w,
                 parent,
@@ -869,6 +885,13 @@ fn render(w: &mut World, c: &mut Code) {
     }
     let selected = c.key();
     for (key, v) in &c.views {
+        if let Some(bar) = v.find {
+            if selected.as_ref() == Some(key) && c.find_open.contains(key) {
+                w.remove::<Hidden>(bar.root);
+            } else {
+                w.insert(bar.root, Hidden);
+            }
+        }
         if selected.as_ref() == Some(key) {
             w.remove::<Hidden>(v.handle.root);
         } else {
@@ -903,28 +926,69 @@ pub fn sync(w: &mut World) {
     let mut c = std::mem::take(r);
     capture(w, &mut c);
     for event in events::<TabStripEvent>(w).to_vec() {
-        if c.strip.is_some_and(|s| s.root == event.strip) {
-            if let TabStripEventKind::Activated(id) = event.kind {
-                // RNDR requests activation; composition keeps the host's current
-                // document authoritative and restores its selected tab.
-                c.redraw = true;
-                if composing(w, &c) {
-                    continue;
+        if !c.strip.is_some_and(|s| s.root == event.strip) {
+            continue;
+        }
+        // Requests are idempotent, scoped to currently open tabs, and never
+        // change the canonical document while an IME transaction is active.
+        c.redraw = true;
+        if composing(w, &c) {
+            continue;
+        }
+        let owned_key = |c: &Code, id: TabId| {
+            c.open_tabs
+                .iter()
+                .find(|k| {
+                    Some(&k.0) == c.selected.as_ref()
+                        && c.views.get(*k).is_some_and(|v| v.id.0 == id.0)
+                })
+                .cloned()
+        };
+        match event.kind {
+            TabStripEventKind::Activated(id) => {
+                if let Some(key) = owned_key(&c, id) {
+                    c.current.insert(key.0, key.1);
+                    clear_focus(w, &c);
                 }
-                if let Some(key) = c
-                    .views
-                    .iter()
-                    .find(|(k, v)| Some(&k.0) == c.selected.as_ref() && v.id.0 == id.0)
-                    .map(|(k, _)| k.clone())
-                {
-                    if c.key().as_ref() != Some(&key) {
-                        c.selected = Some(key.0.clone());
-                        c.current.insert(key.0, key.1);
+            }
+            TabStripEventKind::CloseRequested(id) => {
+                if let Some(key) = owned_key(&c, id) {
+                    let index = c.open_tabs.iter().position(|k| k == &key).unwrap();
+                    c.open_tabs.remove(index);
+                    if c.key().as_ref() == Some(&key) {
+                        let next = c.open_tabs[index..]
+                            .iter()
+                            .find(|k| k.0 == key.0)
+                            .or_else(|| c.open_tabs[..index].iter().rev().find(|k| k.0 == key.0))
+                            .cloned();
+                        if let Some(next) = next {
+                            c.current.insert(next.0, next.1);
+                        } else {
+                            c.current.remove(&key.0);
+                        }
                         clear_focus(w, &c);
-                        c.redraw = true;
+                    }
+                    c.status = format!(
+                        "Closed {} · draft and undo history retained; reopen from Explorer.",
+                        key.1
+                    );
+                }
+            }
+            TabStripEventKind::Reordered(moved) => {
+                if let Some(specs) =
+                    reorder_tabs(&c.tab_specs(), moved.id, moved.target, moved.place)
+                {
+                    let order: Vec<_> = specs.iter().filter_map(|s| owned_key(&c, s.id)).collect();
+                    let mut order = order.into_iter();
+                    for key in &mut c.open_tabs {
+                        if Some(&key.0) == c.selected.as_ref() && c.views.contains_key(key) {
+                            *key = order.next().expect("RNDR reorder preserves membership");
+                        }
                     }
                 }
             }
+            // Multiple editor groups require an explicit host layout contract.
+            TabStripEventKind::Moved(_) | TabStripEventKind::SplitRequested(_) => {}
         }
     }
 
@@ -968,6 +1032,27 @@ pub fn sync(w: &mut World) {
         apply(w, update);
     }
 }
+/// Surface-scoped keyboard integration. The shared host chooses the active
+/// surface and key chord; this adapter never installs another input dispatcher.
+pub fn shortcut(w: &mut World, command: &str) -> bool {
+    let Some(c) = w.resource::<Code>() else {
+        return false;
+    };
+    if composing(w, c) {
+        return false;
+    }
+    let requested = match command {
+        "find" if c.key().is_some_and(|key| c.views.contains_key(&key)) => Action::Find,
+        "quick-open" if c.selected.is_some() => Action::Workbench(workbench::Action::QuickOpen),
+        _ => return false,
+    };
+    let id = next();
+    w.resource_mut::<Code>()
+        .unwrap()
+        .actions
+        .insert(id, requested);
+    action(w, &HostIntent::Command(id))
+}
 pub fn action(w: &mut World, host: &HostIntent) -> bool {
     let HostIntent::Command(id) = host else {
         return false;
@@ -983,6 +1068,30 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
     capture(w, &mut c);
     match a {
         Action::Workbench(a) => workbench::action(w, &mut c, a),
+        Action::Find => {
+            if !composing(w, &c) {
+                if let Some(key) = c.key() {
+                    if let (Some(parent), Some(view)) = (c.find_tools, c.views.get_mut(&key)) {
+                        if view.find.is_none() {
+                            view.find = rndr_ui::source_tools::FindBar::mount(
+                                w,
+                                parent,
+                                view.handle.editor,
+                            )
+                            .ok();
+                        }
+                        if let Some(bar) = view.find {
+                            if !c.find_open.remove(&key) {
+                                c.find_open.insert(key);
+                                if let Some(focus) = w.resource_mut::<Focus>() {
+                                    focus.entity = Some(bar.query);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Action::Refresh => {
             c.enqueue(Operation::Projects);
             if let Some(work) = c.selected.clone() {
@@ -1007,6 +1116,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             if !composing(w, &c) {
                 if let Some(work) = c.selected.clone() {
                     let key = (work.clone(), path.clone());
+                    c.open_tab(&key);
                     c.current.insert(work, path);
                     if !c.buffers.contains_key(&key) {
                         c.enqueue(Operation::Load(key));

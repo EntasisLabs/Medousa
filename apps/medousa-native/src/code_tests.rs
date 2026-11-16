@@ -59,6 +59,93 @@ fn session(w: &mut World, work: &str) {
         },
     );
 }
+fn tab_event(app: &mut App, kind: TabStripEventKind) {
+    let strip = app.world().resource::<Code>().unwrap().strip.unwrap().root;
+    send(app.world_mut(), TabStripEvent { strip, kind });
+    app.update();
+    sync(app.world_mut());
+}
+#[test]
+fn tab_order_uses_open_order_and_rndr_reorder_without_recreating_documents() {
+    let mut app = fixture();
+    load(app.world_mut(), "one", "z.rs", "z", "z1");
+    load(app.world_mut(), "two", "other.rs", "other", "o1");
+    load(app.world_mut(), "one", "a.rs", "a", "a1");
+    let c = app.world().resource::<Code>().unwrap();
+    let z = c.views[&key("one", "z.rs")].id;
+    let a = c.views[&key("one", "a.rs")].id;
+    let document = c.views[&key("one", "z.rs")].document;
+    assert_eq!(
+        c.tab_specs().iter().map(|s| s.id).collect::<Vec<_>>(),
+        vec![TabId(z.0), TabId(a.0)]
+    );
+    tab_event(
+        &mut app,
+        TabStripEventKind::Reordered(rndr_ui::tabs::TabMove {
+            id: TabId(a.0),
+            target: TabId(z.0),
+            place: rndr_ui::drag::DropPlace::Before,
+        }),
+    );
+    let c = app.world().resource::<Code>().unwrap();
+    assert_eq!(
+        c.tab_specs().iter().map(|s| s.id).collect::<Vec<_>>(),
+        vec![TabId(a.0), TabId(z.0)]
+    );
+    assert!(c.open_tabs.contains(&key("two", "other.rs")));
+    assert_eq!(c.views[&key("one", "z.rs")].document, document);
+    assert_eq!(c.key(), Some(key("one", "a.rs")));
+    assert!(take_commands(app.world_mut()).is_empty());
+}
+#[test]
+fn closing_last_tab_preserves_uncertain_draft_and_reopens_same_document() {
+    let mut app = fixture();
+    load(app.world_mut(), "one", "a.rs", "original", "d1");
+    edit(app.world_mut(), &key("one", "a.rs"), "draft");
+    let c = app.world_mut().resource_mut::<Code>().unwrap();
+    c.buffers.get_mut(&key("one", "a.rs")).unwrap().uncertain = true;
+    let view = &c.views[&key("one", "a.rs")];
+    let (id, document) = (TabId(view.id.0), view.document);
+    tab_event(&mut app, TabStripEventKind::CloseRequested(id));
+    let c = app.world().resource::<Code>().unwrap();
+    assert!(c.key().is_none());
+    assert!(c.open_tabs.is_empty());
+    assert!(app
+        .world()
+        .has::<Hidden>(c.views[&key("one", "a.rs")].handle.root));
+    click(app.world_mut(), Action::File("a.rs".into()));
+    let c = app.world().resource::<Code>().unwrap();
+    assert_eq!(c.views[&key("one", "a.rs")].document, document);
+    assert_eq!(c.buffers[&key("one", "a.rs")].content, "draft");
+    assert!(c.buffers[&key("one", "a.rs")].uncertain);
+    assert!(take_commands(app.world_mut()).is_empty());
+}
+#[test]
+fn find_bars_reuse_canonical_per_file_state_and_hide_on_switch() {
+    let mut app = fixture();
+    load(app.world_mut(), "one", "a.rs", "🦀 a a", "d1");
+    click(app.world_mut(), Action::Find);
+    let bar = app.world().resource::<Code>().unwrap().views[&key("one", "a.rs")]
+        .find
+        .unwrap();
+    app.world_mut().get_mut::<Label>(bar.query).unwrap().text = "a".into();
+    rndr_ui::source_tools::apply_find_bars(app.world_mut());
+    assert_eq!(
+        app.world().get::<Label>(bar.status).unwrap().text,
+        "2 matches"
+    );
+    load(app.world_mut(), "one", "b.rs", "b", "d2");
+    assert!(app.world().has::<Hidden>(bar.root));
+    click(app.world_mut(), Action::File("a.rs".into()));
+    let current = app.world().resource::<Code>().unwrap().views[&key("one", "a.rs")]
+        .find
+        .unwrap();
+    assert_eq!(current.root, bar.root);
+    assert!(!app.world().has::<Hidden>(bar.root));
+    assert_eq!(app.world().get::<Label>(bar.query).unwrap().text, "a");
+    click(app.world_mut(), Action::Find);
+    assert!(app.world().has::<Hidden>(bar.root));
+}
 #[test]
 fn repository_disclosures_group_work_by_identity_without_replacing_editors() {
     let mut a = fixture();
@@ -319,13 +406,12 @@ fn preview_binary_lossy_and_truncated_are_readonly() {
         },
     );
     let id = w.resource::<Code>().unwrap().views[&key("one", "a.rs")].document;
-    assert!(
-        w.resource::<SourceDocuments>()
-            .unwrap()
-            .get(id)
-            .unwrap()
-            .is_readonly()
-    );
+    assert!(w
+        .resource::<SourceDocuments>()
+        .unwrap()
+        .get(id)
+        .unwrap()
+        .is_readonly());
 }
 #[test]
 fn identity_mismatch_and_missing_digest_fail_closed() {
@@ -681,12 +767,11 @@ fn explorer_rows_are_compact_clipped_and_use_supported_icons() {
         w.get::<Label>(*file).unwrap().overflow,
         TextOverflow::Ellipsis
     );
-    assert!(
-        w.get::<Label>(*file)
-            .unwrap()
-            .text
-            .contains(Icon::FileCode.scalar())
-    );
+    assert!(w
+        .get::<Label>(*file)
+        .unwrap()
+        .text
+        .contains(Icon::FileCode.scalar()));
     assert!(labels.iter().any(|e| {
         w.get::<Label>(*e)
             .unwrap()
@@ -696,7 +781,7 @@ fn explorer_rows_are_compact_clipped_and_use_supported_icons() {
 }
 
 #[test]
-fn source_tabs_are_retained_nonclosable_and_hide_when_project_has_no_file() {
+fn source_tabs_are_retained_and_hide_when_project_has_no_file() {
     let mut a = fixture();
     let w = a.world_mut();
     load(w, "one", "a.rs", "a", "d1");
@@ -765,7 +850,17 @@ fn tab_activation_routes_only_owned_strip_and_preserves_drafts_without_reads() {
     );
     a.update();
     sync(a.world_mut());
-    assert_eq!(a.world().resource::<Code>().unwrap().views.len(), 2);
+    let c = a.world().resource::<Code>().unwrap();
+    assert_eq!(c.views.len(), 2); // Closing is never a document/draft discard.
+    assert!(!c.open_tabs.contains(&key("one", "a.rs")));
+    assert_eq!(c.key(), Some(key("one", "b.rs")));
+    assert_eq!(c.buffers[&key("one", "a.rs")].content, "draft a");
+    click(a.world_mut(), Action::File("a.rs".into()));
+    assert!(take_commands(a.world_mut()).is_empty());
+    assert_eq!(
+        a.world().resource::<Code>().unwrap().key(),
+        Some(key("one", "a.rs"))
+    );
 }
 
 #[test]
@@ -1051,4 +1146,18 @@ fn loaded_code_performance_probe() {
             samples[20], samples[38]
         );
     }
+}
+
+#[test]
+fn scoped_shortcuts_require_a_selected_document_and_reuse_canonical_find() {
+    let mut a = fixture();
+    assert!(!shortcut(a.world_mut(), "find"));
+    assert!(!shortcut(a.world_mut(), "quick-open"));
+    load(a.world_mut(), "one", "a.rs", "a", "d1");
+    assert!(shortcut(a.world_mut(), "find"));
+    let c = a.world().resource::<Code>().unwrap();
+    assert!(c.views[&key("one", "a.rs")].find.is_some());
+    assert!(!shortcut(a.world_mut(), "unknown"));
+    assert!(shortcut(a.world_mut(), "quick-open"));
+    assert!(take_commands(a.world_mut()).is_empty());
 }

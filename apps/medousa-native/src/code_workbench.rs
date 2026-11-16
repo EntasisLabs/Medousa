@@ -36,9 +36,12 @@ pub(super) enum Feature {
     Symbols,
     Hover,
     Definition,
+    References,
 }
 #[derive(Clone)]
 pub(super) enum Action {
+    QuickOpen,
+    FilterFiles,
     Search,
     SubmitSearch,
     Changes,
@@ -81,6 +84,7 @@ fn busy(c: &Code, work: &str) -> bool {
 pub(super) fn navigation(w: &mut World, p: Entity, c: &mut Code) {
     let enabled = c.selected.as_ref().is_some_and(|s| !busy(c, s));
     for (label, action) in [
+        ("Open file", Action::QuickOpen),
         ("Search", Action::Search),
         ("Changes", Action::Changes),
         ("Tasks", Action::Tasks),
@@ -98,6 +102,7 @@ pub(super) fn navigation(w: &mut World, p: Entity, c: &mut Code) {
         ("Outline", Feature::Symbols),
         ("Hover", Feature::Hover),
         ("Definition", Feature::Definition),
+        ("Find uses", Feature::References),
     ] {
         button(
             w,
@@ -171,6 +176,7 @@ pub(super) fn action(w: &mut World, c: &mut Code, action: Action) {
     let scoped = matches!(
         action,
         Action::SubmitSearch
+            | Action::FilterFiles
             | Action::Diff(_)
             | Action::History
             | Action::Run(_)
@@ -181,6 +187,71 @@ pub(super) fn action(w: &mut World, c: &mut Code, action: Action) {
         return;
     }
     match action {
+        Action::QuickOpen => {
+            if let Some(p) = panel(w, c, &work, "Open project file · bounded daemon tree") {
+                let input = w.spawn((
+                    Layout {
+                        width: Size::Fill,
+                        height: Size::Px(32.),
+                        ..Layout::row()
+                    },
+                    Label::new(""),
+                    Focusable,
+                    Prompt {
+                        submit_on_enter: false,
+                        ..Prompt::new()
+                    },
+                    Placeholder::new("Filter relative paths"),
+                    Semantics {
+                        name: Some("Filter project file paths".into()),
+                        ..Default::default()
+                    },
+                ));
+                set_parent(w, input, p);
+                c.workbench.input = Some(input);
+                control(w, p, c, "Find paths", Action::FilterFiles, true);
+                if let Some(focus) = w.resource_mut::<Focus>() {
+                    focus.entity = Some(input);
+                }
+            }
+        }
+        Action::FilterFiles => {
+            let query = c
+                .workbench
+                .input
+                .and_then(|e| w.get::<Label>(e))
+                .map(|l| l.text.trim().to_lowercase())
+                .unwrap_or_default();
+            let matches: Vec<_> = c
+                .files
+                .get(&work)
+                .into_iter()
+                .flatten()
+                .filter(|path| path.to_lowercase().contains(&query))
+                .take(101)
+                .cloned()
+                .collect();
+            if let Some(p) = panel(w, c, &work, "Matching project paths · first 100") {
+                control(w, p, c, "Change path filter", Action::QuickOpen, true);
+                if matches.is_empty() {
+                    caption(
+                        w,
+                        p,
+                        "No paths in the loaded tree. Refresh Explorer if files have changed.",
+                    );
+                }
+                for path in matches.iter().take(100) {
+                    open_control(w, p, c, &work, path, 0, 0, path);
+                }
+                if matches.len() > 100 || c.truncated.contains(&work) {
+                    caption(
+                        w,
+                        p,
+                        "Bounded file list · refine the path filter or refresh Explorer.",
+                    );
+                }
+            }
+        }
         Action::Search => {
             if let Some(p) = panel(
                 w,
@@ -305,6 +376,7 @@ pub(super) fn action(w: &mut World, c: &mut Code, action: Action) {
                 return;
             }
             let key = (work.clone(), path.clone());
+            c.open_tab(&key);
             c.current.insert(work, path);
             c.workbench.jump = Some((key.clone(), line, character));
             if c.buffers.contains_key(&key) {
@@ -498,11 +570,24 @@ pub(super) async fn execute(
                 .ok_or_else(|| {
                     medousa_sdk::SdkError::Serde("Project has no governed worktree".into())
                 })?;
+            if matches!(feature, Feature::References) {
+                let result: Value = h
+                    .post(
+                        ops::CODE_REQUEST_POST.path,
+                        &json!({
+                            "action":"references", "work_id":work, "uri":file_uri(root, path),
+                            "language":language(path), "line":line, "character":character,
+                        }),
+                    )
+                    .await?;
+                return Ok(json!({"root":root,"observation":result}));
+            }
             let op = match feature {
                 Feature::Diagnostics => ops::CODE_DIAGNOSTICS_GET,
                 Feature::Symbols => ops::CODE_SYMBOLS_GET,
                 Feature::Hover => ops::CODE_HOVER_GET,
                 Feature::Definition => ops::CODE_DEFINITION_GET,
+                Feature::References => unreachable!("references use code.request"),
             };
             let result: Value = h
                 .get_query(
@@ -552,6 +637,56 @@ fn bounded(w: &mut World, p: Entity, text: &str) {
     if text.chars().count() > 16000 {
         caption(w, p, "Display truncated · refresh/open the file for more.");
     }
+}
+fn diff_rows(value: &Value) -> Vec<rndr_ui::diff::DiffRow> {
+    use rndr_ui::diff::{DiffMarker, DiffRow, HunkId};
+    let mut rows = Vec::new();
+    if let Some(hunks) = value["hunks"].as_array() {
+        for (index, hunk) in hunks.iter().enumerate() {
+            let id = HunkId(index as u64 + 1);
+            rows.push(DiffRow {
+                id: rndr_ui::collections::ItemId(rows.len() as u64 + 1),
+                hunk: id,
+                text: format!(
+                    "@@ -{},{} +{},{} @@",
+                    hunk["old_start"], hunk["old_count"], hunk["new_start"], hunk["new_count"]
+                ),
+                marker: DiffMarker::Header,
+                height: 24.,
+            });
+            if let Some(lines) = hunk["lines"].as_array() {
+                for line in lines {
+                    let marker = match line["kind"].as_str() {
+                        Some("addition") => DiffMarker::Added,
+                        Some("deletion") => DiffMarker::Removed,
+                        _ => DiffMarker::Unchanged,
+                    };
+                    rows.push(DiffRow {
+                        id: rndr_ui::collections::ItemId(rows.len() as u64 + 1),
+                        hunk: id,
+                        text: format!(
+                            "{:>4} {:>4}  {}",
+                            line["old_line"]
+                                .as_u64()
+                                .map(|n| n.to_string())
+                                .unwrap_or_default(),
+                            line["new_line"]
+                                .as_u64()
+                                .map(|n| n.to_string())
+                                .unwrap_or_default(),
+                            line["content"]
+                                .as_str()
+                                .unwrap_or("")
+                                .trim_end_matches('\n')
+                        ),
+                        marker,
+                        height: 22.,
+                    });
+                }
+            }
+        }
+    }
+    rows
 }
 fn result<'a>(value: &'a Value) -> &'a Value {
     value.get("result").unwrap_or(value)
@@ -736,7 +871,29 @@ pub(super) fn apply(
             }
             control(w, p, c, "History", Action::History, true);
         }
-        Kind::Diff(_) | Kind::History => bounded(
+        Kind::Diff(path) => {
+            if value["work_id"].as_str() != Some(&work) || value["path"].as_str() != Some(path) {
+                caption(w, p, "Diff identity mismatch · refresh Changes.");
+            } else if value["binary"].as_bool() == Some(true) {
+                caption(w, p, "Binary file · no text diff available.");
+            } else {
+                let rows = diff_rows(&value);
+                let _ = rndr_ui::diff::DiffView::mount(
+                    w,
+                    p,
+                    UiId(next()),
+                    rndr_ui::diff::DiffProps::new(format!("Changes to {path}")),
+                    &rows,
+                );
+                if value["truncated"].as_bool() == Some(true) {
+                    caption(w, p, "Daemon diff truncated · not the complete change set.");
+                }
+                if value["conflict"].as_bool() == Some(true) {
+                    caption(w, p, "Git conflict · resolve explicitly before saving.");
+                }
+            }
+        }
+        Kind::History => bounded(
             w,
             p,
             &serde_json::to_string_pretty(&value).unwrap_or_default(),
