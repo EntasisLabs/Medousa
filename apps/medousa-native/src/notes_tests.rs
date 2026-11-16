@@ -4,6 +4,7 @@ mod management_tests;
 use serde_json::json;
 fn fixture() -> App {
     let mut app = App::new();
+    app.add_plugin(rndr_ui::UiPlugin);
     app.add_plugin(rndr_markdown_ui::MarkdownPlugin);
     let w = app.world_mut();
     let parent = w.spawn((Layout {
@@ -1029,4 +1030,355 @@ fn revision_capture_tracks_edits_reverts_and_remote_reload() {
             .content,
         "remote"
     );
+}
+
+#[test]
+fn find_retains_per_note_query_and_source_identity_across_modes() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(
+        w,
+        "a.md",
+        "---\ntitle: Exact\n---\n🦀 alpha alpha",
+        Some("a1"),
+    );
+    click(w, Action::Write);
+    let document = w.resource::<Notes>().unwrap().views["a.md"].document;
+    click(w, Action::Find);
+    let n = w.resource::<Notes>().unwrap();
+    assert!(n.source && !n.live);
+    let bar = n.views["a.md"].find.unwrap();
+    w.get_mut::<Label>(bar.query).unwrap().text = "alpha".into();
+    rndr_ui::source_tools::apply_find_bars(w);
+    assert_eq!(w.get::<Label>(bar.status).unwrap().text, "2 matches");
+    assert_eq!(w.resource::<Focus>().unwrap().entity, Some(bar.query));
+    load(w, "b.md", "beta", Some("b1"));
+    assert!(w.has::<Hidden>(bar.root));
+    click(w, Action::Open("a.md".into()));
+    assert_eq!(
+        w.resource::<Notes>().unwrap().views["a.md"].document,
+        document
+    );
+    assert_eq!(
+        w.resource::<Notes>().unwrap().views["a.md"]
+            .find
+            .unwrap()
+            .root,
+        bar.root
+    );
+    assert!(!w.has::<Hidden>(bar.root));
+    click(w, Action::Read);
+    assert!(w.has::<Hidden>(bar.root));
+    click(w, Action::Find);
+    assert!(!w.has::<Hidden>(bar.root));
+    assert_eq!(w.get::<Label>(bar.query).unwrap().text, "alpha");
+    click(w, Action::Find);
+    assert!(w.has::<Hidden>(bar.root));
+    assert!(drain_commands(w).is_empty());
+}
+
+#[test]
+fn find_replace_uses_shared_commands_preserving_metadata_and_undo() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    let original = "\u{feff}---\r\ntitle: Exact\r\n---\r\n🦀 alpha alpha\n";
+    load(w, "a.md", original, Some("a1"));
+    click(w, Action::Find);
+    let n = w.resource::<Notes>().unwrap();
+    let bar = n.views["a.md"].find.unwrap();
+    let document = n.views["a.md"].document;
+    w.get_mut::<Label>(bar.query).unwrap().text = "alpha".into();
+    w.get_mut::<Label>(bar.replacement).unwrap().text = "β".into();
+    rndr_ui::source_tools::apply_find_bars(w);
+    // Activate the real shared button rather than bypassing its dispatcher.
+    let replace = w
+        .entities_with::<Semantics>()
+        .into_iter()
+        .find(|e| w.get::<Semantics>(*e).and_then(|s| s.name.as_deref()) == Some("Replace all"))
+        .unwrap();
+    assert_eq!(try_activate(w, replace), ActivationResult::Accepted);
+    rndr_ui::source_tools::apply_find_bars(w);
+    tick(w);
+    let n = w.resource::<Notes>().unwrap();
+    assert_eq!(
+        n.core.get("a.md").unwrap().content,
+        original.replace("alpha", "β")
+    );
+    assert!(n.core.get("a.md").unwrap().dirty);
+    assert_eq!(
+        n.core.get("a.md").unwrap().content_hash.as_deref(),
+        Some("a1")
+    );
+    w.resource_mut::<SourceDocuments>()
+        .unwrap()
+        .get_mut(document)
+        .unwrap()
+        .undo()
+        .unwrap();
+    tick(w);
+    assert_eq!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("a.md")
+            .unwrap()
+            .content,
+        original
+    );
+    assert!(drain_commands(w).is_empty());
+}
+
+#[test]
+fn find_cannot_hide_active_rich_composition() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "alpha", Some("a1"));
+    click(w, Action::Write);
+    let id = w.resource::<Notes>().unwrap().views["a.md"].rich_document;
+    w.resource_mut::<MarkdownDocuments>()
+        .unwrap()
+        .get_mut(id)
+        .unwrap()
+        .composition_start(0, 0)
+        .unwrap();
+    click(w, Action::Find);
+    let n = w.resource::<Notes>().unwrap();
+    assert!(n.live && !n.source);
+    assert!(n.views["a.md"].find.is_none());
+    assert!(drain_commands(w).is_empty());
+}
+
+fn summary(path: &str, title: &str, date: &str) -> VaultNoteSummary {
+    serde_json::from_value(json!({"path":path,"title":title,"modified_at_utc":date})).unwrap()
+}
+
+#[test]
+fn recent_browse_matches_visit_then_modified_contract_without_duplicate_paths() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "folder/old.md", "draft", Some("v1"));
+    edit(w, "folder/old.md", "retained draft");
+    let source = w.resource::<Notes>().unwrap().views["folder/old.md"].document;
+    let mut n = w.remove_resource::<Notes>().unwrap();
+    n.list = vec![
+        summary("folder/old.md", "Same title", "2020-01-01T00:00:00Z"),
+        summary("new.md", "Same title", "2026-01-01T00:00:00Z"),
+        summary("middle.md", "Middle", "2025-01-01T00:00:00Z"),
+        summary("new.md", "Duplicate page", "2026-01-01T00:00:00Z"),
+    ];
+    n.redraw = true;
+    w.insert_resource(n);
+    tick(w);
+    click(w, Action::Browse(Browse::Recent));
+    let mut n = w.remove_resource::<Notes>().unwrap();
+    let (nodes, expanded) = library_model(&mut n);
+    assert!(expanded.is_empty());
+    assert_eq!(
+        nodes
+            .iter()
+            .map(|v| v.secondary.as_str())
+            .collect::<Vec<_>>(),
+        vec!["folder/old.md", "new.md", "middle.md"]
+    );
+    assert!(nodes.iter().all(|v| v.parent.is_none()));
+    assert_eq!(
+        n.core.get("folder/old.md").unwrap().content,
+        "retained draft"
+    );
+    assert_eq!(n.views["folder/old.md"].document, source);
+    n.filter = "same TITLE".into();
+    assert_eq!(library_model(&mut n).0.len(), 2);
+    w.insert_resource(n);
+    click(w, Action::Browse(Browse::Folders));
+    let mut n = w.remove_resource::<Notes>().unwrap();
+    assert!(n.filter.is_empty());
+    assert_eq!(library_model(&mut n).0.len(), 4);
+    w.insert_resource(n);
+    assert!(drain_commands(w).is_empty());
+}
+
+#[test]
+fn selected_then_activated_tree_event_queues_one_load_and_ignores_foreign_tree() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    let mut n = w.remove_resource::<Notes>().unwrap();
+    n.list = vec![
+        summary("a.md", "Same", "2026-01-01T00:00:00Z"),
+        summary("b.md", "Same", "2026-01-01T00:00:00Z"),
+    ];
+    n.redraw = true;
+    w.insert_resource(n);
+    tick(w);
+    let n = w.resource::<Notes>().unwrap();
+    let tree = n.tree.unwrap().root;
+    let a = n.tree_ids["note:a.md"];
+    let b = n.tree_ids["note:b.md"];
+    assert_ne!(a, b);
+    send(
+        w,
+        TreeEvent {
+            tree,
+            kind: TreeEventKind::Selected(Some(a)),
+        },
+    );
+    send(
+        w,
+        TreeEvent {
+            tree,
+            kind: TreeEventKind::Activated(a),
+        },
+    );
+    let foreign = w.spawn((Layout::row(),));
+    send(
+        w,
+        TreeEvent {
+            tree: foreign,
+            kind: TreeEventKind::Activated(b),
+        },
+    );
+    app.update();
+    let w = app.world_mut();
+    tick(w);
+    let commands = drain_commands(w);
+    assert_eq!(commands.len(), 1);
+    assert!(matches!(&commands[0].operation, Operation::Load(p) if p == "a.md"));
+    assert_eq!(
+        w.resource::<Notes>().unwrap().selected.as_deref(),
+        Some("a.md")
+    );
+}
+
+#[test]
+fn tabs_reorder_without_recreating_history_or_changing_selection() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "z.md", "z", Some("z1"));
+    load(w, "a.md", "a", Some("a1"));
+    edit(w, "z.md", "draft z");
+    let n = w.resource::<Notes>().unwrap();
+    assert_eq!(n.tab_order, vec!["z.md", "a.md"]);
+    let a = TabId(n.views["a.md"].tab);
+    let z = TabId(n.views["z.md"].tab);
+    let source = n.views["z.md"].document;
+    let strip = n.tabstrip.unwrap();
+    send(
+        w,
+        TabStripEvent {
+            strip,
+            kind: TabStripEventKind::Reordered(rndr_ui::tabs::TabMove {
+                id: a,
+                target: z,
+                place: rndr_ui::drag::DropPlace::Before,
+            }),
+        },
+    );
+    app.update();
+    let w = app.world_mut();
+    tick(w);
+    let n = w.resource::<Notes>().unwrap();
+    assert_eq!(n.tab_order, vec!["a.md", "z.md"]);
+    assert_eq!(n.selected.as_deref(), Some("a.md"));
+    assert_eq!(n.views["z.md"].document, source);
+    assert_eq!(n.core.get("z.md").unwrap().content, "draft z");
+    assert!(drain_commands(w).is_empty());
+}
+
+#[test]
+#[ignore = "Synthetic 12-case native render fixture; coordinator build lane and pixel comparison required"]
+fn notes_modes_appearances_widths_render_fixture() {
+    use std::sync::Arc;
+    let mut app = crate::ui::app();
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    app.world_mut().insert_resource(engine);
+    // Intentionally synthetic: no daemon IO, live note writes or real secrets.
+    let source = "\u{feff}---\r\ntitle: Synthetic parity fixture\r\ntags: [fixture, review]\r\n---\r\n# Synthetic Notes\n\nUnicode: café 🦀 中文. **Bold**, *italic*, `code` and [link](https://example.com).\n\n## Checklist\n\n- [ ] Preserve draft\n- [x] Preserve source\n\n> A quote with a long line to exercise wrapping and narrow layouts.\n\n```rust\nfn fixture() { println!(\"synthetic\"); }\n```\n\n| Kind | State |\n| --- | --- |\n| Mixed blocks | Retained |\n\n### Ending\n\nFinal paragraph.\n";
+    load(
+        app.world_mut(),
+        "fixtures/synthetic.md",
+        source,
+        Some("fixture-v1"),
+    );
+    app.world_mut().resource_mut::<Notes>().unwrap().list = vec![summary(
+        "fixtures/synthetic.md",
+        "Synthetic parity fixture",
+        "2026-01-01T00:00:00Z",
+    )];
+    app.world_mut().resource_mut::<Notes>().unwrap().redraw = true;
+    tick(app.world_mut());
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    for dark in [true, false] {
+        for (width, height, size) in [(1440, 900, "wide"), (900, 850, "narrow")] {
+            for mode in ["read", "source", "rich"] {
+                publish_system_appearance(
+                    app.world_mut(),
+                    SystemAppearance {
+                        dark: Some(dark),
+                        ..Default::default()
+                    },
+                );
+                click(app.world_mut(), Action::Read);
+                match mode {
+                    "source" => click(app.world_mut(), Action::ToggleSource),
+                    "rich" => click(app.world_mut(), Action::Write),
+                    _ => {}
+                }
+                app.world_mut()
+                    .insert_resource(Viewport::new(width as f32, height as f32));
+                for _ in 0..4 {
+                    rndr_paint::frame(&mut app);
+                }
+                let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+                    exporter
+                        .render_frame(Some(world), frame, width, height, 1.)
+                        .unwrap()
+                });
+                image::save_buffer(
+                    format!(
+                        "verification/native-notes-fixture-{mode}-{}-{size}.png",
+                        if dark { "dark" } else { "light" }
+                    ),
+                    &image.rgba,
+                    image.width,
+                    image.height,
+                    image::ColorType::Rgba8,
+                )
+                .unwrap();
+                assert_eq!(
+                    app.world()
+                        .resource::<Notes>()
+                        .unwrap()
+                        .core
+                        .get("fixtures/synthetic.md")
+                        .unwrap()
+                        .content,
+                    source
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn find_shortcut_routes_only_owned_loaded_documents_and_rejects_composition() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    assert!(!shortcut(w, "find"));
+    load(w, "a.md", "alpha", Some("a1"));
+    assert!(!shortcut(w, "unknown"));
+    assert!(shortcut(w, "find"));
+    assert!(w.resource::<Notes>().unwrap().views["a.md"].find_open);
+    click(w, Action::Write);
+    let id = w.resource::<Notes>().unwrap().views["a.md"].rich_document;
+    w.resource_mut::<MarkdownDocuments>()
+        .unwrap()
+        .get_mut(id)
+        .unwrap()
+        .composition_start(0, 0)
+        .unwrap();
+    assert!(!shortcut(w, "find"));
+    assert!(w.resource::<Notes>().unwrap().live);
+    assert!(drain_commands(w).is_empty());
 }

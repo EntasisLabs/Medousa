@@ -126,3 +126,59 @@ fn failed_delete_retains_document_without_retry() {
     assert!(w.resource::<Notes>().unwrap().views.contains_key("a.md"));
     assert!(drain_commands(w).is_empty());
 }
+
+#[test]
+fn root_switch_clears_recent_and_tree_identity_and_rejects_old_tree_events() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    roots(w);
+    w.resource_mut::<Notes>().unwrap().list =
+        vec![summary("same.md", "Duplicate", "2026-01-01T00:00:00Z")];
+    w.resource_mut::<Notes>().unwrap().recent = vec!["same.md".into()];
+    w.resource_mut::<Notes>().unwrap().redraw = true;
+    tick(w);
+    let n = w.resource::<Notes>().unwrap();
+    let old_tree = n.tree.unwrap().root;
+    let old_id = n.tree_ids["note:same.md"];
+    manage(w, ManageAction::Switch("vault-b".into()));
+    let c = drain_commands(w).pop().unwrap();
+    apply(
+        w,
+        NoteUpdate {
+            command: c,
+            result: Ok(Response::Managed(
+                json!({"active_root_id":"vault-b","roots":[]}),
+            )),
+        },
+    );
+    let page = drain_commands(w).pop().unwrap();
+    apply(
+        w,
+        NoteUpdate {
+            command: page,
+            result: Ok(Response::List(VaultNotesListResponse {
+                notes: vec![summary("same.md", "Duplicate", "2026-01-01T00:00:00Z")],
+                vault_generation: Some(1),
+                next_cursor: None,
+                truncated: false,
+                reset_required: false,
+            })),
+        },
+    );
+    let n = w.resource::<Notes>().unwrap();
+    assert_eq!(n.core.workshop_scope_id(), "vault-b");
+    assert!(n.recent.is_empty());
+    assert_ne!(n.tree_ids["note:same.md"], old_id);
+    send(
+        w,
+        TreeEvent {
+            tree: old_tree,
+            kind: TreeEventKind::Activated(old_id),
+        },
+    );
+    app.update();
+    let w = app.world_mut();
+    tick(w);
+    assert!(drain_commands(w).is_empty());
+    assert!(w.resource::<Notes>().unwrap().selected.is_none());
+}

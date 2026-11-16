@@ -181,10 +181,14 @@ pub(super) fn navigation(w: &mut World, p: Entity, n: &mut Notes) {
     }
 }
 fn forget(w: &mut World, n: &mut Notes, path: &str) {
+    n.tab_order.retain(|p| p != path);
     if let Some(v) = n.views.remove(path) {
         despawn(w, v.handle.root);
         despawn(w, v.preview);
         despawn(w, v.rich.root);
+        if let Some(bar) = v.find {
+            despawn(w, bar.root);
+        }
     }
     let _ = n
         .core
@@ -193,7 +197,7 @@ fn forget(w: &mut World, n: &mut Notes, path: &str) {
     n.remote.remove(path);
     n.uncertain.remove(path);
     if n.selected.as_deref() == Some(path) {
-        n.selected = n.views.keys().min().cloned();
+        n.selected = n.tab_order.first().cloned();
     }
 }
 pub(super) fn action(w: &mut World, n: &mut Notes, a: Action) {
@@ -563,6 +567,11 @@ pub(super) fn apply(
                         n.core = VaultBufferCore::new(r.active_root_id.clone());
                         n.list.clear();
                         n.tree_ids.clear();
+                        n.recent.clear();
+                        n.filter.clear();
+                        if let Some(label) = n.search.and_then(|e| w.get_mut::<Label>(e)) {
+                            label.text.clear();
+                        }
                         n.tree_paths.clear();
                         n.expanded.clear();
                         n.cursor = None;

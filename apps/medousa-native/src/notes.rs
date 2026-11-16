@@ -79,6 +79,14 @@ enum Action {
     Write,
     Read,
     Format(MarkdownCommand),
+    Find,
+    Browse(Browse),
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Browse {
+    #[default]
+    Folders,
+    Recent,
 }
 struct View {
     document: DocumentId,
@@ -89,12 +97,17 @@ struct View {
     rich: MarkdownSurfaceHandle,
     rich_revision: u64,
     tab: u64,
+    find: Option<rndr_ui::source_tools::FindBar>,
+    find_open: bool,
 }
 #[derive(Default)]
 struct Notes {
     management: management::Management,
     toolbar: Option<Entity>,
     formatting: Option<Entity>,
+    find_tools: Option<Entity>,
+    browse: Browse,
+    recent: Vec<String>,
     status: Option<Entity>,
     live: bool,
     tabs: Option<Entity>,
@@ -111,6 +124,7 @@ struct Notes {
     expanded: std::collections::HashSet<String>,
     core: VaultBufferCore,
     views: HashMap<String, View>,
+    tab_order: Vec<String>,
     selected: Option<String>,
     actions: HashMap<u64, Action>,
     queue: Vec<NoteCommand>,
@@ -299,6 +313,7 @@ pub fn mount(world: &mut World, parent: Entity) {
         ..Layout::row()
     };
     world.insert(formatting, Hidden);
+    let find_tools = column(world, content, Size::Fill, Size::Hug);
     let notice = column(world, content, Size::Fill, Size::Hug);
     let editors = column(world, content, Size::Fill, Size::Fill);
     caption(
@@ -312,6 +327,7 @@ pub fn mount(world: &mut World, parent: Entity) {
         management: management::Management::new(manager),
         toolbar: Some(toolbar),
         formatting: Some(formatting),
+        find_tools: Some(find_tools),
         status: Some(status),
         tabs: Some(tabs),
         notice: Some(notice),
@@ -492,7 +508,13 @@ fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
     let mut folders = std::collections::BTreeSet::new();
     let mut matches = Vec::new();
     let query = n.filter.to_lowercase();
+    // Daemon paths are identity. Defensively deduplicate before mounting the
+    // shared tree, including malformed/repeated pages or fixture input.
+    let mut seen = std::collections::HashSet::new();
     for item in &n.list {
+        if !seen.insert(item.path.clone()) {
+            continue;
+        }
         if !format!("{} {}", item.title, item.path)
             .to_lowercase()
             .contains(&query)
@@ -501,7 +523,11 @@ fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
         }
         let mut parent = String::new();
         let segments: Vec<_> = item.path.split('/').collect();
-        for segment in segments.iter().take(segments.len().saturating_sub(1)) {
+        for segment in segments.iter().take(if n.browse == Browse::Folders {
+            segments.len().saturating_sub(1)
+        } else {
+            0
+        }) {
             if !parent.is_empty() {
                 parent.push('/');
             }
@@ -528,7 +554,20 @@ fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
         nodes.push(node);
     }
     n.tree_paths.clear();
-    matches.sort_by(|a, b| a.path.cmp(&b.path));
+    if n.browse == Browse::Recent {
+        // Svelte vaultBrowseController::recentNotesList: visited first, then
+        // descending modification time. Only the loaded root catalog is eligible.
+        matches.sort_by(|a, b| {
+            let rank = |p: &str| n.recent.iter().position(|r| r == p).unwrap_or(usize::MAX);
+            rank(&a.path)
+                .cmp(&rank(&b.path))
+                .then_with(|| b.modified_at_utc.cmp(&a.modified_at_utc))
+                .then_with(|| a.path.cmp(&b.path))
+        });
+        matches.truncate(40);
+    } else {
+        matches.sort_by(|a, b| a.path.cmp(&b.path));
+    }
     for item in matches {
         let id = *n
             .tree_ids
@@ -546,8 +585,10 @@ fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
                 item.title.clone()
             },
         );
-        if let Some((parent, _)) = item.path.rsplit_once('/') {
-            node.parent = n.tree_ids.get(&format!("folder:{parent}")).copied();
+        if n.browse == Browse::Folders {
+            if let Some((parent, _)) = item.path.rsplit_once('/') {
+                node.parent = n.tree_ids.get(&format!("folder:{parent}")).copied();
+            }
         }
         if n.core.get(&item.path).is_some_and(|b| b.dirty) {
             node.badge = "●".into();
@@ -582,6 +623,23 @@ fn render(world: &mut World, n: &mut Notes) {
         n.list_pending.is_none(),
     );
     management::navigation(world, rows, n);
+    for (label, mode) in [("Folders", Browse::Folders), ("Recent", Browse::Recent)] {
+        button(
+            world,
+            rows,
+            n,
+            label,
+            Action::Browse(mode),
+            n.browse != mode,
+        );
+    }
+    if n.browse == Browse::Recent {
+        caption(
+            world,
+            rows,
+            "Recent · this window, then modified · up to 40 loaded notes",
+        );
+    }
     if n.list_pending.is_some() {
         caption(world, rows, "Loading vault notes…");
     }
@@ -687,8 +745,7 @@ fn render(world: &mut World, n: &mut Notes) {
         }
     }
     // Retained open documents are navigation, not a pile of form controls.
-    let mut open: Vec<_> = n.views.keys().cloned().collect();
-    open.sort();
+    let open = n.tab_order.clone();
     if let Some(selected) = n.views.get(&path) {
         let specs: Vec<_> = open
             .iter()
@@ -743,6 +800,14 @@ fn render(world: &mut World, n: &mut Notes) {
         if n.live { "Read" } else { "Write" },
         if n.live { Action::Read } else { Action::Write },
         true,
+    );
+    button(
+        world,
+        toolbar,
+        n,
+        "Find / Replace",
+        Action::Find,
+        n.views.contains_key(&path),
     );
     if n.loads.contains_key(&path) {
         caption(world, notice, "Checking latest version…");
@@ -820,6 +885,13 @@ fn render(world: &mut World, n: &mut Notes) {
         caption(world, notice, error);
     }
     for (p, v) in &n.views {
+        if let Some(bar) = v.find {
+            if *p == path && n.source && v.find_open {
+                world.remove::<Hidden>(bar.root);
+            } else {
+                world.insert(bar.root, Hidden);
+            }
+        }
         if *p == path && n.source {
             world.remove::<Hidden>(v.handle.root);
         } else {
@@ -875,6 +947,11 @@ fn open_note(world: &mut World, n: &mut Notes, path: String) {
                 }
             }
         }
+        if n.selected.as_ref() != Some(&path) {
+            n.recent.retain(|p| p != &path);
+            n.recent.insert(0, path.clone());
+            n.recent.truncate(60);
+        }
         n.selected = Some(path.clone());
         if !n.views.contains_key(&path) {
             n.load(path);
@@ -923,14 +1000,41 @@ pub fn tick(world: &mut World) {
     }
     for event in events::<TabStripEvent>(world).to_vec() {
         if n.tabstrip == Some(event.strip) {
-            if let TabStripEventKind::Activated(id) = event.kind {
-                if let Some(path) = n
-                    .views
-                    .iter()
-                    .find_map(|(p, v)| (v.tab == id.0).then(|| p.clone()))
-                {
-                    open_note(world, &mut n, path);
+            match event.kind {
+                TabStripEventKind::Activated(id) => {
+                    if let Some(path) = n
+                        .views
+                        .iter()
+                        .find_map(|(p, v)| (v.tab == id.0).then(|| p.clone()))
+                    {
+                        open_note(world, &mut n, path);
+                    }
                 }
+                TabStripEventKind::Reordered(moved) if can_deactivate_views(world, &n) => {
+                    let specs: Vec<_> = n
+                        .tab_order
+                        .iter()
+                        .filter_map(|path| {
+                            n.views
+                                .get(path)
+                                .map(|v| TabSpec::new(v.tab, path).closable(false))
+                        })
+                        .collect();
+                    if let Some(order) =
+                        rndr_ui::tabs::reorder_tabs(&specs, moved.id, moved.target, moved.place)
+                    {
+                        n.tab_order = order
+                            .iter()
+                            .filter_map(|tab| {
+                                n.views
+                                    .iter()
+                                    .find_map(|(path, v)| (v.tab == tab.id.0).then(|| path.clone()))
+                            })
+                            .collect();
+                        n.redraw = true;
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -963,6 +1067,27 @@ pub fn tick(world: &mut World) {
     }
     *world.resource_mut::<Notes>().unwrap() = n;
 }
+/// Queue a host-routed Notes shortcut without crossing an active IME session.
+/// The shared shell owns active-surface and key-event consumption policy.
+pub fn shortcut(world: &mut World, command: &str) -> bool {
+    let Some(n) = world.resource::<Notes>() else {
+        return false;
+    };
+    if command != "find"
+        || !can_deactivate_views(world, n)
+        || !n.selected.as_ref().is_some_and(|p| n.views.contains_key(p))
+    {
+        return false;
+    }
+    let id = next();
+    world
+        .resource_mut::<Notes>()
+        .unwrap()
+        .actions
+        .insert(id, Action::Find);
+    action(world, &HostIntent::Command(id))
+}
+
 pub fn action(world: &mut World, host: &HostIntent) -> bool {
     let HostIntent::Command(id) = host else {
         return false;
@@ -983,6 +1108,45 @@ pub fn action(world: &mut World, host: &HostIntent) -> bool {
     }
     match a {
         Action::Manage(a) => management::action(world, &mut n, a),
+        Action::Browse(mode) => {
+            n.browse = mode;
+            n.filter.clear();
+            if let Some(search) = n.search.and_then(|e| world.get_mut::<Label>(e)) {
+                search.text.clear();
+            }
+            n.redraw = true;
+        }
+        Action::Find => {
+            if can_deactivate_views(world, &n) {
+                if let Some(v) = n.selected.as_ref().and_then(|p| n.views.get_mut(p)) {
+                    if let Some(parent) = n.find_tools {
+                        if v.find.is_none() {
+                            v.find = rndr_ui::source_tools::FindBar::mount(
+                                world,
+                                parent,
+                                v.handle.editor,
+                            )
+                            .ok();
+                        }
+                        if let Some(bar) = v.find {
+                            // Rich was captured above. The source is now the single
+                            // visible writer, using its existing retained history.
+                            v.find_open = !v.find_open || !n.source;
+                            n.source = true;
+                            n.live = false;
+                            if let Some(focus) = world.resource_mut::<Focus>() {
+                                focus.entity = if v.find_open {
+                                    Some(bar.query)
+                                } else {
+                                    Some(v.handle.editor)
+                                };
+                            }
+                            n.redraw = true;
+                        }
+                    }
+                }
+            }
+        }
         Action::Refresh => n.list_page(false),
         Action::More => {
             if n.cursor.is_some() {
@@ -1303,6 +1467,7 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                             MarkdownSurfaceProps::new(rich_document, format!("Write note {path}")),
                         )
                         .expect("notes shared rich document");
+                        n.tab_order.push(path.clone());
                         n.views.insert(
                             path.clone(),
                             View {
@@ -1314,6 +1479,8 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                                 rich,
                                 rich_revision: 0,
                                 tab: next(),
+                                find: None,
+                                find_open: false,
                             },
                         );
                     }
