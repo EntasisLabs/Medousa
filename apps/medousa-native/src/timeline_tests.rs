@@ -137,12 +137,10 @@ fn typed_tools_are_deduplicated_and_lazy_selectable_receipts() {
     assert!(activate(&mut world, header));
     assert_eq!(world.entities_with::<Modal>().len(), 1);
     assert!(world.entities_with::<MarkdownView>().len() > before);
-    assert!(
-        world
-            .query::<MarkdownView>()
-            .iter()
-            .any(|(_, v)| v.source().contains("fn main"))
-    );
+    assert!(world
+        .query::<MarkdownView>()
+        .iter()
+        .any(|(_, v)| v.source().contains("fn main")));
     let close = world
         .query::<Semantics>()
         .into_iter()
@@ -247,12 +245,10 @@ fn core_filters_empty_handoff_shells_and_renders_failures() {
     let state = world.get::<Timeline>(root).unwrap();
     assert_eq!(state.rows.len(), 1);
     assert_eq!(state.rows[0].id, "failed");
-    assert!(
-        state.rows[0]
-            .parts
-            .iter()
-            .any(|p| p.id == "error" && p.part.text.contains("unavailable"))
-    );
+    assert!(state.rows[0]
+        .parts
+        .iter()
+        .any(|p| p.id == "error" && p.part.text.contains("unavailable")));
 }
 
 #[test]
@@ -317,10 +313,46 @@ fn assistant_tool_images_are_inline_chronological_deduplicated_and_retained() {
 }
 
 #[test]
+fn user_turn_navigation_stops_following_and_latest_restores_it() {
+    let (mut world, root) = fixture();
+    let history = snapshot(
+        (0..12)
+            .map(|n| {
+                item(
+                    &format!("turn-{n}"),
+                    if n % 2 == 0 { "user" } else { "assistant" },
+                    "A substantial turn\n\nwith a response.",
+                )
+            })
+            .collect(),
+        1,
+    );
+    sync(&mut world, root, Some(&history));
+    world.get_mut::<Scroll>(root).unwrap().offset[1] = -350.;
+    world.get_mut::<Timeline>(root).unwrap().samples = 0;
+    navigate(&mut world, root, PREVIOUS_TURN);
+    assert!(!world.get::<Timeline>(root).unwrap().following);
+    let previous = world.get::<Scroll>(root).unwrap().offset[1];
+    assert!(previous > -350.);
+    navigate(&mut world, root, NEXT_TURN);
+    assert!(world.get::<Scroll>(root).unwrap().offset[1] < previous);
+    sync(&mut world, root, Some(&history));
+    let latest = world.get::<Timeline>(root).unwrap().latest.unwrap();
+    assert!(!world.has::<Hidden>(latest));
+    assert!(activate(&mut world, latest));
+    assert!(world.get::<Timeline>(root).unwrap().following);
+    sync(&mut world, root, Some(&history));
+    assert!(world.has::<Hidden>(latest));
+}
+
+#[test]
 fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
     let (mut world, root) = fixture();
     let mut user = item("u", "user", "Attached screenshot");
-    user.media_attachments=Some(vec![serde_json::from_value(serde_json::json!({"mediaId":"m","kind":"image","mime":"image/png","label":"screen.png"})).unwrap()]);
+    user.media_attachments = Some(vec![serde_json::from_value(
+        serde_json::json!({"mediaId":"m","kind":"image","mime":"image/png","label":"screen.png"}),
+    )
+    .unwrap()]);
     let history = snapshot(vec![user, item("a", "assistant", "A quieter reply")], 1);
     sync(&mut world, root, Some(&history));
     let rows = &world.get::<Timeline>(root).unwrap().rows;
@@ -354,8 +386,8 @@ fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
         Some("Copy message")
     );
     let padding = world.get::<Padding>(root).unwrap();
-    let lane = visual::column_width(820.);
-    assert_eq!(padding.left, (820. - lane) / 2.);
+    let lane = visual::column_width(828.);
+    assert_eq!(padding.left, (828. - lane) / 2.);
     assert_eq!(
         world.get::<Layout>(rows[1].entity).unwrap().width,
         Size::Px(lane)

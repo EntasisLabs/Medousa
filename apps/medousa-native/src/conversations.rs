@@ -535,7 +535,20 @@ pub(super) fn action(world: &mut World, action: u64) -> bool {
     }
     true
 }
+/// Validate drag identities before removing anything. Self/stale/cross-group
+/// targets must not drop the source from the canonical ShellCore layout.
+fn reorder(ids: &mut Vec<String>, source: &str, target: &str, after: bool) -> bool {
+    if source == target || !ids.iter().any(|id| id == source) || !ids.iter().any(|id| id == target)
+    {
+        return false;
+    }
+    ids.retain(|id| id != source);
+    let at = ids.iter().position(|id| id == target).unwrap();
+    ids.insert(at + usize::from(after), source.to_owned());
+    true
+}
 pub(super) fn tab_events(world: &mut World) {
+    chat_sidebar::input(world);
     for event in events::<TabStripEvent>(world).to_vec() {
         if !world
             .resource::<Deck>()
@@ -589,10 +602,9 @@ pub(super) fn tab_events(world: &mut World) {
                 {
                     let source = id(m.id.0);
                     let target = id(m.target.0);
-                    g.tab_ids.retain(|t| t != &source);
-                    if let Some(at) = g.tab_ids.iter().position(|t| t == &target) {
-                        let after = matches!(m.place, rndr_ui::drag::DropPlace::After);
-                        g.tab_ids.insert(at + usize::from(after), source);
+                    let after = matches!(m.place, rndr_ui::drag::DropPlace::After);
+                    if !reorder(&mut g.tab_ids, &source, &target, after) {
+                        continue;
                     }
                 }
                 if let Some(d) = snap
@@ -1024,6 +1036,20 @@ mod tests {
         );
     }
     #[test]
+    fn reorder_preserves_every_tab_for_self_stale_and_foreign_targets() {
+        let original = vec!["a".into(), "b".into(), "c".into()];
+        for (source, target) in [("a", "a"), ("a", "missing"), ("foreign", "b")] {
+            let mut tabs = original.clone();
+            assert!(!reorder(&mut tabs, source, target, false));
+            assert_eq!(tabs, original);
+        }
+        let mut tabs = original.clone();
+        assert!(reorder(&mut tabs, "a", "c", true));
+        assert_eq!(tabs, vec!["b", "c", "a"]);
+        assert!(reorder(&mut tabs, "a", "b", false));
+        assert_eq!(tabs, original);
+    }
+    #[test]
     fn foreign_source_tab_events_cannot_close_chat_tabs() {
         let mut app = fixture();
         let route = loaded(&mut app, "chat");
@@ -1037,13 +1063,12 @@ mod tests {
         );
         app.update();
         assert_eq!(snapshot(app.world()).layout.tabs.len(), 1);
-        assert!(
-            !app.world()
-                .resource::<Deck>()
-                .unwrap()
-                .closed
-                .contains(&route)
-        );
+        assert!(!app
+            .world()
+            .resource::<Deck>()
+            .unwrap()
+            .closed
+            .contains(&route));
     }
     #[test]
     fn close_is_not_delete_and_reopening_restores_draft() {

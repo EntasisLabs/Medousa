@@ -2,7 +2,7 @@
 //! owns only projection, viewport mounting, and presentation-only clipboard actions.
 use crate::native_style as visual;
 use medousa_app_core::contract::{ChatSegment, ToolRunState};
-use medousa_app_core::{ChatItem, ChatItemRole, ChatSnapshot, present_chat_items};
+use medousa_app_core::{present_chat_items, ChatItem, ChatItemRole, ChatSnapshot};
 use rndr_core::*;
 use std::collections::{HashMap, HashSet};
 #[path = "tool_activity.rs"]
@@ -45,6 +45,7 @@ struct Row {
     mounted: bool,
     parts: Vec<MountedPart>,
     copy: String,
+    user: bool,
 }
 struct Timeline {
     session: String,
@@ -54,6 +55,7 @@ struct Timeline {
     layout_offset: f32,
     samples: u8,
     last_view: Option<[f32; 6]>,
+    latest: Option<Entity>,
 }
 impl Component for Timeline {}
 struct DetailBody {
@@ -65,6 +67,48 @@ struct DetailBody {
 impl Component for DetailBody {}
 const COPY: u64 = 0x74696d6501;
 const DISCLOSE: u64 = 0x74696d6502;
+const LATEST: u64 = 0x74696d6503;
+const PREVIOUS_TURN: u64 = 0x74696d6504;
+const NEXT_TURN: u64 = 0x74696d6505;
+struct NavigationTarget(Entity);
+impl Component for NavigationTarget {}
+fn navigate(world: &mut World, root: Entity, command: u64) {
+    let Some(state) = world.get::<Timeline>(root) else {
+        return;
+    };
+    let scroll = world.get::<Scroll>(root).copied().unwrap_or_default();
+    let rect = world.get::<Rect>(root).copied().unwrap_or_default();
+    let top = (-scroll.offset[1]).min((scroll.content[1] - rect.h).max(0.));
+    let offset = if command == LATEST {
+        Some(f32::MIN)
+    } else {
+        let mut y = visual::INSET;
+        let mut positions = vec![];
+        for row in &state.rows {
+            if row.user {
+                positions.push(y);
+            }
+            y += row.height + visual::ROW_GAP;
+        }
+        if command == PREVIOUS_TURN {
+            positions
+                .into_iter()
+                .rev()
+                .find(|y| *y < top - 1.)
+                .map(|y| -y)
+        } else {
+            positions.into_iter().find(|y| *y > top + 1.).map(|y| -y)
+        }
+    };
+    let Some(offset) = offset else {
+        return;
+    };
+    let state = world.get_mut::<Timeline>(root).unwrap();
+    state.following = command == LATEST;
+    state.last_view = None;
+    state.layout_offset = offset;
+    world.get_mut::<Scroll>(root).unwrap().offset[1] = offset;
+}
 struct CopyText(String);
 impl Component for CopyText {}
 
@@ -102,9 +146,40 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
             layout_offset: 0.,
             samples: 0,
             last_view: None,
+            latest: None,
         },
     ));
     set_parent(world, root, frame);
+    let navigation = world.spawn((Layout {
+        width: Size::Px(28.),
+        height: Size::Fill,
+        gap: 4.,
+        ..Layout::column()
+    },));
+    set_parent(world, navigation, frame);
+    for (command, glyph, name) in [
+        (PREVIOUS_TURN, "↑", "Previous user turn"),
+        (NEXT_TURN, "↓", "Next user turn"),
+        (LATEST, "⇣", "Return to latest response"),
+    ] {
+        let mut props = rndr_ui::controls::ButtonProps::new(
+            glyph,
+            rndr_ui::controls::HostIntent::Command(command),
+        );
+        props.name = Some(name.into());
+        props.variant = rndr_ui::controls::ButtonVariant::Quiet;
+        let control =
+            rndr_ui::controls::Button::mount(world, navigation, rndr_ui::UiId(command), props)
+                .unwrap();
+        world.insert(control.root, NavigationTarget(root));
+        world.get_mut::<Layout>(control.root).unwrap().width = Size::Px(28.);
+        world.get_mut::<Layout>(control.root).unwrap().height = Size::Px(28.);
+        rndr_ui::inputs::Tooltip::attach(world, control.root, name).unwrap();
+        if command == LATEST {
+            world.get_mut::<Timeline>(root).unwrap().latest = Some(control.root);
+            world.insert(control.root, Hidden);
+        }
+    }
     let rail = world.spawn((
         Layout {
             width: Size::Px(20.),
@@ -121,7 +196,7 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
             ..Default::default()
         },
     ));
-    set_parent(world, rail, frame);
+    set_parent(world, rail, navigation);
     root
 }
 
@@ -165,16 +240,16 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
         return;
     }
     state.last_view = Some(view);
-    // Center in the whole pane, including the 20-point native scroll rail.
-    let lane = visual::column_width(rect.w + 20.);
-    let inset = ((rect.w + 20. - lane) / 2.).max(0.);
+    // Center in the whole pane, including the native navigation/scroll rail.
+    let lane = visual::column_width(rect.w + 28.);
+    let inset = ((rect.w + 28. - lane) / 2.).max(0.);
     world.insert(
         root,
         Padding {
             top: visual::INSET,
             bottom: visual::INSET,
             left: inset,
-            right: (inset - 20.).max(0.),
+            right: (inset - 28.).max(0.),
         },
     );
     let switched = snapshot.map(|s| s.session_id.as_str()).unwrap_or("") != state.session;
@@ -216,6 +291,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
                 mounted: false,
                 parts: vec![],
                 copy: String::new(),
+                user: item.role == ChatItemRole::User && !item.content.trim().is_empty(),
             }
         });
         state.rows.push(row);
@@ -306,6 +382,13 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
     }
     if let Some(scroll) = world.get_mut::<Scroll>(root) {
         scroll.offset[1] = if state.following { f32::MIN } else { offset };
+    }
+    if let Some(latest) = state.latest {
+        if state.following || state.rows.is_empty() {
+            world.insert(latest, Hidden);
+        } else {
+            world.remove::<Hidden>(latest);
+        }
     }
     state.samples = 2;
     state.revision = snapshot.map(|s| s.revision);
@@ -455,6 +538,14 @@ pub fn action(world: &mut World, intent: &ActionIntent) -> bool {
         return true;
     }
     let command = rndr_ui::controls::host_intent(world, intent);
+    if let Some(rndr_ui::controls::HostIntent::Command(id)) = command {
+        if matches!(id, LATEST | PREVIOUS_TURN | NEXT_TURN) {
+            if let Some(root) = world.get::<NavigationTarget>(intent.entity).map(|n| n.0) {
+                navigate(world, root, id);
+                return true;
+            }
+        }
+    }
     if command == Some(rndr_ui::controls::HostIntent::Command(DISCLOSE)) {
         let Some(parent) = world.get::<Parent>(intent.entity).map(|p| p.entity) else {
             return false;
