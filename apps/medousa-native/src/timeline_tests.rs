@@ -328,6 +328,7 @@ fn user_turn_navigation_stops_following_and_latest_restores_it() {
         1,
     );
     sync(&mut world, root, Some(&history));
+    world.get_mut::<Scroll>(root).unwrap().content[1] = 2200.;
     world.get_mut::<Scroll>(root).unwrap().offset[1] = -350.;
     world.get_mut::<Timeline>(root).unwrap().samples = 0;
     navigate(&mut world, root, PREVIOUS_TURN);
@@ -343,6 +344,129 @@ fn user_turn_navigation_stops_following_and_latest_restores_it() {
     assert!(world.get::<Timeline>(root).unwrap().following);
     sync(&mut world, root, Some(&history));
     assert!(world.has::<Hidden>(latest));
+}
+
+#[test]
+fn turn_controls_have_real_rndr_disabled_state_at_reachable_boundaries() {
+    let (mut world, root) = fixture();
+    // Find controls by their actual RNDR opaque intent, not guessed action text.
+    let controls = children_of(
+        &world,
+        world.get::<Timeline>(root).unwrap().navigation.unwrap(),
+    );
+    let previous = controls[0];
+    let next = controls[1];
+    assert!(!world.get::<Button>(previous).unwrap().enabled);
+    assert!(!world.get::<Button>(next).unwrap().enabled);
+    assert!(world.has::<ControlDisabled>(previous));
+    let history = snapshot(
+        (0..12)
+            .map(|n| item(&n.to_string(), "user", "Turn"))
+            .collect(),
+        1,
+    );
+    sync(&mut world, root, Some(&history));
+    world.get_mut::<Scroll>(root).unwrap().content[1] = 2200.;
+    world.get_mut::<Scroll>(root).unwrap().offset[1] = 0.;
+    sync_navigation(&mut world, root);
+    assert!(!world.get::<Button>(previous).unwrap().enabled);
+    assert!(world.get::<Button>(next).unwrap().enabled);
+    world.get_mut::<Scroll>(root).unwrap().offset[1] = -1600.;
+    sync_navigation(&mut world, root);
+    assert!(world.get::<Button>(previous).unwrap().enabled);
+    assert!(!world.get::<Button>(next).unwrap().enabled);
+    assert!(world.has::<ControlDisabled>(next));
+    let name = world.get::<Button>(next).unwrap().action.clone();
+    assert_eq!(
+        rndr_ui::controls::host_intent(&world, &ActionIntent { entity: next, name }),
+        None
+    );
+}
+
+#[test]
+fn navigation_remeasures_stable_turn_and_does_not_move_other_panes() {
+    let (mut world, root) = fixture();
+    let parent = world.spawn((Layout::column(),));
+    let other = setup(&mut world, parent);
+    world.insert(
+        other,
+        Rect {
+            w: 800.,
+            h: 600.,
+            ..Default::default()
+        },
+    );
+    let history = snapshot(
+        (0..12)
+            .map(|n| item(&n.to_string(), "user", "Turn"))
+            .collect(),
+        1,
+    );
+    sync(&mut world, root, Some(&history));
+    sync(&mut world, other, Some(&history));
+    world.get_mut::<Scroll>(root).unwrap().content[1] = 2200.;
+    world.get_mut::<Scroll>(root).unwrap().offset[1] = -400.;
+    // Reconcile the visible window before simulating measured rows above it.
+    sync(&mut world, root, Some(&history));
+    navigate(&mut world, root, PREVIOUS_TURN);
+    let anchor = world
+        .get::<Timeline>(root)
+        .unwrap()
+        .navigation_anchor
+        .clone()
+        .unwrap();
+    let before = world.get::<Scroll>(root).unwrap().offset[1];
+    let other_offset = world.get::<Scroll>(other).unwrap().offset;
+    let rows: Vec<_> = world
+        .get::<Timeline>(root)
+        .unwrap()
+        .rows
+        .iter()
+        .map(|r| r.entity)
+        .collect();
+    for entity in &rows {
+        world.insert(
+            *entity,
+            Rect {
+                w: 600.,
+                h: 160.,
+                ..Default::default()
+            },
+        );
+    }
+    // The first row grows after layout, as with streamed/reflowed content.
+    world.get_mut::<Rect>(rows[0]).unwrap().h = 260.;
+    assert!(record_offset(&mut world, root));
+    assert_eq!(world.get::<Scroll>(root).unwrap().offset[1], before - 100.);
+    assert_eq!(world.get::<Scroll>(other).unwrap().offset, other_offset);
+    let mut streaming = history.clone();
+    streaming.revision = medousa_app_core::ChatRevision(2);
+    streaming
+        .items
+        .last_mut()
+        .unwrap()
+        .content
+        .push_str(" streaming tail");
+    sync(&mut world, root, Some(&streaming));
+    record_offset(&mut world, root);
+    assert_eq!(
+        world
+            .get::<Timeline>(root)
+            .unwrap()
+            .navigation_anchor
+            .as_deref(),
+        Some(anchor.as_str())
+    );
+    assert!(!world.get::<Timeline>(root).unwrap().following);
+    assert_eq!(world.get::<Scroll>(root).unwrap().offset[1], before - 100.);
+    // Direct wheel/scrollbar input relinquishes the programmatic anchor.
+    world.get_mut::<Scroll>(root).unwrap().offset[1] += 20.;
+    sync(&mut world, root, Some(&streaming));
+    assert!(world
+        .get::<Timeline>(root)
+        .unwrap()
+        .navigation_anchor
+        .is_none());
 }
 
 #[test]

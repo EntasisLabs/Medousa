@@ -95,13 +95,12 @@ fn exchange_back_retains_parent_draft_document_scroll_and_focus() {
         "fixture must exercise a nonzero parent viewport: {scroll:?}"
     );
     activate(&mut app, marker);
-    assert!(
-        app.world()
-            .resource::<Model>()
-            .unwrap()
-            .collaboration
-            .is_open()
-    );
+    assert!(app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .collaboration
+        .is_open());
     assert!(!app.world().has::<Hidden>(ui.exchange.root));
     assert_eq!(
         app.world().resource::<Focus>().unwrap().entity,
@@ -114,13 +113,12 @@ fn exchange_back_retains_parent_draft_document_scroll_and_focus() {
     assert!(!app.world().has::<Hidden>(ui.timeline));
 
     activate(&mut app, ui.exchange.back);
-    assert!(
-        !app.world()
-            .resource::<Model>()
-            .unwrap()
-            .collaboration
-            .is_open()
-    );
+    assert!(!app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .collaboration
+        .is_open());
     assert!(app.world().has::<Hidden>(ui.exchange.root));
     assert_eq!(
         app.world().resource::<Focus>().unwrap().entity,
@@ -241,14 +239,13 @@ fn background_reply_is_routed_to_retained_parent_and_not_another_chat() {
             },
         },
     );
-    assert!(
-        app.world()
-            .resource::<Model>()
-            .unwrap()
-            .collaboration
-            .rows
-            .is_empty()
-    );
+    assert!(app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .collaboration
+        .rows
+        .is_empty());
     conversations::with_session(app.world_mut(), "parent", |world| {
         let m = world.resource::<Model>().unwrap();
         assert!(m.collaboration.is_open());
@@ -288,12 +285,11 @@ fn unanchored_history_is_collapsed_and_reconciles_to_correct_turn() {
     let ui = *app.world().resource::<Ui>().unwrap();
     assert!(!app.world().has::<Hidden>(ui.exchange.earlier));
     assert!(app.world().has::<Hidden>(ui.exchange.earlier_rows));
-    assert!(
-        !app.world()
-            .query::<Target>()
-            .iter()
-            .any(|(_, t)| t.0 == "older")
-    );
+    assert!(!app
+        .world()
+        .query::<Target>()
+        .iter()
+        .any(|(_, t)| t.0 == "older"));
     app.world_mut()
         .resource_mut::<Model>()
         .unwrap()
@@ -310,6 +306,126 @@ fn unanchored_history_is_collapsed_and_reconciles_to_correct_turn() {
     assert!(app.world().has::<Hidden>(earlier));
     assert!(app.world().has::<Hidden>(ui.exchange.earlier));
 }
+fn history_action(app: &App, command: u64, work: &str) -> Entity {
+    app.world()
+        .query::<HistoryTarget>()
+        .iter()
+        .find(|(e, t)| {
+            t.work == work
+                && !app.world().has::<Hidden>(*e)
+                && app.world().get::<Button>(*e).is_some_and(|b| {
+                    rndr_ui::controls::host_intent(
+                        app.world(),
+                        &ActionIntent {
+                            entity: *e,
+                            name: b.action.clone(),
+                        },
+                    ) == Some(HostIntent::Command(command))
+                })
+        })
+        .expect("visible scoped history control")
+        .0
+}
+#[test]
+fn finished_history_dismiss_restore_is_local_and_live_work_reappears() {
+    let mut app = fixture();
+    let mut finished = row("older", None);
+    finished.card.column = WorkBoardColumn::Done;
+    finished.terminal = true;
+    receive(app.world_mut(), "parent", Ok(vec![finished.clone()]));
+    app.world_mut()
+        .resource_mut::<Model>()
+        .unwrap()
+        .collaboration
+        .earlier_open = true;
+    app.update();
+    let marker = target(&app, "older");
+    let dismiss = history_action(&app, HISTORY_DISMISS, "older");
+    activate(&mut app, dismiss);
+    assert!(app.world().has::<Hidden>(marker));
+    // The canonical worker row remains intact; no cancellation/forget request.
+    assert_eq!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .collaboration
+            .rows
+            .len(),
+        1
+    );
+    let show = history_action(&app, HISTORY_VISIBILITY, "");
+    activate(&mut app, show);
+    assert!(!app.world().has::<Hidden>(marker));
+    let restore = history_action(&app, HISTORY_RESTORE, "older");
+    activate(&mut app, restore);
+    let dismiss = history_action(&app, HISTORY_DISMISS, "older");
+    activate(&mut app, dismiss);
+    receive(app.world_mut(), "parent", Ok(vec![row("older", None)]));
+    app.update();
+    assert!(!app.world().has::<Hidden>(marker));
+    assert!(app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .collaboration
+        .history
+        .dismissed
+        .values()
+        .all(|ids| !ids.contains("older")));
+}
+#[test]
+fn history_preferences_are_authority_session_scoped_and_attention_is_never_hidden() {
+    let mut app = fixture();
+    let snapshot = app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .chat
+        .snapshot()
+        .unwrap()
+        .clone();
+    let mut prefs = HistoryPreferences::default();
+    prefs.ids(&snapshot).insert("older".into());
+    let mut other = snapshot.clone();
+    other.authority_id = "another-authority".into();
+    assert!(prefs.ids(&other).is_empty());
+    other = snapshot.clone();
+    other.session_id = "another-session".into();
+    assert!(prefs.ids(&other).is_empty());
+    let mut blocked = row("older", None);
+    blocked.terminal = true;
+    blocked.card.column = WorkBoardColumn::Blocked;
+    prefs.reconcile(&snapshot, &[blocked]);
+    assert!(!prefs.ids(&snapshot).contains("older"));
+    other = snapshot.clone();
+    other.authority_id = "wrong".into();
+    let parent = app.world().resource::<Ui>().unwrap().exchange.earlier_rows;
+    let stale = history_control(
+        app.world_mut(),
+        parent,
+        HISTORY_DISMISS,
+        "older",
+        "Dismiss",
+        &other,
+    );
+    let name = app.world().get::<Button>(stale).unwrap().action.clone();
+    assert!(action(
+        app.world_mut(),
+        &ActionIntent {
+            entity: stale,
+            name
+        }
+    ));
+    assert!(app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .collaboration
+        .history
+        .dismissed
+        .is_empty());
+}
+
 #[test]
 fn full_text_beats_preview_and_reading_ids_do_not_depend_on_content() {
     let mut row = row("worker-1", Some("turn-1"));
@@ -319,12 +435,10 @@ fn full_text_beats_preview_and_reading_ids_do_not_depend_on_content() {
     let after = project(&row);
     assert_eq!(before.items[1].id, after.items[1].id);
     assert_ne!(before.revision, after.revision);
-    assert!(
-        after
-            .items
-            .iter()
-            .any(|i| i.content == "complete persisted result")
-    );
+    assert!(after
+        .items
+        .iter()
+        .any(|i| i.content == "complete persisted result"));
     assert!(!after.items.iter().any(|i| i.content == "short preview"));
     assert_eq!(
         after
@@ -338,11 +452,9 @@ fn full_text_beats_preview_and_reading_ids_do_not_depend_on_content() {
         1
     );
     row.worker_transcript = None;
-    assert!(
-        project(&row).items[0]
-            .content
-            .contains("Only the card preview")
-    );
+    assert!(project(&row).items[0]
+        .content
+        .contains("Only the card preview"));
 }
 #[test]
 fn tool_disclosure_uses_worker_snapshot_and_closes_on_return() {
@@ -374,12 +486,11 @@ fn tool_disclosure_uses_worker_snapshot_and_closes_on_return() {
         .expect("inspector remains open through settled exchange frames")
         .0;
     assert!(app.world().is_alive(inspector));
-    assert!(
-        app.world()
-            .query::<Label>()
-            .iter()
-            .any(|(_, l)| l.text.contains("Pane state is retained"))
-    );
+    assert!(app
+        .world()
+        .query::<Label>()
+        .iter()
+        .any(|(_, l)| l.text.contains("Pane state is retained")));
     let ui = *app.world().resource::<Ui>().unwrap();
     // The inspector owns input; dismiss it before the relationship header.
     let close = app
@@ -392,13 +503,12 @@ fn tool_disclosure_uses_worker_snapshot_and_closes_on_return() {
     activate(&mut app, close);
     assert!(!app.world().is_alive(inspector));
     activate(&mut app, ui.exchange.back);
-    assert!(
-        !app.world()
-            .resource::<Model>()
-            .unwrap()
-            .collaboration
-            .is_open()
-    );
+    assert!(!app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .collaboration
+        .is_open());
 }
 #[test]
 fn exchange_refresh_is_single_flight_and_failures_preserve_recorded_text() {
@@ -415,16 +525,12 @@ fn exchange_refresh_is_single_flight_and_failures_preserve_recorded_text() {
         rx.try_recv().unwrap().command,
         rx.try_recv().unwrap().command,
     ];
-    assert!(
-        commands
-            .iter()
-            .any(|c| matches!(c, Command::Collaboration { .. }))
-    );
-    assert!(
-        commands
-            .iter()
-            .any(|c| matches!(c, Command::PeerCollaboration { .. }))
-    );
+    assert!(commands
+        .iter()
+        .any(|c| matches!(c, Command::Collaboration { .. })));
+    assert!(commands
+        .iter()
+        .any(|c| matches!(c, Command::PeerCollaboration { .. })));
     for _ in 0..8 {
         app.update();
     }
@@ -686,14 +792,13 @@ fn late_reply_ack_preserves_new_edits_and_unknown_delivery_blocks_replay() {
         count += usize::from(matches!(request.command, Command::ThreadReply { .. }));
     }
     assert_eq!(count, 2);
-    assert!(
-        app.world()
-            .resource::<Model>()
-            .unwrap()
-            .collaboration
-            .reply_pending
-            .is_some()
-    );
+    assert!(app
+        .world()
+        .resource::<Model>()
+        .unwrap()
+        .collaboration
+        .reply_pending
+        .is_some());
 }
 
 #[test]

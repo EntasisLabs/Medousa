@@ -56,6 +56,9 @@ struct Timeline {
     samples: u8,
     last_view: Option<[f32; 6]>,
     latest: Option<Entity>,
+    navigation: Option<Entity>,
+    // Stable turn identity, not an estimated pixel offset, during remeasurement.
+    navigation_anchor: Option<String>,
 }
 impl Component for Timeline {}
 struct DetailBody {
@@ -70,7 +73,7 @@ const DISCLOSE: u64 = 0x74696d6502;
 const LATEST: u64 = 0x74696d6503;
 const PREVIOUS_TURN: u64 = 0x74696d6504;
 const NEXT_TURN: u64 = 0x74696d6505;
-struct NavigationTarget(Entity);
+struct NavigationTarget(Entity, u64);
 impl Component for NavigationTarget {}
 fn navigate(world: &mut World, root: Entity, command: u64) {
     let Some(state) = world.get::<Timeline>(root) else {
@@ -78,36 +81,95 @@ fn navigate(world: &mut World, root: Entity, command: u64) {
     };
     let scroll = world.get::<Scroll>(root).copied().unwrap_or_default();
     let rect = world.get::<Rect>(root).copied().unwrap_or_default();
-    let top = (-scroll.offset[1]).min((scroll.content[1] - rect.h).max(0.));
+    let target = turn_target(state, scroll, rect, command);
     let offset = if command == LATEST {
         Some(f32::MIN)
     } else {
-        let mut y = visual::INSET;
-        let mut positions = vec![];
-        for row in &state.rows {
-            if row.user {
-                positions.push(y);
-            }
-            y += row.height + visual::ROW_GAP;
-        }
-        if command == PREVIOUS_TURN {
-            positions
-                .into_iter()
-                .rev()
-                .find(|y| *y < top - 1.)
-                .map(|y| -y)
-        } else {
-            positions.into_iter().find(|y| *y > top + 1.).map(|y| -y)
-        }
+        target.as_ref().map(|(_, y)| -y)
     };
     let Some(offset) = offset else {
         return;
     };
     let state = world.get_mut::<Timeline>(root).unwrap();
     state.following = command == LATEST;
+    state.navigation_anchor = target.map(|(id, _)| id);
     state.last_view = None;
     state.layout_offset = offset;
     world.get_mut::<Scroll>(root).unwrap().offset[1] = offset;
+    sync_navigation(world, root);
+}
+
+fn turn_target(
+    state: &Timeline,
+    scroll: Scroll,
+    rect: Rect,
+    command: u64,
+) -> Option<(String, f32)> {
+    let bottom = (scroll.content[1] - rect.h).max(0.);
+    let top = (-scroll.offset[1]).clamp(0., bottom);
+    let mut y = visual::INSET;
+    let mut positions = Vec::new();
+    for row in &state.rows {
+        // Last turns can be below the highest reachable scroll offset.
+        let reachable = y.min(bottom);
+        if row.user
+            && ((command == PREVIOUS_TURN && reachable < top - 1.)
+                || (command == NEXT_TURN && reachable > top + 1.))
+        {
+            positions.push((row.id.clone(), reachable));
+        }
+        y += row.height + visual::ROW_GAP;
+    }
+    if command == PREVIOUS_TURN {
+        positions.pop()
+    } else {
+        positions.into_iter().next()
+    }
+}
+
+fn sync_navigation(world: &mut World, root: Entity) {
+    let Some(state) = world.get::<Timeline>(root) else {
+        return;
+    };
+    let Some(parent) = state.navigation else {
+        return;
+    };
+    let scroll = world.get::<Scroll>(root).copied().unwrap_or_default();
+    let rect = world.get::<Rect>(root).copied().unwrap_or_default();
+    let availability = [
+        (
+            PREVIOUS_TURN,
+            "↑",
+            "Previous user turn",
+            turn_target(state, scroll, rect, PREVIOUS_TURN).is_some(),
+        ),
+        (
+            NEXT_TURN,
+            "↓",
+            "Next user turn",
+            turn_target(state, scroll, rect, NEXT_TURN).is_some(),
+        ),
+    ];
+    for (command, glyph, name, enabled) in availability {
+        let mut props = rndr_ui::controls::ButtonProps::new(
+            glyph,
+            rndr_ui::controls::HostIntent::Command(command),
+        );
+        props.name = Some(name.into());
+        props.variant = rndr_ui::controls::ButtonVariant::Quiet;
+        props.enabled = enabled;
+        let unchanged = children_of(world, parent).into_iter().any(|e| {
+            world.get::<Button>(e).is_some_and(|b| b.enabled == enabled)
+                && world
+                    .get::<NavigationTarget>(e)
+                    .is_some_and(|n| n.1 == command)
+        });
+        // Updating through RNDR also cancels pressed gestures and gates focus/activation.
+        // Do not reproject unchanged controls from the post-layout callback.
+        if !unchanged {
+            rndr_ui::controls::Button::mount(world, parent, rndr_ui::UiId(command), props).unwrap();
+        }
+    }
 }
 struct CopyText(String);
 impl Component for CopyText {}
@@ -147,6 +209,8 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
             samples: 0,
             last_view: None,
             latest: None,
+            navigation: None,
+            navigation_anchor: None,
         },
     ));
     set_parent(world, root, frame);
@@ -157,6 +221,7 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
         ..Layout::column()
     },));
     set_parent(world, navigation, frame);
+    world.get_mut::<Timeline>(root).unwrap().navigation = Some(navigation);
     for (command, glyph, name) in [
         (PREVIOUS_TURN, "↑", "Previous user turn"),
         (NEXT_TURN, "↓", "Next user turn"),
@@ -171,7 +236,7 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
         let control =
             rndr_ui::controls::Button::mount(world, navigation, rndr_ui::UiId(command), props)
                 .unwrap();
-        world.insert(control.root, NavigationTarget(root));
+        world.insert(control.root, NavigationTarget(root, command));
         world.get_mut::<Layout>(control.root).unwrap().width = Size::Px(28.);
         world.get_mut::<Layout>(control.root).unwrap().height = Size::Px(28.);
         rndr_ui::inputs::Tooltip::attach(world, control.root, name).unwrap();
@@ -197,10 +262,60 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
         },
     ));
     set_parent(world, rail, navigation);
+    sync_navigation(world, root);
     root
 }
 
 fn record_offset(world: &mut World, root: Entity) -> bool {
+    // RNDR calls this after layout. Read actual mounted heights before resolving
+    // the stable navigation anchor; offscreen rows retain their last estimate.
+    let mut changed = false;
+    if let Some(mut state) = world.remove::<Timeline>(root) {
+        let mut y = visual::INSET;
+        let mut anchor_y = None;
+        let old_offset = world.get::<Scroll>(root).map_or(0., |s| s.offset[1]);
+        let mut correction = 0.;
+        for row in &mut state.rows {
+            if row.mounted {
+                if let Some(rect) = world.get::<Rect>(row.entity) {
+                    if rect.h > 0. {
+                        if y + row.height < -old_offset {
+                            correction += rect.h - row.height;
+                        }
+                        row.height = rect.h;
+                    }
+                }
+            }
+            if state.navigation_anchor.as_deref() == Some(row.id.as_str()) {
+                anchor_y = Some(y);
+            }
+            y += row.height + visual::ROW_GAP;
+        }
+        if let Some(anchor_y) = anchor_y {
+            let height = world.get::<Rect>(root).map_or(0., |r| r.h);
+            let target = -anchor_y.min((y + visual::INSET - height).max(0.));
+            if let Some(scroll) = world.get_mut::<Scroll>(root) {
+                if (scroll.offset[1] - target).abs() > 0.5 {
+                    scroll.offset[1] = target;
+                    state.last_view = None;
+                    changed = true;
+                }
+                state.layout_offset = target;
+            }
+        } else {
+            state.navigation_anchor = None;
+            if !state.following && correction.abs() > 0.5 {
+                if let Some(scroll) = world.get_mut::<Scroll>(root) {
+                    scroll.offset[1] -= correction;
+                    state.layout_offset = scroll.offset[1];
+                    state.last_view = None;
+                    changed = true;
+                }
+            }
+        }
+        world.insert(root, state);
+    }
+    sync_navigation(world, root);
     let offset = world.get::<Scroll>(root).map(|s| s.offset[1]);
     if let (Some(offset), Some(state)) = (offset, world.get_mut::<Timeline>(root)) {
         if state.samples > 0 {
@@ -210,7 +325,7 @@ fn record_offset(world: &mut World, root: Entity) -> bool {
             }
         }
     }
-    false
+    changed
 }
 
 /// Call each Update after input. Canonical IDs retain rows through insertion and
@@ -254,6 +369,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
     );
     let switched = snapshot.map(|s| s.session_id.as_str()).unwrap_or("") != state.session;
     if switched {
+        state.navigation_anchor = None;
         for row in state.rows.drain(..) {
             despawn(world, row.entity);
         }
@@ -266,6 +382,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
             state.layout_offset = 0.;
         }
     } else if (scroll.offset[1] - state.layout_offset).abs() > 1.5 {
+        state.navigation_anchor = None;
         // A user wheel/key/scrollbar movement, not a content-height change.
         let bottom = (scroll.content[1] - rect.h).max(0.);
         state.following = scroll.offset[1] <= -bottom + 1.5;
@@ -393,6 +510,7 @@ pub fn sync(world: &mut World, root: Entity, snapshot: Option<&ChatSnapshot>) {
     state.samples = 2;
     state.revision = snapshot.map(|s| s.revision);
     world.insert(root, state);
+    sync_navigation(world, root);
 }
 
 fn sync_row(world: &mut World, row: &mut Row, item: &ChatItem, session: &str) {

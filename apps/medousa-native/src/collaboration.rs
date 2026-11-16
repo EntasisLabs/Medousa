@@ -9,6 +9,7 @@ mod tests;
 use medousa_app_core::{ChatItemRole, ChatSnapshot};
 use medousa_types::{WorkBoardColumn, WorkCardDetail, WorkCardKind};
 use std::{
+    collections::HashSet,
     hash::{Hash, Hasher},
     time::{Duration, Instant},
 };
@@ -17,9 +18,74 @@ const OPEN: u64 = 0x636f6c01;
 const BACK: u64 = 0x636f6c02;
 const RETRY: u64 = 0x636f6c03;
 const EARLIER: u64 = 0x636f6c04;
+const HISTORY_VISIBILITY: u64 = 0x636f6c08;
+const HISTORY_DISMISS: u64 = 0x636f6c09;
+const HISTORY_RESTORE: u64 = 0x636f6c0a;
+// Window-local presentation only. Persistent reference keys additionally need
+// the host's real workshop identity; never substitute an invented workshop ID.
+#[derive(Default)]
+struct HistoryPreferences {
+    dismissed: HashMap<(String, String), HashSet<String>>,
+    show_dismissed: bool,
+}
+impl HistoryPreferences {
+    fn ids(&mut self, snapshot: &ChatSnapshot) -> &mut HashSet<String> {
+        self.dismissed
+            .entry((snapshot.authority_id.clone(), snapshot.session_id.clone()))
+            .or_default()
+    }
+    fn reconcile(&mut self, snapshot: &ChatSnapshot, rows: &[WorkCardDetail]) {
+        let ids = self.ids(snapshot);
+        for row in rows {
+            if !finished_history(row) {
+                ids.remove(work_id(row));
+            }
+        }
+    }
+}
+struct HistoryTarget {
+    authority: String,
+    session: String,
+    work: String,
+}
+impl Component for HistoryTarget {}
+fn finished_history(row: &WorkCardDetail) -> bool {
+    row.terminal && row.card.column == WorkBoardColumn::Done
+}
+fn history_control(
+    world: &mut World,
+    parent: Entity,
+    command: u64,
+    work: &str,
+    name: &str,
+    snapshot: &ChatSnapshot,
+) -> Entity {
+    use rndr_ui::controls::{ButtonProps, HostIntent};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (command, &snapshot.authority_id, &snapshot.session_id, work).hash(&mut hasher);
+    let control = rndr_ui::controls::Button::mount(
+        world,
+        parent,
+        rndr_ui::UiId(hasher.finish()),
+        ButtonProps::new(name, HostIntent::Command(command)),
+    )
+    .unwrap();
+    world.insert(
+        control.root,
+        HistoryTarget {
+            authority: snapshot.authority_id.clone(),
+            session: snapshot.session_id.clone(),
+            work: work.into(),
+        },
+    );
+    visible(world, control.root, true);
+    control.root
+}
 #[derive(Default)]
 pub(super) struct State {
     session: String,
+    authority: String,
+    history: HistoryPreferences,
     peers: peers::State,
     rows: Vec<WorkCardDetail>,
     selected: Option<String>,
@@ -391,13 +457,65 @@ pub(super) fn action(world: &mut World, intent: &ActionIntent) -> bool {
         send_reply(world);
         return true;
     }
-    if ![OPEN, BACK, RETRY, EARLIER].contains(&command) {
+    if ![
+        OPEN,
+        BACK,
+        RETRY,
+        EARLIER,
+        HISTORY_VISIBILITY,
+        HISTORY_DISMISS,
+        HISTORY_RESTORE,
+    ]
+    .contains(&command)
+    {
         return false;
     }
     let ui = *world.resource::<Ui>().unwrap();
     if command == EARLIER {
         let state = &mut world.resource_mut::<Model>().unwrap().collaboration;
         state.earlier_open = !state.earlier_open;
+        return true;
+    }
+    if [HISTORY_VISIBILITY, HISTORY_DISMISS, HISTORY_RESTORE].contains(&command) {
+        let Some(target) = world.get::<HistoryTarget>(intent.entity) else {
+            return true;
+        };
+        let (authority, session, work) = (
+            target.authority.clone(),
+            target.session.clone(),
+            target.work.clone(),
+        );
+        let model = world.resource_mut::<Model>().unwrap();
+        let Some(snapshot) = model.chat.snapshot() else {
+            return true;
+        };
+        // A queued click cannot alter another authority/session's presentation.
+        if snapshot.authority_id != authority || snapshot.session_id != session {
+            return true;
+        }
+        let state = &mut model.collaboration;
+        if state.authority != authority || state.session != session {
+            return true;
+        }
+        if command == HISTORY_VISIBILITY {
+            state.history.show_dismissed = !state.history.show_dismissed;
+        } else if state
+            .rows
+            .iter()
+            .any(|row| work_id(row) == work && finished_history(row))
+        {
+            let ids = state
+                .history
+                .dismissed
+                .entry((authority, session))
+                .or_default();
+            if command == HISTORY_DISMISS {
+                ids.insert(work);
+            } else {
+                ids.remove(&work);
+            }
+        }
+        // No Command/Reply or daemon mutation: dismissal is never cancellation.
         return true;
     }
     if command == OPEN {
@@ -505,9 +623,13 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
     let mut state = std::mem::take(&mut world.resource_mut::<Model>().unwrap().collaboration);
     let request = {
         let model = world.resource::<Model>().unwrap();
-        if state.session != snapshot.session_id {
+        if state.session != snapshot.session_id || state.authority != snapshot.authority_id {
+            let mut history = std::mem::take(&mut state.history);
+            history.show_dismissed = false;
             state = State {
                 session: snapshot.session_id.clone(),
+                authority: snapshot.authority_id.clone(),
+                history,
                 ..Default::default()
             };
         }
@@ -543,6 +665,9 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
     };
     let selected = state.selected.clone();
     let error = state.error.clone();
+    state.history.reconcile(snapshot, &state.rows);
+    let dismissed = state.history.ids(snapshot).clone();
+    let show_dismissed = state.history.show_dismissed;
     let rows = &state.rows;
     if let Some(request) = request {
         state.force_selected = false;
@@ -607,11 +732,34 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
     // An earlier marker may gain a canonical anchor after history reconciliation.
     for entity in children_of(world, ui.exchange.earlier_rows) {
         let keep = world.get::<Target>(entity).is_some_and(|target| {
-            rows.iter()
-                .any(|row| work_id(row) == target.0 && anchor(snapshot, row).is_none())
-                || peers::earlier(&state.peers, snapshot, &target.0)
+            rows.iter().any(|row| {
+                work_id(row) == target.0
+                    && anchor(snapshot, row).is_none()
+                    && (!dismissed.contains(work_id(row)) || show_dismissed)
+            }) || peers::earlier(&state.peers, snapshot, &target.0)
         });
         visible(world, entity, keep);
+    }
+    let dismissed_count = rows
+        .iter()
+        .filter(|row| {
+            finished_history(row)
+                && dismissed.contains(work_id(row))
+                && anchor(snapshot, row).is_none()
+        })
+        .count();
+    if state.earlier_open && dismissed_count > 0 {
+        history_control(
+            world,
+            ui.exchange.earlier_rows,
+            HISTORY_VISIBILITY,
+            "",
+            &format!(
+                "{} dismissed finished work ({dismissed_count}) · this window",
+                if show_dismissed { "Hide" } else { "Show" }
+            ),
+            snapshot,
+        );
     }
     for row in rows {
         if let Some(id) = anchor(snapshot, row) {
@@ -619,8 +767,27 @@ pub(super) fn sync(world: &mut World, ui: Ui, snapshot: Option<&ChatSnapshot>) {
                 marker(world, parent, row, false);
             }
         } else {
-            if state.earlier_open {
+            if state.earlier_open && (!dismissed.contains(work_id(row)) || show_dismissed) {
                 marker(world, ui.exchange.earlier_rows, row, true);
+                if finished_history(row) {
+                    let hidden = dismissed.contains(work_id(row));
+                    history_control(
+                        world,
+                        ui.exchange.earlier_rows,
+                        if hidden {
+                            HISTORY_RESTORE
+                        } else {
+                            HISTORY_DISMISS
+                        },
+                        work_id(row),
+                        if hidden {
+                            "Restore finished work · this window"
+                        } else {
+                            "Dismiss finished work · this window"
+                        },
+                        snapshot,
+                    );
+                }
             }
             earlier = true;
         }
