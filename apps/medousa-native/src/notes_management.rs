@@ -184,6 +184,7 @@ fn forget(w: &mut World, n: &mut Notes, path: &str) {
     if let Some(v) = n.views.remove(path) {
         despawn(w, v.handle.root);
         despawn(w, v.preview);
+        despawn(w, v.rich.root);
     }
     let _ = n
         .core
@@ -461,6 +462,7 @@ pub(super) fn apply(
                     "Note moved on the workshop. Links and vault identity preserved.",
                 );
                 n.source = true;
+                n.live = false;
                 open_note(w, n, to.clone());
                 n.list_page(false);
             }
@@ -474,6 +476,7 @@ pub(super) fn apply(
             Ok(r) if r.created => {
                 message(w, n, "Note created on workshop.");
                 n.source = true;
+                n.live = false;
                 open_note(w, n, r.note.path);
                 n.list_page(false);
             }
@@ -559,6 +562,9 @@ pub(super) fn apply(
                     if matches!(c, Command::Switch(_)) {
                         n.core = VaultBufferCore::new(r.active_root_id.clone());
                         n.list.clear();
+                        n.tree_ids.clear();
+                        n.tree_paths.clear();
+                        n.expanded.clear();
                         n.cursor = None;
                         n.generation = None;
                         n.list_page(false);

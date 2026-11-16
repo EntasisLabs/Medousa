@@ -4,7 +4,7 @@ mod management_tests;
 use serde_json::json;
 fn fixture() -> App {
     let mut app = App::new();
-    app.add_plugin(rndr_ui::UiPlugin);
+    app.add_plugin(rndr_markdown_ui::MarkdownPlugin);
     let w = app.world_mut();
     let parent = w.spawn((Layout {
         width: Size::Fill,
@@ -325,6 +325,318 @@ fn activation_and_pagination_are_explicit_and_fenced() {
         },
     );
     assert!(w.resource::<Notes>().unwrap().list_error.is_empty());
+}
+#[test]
+fn rich_markdown_uses_shared_session_and_preserves_frontmatter_bytes() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    let prefix = "\u{feff}---\r\ntitle: Keep me\r\ntags: [one, two]\r\n---\r\n";
+    load(w, "a.md", &format!("{prefix}alpha"), Some("v1"));
+    click(w, Action::Write);
+    let (rich_id, rich_root, source_id) = {
+        let v = &w.resource::<Notes>().unwrap().views["a.md"];
+        (v.rich_document, v.rich.root, v.document)
+    };
+    assert!(!w.has::<Hidden>(rich_root));
+    w.resource_mut::<MarkdownDocuments>()
+        .unwrap()
+        .get_mut(rich_id)
+        .unwrap()
+        .move_caret(0, 5)
+        .unwrap();
+    click(w, Action::Format(MarkdownCommand::Strong));
+    let expected = format!("{prefix}**alpha**");
+    assert_eq!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("a.md")
+            .unwrap()
+            .content,
+        expected
+    );
+    assert_eq!(
+        w.resource::<SourceDocuments>()
+            .unwrap()
+            .get(source_id)
+            .unwrap()
+            .text(),
+        expected
+    );
+    click(w, Action::ToggleSource);
+    assert!(w.has::<Hidden>(rich_root));
+    click(w, Action::Write);
+    assert_eq!(
+        w.resource::<Notes>().unwrap().views["a.md"].rich_document,
+        rich_id
+    );
+    assert_eq!(
+        w.resource::<MarkdownDocuments>()
+            .unwrap()
+            .get(rich_id)
+            .unwrap()
+            .bytes(),
+        "**alpha**"
+    );
+    click(w, Action::Save);
+    assert!(matches!(drain_commands(w).pop().unwrap().operation,
+        Operation::Save { content, token, .. } if content == expected && token == "v1"));
+}
+#[test]
+fn source_and_rich_handoffs_preserve_drafts_and_independent_undo() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "alpha", Some("v1"));
+    click(w, Action::Write);
+    let id = w.resource::<Notes>().unwrap().views["a.md"].rich_document;
+    w.resource_mut::<MarkdownDocuments>()
+        .unwrap()
+        .get_mut(id)
+        .unwrap()
+        .move_caret(0, 5)
+        .unwrap();
+    click(w, Action::Format(MarkdownCommand::Strong));
+    click(w, Action::Format(MarkdownCommand::Undo));
+    assert_eq!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("a.md")
+            .unwrap()
+            .content,
+        "alpha"
+    );
+    click(w, Action::Format(MarkdownCommand::Redo));
+    click(w, Action::ToggleSource);
+    let source = w.resource::<Notes>().unwrap().views["a.md"].document;
+    w.resource_mut::<SourceDocuments>()
+        .unwrap()
+        .get_mut(source)
+        .unwrap()
+        .undo()
+        .unwrap();
+    tick(w);
+    assert_eq!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("a.md")
+            .unwrap()
+            .content,
+        "alpha"
+    );
+    click(w, Action::Write);
+    assert_eq!(
+        w.resource::<MarkdownDocuments>()
+            .unwrap()
+            .get(id)
+            .unwrap()
+            .bytes(),
+        "alpha"
+    );
+    load(w, "b.md", "beta", Some("b-v1"));
+    click(w, Action::Open("a.md".into()));
+    assert_eq!(
+        w.resource::<Notes>().unwrap().views["a.md"].rich_document,
+        id
+    );
+}
+#[test]
+fn rich_composition_blocks_mode_note_and_management_navigation() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "alpha", Some("v1"));
+    click(w, Action::Write);
+    let (id, root) = {
+        let v = &w.resource::<Notes>().unwrap().views["a.md"];
+        (v.rich_document, v.rich.root)
+    };
+    w.resource_mut::<MarkdownDocuments>()
+        .unwrap()
+        .get_mut(id)
+        .unwrap()
+        .composition_start(0, 0)
+        .unwrap();
+    assert!(!can_deactivate(w));
+    click(w, Action::ToggleSource);
+    click(w, Action::Read);
+    click(w, Action::Open("b.md".into()));
+    click(w, Action::Manage(management::Action::CloseNote));
+    assert!(w.resource::<Notes>().unwrap().live);
+    assert!(!w.has::<Hidden>(root));
+    assert_eq!(
+        w.resource::<Notes>().unwrap().selected.as_deref(),
+        Some("a.md")
+    );
+    assert!(drain_commands(w).is_empty());
+    w.resource_mut::<MarkdownDocuments>()
+        .unwrap()
+        .get_mut(id)
+        .unwrap()
+        .composition_cancel();
+    assert!(can_deactivate(w));
+    w.resource_mut::<Focus>().unwrap().entity = Some(root);
+    click(w, Action::Open("b.md".into()));
+    assert!(w.resource::<Focus>().unwrap().entity.is_none());
+}
+#[test]
+fn rich_edits_during_save_remain_dirty_against_acknowledged_baseline() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "alpha", Some("v1"));
+    click(w, Action::Write);
+    let id = w.resource::<Notes>().unwrap().views["a.md"].rich_document;
+    w.resource_mut::<MarkdownDocuments>()
+        .unwrap()
+        .get_mut(id)
+        .unwrap()
+        .move_caret(0, 5)
+        .unwrap();
+    click(w, Action::Format(MarkdownCommand::Strong));
+    click(w, Action::Save);
+    let command = drain_commands(w).pop().unwrap();
+    w.resource_mut::<MarkdownDocuments>()
+        .unwrap()
+        .get_mut(id)
+        .unwrap()
+        .edit(
+            rndr_markdown::Command::Replace {
+                start: 0,
+                end: 9,
+                text: "late draft".into(),
+            },
+            2000,
+        )
+        .unwrap();
+    apply(
+        w,
+        NoteUpdate {
+            command,
+            result: Ok(Response::Saved(write(
+                "a.md",
+                Some("**alpha**"),
+                Some("v2"),
+            ))),
+        },
+    );
+    let n = w.resource::<Notes>().unwrap();
+    let b = n.core.get("a.md").unwrap();
+    assert_eq!(b.content, "late draft");
+    assert_eq!(b.baseline_content, "**alpha**");
+    assert_eq!(b.content_hash.as_deref(), Some("v2"));
+    assert!(b.dirty);
+}
+#[test]
+fn shared_library_tree_preserves_nested_disclosure_through_search() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    let summary = |path: &str, title: &str| {
+        let mut note = response(path, "", Some("v1")).note;
+        note.title = title.into();
+        serde_json::from_value::<VaultNoteSummary>(serde_json::to_value(note).unwrap()).unwrap()
+    };
+    let mut n = w.remove_resource::<Notes>().unwrap();
+    n.list = vec![
+        summary("work/deep/a.md", "Alpha"),
+        summary("work/b.md", "Beta"),
+        summary("b.md", "Root"),
+    ];
+    n.expanded.insert("work".into());
+    let (nodes, expanded) = library_model(&mut n);
+    assert_eq!(nodes.len(), 5);
+    let work = n.tree_ids["folder:work"];
+    let deep = n.tree_ids["folder:work/deep"];
+    let alpha = n.tree_ids["note:work/deep/a.md"];
+    assert_eq!(
+        nodes.iter().find(|node| node.id == deep).unwrap().parent,
+        Some(work)
+    );
+    assert_eq!(
+        nodes.iter().find(|node| node.id == alpha).unwrap().parent,
+        Some(deep)
+    );
+    assert_eq!(expanded, vec![work]);
+    n.filter = "ALPHA".into();
+    let (filtered, expanded) = library_model(&mut n);
+    assert_eq!(filtered.len(), 3);
+    assert_eq!(expanded, vec![work, deep]);
+    assert_eq!(n.tree_paths.len(), 1);
+    assert_eq!(n.expanded, std::collections::HashSet::from(["work".into()]));
+    n.filter.clear();
+    let (_, expanded) = library_model(&mut n);
+    assert_eq!(expanded, vec![work]);
+    assert_eq!(n.tree_ids["note:work/deep/a.md"], alpha);
+    n.redraw = true;
+    w.insert_resource(n);
+    tick(w);
+    let tree = w.resource::<Notes>().unwrap().tree.unwrap();
+    assert_eq!(tree.node_count(w), 5);
+    assert_eq!(tree.visible_count(w), 4);
+}
+
+#[test]
+fn shared_library_keyboard_selection_snapshots_active_draft() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "first", Some("a-v1"));
+    edit(w, "a.md", "retained first draft");
+    let mut n = w.remove_resource::<Notes>().unwrap();
+    n.list = ["a.md", "b.md"]
+        .iter()
+        .map(|path| {
+            serde_json::from_value::<VaultNoteSummary>(
+                serde_json::to_value(response(path, "", Some("v1")).note).unwrap(),
+            )
+            .unwrap()
+        })
+        .collect();
+    n.redraw = true;
+    w.insert_resource(n);
+    tick(w);
+    let n = w.resource::<Notes>().unwrap();
+    let tree = n.tree.unwrap().root;
+    let target = n.tree_ids["note:b.md"];
+    send(
+        w,
+        TreeEvent {
+            tree,
+            kind: TreeEventKind::Selected(Some(target)),
+        },
+    );
+    app.update(); // Promote queued shared tree events before host Update.
+    let w = app.world_mut();
+    tick(w);
+    assert_eq!(
+        w.resource::<Notes>().unwrap().selected.as_deref(),
+        Some("b.md")
+    );
+    assert_eq!(
+        w.resource::<Notes>()
+            .unwrap()
+            .core
+            .get("a.md")
+            .unwrap()
+            .content,
+        "retained first draft"
+    );
+    assert!(
+        drain_commands(w)
+            .iter()
+            .any(|c| matches!(&c.operation, Operation::Load(path) if path == "b.md"))
+    );
+}
+
+#[test]
+fn note_statistics_match_body_only_unicode_and_read_time_contract() {
+    assert_eq!(note_statistics(""), "Empty note");
+    assert_eq!(
+        note_statistics("---\ntitle: ignored\n---\nhello 🌊"),
+        "2 words · ~1 min read · 8 chars"
+    );
+    assert_eq!(
+        note_statistics(&vec!["word"; 201].join(" ")),
+        "201 words · ~2 min read · 1004 chars"
+    );
 }
 #[test]
 fn absent_save_token_blocks_write_at_model_boundary() {

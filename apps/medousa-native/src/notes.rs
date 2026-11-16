@@ -8,15 +8,20 @@ use medousa_types::{
     VaultPutQuery, VaultWriteResponse,
 };
 use rndr_core::{
-    editing::{DocumentId, Revision, SourceDocuments},
+    editing::{DocumentId, EditOrigin, Revision, SourceBatch, SourceChange, SourceDocuments},
     *,
+};
+use rndr_markdown_ui::{
+    MarkdownCommand, MarkdownDocuments, MarkdownId, MarkdownSurface, MarkdownSurfaceHandle,
+    MarkdownSurfaceProps,
 };
 use rndr_ui::{
     Typography, UiId, UiStyle,
-    controls::{self, ButtonProps, HostIntent},
+    controls::HostIntent,
     editing::{EditorSurface, EditorSurfaceHandle, EditorSurfaceProps},
     tabs::{TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripProps},
     text,
+    tree::{NodeId, TreeEvent, TreeEventKind, TreeHandle, TreeNode, TreeProps, VirtualTree},
 };
 use std::{
     collections::HashMap,
@@ -71,18 +76,27 @@ enum Action {
     Check,
     Acknowledge,
     ToggleSource,
+    Write,
+    Read,
+    Format(MarkdownCommand),
 }
 struct View {
     document: DocumentId,
     captured_revision: Option<Revision>,
     handle: EditorSurfaceHandle,
     preview: Entity,
+    rich_document: MarkdownId,
+    rich: MarkdownSurfaceHandle,
+    rich_revision: u64,
     tab: u64,
 }
 #[derive(Default)]
 struct Notes {
     management: management::Management,
     toolbar: Option<Entity>,
+    formatting: Option<Entity>,
+    status: Option<Entity>,
+    live: bool,
     tabs: Option<Entity>,
     tabstrip: Option<Entity>,
     notice: Option<Entity>,
@@ -90,6 +104,11 @@ struct Notes {
     editors: Option<Entity>,
     search: Option<Entity>,
     rows: Option<Entity>,
+    library: Option<Entity>,
+    tree: Option<TreeHandle>,
+    tree_ids: HashMap<String, NodeId>,
+    tree_paths: HashMap<NodeId, String>,
+    expanded: std::collections::HashSet<String>,
     core: VaultBufferCore,
     views: HashMap<String, View>,
     selected: Option<String>,
@@ -251,8 +270,8 @@ pub fn mount(world: &mut World, parent: Entity) {
     );
     let manager = column(world, sidebar, Size::Fill, Size::Hug);
     world.insert(manager, Hidden);
-    let rows = column(world, sidebar, Size::Fill, Size::Fill);
-    world.insert(rows, Scroll::default());
+    let rows = column(world, sidebar, Size::Fill, Size::Hug);
+    let library = column(world, sidebar, Size::Fill, Size::Fill);
     let content = column(world, root, Size::Fill, Size::Fill);
     visual::flat(world, content, visual::canvas());
     world.insert(content, ResolvedColor);
@@ -271,6 +290,15 @@ pub fn mount(world: &mut World, parent: Entity) {
         gap: 4.,
         ..Layout::row()
     };
+    let formatting = column(world, content, Size::Fill, Size::Px(34.));
+    *world.get_mut::<Layout>(formatting).unwrap() = Layout {
+        width: Size::Fill,
+        height: Size::Px(34.),
+        gap: 4.,
+        padding: 4.,
+        ..Layout::row()
+    };
+    world.insert(formatting, Hidden);
     let notice = column(world, content, Size::Fill, Size::Hug);
     let editors = column(world, content, Size::Fill, Size::Fill);
     caption(
@@ -278,14 +306,19 @@ pub fn mount(world: &mut World, parent: Entity) {
         editors,
         "Select a note to begin. Drafts stay here when you switch surfaces.",
     );
+    let status = column(world, content, Size::Fill, Size::Px(28.));
+    world.get_mut::<Layout>(status).unwrap().padding = 6.;
     world.insert_resource(Notes {
         management: management::Management::new(manager),
         toolbar: Some(toolbar),
+        formatting: Some(formatting),
+        status: Some(status),
         tabs: Some(tabs),
         notice: Some(notice),
         editors: Some(editors),
         search: Some(search),
         rows: Some(rows),
+        library: Some(library),
         core: VaultBufferCore::new("connected-workshop"),
         redraw: true,
         ..Default::default()
@@ -307,24 +340,38 @@ fn document_body(source: &str) -> &str {
     }
     source
 }
+fn note_statistics(source: &str) -> String {
+    let body = document_body(source);
+    let words = body.split_whitespace().count();
+    // Match Svelte's JS string length, including supplementary Unicode pairs.
+    let characters = body.encode_utf16().count();
+    let minutes = words.div_ceil(200);
+    if words == 0 && characters == 0 {
+        "Empty note".into()
+    } else {
+        format!(
+            "{words} {} · ~{minutes} min read · {characters} chars",
+            if words == 1 { "word" } else { "words" }
+        )
+    }
+}
 fn can_deactivate_views(world: &World, n: &Notes) -> bool {
     n.views.values().all(|v| {
         world
             .resource::<SourceDocuments>()
             .and_then(|d| d.get(v.document))
             .is_none_or(|d| !d.is_composing())
+            && world
+                .resource::<MarkdownDocuments>()
+                .and_then(|d| d.get(v.rich_document))
+                .is_none_or(|d| !d.is_composing())
     })
 }
 /// Surface navigation must not interrupt native IME composition.
 pub fn can_deactivate(world: &World) -> bool {
-    world.resource::<Notes>().is_none_or(|n| {
-        n.views.values().all(|v| {
-            world
-                .resource::<SourceDocuments>()
-                .and_then(|d| d.get(v.document))
-                .is_none_or(|d| !d.is_composing())
-        })
-    })
+    world
+        .resource::<Notes>()
+        .is_none_or(|n| can_deactivate_views(world, n))
 }
 pub fn activate(world: &mut World) {
     let Some(n) = world.resource_mut::<Notes>() else {
@@ -335,7 +382,7 @@ pub fn activate(world: &mut World) {
         management::initialize(n);
     }
 }
-fn capture(world: &World, n: &mut Notes) {
+fn capture(world: &mut World, n: &mut Notes) {
     for (path, v) in &mut n.views {
         if let Some(d) = world
             .resource::<SourceDocuments>()
@@ -357,6 +404,76 @@ fn capture(world: &World, n: &mut Notes) {
         }
     }
 }
+// Rich mode edits only the body. Opaque metadata/BOM/newlines preceding it are
+// retained verbatim; the shared rich engine never owns frontmatter serialization.
+fn capture_rich(world: &mut World, n: &mut Notes) {
+    for (path, v) in &mut n.views {
+        let Some(session) = world
+            .resource::<MarkdownDocuments>()
+            .and_then(|d| d.get(v.rich_document))
+        else {
+            continue;
+        };
+        if session.revision() == v.rich_revision {
+            continue;
+        }
+        v.rich_revision = session.revision();
+        let body = session.bytes().to_owned();
+        let Some(buffer) = n.core.get(path) else {
+            continue;
+        };
+        let offset = buffer.content.len() - document_body(&buffer.content).len();
+        let content = format!("{}{}", &buffer.content[..offset], body);
+        if content == buffer.content {
+            continue;
+        }
+        let _ = n.core.dispatch(VaultBufferCommand::ApplyEdit {
+            path: path.clone(),
+            content: content.clone(),
+            title: None,
+        });
+        // A mode handoff is one explicit host edit, not a reload that erases
+        // source undo. Each shared editor retains its own history and caret.
+        if let Some(d) = world
+            .resource_mut::<SourceDocuments>()
+            .and_then(|d| d.get_mut(v.document))
+        {
+            let _ = d.commit(SourceBatch {
+                document: v.document,
+                base: d.revision(),
+                origin: EditOrigin::Host(next()),
+                changes: vec![SourceChange {
+                    range: 0..d.text().len(),
+                    replacement: content,
+                }],
+            });
+            v.captured_revision = Some(d.revision());
+        }
+        n.redraw = true;
+    }
+}
+fn sync_rich(world: &mut World, n: &mut Notes, path: &str) {
+    let (Some(buffer), Some(v)) = (n.core.get(path), n.views.get_mut(path)) else {
+        return;
+    };
+    let body = document_body(&buffer.content);
+    if let Some(d) = world
+        .resource_mut::<MarkdownDocuments>()
+        .and_then(|d| d.get_mut(v.rich_document))
+    {
+        if d.bytes() != body && !d.is_composing() {
+            let _ = d.edit(
+                rndr_markdown::Command::Replace {
+                    start: 0,
+                    end: d.bytes().len(),
+                    text: body.to_owned(),
+                },
+                next(),
+            );
+        }
+        v.rich_revision = d.revision();
+    }
+}
 fn sync_document(world: &mut World, n: &Notes, path: &str) {
     if let (Some(b), Some(v)) = (n.core.get(path), n.views.get(path)) {
         if let Some(d) = world
@@ -370,6 +487,77 @@ fn sync_document(world: &mut World, n: &Notes, path: &str) {
         }
     }
 }
+// RNDR VirtualTree owns realization, scrolling, keyboard/typeahead and a11y.
+fn library_model(n: &mut Notes) -> (Vec<TreeNode>, Vec<NodeId>) {
+    let mut folders = std::collections::BTreeSet::new();
+    let mut matches = Vec::new();
+    let query = n.filter.to_lowercase();
+    for item in &n.list {
+        if !format!("{} {}", item.title, item.path)
+            .to_lowercase()
+            .contains(&query)
+        {
+            continue;
+        }
+        let mut parent = String::new();
+        let segments: Vec<_> = item.path.split('/').collect();
+        for segment in segments.iter().take(segments.len().saturating_sub(1)) {
+            if !parent.is_empty() {
+                parent.push('/');
+            }
+            parent.push_str(segment);
+            folders.insert(parent.clone());
+        }
+        matches.push(item.clone());
+    }
+    let mut nodes = Vec::new();
+    let mut expanded = Vec::new();
+    for folder in folders {
+        let id = *n
+            .tree_ids
+            .entry(format!("folder:{folder}"))
+            .or_insert_with(|| NodeId(next()));
+        let mut node =
+            TreeNode::new(id.0, folder.rsplit('/').next().unwrap_or(&folder)).expandable(true);
+        if let Some((parent, _)) = folder.rsplit_once('/') {
+            node.parent = n.tree_ids.get(&format!("folder:{parent}")).copied();
+        }
+        if !query.is_empty() || n.expanded.contains(&folder) {
+            expanded.push(id);
+        }
+        nodes.push(node);
+    }
+    n.tree_paths.clear();
+    matches.sort_by(|a, b| a.path.cmp(&b.path));
+    for item in matches {
+        let id = *n
+            .tree_ids
+            .entry(format!("note:{}", item.path))
+            .or_insert_with(|| NodeId(next()));
+        let mut node = TreeNode::new(
+            id.0,
+            if item.title.is_empty() {
+                item.path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&item.path)
+                    .to_owned()
+            } else {
+                item.title.clone()
+            },
+        );
+        if let Some((parent, _)) = item.path.rsplit_once('/') {
+            node.parent = n.tree_ids.get(&format!("folder:{parent}")).copied();
+        }
+        if n.core.get(&item.path).is_some_and(|b| b.dirty) {
+            node.badge = "●".into();
+        }
+        node.secondary = item.path.clone();
+        n.tree_paths.insert(id, item.path);
+        nodes.push(node);
+    }
+    (nodes, expanded)
+}
 fn render(world: &mut World, n: &mut Notes) {
     crate::ui::chrome::clear_document_tabs(world, true);
     let (Some(rows), Some(toolbar)) = (n.rows, n.toolbar) else {
@@ -377,7 +565,9 @@ fn render(world: &mut World, n: &mut Notes) {
     };
     let notice = n.notice.unwrap();
     let tabs = n.tabs.unwrap();
-    for parent in [rows, toolbar, notice] {
+    let formatting = n.formatting.unwrap();
+    let status = n.status.unwrap();
+    for parent in [rows, toolbar, notice, formatting, status] {
         for c in children_of(world, parent) {
             despawn(world, c);
         }
@@ -398,43 +588,41 @@ fn render(world: &mut World, n: &mut Notes) {
     if !n.list_error.is_empty() {
         caption(world, rows, &n.list_error);
     }
-    let filter = n.filter.to_lowercase();
-    let list = n.list.clone();
-    let mut matches = 0;
-    for item in &list {
-        if !format!("{} {}", item.title, item.path)
-            .to_lowercase()
-            .contains(&filter)
-        {
-            continue;
-        }
-        matches += 1;
-        let selected = n.selected.as_deref() == Some(&item.path);
-        let dirty = n.core.get(&item.path).is_some_and(|b| b.dirty);
-        let title = if item.title.is_empty() {
-            &item.path
-        } else {
-            &item.title
-        };
-        let id = next();
-        let mut props = ButtonProps::new(title, HostIntent::Command(id));
-        props.variant = controls::ButtonVariant::Quiet;
-        props.description = item.path.clone();
-        let h = controls::NavigationRow::mount(
+    let (nodes, expanded) = library_model(n);
+    let matches = n.tree_paths.len();
+    if let Some(parent) = n.library {
+        let handle = VirtualTree::mount(
             world,
-            rows,
-            UiId(id),
-            props,
-            controls::NavigationMeta {
-                selected,
-                dirty,
-                ..Default::default()
+            parent,
+            UiId(0x4e4f_5452),
+            TreeProps {
+                name: "Notes library".into(),
+                empty: if n.list_pending.is_some() {
+                    "Loading notes…"
+                } else {
+                    "No matching notes"
+                }
+                .into(),
+                row_height: 34.,
+                ..TreeProps::new("Notes library")
             },
+            &nodes,
+            &expanded,
         )
-        .unwrap();
-        world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(30.);
-        world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
-        n.actions.insert(id, Action::Open(item.path.clone()));
+        .expect("notes tree model has unique daemon paths");
+        if let Some(layout) = world.get_mut::<Layout>(handle.root) {
+            layout.width = Size::Fill;
+            layout.height = Size::Fill;
+        }
+        let selected = n.selected.as_ref().and_then(|path| {
+            n.tree_paths
+                .iter()
+                .find_map(|(id, p)| (p == path).then_some(*id))
+        });
+        if handle.selected(world) != selected {
+            let _ = handle.select(world, selected);
+        }
+        n.tree = Some(handle);
     }
     if matches == 0 && n.list_pending.is_none() {
         caption(
@@ -468,10 +656,36 @@ fn render(world: &mut World, n: &mut Notes) {
             "The daemon returned a bounded listing; not all notes may be shown.",
         );
     }
+    if n.live && n.selected.is_some() {
+        world.remove::<Hidden>(formatting);
+    } else {
+        world.insert(formatting, Hidden);
+    }
     let Some(path) = n.selected.clone() else {
         caption(world, toolbar, "Notes");
         return;
     };
+    sync_rich(world, n, &path);
+    if n.live {
+        for (label, command) in [
+            ("Bold", MarkdownCommand::Strong),
+            ("Italic", MarkdownCommand::Emphasis),
+            ("Heading", MarkdownCommand::Heading(1)),
+            ("List", MarkdownCommand::Bullet),
+            ("Quote", MarkdownCommand::Quote),
+            ("Undo", MarkdownCommand::Undo),
+            ("Redo", MarkdownCommand::Redo),
+        ] {
+            button(
+                world,
+                formatting,
+                n,
+                label,
+                Action::Format(command),
+                can_deactivate_views(world, n),
+            );
+        }
+    }
     // Retained open documents are navigation, not a pile of form controls.
     let mut open: Vec<_> = n.views.keys().cloned().collect();
     open.sort();
@@ -522,10 +736,19 @@ fn render(world: &mut World, n: &mut Notes) {
         Action::ToggleSource,
         true,
     );
+    button(
+        world,
+        toolbar,
+        n,
+        if n.live { "Read" } else { "Write" },
+        if n.live { Action::Read } else { Action::Write },
+        true,
+    );
     if n.loads.contains_key(&path) {
         caption(world, notice, "Checking latest version…");
     }
     if let Some(b) = n.core.get(&path).cloned() {
+        caption(world, status, &note_statistics(&b.content));
         if b.conflict || n.remote.contains_key(&path) {
             caption(
                 world,
@@ -602,7 +825,12 @@ fn render(world: &mut World, n: &mut Notes) {
         } else {
             world.insert(v.handle.root, Hidden);
         }
-        if *p == path && !n.source {
+        if *p == path && n.live {
+            world.remove::<Hidden>(v.rich.root);
+        } else {
+            world.insert(v.rich.root, Hidden);
+        }
+        if *p == path && !n.source && !n.live {
             world.remove::<Hidden>(v.preview);
             if let Some(b) = n.core.get(p) {
                 let source = document_body(&b.content);
@@ -620,12 +848,7 @@ fn open_note(world: &mut World, n: &mut Notes, path: String) {
     if n.management.pending.is_some() {
         return;
     }
-    let composing = n.views.values().any(|v| {
-        world
-            .resource::<SourceDocuments>()
-            .and_then(|d| d.get(v.document))
-            .is_some_and(|d| d.is_composing())
-    });
+    let composing = !can_deactivate_views(world, n);
     if composing && n.selected.as_ref() != Some(&path) {
         if let Some(p) = n.selected.clone() {
             n.errors
@@ -634,7 +857,18 @@ fn open_note(world: &mut World, n: &mut Notes, path: String) {
         n.redraw = true;
     } else {
         if n.selected.as_ref() != Some(&path) {
-            let old_editors: Vec<_> = n.views.values().map(|v| v.handle.editor).collect();
+            // Match VaultTreeNode's one-shot reveal: explicit note navigation
+            // opens ancestors, but later user collapse stays authoritative.
+            let mut ancestor = path.as_str();
+            while let Some((parent, _)) = ancestor.rsplit_once('/') {
+                n.expanded.insert(parent.to_owned());
+                ancestor = parent;
+            }
+            let old_editors: Vec<_> = n
+                .views
+                .values()
+                .flat_map(|v| [v.handle.editor, v.rich.root])
+                .collect();
             if let Some(focus) = world.resource_mut::<Focus>() {
                 if focus.entity.is_some_and(|e| old_editors.contains(&e)) {
                     focus.entity = None;
@@ -653,6 +887,40 @@ pub fn tick(world: &mut World) {
         return;
     }
     let mut n = std::mem::take(world.resource_mut::<Notes>().unwrap());
+    capture(world, &mut n);
+    capture_rich(world, &mut n);
+    for event in events::<TreeEvent>(world).to_vec() {
+        if n.tree.is_none_or(|tree| tree.root != event.tree) {
+            continue;
+        }
+        match event.kind {
+            TreeEventKind::Selected(Some(id)) | TreeEventKind::Activated(id) => {
+                if let Some(path) = n.tree_paths.get(&id).cloned() {
+                    if n.selected.as_ref() != Some(&path) {
+                        open_note(world, &mut n, path);
+                        // Restore authoritative selection after a composition or
+                        // management gate rejects the tree's local selection.
+                        n.redraw = true;
+                    }
+                }
+            }
+            TreeEventKind::Expanded(id, open) if n.filter.is_empty() => {
+                if let Some(folder) = n.tree_ids.iter().find_map(|(key, v)| {
+                    (*v == id)
+                        .then(|| key.strip_prefix("folder:").map(str::to_owned))
+                        .flatten()
+                }) {
+                    let changed = if open {
+                        n.expanded.insert(folder)
+                    } else {
+                        n.expanded.remove(&folder)
+                    };
+                    n.redraw |= changed;
+                }
+            }
+            _ => {}
+        }
+    }
     for event in events::<TabStripEvent>(world).to_vec() {
         if n.tabstrip == Some(event.strip) {
             if let TabStripEventKind::Activated(id) = event.kind {
@@ -667,6 +935,7 @@ pub fn tick(world: &mut World) {
         }
     }
     capture(world, &mut n);
+    capture_rich(world, &mut n);
     if let Some(s) = n
         .search
         .and_then(|s| world.get::<Label>(s))
@@ -675,6 +944,17 @@ pub fn tick(world: &mut World) {
         if s != n.filter {
             n.filter = s;
             n.redraw = true;
+        }
+    }
+    // Keep statistics current without remounting the library on every keystroke.
+    if let Some(parent) = n.status {
+        if let Some(buffer) = n.selected.as_ref().and_then(|p| n.core.get(p)) {
+            let statistics = note_statistics(&buffer.content);
+            for child in children_of(world, parent) {
+                if let Some(label) = world.get_mut::<Label>(child) {
+                    label.text.clone_from(&statistics);
+                }
+            }
         }
     }
     if n.redraw {
@@ -696,6 +976,7 @@ pub fn action(world: &mut World, host: &HostIntent) -> bool {
     };
     let mut n = std::mem::take(world.resource_mut::<Notes>().unwrap());
     capture(world, &mut n);
+    capture_rich(world, &mut n);
     if n.management.pending.is_some() && !matches!(a, Action::Manage(_)) {
         *world.resource_mut::<Notes>().unwrap() = n;
         return true;
@@ -714,10 +995,35 @@ pub fn action(world: &mut World, host: &HostIntent) -> bool {
             let composing = !can_deactivate_views(world, &n);
             if !composing {
                 n.source = !n.source;
+                n.live = false;
                 if let Some(focus) = world.resource_mut::<Focus>() {
                     focus.entity = None;
                 }
                 n.redraw = true;
+            }
+        }
+        Action::Write | Action::Read => {
+            if can_deactivate_views(world, &n) {
+                n.live = matches!(a, Action::Write);
+                n.source = false;
+                if let Some(focus) = world.resource_mut::<Focus>() {
+                    focus.entity = None;
+                }
+                n.redraw = true;
+            }
+        }
+        Action::Format(command) => {
+            if n.live && can_deactivate_views(world, &n) {
+                if let Some(path) = n.selected.clone() {
+                    if let Some(v) = n.views.get(&path) {
+                        if let Err(error) = v.rich.command(world, command) {
+                            n.errors
+                                .insert(path, format!("Formatting was not applied: {error:?}"));
+                        }
+                    }
+                    capture_rich(world, &mut n);
+                    n.redraw = true;
+                }
             }
         }
         Action::Save => n.save(),
@@ -828,6 +1134,7 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
     };
     let mut n = std::mem::take(resource);
     capture(world, &mut n);
+    capture_rich(world, &mut n);
     let NoteUpdate { command: c, result } = u;
     if let Operation::Manage(command) = &c.operation {
         management::apply(world, &mut n, c.serial, command, result);
@@ -982,6 +1289,20 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                             .get_mut::<MarkdownView>(preview)
                             .unwrap()
                             .set_follow(false);
+                        if world.resource::<MarkdownDocuments>().is_none() {
+                            world.insert_resource(MarkdownDocuments::default());
+                        }
+                        let rich_document = world
+                            .resource_mut::<MarkdownDocuments>()
+                            .unwrap()
+                            .open(document_body(&n.core.get(&path).unwrap().content));
+                        let rich = MarkdownSurface::mount(
+                            world,
+                            parent,
+                            UiId(next()),
+                            MarkdownSurfaceProps::new(rich_document, format!("Write note {path}")),
+                        )
+                        .expect("notes shared rich document");
                         n.views.insert(
                             path.clone(),
                             View {
@@ -989,6 +1310,9 @@ pub fn apply(world: &mut World, u: NoteUpdate) {
                                 captured_revision: None,
                                 handle,
                                 preview,
+                                rich_document,
+                                rich,
+                                rich_revision: 0,
                                 tab: next(),
                             },
                         );
