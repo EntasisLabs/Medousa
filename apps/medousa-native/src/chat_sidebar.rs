@@ -181,7 +181,7 @@ fn dialog(world: &mut World, anchor: Entity, target: RowTarget, rename: bool) {
             Layout {
                 width: Size::Fill,
                 height: Size::Px(32.),
-                ..Layout::default()
+                ..Layout::row()
             },
             Label::new(&title),
             TextField,
