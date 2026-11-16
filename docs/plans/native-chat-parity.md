@@ -36,7 +36,7 @@ After functional regressions and coordinator compile slot: use existing RNDR Exp
 
 ## Sender-requested corrections (follow-up to eb919e9f)
 
-- Narrow correction committed as `ac33c153`: `chat_sidebar.rs:184` now uses `..Layout::row()`, not nonexistent `Layout::default()`. The old E0599 log is not evidence that the corrected source compiles.
+- Narrow correction committed as `ac2c729c`: `chat_sidebar.rs:184` now uses `..Layout::row()`, not nonexistent `Layout::default()`. The old E0599 log is not evidence that the corrected source compiles.
 - eb919e9f did **not** genuinely disable Previous/Next: it merely no-opped on missing targets. Follow-up sets RNDR `ButtonProps.enabled` / `ControlDisabled` from target availability. Navigation resolves stable turn IDs against measured row heights after layout (including spacing/virtual spacer), retries estimated offscreen destinations, and keeps a per-pane navigation anchor through streaming/layout corrections until deliberate scroll or Latest releases it. Source regressions cover boundary disabling, pane isolation, measured corrections, streaming, manual-scroll release and Latest. They are **unexecuted**; stability is not yet a verified runtime claim.
 - Earlier terminal-Done worker dismissal is presentation-only, never cancel/forget/delete. Stale authority/session clicks are rejected; no Command or daemon fact is manufactured. Current preferences intentionally last only this process/window. This is a conservative supported subset of Svelte `workDockHistory.ts`, not full persistent/history parity or a claim of canonical attention grouping.
 - Tests/render remain held by host process `proc_c2c6dc54377f4a5b89e76eb1618ab397` and its durable callback. No Cargo, new target/profile/install, PTY, restart or live deletion was performed. Formatting/static inspection alone cannot establish compile or pixel parity.
@@ -48,7 +48,7 @@ Request a shared app-core projection, e.g. `ChatWorkDockProjection { scope: Dock
 ```rust
 struct DockScope { workshop_id: String, authority_id: String, session_id: String }
 enum DockGroupKind { Attention, Running, Earlier }
-enum DockItemKey { Approval(String), Peer(String), Worker(String) }
+enum DockItemKey { Budget(String), Permission(String), Proposal { channel: String, proposal_id: String }, Worker(String) }
 struct DockGroup { kind: DockGroupKind, items: Vec<DockItem> }
 struct DockItem {
     key: DockItemKey,
@@ -63,7 +63,7 @@ struct DockItem {
 }
 ```
 
-The host supplies immutable scope from the actual selected workshop/execution authority and parent session; no hardcoded/default workshop ID. Stable keys come from the existing approval request ID, `PeerHandoffView.id`, and `WorkCardDetail.card.work_id`; not row index/title or display text. Keep canonical ordering in the projection rather than adding a new timestamp heuristic. Proposed input seam: parent `ChatSnapshot` + current `Vec<WorkCardDetail>` + existing `Vec<PeerHandoffView>` + existing approval `Vec<SessionTurnIntentRecord>`, using current app-core presentation/peer/approval status contracts. Canonical reference: `ChatWorkDock.svelte::taskGroups`, `workDockHistory.ts::{classifyDockItem,dockItemKey}` and `utils/subagentRows.ts`. Host must map exact status/attention predicates (including pending review/blocked/error) there once, then native renders groups directly. No shared/app-core/RNDR edits are requested implicitly by this proposal.
+The host supplies immutable scope from the actual selected workshop/execution authority and parent session; no hardcoded/default workshop ID. Stable keys come from the existing budget/permission request IDs, the existing `collaboration_peers::key` proposal binding (channel + proposal ID), and `collaboration::work_id` (`WorkCardDetail.work_id`, falling back to `card.id.0`); not row index/title or display text. Keep canonical ordering in the projection rather than adding a new timestamp heuristic. Proposed input seam: parent `ChatSnapshot` + current `Vec<WorkCardDetail>` + existing `Vec<PeerProposalReviewRecord>` + existing approval `Vec<TurnBudgetRequestRecord>` / `Vec<AgentPermissionRequestRecord>`, using current app-core presentation/peer/approval status contracts. Deduplicate shared proposal records rather than displaying peer and approval duplicates. Canonical reference: `ChatWorkDock.svelte::taskGroups`, `workDockHistory.ts::{classifyDockItem,dockItemKey}` and `utils/subagentRows.ts`. Host must map exact status/attention predicates (including pending review/blocked/error) there once, then native renders groups directly. No shared/app-core/RNDR edits are requested implicitly by this proposal.
 
 For persistence, request the host's actual `DockScope` and reuse device-local versioned preferences keyed by JSON tuple `(workshop_id, authority_id, session_id)` matching `workDockHistory.ts`; bounded dismissed-key sets and Show dismissed state are UI preferences only. Until workshop identity and typed dismissibility are supplied, persistent all-kind dismissal and full grouping remain blocked. Canonical family discovery additionally needs host/backend relation inputs; composer input/completion/audio and Liquid/artifact capability seams remain as above.
 
