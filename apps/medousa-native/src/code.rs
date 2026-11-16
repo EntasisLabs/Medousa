@@ -166,9 +166,12 @@ enum Action {
     Check,
     Acknowledge,
     Folder(String),
+    Repository(String),
 }
 #[derive(Default)]
 struct Code {
+    repositories: HashMap<String, (String, String, String)>,
+    collapsed_repositories: HashSet<String>,
     workbench: workbench::Workbench,
     rows: Option<Entity>,
     toolbar: Option<Entity>,
@@ -528,6 +531,89 @@ fn ensure_view(w: &mut World, c: &mut Code, key: &Key) {
         },
     );
 }
+fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
+    let mut groups: Vec<(String, String, Vec<Project>)> = Vec::new();
+    for project in c.projects.clone() {
+        let (id, label, _) = c.repositories.get(&project.id).cloned().unwrap_or_else(|| {
+            (
+                format!("work:{}", project.id),
+                "Project".into(),
+                String::new(),
+            )
+        });
+        if let Some(group) = groups.iter_mut().find(|g| g.0 == id) {
+            group.2.push(project);
+        } else {
+            groups.push((id, label, vec![project]));
+        }
+    }
+    for (id, label, projects) in groups {
+        let expanded = !c.collapsed_repositories.contains(&id);
+        let key = next();
+        let mut props = ButtonProps::new(
+            format!(
+                "{} {}",
+                if expanded {
+                    Icon::ChevronDown.scalar()
+                } else {
+                    Icon::ChevronRight.scalar()
+                },
+                label
+            ),
+            HostIntent::Command(key),
+        );
+        props.variant = controls::ButtonVariant::Quiet;
+        let h = controls::NavigationRow::mount(
+            w,
+            parent,
+            UiId(key),
+            props,
+            controls::NavigationMeta {
+                secondary: Some(projects.len().to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        compact(w, h, Size::Fill);
+        w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(28.);
+        w.insert(
+            h.root,
+            Semantics {
+                name: Some(format!("{label} project")),
+                description: if expanded { "Expanded" } else { "Collapsed" }.into(),
+                ..Default::default()
+            },
+        );
+        c.actions.insert(key, Action::Repository(id));
+        if !expanded {
+            continue;
+        }
+        for p in projects {
+            let key = next();
+            let status = c
+                .repositories
+                .get(&p.id)
+                .map(|v| v.2.clone())
+                .filter(|s| !s.is_empty());
+            let h = controls::NavigationRow::mount(
+                w,
+                parent,
+                UiId(key),
+                ButtonProps::new(&p.title, HostIntent::Command(key)),
+                controls::NavigationMeta {
+                    selected: c.selected.as_ref() == Some(&p.id),
+                    secondary: status,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            compact(w, h, Size::Fill);
+            w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(36.);
+            w.get_mut::<Layout>(h.root).unwrap().padding = 12.;
+            c.actions.insert(key, Action::Project(p.id));
+        }
+    }
+}
 fn render(w: &mut World, c: &mut Code) {
     crate::ui::chrome::clear_document_tabs(w, false);
     let (Some(rows), Some(toolbar)) = (c.rows, c.toolbar) else {
@@ -551,10 +637,7 @@ fn render(w: &mut World, c: &mut Code) {
     if c.pending.contains_key("projects") {
         caption(w, rows, "Loading projects…");
     }
-    for p in c.projects.clone() {
-        let selected = c.selected.as_ref() == Some(&p.id);
-        tree_row(w, rows, c, &p.title, Action::Project(p.id), selected);
-    }
+    render_projects(w, rows, c);
     if c.projects.is_empty() && c.started && !c.pending.contains_key("projects") {
         caption(w, rows, "No projects loaded. Refresh to retry.");
     }
@@ -565,6 +648,14 @@ fn render(w: &mut World, c: &mut Code) {
         if c.pending.contains_key(&format!("tree:{work}")) {
             caption(w, rows, "Loading source tree…");
         }
+        let name = c
+            .projects
+            .iter()
+            .find(|p| p.id == work)
+            .map(|p| p.title.as_str())
+            .unwrap_or("Selected thread");
+        let label = text(w, rows, &format!("Files · {name}"), Typography::Secondary).unwrap();
+        w.get_mut::<Label>(label).unwrap().overflow = TextOverflow::Ellipsis;
         let files = c.files.get(&work).cloned().unwrap_or_default();
         let mut shown = HashSet::new();
         for path in files {
@@ -898,6 +989,11 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 c.enqueue(Operation::Tree(work));
             }
         }
+        Action::Repository(repository) => {
+            if !c.collapsed_repositories.remove(&repository) {
+                c.collapsed_repositories.insert(repository);
+            }
+        }
         Action::Project(work) => {
             if !composing(w, &c) {
                 c.selected = Some(work.clone());
@@ -1075,6 +1171,34 @@ pub fn apply(w: &mut World, u: CodeUpdate) {
             Ok(v) => {
                 if let Some(items) = v.as_array() {
                     c.begin_blocked.clear();
+                    c.repositories = items
+                        .iter()
+                        .filter_map(|p| {
+                            let work = p["id"].as_str()?;
+                            let repo = (p["target"]["kind"].as_str() == Some("git"))
+                                .then(|| p["target"]["repo_path"].as_str())
+                                .flatten()
+                                .map(str::trim)
+                                .filter(|s| !s.is_empty());
+                            // Unknown repository identity remains work-scoped: never merge by title.
+                            let group = repo
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| format!("work:{work}"));
+                            let label = repo
+                                .and_then(|s| {
+                                    s.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next()
+                                })
+                                .unwrap_or("Project");
+                            Some((
+                                work.to_owned(),
+                                (
+                                    group,
+                                    label.to_owned(),
+                                    p["human_phase"].as_str().unwrap_or("").replace('_', " "),
+                                ),
+                            ))
+                        })
+                        .collect();
                     c.projects = items
                         .iter()
                         .filter_map(|p| {

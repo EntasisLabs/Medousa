@@ -60,6 +60,90 @@ fn session(w: &mut World, work: &str) {
     );
 }
 #[test]
+fn repository_disclosures_group_work_by_identity_without_replacing_editors() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    load(w, "one", "src/lib.rs", "retained", "d1");
+    let document = w.resource::<Code>().unwrap().views[&key("one", "src/lib.rs")].document;
+    click(w, Action::Refresh);
+    let command = take_commands(w)
+        .into_iter()
+        .find(|c| matches!(c.operation, Operation::Projects))
+        .unwrap();
+    apply(
+        w,
+        CodeUpdate {
+            command,
+            result: Ok(json!([
+                {"id":"one", "title":"First thread", "target":{"kind":"git", "repo_path":"/a/repo"}, "human_phase":"working"},
+                {"id":"two", "title":"Second thread", "target":{"kind":"git", "repo_path":"/a/repo"}},
+                {"id":"three", "title":"Other repo", "target":{"kind":"git", "repo_path":"/b/repo"}}
+            ])),
+        },
+    );
+    assert_eq!(
+        w.resource::<Code>().unwrap().repositories["one"].0,
+        "/a/repo"
+    );
+    assert_eq!(
+        w.resource::<Code>().unwrap().repositories["two"].0,
+        "/a/repo"
+    );
+    assert_eq!(
+        w.resource::<Code>()
+            .unwrap()
+            .actions
+            .values()
+            .filter(|a| matches!(a, Action::Repository(_)))
+            .count(),
+        2
+    );
+    let toggle = *w
+        .resource::<Code>()
+        .unwrap()
+        .actions
+        .iter()
+        .find(|(_, a)| matches!(a, Action::Repository(s) if s == "/a/repo"))
+        .unwrap()
+        .0;
+    action(w, &HostIntent::Command(toggle));
+    assert_eq!(
+        w.resource::<Code>()
+            .unwrap()
+            .actions
+            .values()
+            .filter(|a| matches!(a, Action::Project(_)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        w.resource::<Code>().unwrap().selected.as_deref(),
+        Some("one")
+    );
+    assert_eq!(
+        w.resource::<Code>().unwrap().views[&key("one", "src/lib.rs")].document,
+        document
+    );
+    let toggle = *w
+        .resource::<Code>()
+        .unwrap()
+        .actions
+        .iter()
+        .find(|(_, a)| matches!(a, Action::Repository(s) if s == "/a/repo"))
+        .unwrap()
+        .0;
+    action(w, &HostIntent::Command(toggle));
+    assert_eq!(
+        w.resource::<Code>()
+            .unwrap()
+            .actions
+            .values()
+            .filter(|a| matches!(a, Action::Project(_)))
+            .count(),
+        3
+    );
+}
+#[test]
 fn activation_only_reads_and_is_idempotent() {
     let mut a = fixture();
     let w = a.world_mut();
@@ -754,6 +838,14 @@ fn code_visual_acceptance() {
         begin: true,
         resume: false,
     }];
+    c.repositories.insert(
+        "one".into(),
+        (
+            "/workshop/Medousa".into(),
+            "Medousa".into(),
+            "working".into(),
+        ),
+    );
     c.files.insert(
         "one".into(),
         [

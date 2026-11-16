@@ -24,6 +24,24 @@ Switching to Notes or Code keeps chat tabs, split panes, unsent drafts, undo his
 background streams in this window. Returning restores the chat workspace. Chat
 send shortcuts do not send a message while Notes or Code is active.
 
+## Sidebar grouping
+
+Chat history uses the same local-date sections as the Tauri app: **Today**,
+**Yesterday**, **Previous 7 days**, and **Older**. Older starts collapsed. Select
+section headings to collapse or expand them. Search temporarily reveals matching
+sections without losing your disclosure choices. Regrouping does not change the
+selected conversation or its draft.
+
+Code groups work threads by the daemon's repository path, with a separate
+collapsible heading for each repository. Threads without a repository identity
+remain separate rather than being merged by a shared display name. Collapsing a
+repository hides its thread rows without closing the active editor or changing
+the selected work thread.
+
+These are the first native sidebar parity changes, not full Tauri interaction
+parity: context menus, drag/reorder affordances, and the complete Code sidebar tab
+organization are not yet equivalent.
+
 ## Preview images
 
 Select an image thumbnail in Chat to open a window-sized preview. This works for

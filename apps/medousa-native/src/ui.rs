@@ -20,6 +20,8 @@ use rndr_ui::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+#[path = "chat_sidebar.rs"]
+mod chat_sidebar;
 #[path = "window_chrome.rs"]
 pub(crate) mod chrome;
 #[path = "collaboration.rs"]
@@ -1126,6 +1128,9 @@ fn update(world: &mut World) {
     }
 }
 fn action(world: &mut World, id: u64) {
+    if chat_sidebar::action(world, id) {
+        return;
+    }
     let ui = *world.resource::<Ui>().unwrap();
     match id {
         BEHAVIOR => {
@@ -1372,6 +1377,7 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
         Update::SessionsPage {
             query,
             rows,
+            summaries,
             cursor,
             append,
         } => {
@@ -1389,6 +1395,7 @@ fn apply_current_reply(world: &mut World, reply: Reply) {
                 m.sessions = rows;
             }
             m.session_cursor = cursor;
+            chat_sidebar::receive(world, summaries, append);
         }
         Update::Renamed { session, title } => {
             for row in &mut world.resource_mut::<Model>().unwrap().sessions {
@@ -1854,40 +1861,7 @@ fn sync(world: &mut World) {
         world.insert(more.root, Hidden);
     }
 
-    let sidebar_key = format!("{:?}{:?}", m.sessions, selected_session);
-    let sidebar_changed = world.resource::<Model>().unwrap().sidebar_key != sidebar_key;
-    world.resource_mut::<Model>().unwrap().sidebar_key = sidebar_key;
-    if sidebar_changed {
-        for (i, (id, title)) in m.sessions.iter().enumerate() {
-            let key = SESSION + i as u64;
-            let props = ButtonProps::new(
-                if title.is_empty() {
-                    "Untitled chat"
-                } else {
-                    title
-                },
-                HostIntent::Command(key),
-            );
-            let meta = NavigationMeta {
-                selected: selected_session == Some(id),
-                ..Default::default()
-            };
-            let h =
-                controls::NavigationRow::mount(world, ui.sessions, UiId(key), props, meta).unwrap();
-            world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
-            world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(36.);
-            world.insert(h.root, Radius(visual::CONTROL_RADIUS));
-            world.remove::<Hidden>(h.root);
-        }
-        // Keep keyed control ownership intact; hidden stale results cannot activate.
-        for e in children_of(world, ui.sessions) {
-            if let Some(UiId(key)) = rndr_ui::identity(world, e) {
-                if key >= SESSION + m.sessions.len() as u64 {
-                    world.insert(e, Hidden);
-                }
-            }
-        }
-    }
+    chat_sidebar::render(world, ui.sessions, &m.sessions, selected_session);
     let provider = m
         .chat
         .session()

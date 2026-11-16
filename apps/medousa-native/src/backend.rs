@@ -94,6 +94,7 @@ pub enum Update {
     SessionsPage {
         query: String,
         rows: Vec<(String, String)>,
+        summaries: Vec<medousa_types::SessionHistorySummary>,
         cursor: Option<String>,
         append: bool,
     },
@@ -252,9 +253,10 @@ async fn sessions(
         .http()
         .get_query(medousa_sdk::operations::SESSIONS_GET.path, &params)
         .await?;
-    let rows = page
-        .sessions
-        .into_iter()
+    let summaries = page.sessions;
+    let rows = summaries
+        .iter()
+        .cloned()
         .map(|session| {
             let label = session
                 .display_name
@@ -272,6 +274,7 @@ async fn sessions(
     Ok(Update::SessionsPage {
         query: query.into(),
         rows,
+        summaries,
         cursor: page.next_cursor,
         append: cursor.is_some(),
     })

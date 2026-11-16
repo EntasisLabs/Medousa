@@ -630,7 +630,7 @@ async fn catalog_search_and_cursor_use_encoded_query_and_preserve_request_identi
     )]);
     assert!(
         matches!(sessions(&client, " hello world ", Some("opaque+/=")).await.unwrap(),
-        Update::SessionsPage { query, rows, cursor, append: true }
+        Update::SessionsPage { query, rows, cursor, append: true, .. }
         if query == "hello world" && rows == vec![("s".into(), "Named chat".into())] && cursor.as_deref() == Some("next"))
     );
     server.join().unwrap();
@@ -768,7 +768,7 @@ async fn list_uses_canonical_titles_and_preview_fallback() {
         ]}),
     )]);
     assert!(
-        matches!(sessions(&client, "  ", None).await.unwrap(), Update::SessionsPage {rows, append: false, query, cursor: None}
+        matches!(sessions(&client, "  ", None).await.unwrap(), Update::SessionsPage {rows, append: false, query, cursor: None, ..}
         if query.is_empty() && rows == vec![("s".into(), "Title".into()), ("t".into(), "Fallback".into()), ("u".into(), "u".into())])
     );
     server.join().unwrap();
