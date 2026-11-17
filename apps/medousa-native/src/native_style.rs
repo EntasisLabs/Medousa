@@ -162,7 +162,8 @@ pub fn trailing_meta(world: &mut World, h: rndr_ui::controls::ControlHandle) {
         },
     );
     for child in children_of(world, face) {
-        if child == h.label {
+        // Skip the label and RNDR's pinned selection bar.
+        if child == h.label || world.has::<Absolute>(child) {
             continue;
         }
         if let Some(l) = world.get_mut::<Layout>(child) {
