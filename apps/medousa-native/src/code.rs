@@ -171,6 +171,7 @@ enum Action {
     Repository(String),
     CopyRelative(Key),
     Reveal(Key),
+    More,
 }
 #[derive(Default)]
 struct Code {
@@ -180,6 +181,9 @@ struct Code {
     explorer_query: String,
     context_targets: HashMap<Entity, Key>,
     context_menu: Option<(rndr_ui::menu::MenuHandle, Key, HashMap<u64, Action>)>,
+    // Overflow anchor and the commands it offers, rebuilt with the toolbar.
+    more: Option<(Entity, Vec<Command>)>,
+    explorer_actions: Option<Entity>,
     workbench: workbench::Workbench,
     rows: Option<Entity>,
     toolbar: Option<Entity>,
@@ -293,6 +297,30 @@ fn column(w: &mut World, p: Entity, width: Size, height: Size) -> Entity {
     },));
     set_parent(w, e, p);
     e
+}
+const INDENT: &str = "    ";
+/// A labelled toolbar command and whether it is currently available.
+type Command = (&'static str, Action, bool);
+/// The header's read of the current buffer; the buffer itself stays owned.
+struct FileState {
+    readonly: bool,
+    remote: Option<Source>,
+    uncertain: bool,
+    dirty: bool,
+    saveable: bool,
+    error: String,
+}
+/// Explanatory band text under the header, inset to the location's left edge.
+fn notice(w: &mut World, p: Entity, s: &str) {
+    let e = text(w, p, s, Typography::Secondary).expect("code notice");
+    w.insert(
+        e,
+        LabelBox {
+            inset_x: 12.,
+            inset_y: 6.,
+            min_height: 0.,
+        },
+    );
 }
 fn caption(w: &mut World, p: Entity, s: &str) {
     let e = text(w, p, s, Typography::Secondary).expect("code text");
@@ -441,8 +469,19 @@ pub fn mount(w: &mut World, parent: Entity) {
     let sidebar = column(w, root, Size::Px(300.), Size::Fill);
     visual::navigation_frame(w, sidebar);
     let heading = row(w, sidebar);
-    text(w, heading, "Explorer", Typography::Emphasis).unwrap();
+    w.remove::<Wrap>(heading);
     w.get_mut::<Layout>(heading).unwrap().height = Size::Px(40.);
+    w.insert(
+        heading,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
+    let title = text(w, heading, "Explorer", Typography::Emphasis).unwrap();
+    w.get_mut::<Layout>(title).unwrap().width = Size::Fill;
+    let explorer_actions = w.spawn((Layout::row(),));
+    set_parent(w, explorer_actions, heading);
     let filter = w.spawn((
         Layout {
             width: Size::Fill,
@@ -455,13 +494,27 @@ pub fn mount(w: &mut World, parent: Entity) {
             submit_on_enter: false,
             ..Prompt::new()
         },
-        Placeholder::new("Filter projects and file paths"),
+        Placeholder::new("Filter files…"),
         Semantics {
             name: Some("Filter projects and file paths".into()),
             ..Default::default()
         },
     ));
     set_parent(w, filter, sidebar);
+    // Same quiet field as the conversation search.
+    w.get_mut::<Layout>(filter).unwrap().padding = 6.;
+    visual::plane(w, filter, visual::rail());
+    w.get_mut::<UiStyle>(filter).unwrap().typography = Some(Typography::Label);
+    w.insert(filter, visual::SemanticBorder(visual::stroke()));
+    w.insert(filter, Radius(visual::CONTROL_RADIUS));
+    let stroke = visual::color(w, visual::stroke());
+    w.insert(
+        filter,
+        Border {
+            color: stroke,
+            width: 1.,
+        },
+    );
     let rows = column(w, sidebar, Size::Fill, Size::Fill);
     w.get_mut::<Layout>(rows).unwrap().padding = 4.;
     w.insert(rows, Scroll::default());
@@ -483,6 +536,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         workbench: workbench::Workbench::new(panel),
         rows: Some(rows),
         explorer_filter: Some(filter),
+        explorer_actions: Some(explorer_actions),
         toolbar: Some(toolbar),
         editors: Some(editors),
         find_tools: Some(find_tools),
@@ -640,7 +694,7 @@ fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
                 } else {
                     Icon::ChevronRight.scalar()
                 },
-                label
+                label.to_uppercase()
             ),
             HostIntent::Command(key),
         );
@@ -657,7 +711,9 @@ fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
         )
         .unwrap();
         compact(w, h, Size::Fill);
-        w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(28.);
+        w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(visual::SECTION_HEIGHT);
+        visual::section_heading(w, h.label);
+        visual::trailing_meta(w, h);
         w.insert(
             h.root,
             Semantics {
@@ -690,8 +746,8 @@ fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
             )
             .unwrap();
             compact(w, h, Size::Fill);
-            w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(36.);
-            w.get_mut::<Layout>(h.root).unwrap().padding = 12.;
+            w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(visual::ROW_HEIGHT);
+            visual::trailing_meta(w, h);
             c.actions.insert(key, Action::Project(p.id));
         }
     }
@@ -708,15 +764,21 @@ fn render(w: &mut World, c: &mut Code) {
     }
     c.actions.clear();
     c.context_targets.clear();
-    let header = row(w, rows);
-    button(
-        w,
-        header,
-        c,
-        "Refresh",
-        Action::Refresh,
-        !c.pending.contains_key("projects"),
-    );
+    if let Some(actions) = c.explorer_actions {
+        for child in children_of(w, actions) {
+            despawn(w, child);
+        }
+        let id = next();
+        visual::icon_action(
+            w,
+            actions,
+            id,
+            Icon::RefreshCw,
+            "Refresh projects",
+            !c.pending.contains_key("projects"),
+        );
+        c.actions.insert(id, Action::Refresh);
+    }
     if c.pending.contains_key("projects") {
         caption(w, rows, "Loading projects…");
     }
@@ -724,23 +786,24 @@ fn render(w: &mut World, c: &mut Code) {
     if c.projects.is_empty() && c.started && !c.pending.contains_key("projects") {
         caption(w, rows, "No projects loaded. Refresh to retry.");
     }
-    let tools = row(w, toolbar);
-    workbench::navigation(w, tools, c);
-    let actions = row(w, toolbar);
-    let has_editor = c.key().is_some_and(|k| c.views.contains_key(&k));
-    button(w, actions, c, "Find / Replace", Action::Find, has_editor);
+    let project = c
+        .selected
+        .as_ref()
+        .and_then(|work| c.projects.iter().find(|p| &p.id == work))
+        .cloned();
     if let Some(work) = c.selected.clone() {
         if c.pending.contains_key(&format!("tree:{work}")) {
             caption(w, rows, "Loading source tree…");
         }
-        let name = c
-            .projects
-            .iter()
-            .find(|p| p.id == work)
-            .map(|p| p.title.as_str())
-            .unwrap_or("Selected thread");
-        let label = text(w, rows, &format!("Files · {name}"), Typography::Secondary).unwrap();
-        w.get_mut::<Label>(label).unwrap().overflow = TextOverflow::Ellipsis;
+        let heading = text(w, rows, "FILES", Typography::Overline).unwrap();
+        w.insert(
+            heading,
+            LabelBox {
+                inset_x: 8.,
+                inset_y: 8.,
+                min_height: 0.,
+            },
+        );
         let files = c.files.get(&work).cloned().unwrap_or_default();
         let mut shown = HashSet::new();
         let query = c.explorer_query.trim().to_lowercase();
@@ -761,7 +824,7 @@ fn render(w: &mut World, c: &mut Code) {
                         c,
                         &format!(
                             "{}{} {}",
-                            "  ".repeat(i - 1),
+                            INDENT.repeat(i - 1),
                             if expanded {
                                 Icon::ChevronDown.scalar()
                             } else {
@@ -786,8 +849,8 @@ fn render(w: &mut World, c: &mut Code) {
                     rows,
                     c,
                     &format!(
-                        "{}{}{}{}",
-                        "  ".repeat(parts.len() - 1),
+                        "{}{} {}{}",
+                        INDENT.repeat(parts.len() - 1),
                         Icon::FileCode.scalar(),
                         parts.last().unwrap_or(&""),
                         if dirty { " •" } else { "" }
@@ -800,80 +863,150 @@ fn render(w: &mut World, c: &mut Code) {
         if c.truncated.contains(&work) {
             caption(w, rows, "Bounded tree · not every project file is shown.");
         }
-        let project = c.projects.iter().find(|p| p.id == work).cloned();
-        if c.sessions.contains_key(&work) {
-            caption(w, actions, "Editing · human");
-        } else if let Some(p) = project {
-            button(
-                w,
-                actions,
-                c,
-                if p.resume {
-                    "Continue editing"
-                } else {
-                    "Begin editing"
-                },
-                Action::Begin,
-                (p.begin || p.resume)
-                    && !c.pending.contains_key(&format!("begin:{work}"))
-                    && !c.begin_blocked.contains(&work),
-            );
-        }
     }
-    if let Some(key) = c.key() {
-        let crumb = text(
-            w,
-            actions,
-            &key.1.replace('/', "  ›  "),
-            Typography::Secondary,
-        )
-        .expect("source breadcrumb");
-        w.get_mut::<Label>(crumb).unwrap().overflow = TextOverflow::Ellipsis;
-        w.get_mut::<Layout>(crumb).unwrap().height = Size::Px(24.);
-        w.get_mut::<Layout>(crumb).unwrap().width = Size::Fill;
-        if let Some(b) = c.buffers.get(&key) {
-            let status = if b.baseline.readonly {
-                "Read-only preview · binary, lossy or truncated content"
-            } else if b.remote.is_some() {
-                "Daemon changed · local draft preserved"
-            } else if b.uncertain {
-                "Save not confirmed · check latest before another save"
-            } else if b.dirty() {
-                "Unsaved"
+    // One header, as in medousa-home: location on the left, frequent actions as
+    // icons, everything else in the overflow menu. Explanations live below it.
+    let header = w.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(40.),
+            gap: 2.,
+            padding: 4.,
+            ..Layout::row()
+        },
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    ));
+    set_parent(w, header, toolbar);
+    // The file name must survive narrowing: the explorer already shows the
+    // project, so a file location is its path, collapsed from the left.
+    let segments: Vec<String> = match (&project, c.key()) {
+        (_, Some(key)) => key.1.split('/').map(String::from).collect(),
+        (Some(p), None) => vec![p.title.clone()],
+        (None, None) => vec!["Select a project".into()],
+    };
+    let crumb =
+        text(w, header, &segments.join("  ›  "), Typography::Label).expect("source location");
+    w.insert(crumb, visual::PathCrumb(segments));
+    w.get_mut::<Label>(crumb).unwrap().overflow = TextOverflow::Ellipsis;
+    w.get_mut::<Layout>(crumb).unwrap().width = Size::Fill;
+    w.insert(
+        crumb,
+        LabelBox {
+            inset_x: 8.,
+            ..LabelBox::CONTENT
+        },
+    );
+    let editing = c.selected.as_ref().is_some_and(|w| c.sessions.contains_key(w));
+    let buffer = c.key().and_then(|k| c.buffers.get(&k)).map(|b| FileState {
+        readonly: b.baseline.readonly,
+        remote: b.remote.clone(),
+        uncertain: b.uncertain,
+        dirty: b.dirty(),
+        saveable: b.saveable(),
+        error: b.error.clone(),
+    });
+    let short = match &buffer {
+        Some(b) if b.readonly => "Read-only",
+        Some(b) if b.remote.is_some() => "Changed on workshop",
+        Some(b) if b.uncertain => "Save unconfirmed",
+        Some(b) if b.dirty => "Unsaved",
+        _ if editing => "Editing",
+        _ => "",
+    };
+    if !short.is_empty() {
+        let status = text(w, header, short, Typography::Caption).unwrap();
+        w.insert(
+            status,
+            LabelBox {
+                inset_x: 8.,
+                ..LabelBox::CONTENT
+            },
+        );
+        w.get_mut::<Layout>(status).unwrap().width = Size::Hug;
+    }
+    let commands = workbench::commands(c);
+    let mut overflow = Vec::new();
+    let has_editor = c.key().is_some_and(|k| c.views.contains_key(&k));
+    for (label, action, enabled) in commands {
+        let icon = match label {
+            "Search" => Icon::Search,
+            "Changes" => Icon::GitBranch,
+            "Problems" => Icon::CircleAlert,
+            _ => {
+                overflow.push((label, action, enabled));
+                continue;
+            }
+        };
+        let id = next();
+        visual::icon_action(w, header, id, icon, label, enabled);
+        c.actions.insert(id, action);
+    }
+    overflow.push(("Find in file", Action::Find, has_editor));
+    if let Some(key) = c.key()
+        && buffer.is_some()
+    {
+        let saveable = buffer.as_ref().is_some_and(|b| b.saveable)
+            && c.sessions
+                .get(&key.0)
+                .is_some_and(|s| s.checked.elapsed() < Duration::from_secs(45))
+            && !c.busy("load", &key)
+            && !c.busy("save", &key);
+        if editing {
+            let id = next();
+            let label = if c.busy("save", &key) {
+                "Saving…"
             } else {
-                "Up to date"
+                "Save"
             };
-            caption(w, toolbar, status);
-            let saveable = b.saveable()
-                && c.sessions
-                    .get(&key.0)
-                    .is_some_and(|s| s.checked.elapsed() < Duration::from_secs(45))
-                && !c.busy("load", &key)
-                && !c.busy("save", &key);
-            let error = b.error.clone();
-            let remote = b.remote.clone();
-            button(
-                w,
-                actions,
-                c,
-                if c.busy("save", &key) {
-                    "Saving…"
-                } else {
-                    "Save"
-                },
-                Action::Save,
-                saveable,
-            );
-            button(
-                w,
-                actions,
-                c,
-                "Check latest",
-                Action::Check,
-                !c.busy("load", &key) && !c.busy("save", &key),
-            );
-            if let Some(remote) = remote {
-                caption(
+            visual::icon_action(w, header, id, Icon::Save, label, saveable);
+            c.actions.insert(id, Action::Save);
+        }
+        let id = next();
+        visual::icon_action(
+            w,
+            header,
+            id,
+            Icon::RefreshCw,
+            "Check latest",
+            !c.busy("load", &key) && !c.busy("save", &key),
+        );
+        c.actions.insert(id, Action::Check);
+    }
+    if let (Some(p), false) = (&project, editing) {
+        let id = next();
+        visual::icon_action(
+            w,
+            header,
+            id,
+            Icon::Pencil,
+            if p.resume {
+                "Continue editing"
+            } else {
+                "Begin editing"
+            },
+            (p.begin || p.resume)
+                && !c.pending.contains_key(&format!("begin:{}", p.id))
+                && !c.begin_blocked.contains(&p.id),
+        );
+        c.actions.insert(id, Action::Begin);
+    }
+    let id = next();
+    let more = visual::icon_action(w, header, id, Icon::Ellipsis, "More actions", true);
+    c.actions.insert(id, Action::More);
+    c.more = Some((more.root, overflow));
+    visual::rule(w, toolbar);
+    if let Some(key) = c.key() {
+        if let Some(b) = buffer {
+            if b.readonly {
+                notice(w, toolbar, "Read-only preview · binary, lossy or truncated content");
+            } else if b.uncertain {
+                notice(w, toolbar, "Save not confirmed · check latest before another save");
+            }
+            if let Some(remote) = b.remote {
+                notice(
                     w,
                     toolbar,
                     &format!(
@@ -881,7 +1014,7 @@ fn render(w: &mut World, c: &mut Code) {
                         remote.content.chars().take(1200).collect::<String>()
                     ),
                 );
-                caption(
+                notice(
                     w,
                     toolbar,
                     "Merge in your editor, then explicitly acknowledge the latest baseline. Save remains a separate action.",
@@ -895,11 +1028,11 @@ fn render(w: &mut World, c: &mut Code) {
                     !remote.readonly,
                 );
             }
-            if !error.is_empty() {
-                caption(w, toolbar, &error);
+            if !b.error.is_empty() {
+                notice(w, toolbar, &b.error);
             }
         } else {
-            caption(w, toolbar, "Loading source…");
+            notice(w, toolbar, "Loading source…");
             button(
                 w,
                 toolbar,
@@ -911,8 +1044,9 @@ fn render(w: &mut World, c: &mut Code) {
         }
     }
     if !c.status.is_empty() {
-        caption(w, toolbar, &c.status);
+        notice(w, toolbar, &c.status);
     }
+    workbench::retain_panel(w, c);
 
     if let Some(parent) = c.tabs {
         w.insert(parent, Hidden);
@@ -1264,6 +1398,22 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
     let mut c = std::mem::take(w.resource_mut::<Code>().unwrap());
     capture(w, &mut c);
     match a {
+        Action::More => {
+            use rndr_ui::menu::{open_menu, MenuAt, MenuItem};
+            if let (Some((anchor, commands)), Some(work)) = (c.more.clone(), c.selected.clone()) {
+                let mut actions = HashMap::new();
+                let mut entries = Vec::new();
+                for (label, action, enabled) in commands {
+                    let id = next();
+                    entries.push(MenuItem::new(id, label).enabled(enabled).into());
+                    actions.insert(id, action);
+                }
+                let key = c.key().unwrap_or((work, String::new()));
+                if let Ok(menu) = open_menu(w, anchor, MenuAt::Below, &entries) {
+                    c.context_menu = Some((menu, key, actions));
+                }
+            }
+        }
         Action::Workbench(a) => workbench::action(w, &mut c, a),
         Action::Find => {
             if !composing(w, &c) {

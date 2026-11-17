@@ -84,6 +84,11 @@ workshop's Forge workspace, not a local folder picker. The native editor reuses
 app-core project bindings and RNDR source documents; Forge remains authoritative
 for project ownership and source-file versions.
 
+A single header shows the file's path (collapsing leading folders when narrow)
+with Search, Changes, Problems, Save/Begin editing and Check latest as icons;
+**More** (…) holds Open file, Tasks, Tests, Run history, Outline, Hover,
+Definition, Find uses and Find in file. Status explanations appear below it.
+
 The first milestone covers project selection, source browsing, retained per-file
 editing, and explicit version-checked saves with human edit ownership. Partial,
 binary, or lossy previews are read-only. Switching files or surfaces does not

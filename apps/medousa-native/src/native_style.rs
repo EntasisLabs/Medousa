@@ -84,6 +84,53 @@ pub fn fit_labels(world: &mut World) {
     }
 }
 
+/// A path that keeps its last segments when space runs out: leading
+/// segments collapse into "…" rather than eliding the file name at the end.
+/// Fitted against the label's own laid-out width each layout pass.
+pub struct PathCrumb(pub Vec<String>);
+impl Component for PathCrumb {}
+
+pub fn path_crumbs(world: &mut World) {
+    let crumbs = world
+        .query::<PathCrumb>()
+        .iter()
+        .map(|(e, c)| (*e, c.0.clone()))
+        .collect::<Vec<_>>();
+    if crumbs.is_empty() {
+        return;
+    }
+    let engine = text_engine(world);
+    let theme = world.resource::<UiTheme>().cloned().unwrap_or_default();
+    for (e, parts) in crumbs {
+        let Some(rect) = world.get::<Rect>(e).copied() else {
+            continue;
+        };
+        let style = world
+            .get::<TextStyle>(e)
+            .cloned()
+            .unwrap_or_else(|| theme.typography(Typography::Label));
+        let inset = world.get::<LabelBox>(e).map_or(0., |b| b.inset_x * 2.);
+        let available = rect.w - inset;
+        let join = |from: usize| {
+            let tail = parts[from..].join("  ›  ");
+            if from > 0 { format!("…  ›  {tail}") } else { tail }
+        };
+        let mut text = join(parts.len().saturating_sub(1));
+        for from in 0..parts.len() {
+            let candidate = join(from);
+            if engine.measure(&candidate, &style, &[], f32::INFINITY).width <= available {
+                text = candidate;
+                break;
+            }
+        }
+        if let Some(label) = world.get_mut::<Label>(e)
+            && label.text != text
+        {
+            label.text = text;
+        }
+    }
+}
+
 /// Tracked group heading recipe on an existing row or text label. Callers
 /// supply the uppercase text: RNDR controls republish labels from props.
 pub fn section_heading(world: &mut World, label: Entity) {
@@ -330,42 +377,73 @@ pub fn document_action(
 ) -> rndr_ui::controls::ControlHandle {
     use rndr_ui::{
         UiId,
-        controls::{Button, ButtonProps, ButtonVariant, HostIntent, IconButton},
+        controls::{Button, ButtonProps, ButtonVariant, HostIntent},
+    };
+    if let Some(icon) = match label {
+        "Refresh" | "Check latest" => Some(Icon::RefreshCw),
+        _ => None,
+    } {
+        return icon_action(world, parent, id, icon, label, enabled);
+    }
+    let mut props = ButtonProps::new(label, HostIntent::Command(id));
+    props.enabled = enabled;
+    props.variant = ButtonVariant::Quiet;
+    let h = Button::mount(world, parent, UiId(id), props).unwrap();
+    *world.get_mut::<Layout>(h.root).unwrap() = Layout {
+        height: Size::Px(ACTION_SIZE),
+        ..Layout::row()
+    };
+    // medousa-home's `px-2` text actions: 8pt either side of the label.
+    world.insert(
+        h.root,
+        FitLabel {
+            label: h.label,
+            extra: 4.,
+            min: 48.,
+            max: 300.,
+        },
+    );
+    world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
+    h
+}
+
+/// Square quiet icon action with a hint. `label` is its accessible name.
+pub fn icon_action(
+    world: &mut World,
+    parent: Entity,
+    id: u64,
+    icon: Icon,
+    label: &str,
+    enabled: bool,
+) -> rndr_ui::controls::ControlHandle {
+    use rndr_ui::{
+        UiId,
+        controls::{ButtonProps, ButtonVariant, HostIntent, IconButton},
     };
     let mut props = ButtonProps::new(label, HostIntent::Command(id));
     props.enabled = enabled;
     props.variant = ButtonVariant::Quiet;
-    let icon = match label {
-        "Refresh" | "Check latest" => Some(Icon::RefreshCw),
-        _ => None,
-    };
-    let h = if let Some(icon) = icon {
-        let h = IconButton::icon(world, parent, UiId(id), icon, label, props).unwrap();
-        world.insert(h.label, LabelBox::CONTENT);
-        action_hint(world, h.root, label);
-        h
-    } else {
-        Button::mount(world, parent, UiId(id), props).unwrap()
-    };
+    let h = IconButton::icon(world, parent, UiId(id), icon, label, props).unwrap();
+    world.insert(h.label, LabelBox::CONTENT);
+    action_hint(world, h.root, label);
     *world.get_mut::<Layout>(h.root).unwrap() = Layout {
         width: Size::Px(ACTION_SIZE),
         height: Size::Px(ACTION_SIZE),
         ..Layout::row()
     };
-    if icon.is_none() {
-        // medousa-home's `px-2` text actions: 8pt either side of the label.
-        world.insert(
-            h.root,
-            FitLabel {
-                label: h.label,
-                extra: 4.,
-                min: 48.,
-                max: 300.,
-            },
-        );
-    }
-    world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
     h
+}
+
+/// One-point rule between stacked regions; Border is all-sided in RNDR.
+pub fn rule(world: &mut World, parent: Entity) -> Entity {
+    let e = world.spawn((Layout {
+        width: Size::Fill,
+        height: Size::Px(1.),
+        ..Layout::column()
+    },));
+    set_parent(world, e, parent);
+    plane(world, e, stroke());
+    e
 }
 
 #[cfg(test)]

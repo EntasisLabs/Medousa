@@ -132,23 +132,25 @@ impl Workbench {
 fn busy(c: &Code, work: &str) -> bool {
     c.pending.contains_key(&format!("workbench:{work}"))
 }
-pub(super) fn navigation(w: &mut World, p: Entity, c: &mut Code) {
+/// Workbench commands in display order. The host decides which are direct
+/// toolbar actions and which live in its overflow menu.
+pub(super) fn commands(c: &Code) -> Vec<super::Command> {
     let enabled = c.selected.as_ref().is_some_and(|s| !busy(c, s));
-    for (label, action) in [
+    let clean = c
+        .key()
+        .and_then(|k| c.buffers.get(&k))
+        .is_some_and(|b| !b.dirty() && !b.uncertain && b.remote.is_none() && !b.baseline.readonly);
+    let mut out: Vec<_> = [
         ("Open file", Action::QuickOpen),
         ("Search", Action::Search),
         ("Changes", Action::Changes),
         ("Tasks", Action::Tasks),
         ("Tests", Action::Tests),
         ("Run history", Action::Runs),
-    ] {
-        button(w, p, c, label, super::Action::Workbench(action), enabled);
-    }
-    let p = row(w, c.toolbar.unwrap());
-    let clean = c
-        .key()
-        .and_then(|k| c.buffers.get(&k))
-        .is_some_and(|b| !b.dirty() && !b.uncertain && b.remote.is_none() && !b.baseline.readonly);
+    ]
+    .into_iter()
+    .map(|(label, action)| (label, super::Action::Workbench(action), enabled))
+    .collect();
     for (label, feature) in [
         ("Problems", Feature::Diagnostics),
         ("Outline", Feature::Symbols),
@@ -156,15 +158,15 @@ pub(super) fn navigation(w: &mut World, p: Entity, c: &mut Code) {
         ("Definition", Feature::Definition),
         ("Find uses", Feature::References),
     ] {
-        button(
-            w,
-            p,
-            c,
+        out.push((
             label,
             super::Action::Workbench(Action::Language(feature)),
             enabled && clean,
-        );
+        ));
     }
+    out
+}
+pub(super) fn retain_panel(w: &mut World, c: &Code) {
     // Hide results from another project, but keep the form/draft retained.
     if let Some(panel) = c.workbench.panel {
         if c.workbench.scope.as_ref() != c.selected.as_ref() {

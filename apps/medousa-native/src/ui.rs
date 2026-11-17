@@ -185,6 +185,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
     app.add_system(Schedule::Layout, visual::document_layouts);
     app.add_system(Schedule::Layout, visual::fit_labels);
+    app.add_system(Schedule::Layout, visual::path_crumbs);
     app.add_system(Schedule::Layout, chrome::polish);
     app.add_system(Schedule::Layout, visual::borders);
     app

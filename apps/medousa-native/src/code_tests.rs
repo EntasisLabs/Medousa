@@ -1055,6 +1055,15 @@ fn integrated_code_band_retains_editor_and_fits_actions() {
             let r = w.get::<Rect>(child).unwrap();
             assert!(r.x + r.w <= width + 1., "code action clipped: {r:?}");
         }
+        // One header row at every width; the file name survives narrowing.
+        assert_eq!(w.get::<Rect>(actions).unwrap().h, 40.);
+        let crumb = w
+            .query::<crate::native_style::PathCrumb>()
+            .iter()
+            .map(|(e, _)| *e)
+            .next()
+            .unwrap();
+        assert!(w.get::<Label>(crumb).unwrap().text.ends_with("b.rs"));
     }
     crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
     for _ in 0..3 {
@@ -1233,4 +1242,52 @@ fn scoped_shortcuts_require_a_selected_document_and_reuse_canonical_find() {
     assert!(!shortcut(a.world_mut(), "unknown"));
     assert!(shortcut(a.world_mut(), "quick-open"));
     assert!(take_commands(a.world_mut()).is_empty());
+}
+
+#[test]
+fn overflow_menu_offers_secondary_commands_and_routes_picks() {
+    let mut app = crate::ui::app();
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
+    load(app.world_mut(), "one", "a.rs", "fn main() {}", "v1");
+    for _ in 0..4 {
+        app.update();
+    }
+    let w = app.world_mut();
+    take_commands(w);
+    let c = w.resource::<Code>().unwrap();
+    let labels: Vec<_> = c.more.as_ref().unwrap().1.iter().map(|x| x.0).collect();
+    // Direct icon actions are not repeated in the overflow.
+    for direct in ["Search", "Changes", "Problems"] {
+        assert!(!labels.contains(&direct), "{direct} duplicated");
+    }
+    for rare in ["Open file", "Tasks", "Outline", "Find uses", "Find in file"] {
+        assert!(labels.contains(&rare), "{rare} missing");
+    }
+    let more = *c
+        .actions
+        .iter()
+        .find(|(_, a)| matches!(a, Action::More))
+        .unwrap()
+        .0;
+    assert!(action(w, &HostIntent::Command(more)));
+    let (menu, target, items) = w.resource::<Code>().unwrap().context_menu.clone().unwrap();
+    assert!(menu.is_open(w));
+    assert_eq!(target, key("one", "a.rs"));
+    let tasks = *items
+        .iter()
+        .find(|(_, a)| matches!(a, Action::Workbench(workbench::Action::Tasks)))
+        .unwrap()
+        .0;
+    send(
+        w,
+        rndr_ui::menu::MenuPicked {
+            menu: menu.root,
+            item: tasks,
+        },
+    );
+    app.update();
+    let c = app.world().resource::<Code>().unwrap();
+    assert!(c.context_menu.is_none(), "pick not consumed");
+    assert!(c.pending.contains_key("workbench:one"), "{:?}", c.pending.keys());
 }
