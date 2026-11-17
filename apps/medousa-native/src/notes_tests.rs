@@ -536,7 +536,7 @@ fn shared_library_tree_preserves_nested_disclosure_through_search() {
         note.title = title.into();
         serde_json::from_value::<VaultNoteSummary>(serde_json::to_value(note).unwrap()).unwrap()
     };
-    let mut n = w.remove_resource::<Notes>().unwrap();
+    let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
     n.list = vec![
         summary("work/deep/a.md", "Alpha"),
         summary("work/b.md", "Beta"),
@@ -581,7 +581,7 @@ fn shared_library_keyboard_selection_snapshots_active_draft() {
     let w = app.world_mut();
     load(w, "a.md", "first", Some("a-v1"));
     edit(w, "a.md", "retained first draft");
-    let mut n = w.remove_resource::<Notes>().unwrap();
+    let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
     n.list = ["a.md", "b.md"]
         .iter()
         .map(|path| {
@@ -1159,7 +1159,7 @@ fn recent_browse_matches_visit_then_modified_contract_without_duplicate_paths() 
     load(w, "folder/old.md", "draft", Some("v1"));
     edit(w, "folder/old.md", "retained draft");
     let source = w.resource::<Notes>().unwrap().views["folder/old.md"].document;
-    let mut n = w.remove_resource::<Notes>().unwrap();
+    let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
     n.list = vec![
         summary("folder/old.md", "Same title", "2020-01-01T00:00:00Z"),
         summary("new.md", "Same title", "2026-01-01T00:00:00Z"),
@@ -1170,7 +1170,7 @@ fn recent_browse_matches_visit_then_modified_contract_without_duplicate_paths() 
     w.insert_resource(n);
     tick(w);
     click(w, Action::Browse(Browse::Recent));
-    let mut n = w.remove_resource::<Notes>().unwrap();
+    let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
     let (nodes, expanded) = library_model(&mut n);
     assert!(expanded.is_empty());
     assert_eq!(
@@ -1190,7 +1190,7 @@ fn recent_browse_matches_visit_then_modified_contract_without_duplicate_paths() 
     assert_eq!(library_model(&mut n).0.len(), 2);
     w.insert_resource(n);
     click(w, Action::Browse(Browse::Folders));
-    let mut n = w.remove_resource::<Notes>().unwrap();
+    let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
     assert!(n.filter.is_empty());
     assert_eq!(library_model(&mut n).0.len(), 4);
     w.insert_resource(n);
@@ -1201,7 +1201,7 @@ fn recent_browse_matches_visit_then_modified_contract_without_duplicate_paths() 
 fn selected_then_activated_tree_event_queues_one_load_and_ignores_foreign_tree() {
     let mut app = fixture();
     let w = app.world_mut();
-    let mut n = w.remove_resource::<Notes>().unwrap();
+    let mut n = std::mem::take(w.resource_mut::<Notes>().unwrap());
     n.list = vec![
         summary("a.md", "Same", "2026-01-01T00:00:00Z"),
         summary("b.md", "Same", "2026-01-01T00:00:00Z"),
@@ -1290,6 +1290,27 @@ fn notes_modes_appearances_widths_render_fixture() {
     let mut app = crate::ui::app();
     app.update();
     crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Notes);
+    // Activation requires a root-identity reply before it admits note loads.
+    // Exercise that real handshake rather than misrouting Loaded to Identity.
+    let identity = drain_commands(app.world_mut()).pop().unwrap();
+    assert!(matches!(identity.operation, Operation::Manage(management::Command::Identity)));
+    apply(app.world_mut(), NoteUpdate {
+        command: identity,
+        result: Ok(Response::Managed(json!({"activeRootId":"fixture-root","roots":[]}))),
+    });
+    let listing = drain_commands(app.world_mut());
+    assert_eq!(listing.len(), 1);
+    assert!(matches!(listing[0].operation, Operation::List { .. }));
+    apply(app.world_mut(), NoteUpdate {
+        command: listing.into_iter().next().unwrap(),
+        result: Ok(Response::List(VaultNotesListResponse {
+            notes: vec![summary("fixtures/synthetic.md", "Synthetic parity fixture", "2026-01-01T00:00:00Z")],
+            vault_generation: Some(1),
+            next_cursor: None,
+            truncated: false,
+            reset_required: false,
+        })),
+    });
     let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
     app.world_mut().insert_resource(engine);
     // Intentionally synthetic: no daemon IO, live note writes or real secrets.

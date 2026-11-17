@@ -169,11 +169,17 @@ enum Action {
     Acknowledge,
     Folder(String),
     Repository(String),
+    CopyRelative(Key),
+    Reveal(Key),
 }
 #[derive(Default)]
 struct Code {
     repositories: HashMap<String, (String, String, String)>,
     collapsed_repositories: HashSet<String>,
+    explorer_filter: Option<Entity>,
+    explorer_query: String,
+    context_targets: HashMap<Entity, Key>,
+    context_menu: Option<(rndr_ui::menu::MenuHandle, Key, HashMap<u64, Action>)>,
     workbench: workbench::Workbench,
     rows: Option<Entity>,
     toolbar: Option<Entity>,
@@ -335,6 +341,11 @@ fn tree_row(w: &mut World, p: Entity, c: &mut Code, s: &str, a: Action, selected
     )
     .expect("source row");
     compact(w, h, Size::Fill);
+    if let (Action::File(path), Some(work)) = (&a, &c.selected) {
+        w.insert(h.root, ContextTarget);
+        c.context_targets
+            .insert(h.root, (work.clone(), path.clone()));
+    }
     c.actions.insert(id, a);
 }
 fn row(w: &mut World, p: Entity) -> Entity {
@@ -420,6 +431,25 @@ pub fn mount(w: &mut World, parent: Entity) {
     let heading = row(w, sidebar);
     text(w, heading, "Explorer", Typography::Emphasis).unwrap();
     w.get_mut::<Layout>(heading).unwrap().height = Size::Px(40.);
+    let filter = w.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Px(32.),
+            ..Layout::row()
+        },
+        Label::new(""),
+        Focusable,
+        Prompt {
+            submit_on_enter: false,
+            ..Prompt::new()
+        },
+        Placeholder::new("Filter projects and file paths"),
+        Semantics {
+            name: Some("Filter projects and file paths".into()),
+            ..Default::default()
+        },
+    ));
+    set_parent(w, filter, sidebar);
     let rows = column(w, sidebar, Size::Fill, Size::Fill);
     w.get_mut::<Layout>(rows).unwrap().padding = 4.;
     w.insert(rows, Scroll::default());
@@ -440,6 +470,7 @@ pub fn mount(w: &mut World, parent: Entity) {
     w.insert_resource(Code {
         workbench: workbench::Workbench::new(panel),
         rows: Some(rows),
+        explorer_filter: Some(filter),
         toolbar: Some(toolbar),
         editors: Some(editors),
         find_tools: Some(find_tools),
@@ -548,6 +579,7 @@ fn ensure_view(w: &mut World, c: &mut Code, key: &Key) {
             ..Layout::row()
         },
     );
+    w.insert(handle.editor, ContextTarget);
     c.views.insert(
         key.clone(),
         View {
@@ -561,7 +593,17 @@ fn ensure_view(w: &mut World, c: &mut Code, key: &Key) {
 }
 fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
     let mut groups: Vec<(String, String, Vec<Project>)> = Vec::new();
+    let query = c.explorer_query.trim().to_lowercase();
     for project in c.projects.clone() {
+        if !query.is_empty()
+            && !project.title.to_lowercase().contains(&query)
+            && !c
+                .repositories
+                .get(&project.id)
+                .is_some_and(|(_, label, _)| label.to_lowercase().contains(&query))
+        {
+            continue;
+        }
         let (id, label, _) = c.repositories.get(&project.id).cloned().unwrap_or_else(|| {
             (
                 format!("work:{}", project.id),
@@ -576,7 +618,7 @@ fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
         }
     }
     for (id, label, projects) in groups {
-        let expanded = !c.collapsed_repositories.contains(&id);
+        let expanded = !query.is_empty() || !c.collapsed_repositories.contains(&id);
         let key = next();
         let mut props = ButtonProps::new(
             format!(
@@ -653,6 +695,7 @@ fn render(w: &mut World, c: &mut Code) {
         }
     }
     c.actions.clear();
+    c.context_targets.clear();
     let header = row(w, rows);
     button(
         w,
@@ -688,13 +731,18 @@ fn render(w: &mut World, c: &mut Code) {
         w.get_mut::<Label>(label).unwrap().overflow = TextOverflow::Ellipsis;
         let files = c.files.get(&work).cloned().unwrap_or_default();
         let mut shown = HashSet::new();
+        let query = c.explorer_query.trim().to_lowercase();
         for path in files {
+            if !query.is_empty() && !path.to_lowercase().contains(&query) {
+                continue;
+            }
             let parts: Vec<_> = path.split('/').collect();
             let mut visible = true;
             for i in 1..parts.len() {
                 let folder = parts[..i].join("/");
                 if shown.insert(folder.clone()) {
-                    let expanded = c.expanded.contains(&(work.clone(), folder.clone()));
+                    let expanded =
+                        !query.is_empty() || c.expanded.contains(&(work.clone(), folder.clone()));
                     tree_row(
                         w,
                         rows,
@@ -713,7 +761,7 @@ fn render(w: &mut World, c: &mut Code) {
                         false,
                     );
                 }
-                if !c.expanded.contains(&(work.clone(), folder)) {
+                if query.is_empty() && !c.expanded.contains(&(work.clone(), folder)) {
                     visible = false;
                     break;
                 }
@@ -925,6 +973,19 @@ pub fn sync(w: &mut World) {
     };
     let mut c = std::mem::take(r);
     capture(w, &mut c);
+    if let Some(query) = c
+        .explorer_filter
+        .and_then(|e| w.get::<Label>(e))
+        .map(|l| l.text.clone())
+    {
+        if c.explorer_query != query {
+            c.explorer_query = query;
+            c.redraw = true;
+        }
+    }
+    if crate::surfaces::active(w) == crate::surfaces::SurfaceId::Code {
+        context_events(w, &mut c);
+    }
     for event in events::<TabStripEvent>(w).to_vec() {
         if !c.strip.is_some_and(|s| s.root == event.strip) {
             continue;
@@ -1032,8 +1093,131 @@ pub fn sync(w: &mut World) {
         apply(w, update);
     }
 }
+fn context_events(w: &mut World, c: &mut Code) {
+    use rndr_ui::menu::{open_menu, MenuAt, MenuItem, MenuPicked};
+    for event in events::<MenuPicked>(w).to_vec() {
+        if !c
+            .context_menu
+            .as_ref()
+            .is_some_and(|(menu, _, _)| menu.root == event.menu)
+        {
+            continue;
+        }
+        let (_, key, mut actions) = c.context_menu.take().unwrap();
+        if c.selected.as_ref() != Some(&key.0) || composing(w, c) {
+            continue;
+        }
+        if matches!(
+            actions.get(&event.item),
+            Some(Action::Workbench(workbench::Action::Language(_)))
+        ) && c.key().as_ref() != Some(&key)
+        {
+            continue;
+        }
+        if let Some(action) = actions.remove(&event.item) {
+            // Route through the same authority/draft-safe action adapter as toolbar controls.
+            let id = next();
+            c.actions.insert(id, action);
+            let saved = std::mem::take(c);
+            *w.resource_mut::<Code>().unwrap() = saved;
+            self::action(w, &HostIntent::Command(id));
+            *c = std::mem::take(w.resource_mut::<Code>().unwrap());
+        }
+    }
+    for event in events::<SecondaryPress>(w).to_vec() {
+        let key = c.context_targets.get(&event.entity).cloned().or_else(|| {
+            c.views
+                .iter()
+                .find(|(_, v)| v.handle.editor == event.entity)
+                .map(|(key, _)| key.clone())
+        });
+        let Some(key) = key.filter(|key| c.selected.as_ref() == Some(&key.0)) else {
+            continue;
+        };
+        if composing(w, c) {
+            continue;
+        }
+        let current = c.key().as_ref() == Some(&key);
+        let mut actions = HashMap::new();
+        let mut entries = Vec::new();
+        for (label, action, enabled) in [
+            ("Open file", Action::File(key.1.clone()), true),
+            (
+                "Copy Relative Path",
+                Action::CopyRelative(key.clone()),
+                true,
+            ),
+            ("Reveal in Explorer", Action::Reveal(key.clone()), true),
+            (
+                "Go to Definition",
+                Action::Workbench(workbench::Action::Language(workbench::Feature::Definition)),
+                current,
+            ),
+            (
+                "Find Uses",
+                Action::Workbench(workbench::Action::Language(workbench::Feature::References)),
+                current,
+            ),
+        ] {
+            let id = next();
+            entries.push(MenuItem::new(id, label).enabled(enabled).into());
+            actions.insert(id, action);
+        }
+        if let Ok(menu) = open_menu(w, event.entity, MenuAt::Point(event.at), &entries) {
+            c.context_menu = Some((menu, key, actions));
+        }
+    }
+}
 /// Surface-scoped keyboard integration. The shared host chooses the active
 /// surface and key chord; this adapter never installs another input dispatcher.
+pub fn keyboard(w: &mut World) {
+    if crate::surfaces::active(w) != crate::surfaces::SurfaceId::Code
+        || w.resource::<Code>().is_none_or(|c| composing(w, c))
+        || w.resource::<Input>()
+            .is_some_and(|i| !i.ime_preedit.is_empty() || !i.ime_commit.is_empty())
+    {
+        return;
+    }
+    let platform = w
+        .resource::<Platform>()
+        .copied()
+        .unwrap_or_else(Platform::host);
+    let keys = w
+        .resource_mut::<Input>()
+        .map(|input| std::mem::take(&mut input.keys))
+        .unwrap_or_default();
+    let mut kept = Vec::new();
+    let first_pressed = keys.iter().position(|event| !event.released);
+    let mut consumed_first = false;
+    for (index, event) in keys.into_iter().enumerate() {
+        let command = (!event.released && !event.repeat && !event.synthetic)
+            .then(|| {
+                [('f', "find"), ('p', "quick-open"), ('s', "save")]
+                    .into_iter()
+                    .find(|(ch, _)| {
+                        Keystroke::character(*ch)
+                            .primary()
+                            .matches(&event, platform)
+                    })
+                    .map(|(_, command)| command)
+            })
+            .flatten();
+        if !command.is_some_and(|command| shortcut(w, command)) {
+            kept.push(event);
+        } else if Some(index) == first_pressed {
+            consumed_first = true;
+        }
+    }
+    if let Some(input) = w.resource_mut::<Input>() {
+        // The runner derives the legacy shim from the first pressed event.
+        // Do not erase an unrelated earlier key when consuming a later chord.
+        if consumed_first {
+            input.key = kept.iter().find(|event| !event.released)
+                .and_then(|event| rndr_core::legacy_key(event, platform));
+        }
+        input.keys = kept;
+    }
+}
 pub fn shortcut(w: &mut World, command: &str) -> bool {
     let Some(c) = w.resource::<Code>() else {
         return false;
@@ -1044,6 +1228,7 @@ pub fn shortcut(w: &mut World, command: &str) -> bool {
     let requested = match command {
         "find" if c.key().is_some_and(|key| c.views.contains_key(&key)) => Action::Find,
         "quick-open" if c.selected.is_some() => Action::Workbench(workbench::Action::QuickOpen),
+        "save" if c.key().is_some() => Action::Save,
         _ => return false,
     };
     let id = next();
@@ -1090,6 +1275,29 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                         }
                     }
                 }
+            }
+        }
+        Action::CopyRelative(key) => {
+            if c.selected.as_ref() == Some(&key.0) {
+                if let Some(clipboard) = w.resource_mut::<Clipboard>() {
+                    clipboard.text = key.1;
+                    clipboard.html.clear();
+                    clipboard.html_text.clear();
+                    clipboard.dirty = true;
+                }
+            }
+        }
+        Action::Reveal(key) => {
+            if c.selected.as_ref() == Some(&key.0) && !composing(w, &c) {
+                c.explorer_query.clear();
+                if let Some(e) = c.explorer_filter {
+                    w.get_mut::<Label>(e).unwrap().text.clear();
+                }
+                let parts: Vec<_> = key.1.split('/').collect();
+                for i in 1..parts.len() {
+                    c.expanded.insert((key.0.clone(), parts[..i].join("/")));
+                }
+                c.status = format!("Revealed {} in Explorer", key.1);
             }
         }
         Action::Refresh => {

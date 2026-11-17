@@ -38,7 +38,7 @@ fn backdrop_hit_target_is_an_activatable_native_button() {
     );
     assert!(app.world().entities_with::<Modal>().is_empty());
 }
-use medousa_app_core::{ChatItem, contract::ChatSegment};
+use medousa_app_core::{contract::ChatSegment, ChatItem};
 use medousa_types::ToolInputParam;
 fn run(id: &str, tool: &str, status: &str) -> ToolRunState {
     ToolRunState {
@@ -182,12 +182,10 @@ fn open_inspector_reconciles_live_runs_retains_scroll_and_does_no_idle_remount()
     assert_eq!(world.resource::<Inspector>().unwrap().root, Some(root));
     assert_eq!(children_of(&world, body).len(), 2);
     assert_eq!(world.get::<Scroll>(body).unwrap().offset[1], -20.);
-    assert!(
-        world
-            .query::<MarkdownView>()
-            .iter()
-            .any(|(_, v)| v.source().contains("Source loaded"))
-    );
+    assert!(world
+        .query::<MarkdownView>()
+        .iter()
+        .any(|(_, v)| v.source().contains("Source loaded")));
     let state = world.resource::<Inspector>().unwrap();
     assert_eq!(
         world.get::<Label>(state.subtitle.unwrap()).unwrap().text,
@@ -266,18 +264,16 @@ fn native_modal_geometry_scroll_and_parameter_values_are_readable_not_json_wrapp
     assert!((sheet.h - 640.).abs() < 2., "sheet {sheet:?}");
     let scroll = app.world().get::<Scroll>(state.body.unwrap()).unwrap();
     assert!(scroll.content[1] > 640.);
-    assert!(
-        app.world()
-            .query::<MarkdownView>()
-            .iter()
-            .any(|(_, v)| v.source().contains("Load schemas"))
-    );
-    assert!(
-        !app.world()
-            .query::<MarkdownView>()
-            .iter()
-            .any(|(_, v)| v.source().contains("truncated"))
-    );
+    assert!(app
+        .world()
+        .query::<MarkdownView>()
+        .iter()
+        .any(|(_, v)| v.source().contains("Load schemas")));
+    assert!(!app
+        .world()
+        .query::<MarkdownView>()
+        .iter()
+        .any(|(_, v)| v.source().contains("truncated")));
     app.world_mut().insert_resource(Viewport::new(400., 500.));
     sync(app.world_mut(), Some(&s));
     for _ in 0..3 {

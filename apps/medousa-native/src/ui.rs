@@ -152,6 +152,9 @@ pub fn app() -> App {
     let mut app = App::new();
     app.add_plugin(UiPlugin);
     app.add_plugin(MarkdownPlugin);
+    // Reuse RNDR retained rich Markdown for Notes alongside read-only rendering.
+    app.add_plugin(rndr_markdown_ui::MarkdownPlugin);
+    app.add_plugin(rndr_term::TerminalPlugin);
     app.world_mut().resource_mut::<Keymap>().unwrap().bind(
         KeyBinding::new("chat.send", [Keystroke::named(NamedKey::Enter).primary()])
             .context("Chat composer"),
@@ -1049,6 +1052,11 @@ fn update(world: &mut World) {
     if chat_active {
         conversations::tab_events(world);
     }
+    // Canonical FindBar consumes its source-edit intents before app routing.
+    if crate::surfaces::active(world) == crate::surfaces::SurfaceId::Code {
+        crate::code::keyboard(world);
+    }
+    rndr_ui::source_tools::apply_find_bars(world);
     for intent in take_action_intents(world) {
         let host = controls::host_intent(world, &intent);
         if host
@@ -1861,7 +1869,9 @@ fn sync(world: &mut World) {
         world.insert(more.root, Hidden);
     }
 
-    chat_sidebar::render(world, ui.sessions, &m.sessions, selected_session);
+    // The core is borrowed into m during presentation; world.Model.chat is empty.
+    chat_sidebar::render(world, ui.sessions, &m.sessions, selected_session,
+        m.chat.snapshot().map(|s| s.authority_id.clone()).filter(|a| !a.is_empty()));
     let provider = m
         .chat
         .session()

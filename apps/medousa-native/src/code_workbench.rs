@@ -10,14 +10,16 @@ pub(super) struct Command {
 }
 #[derive(Clone, Debug)]
 enum Kind {
-    Search(String),
+    Search(SearchOptions),
     Changes,
     Diff(String),
     History,
     Tasks,
+    Tests,
     Runs,
     Run {
         task: String,
+        test: Option<String>,
         lease: Lease,
     },
     Output(String),
@@ -44,12 +46,19 @@ pub(super) enum Action {
     FilterFiles,
     Search,
     SubmitSearch,
+    SearchToggle(SearchToggle),
+    MoreSearch,
     Changes,
     Diff(String),
     History,
     Tasks,
     Runs,
     Run(String),
+    Tests,
+    RunTest {
+        task: String,
+        test: String,
+    },
     Output(String),
     Cancel(String),
     Close,
@@ -61,6 +70,45 @@ pub(super) enum Action {
         character: usize,
     },
 }
+#[derive(Clone, Copy)]
+pub(super) enum SearchToggle {
+    Regex,
+    Case,
+    Word,
+    Changed,
+    Ignored,
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct SearchOptions {
+    query: String,
+    regex: bool,
+    case_sensitive: bool,
+    whole_word: bool,
+    changed: bool,
+    ignored: bool,
+    include: String,
+    exclude: String,
+    cursor: Option<String>,
+}
+impl SearchOptions {
+    fn parameters(&self) -> Vec<(&'static str, String)> {
+        let mut parameters = vec![
+            ("query", self.query.clone()),
+            ("mode", if self.regex { "regex" } else { "literal" }.into()),
+            ("case_sensitive", self.case_sensitive.to_string()),
+            ("whole_word", self.whole_word.to_string()),
+            ("include", self.include.clone()),
+            ("exclude", self.exclude.clone()),
+            ("include_ignored", self.ignored.to_string()),
+            ("scope", if self.changed { "changed" } else { "all" }.into()),
+            ("limit", "100".into()),
+        ];
+        if let Some(cursor) = &self.cursor {
+            parameters.push(("cursor", cursor.clone()));
+        }
+        parameters
+    }
+}
 #[derive(Default)]
 pub(super) struct Workbench {
     panel: Option<Entity>,
@@ -69,6 +117,9 @@ pub(super) struct Workbench {
     pub actions: HashMap<u64, super::Action>,
     run_uncertain: HashSet<String>,
     jump: Option<(Key, usize, usize)>,
+    searches: HashMap<String, SearchOptions>,
+    search_fields: Option<[Entity; 3]>,
+    next_search: Option<SearchOptions>,
 }
 impl Workbench {
     pub fn new(panel: Entity) -> Self {
@@ -88,6 +139,7 @@ pub(super) fn navigation(w: &mut World, p: Entity, c: &mut Code) {
         ("Search", Action::Search),
         ("Changes", Action::Changes),
         ("Tasks", Action::Tasks),
+        ("Tests", Action::Tests),
         ("Run history", Action::Runs),
     ] {
         button(w, p, c, label, super::Action::Workbench(action), enabled);
@@ -132,16 +184,98 @@ fn panel(w: &mut World, c: &mut Code, work: &str, title: &str) -> Option<Entity>
     if let Some(f) = w.resource_mut::<Focus>() {
         f.entity = None;
     }
+    capture_search(w, c);
     for e in children_of(w, p) {
         despawn(w, e);
     }
     w.remove::<Hidden>(p);
     c.workbench.input = None;
+    c.workbench.search_fields = None;
+    c.workbench.next_search = None;
     c.workbench.scope = Some(work.into());
     c.workbench.actions.clear();
     caption(w, p, title);
     control(w, p, c, "Close panel", Action::Close, true);
     Some(p)
+}
+fn capture_search(w: &World, c: &mut Code) {
+    if let (Some(work), Some(fields)) = (&c.workbench.scope, c.workbench.search_fields) {
+        let state = c.workbench.searches.entry(work.clone()).or_default();
+        state.query = w
+            .get::<Label>(fields[0])
+            .map(|l| l.text.clone())
+            .unwrap_or_default();
+        state.include = w
+            .get::<Label>(fields[1])
+            .map(|l| l.text.clone())
+            .unwrap_or_default();
+        state.exclude = w
+            .get::<Label>(fields[2])
+            .map(|l| l.text.clone())
+            .unwrap_or_default();
+        state.cursor = None;
+    }
+}
+fn search_form(w: &mut World, c: &mut Code, work: &str) {
+    capture_search(w, c);
+    let state = c.workbench.searches.entry(work.into()).or_default().clone();
+    let Some(p) = panel(
+        w,
+        c,
+        work,
+        "Search saved project files · at most 100 hits per page",
+    ) else {
+        return;
+    };
+    let fields = [
+        ("Search project contents", &state.query),
+        ("Include globs (comma-separated)", &state.include),
+        ("Exclude globs (comma-separated)", &state.exclude),
+    ]
+    .map(|(name, value)| {
+        let e = w.spawn((
+            Layout {
+                width: Size::Fill,
+                height: Size::Px(32.),
+                ..Layout::row()
+            },
+            Label::new(value),
+            Focusable,
+            Prompt {
+                submit_on_enter: false,
+                ..Prompt::new()
+            },
+            Placeholder::new(name),
+            Semantics {
+                name: Some(name.into()),
+                ..Default::default()
+            },
+        ));
+        set_parent(w, e, p);
+        e
+    });
+    c.workbench.input = Some(fields[0]);
+    c.workbench.search_fields = Some(fields);
+    for (name, on, toggle) in [
+        ("Regex", state.regex, SearchToggle::Regex),
+        ("Match case", state.case_sensitive, SearchToggle::Case),
+        ("Whole word", state.whole_word, SearchToggle::Word),
+        ("Changed files only", state.changed, SearchToggle::Changed),
+        ("Include ignored", state.ignored, SearchToggle::Ignored),
+    ] {
+        control(
+            w,
+            p,
+            c,
+            &format!("{} {name}", if on { "✓" } else { "○" }),
+            Action::SearchToggle(toggle),
+            true,
+        );
+    }
+    control(w, p, c, "Search saved files", Action::SubmitSearch, true);
+    if let Some(focus) = w.resource_mut::<Focus>() {
+        focus.entity = Some(fields[0]);
+    }
 }
 fn enqueue(c: &mut Code, work: String, kind: Kind) {
     c.enqueue(Operation::Workbench(Command { work, kind }));
@@ -163,6 +297,7 @@ pub(super) fn action(w: &mut World, c: &mut Code, action: Action) {
         return;
     };
     if matches!(action, Action::Close) {
+        capture_search(w, c);
         if let Some(p) = c.workbench.panel {
             w.insert(p, Hidden);
         }
@@ -176,10 +311,13 @@ pub(super) fn action(w: &mut World, c: &mut Code, action: Action) {
     let scoped = matches!(
         action,
         Action::SubmitSearch
+            | Action::SearchToggle(_)
+            | Action::MoreSearch
             | Action::FilterFiles
             | Action::Diff(_)
             | Action::History
             | Action::Run(_)
+            | Action::RunTest { .. }
             | Action::Output(_)
             | Action::Cancel(_)
     );
@@ -252,53 +390,49 @@ pub(super) fn action(w: &mut World, c: &mut Code, action: Action) {
                 }
             }
         }
-        Action::Search => {
-            if let Some(p) = panel(
-                w,
-                c,
-                &work,
-                "Search saved project files · literal · at most 100 hits",
-            ) {
-                let e = w.spawn((
-                    Layout {
-                        width: Size::Fill,
-                        height: Size::Px(32.),
-                        ..Layout::row()
-                    },
-                    Label::new(""),
-                    Focusable,
-                    Prompt {
-                        submit_on_enter: false,
-                        ..Prompt::new()
-                    },
-                    Placeholder::new("Search project contents"),
-                    Semantics {
-                        name: Some("Search project contents".into()),
-                        ..Default::default()
-                    },
-                ));
-                set_parent(w, e, p);
-                c.workbench.input = Some(e);
-                control(w, p, c, "Search saved files", Action::SubmitSearch, true);
-            }
+        Action::Search => search_form(w, c, &work),
+        Action::SearchToggle(toggle) => {
+            capture_search(w, c);
+            let state = c.workbench.searches.entry(work.clone()).or_default();
+            let field = match toggle {
+                SearchToggle::Regex => &mut state.regex,
+                SearchToggle::Case => &mut state.case_sensitive,
+                SearchToggle::Word => &mut state.whole_word,
+                SearchToggle::Changed => &mut state.changed,
+                SearchToggle::Ignored => &mut state.ignored,
+            };
+            *field = !*field;
+            search_form(w, c, &work);
         }
         Action::SubmitSearch => {
-            let query = c
+            capture_search(w, c);
+            if let Some(state) = c
                 .workbench
-                .input
-                .and_then(|e| w.get::<Label>(e))
-                .map(|l| l.text.trim().to_owned())
-                .unwrap_or_default();
-            if !query.is_empty() {
-                enqueue(c, work, Kind::Search(query));
+                .searches
+                .get(&work)
+                .filter(|s| !s.query.trim().is_empty())
+                .cloned()
+            {
+                enqueue(c, work, Kind::Search(state));
+            }
+        }
+        Action::MoreSearch => {
+            if let Some(state) = c.workbench.next_search.clone() {
+                enqueue(c, work, Kind::Search(state));
             }
         }
         Action::Changes => enqueue(c, work, Kind::Changes),
         Action::Diff(path) => enqueue(c, work, Kind::Diff(path)),
         Action::History => enqueue(c, work, Kind::History),
         Action::Tasks => enqueue(c, work, Kind::Tasks),
+        Action::Tests => enqueue(c, work, Kind::Tests),
         Action::Runs => enqueue(c, work, Kind::Runs),
-        Action::Run(task) => {
+        Action::Run(_) | Action::RunTest { .. } => {
+            let (task, test) = match action {
+                Action::Run(task) => (task, None),
+                Action::RunTest { task, test } => (task, Some(test)),
+                _ => unreachable!(),
+            };
             if !clean_project(c, &work) {
                 panel(
                     w,
@@ -308,6 +442,8 @@ pub(super) fn action(w: &mut World, c: &mut Code, action: Action) {
                 );
                 return;
             }
+            // The shared busy(c, &work) guard above reads Code.pending;
+            // admission uncertainty outlives that request's terminal reply.
             if c.workbench.run_uncertain.contains(&work) {
                 return;
             }
@@ -317,10 +453,10 @@ pub(super) fn action(w: &mut World, c: &mut Code, action: Action) {
                 .filter(|s| s.checked.elapsed() < Duration::from_secs(45))
             {
                 let lease = s.lease.clone();
-                // A timed-out start is not safe to replay. Listing runs is the
-                // explicit recovery boundary; nothing starts automatically.
+                // A timed-out start is not safe to replay. Listing runs is
+                // observation only and cannot clear this admission uncertainty.
                 c.workbench.run_uncertain.insert(work.clone());
-                enqueue(c, work, Kind::Run { task, lease });
+                enqueue(c, work, Kind::Run { task, test, lease });
             } else {
                 panel(
                     w,
@@ -492,11 +628,7 @@ pub(super) async fn execute(
         Kind::Search(q) => {
             h.get_query(
                 &route(ops::FORGE_ITEMS_BY_WORK_ID_SEARCH_GET, work),
-                &[
-                    ("query", q.clone()),
-                    ("mode", "literal".into()),
-                    ("limit", "100".into()),
-                ],
+                &q.parameters(),
             )
             .await
         }
@@ -522,11 +654,15 @@ pub(super) async fn execute(
             h.get(&route(ops::FORGE_ITEMS_BY_WORK_ID_TASKS_GET, work))
                 .await
         }
+        Kind::Tests => {
+            h.get(&route(ops::FORGE_ITEMS_BY_WORK_ID_TESTS_GET, work))
+                .await
+        }
         Kind::Runs => {
             h.get(&route(ops::FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_GET, work))
                 .await
         }
-        Kind::Run { task, lease } => {
+        Kind::Run { task, test, lease } => {
             h.post(
                 &named_route(
                     ops::FORGE_ITEMS_BY_WORK_ID_TASKS_BY_TASK_ID_RUNS_POST,
@@ -534,7 +670,7 @@ pub(super) async fn execute(
                     "{task_id}",
                     task,
                 ),
-                &json!({"lease_id":lease.id,"generation":lease.generation}),
+                &json!({"lease_id":lease.id,"generation":lease.generation,"test_id":test}),
             )
             .await
         }
@@ -817,7 +953,7 @@ pub(super) fn apply(
         return;
     };
     match command.kind {
-        Kind::Search(_) => {
+        Kind::Search(mut options) => {
             if value["work_id"].as_str() != Some(&work) {
                 caption(w, p, "Search identity mismatch");
                 return;
@@ -850,7 +986,12 @@ pub(super) fn apply(
             if value["truncated"].as_bool() == Some(true) {
                 caption(w, p, "Results truncated · refine your query.");
             }
-            control(w, p, c, "New search", Action::Search, true);
+            if let Some(cursor) = value["next_cursor"].as_str().filter(|s| !s.is_empty()) {
+                options.cursor = Some(cursor.into());
+                c.workbench.next_search = Some(options);
+                control(w, p, c, "Next results page", Action::MoreSearch, true);
+            }
+            control(w, p, c, "Edit search", Action::Search, true);
         }
         Kind::Changes => {
             if let Some(files) = value["files"].as_array() {
@@ -872,7 +1013,7 @@ pub(super) fn apply(
             control(w, p, c, "History", Action::History, true);
         }
         Kind::Diff(path) => {
-            if value["work_id"].as_str() != Some(&work) || value["path"].as_str() != Some(path) {
+            if value["work_id"].as_str() != Some(&work) || value["path"].as_str() != Some(path.as_str()) {
                 caption(w, p, "Diff identity mismatch · refresh Changes.");
             } else if value["binary"].as_bool() == Some(true) {
                 caption(w, p, "Binary file · no text diff available.");
@@ -898,6 +1039,75 @@ pub(super) fn apply(
             p,
             &serde_json::to_string_pretty(&value).unwrap_or_default(),
         ),
+        Kind::Tests => {
+            if let Some(tests) = value.as_array() {
+                let mut seen = HashSet::new();
+                for test in tests.iter().take(200) {
+                    let (Some(id), Some(task), Some(path)) = (
+                        test["id"].as_str(),
+                        test["task_id"].as_str(),
+                        test["path"].as_str(),
+                    ) else {
+                        continue;
+                    };
+                    if !safe_path(path) {
+                        continue;
+                    }
+                    let file = test["target_kind"].as_str() == Some("file");
+                    if file && !seen.insert((task.to_owned(), path.to_owned())) {
+                        continue;
+                    }
+                    let supported = file
+                        || (test["target_kind"].as_str() == Some("named")
+                            && matches!(
+                                test["provider"].as_str(),
+                                Some("cargo" | "python" | "go")
+                            ));
+                    open_control(
+                        w,
+                        p,
+                        c,
+                        &work,
+                        path,
+                        test["line"].as_u64().unwrap_or(1).saturating_sub(1) as usize,
+                        0,
+                        &format!(
+                            "{} · {}:{}",
+                            test["label"].as_str().unwrap_or(id),
+                            path,
+                            test["line"].as_u64().unwrap_or(1)
+                        ),
+                    );
+                    control(
+                        w,
+                        p,
+                        c,
+                        if file {
+                            "Run test file"
+                        } else {
+                            "Run named test"
+                        },
+                        Action::RunTest {
+                            task: task.into(),
+                            test: id.into(),
+                        },
+                        supported && !c.workbench.run_uncertain.contains(&work),
+                    );
+                    if !supported {
+                        caption(
+                            w,
+                            p,
+                            "Target not addressable individually · use its detected project task.",
+                        );
+                    }
+                }
+                if tests.is_empty() {
+                    caption(w, p, "No discovered project tests.");
+                }
+            }
+            control(w, p, c, "Refresh tests", Action::Tests, true);
+            control(w, p, c, "Run history", Action::Runs, true);
+        }
         Kind::Tasks => {
             if let Some(tasks) = value.as_array() {
                 for task in tasks.iter().take(100) {
@@ -940,7 +1150,10 @@ pub(super) fn apply(
         }
         Kind::Runs => {
             if let Some(runs) = value["runs"].as_array() {
-                c.workbench.run_uncertain.remove(&work);
+                // A list can lag a timed-out admission; it is not proof of absence.
+                if c.workbench.run_uncertain.contains(&work) {
+                    caption(w, p, "Previous start has unknown outcome. Do not replay it; inspect retained runs and reconcile the original admission.");
+                }
                 for run in runs.iter().take(64) {
                     if run["work_id"].as_str() == Some(&work) {
                         if let Some(id) = run["run_id"].as_str() {
@@ -977,7 +1190,9 @@ pub(super) fn apply(
                 caption(w, p, "Run identity missing; inspect run history.");
                 return;
             };
-            c.workbench.run_uncertain.remove(&work);
+            if matches!(command.kind, Kind::Run { .. }) {
+                c.workbench.run_uncertain.remove(&work);
+            }
             let state = value["state"].as_str().unwrap_or("unknown");
             caption(w, p, &format!("{id} · {state}"));
             bounded(

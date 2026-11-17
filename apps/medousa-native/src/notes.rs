@@ -1067,6 +1067,43 @@ pub fn tick(world: &mut World) {
     }
     *world.resource_mut::<Notes>().unwrap() = n;
 }
+/// Consume only Notes primary-F presses. Keep arrival order for other widgets.
+pub fn keyboard(world: &mut World) {
+    if crate::surfaces::active(world) != crate::surfaces::SurfaceId::Notes
+        || !can_deactivate(world)
+        || world.resource::<Input>().is_some_and(|i| {
+            !i.ime_preedit.is_empty() || !i.ime_commit.is_empty()
+        })
+    {
+        return;
+    }
+    let platform = world.resource::<Platform>().copied().unwrap_or_else(Platform::host);
+    let keys = world.resource_mut::<Input>()
+        .map(|i| std::mem::take(&mut i.keys)).unwrap_or_default();
+    let mut kept = Vec::with_capacity(keys.len());
+    let mut consumed = false;
+    for event in keys {
+        if !event.released && !event.repeat && !event.synthetic
+            && Keystroke::character('f').primary().matches(&event, platform)
+            && shortcut(world, "find")
+        {
+            consumed = true;
+        } else {
+            kept.push(event);
+        }
+    }
+    if let Some(input) = world.resource_mut::<Input>() {
+        // rndr_render::Runner and Input::push_key use the FIRST press, not
+        // the first mappable press. Reconstruct only after actual consumption;
+        // legacy-only input and rejected events must remain untouched.
+        if consumed {
+            input.key = kept.iter().find(|e| !e.released)
+                .and_then(|e| rndr_core::legacy_key(e, platform));
+        }
+        input.keys = kept;
+    }
+}
+
 /// Queue a host-routed Notes shortcut without crossing an active IME session.
 /// The shared shell owns active-surface and key-event consumption policy.
 pub fn shortcut(world: &mut World, command: &str) -> bool {

@@ -1,12 +1,11 @@
 //! Presentation-only inspector. RNDR owns modal hit isolation, Escape, scrolling,
 //! keyboard/button activation and text selection; no network or tool execution.
-use super::{Part, literal, project};
-use medousa_app_core::{ChatRevision, ChatSnapshot, contract::ToolRunState};
+use super::{literal, project, Part};
+use medousa_app_core::{contract::ToolRunState, ChatRevision, ChatSnapshot};
 use rndr_core::*;
 use rndr_ui::{
-    Typography, UiId,
     controls::{self, ButtonProps, ButtonVariant, HostIntent},
-    text,
+    text, Typography, UiId,
 };
 
 const OPEN: u64 = 0x746f6f6c01;

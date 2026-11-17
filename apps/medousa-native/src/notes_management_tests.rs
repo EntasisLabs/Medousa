@@ -147,7 +147,7 @@ fn root_switch_clears_recent_and_tree_identity_and_rejects_old_tree_events() {
         NoteUpdate {
             command: c,
             result: Ok(Response::Managed(
-                json!({"active_root_id":"vault-b","roots":[]}),
+                json!({"activeRootId":"vault-b","roots":[]}),
             )),
         },
     );

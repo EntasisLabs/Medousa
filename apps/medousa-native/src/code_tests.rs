@@ -810,6 +810,8 @@ fn tab_activation_routes_only_owned_strip_and_preserves_drafts_without_reads() {
     load(a.world_mut(), "one", "a.rs", "a", "d1");
     edit(a.world_mut(), &key("one", "a.rs"), "draft a");
     load(a.world_mut(), "one", "b.rs", "b", "d2");
+    // Publish the initial RNDR selection before injecting a later user request.
+    for _ in 0..2 { a.update(); sync(a.world_mut()); }
     let c = a.world().resource::<Code>().unwrap();
     let strip = c.strip.unwrap();
     let id = TabId(c.views[&key("one", "a.rs")].id.0);
@@ -855,6 +857,8 @@ fn tab_activation_routes_only_owned_strip_and_preserves_drafts_without_reads() {
     assert!(!c.open_tabs.contains(&key("one", "a.rs")));
     assert_eq!(c.key(), Some(key("one", "b.rs")));
     assert_eq!(c.buffers[&key("one", "a.rs")].content, "draft a");
+    // A subsequent tree click occurs in a later frame, after the close request.
+    for _ in 0..2 { a.update(); sync(a.world_mut()); }
     click(a.world_mut(), Action::File("a.rs".into()));
     assert!(take_commands(a.world_mut()).is_empty());
     assert_eq!(
@@ -984,6 +988,7 @@ fn code_visual_acceptance() {
         (1200, 850, "wide"),
         (760, 540, "narrow"),
         (1200, 850, "light"),
+        (760, 540, "light-narrow"),
         (760, 650, "light-zoom"),
     ] {
         publish_system_appearance(
@@ -1148,6 +1153,74 @@ fn loaded_code_performance_probe() {
     }
 }
 
+#[test]
+fn code_keyboard_is_surface_scoped_and_consumes_only_handled_primary_chords() {
+    use crate::surfaces::{self, SurfaceId};
+    for platform in [Platform::Mac, Platform::Windows] {
+        let mut a = crate::ui::app();
+        a.update(); // Startup mounts the surface controls before file actions.
+        let w = a.world_mut();
+        w.insert_resource(platform);
+        load(w, "one", "a.rs", "saved", "v1");
+        let modifiers = Modifiers {
+            super_key: platform == Platform::Mac,
+            ctrl: platform != Platform::Mac,
+            ..Default::default()
+        };
+        w.resource_mut::<Input>().unwrap().keys = vec![KeyEvent::character('f', modifiers)];
+        keyboard(w);
+        assert_eq!(
+            w.resource::<Input>().unwrap().keys.len(),
+            1,
+            "Chat keeps its keyboard event"
+        );
+        assert!(w.resource::<Code>().unwrap().views[&key("one", "a.rs")]
+            .find
+            .is_none());
+        surfaces::select(w, SurfaceId::Code);
+        w.resource_mut::<Input>().unwrap().ime_preedit = "漢".into();
+        keyboard(w);
+        assert_eq!(
+            w.resource::<Input>().unwrap().keys.len(),
+            1,
+            "Composition must not open Find"
+        );
+        w.resource_mut::<Input>().unwrap().ime_preedit.clear();
+        w.resource_mut::<Input>()
+            .unwrap()
+            .keys
+            .push(KeyEvent::character('x', Modifiers::default()));
+        keyboard(w);
+        assert_eq!(w.resource::<Input>().unwrap().keys.len(), 1);
+        assert!(w.resource::<Code>().unwrap().views[&key("one", "a.rs")]
+            .find
+            .is_some());
+        w.resource_mut::<Input>().unwrap().keys = vec![KeyEvent::character('p', modifiers)];
+        keyboard(w);
+        assert!(w.resource::<Input>().unwrap().keys.is_empty());
+        edit(w, &key("one", "a.rs"), "dirty");
+        session(w, "one");
+        take_commands(w);
+        w.resource_mut::<Input>().unwrap().keys = vec![KeyEvent::character('s', modifiers)];
+        keyboard(w);
+        assert!(w.resource::<Input>().unwrap().keys.is_empty());
+        assert!(take_commands(w)
+            .iter()
+            .any(|c| matches!(c.operation, Operation::Save { .. })));
+    }
+}
+#[test]
+fn explorer_query_keeps_dirty_buffers_and_active_project() {
+    let mut a = fixture();
+    let w = a.world_mut();
+    load(w, "one", "a.rs", "saved", "v1");
+    edit(w, &key("one", "a.rs"), "dirty");
+    w.resource_mut::<Code>().unwrap().explorer_query = "no matching project".into();
+    sync(w);
+    let c = w.resource::<Code>().unwrap();
+    assert_eq!(c.buffers[&key("one", "a.rs")].content, "dirty");
+    assert_eq!(c.selected.as_deref(), Some("one"));
+}
 #[test]
 fn scoped_shortcuts_require_a_selected_document_and_reuse_canonical_find() {
     let mut a = fixture();

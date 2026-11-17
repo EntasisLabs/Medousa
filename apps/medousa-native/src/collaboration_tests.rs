@@ -343,16 +343,14 @@ fn finished_history_dismiss_restore_is_local_and_live_work_reappears() {
     let dismiss = history_action(&app, HISTORY_DISMISS, "older");
     activate(&mut app, dismiss);
     assert!(app.world().has::<Hidden>(marker));
-    // The canonical worker row remains intact; no cancellation/forget request.
-    assert_eq!(
-        app.world()
-            .resource::<Model>()
-            .unwrap()
-            .collaboration
-            .rows
-            .len(),
-        1
-    );
+    // Both canonical worker rows remain intact; receive merges the older row
+    // with the current turn's worker rather than replacing the existing row.
+    let rows = &app.world().resource::<Model>().unwrap().collaboration.rows;
+    assert_eq!(rows.len(), 2);
+    let expected_older = row("older", None).card.id;
+    let expected_current = row("worker-1", None).card.id;
+    assert!(rows.iter().any(|r| r.card.id == expected_older));
+    assert!(rows.iter().any(|r| r.card.id == expected_current));
     let show = history_action(&app, HISTORY_VISIBILITY, "");
     activate(&mut app, show);
     assert!(!app.world().has::<Hidden>(marker));
@@ -399,7 +397,9 @@ fn history_preferences_are_authority_session_scoped_and_attention_is_never_hidde
     assert!(!prefs.ids(&snapshot).contains("older"));
     other = snapshot.clone();
     other.authority_id = "wrong".into();
-    let parent = app.world().resource::<Ui>().unwrap().exchange.earlier_rows;
+    // Keep the fixture visible so RNDR admits the request; the history
+    // authority guard, not hidden-control rejection, must reject its effect.
+    let parent = app.world().resource::<Ui>().unwrap().content;
     let stale = history_control(
         app.world_mut(),
         parent,
@@ -423,7 +423,8 @@ fn history_preferences_are_authority_session_scoped_and_attention_is_never_hidde
         .collaboration
         .history
         .dismissed
-        .is_empty());
+        .values()
+        .all(HashSet::is_empty));
 }
 
 #[test]

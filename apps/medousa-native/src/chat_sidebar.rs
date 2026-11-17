@@ -458,9 +458,9 @@ pub(super) fn render(
     parent: Entity,
     rows: &[(String, String)],
     selected: Option<&str>,
+    authority: Option<String>,
 ) {
     ensure(world);
-    let authority = scope(world);
     let s = world.resource_mut::<State>().unwrap();
     if !s.initialized {
         s.collapsed.insert(3);
@@ -483,7 +483,7 @@ pub(super) fn render(
             rows.iter()
                 .enumerate()
                 .filter_map(|(i, (id, _))| {
-                    let group = if pinned(world, id) {
+                    let group = if authority.as_ref().and_then(|a| s.pins.get(a)).is_some_and(|pins| pins.contains(id)) {
                         4
                     } else {
                         bucket(s.summaries.get(id).and_then(|s| s.last_timestamp), today)
@@ -728,7 +728,10 @@ mod tests {
         set_pin(app.world_mut(), "old", true);
         app.update();
         assert!(visible(app.world(), row(app.world(), 4, 3)));
-        assert!(!visible(app.world(), row(app.world(), 3, 3)));
+        let older = app.world().resource::<State>().unwrap().sections[3].unwrap();
+        assert!(children_of(app.world(), older).into_iter().all(|e|
+            rndr_ui::identity(app.world(), e) != Some(UiId(SESSION + 3)) || !visible(app.world(), e)
+        ));
         let parent = app.world().resource::<Ui>().unwrap().sessions;
         assert_eq!(
             children_of(app.world(), parent)[0],
@@ -953,7 +956,8 @@ mod tests {
         hydrate(&mut app, "today", "authority-a");
         set_pin(app.world_mut(), "old", true);
         for (width, height, dark, name) in
-            [(1200, 850, true, "dark"), (760, 650, false, "light-narrow")]
+            [(1200, 850, true, "dark"), (760, 650, true, "dark-narrow"),
+             (1200, 850, false, "light"), (760, 650, false, "light-narrow")]
         {
             publish_system_appearance(
                 app.world_mut(),
