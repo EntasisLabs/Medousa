@@ -137,10 +137,12 @@ fn typed_tools_are_deduplicated_and_lazy_selectable_receipts() {
     assert!(activate(&mut world, header));
     assert_eq!(world.entities_with::<Modal>().len(), 1);
     assert!(world.entities_with::<MarkdownView>().len() > before);
-    assert!(world
-        .query::<MarkdownView>()
-        .iter()
-        .any(|(_, v)| v.source().contains("fn main")));
+    assert!(
+        world
+            .query::<MarkdownView>()
+            .iter()
+            .any(|(_, v)| v.source().contains("fn main"))
+    );
     let close = world
         .query::<Semantics>()
         .into_iter()
@@ -245,10 +247,12 @@ fn core_filters_empty_handoff_shells_and_renders_failures() {
     let state = world.get::<Timeline>(root).unwrap();
     assert_eq!(state.rows.len(), 1);
     assert_eq!(state.rows[0].id, "failed");
-    assert!(state.rows[0]
-        .parts
-        .iter()
-        .any(|p| p.id == "error" && p.part.text.contains("unavailable")));
+    assert!(
+        state.rows[0]
+            .parts
+            .iter()
+            .any(|p| p.id == "error" && p.part.text.contains("unavailable"))
+    );
 }
 
 #[test]
@@ -462,11 +466,13 @@ fn navigation_remeasures_stable_turn_and_does_not_move_other_panes() {
     // Direct wheel/scrollbar input relinquishes the programmatic anchor.
     world.get_mut::<Scroll>(root).unwrap().offset[1] += 20.;
     sync(&mut world, root, Some(&streaming));
-    assert!(world
-        .get::<Timeline>(root)
-        .unwrap()
-        .navigation_anchor
-        .is_none());
+    assert!(
+        world
+            .get::<Timeline>(root)
+            .unwrap()
+            .navigation_anchor
+            .is_none()
+    );
 }
 
 #[test]
@@ -548,4 +554,28 @@ fn quiet_bubbles_align_by_role_and_media_is_a_real_preview() {
     sync(&mut world, root, Some(&history));
     crate::media_preview::tick(&mut world);
     assert!(crate::media_preview::drain_commands(&mut world).is_empty());
+}
+
+#[test]
+fn timeline_scrollbar_is_quiet_when_empty_and_visible_for_overflow_or_focus() {
+    let (mut world, root) = fixture();
+    let navigation = world.get::<Timeline>(root).unwrap().navigation.unwrap();
+    let rail = children_of(&world, navigation)
+        .into_iter()
+        .find(|e| world.has::<Scrollbar>(*e))
+        .unwrap();
+    assert_eq!(world.get::<Layout>(rail).unwrap().width, Size::Px(8.));
+    assert_eq!(world.get::<Scrollbar>(rail).unwrap().target, root);
+    sync_navigation(&mut world, root);
+    assert_eq!(world.get::<Opacity>(rail).unwrap().0, 0.);
+    world.get_mut::<Scroll>(root).unwrap().content[1] = 1200.;
+    sync_navigation(&mut world, root);
+    assert_eq!(world.get::<Opacity>(rail).unwrap().0, 1.);
+    world.get_mut::<Scroll>(root).unwrap().content[1] = 0.;
+    world.insert_resource(Focus {
+        entity: Some(rail),
+        ..Default::default()
+    });
+    sync_navigation(&mut world, root);
+    assert_eq!(world.get::<Opacity>(rail).unwrap().0, 1.);
 }

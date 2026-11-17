@@ -256,7 +256,11 @@ fn assert_pending_layout(app: &App) {
         "actual conversation must stay visible"
     );
     assert_eq!(w.query::<OpenRequest>().iter().count(), 4);
-    assert!(w.resource::<Approvals>().unwrap().actions.is_empty());
+    // Actions are exposed only after explicitly selecting a request thread.
+    assert_eq!(
+        w.resource::<Approvals>().unwrap().actions.is_empty(),
+        crate::ui::collaboration::selected(w).is_none()
+    );
 }
 #[test]
 fn pending_historical_requests_never_take_over_chat_even_when_expanded() {
@@ -295,6 +299,19 @@ fn pending_inbox_visual_acceptance() {
             .insert_resource(Viewport::new(width as f32, height as f32));
         for open in [false, true] {
             if open {
+                // Pending cards live in the explicit work thread, not inline
+                // in Chat. Open that thread before expanding its details.
+                let request = app
+                    .world()
+                    .query::<OpenRequest>()
+                    .iter()
+                    .find(|(_, request)| request.0.ends_with("proposal-0"))
+                    .expect("pending request 0")
+                    .0;
+                assert!(activate(app.world_mut(), request));
+                for _ in 0..8 {
+                    rndr_paint::frame(&mut app);
+                }
                 let node = app
                     .world()
                     .query::<RequestDetails>()

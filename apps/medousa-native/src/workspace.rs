@@ -267,7 +267,7 @@ pub fn chrome(world: &mut World) {
         if focus != Some(handle.sash) && drag != Some(handle.sash) {
             world.insert(
                 handle.sash,
-                crate::native_style::color(world, crate::native_style::stroke()),
+                crate::native_style::color(world, crate::native_style::navigation()),
             );
         }
     }

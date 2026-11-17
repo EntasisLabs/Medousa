@@ -76,9 +76,19 @@ fn cohesive_composer_geometry_and_header_accessibility() {
         assert!(mode.y >= editor.y + editor.h);
         assert!(mode.x >= shell.x && mode.x + mode.w <= shell.x + shell.w + 1.);
         assert!(
-            mode.y + mode.h < shell.y + shell.h,
-            "footer must stay inside frame"
+            mode.y + mode.h <= shell.y + shell.h + 1.,
+            "footer must stay inside centered column"
         );
+        let card = children_of(w, ui.compose)
+            .into_iter()
+            .find(|e| w.has::<Radius>(*e))
+            .and_then(|e| w.get::<Rect>(e))
+            .unwrap();
+        assert!(
+            mode.y >= card.y + card.h,
+            "secondary controls stay outside writing card"
+        );
+        assert!(card.h < 125., "idle card stays compact: {card:?}");
         assert!(shell.x + shell.w <= width);
         for name in ["Toggle conversation sidebar", "Open work threads"] {
             assert!(
@@ -574,7 +584,7 @@ fn composer_long_draft_visual_acceptance() {
         let editor = w.get::<Rect>(ui.composer.editor).unwrap();
         let shell = w.get::<Rect>(ui.compose).unwrap();
         assert!(
-            editor.h > 80. && editor.h <= 140.,
+            editor.h > 80. && editor.h <= 297.5,
             "bounded growth: {editor:?}"
         );
         assert!(editor.x >= shell.x && editor.x + editor.w <= shell.x + shell.w);
@@ -625,7 +635,7 @@ fn composer_grows_with_draft_then_shrinks_without_replacing_document() {
     }
     let grown = app.world().get::<Rect>(editor.editor).unwrap().h;
     assert!(
-        grown > 80. && grown <= 140.,
+        grown > 80. && grown <= 297.5,
         "bounded editor height {grown}"
     );
     {
@@ -651,4 +661,161 @@ fn composer_grows_with_draft_then_shrinks_without_replacing_document() {
             .text(),
         "short draft"
     );
+}
+
+#[test]
+fn sidebar_search_is_disclosed_and_clears_filter_on_close() {
+    let (mut app, _rx) = fixture();
+    let ui = *app.world().resource::<Ui>().unwrap();
+    assert!(app.world().has::<Hidden>(ui.search));
+    action(app.world_mut(), TOGGLE_SEARCH);
+    settle(&mut app);
+    assert!(!app.world().has::<Hidden>(ui.search));
+    assert_eq!(
+        app.world().resource::<Focus>().unwrap().entity,
+        Some(ui.search)
+    );
+    app.world_mut().get_mut::<Label>(ui.search).unwrap().text = "Native".into();
+    settle(&mut app);
+    action(app.world_mut(), TOGGLE_SEARCH);
+    settle(&mut app);
+    assert!(app.world().has::<Hidden>(ui.search));
+    assert!(app.world().get::<Label>(ui.search).unwrap().text.is_empty());
+    assert!(
+        app.world()
+            .resource::<Model>()
+            .unwrap()
+            .search_query
+            .is_empty()
+    );
+    assert_eq!(
+        app.world().resource::<Focus>().unwrap().entity,
+        Some(ui.composer.editor)
+    );
+}
+
+#[test]
+fn composer_scrollbar_is_narrow_and_keeps_the_native_target() {
+    let (app, _rx) = fixture();
+    let w = app.world();
+    let ui = w.resource::<Ui>().unwrap();
+    let bar = children_of(w, ui.composer.root)
+        .into_iter()
+        .find(|e| w.has::<Scrollbar>(*e))
+        .unwrap();
+    assert_eq!(w.get::<Scrollbar>(bar).unwrap().target, ui.composer.editor);
+    assert_eq!(w.get::<Layout>(bar).unwrap().width, Size::Px(8.));
+    assert!(w.has::<Focusable>(bar));
+    assert_eq!(
+        w.get::<Color>(bar),
+        Some(&visual::color(w, composer_color()))
+    );
+}
+
+#[test]
+fn composer_expands_during_incremental_typing_and_resize() {
+    let (mut app, _rx) = fixture();
+    app.world_mut()
+        .insert_resource(Arc::new(rndr_render::ParleyText::new()) as Arc<dyn TextEngine>);
+    for _ in 0..4 {
+        app.update();
+    }
+    let ui = *app.world().resource::<Ui>().unwrap();
+    let document = app.world().resource::<Model>().unwrap().document;
+    request_focus(app.world_mut(), ui.composer.editor);
+    let initial = app.world().get::<Rect>(ui.composer.editor).unwrap().h;
+    for ch in "A naturally wrapping prompt with enough words to grow while typing. "
+        .repeat(8)
+        .chars()
+    {
+        app.world_mut().resource_mut::<Input>().unwrap().chars = ch.to_string();
+        app.update();
+        app.world_mut()
+            .resource_mut::<Input>()
+            .unwrap()
+            .chars
+            .clear();
+        app.update();
+    }
+    let wide = *app.world().get::<Rect>(ui.composer.editor).unwrap();
+    assert!(wide.h > initial + 40., "{initial} -> {wide:?}");
+    app.world_mut().insert_resource(Viewport::new(760., 850.));
+    for _ in 0..8 {
+        app.update();
+    }
+    let narrow = *app.world().get::<Rect>(ui.composer.editor).unwrap();
+    assert!(
+        narrow.h >= wide.h && narrow.h <= 297.5,
+        "{wide:?} -> {narrow:?}"
+    );
+    assert_eq!(app.world().resource::<Model>().unwrap().document, document);
+    assert_eq!(
+        app.world().resource::<Ui>().unwrap().composer.editor,
+        ui.composer.editor
+    );
+}
+
+#[test]
+fn timeline_keeps_one_draggable_scrollbar_without_passive_overlay() {
+    let (mut app, _rx) = fixture();
+    for _ in 0..3 {
+        settle(&mut app);
+        let w = app.world();
+        let root = w.resource::<Ui>().unwrap().timeline;
+        assert!(w.has::<Scroll>(root));
+        assert!(!w.has::<ScrollIndicator>(root));
+        let bars: Vec<_> = w
+            .entities_with::<Scrollbar>()
+            .into_iter()
+            .filter(|e| w.get::<Scrollbar>(*e).unwrap().target == root)
+            .collect();
+        assert_eq!(bars.len(), 1);
+        assert!(w.has::<Focusable>(bars[0]));
+    }
+}
+
+#[test]
+#[ignore = "Overflowing timeline scrollbar GPU acceptance"]
+fn timeline_single_scrollbar_visual_acceptance() {
+    let (mut app, _rx) = fixture();
+    app.world_mut()
+        .insert_resource(Arc::new(rndr_render::ParleyText::new()) as Arc<dyn TextEngine>);
+    let content = "The conversation keeps one draggable scrollbar while the left navigation stays available.\n\n".repeat(40);
+    app.world_mut().resource_mut::<Model>().unwrap().chat.hydrate("s".into(), "a".into(), vec![
+        serde_json::json!({"entry_id":"u", "entry_seq":1, "role":"user", "content":"Keep the left nav; remove the duplicate scrollbar."}),
+        serde_json::json!({"entry_id":"a", "entry_seq":2, "role":"assistant", "content":content}),
+    ], None).unwrap();
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    for (width, height, suffix) in [(1200, 850, "wide"), (760, 650, "narrow")] {
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        for _ in 0..12 {
+            rndr_paint::frame(&mut app);
+        }
+        let root = app.world().resource::<Ui>().unwrap().timeline;
+        let scroll = app.world().get::<Scroll>(root).unwrap();
+        assert!(scroll.content[1] > app.world().get::<Rect>(root).unwrap().h);
+        assert!(!app.world().has::<ScrollIndicator>(root));
+        let bars: Vec<_> = app
+            .world()
+            .entities_with::<Scrollbar>()
+            .into_iter()
+            .filter(|e| app.world().get::<Scrollbar>(*e).unwrap().target == root)
+            .collect();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(app.world().get::<Opacity>(bars[0]).unwrap().0, 1.);
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-single-scrollbar-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
 }

@@ -30,6 +30,7 @@ pub(crate) mod collaboration;
 mod conversations;
 
 const BEHAVIOR: u64 = 33;
+const TOGGLE_SEARCH: u64 = 34;
 const DETAILS: u64 = 30;
 const MODEL_SEARCH: u64 = 31;
 const SIDEBAR: u64 = 32;
@@ -77,6 +78,7 @@ pub struct Model {
     details_open: bool,
     model_search_open: bool,
     sidebar_open: bool,
+    sidebar_search_open: bool,
     document: DocumentId,
     pending_draft: Option<(DocumentId, rndr_core::editing::Revision)>,
 }
@@ -112,6 +114,7 @@ impl Model {
             details_open: false,
             model_search_open: false,
             sidebar_open: true,
+            sidebar_search_open: false,
             document,
             pending_draft: None,
         }
@@ -130,6 +133,7 @@ struct Ui {
     rename: Entity,
     session_actions: Entity,
     timeline: Entity,
+    empty_presence: Entity,
     composer_parent: Entity,
     exchange: collaboration::View,
     composer: EditorSurfaceHandle,
@@ -183,6 +187,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Update, update);
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
+    app.add_system(Schedule::Layout, timeline::chrome);
     app.add_system(Schedule::Layout, visual::document_layouts);
     app.add_system(Schedule::Layout, visual::fit_labels);
     app.add_system(Schedule::Layout, visual::path_crumbs);
@@ -222,6 +227,7 @@ fn button(
     let icon = match (id, title) {
         (SIDEBAR, "Chats") => Some((Icon::PanelLeft, "Toggle conversation sidebar")),
         (DETAILS, "Info") => Some((Icon::Info, "Open work threads")),
+        (TOGGLE_SEARCH, _) => Some((Icon::Search, "Search conversations")),
         (NEW, "New chat") => Some((Icon::Plus, "New chat")),
         (40, "Split") => Some((Icon::PanelLeft, "Split conversation pane")),
         (41, "Join") => Some((Icon::PanelLeft, "Join conversation panes")),
@@ -250,7 +256,7 @@ fn button(
                     64.
                 }
             }
-            40 | 41 | NEW => 32.,
+            40 | 41 | NEW | TOGGLE_SEARCH => 28.,
             MODEL_PREV | MODEL_NEXT => 70.,
             MODEL_SEARCH => 150.,
             _ => 90.,
@@ -295,8 +301,8 @@ fn setup(world: &mut World) {
     *world.get_mut::<Layout>(sidebar.content).unwrap() = Layout {
         width: Size::Fill,
         height: Size::Fill,
-        padding: 12.,
-        gap: 8.,
+        padding: 8.,
+        gap: 4.,
         ..Layout::column()
     };
     visual::flat(world, sidebar.root, visual::navigation());
@@ -317,9 +323,10 @@ fn setup(world: &mut World) {
             ..Default::default()
         },
     );
-    let title = text(world, sidebar_header, "Conversations", Typography::Emphasis).unwrap();
+    let title = text(world, sidebar_header, "Chats", Typography::Label).unwrap();
     world.get_mut::<Layout>(title).unwrap().width = Size::Fill;
     button(world, sidebar_header, NEW, "New chat", true);
+    button(world, sidebar_header, TOGGLE_SEARCH, "Search", true);
     let search = world.spawn((
         Layout {
             width: Size::Fill,
@@ -333,6 +340,7 @@ fn setup(world: &mut World) {
         Placeholder::new("Search conversations…"),
     ));
     set_parent(world, search, sidebar.content);
+    world.insert(search, Hidden);
     plane(world, search, visual::rail());
     world.get_mut::<UiStyle>(search).unwrap().typography = Some(Typography::Label);
     world.insert(search, visual::SemanticBorder(visual::stroke()));
@@ -502,6 +510,54 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     );
     let exchange = collaboration::mount(world, main, content.content);
     let timeline = timeline::setup(world, main);
+    // A separate retained surface keeps the timeline and its scroll position
+    // intact while a genuinely empty, loaded conversation is displayed.
+    let empty_presence = container(
+        world,
+        Some(main),
+        Layout {
+            width: Size::Fill,
+            height: Size::Fill,
+            gap: 12.,
+            ..Layout::column()
+        },
+    );
+    world.insert(empty_presence, Hidden);
+    container(
+        world,
+        Some(empty_presence),
+        Layout {
+            height: Size::Fill,
+            ..Layout::column()
+        },
+    );
+    let ask = text(world, empty_presence, presence_ask(), Typography::Reading).unwrap();
+    world.insert(ask, AlignSelf(Items::Center));
+    world.insert(
+        ask,
+        visual::FitLabel {
+            label: ask,
+            extra: 0.,
+            min: 0.,
+            max: 360.,
+        },
+    );
+    world.insert(
+        ask,
+        UiStyle {
+            foreground: Some(visual::secondary().into()),
+            typography: Some(Typography::Reading),
+            ..Default::default()
+        },
+    );
+    container(
+        world,
+        Some(empty_presence),
+        Layout {
+            height: Size::Fill,
+            ..Layout::column()
+        },
+    );
     let approvals = approvals::setup(world, main);
     approvals::thread_host(world, approvals, exchange.approvals);
     let composer_row = container(
@@ -510,7 +566,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         Layout {
             width: Size::Fill,
             height: Size::Hug,
-            padding: 12.,
+            padding: 16.,
             ..Layout::row()
         },
     );
@@ -544,7 +600,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         width: Size::Fill,
         height: Size::Hug,
         padding: 8.,
-        gap: 0.,
+        gap: 4.,
         ..Layout::column()
     };
     world.insert(
@@ -590,8 +646,8 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         Some(compose.content),
         Layout {
             width: Size::Fill,
-            height: Size::Px(44.),
-            padding: 4.,
+            height: Size::Px(32.),
+            padding: 0.,
             ..Layout::column()
         },
     );
@@ -609,7 +665,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         },
     );
     let attachments = attachments::setup(world, controls, attachment_tray);
-    world.get_mut::<Layout>(attachments).unwrap().width = Size::Px(40.);
+    world.get_mut::<Layout>(attachments).unwrap().width = Size::Px(28.);
     let model_stack = container(
         world,
         Some(controls),
@@ -630,7 +686,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     )
     .unwrap()
     .root;
-    let model_caption = text(world, model_stack, "Choose a model", Typography::Secondary).unwrap();
+    let model_caption = text(world, model_stack, "Choose a model", Typography::Caption).unwrap();
     world.insert(
         model_caption,
         UiStyle {
@@ -641,7 +697,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
     world.get_mut::<Layout>(model_caption).unwrap().padding = 0.;
     let footer = container(
         world,
-        Some(compose.content),
+        Some(composer_shell),
         Layout {
             width: Size::Fill,
             height: Size::Hug,
@@ -650,7 +706,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         },
     );
     let runtime_trigger = button(world, footer, DETAILS, "Medousa  ⌄", true);
-    world.get_mut::<Layout>(runtime_trigger.root).unwrap().width = Size::Px(118.);
+    world.get_mut::<Layout>(runtime_trigger.root).unwrap().width = Size::Px(100.);
     let mode = SingleSelect::mount(
         world,
         footer,
@@ -770,6 +826,7 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         rename,
         session_actions,
         timeline,
+        empty_presence,
         exchange,
         composer_parent,
         composer,
@@ -788,6 +845,16 @@ fn mount_view(world: &mut World, parent: Entity, shared: Shared) -> Ui {
         model_pages,
     }
 }
+fn presence_ask() -> &'static str {
+    use chrono::Timelike;
+    match chrono::Local::now().hour() {
+        0..=4 => "What are we doing past midnight?",
+        5..=11 => "What are we doing this morning?",
+        12..=16 => "What are we doing today?",
+        17..=20 => "What are we doing this evening?",
+        _ => "What are we doing tonight?",
+    }
+}
 fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> EditorSurfaceHandle {
     let mut props = EditorSurfaceProps::new(document, "Message Medousa");
     props.gutter = false;
@@ -802,6 +869,12 @@ fn mount_composer(world: &mut World, parent: Entity, document: DocumentId) -> Ed
             ..Default::default()
         },
     );
+    for child in children_of(world, h.root) {
+        if world.has::<Scrollbar>(child) {
+            world.get_mut::<Layout>(child).unwrap().width = Size::Px(8.);
+            plane(world, child, composer_color());
+        }
+    }
     // Core editor paint otherwise supplies its own gray input background.
     world.insert(h.editor, ResolvedColor);
     // Leave Color to UiStyle's resolver: an authored primitive Color would
@@ -857,11 +930,11 @@ fn sync_composer_height(
     }
     let width = (rect.w - 2. * TEXT_ORIGIN_X).max(engine.unit_advance(&style));
     let line = engine.layout("Mg", &style, &[], width).height.max(20.);
-    let max = (5. * line + 24.).min((viewport * 0.25).max(44.));
+    let max = (10. * line + 16.).min((viewport * 0.35).max(32.));
     let height = if end < text.len() {
         max
     } else {
-        (engine.layout(&text[..end], &style, &[], width).height + 24.).clamp(44., max)
+        (engine.layout(&text[..end], &style, &[], width).height + 16.).clamp(32., max)
     };
     world.get_mut::<Layout>(parent).unwrap().height = Size::Px(height);
     world.insert(
@@ -922,7 +995,7 @@ fn round_send(world: &mut World, handle: controls::ControlHandle, enabled: bool)
     while let Some(node) = nodes.pop() {
         // Shape the existing RNDR control primitives, preserving its focus,
         // hover, disabled state and activation semantics.
-        let radius = if node == handle.root { 19. } else { 15. };
+        let radius = if node == handle.root { 16. } else { 14. };
         world.insert(node, Radius(radius));
         if node != handle.label {
             world.get_mut::<Layout>(node).unwrap().height = Size::Fill;
@@ -930,8 +1003,8 @@ fn round_send(world: &mut World, handle: controls::ControlHandle, enabled: bool)
         nodes.extend(children_of(world, node));
     }
     *world.get_mut::<Layout>(handle.root).unwrap() = Layout {
-        width: Size::Px(38.),
-        height: Size::Px(38.),
+        width: Size::Px(32.),
+        height: Size::Px(32.),
         padding: 2.,
         ..Layout::column()
     };
@@ -941,8 +1014,8 @@ fn round_send(world: &mut World, handle: controls::ControlHandle, enabled: bool)
     // a short Hug-height face (which produces an over-rounded diamond).
     world.get_mut::<Layout>(handle.label).unwrap().height = Size::Fill;
     if let Some(metrics) = world.get_mut::<LabelBox>(handle.label) {
-        metrics.inset_x = 7.;
-        metrics.inset_y = 3.;
+        metrics.inset_x = 4.;
+        metrics.inset_y = 2.;
     }
 }
 fn depth_options() -> Vec<SelectOption> {
@@ -1161,6 +1234,19 @@ fn action(world: &mut World, id: u64) {
             close_popup(world, ui.behavior, true);
             let m = world.resource_mut::<Model>().unwrap();
             m.model_search_open = !m.model_search_open;
+        }
+        TOGGLE_SEARCH => {
+            let m = world.resource_mut::<Model>().unwrap();
+            m.sidebar_search_open = !m.sidebar_search_open;
+            if m.sidebar_search_open {
+                world.remove::<Hidden>(ui.search);
+                request_focus(world, ui.search);
+            } else {
+                // A filtered list must never silently remain filtered.
+                world.get_mut::<Label>(ui.search).unwrap().text.clear();
+                world.insert(ui.search, Hidden);
+                request_focus(world, ui.composer.editor);
+            }
         }
         SIDEBAR => {
             let m = world.resource_mut::<Model>().unwrap();
@@ -1782,7 +1868,7 @@ fn sync(world: &mut World) {
         11,
         &format!("{mode_title}  ⌄"),
         available && m.chat.session().is_some(),
-        Size::Px(130.),
+        Size::Px(94.),
     );
     quiet_selector(
         world,
@@ -1801,7 +1887,7 @@ fn sync(world: &mut World) {
         .map(|(provider, _)| provider_caption(provider))
         .unwrap_or_default();
     let behavior_button = button(world, ui.footer, BEHAVIOR, "Behavior  ⌄", true);
-    world.get_mut::<Layout>(behavior_button.root).unwrap().width = Size::Px(118.);
+    world.get_mut::<Layout>(behavior_button.root).unwrap().width = Size::Px(100.);
     let open = !world.has::<Hidden>(ui.behavior);
     world.insert(
         behavior_button.root,
@@ -1873,8 +1959,16 @@ fn sync(world: &mut World) {
     }
 
     // The core is borrowed into m during presentation; world.Model.chat is empty.
-    chat_sidebar::render(world, ui.sessions, &m.sessions, selected_session,
-        m.chat.snapshot().map(|s| s.authority_id.clone()).filter(|a| !a.is_empty()));
+    chat_sidebar::render(
+        world,
+        ui.sessions,
+        &m.sessions,
+        selected_session,
+        m.chat
+            .snapshot()
+            .map(|s| s.authority_id.clone())
+            .filter(|a| !a.is_empty()),
+    );
     let provider = m
         .chat
         .session()
@@ -1885,6 +1979,21 @@ fn sync(world: &mut World) {
         ui.timeline,
         provider.as_ref().or_else(|| m.chat.snapshot()),
     );
+    // Don't present an empty room while history is loading, or for an
+    // external provider whose own conversation may not yet have arrived.
+    let show_presence = provider.is_none()
+        && !m.loading
+        && m.chat
+            .snapshot()
+            .is_some_and(|snapshot| snapshot.items.is_empty() && snapshot.active_turn_id.is_none());
+    let timeline_frame = world.get::<Parent>(ui.timeline).unwrap().entity;
+    if show_presence {
+        world.remove::<Hidden>(ui.empty_presence);
+        world.insert(timeline_frame, Hidden);
+    } else {
+        world.insert(ui.empty_presence, Hidden);
+        world.remove::<Hidden>(timeline_frame);
+    }
     let state = world.resource::<Model>().unwrap();
     let (details, filter, sidebar) = (
         state.details_open,
@@ -1987,6 +2096,26 @@ mod tests {
         app.update();
         app.update();
         (app, rx)
+    }
+    #[test]
+    fn empty_presence_only_appears_for_loaded_empty_chat() {
+        let (mut app, _rx) = idle_fixture();
+        let ui = *app.world().resource::<Ui>().unwrap();
+        let frame = app.world().get::<Parent>(ui.timeline).unwrap().entity;
+        assert!(!app.world().has::<Hidden>(ui.empty_presence));
+        assert!(app.world().has::<Hidden>(frame));
+        app.world_mut().resource_mut::<Model>().unwrap().loading = true;
+        app.update();
+        assert!(app.world().has::<Hidden>(ui.empty_presence));
+        assert!(!app.world().has::<Hidden>(frame));
+        let m = app.world_mut().resource_mut::<Model>().unwrap();
+        m.loading = false;
+        m.chat.hydrate("other".into(), "a".into(), vec![
+            serde_json::json!({"entry_id":"u", "entry_seq":1, "role":"user", "content":"Hello"})
+        ], None).unwrap();
+        app.update();
+        assert!(app.world().has::<Hidden>(ui.empty_presence));
+        assert!(!app.world().has::<Hidden>(frame));
     }
     #[test]
     fn sustained_composer_typing_acknowledges_source_events() {

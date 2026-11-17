@@ -2,7 +2,7 @@
 //! owns only projection, viewport mounting, and presentation-only clipboard actions.
 use crate::native_style as visual;
 use medousa_app_core::contract::{ChatSegment, ToolRunState};
-use medousa_app_core::{present_chat_items, ChatItem, ChatItemRole, ChatSnapshot};
+use medousa_app_core::{ChatItem, ChatItemRole, ChatSnapshot, present_chat_items};
 use rndr_core::*;
 use std::collections::{HashMap, HashSet};
 #[path = "tool_activity.rs"]
@@ -150,6 +150,21 @@ fn sync_navigation(world: &mut World, root: Entity) {
             turn_target(state, scroll, rect, NEXT_TURN).is_some(),
         ),
     ];
+    // Keep the retained native scroll target and keyboard route, but don't
+    // paint a full-height thumb when there is nothing to scroll.
+    for child in children_of(world, parent) {
+        if world.has::<Scrollbar>(child) {
+            let focused = world.resource::<Focus>().and_then(|f| f.entity) == Some(child);
+            world.insert(
+                child,
+                Opacity(if scroll.content[1] > rect.h + 1. || focused {
+                    1.
+                } else {
+                    0.
+                }),
+            );
+        }
+    }
     for (command, glyph, name, enabled) in availability {
         let mut props = rndr_ui::controls::ButtonProps::new(
             glyph,
@@ -173,6 +188,16 @@ fn sync_navigation(world: &mut World, root: Entity) {
 }
 struct CopyText(String);
 impl Component for CopyText {}
+
+/// UiPlugin supplies passive indicators to every Scroll viewport each frame.
+/// The timeline already has an accessible, draggable Scrollbar in its navigation
+/// column. Suppress only its redundant overlay after the toolkit styles run.
+pub fn chrome(world: &mut World) {
+    for root in world.entities_with::<Timeline>() {
+        world.remove::<ScrollIndicator>(root);
+        sync_navigation(world, root);
+    }
+}
 
 /// Requires the host's MarkdownPlugin and native interaction plugins. The only
 /// scrollport is this root; Markdown views hug content and retain selection.
@@ -262,6 +287,9 @@ pub fn setup(world: &mut World, parent: Entity) -> Entity {
         },
     ));
     set_parent(world, rail, navigation);
+    world.get_mut::<Layout>(rail).unwrap().width = Size::Px(8.);
+    world.insert(rail, AlignSelf(Items::End));
+    visual::plane(world, rail, visual::canvas());
     sync_navigation(world, root);
     root
 }
