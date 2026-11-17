@@ -161,6 +161,7 @@ pub fn app() -> App {
     );
     let theme = UiTheme {
         density: Density::Compact,
+        ramp: visual::ramp(),
         ..Default::default()
     };
     rndr_ui::apply_theme_bridge(app.world_mut(), theme);
@@ -183,6 +184,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
     app.add_system(Schedule::Layout, visual::document_layouts);
+    app.add_system(Schedule::Layout, visual::fit_labels);
     app.add_system(Schedule::Layout, chrome::polish);
     app.add_system(Schedule::Layout, visual::borders);
     app

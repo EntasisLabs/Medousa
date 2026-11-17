@@ -299,11 +299,14 @@ pub fn mount(world: &mut World, parent: Entity) {
     let toolbar = column(world, content, Size::Fill, Size::Px(38.));
     *world.get_mut::<Layout>(toolbar).unwrap() = Layout {
         width: Size::Fill,
-        height: Size::Px(38.),
+        height: Size::Hug,
+        min_height: 38.,
         padding: 4.,
         gap: 4.,
         ..Layout::row()
     };
+    // Measured actions flow onto another line instead of clipping or eliding.
+    world.insert(toolbar, Wrap { line_gap: 4. });
     let formatting = column(world, content, Size::Fill, Size::Px(34.));
     *world.get_mut::<Layout>(formatting).unwrap() = Layout {
         width: Size::Fill,

@@ -1,22 +1,150 @@
 //! App-owned presentation tokens. RNDR still owns controls, focus and interaction.
 //! Opaque surfaces deliberately work without platform blur or window materials.
 use rndr_core::*;
-use rndr_ui::{Token, UiColor, UiStyle, UiTheme};
+use rndr_ui::{Token, TypeMetrics, TypeRamp, Typography, UiColor, UiStyle, UiTheme};
 
 pub const COLUMN: f32 = 720.;
 pub const ROW_GAP: f32 = 24.;
 pub const INSET: f32 = 20.;
 pub const CONTROL_RADIUS: f32 = 6.;
 pub const ACTION_SIZE: f32 = 32.;
+/// Sidebar list rows and tracked group headings, as in medousa-home.
+pub const ROW_HEIGHT: f32 = 32.;
+pub const SECTION_HEIGHT: f32 = 26.;
+
+/// medousa-home's type grammar: 13pt chrome rows, 12/11pt metadata, tracked
+/// 11pt group headings, 15pt reading and 13pt code. Scales stay with RNDR.
+pub fn ramp() -> TypeRamp {
+    TypeRamp {
+        label: TypeMetrics::new(13., 18., 400).tracking(-0.08),
+        emphasis: TypeMetrics::new(13., 18., 600),
+        secondary: TypeMetrics::new(12., 16., 400),
+        caption: TypeMetrics::new(11., 14., 400),
+        overline: TypeMetrics::new(11., 14., 600).tracking(0.6),
+        reading: TypeMetrics::new(15., 24., 400),
+        ..TypeRamp::default()
+    }
+}
+
+/// Size an entity to its label's real measured text instead of guessed
+/// character counts. `label` may be the entity itself or a descendant; the
+/// padding and label insets between them are included. Re-measured every
+/// layout so it follows text scale and ramp changes.
+pub struct FitLabel {
+    pub label: Entity,
+    pub extra: f32,
+    pub min: f32,
+    pub max: f32,
+}
+impl Component for FitLabel {}
+
+pub fn fit_labels(world: &mut World) {
+    let fits = world
+        .query::<FitLabel>()
+        .iter()
+        .map(|(e, f)| (*e, f.label, f.extra, f.min, f.max))
+        .collect::<Vec<_>>();
+    if fits.is_empty() {
+        return;
+    }
+    let engine = text_engine(world);
+    let theme = world.resource::<UiTheme>().cloned().unwrap_or_default();
+    let scale = world
+        .resource::<Viewport>()
+        .map(|v| v.scale)
+        .filter(|s| s.is_finite() && *s > 0.)
+        .unwrap_or(1.);
+    for (root, label, extra, min, max) in fits {
+        let Some(text) = world.get::<Label>(label).map(|l| l.text.clone()) else {
+            continue;
+        };
+        let style = world
+            .get::<TextStyle>(label)
+            .cloned()
+            .unwrap_or_else(|| theme.typography(Typography::Label));
+        let natural = engine.measure(&text, &style, &[], f32::INFINITY).width;
+        let mut chrome = world.get::<LabelBox>(label).map_or(0., |b| b.inset_x * 2.);
+        let mut e = label;
+        while e != root {
+            let Some(parent) = world.get::<Parent>(e).map(|p| p.entity) else {
+                break;
+            };
+            chrome += world.get::<Layout>(parent).map_or(0., |l| l.padding * 2.);
+            e = parent;
+        }
+        if label != root {
+            chrome += world.get::<Layout>(label).map_or(0., |l| l.padding * 2.);
+        }
+        // Fractional advances can lose a device pixel at either edge after
+        // nested snapping; reserve two, as RNDR's toolbar fit does.
+        let width = ((natural + chrome + extra) * scale).ceil() / scale + 2. / scale;
+        if let Some(layout) = world.get_mut::<Layout>(root) {
+            layout.width = Size::Px(width.clamp(min, max.max(min)));
+        }
+    }
+}
+
+/// Tracked group heading recipe on an existing row or text label. Callers
+/// supply the uppercase text: RNDR controls republish labels from props.
+pub fn section_heading(world: &mut World, label: Entity) {
+    // An app UiStyle outranks the control's per-frame recipe.
+    world.insert(
+        label,
+        UiStyle {
+            foreground: Some(secondary().into()),
+            typography: Some(Typography::Overline),
+            ..Default::default()
+        },
+    );
+}
+
+/// medousa-home row grammar: title fills, metadata is a trailing caption on
+/// the same line rather than a second line clipped by the row height.
+pub fn trailing_meta(world: &mut World, h: rndr_ui::controls::ControlHandle) {
+    let Some(face) = world.get::<Parent>(h.label).map(|p| p.entity) else {
+        return;
+    };
+    if let Some(l) = world.get_mut::<Layout>(face) {
+        l.axis = Axis::Row;
+    }
+    world.insert(
+        face,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
+    for child in children_of(world, face) {
+        if child == h.label {
+            continue;
+        }
+        if let Some(l) = world.get_mut::<Layout>(child) {
+            l.width = Size::Hug;
+        }
+        world.insert(
+            child,
+            UiStyle {
+                typography: Some(Typography::Caption),
+                ..Default::default()
+            },
+        );
+    }
+}
 
 /// One tooltip recipe for app-owned icon actions. RNDR owns visibility, Escape,
 /// focus and pointer-leave suppression; the app only supplies readable geometry.
 pub fn action_hint(world: &mut World, target: Entity, label: &str) -> Entity {
     let tip = rndr_ui::inputs::Tooltip::attach(world, target, label).unwrap();
     world.insert(tip.root, PopupPlacement::Below);
-    let scale = world.resource::<UiTheme>().map_or(1., |t| t.text_scale);
-    world.get_mut::<Layout>(tip.root).unwrap().width =
-        Size::Px((label.chars().count() as f32 * 7. * scale + 20.).clamp(120., 360.));
+    world.insert(
+        tip.root,
+        FitLabel {
+            label: tip.root,
+            extra: 0.,
+            min: 0.,
+            max: 360.,
+        },
+    );
     world.get_mut::<Label>(tip.root).unwrap().overflow = TextOverflow::Wrap;
     tip.root
 }
@@ -219,16 +347,23 @@ pub fn document_action(
     } else {
         Button::mount(world, parent, UiId(id), props).unwrap()
     };
-    let width = if icon.is_some() {
-        ACTION_SIZE
-    } else {
-        (label.chars().count() as f32 * 7. + 20.).clamp(56., 300.)
-    };
     *world.get_mut::<Layout>(h.root).unwrap() = Layout {
-        width: Size::Px(width),
+        width: Size::Px(ACTION_SIZE),
         height: Size::Px(ACTION_SIZE),
         ..Layout::row()
     };
+    if icon.is_none() {
+        // medousa-home's `px-2` text actions: 8pt either side of the label.
+        world.insert(
+            h.root,
+            FitLabel {
+                label: h.label,
+                extra: 4.,
+                min: 48.,
+                max: 300.,
+            },
+        );
+    }
     world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
     h
 }

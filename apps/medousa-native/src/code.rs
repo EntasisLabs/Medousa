@@ -300,9 +300,17 @@ fn caption(w: &mut World, p: Entity, s: &str) {
         w.insert(
             e,
             Layout {
-                width: Size::Px((s.chars().count() as f32 * 7. + 8.).clamp(40., 280.)),
                 height: Size::Px(28.),
                 ..Layout::column()
+            },
+        );
+        w.insert(
+            e,
+            visual::FitLabel {
+                label: e,
+                extra: 0.,
+                min: 0.,
+                max: 280.,
             },
         );
         w.get_mut::<Label>(e).unwrap().overflow = TextOverflow::Ellipsis;
@@ -349,13 +357,17 @@ fn tree_row(w: &mut World, p: Entity, c: &mut Code, s: &str, a: Action, selected
     c.actions.insert(id, a);
 }
 fn row(w: &mut World, p: Entity) -> Entity {
-    let e = w.spawn((Layout {
-        width: Size::Fill,
-        height: Size::Hug,
-        gap: 4.,
-        padding: 4.,
-        ..Layout::row()
-    },));
+    // Measured actions flow onto another line instead of clipping or eliding.
+    let e = w.spawn((
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 4.,
+            padding: 4.,
+            ..Layout::row()
+        },
+        Wrap { line_gap: 4. },
+    ));
     set_parent(w, e, p);
     e
 }

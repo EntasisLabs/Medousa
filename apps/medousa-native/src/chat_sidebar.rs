@@ -563,7 +563,7 @@ pub(super) fn render(
                 } else {
                     Icon::ChevronDown.scalar()
                 },
-                LABELS[g]
+                LABELS[g].to_uppercase()
             ),
             HostIntent::Command(SECTION + g as u64),
         );
@@ -582,18 +582,12 @@ pub(super) fn render(
         .unwrap();
         *world.get_mut::<Layout>(h.root).unwrap() = Layout {
             width: Size::Fill,
-            height: Size::Px(26.),
+            height: Size::Px(visual::SECTION_HEIGHT),
             padding: 4.,
             ..Layout::row()
         };
-        world.insert(
-            h.label,
-            UiRecipe(UiStyle {
-                foreground: Some(visual::secondary().into()),
-                typography: Some(Typography::Secondary),
-                ..Default::default()
-            }),
-        );
+        visual::section_heading(world, h.label);
+        visual::trailing_meta(world, h);
         world.insert(
             h.root,
             Semantics {
@@ -640,7 +634,8 @@ pub(super) fn render(
             )
             .unwrap();
             world.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
-            world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(32.);
+            world.get_mut::<Layout>(h.root).unwrap().height = Size::Px(visual::ROW_HEIGHT);
+            visual::trailing_meta(world, h);
             world.insert(h.root, Radius(visual::CONTROL_RADIUS));
             if let Some(authority) = &authority {
                 world.insert(h.root, ContextTarget);
