@@ -1,21 +1,22 @@
 //! Native adapter over the canonical Forge source API. SourceDocuments owns
 //! per-file history/selection/scroll; the daemon owns project files and leases.
 use crate::native_style as visual;
-use medousa_sdk::{operations as ops, MedousaClient};
+use medousa_sdk::{MedousaClient, operations as ops};
 use rndr_core::{
     editing::{DocumentId, Revision, SourceDocuments},
     *,
 };
 use rndr_ui::{
+    Corner, Typography, UiId, UiRecipe, UiStyle,
     controls::{self, ButtonProps, HostIntent},
     editing::{EditorSurface, EditorSurfaceHandle, EditorSurfaceProps},
     tabs::{
-        reorder_tabs, TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripHandle,
-        TabStripProps,
+        TabId, TabSpec, TabStrip, TabStripEvent, TabStripEventKind, TabStripHandle, TabStripProps,
+        reorder_tabs,
     },
-    text, Corner, Typography, UiId, UiRecipe, UiStyle,
+    text,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::{AtomicU64, Ordering},
@@ -169,14 +170,23 @@ enum Action {
     Acknowledge,
     Folder(String),
     Repository(String),
+    ChooseProjects,
+    ChooseUndertakings,
+    ClosePicker,
     CopyRelative(Key),
     Reveal(Key),
     More,
 }
+#[derive(Clone, Debug, PartialEq)]
+enum ExplorerPicker {
+    Projects,
+    Undertakings(String),
+}
 #[derive(Default)]
 struct Code {
     repositories: HashMap<String, (String, String, String)>,
-    collapsed_repositories: HashSet<String>,
+    explorer_picker: Option<ExplorerPicker>,
+    explorer_context: Option<Entity>,
     explorer_filter: Option<Entity>,
     explorer_query: String,
     context_targets: HashMap<Entity, Key>,
@@ -482,6 +492,7 @@ pub fn mount(w: &mut World, parent: Entity) {
     w.get_mut::<Layout>(title).unwrap().width = Size::Fill;
     let explorer_actions = w.spawn((Layout::row(),));
     set_parent(w, explorer_actions, heading);
+    let explorer_context = column(w, sidebar, Size::Fill, Size::Hug);
     let filter = w.spawn((
         Layout {
             width: Size::Fill,
@@ -496,7 +507,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         },
         Placeholder::new("Filter files…"),
         Semantics {
-            name: Some("Filter projects and file paths".into()),
+            name: Some("Filter explorer".into()),
             ..Default::default()
         },
     ));
@@ -536,6 +547,7 @@ pub fn mount(w: &mut World, parent: Entity) {
         workbench: workbench::Workbench::new(panel),
         rows: Some(rows),
         explorer_filter: Some(filter),
+        explorer_context: Some(explorer_context),
         explorer_actions: Some(explorer_actions),
         toolbar: Some(toolbar),
         editors: Some(editors),
@@ -657,82 +669,47 @@ fn ensure_view(w: &mut World, c: &mut Code, key: &Key) {
         },
     );
 }
-fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
-    let mut groups: Vec<(String, String, Vec<Project>)> = Vec::new();
-    let query = c.explorer_query.trim().to_lowercase();
-    for project in c.projects.clone() {
-        if !query.is_empty()
-            && !project.title.to_lowercase().contains(&query)
-            && !c
-                .repositories
-                .get(&project.id)
-                .is_some_and(|(_, label, _)| label.to_lowercase().contains(&query))
-        {
-            continue;
-        }
-        let (id, label, _) = c.repositories.get(&project.id).cloned().unwrap_or_else(|| {
-            (
-                format!("work:{}", project.id),
-                "Project".into(),
-                String::new(),
-            )
-        });
-        if let Some(group) = groups.iter_mut().find(|g| g.0 == id) {
-            group.2.push(project);
-        } else {
-            groups.push((id, label, vec![project]));
-        }
+// The picker is navigation, never a change to the active editor/lease scope.
+fn repository(c: &Code, work: &str) -> (String, String) {
+    c.repositories
+        .get(work)
+        .map(|r| (r.0.clone(), r.1.clone()))
+        .unwrap_or_else(|| (format!("work:{work}"), "Project".into()))
+}
+fn reset_explorer_query(w: &mut World, c: &mut Code) {
+    c.explorer_query.clear();
+    if let Some(e) = c.explorer_filter {
+        w.get_mut::<Label>(e).unwrap().text.clear();
     }
-    for (id, label, projects) in groups {
-        let expanded = !query.is_empty() || !c.collapsed_repositories.contains(&id);
-        let key = next();
-        let mut props = ButtonProps::new(
-            format!(
-                "{} {}",
-                if expanded {
-                    Icon::ChevronDown.scalar()
-                } else {
-                    Icon::ChevronRight.scalar()
-                },
-                label.to_uppercase()
-            ),
-            HostIntent::Command(key),
-        );
-        props.variant = controls::ButtonVariant::Quiet;
-        let h = controls::NavigationRow::mount(
-            w,
-            parent,
-            UiId(key),
-            props,
-            controls::NavigationMeta {
-                secondary: Some(projects.len().to_string()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        compact(w, h, Size::Fill);
-        w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(visual::SECTION_HEIGHT);
-        visual::section_heading(w, h.label);
-        visual::trailing_meta(w, h);
-        w.insert(
-            h.root,
-            Semantics {
-                name: Some(format!("{label} project")),
-                description: if expanded { "Expanded" } else { "Collapsed" }.into(),
-                ..Default::default()
-            },
-        );
-        c.actions.insert(key, Action::Repository(id));
-        if !expanded {
-            continue;
-        }
-        for p in projects {
-            let key = next();
-            let status = c
+}
+fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
+    let query = c.explorer_query.trim().to_lowercase();
+    let scope = match &c.explorer_picker {
+        Some(ExplorerPicker::Undertakings(id)) => Some(id.clone()),
+        _ => None,
+    };
+    let heading = scope
+        .as_ref()
+        .map(|id| {
+            let label = c
                 .repositories
-                .get(&p.id)
-                .map(|v| v.2.clone())
-                .filter(|s| !s.is_empty());
+                .values()
+                .find(|r| &r.0 == id)
+                .map(|r| r.1.as_str())
+                .unwrap_or("Project");
+            format!("{label} / Choose an undertaking")
+        })
+        .unwrap_or_else(|| "Choose a project".into());
+    caption(w, parent, &heading);
+    let mut shown = HashSet::new();
+    let mut count = 0;
+    for p in c.projects.clone() {
+        let (id, label) = repository(c, &p.id);
+        if let Some(scope) = &scope {
+            if &id != scope || (!query.is_empty() && !p.title.to_lowercase().contains(&query)) {
+                continue;
+            }
+            let key = next();
             let h = controls::NavigationRow::mount(
                 w,
                 parent,
@@ -740,7 +717,11 @@ fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
                 ButtonProps::new(&p.title, HostIntent::Command(key)),
                 controls::NavigationMeta {
                     selected: c.selected.as_ref() == Some(&p.id),
-                    secondary: status,
+                    secondary: c
+                        .repositories
+                        .get(&p.id)
+                        .map(|r| r.2.clone())
+                        .filter(|s| !s.is_empty()),
                     ..Default::default()
                 },
             )
@@ -749,7 +730,103 @@ fn render_projects(w: &mut World, parent: Entity, c: &mut Code) {
             w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(visual::ROW_HEIGHT);
             visual::trailing_meta(w, h);
             c.actions.insert(key, Action::Project(p.id));
+        } else {
+            if !query.is_empty()
+                && !label.to_lowercase().contains(&query)
+                && !id.to_lowercase().contains(&query)
+            {
+                continue;
+            }
+            if !shown.insert(id.clone()) {
+                continue;
+            }
+            let key = next();
+            let selected = c
+                .selected
+                .as_ref()
+                .is_some_and(|work| repository(c, work).0 == id);
+            let h = controls::NavigationRow::mount(
+                w,
+                parent,
+                UiId(key),
+                ButtonProps::new(&label, HostIntent::Command(key)),
+                controls::NavigationMeta {
+                    selected,
+                    // Full identity disambiguates repositories with the same basename.
+                    secondary: Some(id.clone()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            compact(w, h, Size::Fill);
+            w.get_mut::<Layout>(h.root).unwrap().height = Size::Px(visual::ROW_HEIGHT);
+            visual::trailing_meta(w, h);
+            rndr_ui::inputs::Tooltip::attach(w, h.root, &id).unwrap();
+            c.actions.insert(key, Action::Repository(id));
         }
+        count += 1;
+    }
+    if count == 0 && !c.projects.is_empty() {
+        caption(w, parent, "No matches. Try a different filter.");
+    }
+}
+fn render_explorer_context(w: &mut World, c: &mut Code) {
+    let Some(parent) = c.explorer_context else {
+        return;
+    };
+    for child in children_of(w, parent) {
+        despawn(w, child);
+    }
+    // Fixed context stays above the scrolling tree. Both segments are real,
+    // keyboard-accessible controls; full names remain available in tooltips.
+    let breadcrumb = row(w, parent);
+    w.remove::<Wrap>(breadcrumb);
+    let selected = c.selected.clone();
+    let (project, undertaking) = selected
+        .as_ref()
+        .map(|work| {
+            let (_, label) = repository(c, work);
+            let title = c
+                .projects
+                .iter()
+                .find(|p| &p.id == work)
+                .map(|p| p.title.clone())
+                .unwrap_or_else(|| "Undertaking".into());
+            (label, title)
+        })
+        .unwrap_or_else(|| ("Choose project".into(), "Choose undertaking".into()));
+    for (label, action, enabled, description) in [
+        (
+            format!("{project}  {}", Icon::ChevronDown.scalar()),
+            Action::ChooseProjects,
+            true,
+            "Switch project",
+        ),
+        (
+            format!("/  {undertaking}  {}", Icon::ChevronDown.scalar()),
+            Action::ChooseUndertakings,
+            selected.is_some(),
+            "Switch undertaking within project",
+        ),
+    ] {
+        let id = next();
+        let mut props = ButtonProps::new(&label, HostIntent::Command(id));
+        props.enabled = enabled;
+        props.variant = controls::ButtonVariant::Quiet;
+        let h = controls::Button::mount(w, breadcrumb, UiId(id), props).unwrap();
+        compact(w, h, Size::Fill);
+        w.insert(
+            h.root,
+            Semantics {
+                name: Some(format!("{description}: {label}")),
+                ..Default::default()
+            },
+        );
+        rndr_ui::inputs::Tooltip::attach(w, h.root, &format!("{description}: {label}")).unwrap();
+        c.actions.insert(id, action);
+    }
+    if c.explorer_picker.is_some() && selected.is_some() {
+        button(w, parent, c, "Back to files", Action::ClosePicker, true);
     }
 }
 fn render(w: &mut World, c: &mut Code) {
@@ -779,10 +856,24 @@ fn render(w: &mut World, c: &mut Code) {
         );
         c.actions.insert(id, Action::Refresh);
     }
+    render_explorer_context(w, c);
+    let picking = c.explorer_picker.is_some() || c.selected.is_none();
+    if let Some(filter) = c.explorer_filter {
+        w.insert(
+            filter,
+            Placeholder::new(if picking {
+                "Filter choices…"
+            } else {
+                "Filter files…"
+            }),
+        );
+    }
     if c.pending.contains_key("projects") {
         caption(w, rows, "Loading projects…");
     }
-    render_projects(w, rows, c);
+    if picking {
+        render_projects(w, rows, c);
+    }
     if c.projects.is_empty() && c.started && !c.pending.contains_key("projects") {
         caption(w, rows, "No projects loaded. Refresh to retry.");
     }
@@ -791,7 +882,7 @@ fn render(w: &mut World, c: &mut Code) {
         .as_ref()
         .and_then(|work| c.projects.iter().find(|p| &p.id == work))
         .cloned();
-    if let Some(work) = c.selected.clone() {
+    if let Some(work) = c.selected.clone().filter(|_| !picking) {
         if c.pending.contains_key(&format!("tree:{work}")) {
             caption(w, rows, "Loading source tree…");
         }
@@ -807,6 +898,14 @@ fn render(w: &mut World, c: &mut Code) {
         let files = c.files.get(&work).cloned().unwrap_or_default();
         let mut shown = HashSet::new();
         let query = c.explorer_query.trim().to_lowercase();
+        if files.is_empty()
+            && c.files.contains_key(&work)
+            && !c.pending.contains_key(&format!("tree:{work}"))
+        {
+            caption(w, rows, "No source files in this workspace.");
+        } else if !query.is_empty() && !files.iter().any(|p| p.to_lowercase().contains(&query)) {
+            caption(w, rows, "No matching files. Try a different filter.");
+        }
         for path in files {
             if !query.is_empty() && !path.to_lowercase().contains(&query) {
                 continue;
@@ -899,7 +998,10 @@ fn render(w: &mut World, c: &mut Code) {
             ..LabelBox::CONTENT
         },
     );
-    let editing = c.selected.as_ref().is_some_and(|w| c.sessions.contains_key(w));
+    let editing = c
+        .selected
+        .as_ref()
+        .is_some_and(|w| c.sessions.contains_key(w));
     let buffer = c.key().and_then(|k| c.buffers.get(&k)).map(|b| FileState {
         readonly: b.baseline.readonly,
         remote: b.remote.clone(),
@@ -1001,9 +1103,17 @@ fn render(w: &mut World, c: &mut Code) {
     if let Some(key) = c.key() {
         if let Some(b) = buffer {
             if b.readonly {
-                notice(w, toolbar, "Read-only preview · binary, lossy or truncated content");
+                notice(
+                    w,
+                    toolbar,
+                    "Read-only preview · binary, lossy or truncated content",
+                );
             } else if b.uncertain {
-                notice(w, toolbar, "Save not confirmed · check latest before another save");
+                notice(
+                    w,
+                    toolbar,
+                    "Save not confirmed · check latest before another save",
+                );
             }
             if let Some(remote) = b.remote {
                 notice(
@@ -1240,7 +1350,7 @@ pub fn sync(w: &mut World) {
     }
 }
 fn context_events(w: &mut World, c: &mut Code) {
-    use rndr_ui::menu::{open_menu, MenuAt, MenuItem, MenuPicked};
+    use rndr_ui::menu::{MenuAt, MenuItem, MenuPicked, open_menu};
     for event in events::<MenuPicked>(w).to_vec() {
         if !c
             .context_menu
@@ -1358,7 +1468,9 @@ pub fn keyboard(w: &mut World) {
         // The runner derives the legacy shim from the first pressed event.
         // Do not erase an unrelated earlier key when consuming a later chord.
         if consumed_first {
-            input.key = kept.iter().find(|event| !event.released)
+            input.key = kept
+                .iter()
+                .find(|event| !event.released)
                 .and_then(|event| rndr_core::legacy_key(event, platform));
         }
         input.keys = kept;
@@ -1399,7 +1511,7 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
     capture(w, &mut c);
     match a {
         Action::More => {
-            use rndr_ui::menu::{open_menu, MenuAt, MenuItem};
+            use rndr_ui::menu::{MenuAt, MenuItem, open_menu};
             if let (Some((anchor, commands)), Some(work)) = (c.more.clone(), c.selected.clone()) {
                 let mut actions = HashMap::new();
                 let mut entries = Vec::new();
@@ -1468,14 +1580,29 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                 c.enqueue(Operation::Tree(work));
             }
         }
-        Action::Repository(repository) => {
-            if !c.collapsed_repositories.remove(&repository) {
-                c.collapsed_repositories.insert(repository);
+        Action::ChooseProjects => {
+            c.explorer_picker = Some(ExplorerPicker::Projects);
+            reset_explorer_query(w, &mut c);
+        }
+        Action::ChooseUndertakings => {
+            if let Some(work) = &c.selected {
+                c.explorer_picker = Some(ExplorerPicker::Undertakings(repository(&c, work).0));
+                reset_explorer_query(w, &mut c);
             }
+        }
+        Action::ClosePicker => {
+            c.explorer_picker = None;
+            reset_explorer_query(w, &mut c);
+        }
+        Action::Repository(repository) => {
+            c.explorer_picker = Some(ExplorerPicker::Undertakings(repository));
+            reset_explorer_query(w, &mut c);
         }
         Action::Project(work) => {
             if !composing(w, &c) {
                 c.selected = Some(work.clone());
+                c.explorer_picker = None;
+                reset_explorer_query(w, &mut c);
                 if !c.files.contains_key(&work) {
                     c.enqueue(Operation::Tree(work));
                 }

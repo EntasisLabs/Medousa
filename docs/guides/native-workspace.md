@@ -162,7 +162,18 @@ open notes before switching vaults; relative note paths are never rebound across
 
 ## Read and edit project source
 
-Choose **Code**, select a project, then expand folders and select a source file.
+Choose **Code**, choose a project, then choose one of its undertakings (threads).
+The fixed **Project / Undertaking** breadcrumb above the file filter switches
+context: the project segment opens the project picker; the undertaking segment
+lists only threads in the current project. **Back to files** cancels a picker
+without changing the active workspace. Choosing a project in the picker does not
+switch files or editing ownership until you choose an undertaking.
+
+Once selected, the sidebar shows that workspace's filesystem tree, not the entire
+project/thread catalog above it. Expand folders and select a source file. The
+filter searches file paths while browsing and choices while picking; switching
+between these modes clears the filter. Repository paths disambiguate projects
+with the same name.
 Projects and source come from the connected workshop's Forge workspace; Code
 does not treat a folder on the app device as the remote project's filesystem.
 The tree may be bounded; a truncation notice means some files are not shown.

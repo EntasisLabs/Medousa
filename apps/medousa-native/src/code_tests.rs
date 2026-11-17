@@ -110,9 +110,10 @@ fn closing_last_tab_preserves_uncertain_draft_and_reopens_same_document() {
     let c = app.world().resource::<Code>().unwrap();
     assert!(c.key().is_none());
     assert!(c.open_tabs.is_empty());
-    assert!(app
-        .world()
-        .has::<Hidden>(c.views[&key("one", "a.rs")].handle.root));
+    assert!(
+        app.world()
+            .has::<Hidden>(c.views[&key("one", "a.rs")].handle.root)
+    );
     click(app.world_mut(), Action::File("a.rs".into()));
     let c = app.world().resource::<Code>().unwrap();
     assert_eq!(c.views[&key("one", "a.rs")].document, document);
@@ -147,10 +148,11 @@ fn find_bars_reuse_canonical_per_file_state_and_hide_on_switch() {
     assert!(app.world().has::<Hidden>(bar.root));
 }
 #[test]
-fn repository_disclosures_group_work_by_identity_without_replacing_editors() {
-    let mut a = fixture();
-    let w = a.world_mut();
+fn breadcrumb_pickers_scope_threads_by_repository_without_replacing_drafts() {
+    let mut app = fixture();
+    let w = app.world_mut();
     load(w, "one", "src/lib.rs", "retained", "d1");
+    edit(w, &key("one", "src/lib.rs"), "unsaved draft");
     let document = w.resource::<Code>().unwrap().views[&key("one", "src/lib.rs")].document;
     click(w, Action::Refresh);
     let command = take_commands(w)
@@ -168,14 +170,15 @@ fn repository_disclosures_group_work_by_identity_without_replacing_editors() {
             ])),
         },
     );
-    assert_eq!(
-        w.resource::<Code>().unwrap().repositories["one"].0,
-        "/a/repo"
+    // Browsing shows files only, never the entire project catalog above them.
+    assert!(
+        !w.resource::<Code>()
+            .unwrap()
+            .actions
+            .values()
+            .any(|a| matches!(a, Action::Repository(_) | Action::Project(_)))
     );
-    assert_eq!(
-        w.resource::<Code>().unwrap().repositories["two"].0,
-        "/a/repo"
-    );
+    click(w, Action::ChooseProjects);
     assert_eq!(
         w.resource::<Code>()
             .unwrap()
@@ -185,15 +188,14 @@ fn repository_disclosures_group_work_by_identity_without_replacing_editors() {
             .count(),
         2
     );
-    let toggle = *w
-        .resource::<Code>()
-        .unwrap()
-        .actions
-        .iter()
-        .find(|(_, a)| matches!(a, Action::Repository(s) if s == "/a/repo"))
-        .unwrap()
-        .0;
-    action(w, &HostIntent::Command(toggle));
+    assert!(
+        !w.resource::<Code>()
+            .unwrap()
+            .actions
+            .values()
+            .any(|a| matches!(a, Action::Project(_)))
+    );
+    click(w, Action::Repository("/a/repo".into()));
     assert_eq!(
         w.resource::<Code>()
             .unwrap()
@@ -201,34 +203,63 @@ fn repository_disclosures_group_work_by_identity_without_replacing_editors() {
             .values()
             .filter(|a| matches!(a, Action::Project(_)))
             .count(),
-        1
+        2
     );
+    assert!(
+        !w.resource::<Code>()
+            .unwrap()
+            .actions
+            .values()
+            .any(|a| matches!(a, Action::Project(id) if id == "three"))
+    );
+    click(w, Action::Project("two".into()));
+    assert_eq!(
+        w.resource::<Code>().unwrap().selected.as_deref(),
+        Some("two")
+    );
+    assert!(w.resource::<Code>().unwrap().explorer_picker.is_none());
+    assert!(
+        take_commands(w)
+            .iter()
+            .any(|c| matches!(&c.operation, Operation::Tree(work) if work == "two"))
+    );
+    click(w, Action::ChooseUndertakings);
+    assert_eq!(
+        w.resource::<Code>().unwrap().explorer_picker,
+        Some(ExplorerPicker::Undertakings("/a/repo".into()))
+    );
+    click(w, Action::Project("one".into()));
+    let c = w.resource::<Code>().unwrap();
+    assert_eq!(c.views[&key("one", "src/lib.rs")].document, document);
+    assert_eq!(
+        c.buffers[&key("one", "src/lib.rs")].content,
+        "unsaved draft"
+    );
+    assert_eq!(c.key(), Some(key("one", "src/lib.rs")));
+}
+#[test]
+fn cancelling_workspace_picker_preserves_active_scope_and_resets_filter() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "one", "a.rs", "saved", "d1");
+    take_commands(w);
+    click(w, Action::ChooseProjects);
+    let c = w.resource_mut::<Code>().unwrap();
+    c.explorer_query = "unrelated".into();
+    let filter = c.explorer_filter.unwrap();
+    w.get_mut::<Label>(filter).unwrap().text = "unrelated".into();
+    click(w, Action::Repository("/other/repo".into()));
     assert_eq!(
         w.resource::<Code>().unwrap().selected.as_deref(),
         Some("one")
     );
-    assert_eq!(
-        w.resource::<Code>().unwrap().views[&key("one", "src/lib.rs")].document,
-        document
-    );
-    let toggle = *w
-        .resource::<Code>()
-        .unwrap()
-        .actions
-        .iter()
-        .find(|(_, a)| matches!(a, Action::Repository(s) if s == "/a/repo"))
-        .unwrap()
-        .0;
-    action(w, &HostIntent::Command(toggle));
-    assert_eq!(
-        w.resource::<Code>()
-            .unwrap()
-            .actions
-            .values()
-            .filter(|a| matches!(a, Action::Project(_)))
-            .count(),
-        3
-    );
+    click(w, Action::ClosePicker);
+    let c = w.resource::<Code>().unwrap();
+    assert!(c.explorer_query.is_empty());
+    assert!(w.get::<Label>(filter).unwrap().text.is_empty());
+    assert!(c.explorer_picker.is_none());
+    assert_eq!(c.key(), Some(key("one", "a.rs")));
+    assert!(take_commands(w).is_empty());
 }
 #[test]
 fn activation_only_reads_and_is_idempotent() {
@@ -406,12 +437,13 @@ fn preview_binary_lossy_and_truncated_are_readonly() {
         },
     );
     let id = w.resource::<Code>().unwrap().views[&key("one", "a.rs")].document;
-    assert!(w
-        .resource::<SourceDocuments>()
-        .unwrap()
-        .get(id)
-        .unwrap()
-        .is_readonly());
+    assert!(
+        w.resource::<SourceDocuments>()
+            .unwrap()
+            .get(id)
+            .unwrap()
+            .is_readonly()
+    );
 }
 #[test]
 fn identity_mismatch_and_missing_digest_fail_closed() {
@@ -767,11 +799,12 @@ fn explorer_rows_are_compact_clipped_and_use_supported_icons() {
         w.get::<Label>(*file).unwrap().overflow,
         TextOverflow::Ellipsis
     );
-    assert!(w
-        .get::<Label>(*file)
-        .unwrap()
-        .text
-        .contains(Icon::FileCode.scalar()));
+    assert!(
+        w.get::<Label>(*file)
+            .unwrap()
+            .text
+            .contains(Icon::FileCode.scalar())
+    );
     assert!(labels.iter().any(|e| {
         w.get::<Label>(*e)
             .unwrap()
@@ -811,7 +844,10 @@ fn tab_activation_routes_only_owned_strip_and_preserves_drafts_without_reads() {
     edit(a.world_mut(), &key("one", "a.rs"), "draft a");
     load(a.world_mut(), "one", "b.rs", "b", "d2");
     // Publish the initial RNDR selection before injecting a later user request.
-    for _ in 0..2 { a.update(); sync(a.world_mut()); }
+    for _ in 0..2 {
+        a.update();
+        sync(a.world_mut());
+    }
     let c = a.world().resource::<Code>().unwrap();
     let strip = c.strip.unwrap();
     let id = TabId(c.views[&key("one", "a.rs")].id.0);
@@ -858,7 +894,10 @@ fn tab_activation_routes_only_owned_strip_and_preserves_drafts_without_reads() {
     assert_eq!(c.key(), Some(key("one", "b.rs")));
     assert_eq!(c.buffers[&key("one", "a.rs")].content, "draft a");
     // A subsequent tree click occurs in a later frame, after the close request.
-    for _ in 0..2 { a.update(); sync(a.world_mut()); }
+    for _ in 0..2 {
+        a.update();
+        sync(a.world_mut());
+    }
     click(a.world_mut(), Action::File("a.rs".into()));
     assert!(take_commands(a.world_mut()).is_empty());
     assert_eq!(
@@ -933,7 +972,7 @@ fn code_visual_acceptance() {
     let c = w.resource_mut::<Code>().unwrap();
     c.projects = vec![Project {
         id: "one".into(),
-        title: "Medousa / do proper migration".into(),
+        title: "do proper migration".into(),
         begin: true,
         resume: false,
     }];
@@ -982,6 +1021,12 @@ fn code_visual_acceptance() {
         include_str!("code.rs"),
         "v2",
     );
+    // The fixture supplies its own catalog instead of completing the live request.
+    app.world_mut()
+        .resource_mut::<Code>()
+        .unwrap()
+        .pending
+        .remove("projects");
     let mut exporter = rndr_render::Exporter::new().unwrap();
     std::fs::create_dir_all("verification").unwrap();
     for (width, height, suffix) in [
@@ -1020,6 +1065,29 @@ fn code_visual_acceptance() {
             image::ColorType::Rgba8,
         )
         .unwrap();
+        for (mode, action) in [
+            ("projects", Action::ChooseProjects),
+            ("undertakings", Action::ChooseUndertakings),
+        ] {
+            click(app.world_mut(), action);
+            for _ in 0..4 {
+                rndr_paint::frame(&mut app);
+            }
+            let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+                exporter
+                    .render_frame(Some(world), frame, width, height, 1.)
+                    .unwrap()
+            });
+            image::save_buffer(
+                format!("verification/native-code-{mode}-{suffix}.png"),
+                &image.rgba,
+                image.width,
+                image.height,
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+            click(app.world_mut(), Action::ClosePicker);
+        }
     }
 }
 
@@ -1183,9 +1251,11 @@ fn code_keyboard_is_surface_scoped_and_consumes_only_handled_primary_chords() {
             1,
             "Chat keeps its keyboard event"
         );
-        assert!(w.resource::<Code>().unwrap().views[&key("one", "a.rs")]
-            .find
-            .is_none());
+        assert!(
+            w.resource::<Code>().unwrap().views[&key("one", "a.rs")]
+                .find
+                .is_none()
+        );
         surfaces::select(w, SurfaceId::Code);
         w.resource_mut::<Input>().unwrap().ime_preedit = "漢".into();
         keyboard(w);
@@ -1201,9 +1271,11 @@ fn code_keyboard_is_surface_scoped_and_consumes_only_handled_primary_chords() {
             .push(KeyEvent::character('x', Modifiers::default()));
         keyboard(w);
         assert_eq!(w.resource::<Input>().unwrap().keys.len(), 1);
-        assert!(w.resource::<Code>().unwrap().views[&key("one", "a.rs")]
-            .find
-            .is_some());
+        assert!(
+            w.resource::<Code>().unwrap().views[&key("one", "a.rs")]
+                .find
+                .is_some()
+        );
         w.resource_mut::<Input>().unwrap().keys = vec![KeyEvent::character('p', modifiers)];
         keyboard(w);
         assert!(w.resource::<Input>().unwrap().keys.is_empty());
@@ -1213,9 +1285,11 @@ fn code_keyboard_is_surface_scoped_and_consumes_only_handled_primary_chords() {
         w.resource_mut::<Input>().unwrap().keys = vec![KeyEvent::character('s', modifiers)];
         keyboard(w);
         assert!(w.resource::<Input>().unwrap().keys.is_empty());
-        assert!(take_commands(w)
-            .iter()
-            .any(|c| matches!(c.operation, Operation::Save { .. })));
+        assert!(
+            take_commands(w)
+                .iter()
+                .any(|c| matches!(c.operation, Operation::Save { .. }))
+        );
     }
 }
 #[test]
@@ -1289,5 +1363,9 @@ fn overflow_menu_offers_secondary_commands_and_routes_picks() {
     app.update();
     let c = app.world().resource::<Code>().unwrap();
     assert!(c.context_menu.is_none(), "pick not consumed");
-    assert!(c.pending.contains_key("workbench:one"), "{:?}", c.pending.keys());
+    assert!(
+        c.pending.contains_key("workbench:one"),
+        "{:?}",
+        c.pending.keys()
+    );
 }
