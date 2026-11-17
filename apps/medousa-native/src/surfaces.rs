@@ -8,6 +8,8 @@ use rndr_ui::{
 };
 
 pub const RAIL_WIDTH: f32 = 56.;
+const NAV_TARGET: f32 = 40.;
+const NAV_ICON: f32 = 20.;
 const CHAT: u64 = 0x5355_0001;
 const NOTES: u64 = 0x5355_0002;
 const CODE: u64 = 0x5355_0003;
@@ -33,6 +35,7 @@ struct SurfaceHost {
     rail: Entity,
     tiles: [Entity; SURFACE_COUNT],
     buttons: [controls::ControlHandle; SURFACE_COUNT],
+    indicators: [Entity; SURFACE_COUNT],
     focus: [Option<Entity>; SURFACE_COUNT],
 }
 fn panel(world: &mut World, parent: Entity, layout: Layout) -> Entity {
@@ -65,6 +68,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     );
     let mut tiles = Vec::new();
     let mut buttons = Vec::new();
+    let mut indicators = Vec::new();
     for (command, icon, name) in [
         (CHAT, Icon::MessageCircle, "Chat"),
         (NOTES, Icon::Book, "Notes"),
@@ -74,8 +78,8 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             world,
             rail,
             Layout {
-                width: Size::Px(40.),
-                height: Size::Px(40.),
+                width: Size::Px(NAV_TARGET),
+                height: Size::Px(NAV_TARGET),
                 ..Layout::column()
             },
         );
@@ -89,8 +93,51 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         *world.get_mut::<Layout>(handle.root).unwrap() = Layout {
             width: Size::Fill,
             height: Size::Fill,
+            padding: 2.,
             ..Layout::column()
         };
+        // Preserve the canonical control's two-color focus ring. Give every
+        // inner layer the same vertical extent instead of a Hug-height face.
+        let mut nodes = children_of(world, handle.root);
+        while let Some(node) = nodes.pop() {
+            world.get_mut::<Layout>(node).unwrap().height = Size::Fill;
+            nodes.extend(children_of(world, node));
+        }
+        world.insert(
+            handle.label,
+            LabelBox {
+                inset_x: 5.,
+                inset_y: 5.,
+                min_height: 0.,
+            },
+        );
+        world.insert(
+            handle.label,
+            TextStyle {
+                size: NAV_ICON,
+                align: TextAlign::Center,
+                line_height: Some(1.),
+                ..Default::default()
+            },
+        );
+        world.insert(handle.root, motion::PressScale(0.96));
+        let indicator = world.spawn((
+            Layout {
+                width: Size::Px(3.),
+                height: Size::Px(16.),
+                ..Layout::column()
+            },
+            Absolute {
+                left: Some(0.),
+                top: Some(12.),
+                ..Default::default()
+            },
+            Radius(1.5),
+            ResolvedColor,
+        ));
+        set_parent(world, indicator, tile);
+        crate::native_style::plane(world, indicator, Token::Accent);
+        indicators.push(indicator);
         Tooltip::attach(world, handle.root, name).unwrap();
         tiles.push(tile);
         buttons.push(handle);
@@ -129,6 +176,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         rail,
         tiles: tiles.try_into().ok().expect("one tile per surface"),
         buttons: buttons.try_into().ok().expect("one button per surface"),
+        indicators: indicators.try_into().ok().expect("one marker per surface"),
         focus: [None; SURFACE_COUNT],
     });
     roots[0]
@@ -239,28 +287,56 @@ pub fn chrome(world: &mut World) {
     let tiles = host.tiles;
     let buttons = host.buttons;
     let rail = host.rail;
+    let indicators = host.indicators;
+    let hover = world
+        .resource::<Input>()
+        .and_then(|input| hit_test(world, input.pointer.position[0], input.pointer.position[1]));
+    let theme = world.resource::<UiTheme>().cloned().unwrap_or_default();
+    let curve = motion::Curve::tween(0.12, motion::Easing::EaseOut);
     crate::native_style::plane(world, rail, crate::native_style::rail());
     for i in 0..SURFACE_COUNT {
-        crate::native_style::plane(
-            world,
-            tiles[i],
-            if i == active {
-                rndr_ui::Token::Selected
-            } else {
-                crate::native_style::rail()
-            },
-        );
+        let pressed = interaction_pressed(world, buttons[i].root);
+        let hovered = hover.is_some_and(|e| descendant(world, e, buttons[i].root));
+        let fill = if pressed && theme.contrast == Contrast::High {
+            Token::Text
+        } else if pressed {
+            Token::ControlPressed
+        } else if hovered {
+            Token::ControlHover
+        } else if i == active {
+            Token::Selected
+        } else {
+            crate::native_style::rail()
+        };
+        // Style only the tile and inner face/border. The canonical root/gap
+        // still owns keyboard focus, release activation and cancellation.
+        let face = world.get::<Parent>(buttons[i].label).unwrap().entity;
+        let border = world.get::<Parent>(face).unwrap().entity;
+        let color = crate::native_style::color(world, fill);
+        for entity in [tiles[i], border, face] {
+            crate::native_style::plane(world, entity, fill);
+            if world.get::<Color>(entity).is_none() {
+                world.insert(entity, color);
+            }
+            motion::animate_color(world, entity, motion::ColorProp::Fill, color, curve);
+        }
+        // Keep a non-color selection cue; hover and keyboard focus are separate.
+        if i == active {
+            world.remove::<Hidden>(indicators[i]);
+        } else {
+            world.insert(indicators[i], Hidden);
+        }
+        let ink = if pressed && theme.contrast == Contrast::High {
+            Token::Canvas
+        } else if i == active || hovered || pressed {
+            crate::native_style::text()
+        } else {
+            crate::native_style::secondary()
+        };
         world.insert(
             buttons[i].label,
             UiStyle {
-                foreground: Some(
-                    (if i == active {
-                        crate::native_style::text()
-                    } else {
-                        crate::native_style::secondary()
-                    })
-                    .into(),
-                ),
+                foreground: Some(ink.into()),
                 ..Default::default()
             },
         );
@@ -287,6 +363,192 @@ mod tests {
         });
         app.update();
         app
+    }
+    fn frames(app: &mut App, clock: &ManualClock, n: usize) {
+        for _ in 0..n {
+            clock.advance(std::time::Duration::from_millis(16));
+            app.update();
+        }
+    }
+    fn pointer(app: &mut App, point: [f32; 2], pressed: bool, released: bool) {
+        let input = app.world_mut().resource_mut::<Input>().unwrap();
+        input.pointer.position = point;
+        input.pointer.press_at = pressed.then_some(point);
+        input.pointer.button = PointerButton::Left;
+        input.pointer.pressed = pressed;
+        input.pointer.down = pressed;
+        input.pointer.released = released;
+    }
+    #[test]
+    fn nav_icons_are_twenty_points_centered_in_equal_targets() {
+        let mut app = app();
+        for width in [1200., 760.] {
+            app.world_mut().insert_resource(Viewport::new(width, 650.));
+            for _ in 0..5 {
+                app.update();
+            }
+            let w = app.world();
+            let host = w.resource::<SurfaceHost>().unwrap();
+            for (i, button) in host.buttons.iter().enumerate() {
+                let tile = w.get::<Rect>(host.tiles[i]).unwrap();
+                let rect = w.get::<Rect>(button.root).unwrap();
+                let label = w.get::<Rect>(button.label).unwrap();
+                let style = w.get::<TextStyle>(button.label).unwrap();
+                assert_eq!(style.size, NAV_ICON);
+                assert_eq!(style.align, TextAlign::Center);
+                assert_eq!(rect.w, NAV_TARGET);
+                assert_eq!(rect.h, NAV_TARGET);
+                assert!((rect.x + rect.w / 2. - RAIL_WIDTH / 2.).abs() < 1.);
+                assert!((label.x + label.w / 2. - tile.x - tile.w / 2.).abs() < 1.);
+                assert!(
+                    (label.y + label.h / 2. - tile.y - tile.h / 2.).abs() < 1.,
+                    "{tile:?} {label:?}"
+                );
+                assert!(w.has::<Focusable>(button.root));
+                assert_eq!(
+                    w.get::<Semantics>(button.root).unwrap().name.as_deref(),
+                    Some(["Chat", "Notes", "Code"][i])
+                );
+                assert_eq!(
+                    w.has::<Hidden>(host.indicators[i]),
+                    i != host.active.index()
+                );
+            }
+        }
+    }
+    #[test]
+    fn nav_release_cancel_hover_transition_and_keyboard_activation() {
+        let mut app = app();
+        let clock = ManualClock::handle();
+        app.set_clock(clock.clone());
+        frames(&mut app, &clock, 20);
+        let host = app.world().resource::<SurfaceHost>().unwrap();
+        let button = host.buttons[1];
+        let rect = *app.world().get::<Rect>(button.root).unwrap();
+        let point = [rect.x + rect.w / 2., rect.y + rect.h / 2.];
+        let face = app.world().get::<Parent>(button.label).unwrap().entity;
+        let idle = motion::color_value(app.world(), face, motion::ColorProp::Fill).unwrap();
+        pointer(&mut app, point, false, false);
+        frames(&mut app, &clock, 1);
+        assert!(motion::is_animating(app.world(), face));
+        frames(&mut app, &clock, 12);
+        let hover = motion::color_value(app.world(), face, motion::ColorProp::Fill).unwrap();
+        assert_ne!(idle, hover);
+        pointer(&mut app, point, true, false);
+        frames(&mut app, &clock, 1);
+        assert_eq!(
+            active(app.world()),
+            SurfaceId::Chat,
+            "press must not navigate"
+        );
+        pointer(&mut app, [500., 400.], false, true);
+        frames(&mut app, &clock, 2);
+        assert_eq!(
+            active(app.world()),
+            SurfaceId::Chat,
+            "release outside cancels"
+        );
+        pointer(&mut app, point, true, false);
+        frames(&mut app, &clock, 1);
+        pointer(&mut app, point, false, true);
+        frames(&mut app, &clock, 2);
+        assert_eq!(active(app.world()), SurfaceId::Notes);
+        pointer(&mut app, [500., 400.], false, false);
+        let chat = app.world().resource::<SurfaceHost>().unwrap().buttons[0].root;
+        request_focus(app.world_mut(), chat);
+        app.world_mut().resource_mut::<Input>().unwrap().key = Some(Key::Enter);
+        frames(&mut app, &clock, 1);
+        app.world_mut().resource_mut::<Input>().unwrap().key = None;
+        frames(&mut app, &clock, 1);
+        assert_eq!(active(app.world()), SurfaceId::Chat);
+    }
+    #[test]
+    fn nav_reduced_motion_disables_press_scaling_but_keeps_feedback() {
+        let mut app = app();
+        let clock = ManualClock::handle();
+        app.set_clock(clock.clone());
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                reduced_motion: true,
+                ..Default::default()
+            },
+        );
+        frames(&mut app, &clock, 20);
+        let button = app.world().resource::<SurfaceHost>().unwrap().buttons[1];
+        let rect = *app.world().get::<Rect>(button.root).unwrap();
+        let point = [rect.x + rect.w / 2., rect.y + rect.h / 2.];
+        pointer(&mut app, point, true, false);
+        frames(&mut app, &clock, 12);
+        let transform = app
+            .world()
+            .get::<Transform>(button.root)
+            .copied()
+            .unwrap_or_default();
+        assert_eq!(transform.scale, [1., 1.]);
+        assert_eq!(*app.world().get::<Rect>(button.root).unwrap(), rect);
+        let face = app.world().get::<Parent>(button.label).unwrap().entity;
+        assert_eq!(
+            app.world().get::<UiStyle>(face).unwrap().background,
+            Some(Token::ControlPressed.into())
+        );
+        assert_eq!(active(app.world()), SurfaceId::Chat);
+        pointer(&mut app, point, false, true);
+        frames(&mut app, &clock, 2);
+        assert_eq!(active(app.world()), SurfaceId::Notes);
+    }
+    #[test]
+    #[ignore = "Navigation rail interaction GPU acceptance"]
+    fn nav_polish_visual_acceptance() {
+        use std::sync::Arc;
+        let mut app = app();
+        let clock = ManualClock::handle();
+        app.set_clock(clock.clone());
+        app.world_mut()
+            .insert_resource(Arc::new(rndr_render::ParleyText::new()) as Arc<dyn TextEngine>);
+        let mut exporter = rndr_render::Exporter::new().unwrap();
+        for (width, height, dark, suffix) in [
+            (1200, 850, true, "wide"),
+            (760, 650, true, "narrow"),
+            (1200, 850, false, "light"),
+        ] {
+            publish_system_appearance(
+                app.world_mut(),
+                SystemAppearance {
+                    dark: Some(dark),
+                    ..Default::default()
+                },
+            );
+            app.world_mut()
+                .insert_resource(Viewport::new(width as f32, height as f32));
+            frames(&mut app, &clock, 20);
+            let host = app.world().resource::<SurfaceHost>().unwrap();
+            let rect = *app.world().get::<Rect>(host.buttons[1].root).unwrap();
+            let point = [rect.x + rect.w / 2., rect.y + rect.h / 2.];
+            for state in ["rest", "hover", "press", "selected"] {
+                match state {
+                    "rest" => pointer(&mut app, [500., 400.], false, false),
+                    "hover" => pointer(&mut app, point, false, false),
+                    "press" => pointer(&mut app, point, true, false),
+                    _ => pointer(&mut app, point, false, true),
+                }
+                frames(&mut app, &clock, 20);
+                let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+                    exporter
+                        .render_frame(Some(world), frame, width, height, 1.)
+                        .unwrap()
+                });
+                image::save_buffer(
+                    format!("verification/native-nav-{suffix}-{state}.png"),
+                    &image.rgba,
+                    image.width,
+                    image.height,
+                    image::ColorType::Rgba8,
+                )
+                .unwrap();
+            }
+            select(app.world_mut(), SurfaceId::Chat);
+        }
     }
     #[test]
     fn surface_switch_retains_chat_document_and_clears_hidden_focus() {
