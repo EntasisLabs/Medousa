@@ -1369,3 +1369,84 @@ fn overflow_menu_offers_secondary_commands_and_routes_picks() {
         c.pending.keys()
     );
 }
+
+#[test]
+#[ignore = "Synthetic terminal dock GPU acceptance; no daemon or live shells"]
+fn terminal_visual_acceptance() {
+    let mut app = crate::ui::app();
+    app.update();
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
+    let engine: std::sync::Arc<dyn TextEngine> =
+        std::sync::Arc::new(rndr_render::ParleyText::new());
+    app.world_mut().insert_resource(engine);
+    let w = app.world_mut();
+    let c = w.resource_mut::<Code>().unwrap();
+    c.projects = vec![Project {
+        id: "one".into(),
+        title: "Native terminal integration".into(),
+        begin: true,
+        resume: false,
+    }];
+    c.repositories.insert(
+        "one".into(),
+        (
+            "/workshop/Medousa".into(),
+            "Medousa".into(),
+            "working".into(),
+        ),
+    );
+    c.files.insert(
+        "one".into(),
+        vec![
+            "src/main.rs".into(),
+            "src/terminal.rs".into(),
+            "Cargo.toml".into(),
+        ],
+    );
+    c.expanded.insert(("one".into(), "src".into()));
+    c.pending.remove("projects");
+    load(
+        w,
+        "one",
+        "src/terminal.rs",
+        "// Workshop-owned interactive terminal\nuse rndr_core::*;\n\nfn main() {\n    // The workshop owns the shell and working directory.\n    // This device renders the authenticated PTY stream.\n}\n",
+        "d1",
+    );
+    let terminal = crate::terminal::tests::preview(w, "one");
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    for (width, height, suffix) in [
+        (1200, 850, "dark"),
+        (760, 650, "narrow"),
+        (1200, 850, "light"),
+    ] {
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(suffix != "light"),
+                ..Default::default()
+            },
+        );
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        for _ in 0..8 {
+            rndr_paint::frame(&mut app);
+        }
+        let rect = app.world().get::<Rect>(terminal).unwrap();
+        assert!(rect.w > 150. && rect.h > 90., "terminal rect {rect:?}");
+        assert!(rect.y + rect.h <= height as f32 + 1.);
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-terminal-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+}

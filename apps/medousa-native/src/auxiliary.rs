@@ -54,8 +54,7 @@ pub struct Auxiliary {
     _wake: Feed<AuxiliaryWake>,
 }
 impl Auxiliary {
-    pub fn start(client: MedousaClient, world: &mut World) -> Self {
-        let client = Arc::new(client);
+    pub fn start(client: Arc<MedousaClient>, world: &mut World) -> Self {
         let previews = Arc::new(tokio::sync::Semaphore::new(3));
         let (tx, mut commands) = tokio::sync::mpsc::unbounded_channel();
         let (tx_updates, rx) = mpsc::channel();

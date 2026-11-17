@@ -537,7 +537,8 @@ pub fn mount(w: &mut World, parent: Entity) {
     w.insert(panel, Hidden);
     w.insert(panel, Scroll::default());
     let find_tools = column(w, content, Size::Fill, Size::Hug);
-    let editors = column(w, content, Size::Fill, Size::Fill);
+    let editor_dock = crate::terminal::mount(w, content);
+    let editors = column(w, editor_dock, Size::Fill, Size::Fill);
     caption(
         w,
         editors,
@@ -1029,6 +1030,7 @@ fn render(w: &mut World, c: &mut Code) {
         );
         w.get_mut::<Layout>(status).unwrap().width = Size::Hug;
     }
+    crate::terminal::toolbar(w, header, c.selected.is_some());
     let commands = workbench::commands(c);
     let mut overflow = Vec::new();
     let has_editor = c.key().is_some_and(|k| c.views.contains_key(&k));
@@ -1348,6 +1350,8 @@ pub fn sync(w: &mut World) {
     for update in deferred {
         apply(w, update);
     }
+    let selected = w.resource::<Code>().and_then(|c| c.selected.clone());
+    crate::terminal::sync(w, selected);
 }
 fn context_events(w: &mut World, c: &mut Code) {
     use rndr_ui::menu::{MenuAt, MenuItem, MenuPicked, open_menu};
@@ -1427,6 +1431,9 @@ fn context_events(w: &mut World, c: &mut Code) {
 /// Surface-scoped keyboard integration. The shared host chooses the active
 /// surface and key chord; this adapter never installs another input dispatcher.
 pub fn keyboard(w: &mut World) {
+    if crate::terminal::focused(w) {
+        return;
+    }
     if crate::surfaces::active(w) != crate::surfaces::SurfaceId::Code
         || w.resource::<Code>().is_none_or(|c| composing(w, c))
         || w.resource::<Input>()
@@ -1497,6 +1504,9 @@ pub fn shortcut(w: &mut World, command: &str) -> bool {
     action(w, &HostIntent::Command(id))
 }
 pub fn action(w: &mut World, host: &HostIntent) -> bool {
+    if crate::terminal::action(w, host) {
+        return true;
+    }
     let HostIntent::Command(id) = host else {
         return false;
     };

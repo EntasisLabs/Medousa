@@ -11,6 +11,7 @@ mod notes;
 mod provider_timeline;
 mod runtimes;
 mod surfaces;
+mod terminal;
 mod timeline;
 mod ui;
 mod workspace;
@@ -29,6 +30,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(connection) => {
             match backend::client(&connection.origin, &connection.data_dir) {
                 Ok(client) => {
+                    let client = std::sync::Arc::new(client);
+                    terminal::start(
+                        app.world_mut(),
+                        client.clone(),
+                        connection.origin.clone(),
+                        connection.data_dir.clone(),
+                    );
                     let auxiliary = auxiliary::Auxiliary::start(client, app.world_mut());
                     app.world_mut().insert_resource(auxiliary);
                 }

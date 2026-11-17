@@ -213,8 +213,38 @@ select one for bounded stdout/stderr, parsed source locations, explicit refresh,
 and cancellation while active. An unconfirmed task start is never replayed
 automatically. This is task output, not an interactive terminal emulator.
 
-These native workflows do not add project creation, arbitrary shell sessions,
-workspace-edit refactors, rich-text note editing, or the separate Reviews lifecycle.
+### Interactive terminal
+
+Select an undertaking in **Code**, then choose **Terminal** to open the resizable
+dock below the editor. This attaches to that undertaking's existing human shell,
+or creates one in its workshop workspace if none is running. The header shows the
+working folder; its tooltip includes the session identity and full status.
+The shell runs on the **workshop**, never in a substitute folder on the app device.
+Opening it does not take a Forge editing lease or attach your keyboard to an
+agent/task process.
+
+The native terminal supports ANSI/full-screen programs, keyboard navigation,
+Ctrl-C, selection/copy, and bracketed paste through its terminal emulator.
+**Hide** collapses the dock without ending the shell. Switching undertakings keeps
+separate terminal screens and connections; it discovers an existing human shell
+for the new undertaking but does not silently create one. Use **New shell** there
+to create one explicitly. **New shell** also starts a fresh shell after an exit;
+it does not terminate previous workshop sessions.
+
+**Reconnect** reattaches the same known shell after a disconnect. Pending input is
+discarded, never replayed. If a write fails its delivery may be unconfirmed: inspect
+the shell before retyping. Failed shell creation is not automatically retried;
+reopening first discovers sessions so an unconfirmed start is not duplicated.
+
+This initial native bridge supports the configured **local workshop** only and
+uses authenticated WebSocket headers, not URL tokens. Expanded terminal tabs,
+pop-outs, terminal search, clickable file paths, and remote workshop routing are
+not part of this dock yet. Task run history remains separate from interactive
+shells. Shells have normal workshop filesystem permissions, independently of
+editor save leases; review commands before executing them.
+
+These native workflows do not add project creation, workspace-edit refactors,
+rich-text note editing, or the separate Reviews lifecycle.
 
 ### Interactive build performance
 
