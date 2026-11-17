@@ -15,7 +15,7 @@ rndr_ui = { path = "../../../../rndr/crates/rndr_ui" }
 rndr_markdown = { path = "../../../../rndr/crates/rndr_markdown" }
 rndr_markdown_ui = { path = "../../../../rndr/crates/rndr_markdown_ui" }
 rndr_paint = { path = "../../../../rndr/crates/rndr_paint", features = ["highlight"] }
-rndr_render = { path = "../../../../rndr/crates/rndr_render", default-features = false, features = ["parley", "accesskit"] }
+rndr_render = { path = "../../../../rndr/crates/rndr_render", default-features = false, features = ["parley", "accesskit", "svg"] }
 medousa-sdk = { path = "../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-app-core = { path = "../../crates/medousa-app-core" }
 medousa-desktop-host = { path = "../../crates/medousa-desktop-host" }

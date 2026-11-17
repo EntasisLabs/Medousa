@@ -35,7 +35,8 @@ struct SurfaceHost {
     rail: Entity,
     tiles: [Entity; SURFACE_COUNT],
     buttons: [controls::ControlHandle; SURFACE_COUNT],
-    indicators: [Entity; SURFACE_COUNT],
+    icons: [Entity; SURFACE_COUNT],
+    icon_keys: [Option<(u32, [u8; 4])>; SURFACE_COUNT],
     focus: [Option<Entity>; SURFACE_COUNT],
 }
 fn panel(world: &mut World, parent: Entity, layout: Layout) -> Entity {
@@ -68,7 +69,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     );
     let mut tiles = Vec::new();
     let mut buttons = Vec::new();
-    let mut indicators = Vec::new();
+    let mut icons = Vec::new();
     for (command, icon, name) in [
         (CHAT, Icon::MessageCircle, "Chat"),
         (NOTES, Icon::Book, "Notes"),
@@ -121,23 +122,23 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             },
         );
         world.insert(handle.root, motion::PressScale(0.96));
-        let indicator = world.spawn((
+        // Keep RNDR's real button and accessible name, but paint vector-source
+        // artwork instead of enlarging the toolkit's baked 16px glyph atlas.
+        let image = world.spawn((
             Layout {
-                width: Size::Px(3.),
-                height: Size::Px(16.),
+                width: Size::Px(NAV_ICON),
+                height: Size::Px(NAV_ICON),
                 ..Layout::column()
             },
             Absolute {
-                left: Some(0.),
-                top: Some(12.),
+                left: Some((NAV_TARGET - NAV_ICON) / 2.),
+                top: Some((NAV_TARGET - NAV_ICON) / 2.),
                 ..Default::default()
             },
-            Radius(1.5),
-            ResolvedColor,
+            ImageView::new(0),
         ));
-        set_parent(world, indicator, tile);
-        crate::native_style::plane(world, indicator, Token::Accent);
-        indicators.push(indicator);
+        set_parent(world, image, handle.root);
+        icons.push(image);
         Tooltip::attach(world, handle.root, name).unwrap();
         tiles.push(tile);
         buttons.push(handle);
@@ -176,7 +177,8 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         rail,
         tiles: tiles.try_into().ok().expect("one tile per surface"),
         buttons: buttons.try_into().ok().expect("one button per surface"),
-        indicators: indicators.try_into().ok().expect("one marker per surface"),
+        icons: icons.try_into().ok().expect("one icon per surface"),
+        icon_keys: [None; SURFACE_COUNT],
         focus: [None; SURFACE_COUNT],
     });
     roots[0]
@@ -287,7 +289,16 @@ pub fn chrome(world: &mut World) {
     let tiles = host.tiles;
     let buttons = host.buttons;
     let rail = host.rail;
-    let indicators = host.indicators;
+    let icons = host.icons;
+    let icon_keys = host.icon_keys;
+    let px = (NAV_ICON
+        * world
+            .resource::<Viewport>()
+            .copied()
+            .unwrap_or_default()
+            .pixels_per_point())
+    .ceil()
+    .clamp(20., 320.) as u32;
     let hover = world
         .resource::<Input>()
         .and_then(|input| hit_test(world, input.pointer.position[0], input.pointer.position[1]));
@@ -320,12 +331,6 @@ pub fn chrome(world: &mut World) {
             }
             motion::animate_color(world, entity, motion::ColorProp::Fill, color, curve);
         }
-        // Keep a non-color selection cue; hover and keyboard focus are separate.
-        if i == active {
-            world.remove::<Hidden>(indicators[i]);
-        } else {
-            world.insert(indicators[i], Hidden);
-        }
         let ink = if pressed && theme.contrast == Contrast::High {
             Token::Canvas
         } else if i == active || hovered || pressed {
@@ -340,6 +345,25 @@ pub fn chrome(world: &mut World) {
                 ..Default::default()
             },
         );
+        // Controls refresh their visible scalar during theme resolution. Clear
+        // only its paint text here; the root's name/focus/activation stay native.
+        world
+            .get_mut::<Label>(buttons[i].label)
+            .unwrap()
+            .text
+            .clear();
+        let color = crate::native_style::color(world, ink);
+        let rgba =
+            [color.r, color.g, color.b, color.a].map(|v| (v.clamp(0., 1.) * 255.).round() as u8);
+        if icon_keys[i] != Some((px, rgba)) {
+            let raster = nav_raster(i, px, rgba);
+            let id = nav_image_id(i, px, rgba);
+            rndr_render::load_rgba(world, id, raster.width, raster.height, raster.rgba)
+                .expect("valid bundled nav raster");
+            world.get_mut::<ImageView>(icons[i]).unwrap().image = id;
+            world.resource_mut::<SurfaceHost>().unwrap().icon_keys[i] = Some((px, rgba));
+        }
+        debug_assert!(world.has::<ImageView>(icons[i]));
         if let Some(semantics) = world.get_mut::<Semantics>(buttons[i].root) {
             semantics.description = if i == active {
                 "Current workspace"
@@ -349,6 +373,28 @@ pub fn chrome(world: &mut World) {
             .into();
         }
     }
+}
+
+// The GPU caches textures by identity, so appearance and DPI variants need
+// distinct IDs (re-uploading changed pixels under the same ID stays stale).
+fn nav_image_id(index: usize, px: u32, rgba: [u8; 4]) -> u64 {
+    0x5355_0000_0000_0000
+        | ((index as u64) << 42)
+        | ((px as u64) << 32)
+        | u32::from_be_bytes(rgba) as u64
+}
+fn nav_raster(index: usize, px: u32, rgba: [u8; 4]) -> rndr_render::Raster {
+    let source = [
+        include_str!("nav_icons/message-circle.svg"),
+        include_str!("nav_icons/book.svg"),
+        include_str!("nav_icons/code.svg"),
+    ][index];
+    let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
+    let svg = source.replace("currentColor", &color).replace(
+        "fill=\"none\"",
+        &format!("opacity=\"{}\" fill=\"none\"", rgba[3] as f32 / 255.),
+    );
+    rndr_render::decode_svg(svg.as_bytes(), px, px).expect("valid bundled nav SVG")
 }
 
 #[cfg(test)]
@@ -409,12 +455,73 @@ mod tests {
                     w.get::<Semantics>(button.root).unwrap().name.as_deref(),
                     Some(["Chat", "Notes", "Code"][i])
                 );
+                let icon = w.get::<Rect>(host.icons[i]).unwrap();
+                assert_eq!((icon.w, icon.h), (NAV_ICON, NAV_ICON));
+                assert!((icon.x + icon.w / 2. - tile.x - tile.w / 2.).abs() < 1.);
+                assert!((icon.y + icon.h / 2. - tile.y - tile.h / 2.).abs() < 1.);
+                assert!(w.get::<Label>(button.label).unwrap().text.is_empty());
                 assert_eq!(
-                    w.has::<Hidden>(host.indicators[i]),
-                    i != host.active.index()
+                    children_of(w, host.tiles[i]),
+                    vec![button.root],
+                    "no extra selection marker"
                 );
             }
         }
+    }
+    #[test]
+    fn nav_svg_raster_tracks_dpi_and_appearance_without_glyph_upscaling() {
+        let mut app = app();
+        let mut previous = None;
+        for scale in [1., 1.5, 2., 3.] {
+            app.world_mut().resource_mut::<Viewport>().unwrap().scale = scale;
+            app.update();
+            let host = app.world().resource::<SurfaceHost>().unwrap();
+            for i in 0..SURFACE_COUNT {
+                let (px, rgba) = host.icon_keys[i].unwrap();
+                assert_eq!(px, (NAV_ICON * scale).ceil() as u32);
+                let raster = nav_raster(i, px, rgba);
+                assert_eq!((raster.width, raster.height), (px, px));
+                assert!(
+                    raster.rgba.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255),
+                    "anti-aliased edges"
+                );
+                assert_eq!(
+                    app.world().get::<ImageView>(host.icons[i]).unwrap().image,
+                    nav_image_id(i, px, rgba)
+                );
+            }
+            let id = app.world().get::<ImageView>(host.icons[0]).unwrap().image;
+            assert_ne!(previous, Some(id));
+            previous = Some(id);
+        }
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(true),
+                ..Default::default()
+            },
+        );
+        app.update();
+        let before = app.world().resource::<SurfaceHost>().unwrap().icon_keys;
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(false),
+                ..Default::default()
+            },
+        );
+        app.update();
+        assert_ne!(
+            before,
+            app.world().resource::<SurfaceHost>().unwrap().icon_keys
+        );
+        let light = app.world().resource::<SurfaceHost>().unwrap().icon_keys;
+        app.update();
+        assert_eq!(
+            light,
+            app.world().resource::<SurfaceHost>().unwrap().icon_keys,
+            "unchanged frames reuse cached rasters"
+        );
     }
     #[test]
     fn nav_release_cancel_hover_transition_and_keyboard_activation() {
@@ -507,10 +614,12 @@ mod tests {
         app.world_mut()
             .insert_resource(Arc::new(rndr_render::ParleyText::new()) as Arc<dyn TextEngine>);
         let mut exporter = rndr_render::Exporter::new().unwrap();
-        for (width, height, dark, suffix) in [
-            (1200, 850, true, "wide"),
-            (760, 650, true, "narrow"),
-            (1200, 850, false, "light"),
+        for (width, height, scale, dark, suffix) in [
+            (1200, 850, 1., true, "wide"),
+            (760, 650, 1., true, "narrow"),
+            (1200, 850, 1., false, "light"),
+            (760, 650, 2., true, "retina"),
+            (760, 650, 1.5, false, "fractional"),
         ] {
             publish_system_appearance(
                 app.world_mut(),
@@ -519,8 +628,12 @@ mod tests {
                     ..Default::default()
                 },
             );
-            app.world_mut()
-                .insert_resource(Viewport::new(width as f32, height as f32));
+            app.world_mut().insert_resource(Viewport {
+                width: width as f32,
+                height: height as f32,
+                scale,
+                ..Default::default()
+            });
             frames(&mut app, &clock, 20);
             let host = app.world().resource::<SurfaceHost>().unwrap();
             let rect = *app.world().get::<Rect>(host.buttons[1].root).unwrap();
@@ -535,7 +648,13 @@ mod tests {
                 frames(&mut app, &clock, 20);
                 let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
                     exporter
-                        .render_frame(Some(world), frame, width, height, 1.)
+                        .render_frame(
+                            Some(world),
+                            frame,
+                            (width as f32 * scale) as u32,
+                            (height as f32 * scale) as u32,
+                            scale,
+                        )
                         .unwrap()
                 });
                 image::save_buffer(
