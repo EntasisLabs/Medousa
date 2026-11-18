@@ -267,8 +267,7 @@ error, not proof of an empty queue.
 Select work, then a sealed candidate. **Summary** includes the outcome, risk,
 verification command/result, policy findings and blockers. Wide windows place checks,
 risk and candidate metadata beside the reading column; narrow windows stack them.
-**Changes** opens a bounded changed-file navigator and the selected sealed diff,
-instead of wrapping every filename into the summary. Technical identities and the
+**Changes** keeps changed-file navigation and sealed diffs out of the summary. Technical identities and the
 activity timeline are under **About**. **Changes** presents full-width file accordions
 with per-file addition/removal counts. Expand individual headers or use **Expand all**
 and **Collapse all**. Exact sealed file reads load one at a time, with cached
@@ -282,7 +281,16 @@ not the mutable Code checkout. Binary, truncated and unavailable diffs are ident
 explicitly. Each diff uses a bounded viewport in the scrolling file stream above
 the decision form, using RNDR's
 compact monospace code metrics, separate old/new line-number gutters, and
-theme-aware generic syntax colors (not language-semantic highlighting). Source
+theme-aware generic syntax colors (not language-semantic highlighting). Paired replacement
+lines also show word-level intraline backgrounds, preserving syntax colors and UTF-8
+boundaries. Highlight computation is bounded for large/generated diffs; unmatched
+lines retain their full-row addition/removal background. **Show unchanged context**
+reveals the file's omitted lines from the exact sealed before/after text;
+**Collapse unchanged context** returns to the original hunks. This is a per-file
+all-context toggle, not yet the Tauri per-gap 20-line reveal. Controls are omitted
+for binary, truncated, missing, inconsistent, or oversized context (over 20,000
+combined source lines). Context visibility is local to the selected revision and
+does not alter comment anchors or issue checkout reads. Source
 indentation and blank lines are preserved. Long lines remain single-line and
 are horizontally scrollable; the extent includes offscreen rows. The evidence
 digest, baseline and sealed head identify what you are reading.

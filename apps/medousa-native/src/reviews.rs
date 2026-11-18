@@ -111,6 +111,7 @@ enum Action {
     Candidate(String),
     File(String),
     ToggleFile(String),
+    Context(String),
     ExpandAll,
     CollapseAll,
     Summary,
@@ -148,6 +149,8 @@ struct State {
     review: Value,
     file: Option<(String, Value)>,
     expanded: HashSet<String>,
+    context: HashSet<String>,
+    context_cache: HashMap<String, Option<Value>>,
     file_cache: HashMap<String, Value>,
     file_errors: HashSet<String>,
     loading_path: Option<String>,
@@ -215,6 +218,8 @@ fn load_draft(s: &mut State) {
 // serialized so Expand all cannot flood the daemon with unbounded concurrency.
 fn clear_files(s: &mut State) {
     s.expanded.clear();
+    s.context.clear();
+    s.context_cache.clear();
     s.file_cache.clear();
     s.file_errors.clear();
     s.loading_path = None;
@@ -345,6 +350,10 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
                     .filter_map(|f| f["path"].as_str().map(str::to_owned)).collect();
                 s.file_errors.clear();
                 load_next_file(&mut s);
+            }
+            Action::Context(path) if known_file(&s, &path) => {
+                if !s.context.remove(&path) { s.context.insert(path.clone()); }
+                s.diff_positions.remove(&path);
             }
             Action::CollapseAll => s.expanded.clear(),
             Action::Changes => s.changes = true,

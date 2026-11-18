@@ -862,6 +862,15 @@ fn native_reviews_visual_acceptance() {
     let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
     image::save_buffer(format!("verification/native-reviews-{name}-accordions-{}.png",if expanded {"expanded"} else {"collapsed"}),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
    }
+   for expanded in [false, true] {
+    crate::reviews::tests::visual_context(app.world_mut(), expanded);
+    for _ in 0..4 { rndr_paint::frame(&mut app); }
+    let control = if expanded { "Collapse unchanged context" } else { "Show unchanged context" };
+    assert!(app.world().query::<Label>().iter().any(|(_,l)| l.text == control));
+    let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
+    image::save_buffer(format!("verification/native-reviews-{name}-context-{}.png",if expanded {"expanded"} else {"collapsed"}),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
+   }
+
 
   }
  }

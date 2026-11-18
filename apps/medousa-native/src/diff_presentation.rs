@@ -7,6 +7,9 @@ use rndr_ui::{
     diff::{DiffAnnotation, DiffMarker, DiffRow, HunkId},
 };
 use serde_json::Value;
+#[path = "diff_changes.rs"]
+mod changes;
+pub(crate) use changes::expanded as expanded_context;
 
 pub(crate) fn syntax_spans(w: &World, content: &str) -> Vec<TextSpan> {
     // Same bounded generic lexer as the editor, not language-semantic tokens.
@@ -89,7 +92,87 @@ pub(crate) fn rows(w: &World, value: &Value) -> (Vec<DiffRow>, Vec<DiffAnnotatio
             });
         }
     }
+    apply_inline(w, &rows, &mut annotations);
     (rows, annotations)
+}
+
+fn apply_inline(w: &World, rows: &[DiffRow], annotations: &mut [DiffAnnotation]) {
+    let theme = w.resource::<UiTheme>().cloned().unwrap_or_default();
+    let indices: std::collections::HashMap<_, _> = annotations
+        .iter()
+        .enumerate()
+        .map(|(i, a)| (a.id, i))
+        .collect();
+    let mut pairs = 0;
+    let mut start = 0;
+    while start < rows.len() {
+        if rows[start].marker != DiffMarker::Removed {
+            start += 1;
+            continue;
+        }
+        let mut middle = start;
+        while middle < rows.len() && rows[middle].marker == DiffMarker::Removed {
+            middle += 1;
+        }
+        let mut end = middle;
+        while end < rows.len() && rows[end].marker == DiffMarker::Added {
+            end += 1;
+        }
+        for (old, new) in rows[start..middle].iter().zip(&rows[middle..end]) {
+            if pairs >= 64 {
+                break;
+            }
+            pairs += 1;
+            let (left, right) = changes::changed(&old.text, &new.text);
+            for (row, ranges, token) in [
+                (old, left, rndr_ui::Token::DangerStroke),
+                (new, right, rndr_ui::Token::SuccessStroke),
+            ] {
+                let Some(index) = indices.get(&row.id) else {
+                    continue;
+                };
+                let annotation = &mut annotations[*index];
+                // Split syntax runs at change boundaries: no overlapping spans
+                // whose precedence could discard syntax colors or backgrounds.
+                let mut edges = vec![0, row.text.len()];
+                for span in &annotation.spans {
+                    edges.extend([span.start, span.end]);
+                }
+                for range in &ranges {
+                    edges.extend([range.start, range.end]);
+                }
+                edges.sort_unstable();
+                edges.dedup();
+                let mut spans = vec![];
+                for pair in edges.windows(2) {
+                    if pair[0] == pair[1] {
+                        continue;
+                    }
+                    let mut span = annotation
+                        .spans
+                        .iter()
+                        .find(|s| s.start <= pair[0] && s.end >= pair[1])
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            TextSpan::new(pair[0], pair[1], theme.color(rndr_ui::Token::Text))
+                        });
+                    span.start = pair[0];
+                    span.end = pair[1];
+                    if ranges
+                        .iter()
+                        .any(|r| r.start <= pair[0] && r.end >= pair[1])
+                    {
+                        let mut color = theme.color(token);
+                        color.a = 0.28;
+                        span.highlight = Some(color);
+                    }
+                    spans.push(span);
+                }
+                annotation.spans = spans;
+            }
+        }
+        start = end;
+    }
 }
 
 // Retain only the bounded presentation, not mutable checkout/review authority.
@@ -101,6 +184,7 @@ struct Mounted {
     name: String,
     rows: Vec<DiffRow>,
     annotations: Vec<DiffAnnotation>,
+    value: Value,
 }
 impl Component for Mounted {}
 
@@ -128,6 +212,7 @@ pub(crate) fn mount(
             name,
             rows,
             annotations,
+            value: value.clone(),
         },
     );
     Ok(handle)
@@ -139,19 +224,8 @@ pub(crate) fn refresh_appearance(w: &mut World) {
         .into_iter()
         .map(|(e, m)| (e, m.clone()))
         .collect();
-    let height = row_height(w);
     for (root, mut mounted) in retained {
-        for row in &mut mounted.rows {
-            row.height = height;
-        }
-        for (annotation, row) in mounted.annotations.iter_mut().zip(
-            mounted
-                .rows
-                .iter()
-                .filter(|r| r.marker != DiffMarker::Header),
-        ) {
-            annotation.spans = syntax_spans(w, &row.text);
-        }
+        (mounted.rows, mounted.annotations) = rows(w, &mounted.value);
         if rndr_ui::diff::DiffView::mount_annotated(
             w,
             mounted.parent,
@@ -260,4 +334,63 @@ fn retained_diff_refreshes_annotations_and_metrics_in_place() {
         syntax_spans(w, &after.rows[1].text)
     );
     assert_eq!(w.query::<Mounted>().len(), 1);
+}
+
+#[cfg(test)]
+#[test]
+fn intraline_highlights_split_syntax_runs_and_refresh_with_theme() {
+    let mut app = App::new();
+    app.add_plugin(rndr_ui::UiPlugin);
+    let w = app.world_mut();
+    w.insert_resource(UiTheme {
+        appearance: rndr_ui::Appearance::Dark,
+        ..Default::default()
+    });
+    let parent = w.spawn((Layout::column(),));
+    let value = serde_json::json!({"hunks":[{"lines":[
+        {"kind":"deletion","old_line":1,"content":"let café = old(10); // 🦀"},
+        {"kind":"addition","new_line":1,"content":"let café = new(20); // 🦀"}]}]});
+    let handle = mount(w, parent, rndr_ui::UiId(0xd1ff), "Changes".into(), &value).unwrap();
+    let before = w.get::<Mounted>(handle.root).unwrap().clone();
+    assert!(
+        before
+            .annotations
+            .iter()
+            .all(|a| a.spans.iter().any(|s| s.highlight.is_some()))
+    );
+    w.insert_resource(UiTheme {
+        appearance: rndr_ui::Appearance::Light,
+        ..Default::default()
+    });
+    refresh_appearance(w);
+    let after = w.get::<Mounted>(handle.root).unwrap();
+    assert_ne!(before.annotations[0].spans, after.annotations[0].spans);
+    for a in &after.annotations {
+        let row = after.rows.iter().find(|r| r.id == a.id).unwrap();
+        let highlighted: String = a
+            .spans
+            .iter()
+            .filter(|s| s.highlight.is_some())
+            .map(|s| &row.text[s.start..s.end])
+            .collect();
+        assert!(highlighted == "old10" || highlighted == "new20");
+        for spans in a.spans.windows(2) {
+            assert!(spans[0].end <= spans[1].start);
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn standalone_changes_and_hunk_boundaries_never_get_paired() {
+    let value = serde_json::json!({"hunks":[{"lines":[
+        {"kind":"deletion","content":"old"}, {"kind":"context","content":"same"},
+        {"kind":"addition","content":"new"}, {"kind":"deletion","content":"old"}]},
+        {"lines":[{"kind":"addition","content":"new"}]}]});
+    let (_, annotations) = rows(&World::new(), &value);
+    assert!(
+        annotations
+            .iter()
+            .all(|a| a.spans.iter().all(|s| s.highlight.is_none()))
+    );
 }

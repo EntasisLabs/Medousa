@@ -993,3 +993,49 @@ pub(crate) fn visual_accordions(w: &mut World, expanded: bool) {
         },
     );
 }
+
+pub(crate) fn visual_context(w: &mut World, expanded: bool) {
+    let mut value = diff();
+    value["baseline"] = json!({"content":"// Sealed before and after versions\nlet café = old(10);\n\n// Unchanged context from Git, not the checkout\nfinish();\n"});
+    value["reviewed"] = json!({"content":"// Sealed before and after versions\nlet café = new(20);\n\n// Unchanged context from Git, not the checkout\nfinish();\n"});
+    value["hunks"] = json!([{"old_start":2,"old_count":1,"new_start":2,"new_count":1,"lines":[
+        {"kind":"deletion","old_line":2,"content":"let café = old(10);\n"},
+        {"kind":"addition","new_line":2,"content":"let café = new(20);\n"}]}]);
+    let s = w.resource_mut::<State>().unwrap();
+    s.expanded.clear(); s.expanded.insert("src/main.rs".into());
+    s.context.clear(); s.context_cache.clear(); if expanded { s.context.insert("src/main.rs".into()); }
+    s.file_cache.insert("src/main.rs".into(),value.clone());
+    s.file = Some(("src/main.rs".into(),value));
+    s.diff_positions.clear(); s.changes = true; s.redraw = true;
+    sync(w);
+}
+
+#[test]
+fn context_toggle_is_local_preserves_comment_authority_and_resets_on_revision_change() {
+    let mut w = seeded(); visual_context(&mut w,false);
+    take_commands(&mut w);
+    body(&mut w,"Keep my anchored draft");
+    let original = w.resource::<State>().unwrap().file.clone();
+    act(&mut w,Action::Context("src/main.rs".into())); sync(&mut w);
+    let s = w.resource::<State>().unwrap();
+    assert!(s.context.contains("src/main.rs")); assert_eq!(s.file,original);
+    assert_eq!(s.draft.body,"Keep my anchored draft");
+    assert!(w.query::<Label>().iter().any(|(_,l)| l.text == "Collapse unchanged context"));
+    assert!(take_commands(&mut w).is_empty());
+    act(&mut w,Action::Context("src/main.rs".into())); sync(&mut w);
+    assert!(w.resource::<State>().unwrap().context.is_empty());
+    assert!(w.query::<Label>().iter().any(|(_,l)| l.text == "Show unchanged context"));
+    act(&mut w,Action::Context("src/main.rs".into()));
+    act(&mut w,Action::Candidate("older".into()));
+    assert!(w.resource::<State>().unwrap().context.is_empty());
+}
+
+#[test]
+fn incomplete_sealed_file_has_no_context_control() {
+    let mut w = seeded(); visual_context(&mut w,false);
+    let s = w.resource_mut::<State>().unwrap();
+    s.file_cache.get_mut("src/main.rs").unwrap()["truncated"] = json!(true);
+    s.context_cache.clear();
+    s.redraw = true; sync(&mut w);
+    assert!(!w.resource::<State>().unwrap().actions.values().any(|a| matches!(a,Action::Context(_))));
+}

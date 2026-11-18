@@ -7,7 +7,7 @@ use rndr_ui::{
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Clone)]
-struct FileDiff(String, Revision);
+struct FileDiff(String, Revision, bool);
 impl Component for FileDiff {}
 static NEXT: AtomicU64 = AtomicU64::new(0x5256_0000);
 fn next() -> u64 {
@@ -252,7 +252,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         return;
     };
     for (root, file) in w.query::<FileDiff>() {
-        if revision(&s.review).as_ref() != Some(&file.1) { continue; }
+        if revision(&s.review).as_ref() != Some(&file.1) || s.context.contains(&file.0) != file.2 { continue; }
         let handle = rndr_ui::collections::VirtualViewHandle { root };
         if let (Some(anchor), Some(scroll)) = (handle.anchor(w), w.get::<Scroll>(root)) {
             s.diff_positions.insert(file.0.clone(), (anchor, scroll.offset[0]));
@@ -444,6 +444,19 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                             "Truncated diff · only part of this file is shown.",
                         );
                     }
+                    // Build the bounded sealed context once per revision/file,
+                    // not on every form edit or accordion redraw.
+                    let available = s.context_cache.entry(path.clone())
+                        .or_insert_with(|| crate::diff_presentation::expanded_context(&value)).is_some();
+                    if available {
+                        button(w, section, s,
+                            if s.context.contains(&path) { "Collapse unchanged context" } else { "Show unchanged context" },
+                            Action::Context(path.clone()), !busy);
+                    }
+                    let expanded = if s.context.contains(&path) {
+                        s.context_cache.get(&path).and_then(|v| v.clone())
+                    } else { None };
+                    let value = expanded.as_ref().unwrap_or(&value);
                     if value["hunks"].as_array().is_none_or(|h| h.is_empty()) {
                         caption(w, section, "No text changes in the sealed diff.");
                     } else {
@@ -471,12 +484,12 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                             holder,
                             UiId(next()),
                             format!("Sealed changes to {path}"),
-                            &value,
+                            value,
                         )
                         .unwrap();
                         w.insert(
                             handle.root,
-                            FileDiff(path.clone(), revision(&review).unwrap()),
+                            FileDiff(path.clone(), revision(&review).unwrap(), s.context.contains(&path)),
                         );
                         if let Some((anchor, x)) = s.diff_positions.get(&path) {
                             let _ = rndr_ui::collections::VirtualViewHandle { root: handle.root }
