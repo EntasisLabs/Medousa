@@ -271,7 +271,12 @@ risk and candidate metadata beside the reading column; narrow windows stack them
 instead of wrapping every filename into the summary. Technical identities and the
 activity timeline are under **About**. Select a changed file to open it through the sealed review-file API,
 not the mutable Code checkout. Binary, truncated and unavailable diffs are identified
-explicitly. The evidence digest, baseline and sealed head identify what you are reading.
+explicitly. The diff fills the remaining pane above the decision form, using RNDR's
+compact monospace code metrics, separate old/new line-number gutters, and
+theme-aware generic syntax colors (not language-semantic highlighting). Source
+indentation and blank lines are preserved. Long lines remain single-line and
+are horizontally scrollable; the extent includes offscreen rows. The evidence
+digest, baseline and sealed head identify what you are reading.
 
 Select **Old side** or **New side**, enter a line number actually present in the diff, and
 write a comment. **Add comment** persists that exact sealed file/side/line

@@ -381,15 +381,17 @@ fn daemon_diff_hunks_map_to_canonical_rndr_markers_and_line_numbers() {
         "lines":[{"kind":"deletion","old_line":4,"content":"old\n"},
                  {"kind":"addition","new_line":4,"content":"new\n"},
                  {"kind":"addition","new_line":5,"content":"\n"}]}]});
-    let rows = diff_rows(&value);
+    let (rows, annotations) = crate::diff_presentation::rows(&World::new(), &value);
     assert_eq!(rows.len(), 4);
     assert_eq!(rows[0].marker, DiffMarker::Header);
     assert_eq!(rows[1].marker, DiffMarker::Removed);
     assert_eq!(rows[2].marker, DiffMarker::Added);
     assert!(rows[1].text.contains("old"));
     assert!(rows[2].text.contains("new"));
-    assert!(rows[3].text.contains('5'));
-    assert!(rows.iter().all(|r| !r.text.trim().is_empty()));
+    assert_eq!(rows[3].text, "");
+    assert_eq!(annotations[2].new_line, Some(5));
+    assert_eq!(annotations[0].old_line, Some(4));
+    assert_eq!(rows[1].text, "old");
     let mut app = fixture();
     let parent = app
         .world()
@@ -398,12 +400,13 @@ fn daemon_diff_hunks_map_to_canonical_rndr_markers_and_line_numbers() {
         .workbench
         .panel
         .unwrap();
-    rndr_ui::diff::DiffView::mount(
+    rndr_ui::diff::DiffView::mount_annotated(
         app.world_mut(),
         parent,
         UiId(next()),
         rndr_ui::diff::DiffProps::new("Native diff"),
         &rows,
+        &annotations,
     )
     .unwrap();
 }
@@ -444,4 +447,27 @@ fn references_use_saved_file_preconditions_like_other_language_observations() {
         .push('x');
     act(w, Action::Language(Feature::References));
     assert!(super::super::take_commands(w).is_empty());
+}
+
+#[test]
+fn actual_code_diff_result_owns_a_bounded_two_axis_viewport() {
+    let mut app = crate::ui::app();
+    app.update();
+    app.world_mut().insert_resource(Viewport::new(1100., 800.));
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Code);
+    app.world_mut().resource_mut::<Code>().unwrap().selected = Some("work".into());
+    for _ in 0..4 { rndr_paint::frame(&mut app); }
+    let w = app.world_mut();
+    let mut c = std::mem::take(w.resource_mut::<Code>().unwrap());
+    apply(w, &mut c, Command { work: "work".into(), kind: Kind::Diff("src/main.rs".into()) },
+        Ok(json!({"work_id":"work","path":"src/main.rs","hunks":[{"old_start":1,"old_count":1,"new_start":1,"new_count":1,
+            "lines":[{"kind":"addition","new_line":1,"content":format!("let value = 42; // {} END", "long_".repeat(200))}]}]})));
+    *w.resource_mut::<Code>().unwrap() = c;
+    for _ in 0..4 { rndr_paint::frame(&mut app); }
+    let w = app.world();
+    let root = w.query::<Semantics>().into_iter().find(|(_, sem)| sem.name.as_deref() == Some("Changes to src/main.rs")).unwrap().0;
+    let rect = w.get::<Rect>(root).unwrap();
+    assert!(rect.h > 50. && rect.h < 240., "Diff must fit its results pane: {rect:?}");
+    assert_eq!(w.get::<Layout>(root).unwrap().height, Size::Fill);
+    assert!(w.get::<Scroll>(root).unwrap().content[0] > rect.w + 500.);
 }

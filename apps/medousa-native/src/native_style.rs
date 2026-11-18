@@ -243,6 +243,7 @@ pub fn sync_appearance(world: &mut World) {
         // Markdown is embedded in app-owned reading planes and user bubbles.
         world.resource_mut::<MarkdownTheme>().unwrap().surface = Color::rgba(0., 0., 0., 0.);
         crate::code::refresh_appearance(world);
+        crate::diff_presentation::refresh_appearance(world);
         world.insert_resource(AppliedTheme(effective));
     }
 }

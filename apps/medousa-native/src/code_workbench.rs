@@ -776,56 +776,6 @@ fn bounded(w: &mut World, p: Entity, text: &str) {
         caption(w, p, "Display truncated · refresh/open the file for more.");
     }
 }
-fn diff_rows(value: &Value) -> Vec<rndr_ui::diff::DiffRow> {
-    use rndr_ui::diff::{DiffMarker, DiffRow, HunkId};
-    let mut rows = Vec::new();
-    if let Some(hunks) = value["hunks"].as_array() {
-        for (index, hunk) in hunks.iter().enumerate() {
-            let id = HunkId(index as u64 + 1);
-            rows.push(DiffRow {
-                id: rndr_ui::collections::ItemId(rows.len() as u64 + 1),
-                hunk: id,
-                text: format!(
-                    "@@ -{},{} +{},{} @@",
-                    hunk["old_start"], hunk["old_count"], hunk["new_start"], hunk["new_count"]
-                ),
-                marker: DiffMarker::Header,
-                height: 24.,
-            });
-            if let Some(lines) = hunk["lines"].as_array() {
-                for line in lines {
-                    let marker = match line["kind"].as_str() {
-                        Some("addition") => DiffMarker::Added,
-                        Some("deletion") => DiffMarker::Removed,
-                        _ => DiffMarker::Unchanged,
-                    };
-                    rows.push(DiffRow {
-                        id: rndr_ui::collections::ItemId(rows.len() as u64 + 1),
-                        hunk: id,
-                        text: format!(
-                            "{:>4} {:>4}  {}",
-                            line["old_line"]
-                                .as_u64()
-                                .map(|n| n.to_string())
-                                .unwrap_or_default(),
-                            line["new_line"]
-                                .as_u64()
-                                .map(|n| n.to_string())
-                                .unwrap_or_default(),
-                            line["content"]
-                                .as_str()
-                                .unwrap_or("")
-                                .trim_end_matches('\n')
-                        ),
-                        marker,
-                        height: 22.,
-                    });
-                }
-            }
-        }
-    }
-    rows
-}
 fn result<'a>(value: &'a Value) -> &'a Value {
     value.get("result").unwrap_or(value)
 }
@@ -1020,13 +970,12 @@ pub(super) fn apply(
             } else if value["binary"].as_bool() == Some(true) {
                 caption(w, p, "Binary file · no text diff available.");
             } else {
-                let rows = diff_rows(&value);
-                let _ = rndr_ui::diff::DiffView::mount(
+                let _ = crate::diff_presentation::mount(
                     w,
                     p,
                     UiId(next()),
-                    rndr_ui::diff::DiffProps::new(format!("Changes to {path}")),
-                    &rows,
+                    format!("Changes to {path}"),
+                    &value,
                 );
                 if value["truncated"].as_bool() == Some(true) {
                     caption(w, p, "Daemon diff truncated · not the complete change set.");

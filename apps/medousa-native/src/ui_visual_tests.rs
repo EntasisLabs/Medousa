@@ -835,5 +835,24 @@ fn native_reviews_visual_acceptance() {
   crate::reviews::tests::assert_visual_geometry(app.world(), changes);
   let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
   image::save_buffer(format!("verification/native-reviews-{name}.png"),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
+  if changes {
+   let root = app.world().query::<Semantics>().into_iter().find(|(_, sem)|
+       sem.name.as_deref() == Some("Sealed changes to src/main.rs")).unwrap().0;
+   let port = *app.world().get::<Rect>(root).unwrap();
+   let extent = app.world().get::<Scroll>(root).unwrap().content[0];
+   assert!(extent > port.w + 100., "Long source must establish a horizontal range");
+   app.world_mut().get_mut::<Scroll>(root).unwrap().offset[0] = port.w - extent;
+   for _ in 0..4 { rndr_paint::frame(&mut app); }
+   assert!(app.world().get::<Scroll>(root).unwrap().offset[0] < -100.);
+   let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
+   image::save_buffer(format!("verification/native-reviews-{name}-horizontal-tail.png"),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
+   app.world_mut().get_mut::<Scroll>(root).unwrap().offset[0] = 0.;
+   crate::reviews::tests::scroll_visual_diff_to_end(app.world_mut());
+   for _ in 0..4 { rndr_paint::frame(&mut app); }
+   crate::reviews::tests::assert_visual_diff_end(app.world());
+   crate::reviews::tests::assert_visual_geometry(app.world(), true);
+   let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
+   image::save_buffer(format!("verification/native-reviews-{name}-end.png"),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
+  }
  }
 }

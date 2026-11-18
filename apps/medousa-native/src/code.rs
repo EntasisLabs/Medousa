@@ -440,29 +440,7 @@ fn style_editor(w: &mut World, handle: EditorSurfaceHandle) {
 fn highlight(w: &mut World, editor: Entity, content: &str) {
     // Reuse RNDR's bounded generic code-token colors, not a second parser/editor.
     // Full language-aware semantic tokens remain outside this presentation pass.
-    let palette = w
-        .resource::<rndr_ui::UiTheme>()
-        .cloned()
-        .unwrap_or_default()
-        .markdown_theme();
-    let original = MarkdownTheme::default();
-    let mut runs = code_token_spans(content);
-    // RNDR's public generic lexer currently uses its default palette. Keep its
-    // byte ranges and remap only its documented four token colors.
-    for run in &mut runs {
-        let color = run.color;
-        run.color = if color == original.keyword {
-            palette.keyword
-        } else if color == original.string {
-            palette.string
-        } else if color == original.number {
-            palette.number
-        } else if color == original.comment {
-            palette.comment
-        } else {
-            color
-        };
-    }
+    let runs = crate::diff_presentation::syntax_spans(w, content);
     w.insert(editor, Spans { runs });
 }
 pub fn mount(w: &mut World, parent: Entity) {

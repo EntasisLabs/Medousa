@@ -5,6 +5,7 @@ mod backend;
 mod chat;
 mod code;
 mod context;
+mod diff_presentation;
 mod media_preview;
 mod native_style;
 mod notes;

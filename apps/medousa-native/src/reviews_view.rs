@@ -366,13 +366,15 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     visual::rule(w, p);
     if s.changes {
         let wide = w.resource::<Viewport>().map_or(1200., |v| v.width) >= 1100.;
-        let height = w.resource::<Viewport>().map_or(850., |v| v.height);
+        if wide {
+            heading(w, p, &string(&review, "title"));
+        }
         let changes = panel(
             w,
             p,
             Layout {
                 width: Size::Fill,
-                height: Size::Px((height - 370.).max(320.)),
+                height: Size::Fill,
                 gap: 16.,
                 ..if wide {
                     Layout::row()
@@ -386,7 +388,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
             changes,
             Layout {
                 width: if wide { Size::Px(200.) } else { Size::Fill },
-                height: if wide { Size::Fill } else { Size::Px(130.) },
+                height: if wide { Size::Fill } else { Size::Px(96.) },
                 gap: 4.,
                 ..Layout::column()
             },
@@ -441,7 +443,6 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                 if value["truncated"] == true {
                     caption(w, diff, "Truncated diff · only part of this file is shown.");
                 }
-                let rows = diff_rows(&value);
                 let holder = panel(
                     w,
                     diff,
@@ -451,12 +452,12 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                         ..Layout::column()
                     },
                 );
-                rndr_ui::diff::DiffView::mount(
+                crate::diff_presentation::mount(
                     w,
                     holder,
                     UiId(next()),
-                    rndr_ui::diff::DiffProps::new(format!("Sealed changes to {path}")),
-                    &rows,
+                    format!("Sealed changes to {path}"),
+                    &value,
                 )
                 .unwrap();
             }
@@ -874,52 +875,4 @@ pub(super) fn render(w: &mut World, s: &mut State) {
 }
 fn short(s: &str) -> &str {
     s.get(..s.len().min(12)).unwrap_or(s)
-}
-pub(super) fn diff_rows(value: &Value) -> Vec<rndr_ui::diff::DiffRow> {
-    use rndr_ui::{
-        collections::ItemId,
-        diff::{DiffMarker, DiffRow, HunkId},
-    };
-    let mut rows = Vec::new();
-    for (index, h) in value["hunks"].as_array().into_iter().flatten().enumerate() {
-        let hunk = HunkId(index as u64 + 1);
-        rows.push(DiffRow {
-            id: ItemId(rows.len() as u64 + 1),
-            hunk,
-            text: format!(
-                "@@ -{},{} +{},{} @@",
-                h["old_start"], h["old_count"], h["new_start"], h["new_count"]
-            ),
-            marker: DiffMarker::Header,
-            height: 24.,
-        });
-        for line in h["lines"].as_array().into_iter().flatten() {
-            rows.push(DiffRow {
-                id: ItemId(rows.len() as u64 + 1),
-                hunk,
-                text: format!(
-                    "{:>4} {:>4}  {}",
-                    line["old_line"]
-                        .as_u64()
-                        .map(|n| n.to_string())
-                        .unwrap_or_default(),
-                    line["new_line"]
-                        .as_u64()
-                        .map(|n| n.to_string())
-                        .unwrap_or_default(),
-                    line["content"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .trim_end_matches('\n')
-                ),
-                marker: match line["kind"].as_str() {
-                    Some("addition") => DiffMarker::Added,
-                    Some("deletion") => DiffMarker::Removed,
-                    _ => DiffMarker::Unchanged,
-                },
-                height: 22.,
-            });
-        }
-    }
-    rows
 }
