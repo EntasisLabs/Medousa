@@ -819,3 +819,21 @@ fn timeline_single_scrollbar_visual_acceptance() {
         .unwrap();
     }
 }
+
+#[test]
+#[ignore = "Sealed Forge Reviews Parley/GPU visual acceptance"]
+fn native_reviews_visual_acceptance() {
+ let mut exporter=rndr_render::Exporter::new().unwrap();
+ std::fs::create_dir_all("verification").unwrap();
+ for (width,height,light,changes,confirm,name) in [(1200,850,false,false,false,"summary-wide"),(760,850,false,false,false,"summary-narrow"),(1200,850,false,true,false,"changes-wide"),(760,760,false,true,false,"changes-narrow"),(1200,850,true,true,false,"changes-light"),(760,850,true,false,true,"confirm-narrow")] {
+  let(mut app,_rx)=fixture();let engine:Arc<dyn TextEngine>=Arc::new(rndr_render::ParleyText::new());app.world_mut().insert_resource(engine);
+  app.world_mut().insert_resource(Viewport::new(width as f32,height as f32));
+  publish_system_appearance(app.world_mut(),SystemAppearance{dark:Some(!light),..Default::default()});
+  crate::surfaces::select(app.world_mut(),crate::surfaces::SurfaceId::Reviews);
+  crate::reviews::take_commands(app.world_mut());crate::reviews::tests::seed_visual(app.world_mut(),changes,confirm);
+  for _ in 0..4{rndr_paint::frame(&mut app);}
+  crate::reviews::tests::assert_visual_geometry(app.world(), changes);
+  let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
+  image::save_buffer(format!("verification/native-reviews-{name}.png"),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
+ }
+}

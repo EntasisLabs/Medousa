@@ -13,12 +13,14 @@ const NAV_ICON: f32 = 20.;
 const CHAT: u64 = 0x5355_0001;
 const NOTES: u64 = 0x5355_0002;
 const CODE: u64 = 0x5355_0003;
-const SURFACE_COUNT: usize = 3;
+const REVIEWS: u64 = 0x5355_0004;
+const SURFACE_COUNT: usize = 4;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SurfaceId {
     Chat,
     Notes,
     Code,
+    Reviews,
 }
 impl SurfaceId {
     fn index(self) -> usize {
@@ -26,6 +28,7 @@ impl SurfaceId {
             Self::Chat => 0,
             Self::Notes => 1,
             Self::Code => 2,
+            Self::Reviews => 3,
         }
     }
 }
@@ -74,6 +77,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         (CHAT, Icon::MessageCircle, "Chat"),
         (NOTES, Icon::Book, "Notes"),
         (CODE, Icon::Code, "Code"),
+        (REVIEWS, Icon::Check, "Reviews"),
     ] {
         let tile = panel(
             world,
@@ -153,7 +157,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Layout::column()
         },
     );
-    let roots = ["Chat", "Notes", "Code"].map(|name| {
+    let roots = ["Chat", "Notes", "Code", "Reviews"].map(|name| {
         let entity = panel(
             world,
             content,
@@ -168,6 +172,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     });
     crate::notes::mount(world, roots[1]);
     crate::code::mount(world, roots[2]);
+    crate::reviews::mount(world, roots[3]);
     for root in &roots[1..] {
         world.insert(*root, Hidden);
     }
@@ -189,7 +194,7 @@ pub fn active(world: &World) -> SurfaceId {
         .map(|h| h.active)
         .unwrap_or(SurfaceId::Chat)
 }
-fn descendant(world: &World, mut entity: Entity, root: Entity) -> bool {
+pub(crate) fn descendant(world: &World, mut entity: Entity, root: Entity) -> bool {
     for _ in 0..128 {
         if entity == root {
             return true;
@@ -230,6 +235,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         }
         SurfaceId::Notes => !crate::notes::can_deactivate(world),
         SurfaceId::Code => !crate::code::can_deactivate(world),
+        SurfaceId::Reviews => false,
     };
     if composing {
         return;
@@ -256,6 +262,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Chat => {}
         SurfaceId::Notes => crate::notes::activate(world),
         SurfaceId::Code => crate::code::activate(world),
+        SurfaceId::Reviews => crate::reviews::activate(world),
     }
     frame_wake(world).wake();
 }
@@ -264,6 +271,7 @@ pub fn action(world: &mut World, intent: &HostIntent) -> bool {
         HostIntent::Command(CHAT) => SurfaceId::Chat,
         HostIntent::Command(NOTES) => SurfaceId::Notes,
         HostIntent::Command(CODE) => SurfaceId::Code,
+        HostIntent::Command(REVIEWS) => SurfaceId::Reviews,
         _ => return false,
     };
     select(world, target);
@@ -388,6 +396,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4]) -> rndr_render::Raster {
         include_str!("nav_icons/message-circle.svg"),
         include_str!("nav_icons/book.svg"),
         include_str!("nav_icons/code.svg"),
+        include_str!("nav_icons/reviews.svg"),
     ][index];
     let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
     let svg = source.replace("currentColor", &color).replace(
@@ -453,7 +462,7 @@ mod tests {
                 assert!(w.has::<Focusable>(button.root));
                 assert_eq!(
                     w.get::<Semantics>(button.root).unwrap().name.as_deref(),
-                    Some(["Chat", "Notes", "Code"][i])
+                    Some(["Chat", "Notes", "Code", "Reviews"][i])
                 );
                 let icon = w.get::<Rect>(host.icons[i]).unwrap();
                 assert_eq!((icon.w, icon.h), (NAV_ICON, NAV_ICON));

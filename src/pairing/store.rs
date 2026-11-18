@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use chacha20poly1305::aead::{Aead, KeyInit};
@@ -19,6 +21,52 @@ use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 
 const MAX_PAIRING_RECORD_BYTES: u64 = 1024 * 1024;
 const REVOKED_PAIRINGS_FILE: &str = "revoked.json";
+const UNREADABLE_WARNING_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+// Process-wide rather than per PairingStore: callers routinely recreate stores.
+// Aggregate scans instead of retaining file names/errors (which may contain secrets)
+// or an unbounded per-record cache. Persistent faults still get periodic warnings.
+static UNREADABLE_WARNINGS: Mutex<UnreadableWarnings> = Mutex::new(UnreadableWarnings {
+    last_report: None,
+    suppressed_scans: 0,
+});
+
+struct UnreadableWarnings {
+    last_report: Option<Instant>,
+    suppressed_scans: u64,
+}
+
+impl UnreadableWarnings {
+    fn report(&mut self, now: Instant) -> Option<u64> {
+        if self
+            .last_report
+            .is_some_and(|last| now.saturating_duration_since(last) < UNREADABLE_WARNING_INTERVAL)
+        {
+            self.suppressed_scans = self.suppressed_scans.saturating_add(1);
+            return None;
+        }
+        self.last_report = Some(now);
+        Some(std::mem::take(&mut self.suppressed_scans))
+    }
+}
+
+fn warn_unreadable_records(count: usize) {
+    if count == 0 {
+        return;
+    }
+    // No fallible work occurs under the lock; recover if another caller panicked.
+    let report = UNREADABLE_WARNINGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .report(Instant::now());
+    if let Some(suppressed_scans) = report {
+        eprintln!(
+            "medousa-daemon: skipped {count} unreadable pairing record(s); \
+             {suppressed_scans} repeated failing scan(s) suppressed; \
+             check pairing storage and daemon identity (warnings limited to once per 5 minutes)"
+        );
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,10 +149,14 @@ impl PairingStore {
         let root = pairing_root()?;
         let revoked = self.load_revoked()?;
         let mut by_phone_id = HashMap::new();
+        let mut unreadable_count = 0;
         for entry in root.list_root()? {
             if entry.kind != StoreEntryKind::File || !entry.path.file_name().ends_with(".json") {
                 continue;
             }
+            // Legacy records have arbitrary device-based names; filtering to opaque
+            // modern storage keys would silently drop valid older pairings. Only
+            // the known revocation sidecar is excluded; unknown JSON fails closed.
             if entry.path.file_name() == REVOKED_PAIRINGS_FILE {
                 continue;
             }
@@ -119,11 +171,10 @@ impl PairingStore {
                         }
                     }
                 }
-                Err(err) => {
-                    eprintln!("medousa-daemon: skipping unreadable pairing record ({err:#})");
-                }
+                Err(_) => unreadable_count += 1,
             }
         }
+        warn_unreadable_records(unreadable_count);
         let mut out = by_phone_id.into_values().collect::<Vec<_>>();
         out.sort_by_key(|right| std::cmp::Reverse(right.last_seen));
         Ok(out)
@@ -394,6 +445,8 @@ mod tests {
 
     #[test]
     fn list_paired_skips_unreadable_records() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = crate::paths::scoped_test_data_dir(temp.path().canonicalize().unwrap());
         let identity = DeviceIdentity::generate_ephemeral();
         let store = PairingStore::new(identity.signing_key());
         fs::create_dir_all(pairings_dir()).expect("pairings dir");
@@ -407,6 +460,74 @@ mod tests {
                 .all(|record| record.phone_id != "corrupt-test-phone"),
             "corrupt record should be skipped"
         );
-        let _ = fs::remove_file(corrupt_path);
+        let original = fs::read(&corrupt_path).unwrap();
+        // Unknown JSON must not be trusted as a device or removed as "cleanup".
+        let auxiliary = pairings_dir().join("unknown.json");
+        fs::write(&auxiliary, br#"{"secret":"do-not-log"}"#).unwrap();
+        for _ in 0..3 {
+            let fresh = PairingStore::new(identity.signing_key());
+            assert!(fresh.list_paired().unwrap().is_empty());
+            assert!(
+                fresh
+                    .get_by_phone_id("corrupt-test-phone")
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert_eq!(fs::read(corrupt_path).unwrap(), original);
+        assert_eq!(fs::read(auxiliary).unwrap(), br#"{"secret":"do-not-log"}"#);
+    }
+
+    #[test]
+    fn unreadable_canonical_record_and_revocations_fail_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = crate::paths::scoped_test_data_dir(temp.path().canonicalize().unwrap());
+        let identity = DeviceIdentity::generate_ephemeral();
+        let store = PairingStore::new(identity.signing_key());
+        let root = pairing_root().unwrap();
+        root.atomic_write(&record_path("phone").unwrap(), b"{}")
+            .unwrap();
+        assert!(store.get_by_phone_id("phone").is_err());
+        assert!(store.list_paired().unwrap().is_empty());
+        root.atomic_write(&revoked_pairings_store_path(), b"invalid")
+            .unwrap();
+        assert!(store.list_paired().is_err());
+        assert!(store.is_revoked("pairing").is_err());
+    }
+
+    #[test]
+    fn unreadable_warning_limiter_reports_first_and_periodic_faults() {
+        let mut warnings = UnreadableWarnings {
+            last_report: None,
+            suppressed_scans: 0,
+        };
+        let start = Instant::now();
+        assert_eq!(warnings.report(start), Some(0));
+        for _ in 0..10_000 {
+            assert_eq!(warnings.report(start + Duration::from_secs(1)), None);
+        }
+        assert_eq!(
+            warnings.report(start + UNREADABLE_WARNING_INTERVAL),
+            Some(10_000)
+        );
+        assert_eq!(warnings.report(start + UNREADABLE_WARNING_INTERVAL), None);
+        assert_eq!(
+            warnings.report(start + UNREADABLE_WARNING_INTERVAL * 2),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn unreadable_warning_suppression_counter_saturates() {
+        let start = Instant::now();
+        let mut warnings = UnreadableWarnings {
+            last_report: Some(start),
+            suppressed_scans: u64::MAX,
+        };
+        assert_eq!(warnings.report(start), None);
+        assert_eq!(
+            warnings.report(start + UNREADABLE_WARNING_INTERVAL),
+            Some(u64::MAX)
+        );
     }
 }

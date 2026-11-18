@@ -9,6 +9,7 @@ mod media_preview;
 mod native_style;
 mod notes;
 mod provider_timeline;
+mod reviews;
 mod runtimes;
 mod surfaces;
 mod terminal;

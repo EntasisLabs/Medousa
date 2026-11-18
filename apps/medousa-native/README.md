@@ -13,7 +13,7 @@ attempts to attach to the configured local daemon using the existing local
 credentials. It does **not** start, install, or restart a daemon. An unavailable
 daemon is an ordinary connection error, not a separate preview application.
 
-The shell has a slim app-level rail for **Chat**, **Notes**, and **Code**, separate from the
+The shell has a slim app-level rail for **Chat**, **Notes**, **Code**, and **Reviews**, separate from the
 contextual sidebar. Only mounted destinations appear; there are no placeholder
 screens. Switching surfaces retains chat tabs, splits, drafts, scroll, and ongoing
 streams. Notes and Code have their own editor focus; chat send shortcuts are
@@ -150,3 +150,14 @@ headless text engine. Both measure CPU update/layout/paint, not GPU submission,
 platform input latency or display presentation. They do not replace a foreground
 check with a real loaded conversation/project. Save window-only drafts before
 relaunching to evaluate the new executable.
+
+## Forge Reviews
+
+The retained Reviews workspace reads the workshop Forge queue, sealed candidates,
+summary/checks/policy evidence and revision-bound file diffs. It supports anchored
+comments, comment resolution, request-changes rationale, explicit
+approval strategy/confirmation and separate decision-bound apply. All writes
+preflight exact revision identity and daemon allowed actions; unknown writes
+require refresh and are never replayed. Drafts are window-lifetime and isolated
+by work/evidence. This is not hosted-provider pull-request integration. See
+[the native workspace guide](../../docs/guides/native-workspace.md#review-sealed-forge-work).

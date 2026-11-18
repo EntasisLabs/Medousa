@@ -1,4 +1,4 @@
-# Native workspace: Chat, Notes, and Code
+# Native workspace: Chat, Notes, Code, and Reviews
 
 The native app in `apps/medousa-native` is the RNDR desktop implementation under
 active development. It is separate from the older `apps/rndr-home` preview and
@@ -15,14 +15,14 @@ restart the daemon, provision credentials, or add remote pairing.
 
 ## Switch workspaces
 
-Use **Chat** (conversation icon), **Notes** (book icon), or **Code** (code icon)
+Use **Chat** (conversation icon), **Notes** (book icon), **Code** (code icon), or **Reviews** (check icon)
 in the left rail. Hover
 for labels, or Tab to a control and press Enter/Space. The conversation sidebar
 belongs to Chat; it is not the app-level navigation.
 
-Switching to Notes or Code keeps chat tabs, split panes, unsent drafts, undo history and
+Switching to Notes, Code, or Reviews keeps chat tabs, split panes, unsent drafts, undo history and
 background streams in this window. Returning restores the chat workspace. Chat
-send shortcuts do not send a message while Notes or Code is active.
+send shortcuts do not send a message while another workspace is active.
 
 ## Sidebar grouping
 
@@ -244,7 +244,7 @@ shells. Shells have normal workshop filesystem permissions, independently of
 editor save leases; review commands before executing them.
 
 These native workflows do not add project creation, workspace-edit refactors,
-rich-text note editing, or the separate Reviews lifecycle.
+rich-text note editing, or hosted pull-request review.
 
 ### Interactive build performance
 
@@ -254,3 +254,43 @@ substantially slower and is not the interactive baseline. Hidden chat views keep
 background model updates without reconciling their presentation on every Notes or
 Code interaction. Before relaunching an updated build, save window-only drafts.
 CPU fixture timings are not a guarantee of GPU/display or end-to-end input latency.
+
+## Review sealed Forge work
+
+Choose **Reviews** in the left rail for the connected workshop's Forge queue.
+Search the queue by title or work ID. It is grouped into **Ready for review**,
+**In progress**, and **Reviewed**, with **All**, **Active**, and **Reviewed** filters.
+**Refresh** reads the latest evidence; it never seals, approves, or applies work.
+The queue follows daemon pages with a defensive bound; an incomplete read is an
+error, not proof of an empty queue.
+
+Select work, then a sealed candidate. **Summary** includes the outcome, risk,
+verification command/result, policy findings and blockers. Wide windows place checks,
+risk and candidate metadata beside the reading column; narrow windows stack them.
+**Changes** opens a bounded changed-file navigator and the selected sealed diff,
+instead of wrapping every filename into the summary. Technical identities and the
+activity timeline are under **About**. Select a changed file to open it through the sealed review-file API,
+not the mutable Code checkout. Binary, truncated and unavailable diffs are identified
+explicitly. The evidence digest, baseline and sealed head identify what you are reading.
+
+Select **Old side** or **New side**, enter a line number actually present in the diff, and
+write a comment. **Add comment** persists that exact sealed file/side/line
+anchor. Existing comments can be
+resolved explicitly when the daemon permits review. **Request changes** requires
+a rationale. Rationale/comment drafts survive file and surface changes and are
+isolated by work and evidence for this window only, not recovered after quitting.
+
+Choose an integration strategy before **Approve**. Approval opens a separate
+confirmation showing the candidate identity and does not apply it. **Apply** is
+another explicit confirmation using the recorded decision ID. Daemon allowed-actions
+govern all controls; stale evidence, blocking checks, policy findings and changed
+baselines prevent approval. Each write first re-reads the selected candidate,
+compares its full revision identity and rechecks permissions. The daemon remains
+the final atomic authority. Refreshes invalidate pending confirmations; delayed
+reads cannot replace a newer selection.
+
+After an error or uncertain write, inspect and **Refresh** before deciding again.
+Writes are single-flight and are never replayed automatically. Opening Reviews
+does not acquire an editing lease, start work, prepare/seal an attempt, or restart
+the daemon. Hosted provider PR inboxes, reviewer requests and provider merge
+actions remain separate follow-up work; this workspace is Forge Reviews.
