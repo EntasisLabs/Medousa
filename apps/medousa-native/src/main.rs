@@ -3,6 +3,7 @@ mod attachments;
 mod auxiliary;
 mod backend;
 mod chat;
+mod calendar;
 mod code;
 mod context;
 mod diff_presentation;

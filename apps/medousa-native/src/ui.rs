@@ -1160,6 +1160,10 @@ fn update(world: &mut World) {
                 }
                 continue;
             }
+            crate::surfaces::SurfaceId::Calendar => {
+                if let Some(host) = host { crate::calendar::action(world, &host); }
+                continue;
+            }
             crate::surfaces::SurfaceId::Chat => {}
         }
         conversations::focus_entity(world, intent.entity);
@@ -1207,6 +1211,7 @@ fn update(world: &mut World) {
     crate::notes::tick(world);
     crate::code::sync(world);
     crate::reviews::sync(world);
+    crate::calendar::sync(world);
     auxiliary::dispatch(world);
     // Every adapter above reads canonical SourceSession text/revision, not its
     // notification queue. Acknowledge after capture, including parked drafts:
