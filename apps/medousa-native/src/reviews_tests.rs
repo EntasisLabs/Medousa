@@ -655,6 +655,8 @@ pub(crate) fn seed_visual(w: &mut World, changes: bool, confirm: bool) {
                 "Long sealed source line with punctuation, descenders (gypq), and a trailing marker beyond the pane edge — END_OF_LONG_LINE".to_owned()
             } else { format!("let result_{line} = inspect_sealed_changes(); // gypq") }
         })).collect::<Vec<_>>());
+        s.expanded.insert("src/main.rs".into());
+        s.file_cache.insert("src/main.rs".into(), value.clone());
         s.file = Some(("src/main.rs".into(), value));
     }
     if confirm {
@@ -672,7 +674,7 @@ fn presentation_tabs_keep_file_navigation_out_of_summary_and_details_collapsed()
     let mut w = seeded();
     let s = w.resource::<State>().unwrap();
     assert!(!s.changes);
-    assert!(!s.actions.values().any(|a| matches!(a, Action::File(_))));
+    assert!(!s.actions.values().any(|a| matches!(a, Action::File(_) | Action::ToggleFile(_))));
     assert!(
         !w.query::<Label>()
             .iter()
@@ -691,7 +693,7 @@ fn presentation_tabs_keep_file_navigation_out_of_summary_and_details_collapsed()
             .unwrap()
             .actions
             .values()
-            .any(|a| matches!(a, Action::File(_)))
+            .any(|a| matches!(a, Action::File(_) | Action::ToggleFile(_)))
     );
     assert!(take_commands(&mut w).is_empty()); // Reading tab selection is local, never a write.
     act(&mut w, Action::Summary);
@@ -743,7 +745,7 @@ pub(crate) fn assert_visual_geometry(w: &World, changes: bool) {
             .query::<Label>()
             .into_iter()
             .find(|(e, l)| l.text == text && crate::surfaces::descendant(w, *e, detail))
-            .unwrap()
+            .unwrap_or_else(|| panic!("Missing review label: {text}"))
             .0;
         *w.get::<Rect>(entity).unwrap()
     };
@@ -764,15 +766,14 @@ pub(crate) fn assert_visual_geometry(w: &World, changes: bool) {
             );
         }
     } else {
-        let files = label_rect("Changed files");
+        let files = label_rect(&format!("{} changed files", w.resource::<State>().unwrap().review["changed_files"].as_array().unwrap().len()));
         let diff = w.query::<Semantics>().into_iter().find(|(e, sem)|
             sem.name.as_deref() == Some("Sealed changes to src/main.rs")
             && crate::surfaces::descendant(w, *e, detail)
         ).unwrap().0;
         let rect = w.get::<Rect>(diff).unwrap();
         assert!(rect.h > 150., "Diff must retain a usable viewport: {rect:?}");
-        assert!(rect.y + rect.h <= detail_rect.y + detail_rect.h + 1.,
-            "Diff must fit above the decision form: {rect:?}; detail {detail_rect:?}");
+        assert!(rect.w > detail_rect.w - 12., "Accordion diffs use the full reading width: {rect:?}; detail {detail_rect:?}");
         assert_eq!(w.get::<Layout>(diff).unwrap().height, Size::Fill);
         for (e, label) in w.query::<Label>() {
             if label.text.contains("inspect_sealed_changes") {
@@ -816,4 +817,179 @@ pub(crate) fn assert_visual_diff_end(w: &World) {
     assert!(w.query::<Label>().into_iter().any(|(_, label)|
         label.text.contains("let result_80 = inspect_sealed_changes()")),
         "Last sealed diff row must be reachable");
+}
+
+fn multi_file(w: &mut World) {
+    w.resource_mut::<State>().unwrap().review["changed_files"] = json!([
+        {"path":"src/main.rs","lines_added":1,"lines_removed":1},
+        {"path":"src/other.rs","lines_added":2,"lines_removed":0}
+    ]);
+}
+fn complete_file(w: &mut World, command: Command) {
+    let Kind::File { path, .. } = &command.kind else {
+        panic!("expected file read")
+    };
+    let mut value = diff();
+    value["path"] = json!(path);
+    apply(
+        w,
+        Update {
+            command,
+            result: Ok(value),
+        },
+    );
+}
+#[test]
+fn accordions_serialize_expand_all_cache_exact_files_and_collapse_locally() {
+    let mut w = seeded();
+    multi_file(&mut w);
+    act(&mut w, Action::ExpandAll);
+    let mut reads = take_commands(&mut w);
+    assert_eq!(reads.len(), 1);
+    assert_eq!(w.resource::<State>().unwrap().expanded.len(), 2);
+    complete_file(&mut w, reads.remove(0));
+    let mut reads = take_commands(&mut w);
+    assert_eq!(reads.len(), 1);
+    complete_file(&mut w, reads.remove(0));
+    assert_eq!(w.resource::<State>().unwrap().file_cache.len(), 2);
+    assert!(take_commands(&mut w).is_empty());
+    act(&mut w, Action::CollapseAll);
+    assert!(w.resource::<State>().unwrap().expanded.is_empty());
+    act(&mut w, Action::ToggleFile("src/other.rs".into()));
+    assert!(
+        take_commands(&mut w).is_empty(),
+        "Cached reopening is local"
+    );
+    assert_eq!(
+        w.resource::<State>().unwrap().file.as_ref().unwrap().1["path"],
+        "src/other.rs"
+    );
+}
+#[test]
+fn collapse_all_stops_queued_reads_and_revision_change_rejects_inflight_cache() {
+    let mut w = seeded();
+    multi_file(&mut w);
+    act(&mut w, Action::ExpandAll);
+    let read = take_commands(&mut w).remove(0);
+    act(&mut w, Action::CollapseAll);
+    complete_file(&mut w, read);
+    assert!(take_commands(&mut w).is_empty());
+    assert_eq!(w.resource::<State>().unwrap().file_cache.len(), 1);
+    act(&mut w, Action::ToggleFile("src/other.rs".into()));
+    let old = take_commands(&mut w).remove(0);
+    act(&mut w, Action::Candidate("older".into()));
+    take_commands(&mut w);
+    complete_file(&mut w, old);
+    assert!(w.resource::<State>().unwrap().file_cache.is_empty());
+    assert!(w.resource::<State>().unwrap().expanded.is_empty());
+}
+#[test]
+fn accordion_failure_is_not_retried_until_explicit_action() {
+    let mut w = seeded();
+    act(&mut w, Action::ToggleFile("src/main.rs".into()));
+    let read = take_commands(&mut w).remove(0);
+    apply(
+        &mut w,
+        Update {
+            command: read,
+            result: Err("Unavailable".into()),
+        },
+    );
+    assert!(take_commands(&mut w).is_empty());
+    assert!(
+        w.resource::<State>()
+            .unwrap()
+            .file_errors
+            .contains("src/main.rs")
+    );
+    act(&mut w, Action::File("src/main.rs".into()));
+    assert_eq!(take_commands(&mut w).len(), 1);
+}
+#[test]
+fn loading_other_accordion_never_changes_comment_file_or_draft() {
+    let mut w = seeded();
+    multi_file(&mut w);
+    act(&mut w, Action::File("src/main.rs".into()));
+    let read = take_commands(&mut w).remove(0);
+    complete_file(&mut w, read);
+    body(&mut w, "Keep this exact file draft");
+    act(&mut w, Action::ExpandAll);
+    let read = take_commands(&mut w).remove(0);
+    complete_file(&mut w, read);
+    let s = w.resource::<State>().unwrap();
+    assert_eq!(s.file.as_ref().unwrap().0, "src/main.rs");
+    assert_eq!(s.draft.body, "Keep this exact file draft");
+    act(&mut w, Action::File("outside-review.rs".into()));
+    assert!(take_commands(&mut w).is_empty());
+    assert_eq!(
+        w.resource::<State>().unwrap().file.as_ref().unwrap().0,
+        "src/main.rs"
+    );
+}
+
+#[test]
+fn accordion_rerender_preserves_diff_anchor_without_crossing_revision() {
+    let mut app = crate::ui::app();
+    app.update();
+    app.world_mut().insert_resource(Viewport::new(1200., 850.));
+    crate::surfaces::select(app.world_mut(), crate::surfaces::SurfaceId::Reviews);
+    take_commands(app.world_mut());
+    seed_visual(app.world_mut(), true, false);
+    for _ in 0..4 {
+        rndr_paint::frame(&mut app);
+    }
+    scroll_visual_diff_to_end(app.world_mut());
+    for _ in 0..4 {
+        rndr_paint::frame(&mut app);
+    }
+    let root = |w: &World| {
+        w.query::<Semantics>()
+            .into_iter()
+            .find(|(_, s)| s.name.as_deref() == Some("Sealed changes to src/main.rs"))
+            .unwrap()
+            .0
+    };
+    let before = rndr_ui::collections::VirtualViewHandle {
+        root: root(app.world()),
+    }
+    .anchor(app.world())
+    .unwrap();
+    act(app.world_mut(), Action::CollapseAll);
+    act(app.world_mut(), Action::ToggleFile("src/main.rs".into()));
+    for _ in 0..4 {
+        rndr_paint::frame(&mut app);
+    }
+    let after = rndr_ui::collections::VirtualViewHandle {
+        root: root(app.world()),
+    }
+    .anchor(app.world())
+    .unwrap();
+    assert_eq!(before, after);
+    act(app.world_mut(), Action::Candidate("older".into()));
+    assert!(
+        app.world()
+            .resource::<State>()
+            .unwrap()
+            .diff_positions
+            .is_empty()
+    );
+}
+
+pub(crate) fn visual_accordions(w: &mut World, expanded: bool) {
+    let s = w.resource_mut::<State>().unwrap();
+    s.review["changed_files"] = json!([
+        {"path":"src/main.rs","lines_added":18,"lines_removed":7},
+        {"path":"src/other.rs","lines_added":2,"lines_removed":1}
+    ]);
+    let mut other = diff();
+    other["path"] = json!("src/other.rs");
+    s.file_cache.insert("src/other.rs".into(), other);
+    act(
+        w,
+        if expanded {
+            Action::ExpandAll
+        } else {
+            Action::CollapseAll
+        },
+    );
 }

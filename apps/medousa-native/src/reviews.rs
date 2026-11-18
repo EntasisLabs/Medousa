@@ -110,6 +110,9 @@ enum Action {
     Open(String),
     Candidate(String),
     File(String),
+    ToggleFile(String),
+    ExpandAll,
+    CollapseAll,
     Summary,
     Changes,
     About,
@@ -144,6 +147,11 @@ struct State {
     work: Option<String>,
     review: Value,
     file: Option<(String, Value)>,
+    expanded: HashSet<String>,
+    file_cache: HashMap<String, Value>,
+    file_errors: HashSet<String>,
+    loading_path: Option<String>,
+    diff_positions: HashMap<String, (rndr_ui::collections::VariableAnchor, f32)>,
     drafts: HashMap<(String, String), Draft>,
     draft: Draft,
     actions: HashMap<u64, Action>,
@@ -203,6 +211,53 @@ fn save_draft(s: &mut State) {
 fn load_draft(s: &mut State) {
     s.draft = s.drafts.get(&draft_key(s)).cloned().unwrap_or_default();
 }
+// Cache and expansion state never outlive their exact sealed revision. Reads are
+// serialized so Expand all cannot flood the daemon with unbounded concurrency.
+fn clear_files(s: &mut State) {
+    s.expanded.clear();
+    s.file_cache.clear();
+    s.file_errors.clear();
+    s.loading_path = None;
+    s.diff_positions.clear();
+    s.file_pending = None;
+}
+fn select_file(s: &mut State, path: &str) {
+    save_draft(s);
+    s.file = Some((
+        path.into(),
+        s.file_cache.get(path).cloned().unwrap_or(Value::Null),
+    ));
+    load_draft(s);
+}
+fn load_next_file(s: &mut State) {
+    if s.file_pending.is_some() || s.read_pending.is_some() || s.mutation_pending.is_some() {
+        return;
+    }
+    let Some(revision) = revision(&s.review) else {
+        return;
+    };
+    let path = s.review["changed_files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f["path"].as_str())
+        .find(|path| {
+            s.expanded.contains(*path)
+                && !s.file_cache.contains_key(*path)
+                && !s.file_errors.contains(*path)
+        })
+        .map(str::to_owned);
+    if let Some(path) = path {
+        s.loading_path = Some(path.clone());
+        s.file_pending = Some(enqueue(s, Kind::File { revision, path }));
+    }
+}
+fn known_file(s: &State, path: &str) -> bool {
+    s.review["changed_files"]
+        .as_array()
+        .is_some_and(|files| files.iter().any(|f| f["path"].as_str() == Some(path)))
+}
+
 pub fn mount(w: &mut World, parent: Entity) {
     view::mount(w, parent);
 }
@@ -260,26 +315,42 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
         match a {
             Action::Refresh => refresh(&mut s),
             Action::Open(work) => {
-                save_draft(&mut s); s.changes = false; s.about = false; s.work = Some(work.clone()); s.review = Value::Null; s.file = None;
+                save_draft(&mut s); s.changes = false; s.about = false; s.work = Some(work.clone()); s.review = Value::Null; s.file = None; clear_files(&mut s);
                 s.file_pending = None; s.confirmation = None; s.uncertain = false; s.message.clear(); load_draft(&mut s);
                 s.read_pending = Some(enqueue(&mut s,Kind::Review { work,attempt:None }));
             }
             Action::Candidate(attempt) => {
                 if let Some(work) = s.work.clone() {
-                    save_draft(&mut s); s.review = Value::Null; s.file = None; s.file_pending = None; s.confirmation = None; load_draft(&mut s);
+                    save_draft(&mut s); s.review = Value::Null; s.file = None; clear_files(&mut s); s.file_pending = None; s.confirmation = None; load_draft(&mut s);
                     s.read_pending = Some(enqueue(&mut s,Kind::Review { work,attempt:Some(attempt) }));
                 }
             }
-            Action::File(path) => {
-                if let Some(revision) = revision(&s.review).filter(|_| s.read_pending.is_none()) {
-                    save_draft(&mut s); s.changes = true; s.file = Some((path.clone(),Value::Null)); load_draft(&mut s);
-                    s.file_pending = Some(enqueue(&mut s,Kind::File { revision,path }));
+            Action::File(path) if known_file(&s, &path) && s.read_pending.is_none() => {
+                s.changes = true;
+                s.expanded.insert(path.clone());
+                s.file_errors.remove(&path);
+                select_file(&mut s, &path);
+                load_next_file(&mut s);
+            }
+            Action::ToggleFile(path) if known_file(&s, &path) && s.read_pending.is_none() => {
+                if !s.expanded.remove(&path) {
+                    s.expanded.insert(path.clone());
+                    s.file_errors.remove(&path);
+                    select_file(&mut s, &path);
+                    load_next_file(&mut s);
                 }
             }
+            Action::ExpandAll if s.read_pending.is_none() => {
+                s.expanded = s.review["changed_files"].as_array().into_iter().flatten()
+                    .filter_map(|f| f["path"].as_str().map(str::to_owned)).collect();
+                s.file_errors.clear();
+                load_next_file(&mut s);
+            }
+            Action::CollapseAll => s.expanded.clear(),
             Action::Changes => s.changes = true,
             Action::About => s.about = !s.about,
             Action::Filter(filter) => s.filter = filter,
-            Action::Summary => { s.changes = false; save_draft(&mut s); s.file = None; s.file_pending = None; load_draft(&mut s); }
+            Action::Summary => { s.changes = false; save_draft(&mut s); s.file = None; load_draft(&mut s); }
             Action::Side => s.draft.old = !s.draft.old,
             Action::Strategy => s.strategy = !s.strategy,
             Action::Cancel => s.confirmation = None,
@@ -336,7 +407,7 @@ fn mutation_allowed(s: &State, m: &Mutation) -> bool {
     }
 }
 fn comment_valid(s: &State) -> bool {
-    if !allowed(&s.review, "review") || s.draft.body.trim().is_empty() || s.file_pending.is_some() {
+    if !allowed(&s.review, "review") || s.draft.body.trim().is_empty() {
         return false;
     }
     let Some((_, v)) = &s.file else {
@@ -551,7 +622,7 @@ pub fn apply(w: &mut World, u: Update) {
                 s.confirmation = None;
                 if changed {
                     s.file = None;
-                    s.file_pending = None;
+                    clear_files(&mut s);
                 }
                 load_draft(&mut s);
                 s.message.clear();
@@ -562,11 +633,15 @@ pub fn apply(w: &mut World, u: Update) {
         }
         (Kind::File { revision: r, path }, Ok(v)) => {
             if revision(&s.review).as_ref() == Some(&r)
-                && s.file.as_ref().is_some_and(|f| f.0 == path)
+                && s.loading_path.as_deref() == Some(&path)
                 && file_matches(&v, &r, &path)
             {
-                s.file = Some((path, v));
+                s.file_cache.insert(path.clone(), v.clone());
+                if s.file.as_ref().is_some_and(|f| f.0 == path) {
+                    s.file = Some((path, v));
+                }
             } else {
+                s.file_errors.insert(path);
                 s.message = "Sealed diff identity mismatch. No file was substituted.".into();
             }
         }
@@ -581,6 +656,7 @@ pub fn apply(w: &mut World, u: Update) {
             refresh(&mut s);
         }
         (kind, Err(error)) => {
+            if let Kind::File { path, .. } = &kind { s.file_errors.insert(path.clone()); }
             s.message = error;
             if matches!(kind, Kind::Mutate { .. } | Kind::Review { .. }) {
                 s.uncertain = true;
@@ -588,6 +664,8 @@ pub fn apply(w: &mut World, u: Update) {
             s.confirmation = None;
         }
     }
+    if s.file_pending.is_none() { s.loading_path = None; }
+    load_next_file(&mut s);
     view::render(w, &mut s);
     s.redraw = false;
     w.insert_resource(s);

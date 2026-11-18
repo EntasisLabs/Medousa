@@ -6,6 +6,9 @@ use rndr_ui::{
     text,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
+#[derive(Clone)]
+struct FileDiff(String, Revision);
+impl Component for FileDiff {}
 static NEXT: AtomicU64 = AtomicU64::new(0x5256_0000);
 fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
@@ -248,6 +251,13 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     let (Some(q), Some(p), Some(form)) = (s.queue_panel, s.detail, s.form) else {
         return;
     };
+    for (root, file) in w.query::<FileDiff>() {
+        if revision(&s.review).as_ref() != Some(&file.1) { continue; }
+        let handle = rndr_ui::collections::VirtualViewHandle { root };
+        if let (Some(anchor), Some(scroll)) = (handle.anchor(w), w.get::<Scroll>(root)) {
+            s.diff_positions.insert(file.0.clone(), (anchor, scroll.offset[0]));
+        }
+    }
     let tools = s.queue_tools.unwrap_or(q);
     if tools != q {
         clear(w, tools);
@@ -365,109 +375,139 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     );
     visual::rule(w, p);
     if s.changes {
-        let wide = w.resource::<Viewport>().map_or(1200., |v| v.width) >= 1100.;
-        if wide {
-            heading(w, p, &string(&review, "title"));
-        }
-        let changes = panel(
+        heading(w, p, &string(&review, "title"));
+        let tools = row(w, p);
+        caption(w, p, &format!("{} changed file{}", files.len(), if files.len() == 1 { "" } else { "s" }));
+        button(
             w,
-            p,
-            Layout {
-                width: Size::Fill,
-                height: Size::Fill,
-                gap: 16.,
-                ..if wide {
-                    Layout::row()
-                } else {
-                    Layout::column()
-                }
-            },
+            tools,
+            s,
+            "Expand all",
+            Action::ExpandAll,
+            !busy && s.read_pending.is_none(),
         );
-        let list = panel(
-            w,
-            changes,
-            Layout {
-                width: if wide { Size::Px(200.) } else { Size::Fill },
-                height: if wide { Size::Fill } else { Size::Px(96.) },
-                gap: 4.,
-                ..Layout::column()
-            },
-        );
-        w.insert(list, Scroll::default());
-        heading(w, list, "Changed files");
+        button(w, tools, s, "Collapse all", Action::CollapseAll, !busy);
+        // One full-width stream. File headers remain ordinary navigation controls
+        // (keyboard/semantics included); each bounded diff owns its two-axis port.
         for file in &files {
             let path = string(file, "path");
+            let open = s.expanded.contains(&path);
+            let section = column(w, p);
+            visual::rule(w, section);
+            let header = row(w, section);
             nav(
                 w,
-                list,
+                header,
                 s,
-                &path,
-                Action::File(path.clone()),
-                s.file.as_ref().is_some_and(|f| f.0 == path),
+                &format!(
+                    "{}  {}    +{}  −{}",
+                    if open { "−" } else { "+" },
+                    path,
+                    file["lines_added"].as_u64().unwrap_or(0),
+                    file["lines_removed"].as_u64().unwrap_or(0)
+                ),
+                Action::ToggleFile(path.clone()),
+                false,
             );
-        }
-        let diff = panel(
-            w,
-            changes,
-            Layout {
-                width: Size::Fill,
-                height: Size::Fill,
-                gap: 12.,
-                ..Layout::column()
-            },
-        );
-        if let Some((path, value)) = s.file.clone() {
-            heading(w, diff, &path);
-            if let Some(file) = files.iter().find(|f| f["path"].as_str() == Some(&path)) {
-                caption(
-                    w,
-                    diff,
-                    &format!(
-                        "Sealed diff   +{}  −{}",
-                        file["lines_added"].as_u64().unwrap_or(0),
-                        file["lines_removed"].as_u64().unwrap_or(0)
-                    ),
-                );
+            if !open {
+                continue;
             }
-            if s.file_pending.is_some() {
-                caption(w, diff, "Loading exact sealed diff…");
-            } else if value.is_null() {
+            let selected = s.file.as_ref().is_some_and(|f| f.0 == path);
+            let value = s.file_cache.get(&path).cloned().or_else(|| {
+                s.file
+                    .as_ref()
+                    .filter(|f| f.0 == path && !f.1.is_null())
+                    .map(|f| f.1.clone())
+            });
+            if s.file_errors.contains(&path) {
                 caption(
                     w,
-                    diff,
-                    "Diff unavailable. Refresh or select this file again.",
+                    section,
+                    "Sealed diff unavailable. Retry to read this exact revision.",
                 );
-            } else if value["binary"] == true {
-                caption(w, diff, "Binary change · text diff unavailable.");
-            } else {
-                if value["truncated"] == true {
-                    caption(w, diff, "Truncated diff · only part of this file is shown.");
-                }
-                let holder = panel(
+                button(
                     w,
-                    diff,
-                    Layout {
-                        width: Size::Fill,
-                        height: Size::Fill,
-                        ..Layout::column()
+                    section,
+                    s,
+                    "Retry sealed diff",
+                    Action::File(path.clone()),
+                    !busy,
+                );
+            } else if let Some(value) = value {
+                if value["binary"] == true {
+                    caption(w, section, "Binary change · text diff unavailable.");
+                } else {
+                    if value["truncated"] == true {
+                        caption(
+                            w,
+                            section,
+                            "Truncated diff · only part of this file is shown.",
+                        );
+                    }
+                    if value["hunks"].as_array().is_none_or(|h| h.is_empty()) {
+                        caption(w, section, "No text changes in the sealed diff.");
+                    } else {
+                        let count: usize = value["hunks"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .map(|h| 1 + h["lines"].as_array().map_or(0, Vec::len))
+                            .sum();
+                        let maximum = (w.resource::<Viewport>().map_or(850., |v| v.height) - 480.)
+                            .clamp(180., 360.);
+                        let height = (count as f32 * crate::diff_presentation::row_height(w) + 12.)
+                            .min(maximum);
+                        let holder = panel(
+                            w,
+                            section,
+                            Layout {
+                                width: Size::Fill,
+                                height: Size::Px(height),
+                                ..Layout::column()
+                            },
+                        );
+                        let handle = crate::diff_presentation::mount(
+                            w,
+                            holder,
+                            UiId(next()),
+                            format!("Sealed changes to {path}"),
+                            &value,
+                        )
+                        .unwrap();
+                        w.insert(
+                            handle.root,
+                            FileDiff(path.clone(), revision(&review).unwrap()),
+                        );
+                        if let Some((anchor, x)) = s.diff_positions.get(&path) {
+                            let _ = rndr_ui::collections::VirtualViewHandle { root: handle.root }
+                                .jump(w, anchor.id, anchor.remainder_mp);
+                            w.get_mut::<Scroll>(handle.root).unwrap().offset[0] = *x;
+                        }
+                    }
+                }
+                button(
+                    w,
+                    section,
+                    s,
+                    if selected {
+                        "Commenting on this file"
+                    } else {
+                        "Comment on this file"
+                    },
+                    Action::File(path.clone()),
+                    !busy && !selected,
+                );
+            } else {
+                caption(
+                    w,
+                    section,
+                    if s.loading_path.as_deref() == Some(&path) {
+                        "Loading exact sealed diff…"
+                    } else {
+                        "Waiting to load exact sealed diff…"
                     },
                 );
-                crate::diff_presentation::mount(
-                    w,
-                    holder,
-                    UiId(next()),
-                    format!("Sealed changes to {path}"),
-                    &value,
-                )
-                .unwrap();
             }
-        } else {
-            heading(w, diff, "Read the sealed changes");
-            caption(
-                w,
-                diff,
-                "Choose a file to inspect its diff and add anchored comments.",
-            );
         }
     } else {
         let synthesis = &review["synthesis"];
@@ -792,6 +832,9 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         button(w, bar, s, "Confirm", Action::Confirm, usable);
         button(w, bar, s, "Cancel", Action::Cancel, !busy);
     } else {
+        if let Some((path, _)) = &s.file {
+            caption(w, form, &format!("Comment on {path}"));
+        }
         s.body = Some(prompt(
             w,
             form,
@@ -817,7 +860,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                 s,
                 "Add comment",
                 Action::Comment,
-                usable && s.file_pending.is_none(),
+                usable && s.file.as_ref().is_some_and(|(_, v)| !v.is_null()),
             );
         }
         button(

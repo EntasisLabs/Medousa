@@ -853,6 +853,16 @@ fn native_reviews_visual_acceptance() {
    crate::reviews::tests::assert_visual_geometry(app.world(), true);
    let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
    image::save_buffer(format!("verification/native-reviews-{name}-end.png"),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
+   for expanded in [true, false] {
+    crate::reviews::tests::visual_accordions(app.world_mut(), expanded);
+    for _ in 0..4 { rndr_paint::frame(&mut app); }
+    let count = app.world().query::<Semantics>().into_iter().filter(|(_, sem)|
+        sem.name.as_deref().is_some_and(|n| n.starts_with("Sealed changes to "))).count();
+    assert_eq!(count, if expanded { 2 } else { 0 });
+    let(_,image)=rndr_paint::frame_with_snapshot_frame(&mut app,|world,frame|exporter.render_frame(Some(world),frame,width,height,1.).unwrap());
+    image::save_buffer(format!("verification/native-reviews-{name}-accordions-{}.png",if expanded {"expanded"} else {"collapsed"}),&image.rgba,image.width,image.height,image::ColorType::Rgba8).unwrap();
+   }
+
   }
  }
 }

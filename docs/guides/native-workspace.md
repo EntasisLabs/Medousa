@@ -269,9 +269,18 @@ verification command/result, policy findings and blockers. Wide windows place ch
 risk and candidate metadata beside the reading column; narrow windows stack them.
 **Changes** opens a bounded changed-file navigator and the selected sealed diff,
 instead of wrapping every filename into the summary. Technical identities and the
-activity timeline are under **About**. Select a changed file to open it through the sealed review-file API,
+activity timeline are under **About**. **Changes** presents full-width file accordions
+with per-file addition/removal counts. Expand individual headers or use **Expand all**
+and **Collapse all**. Exact sealed file reads load one at a time, with cached
+results reused only within the same evidence revision. Closing files stops queued
+reads; an already-running read may finish into that revision’s cache. Failed reads
+require an explicit retry. Switching candidates clears the cache and expansion state.
+Choose **Comment on this file** to select the file for the anchored comment form;
+opening another file preserves its separate draft. File diffs retain their own scroll
+positions when other accordions change. Files open through the sealed review-file API,
 not the mutable Code checkout. Binary, truncated and unavailable diffs are identified
-explicitly. The diff fills the remaining pane above the decision form, using RNDR's
+explicitly. Each diff uses a bounded viewport in the scrolling file stream above
+the decision form, using RNDR's
 compact monospace code metrics, separate old/new line-number gutters, and
 theme-aware generic syntax colors (not language-semantic highlighting). Source
 indentation and blank lines are preserved. Long lines remain single-line and
