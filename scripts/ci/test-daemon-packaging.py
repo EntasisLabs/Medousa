@@ -173,7 +173,7 @@ print("test result: ok. " + os.environ["PASS_COUNT"] + " passed; 0 failed; 0 ign
                 subprocess.run(["bash", str(ROOT / "scripts/ci/test-platform-lifetime.sh")],
                                cwd=ROOT, env=env, check=True, capture_output=True, text=True)
             invocations = [json.loads(line) for line in calls.read_text().splitlines()]
-            self.assertEqual(len(invocations), 9)
+            self.assertEqual(len(invocations), 12)
             source = (ROOT / "src/runtime/platform/lifetime_tests.rs").read_text()
             for args in invocations:
                 self.assertEqual(args[0], "test")

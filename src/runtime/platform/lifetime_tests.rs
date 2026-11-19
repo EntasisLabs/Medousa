@@ -122,6 +122,9 @@ impl Fixture {
         crate::vault::roots::set_test_vault_root_override(Some(root.join("vault")));
         let mut previous_env = Vec::new();
         for (key, value) in [
+            // Storage recovery also runs on Forge threads, outside the scoped
+            // thread-local data root used by the constructor itself.
+            ("MEDOUSA_DATA_DIR", root.to_str()),
             ("MEDOUSA_TEST_HERMETIC", Some("1")),
             // Port zero is never a live host gateway. No remote MCP catalog is needed.
             ("MEDOUSA_MCP_GATEWAY_URL", Some("http://127.0.0.1:0")),
@@ -217,6 +220,97 @@ async fn closed_with_live_agent(registered: &Registered) {
             .is_err()
     );
     calendar_operation(&registered.agent).await;
+}
+
+#[tokio::test]
+#[ignore = "process-global constructor state; run scripts/ci/test-platform-lifetime.sh"]
+async fn startup_queues_worker_continuations_without_executing_them() {
+    use std::collections::HashMap;
+
+    use crate::agent_runtime::turn_worker::{TurnWorkRecord, turn_worker_store};
+    use crate::runtime_composition_ext::RuntimeCompositionExt;
+    use stasis::domain::runtime::job::JobState;
+
+    let _fixture = Fixture::new();
+    let mut records = HashMap::new();
+    for (index, (status, disposition, delivered, stopped, queued)) in [
+        ("completed", "parallel", false, false, true),
+        ("failed", "parallel", false, false, true),
+        ("cancelled", "parallel", false, false, true),
+        ("completed", "bound", false, false, true),
+        ("pending", "parallel", false, false, true),
+        ("running", "parallel", false, false, true),
+        ("completed", "parallel", true, false, false),
+        ("completed", "parallel", false, true, false),
+        ("completed", "delegated", false, false, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let record: TurnWorkRecord = serde_json::from_value(serde_json::json!({
+            "work_id": format!("startup-{index}"),
+            "session_id": format!("ses_{index:032x}"),
+            "intent": "research", "task_prompt": "Already finished work",
+            "status": status, "disposition": disposition, "tool_names": [],
+            "user_ack": "Working", "provider": "ollama", "model": "no-inference",
+            "response_depth_mode": "standard", "created_at": chrono::Utc::now(),
+            "updated_at": chrono::Utc::now(), "result_text": "Saved final response",
+            "needs_synthesis": false, "synthesis_delivered": delivered,
+            "stop_request_id": stopped.then_some("stop-test"),
+        }))
+        .unwrap();
+        records.insert(record.work_id.clone(), (record, queued));
+    }
+    // Seed real restart state before the writer and global worker store open it.
+    let saved: HashMap<_, _> = records
+        .iter()
+        .map(|(id, (record, _))| (id.clone(), record.clone()))
+        .collect();
+    std::fs::write(
+        crate::paths::medousa_data_dir().join("turn_workers.json"),
+        serde_json::to_vec(&saved).unwrap(),
+    )
+    .unwrap();
+    crate::workspace::init_persist_writer().await.unwrap();
+    let (future, _reached) = construction(Action::Continue);
+    // Keep the hook receiver alive until construction has registered handlers.
+    let platform = tokio::time::timeout(Duration::from_secs(30), future)
+        .await
+        .expect("startup must not wait for recovered inference")
+        .unwrap();
+
+    let store = turn_worker_store();
+    let mut job_ids = HashMap::new();
+    for (id, (original, queued)) in &records {
+        let restored = store.get(id).unwrap();
+        assert_eq!(restored.status, original.status);
+        assert_eq!(restored.result_text, original.result_text);
+        assert_eq!(restored.synthesis_delivered, original.synthesis_delivered);
+        assert_eq!(restored.stasis_job_id.is_some(), *queued, "{id}");
+        if let Some(job_id) = restored.stasis_job_id {
+            let job = platform
+                .composition()
+                .get_job(&job_id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(job.state, JobState::Enqueued);
+            assert_eq!(
+                job.job_type,
+                crate::agent_runtime::turn_worker_job::TURN_WORKER_JOB_TYPE
+            );
+            job_ids.insert(id.clone(), job_id);
+        }
+    }
+    crate::agent_runtime::turn_worker_job::reconcile_durable_turn_workers(platform.composition())
+        .await;
+    for (id, job_id) in job_ids {
+        assert_eq!(
+            store.get(&id).unwrap().stasis_job_id.as_deref(),
+            Some(job_id.as_str())
+        );
+    }
+    crate::workspace::flush_persist_writer().await.unwrap();
 }
 
 #[tokio::test]

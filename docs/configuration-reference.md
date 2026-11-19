@@ -304,13 +304,35 @@ Home Settings → Rhythm writes these fields to `tui_defaults.json` on Mac deskt
 | `OPENSHELL_GATEWAY` | OpenShell gateway name |
 | `MEDOUSA_LOG` | Tracing filter (default `medousa=info,stasis=warn` when unset; takes precedence over `RUST_LOG` when set) |
 | `RUST_LOG` | Fallback tracing filter when `MEDOUSA_LOG` unset |
-| `MEDOUSA_LOG_ROTATE_MAX_BYTES` | Rotate daemon log file at this size |
-| `MEDOUSA_LOG_ROTATE_MAX_BACKUPS` | Retained rotated log files |
+| `MEDOUSA_LOG_ROTATE_MAX_BYTES` | Per-file byte limit (default 50 MiB; invalid/zero values use the default) |
+| `MEDOUSA_LOG_ROTATE_MAX_BACKUPS` | Retained rotated log files (default 3, clamped to 1–10) |
 | `MEDOUSA_DEAD_LETTER_CAP` | Max concurrently retained dead-letter jobs |
 | `MEDOUSA_OTEL_ENABLED` | Enable OTLP export (`true`/`1`) — requires daemon built with `otel-export` feature |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry export endpoint |
 | `OTEL_SERVICE_NAME` | Service name |
 | `STASIS_OTEL_SERVICE_NAME` | Legacy alias |
+
+On macOS/Linux, when **both stdout and stderr** are redirected to
+`{dataDir}/logs/daemon.log`, the daemon takes over those descriptors before
+starting its runtime. A single writer bounds tracing, raw stderr warnings, and
+inherited child output, rotating through `daemon.log.1` … `.3` by default.
+The default steady-state budget is 200 MiB (one active file plus three backups).
+A single long line may span files. Foreground terminals, unrelated files,
+service-manager journals, and Windows output are not captured by this mechanism.
+Heartbeat JSONL continues using the same policy through its separate sink.
+
+When the daemon starts against an oversized legacy log, it preserves only the
+last configured per-file limit as `.1`, then releases the oversized inode's
+blocks. Recovery needs space for that bounded tail before discarding old data.
+Install the rebuilt daemon and **stop the old process before starting it**;
+restarting an old binary does not acquire this fix, and concurrent daemons
+must not share this output file. To retain more history, copy it elsewhere
+before restart. Do not rename a running daemon's log as a cleanup strategy:
+open descriptors can keep writing into the renamed inode.
+
+Rotation settings must be in the daemon process environment at launch (capture
+runs before the daemon loads configuration overlays). Normal shutdown drains
+pending output; forced termination can lose output still buffered in memory.
 
 ---
 

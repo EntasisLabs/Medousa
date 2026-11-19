@@ -13,6 +13,7 @@ export RUST_MIN_STACK=33554432
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 for name in \
+  startup_queues_worker_continuations_without_executing_them \
   retained_agent_survives_final_platform_drop_without_observation_failure \
   late_actual_constructor_failure_closes_observations_after_handler_registration \
   polled_actual_constructor_cancellation_closes_observations_after_handler_registration

@@ -106,10 +106,9 @@ fn turn_worker_job_placement(
     PlacementConstraints::unrestricted().target_node(&resolution.resolved_runtime_id)
 }
 
-pub async fn reconcile_durable_turn_workers(
-    composition: &RuntimeComposition,
-    agent: Arc<TuiRuntime>,
-) {
+/// Restore durable jobs without executing agent turns during platform startup.
+/// The worker host consumes continuations after daemon services are registered.
+pub async fn reconcile_durable_turn_workers(composition: &RuntimeComposition) {
     let store = turn_worker_store();
     let incomplete = store.list_incomplete();
     if incomplete.is_empty() {
@@ -164,41 +163,12 @@ pub async fn reconcile_durable_turn_workers(
                     }
                 }
             }
-            TurnWorkStatus::Completed if !record.synthesis_delivered => {
-                eprintln!(
-                    "medousa-daemon: resume synthesis for work_id={}",
-                    record.work_id
-                );
-                let work_id = record.work_id.clone();
-                let stream_turn_id = record.parent_stream_turn_id;
-                resume_pending_synthesis(agent.clone(), record).await;
-                if pending_continuation_outcome(store.get(&work_id).as_ref()).is_some()
-                    && job_needs_enqueue(composition, &work_id).await
-                    && let Err(error) = enqueue_turn_worker_job_with_id(
-                        composition,
-                        &work_id,
-                        stream_turn_id,
-                        &format!("{work_id}:continuation:{}", uuid::Uuid::new_v4()),
-                    )
-                    .await
-                {
-                    tracing::warn!(%work_id, %error, "failed to restore host continuation");
-                }
-            }
-            TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
-                if !record.synthesis_delivered
-                    && record.disposition
-                        == crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel =>
+            TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+                if pending_continuation_outcome(Some(&record)).is_some() =>
             {
-                eprintln!(
-                    "medousa-daemon: resume host intake for work_id={}",
-                    record.work_id
-                );
                 let work_id = record.work_id.clone();
                 let stream_turn_id = record.parent_stream_turn_id;
-                resume_pending_synthesis(agent.clone(), record).await;
-                if pending_continuation_outcome(store.get(&work_id).as_ref()).is_some()
-                    && job_needs_enqueue(composition, &work_id).await
+                if job_needs_enqueue(composition, &work_id).await
                     && let Err(error) = enqueue_turn_worker_job_with_id(
                         composition,
                         &work_id,

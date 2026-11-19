@@ -7,6 +7,8 @@
 //! * [`log_rotation`] — size-capped rotation for append-only file sinks.
 //! * [`dead_letter`] — bounded dead-letter pileup enforcement.
 
+#[cfg(unix)]
+pub mod daemon_output;
 pub mod correlation;
 pub mod dead_letter;
 pub mod log_rotation;

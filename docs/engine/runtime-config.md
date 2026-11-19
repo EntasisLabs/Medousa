@@ -57,6 +57,12 @@ retains the newest 4,096 activity events within the 8 MiB in-memory feed budget.
 Worker and ask-job retention belongs to their domain stores; persistence does
 not independently evict active work.
 
+Daemon startup restores unfinished native worker jobs and undelivered host
+continuations to the runtime queue without executing agent turns during platform
+construction. The worker host resumes them after daemon services and delivery
+bridges are registered. Completed worker effects are not rerun to deliver a
+pending response; interrupted external agents are not automatically relaunched.
+
 The 8 MiB journal threshold triggers compaction, not rejection. Each atomic
 mutation record has an 8 MiB admission limit, shared with recovery, and the
 writer queue has a 16 MiB serialized-payload budget plus 256 command slots.

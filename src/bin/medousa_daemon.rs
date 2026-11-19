@@ -284,6 +284,15 @@ fn resolve_max_concurrency() -> usize {
 }
 
 fn main() -> Result<()> {
+    // Capture before creating the runtime/worker threads. Only redirected
+    // canonical daemon.log output is taken over; foreground output is unchanged.
+    #[cfg(unix)]
+    let _output = medousa::observability::daemon_output::capture(
+        &medousa::paths::medousa_data_dir().join("logs/daemon.log"),
+        medousa::observability::RotateConfig::from_env(),
+    )
+    .context("failed to initialize bounded daemon output")?;
+
     std::thread::Builder::new()
         .name("medousa-daemon-bootstrap".to_string())
         .stack_size(DAEMON_BOOTSTRAP_STACK_SIZE)

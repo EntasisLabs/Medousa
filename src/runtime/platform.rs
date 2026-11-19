@@ -244,11 +244,8 @@ async fn build_platform_inner(
     #[cfg(test)]
     lifetime_tests::after_handler_registration(&agent, observation_sender).await?;
 
-    crate::agent_runtime::turn_worker_job::reconcile_durable_turn_workers(
-        agent.runtime.as_ref(),
-        agent.clone(),
-    )
-    .await;
+    crate::agent_runtime::turn_worker_job::reconcile_durable_turn_workers(agent.runtime.as_ref())
+        .await;
 
     if let Some(service) = delegation_service.as_ref() {
         service

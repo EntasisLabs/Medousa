@@ -228,7 +228,16 @@ pub async fn maybe_resume_host_after_parallel_worker(
         cohort.acknowledge();
         return;
     }
-    if run_host_resume_turn(ctx, execution_registry, agent, &cohort, sink.clone()).await {
+    // Keep the full host turn's async state off the caller's recovery/worker stack.
+    if Box::pin(run_host_resume_turn(
+        ctx,
+        execution_registry,
+        agent,
+        &cohort,
+        sink.clone(),
+    ))
+    .await
+    {
         cohort.acknowledge();
     } else {
         sink.notice(format!(
@@ -367,7 +376,7 @@ async fn run_host_resume_turn(
         primary: primary.clone(),
         captured: captured.clone(),
     });
-    run_agent_turn(
+    Box::pin(run_agent_turn(
         &turn_id,
         request,
         backend,
@@ -377,7 +386,7 @@ async fn run_host_resume_turn(
         execution_lease.context().clone(),
         None,
         project_state,
-    )
+    ))
     .await;
     drop(execution_lease);
 

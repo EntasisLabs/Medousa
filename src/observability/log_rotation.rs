@@ -27,6 +27,7 @@ impl RotateConfig {
         let max_bytes = std::env::var("MEDOUSA_LOG_ROTATE_MAX_BYTES")
             .ok()
             .and_then(|raw| raw.trim().parse().ok())
+            .filter(|bytes| *bytes > 0)
             .unwrap_or_else(|| Self::default().max_bytes);
         let max_backups = std::env::var("MEDOUSA_LOG_ROTATE_MAX_BACKUPS")
             .ok()
@@ -52,7 +53,7 @@ pub fn rotate_if_oversized(path: &Path, config: RotateConfig) -> io::Result<bool
     // Drop the oldest backup, then shift `.N` → `.N+1`, then move active → `.1`.
     let oldest = backup_path(path, config.max_backups);
     if oldest.exists() {
-        let _ = fs::remove_file(&oldest);
+        fs::remove_file(&oldest)?;
     }
     for idx in (1..config.max_backups).rev() {
         let from = backup_path(path, idx);
