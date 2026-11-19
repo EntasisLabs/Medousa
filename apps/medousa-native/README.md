@@ -167,6 +167,10 @@ by work/evidence. This is not hosted-provider pull-request integration. See
 Peers provides retained trusted-workshop threads, search, unread counts,
 explicit mark-read and text sends through the shared desktop-host authenticated
 peer service. Window-only drafts survive peer/surface changes. Unknown delivery
-is never retried automatically. Incoming updates use explicit Refresh; pairing,
-trust management, sharing and attachment opening remain in the reference app.
+is never retried automatically. Incoming updates use explicit Refresh.
+**Connections** adds nearby discovery, explicit peer-only invite pairing,
+current invite retrieval, incoming trust expiry/inactivity policies and confirmed
+forget/revoke. Remote execution permissions are not changed. Outbound removal
+forgets local credentials, not trust on the other workshop. Sharing and attachment
+opening remain in the reference app.
 See [the native workspace guide](../../docs/guides/native-workspace.md#peers-trusted-workshop-conversations).

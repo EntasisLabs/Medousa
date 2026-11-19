@@ -90,9 +90,11 @@ enum Action {
     Send,
     MarkRead,
     AllowResend,
+    Manage,
 }
 struct State {
     root: Entity,
+    managing: bool,
     list: Entity,
     header: Entity,
     thread: Entity,
@@ -125,6 +127,7 @@ struct State {
 fn empty(root: Entity) -> State {
     State {
         root,
+        managing: false,
         list: root,
         header: root,
         thread: root,
@@ -200,6 +203,7 @@ fn capture(w: &World, s: &mut State) {
     }
 }
 pub fn can_deactivate(w: &World) -> bool {
+    if !crate::peer_management::can_deactivate(w) { return false; }
     w.resource::<State>().is_none_or(|s| {
         [Some(s.search), s.editor]
             .into_iter()
@@ -216,9 +220,12 @@ fn with_state(w: &mut World, f: impl FnOnce(&mut World, &mut State)) {
     w.insert_resource(s);
 }
 pub fn sync(w: &mut World) {
+    crate::peer_management::sync(w);
+    let managing = crate::peer_management::active(w);
     let can = can_deactivate(w);
     with_state(w, |w, s| {
         capture(w, s);
+        if managing != s.managing { s.managing = managing; s.redraw = true; if !managing { s.refresh(); } }
         let narrow = w.resource::<Viewport>().is_some_and(|v| v.width < 900.);
         if narrow != s.narrow {
             s.narrow = narrow;
@@ -247,6 +254,7 @@ pub fn sync(w: &mut World) {
     });
 }
 pub fn action(w: &mut World, intent: &HostIntent) -> bool {
+    if crate::peer_management::active(w) { return crate::peer_management::action(w, intent); }
     let HostIntent::Command(id) = intent else {
         return false;
     };
@@ -263,6 +271,7 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
     with_state(w, |w, s| {
         capture(w, s);
         match a {
+            Action::Manage if s.read.is_none() && s.mutation.is_none() => crate::peer_management::open(w),
             Action::Refresh => s.refresh(),
             Action::Select(id) => {
                 if s.peers.iter().any(|p| p.id == id) {

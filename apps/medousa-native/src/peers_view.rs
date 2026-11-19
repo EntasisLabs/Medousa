@@ -93,6 +93,7 @@ pub(super) fn mount(w: &mut World, parent: Entity) {
         },
     );
     visual::flat(w, root, visual::canvas());
+    crate::peer_management::mount(w, root);
     let sidebar = panel(
         w,
         root,
@@ -161,6 +162,7 @@ pub(super) fn mount(w: &mut World, parent: Entity) {
     button(w, controls, &mut s, "Search", Action::Search, true);
     button(w, controls, &mut s, "Clear", Action::Clear, true);
     button(w, controls, &mut s, "Refresh", Action::Refresh, true);
+    button(w, controls, &mut s, "Connections…", Action::Manage, true);
     s.persistent = s.actions.keys().copied().collect();
     w.insert_resource(s);
 }
@@ -177,6 +179,11 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     clear(w, s.list);
     clear(w, s.header);
     clear(w, s.thread);
+    if s.managing {
+        w.insert(s.sidebar, Hidden);
+        w.insert(s.detail, Hidden);
+        return;
+    }
     let list_only = s.narrow && s.selected.is_none();
     if s.narrow && !list_only {
         w.insert(s.sidebar, Hidden);
@@ -258,7 +265,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
             w,
             s.list,
             if s.peers.is_empty() {
-                "No trusted peers yet. Pair a workshop in the reference app to start a conversation."
+                "No trusted peers yet. Open Connections to pair a workshop."
             } else {
                 "No peers match your search."
             },
@@ -281,7 +288,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                 } else if p.ready {
                     "Paired workshop · availability checked on send"
                 } else {
-                    "Reconnect in the reference app to send"
+                    "Open Connections to pair again"
                 },
                 p.device
             ),

@@ -11,6 +11,7 @@ mod media_preview;
 mod native_style;
 mod notes;
 mod peers;
+mod peer_management;
 mod provider_timeline;
 mod reviews;
 mod runtimes;

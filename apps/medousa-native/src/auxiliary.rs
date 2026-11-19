@@ -17,6 +17,7 @@ pub enum Command {
     Review(crate::reviews::Command),
     Calendar(crate::calendar::Command),
     Peers(crate::peers::Command),
+    PeerManagement(crate::peer_management::Command),
 }
 enum Update {
     Note(crate::notes::NoteUpdate),
@@ -24,6 +25,7 @@ enum Update {
     Review(crate::reviews::Update),
     Calendar(crate::calendar::Update),
     Peers(crate::peers::Update),
+    PeerManagement(crate::peer_management::Update),
     Preview(media_preview::PreviewUpdate),
     Context(context::ContextUpdate),
     Approval(approvals::ApprovalUpdate),
@@ -86,6 +88,7 @@ impl Auxiliary {
                     }
                     let result=match command {
                     Command::Preview(c)=> { let _permit=previews.acquire_owned().await.expect("preview semaphore"); Ok(Update::Preview(media_preview::execute(&client,c).await)) },
+                    Command::PeerManagement(c)=>Ok(Update::PeerManagement(crate::peer_management::execute(&client,c).await)),
                     Command::Peers(c)=>Ok(Update::Peers(crate::peers::execute(&client,c).await)),
                     Command::Calendar(c)=>Ok(Update::Calendar(crate::calendar::execute(&client,c).await)),
                     Command::Note(c)=>Ok(Update::Note(crate::notes::execute(&client,c).await)),
@@ -117,6 +120,7 @@ pub fn tick(world: &mut World) {
         .unwrap_or_default();
     for update in updates {
         match update {
+            Update::PeerManagement(u) => crate::peer_management::apply(world,u),
             Update::Peers(u) => crate::peers::apply(world,u),
             Update::Calendar(u) => crate::calendar::apply(world, u),
             Update::Note(u) => crate::notes::apply(world, u),
@@ -159,6 +163,7 @@ pub fn dispatch(world: &mut World) {
         .map(Command::Note)
         .chain(crate::calendar::take_commands(world).into_iter().map(Command::Calendar))
         .chain(crate::peers::take_commands(world).into_iter().map(Command::Peers))
+        .chain(crate::peer_management::take_commands(world).into_iter().map(Command::PeerManagement))
         .chain(
             crate::reviews::take_commands(world)
                 .into_iter()

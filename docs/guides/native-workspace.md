@@ -386,7 +386,36 @@ by opening a thread. Partial source failures are shown, not represented as a
 successful empty inbox. Availability is checked on request; a paired workshop
 is not necessarily online. Use Refresh for incoming updates in this slice.
 
-Discovery, pairing/invites, revocation and creating note/artifact shares still
-use the reference app. Existing attachment messages have informational previews
-only; native opening/import is not implemented. Save drafts before restarting
-the native app.
+### Connect and manage trust
+
+Open **Connections…** in Peers. Opening it reads trust status only; it does not
+create an invite, scan the LAN or pair a device. **Find nearby workshops** lists
+untrusted addresses. Choose **Use this address**, then paste the invite URL from
+that workshop. Alternatively enter its reachable workshop URL manually. Select
+**Review pairing**, check the destination and **Confirm change**. Pairing reuses
+signed identity verification and creates a peer, not a portal or execution grant.
+
+To invite another device, enable LAN pairing in the reference app's Connection
+settings, then use **Get current invite**. Copy the displayed link to that device.
+Invite links are sensitive and expire; share only with the intended recipient.
+Native camera scanning, QR-image rendering and LAN enable/disable are not part
+of this slice.
+
+In **Trusted peers**, select the exact device and pairing. Incoming peers support
+trust expiry (a future RFC3339 timestamp such as `2027-01-01T00:00:00Z`) and
+inactivity expiry (1–3650 whole days). Blank values clear those limits. Use
+**Review trust policy**, then confirm. A policy change expires the current
+session; the peer must authenticate again. Execution policies are unchanged.
+Outbound trust policy belongs to the remote workshop and is not editable here.
+
+**Forget selected peer…** requires confirmation. For incoming peers it revokes
+trust on this workshop. For outbound peers it removes only local registry and
+credentials; it does not revoke trust held by the other workshop. Full device
+and pairing identities are checked again before removal or policy mutation.
+Refresh trust after a change. If a change cannot be confirmed, inspect both ends,
+use **Refresh trust**, then explicitly unlock actions; no mutation is replayed.
+Returning to conversations refreshes the peer list and preserves window drafts.
+
+Creating note/artifact shares and opening/importing attachment messages remain
+in the reference app. Existing attachment messages have informational previews
+only. Save drafts before restarting the native app.

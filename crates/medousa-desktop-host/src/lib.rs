@@ -11,4 +11,5 @@ mod connection_tests;
 pub mod mesh_envelope;
 pub mod pairing_client;
 pub mod peers;
+pub mod peer_management;
 pub mod workshop_transport;
