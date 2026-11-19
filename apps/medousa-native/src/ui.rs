@@ -187,6 +187,7 @@ pub fn app() -> App {
     app.add_system(Schedule::Update, update);
     app.add_system(Schedule::Layout, workspace::chrome);
     app.add_system(Schedule::Layout, crate::surfaces::chrome);
+    app.add_system(Schedule::Layout, crate::calendar::chrome);
     app.add_system(Schedule::Layout, timeline::chrome);
     app.add_system(Schedule::Layout, visual::document_layouts);
     app.add_system(Schedule::Layout, visual::fit_labels);

@@ -322,25 +322,42 @@ actions remain separate follow-up work; this workspace is Forge Reviews.
 
 The native Calendar surface reads and writes `calendar/personal.ics` through the
 connected workshop daemon; it never opens a separate device-local calendar file.
-Month provides a six-week grid and selected-day agenda; Day and Week provide
+Month provides a continuous, height-filling six-week grid and an optional
+selected-day agenda; Day and Week provide
 chronological agendas. Previous, Today, and Next navigate the selected view.
 Select a date to inspect its events, then use **New event** or open an existing
-event to edit it. On narrow windows the selected-day agenda follows the grid.
+event to edit it. Selecting a date or **+N more** opens its agenda; **Agenda** /
+**Hide agenda** also toggles it. On narrow windows the agenda is a bounded panel
+below the grid. Today has a compact date marker, separate from the selected day.
+The **Calendar** control reveals the daemon calendar source path.
 
 The first native editor supports title, start/end, all-day, location, and
 description. Enter dates as `YYYY-MM-DD` and timed-event times as 24-hour `HH:MM`.
 Timed events use the device's local time zone; nonexistent or ambiguous daylight
 saving times are rejected. All-day events use calendar dates without zone shifts;
 the end date is exclusive (the day after the last included day).
-Existing linked-note and alarm metadata is preserved on save. **Delete event**
+Existing linked-note metadata and custom alarms are preserved on save. Under
+**Event reminders**, add display alarms using the 5/15/30-minute, hour, day,
+two-day, and week presets, or remove individual alarms. Duplicate presets are
+not added. These alarms are persisted through the daemon; this does not enable
+native notification delivery or create task reminders. **Delete event**
 requires a separate confirmation. A failed/uncertain mutation retains the draft
 and disables resubmission: close the editor, refresh, and inspect the daemon's
 current calendar before retrying. Navigating to another surface retains an open
 draft; navigation within Calendar is disabled while the editor is open.
 
-This is the first Calendar parity slice, not full Tauri parity. Week/Day are
-agendas rather than time grids. Recurring occurrences are visible but read-only
+Use the toolbar **Search** control to expand or collapse the search form; hiding
+it retains the query and results. Submit **Search** in the form to filter the current view's loaded events by title, location,
+or description (case-insensitive). The scope is the displayed Day, Week, or
+six-week Month grid—not a global calendar search. Results retain their original
+event identity for editing. **Clear search** restores the normal view. The query
+is retained when changing dates or returning from an event editor.
+
+This is not full Tauri parity. Week/Day remain chronological agendas, as in the
+current reference app; the reference Week view additionally uses side-by-side
+day columns. Recurring occurrences are visible but read-only
 because the current update endpoint addresses the series by UID. Recurrence
-editing, reminder editing/delivery, search, drag/resizing, and native `.ics`
+editing, native notification delivery, task-reminder integration, global search,
+drag/resizing, and native `.ics`
 import/export controls remain outstanding. Opening an event does not enable a
 native notification service.

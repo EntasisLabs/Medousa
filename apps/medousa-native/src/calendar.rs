@@ -2,7 +2,9 @@
 //! dates for all-day events. Only the workshop daemon reads/writes calendar files.
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use medousa_sdk::MedousaClient;
-use medousa_types::{CalendarEvent, CalendarListQuery, CalendarListResponse, CalendarWriteRequest};
+use medousa_types::{
+    CalendarAlarm, CalendarEvent, CalendarListQuery, CalendarListResponse, CalendarWriteRequest,
+};
 use rndr_core::*;
 use rndr_ui::controls::HostIntent;
 use std::{
@@ -11,6 +13,9 @@ use std::{
 };
 #[path = "calendar_view.rs"]
 mod view;
+pub fn chrome(w: &mut World) {
+    view::chrome(w);
+}
 static NEXT: AtomicU64 = AtomicU64::new(0x4341_0000);
 fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
@@ -55,12 +60,20 @@ enum Action {
     Delete,
     ConfirmDelete,
     Refresh,
+    AddAlarm(i32),
+    RemoveAlarm(usize),
+    Search,
+    ClearSearch,
+    ToggleSearch,
+    ToggleAgenda,
+    ToggleSource,
 }
 #[derive(Clone)]
 struct Draft {
     original: Option<CalendarEvent>,
     values: [String; 7],
     all_day: bool,
+    alarms: Vec<CalendarAlarm>,
 }
 // title, start date, start time, end date (exclusive for all-day), end time,
 // location, description. Advanced metadata is preserved, not silently cleared.
@@ -78,6 +91,7 @@ impl Draft {
                 String::new(),
             ],
             all_day: false,
+            alarms: vec![],
         }
     }
     fn event(e: CalendarEvent) -> Self {
@@ -104,6 +118,7 @@ impl Draft {
             e.description.clone().unwrap_or_default(),
         ];
         d.all_day = e.all_day;
+        d.alarms = e.alarms.clone();
         d.original = Some(e);
         d
     }
@@ -135,9 +150,34 @@ impl Draft {
             rrule: old.and_then(|e| e.rrule.clone()),
             calendar_path: Some(old.map_or(path, |e| &e.calendar_path).into()),
             note_path: old.and_then(|e| e.note_path.clone()),
-            alarms: old.map(|e| e.alarms.clone()).unwrap_or_default(),
+            alarms: self.alarms.clone(),
         })
     }
+}
+fn recurring(d: &Draft) -> bool {
+    d.original
+        .as_ref()
+        .is_some_and(|e| e.rrule.is_some() || e.recurrence_id.is_some())
+}
+fn search_matches(s: &State, e: &CalendarEvent) -> bool {
+    let start = match s.mode {
+        Mode::Month => grid(s.day),
+        Mode::Week => week(s.day),
+        Mode::Day => s.day,
+    };
+    let days = match s.mode {
+        Mode::Month => 42,
+        Mode::Week => 7,
+        Mode::Day => 1,
+    };
+    (0..days).any(|i| on_day(e, start + Duration::days(i)))
+        && [
+            &e.summary,
+            e.location.as_deref().unwrap_or(""),
+            e.description.as_deref().unwrap_or(""),
+        ]
+        .iter()
+        .any(|text| text.to_lowercase().contains(&s.search))
 }
 fn nonempty(s: &str) -> Option<String> {
     if s.is_empty() { None } else { Some(s.into()) }
@@ -221,6 +261,12 @@ struct State {
     uncertain: bool,
     confirm: bool,
     narrow: bool,
+    search: String,
+    search_input: String,
+    search_field: Option<Entity>,
+    show_search: bool,
+    show_agenda: bool,
+    show_source: bool,
 }
 impl State {
     fn enqueue(&mut self, kind: Kind) -> u64 {
@@ -282,6 +328,12 @@ pub fn mount(w: &mut World, parent: Entity) {
         uncertain: false,
         confirm: false,
         narrow: false,
+        search: String::new(),
+        search_input: String::new(),
+        search_field: None,
+        show_search: false,
+        show_agenda: false,
+        show_source: false,
     });
 }
 pub fn activate(w: &mut World) {
@@ -293,6 +345,9 @@ pub fn activate(w: &mut World) {
     }
 }
 fn capture(w: &World, s: &mut State) {
+    if let Some(l) = s.search_field.and_then(|e| w.get::<Label>(e)) {
+        s.search_input = l.text.clone();
+    }
     if let Some(d) = &mut s.draft {
         for (i, e) in s.fields.iter().enumerate() {
             if let Some(l) = w.get::<Label>(*e) {
@@ -302,8 +357,12 @@ fn capture(w: &World, s: &mut State) {
     }
 }
 pub fn can_deactivate(w: &World) -> bool {
-    w.resource::<State>()
-        .is_none_or(|s| s.fields.iter().all(|e| !w.has::<ImePreview>(*e)))
+    w.resource::<State>().is_none_or(|s| {
+        s.fields
+            .iter()
+            .chain(s.search_field.iter())
+            .all(|e| !w.has::<ImePreview>(*e))
+    })
 }
 pub fn sync(w: &mut World) {
     let can_render = can_deactivate(w);
@@ -345,6 +404,12 @@ fn empty_state(root: Entity) -> State {
         uncertain: false,
         confirm: false,
         narrow: false,
+        search: String::new(),
+        search_input: String::new(),
+        search_field: None,
+        show_search: false,
+        show_agenda: false,
+        show_source: false,
     }
 }
 pub fn action(w: &mut World, host: &HostIntent) -> bool {
@@ -380,10 +445,49 @@ pub fn action(w: &mut World, host: &HostIntent) -> bool {
             }
             Action::Day(d) if s.draft.is_none() => {
                 s.day = d;
+                s.show_agenda = true;
                 s.refresh();
             }
             Action::Refresh => {
                 s.refresh();
+            }
+            Action::ToggleSearch if s.draft.is_none() => {
+                s.show_search = !s.show_search;
+            }
+            Action::ToggleAgenda if s.draft.is_none() => {
+                s.show_agenda = !s.show_agenda;
+            }
+            Action::ToggleSource if s.draft.is_none() => {
+                s.show_source = !s.show_source;
+            }
+            Action::Search if s.draft.is_none() => {
+                s.search = s.search_input.trim().to_lowercase();
+            }
+            Action::ClearSearch if s.draft.is_none() => {
+                s.search.clear();
+                s.search_input.clear();
+                s.search_field = None;
+            }
+            Action::AddAlarm(minutes) if !s.uncertain => {
+                if let Some(d) = &mut s.draft {
+                    if !recurring(d)
+                        && minutes > 0
+                        && !d.alarms.iter().any(|a| a.trigger_minutes_before == minutes)
+                    {
+                        d.alarms.push(CalendarAlarm {
+                            trigger_minutes_before: minutes,
+                            action: "display".into(),
+                        });
+                        d.alarms.sort_by_key(|a| a.trigger_minutes_before);
+                    }
+                }
+            }
+            Action::RemoveAlarm(index) if !s.uncertain => {
+                if let Some(d) = &mut s.draft {
+                    if !recurring(d) && index < d.alarms.len() {
+                        d.alarms.remove(index);
+                    }
+                }
             }
             Action::New if s.draft.is_none() => {
                 s.draft = Some(Draft::new(s.day));

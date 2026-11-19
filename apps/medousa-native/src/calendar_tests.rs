@@ -228,9 +228,21 @@ fn native_calendar_visual_acceptance() {
     std::fs::create_dir_all("verification").unwrap();
     for (width, height, light, mode, edit, name) in [
         (1200, 900, false, Mode::Month, false, "month-wide"),
+        (1280, 900, false, Mode::Month, false, "month-reference"),
+        (1200, 900, false, Mode::Month, false, "month-agenda"),
+        (760, 850, false, Mode::Month, false, "month-agenda-narrow"),
         (760, 850, false, Mode::Month, false, "month-narrow"),
         (1200, 900, true, Mode::Month, false, "month-light"),
         (1200, 850, false, Mode::Week, false, "week"),
+        (1200, 900, false, Mode::Day, false, "day-dark"),
+        (1200, 900, false, Mode::Month, false, "buttons-hover"),
+        (1200, 900, false, Mode::Month, false, "buttons-press"),
+        (1200, 900, true, Mode::Month, false, "buttons-hover-light"),
+        (1200, 900, false, Mode::Month, false, "search-wide"),
+        (760, 850, true, Mode::Month, false, "search-narrow"),
+        (760, 850, false, Mode::Month, false, "search-empty"),
+        (1200, 1000, false, Mode::Month, true, "reminders-wide"),
+        (760, 1000, true, Mode::Month, true, "reminders-narrow"),
         (760, 850, true, Mode::Day, false, "day-light"),
         (1200, 1000, false, Mode::Month, true, "editor-wide"),
         (760, 1000, true, Mode::Month, true, "editor-narrow"),
@@ -257,15 +269,83 @@ fn native_calendar_visual_acceptance() {
         all.dtstart = bound("2026-11-20", "", true).unwrap();
         all.dtend = Some(bound("2026-11-21", "", true).unwrap());
         s.events.push(all);
+        if name.contains("agenda") {
+            act(app.world_mut(), Action::ToggleAgenda);
+        }
         if edit {
             act(app.world_mut(), Action::Open(0));
+        }
+        if name.starts_with("search-") {
+            search(
+                app.world_mut(),
+                if name == "search-empty" {
+                    "nothing matches"
+                } else {
+                    "CAFÉ"
+                },
+            );
+        }
+        if name.starts_with("reminders-") {
+            act(app.world_mut(), Action::AddAlarm(1440));
         }
         for _ in 0..6 {
             rndr_paint::frame(&mut app);
         }
+        if name.starts_with("buttons-") {
+            let root = app.world().query::<Semantics>().iter()
+                .find(|(_, sem)| sem.name.as_deref() == Some("Month"))
+                .map(|(e, _)| *e).unwrap();
+            let rect = *app.world().get::<Rect>(root).unwrap();
+            let input = app.world_mut().resource_mut::<Input>().unwrap();
+            input.pointer.position = [rect.x + rect.w / 2., rect.y + rect.h / 2.];
+            input.pointer.button = PointerButton::Left;
+            input.pointer.down = name == "buttons-press";
+            input.pointer.pressed = name == "buttons-press";
+            input.pointer.press_at = input.pointer.down.then_some(input.pointer.position);
+            rndr_paint::frame(&mut app);
+            app.world_mut().resource_mut::<Input>().unwrap().pointer.pressed = false;
+            for _ in 0..3 { rndr_paint::frame(&mut app); }
+        }
+        if name.starts_with("reminders-") {
+            let root = app.world().resource::<State>().unwrap().root;
+            let scrolls: Vec<_> = app
+                .world()
+                .query::<Scroll>()
+                .into_iter()
+                .filter(|(e, _)| crate::surfaces::descendant(app.world(), *e, root))
+                .map(|(e, _)| e)
+                .collect();
+            for e in scrolls {
+                app.world_mut().get_mut::<Scroll>(e).unwrap().offset[1] = -10000.;
+            }
+            for _ in 0..3 {
+                rndr_paint::frame(&mut app);
+            }
+        }
         let root = app.world().resource::<State>().unwrap().root;
         let rect = app.world().get::<Rect>(root).unwrap();
         assert!(rect.x >= 0. && rect.x + rect.w <= width as f32 + 1.);
+        if name.starts_with("month-") {
+            let cells: Vec<_> = app
+                .world()
+                .query::<Semantics>()
+                .into_iter()
+                .filter(|(_, sem)| {
+                    sem.name
+                        .as_deref()
+                        .is_some_and(|n| n.starts_with("Select "))
+                })
+                .filter(|(e, _)| crate::surfaces::descendant(app.world(), *e, root))
+                .collect();
+            assert_eq!(cells.len(), 42);
+            for (e, _) in cells {
+                let r = app.world().get::<Rect>(e).unwrap();
+                assert!(
+                    r.y >= rect.y && r.y + r.h <= rect.y + rect.h + 1.,
+                    "{name}: date outside viewport: {r:?}"
+                );
+            }
+        }
         let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
             exporter
                 .render_frame(Some(world), frame, width, height, 1.)
@@ -347,7 +427,7 @@ async fn create_reopen_edit_reload_delete_over_typed_http() {
             let response=match expected {
                 "POST"|"PUT"=>{
                     let r:CalendarWriteRequest=serde_json::from_slice(&raw[header_end..header_end+len]).unwrap();assert!(head.starts_with(if expected=="POST"{"POST /v1/calendar/events "}else{"PUT /v1/calendar/events/fixture "}));assert_eq!(r.calendar_path.as_deref(),Some("calendar/personal.ics"));
-                    if expected=="PUT"{assert_eq!(r.uid.as_deref(),Some("fixture"));assert_eq!(r.summary,"Edited title");}
+                    if expected=="PUT"{assert_eq!(r.uid.as_deref(),Some("fixture"));assert_eq!(r.summary,"Edited title");assert_eq!(r.alarms.iter().map(|a|a.trigger_minutes_before).collect::<Vec<_>>(),vec![1440]);}
                     let mut e=event();e.summary=r.summary;e.dtstart=r.dtstart;e.dtend=r.dtend;e.all_day=r.all_day;e.calendar_path=r.calendar_path.unwrap();e.alarms=r.alarms;e.note_path=r.note_path;e.description=r.description;e.location=r.location;stored=Some(e.clone());json!({"event":e,"created":expected=="POST"})
                 },
                 "GET"=>{assert!(head.starts_with("GET /v1/calendar/events?"));assert!(head.contains("from=")&&head.contains("to=")&&head.contains("path=calendar%2Fpersonal.ics"));json!({"calendar_path":"calendar/personal.ics","events":stored.iter().collect::<Vec<_>>()})},
@@ -374,6 +454,7 @@ async fn create_reopen_edit_reload_delete_over_typed_http() {
     let w = app.world_mut();
     act(w, Action::New);
     input(w, 0, "New planning event");
+    act(w, Action::AddAlarm(15));
     act(w, Action::Save);
     let cmd = take_commands(w).pop().unwrap();
     apply(w, execute(&c, cmd).await);
@@ -386,6 +467,18 @@ async fn create_reopen_edit_reload_delete_over_typed_http() {
     );
     act(w, Action::Open(0));
     input(w, 0, "Edited title");
+    assert_eq!(
+        w.resource::<State>()
+            .unwrap()
+            .draft
+            .as_ref()
+            .unwrap()
+            .alarms[0]
+            .trigger_minutes_before,
+        15
+    );
+    act(w, Action::RemoveAlarm(0));
+    act(w, Action::AddAlarm(1440));
     act(w, Action::Save);
     let cmd = take_commands(w).pop().unwrap();
     apply(w, execute(&c, cmd).await);
@@ -395,6 +488,10 @@ async fn create_reopen_edit_reload_delete_over_typed_http() {
     assert_eq!(
         w.resource::<State>().unwrap().events[0].summary,
         "Edited title"
+    );
+    assert_eq!(
+        w.resource::<State>().unwrap().events[0].alarms[0].trigger_minutes_before,
+        1440
     );
     act(w, Action::Open(0));
     act(w, Action::Delete);
@@ -426,4 +523,295 @@ fn local_dst_boundaries_reject_ambiguous_or_nonexistent_time() {
         bound("2026-11-01", "", true).unwrap().to_rfc3339(),
         "2026-11-01T00:00:00+00:00"
     );
+}
+
+#[test]
+fn alarm_actions_preserve_custom_metadata_deduplicate_and_save() {
+    let mut app = seeded();
+    let w = app.world_mut();
+    let custom = CalendarAlarm {
+        trigger_minutes_before: 47,
+        action: "display".into(),
+    };
+    w.resource_mut::<State>().unwrap().events[0]
+        .alarms
+        .push(custom.clone());
+    act(w, Action::Open(0));
+    input(w, 0, "Unsaved title survives alarm rebuild");
+    act(w, Action::AddAlarm(60));
+    act(w, Action::AddAlarm(60));
+    act(w, Action::AddAlarm(0));
+    act(w, Action::AddAlarm(-5));
+    let d = w.resource::<State>().unwrap().draft.as_ref().unwrap();
+    assert_eq!(d.values[0], "Unsaved title survives alarm rebuild");
+    assert_eq!(
+        d.alarms
+            .iter()
+            .map(|a| a.trigger_minutes_before)
+            .collect::<Vec<_>>(),
+        vec![15, 47, 60]
+    );
+    assert_eq!(d.alarms[1], custom);
+    act(w, Action::RemoveAlarm(0));
+    act(w, Action::RemoveAlarm(99));
+    act(w, Action::Save);
+    let c = take_commands(w).pop().unwrap();
+    let Kind::Save(r) = c.kind else {
+        panic!("expected save")
+    };
+    assert_eq!(
+        r.alarms,
+        vec![
+            custom,
+            CalendarAlarm {
+                trigger_minutes_before: 60,
+                action: "display".into()
+            }
+        ]
+    );
+    assert_eq!(r.note_path.as_deref(), Some("meetings/plan.md"));
+}
+#[test]
+fn recurring_and_uncertain_reminder_changes_are_guarded() {
+    let mut app = seeded();
+    let w = app.world_mut();
+    w.resource_mut::<State>().unwrap().events[0].rrule = Some("FREQ=DAILY".into());
+    act(w, Action::Open(0));
+    act(w, Action::AddAlarm(60));
+    act(w, Action::RemoveAlarm(0));
+    assert_eq!(
+        w.resource::<State>()
+            .unwrap()
+            .draft
+            .as_ref()
+            .unwrap()
+            .alarms
+            .len(),
+        1
+    );
+    act(w, Action::Save);
+    assert!(take_commands(w).is_empty());
+    act(w, Action::Cancel);
+    act(w, Action::New);
+    w.resource_mut::<State>().unwrap().uncertain = true;
+    act(w, Action::AddAlarm(60));
+    assert!(
+        w.resource::<State>()
+            .unwrap()
+            .draft
+            .as_ref()
+            .unwrap()
+            .alarms
+            .is_empty()
+    );
+}
+fn search(w: &mut World, query: &str) {
+    if !w.resource::<State>().unwrap().show_search {
+        act(w, Action::ToggleSearch);
+    }
+    let field = w.resource::<State>().unwrap().search_field.unwrap();
+    w.get_mut::<Label>(field).unwrap().text = query.into();
+    act(w, Action::Search);
+}
+#[test]
+fn search_is_case_insensitive_scoped_and_returns_original_event_indices() {
+    let mut app = seeded();
+    let w = app.world_mut();
+    let mut other = event();
+    other.summary = "Another meeting".into();
+    other.uid = "other".into();
+    other.location = Some("Zürich".into());
+    other.description = Some("Release 🦀 notes".into());
+    w.resource_mut::<State>().unwrap().events.push(other);
+    search(w, "  CAFÉ  ");
+    let s = w.resource::<State>().unwrap();
+    assert_eq!(s.search, "café");
+    assert!(search_matches(s, &s.events[0]));
+    assert!(!search_matches(s, &s.events[1]));
+    search(w, "ZÜRICH");
+    let s = w.resource::<State>().unwrap();
+    assert!(search_matches(s, &s.events[1]));
+    let id = s
+        .actions
+        .iter()
+        .find_map(|(id, a)| matches!(a, Action::Open(1)).then_some(*id))
+        .unwrap();
+    action(w, &HostIntent::Command(id));
+    sync(w);
+    assert_eq!(
+        w.resource::<State>()
+            .unwrap()
+            .draft
+            .as_ref()
+            .unwrap()
+            .original
+            .as_ref()
+            .unwrap()
+            .uid,
+        "other"
+    );
+    act(w, Action::Cancel);
+    search(w, "🦀 notes");
+    assert!(search_matches(
+        w.resource::<State>().unwrap(),
+        &w.resource::<State>().unwrap().events[1]
+    ));
+    assert!(take_commands(w).is_empty());
+    act(w, Action::ClearSearch);
+    let s = w.resource::<State>().unwrap();
+    assert!(s.search.is_empty());
+    assert!(s.search_input.is_empty());
+    assert_eq!(w.get::<Label>(s.search_field.unwrap()).unwrap().text, "");
+}
+#[test]
+fn search_excludes_query_buffer_and_tracks_navigation_and_all_day_bounds() {
+    let mut app = seeded();
+    let w = app.world_mut();
+    let mut e = event();
+    e.all_day = true;
+    e.summary = "Travel".into();
+    e.dtstart = bound("2026-11-17", "", true).unwrap();
+    e.dtend = Some(bound("2026-11-19", "", true).unwrap());
+    w.resource_mut::<State>().unwrap().events = vec![e];
+    act(w, Action::Mode(Mode::Day));
+    take_commands(w);
+    search(w, "travel");
+    let s = w.resource::<State>().unwrap();
+    assert!(search_matches(s, &s.events[0]));
+    act(w, Action::Shift(1));
+    let s = w.resource::<State>().unwrap();
+    assert_eq!(s.search, "travel");
+    assert!(!search_matches(s, &s.events[0]));
+    act(w, Action::Mode(Mode::Month));
+    let s = w.resource::<State>().unwrap();
+    assert!(search_matches(s, &s.events[0]));
+    let mut outside = s.events[0].clone();
+    outside.dtstart = bound("2026-10-31", "", true).unwrap();
+    outside.dtend = Some(bound("2026-11-01", "", true).unwrap());
+    assert!(!search_matches(s, &outside));
+}
+#[test]
+fn search_input_retains_identity_and_ime_defers_action_and_resize() {
+    let mut app = seeded();
+    let w = app.world_mut();
+    act(w, Action::ToggleSearch);
+    let e = w.resource::<State>().unwrap().search_field.unwrap();
+    w.get_mut::<Label>(e).unwrap().text = "未完成".into();
+    sync(w);
+    assert_eq!(w.resource::<State>().unwrap().search_field, Some(e));
+    w.insert(
+        e,
+        ImePreview {
+            text: "未".into(),
+            cursor: None,
+        },
+    );
+    w.insert_resource(Viewport::new(760., 850.));
+    act(w, Action::Search);
+    assert_eq!(w.resource::<State>().unwrap().search_field, Some(e));
+    assert!(w.resource::<State>().unwrap().search.is_empty());
+    assert!(!can_deactivate(w));
+    w.remove::<ImePreview>(e);
+    act(w, Action::Search);
+    assert_eq!(w.resource::<State>().unwrap().search, "未完成");
+}
+
+#[test]
+fn calendar_chrome_is_collapsed_and_day_selection_opens_optional_agenda() {
+    let mut app = seeded();
+    let w = app.world_mut();
+    let s = w.resource::<State>().unwrap();
+    assert!(!s.show_search && !s.show_agenda && !s.show_source);
+    assert!(s.search_field.is_none());
+    act(w, Action::ToggleSearch);
+    let e = w.resource::<State>().unwrap().search_field.unwrap();
+    w.get_mut::<Label>(e).unwrap().text = "Planning".into();
+    act(w, Action::ToggleSearch);
+    assert_eq!(w.resource::<State>().unwrap().search_input, "Planning");
+    act(w, Action::ToggleSearch);
+    let e = w.resource::<State>().unwrap().search_field.unwrap();
+    assert_eq!(w.get::<Label>(e).unwrap().text, "Planning");
+    act(w, Action::Day(date("2026-11-20")));
+    assert!(w.resource::<State>().unwrap().show_agenda);
+    act(w, Action::ToggleAgenda);
+    assert!(!w.resource::<State>().unwrap().show_agenda);
+    act(w, Action::ToggleSource);
+    assert!(w.resource::<State>().unwrap().show_source);
+}
+
+#[test]
+fn calendar_buttons_paint_solid_faces_without_overriding_focus_layers() {
+    use rndr_ui::{Token, UiStyle};
+    let mut app = seeded();
+    for dark in [true, false] {
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(dark),
+                ..Default::default()
+            },
+        );
+        for _ in 0..3 {
+            app.update();
+        }
+        let root = app
+            .world()
+            .query::<Semantics>()
+            .iter()
+            .find(|(_, sem)| sem.name.as_deref() == Some("Month"))
+            .map(|(e, _)| *e)
+            .unwrap();
+        let label = app
+            .world()
+            .query::<Label>()
+            .iter()
+            .find(|(e, label)| {
+                label.text == "Month" && crate::surfaces::descendant(app.world(), *e, root)
+            })
+            .map(|(e, _)| *e)
+            .unwrap();
+        let face = app.world().get::<Parent>(label).unwrap().entity;
+        let border = app.world().get::<Parent>(face).unwrap().entity;
+        let gap = app.world().get::<Parent>(border).unwrap().entity;
+        assert!(
+            app.world().get::<UiStyle>(root).is_none(),
+            "no selected plane behind the control"
+        );
+        for token in [Token::Selected, Token::ControlHover, Token::ControlPressed] {
+            let rect = *app.world().get::<Rect>(root).unwrap();
+            let input = app.world_mut().resource_mut::<Input>().unwrap();
+            input.pointer.position = if token == Token::Selected {
+                [-100., -100.]
+            } else {
+                [rect.x + rect.w / 2., rect.y + rect.h / 2.]
+            };
+            input.pointer.button = PointerButton::Left;
+            input.pointer.pressed = token == Token::ControlPressed;
+            input.pointer.down = token == Token::ControlPressed;
+            input.pointer.press_at =
+                (token == Token::ControlPressed).then_some(input.pointer.position);
+            app.update();
+            for entity in [border, face] {
+                assert_eq!(
+                    app.world().get::<UiStyle>(entity).unwrap().background,
+                    Some(token.into())
+                );
+            }
+        }
+        request_focus(app.world_mut(), root);
+        app.world_mut()
+            .resource_mut::<Input>()
+            .unwrap()
+            .pointer
+            .down = false;
+        app.world_mut()
+            .resource_mut::<Input>()
+            .unwrap()
+            .pointer
+            .pressed = false;
+        app.update();
+        assert_eq!(app.world().resource::<Focus>().unwrap().entity, Some(root));
+        assert!(app.world().get::<UiStyle>(root).is_none());
+        assert!(app.world().get::<UiStyle>(gap).is_none());
+    }
 }

@@ -2,9 +2,77 @@ use super::*;
 use crate::native_style as visual;
 use rndr_ui::{
     Token, Typography, UiId,
-    controls::{self, ButtonProps, NavigationMeta},
+    controls::{self, ButtonProps},
     text,
 };
+/// Paint the actual control face, not a selected plane behind RNDR's inset
+/// quiet button. Like the navigation rail, retain its root/gap focus layers.
+struct SolidButton {
+    label: Entity,
+    selected: bool,
+}
+impl Component for SolidButton {}
+fn solid(w: &mut World, h: controls::ControlHandle, selected: bool) {
+    w.insert(
+        h.root,
+        SolidButton {
+            label: h.label,
+            selected,
+        },
+    );
+}
+pub(super) fn chrome(w: &mut World) {
+    let buttons: Vec<_> = w
+        .query::<SolidButton>()
+        .iter()
+        .map(|(root, b)| (*root, b.label, b.selected))
+        .collect();
+    let hover = w
+        .resource::<Input>()
+        .and_then(|input| hit_test(w, input.pointer.position[0], input.pointer.position[1]));
+    let theme = w
+        .resource::<rndr_ui::UiTheme>()
+        .cloned()
+        .unwrap_or_default();
+    for (root, label, selected) in buttons {
+        let enabled = !w.has::<ControlDisabled>(root);
+        let pressed = enabled && interaction_pressed(w, root);
+        let hovered = enabled && hover.is_some_and(|e| crate::surfaces::descendant(w, e, root));
+        let high_press = pressed && theme.contrast == rndr_ui::Contrast::High;
+        let fill = if high_press {
+            Token::Text
+        } else if pressed {
+            Token::ControlPressed
+        } else if hovered {
+            Token::ControlHover
+        } else if selected {
+            Token::Selected
+        } else {
+            visual::canvas()
+        };
+        let face = w.get::<Parent>(label).unwrap().entity;
+        let border = w.get::<Parent>(face).unwrap().entity;
+        for entity in [border, face] {
+            visual::plane(w, entity, fill);
+        }
+        w.insert(
+            label,
+            rndr_ui::UiStyle {
+                foreground: Some(
+                    if !enabled {
+                        Token::Disabled
+                    } else if high_press {
+                        Token::Canvas
+                    } else {
+                        Token::Text
+                    }
+                    .into(),
+                ),
+                ..Default::default()
+            },
+        );
+    }
+}
 fn panel(w: &mut World, p: Entity, l: Layout) -> Entity {
     let e = w.spawn((l,));
     set_parent(w, e, p);
@@ -43,29 +111,41 @@ fn label(w: &mut World, p: Entity, value: &str, kind: Typography) {
 }
 fn button(w: &mut World, p: Entity, s: &mut State, name: &str, a: Action, enabled: bool) {
     let id = next();
-    visual::document_action(w, p, id, name, enabled);
+    let h = visual::document_action(w, p, id, name, enabled);
+    solid(w, h, matches!(&a, Action::Mode(m) if *m == s.mode));
+    if let Some(sem) = w.get_mut::<Semantics>(h.root) {
+        sem.name = Some(match &a {
+            Action::Shift(-1) => "Previous period".into(),
+            Action::Shift(1) => "Next period".into(),
+            _ => name.into(),
+        });
+    }
     s.actions.insert(id, a);
 }
 fn day_button(w: &mut World, p: Entity, s: &mut State, day: NaiveDate) {
     let id = next();
     let mut props = ButtonProps::new(day.day().to_string(), HostIntent::Command(id));
     props.enabled = s.draft.is_none() && s.mutation.is_none();
-    let h = controls::NavigationRow::mount(
-        w,
-        p,
-        UiId(id),
-        props,
-        NavigationMeta {
-            selected: day == s.day,
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    props.variant = controls::ButtonVariant::Quiet;
+    let h = controls::Button::mount(w, p, UiId(id), props).unwrap();
+    if day == Local::now().date_naive() {
+        solid(w, h, true);
+    }
+    if day.month() != s.day.month() {
+        w.insert(
+            h.label,
+            rndr_ui::UiStyle {
+                foreground: Some(Token::Secondary.into()),
+                ..Default::default()
+            },
+        );
+    }
     *w.get_mut::<Layout>(h.root).unwrap() = Layout {
-        width: Size::Fill,
-        height: Size::Px(30.),
+        width: Size::Px(28.),
+        height: Size::Px(26.),
         ..Layout::column()
     };
+    w.insert(h.root, Radius(14.));
     if let Some(sem) = w.get_mut::<Semantics>(h.root) {
         sem.name = Some(format!("Select {}", day.format("%A, %B %e, %Y")));
     }
@@ -94,12 +174,12 @@ fn event(w: &mut World, p: Entity, s: &mut State, i: usize, compact: bool) {
     let h = controls::Button::mount(w, p, UiId(id), props).unwrap();
     *w.get_mut::<Layout>(h.root).unwrap() = Layout {
         width: Size::Fill,
-        height: Size::Px(if compact { 27. } else { 38. }),
+        height: Size::Px(if compact { 20. } else { 38. }),
         ..Layout::row()
     };
     w.get_mut::<Label>(h.label).unwrap().overflow = TextOverflow::Ellipsis;
-    visual::plane(w, h.root, Token::Selected);
-    w.insert(h.root, Radius(4.));
+    solid(w, h, true);
+    w.insert(h.root, Radius(3.));
     s.actions.insert(id, Action::Open(i));
 }
 fn agenda(w: &mut World, p: Entity, s: &mut State, day: NaiveDate) {
@@ -224,6 +304,59 @@ fn editor(w: &mut World, p: Entity, s: &mut State) {
             Typography::Secondary,
         );
     }
+    label(w, p, "Event reminders", Typography::Emphasis);
+    label(
+        w,
+        p,
+        "Saved as calendar display alarms. Native notification delivery is not enabled.",
+        Typography::Secondary,
+    );
+    if d.alarms.is_empty() {
+        label(w, p, "No reminders", Typography::Secondary);
+    }
+    for (i, alarm) in d.alarms.iter().enumerate() {
+        let bar = row(w, p);
+        label(
+            w,
+            bar,
+            &format!(
+                "{} minutes before · {}",
+                alarm.trigger_minutes_before, alarm.action
+            ),
+            Typography::Secondary,
+        );
+        button(
+            w,
+            bar,
+            s,
+            "Remove reminder",
+            Action::RemoveAlarm(i),
+            !busy && !recurring && !s.uncertain,
+        );
+    }
+    label(w, p, "Add reminder before event", Typography::Secondary);
+    let presets = row(w, p);
+    for (name, minutes) in [
+        ("+5 min", 5),
+        ("+15 min", 15),
+        ("+30 min", 30),
+        ("+1 hour", 60),
+        ("+1 day", 1440),
+        ("+2 days", 2880),
+        ("+1 week", 10080),
+    ] {
+        button(
+            w,
+            presets,
+            s,
+            name,
+            Action::AddAlarm(minutes),
+            !busy
+                && !recurring
+                && !s.uncertain
+                && !d.alarms.iter().any(|a| a.trigger_minutes_before == minutes),
+        );
+    }
     if recurring {
         label(
             w,
@@ -233,17 +366,6 @@ fn editor(w: &mut World, p: Entity, s: &mut State) {
         );
     }
     if let Some(e) = &d.original {
-        if !e.alarms.is_empty() {
-            label(
-                w,
-                p,
-                &format!(
-                    "{} existing alarm(s) preserved on save. Native notification delivery is not enabled yet.",
-                    e.alarms.len()
-                ),
-                Typography::Secondary,
-            );
-        }
         if let Some(path) = &e.note_path {
             label(w, p, &format!("Linked note: {path}"), Typography::Secondary);
         }
@@ -309,55 +431,104 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     }
     s.actions.clear();
     s.fields.clear();
+    s.search_field = None;
     *w.get_mut::<Layout>(s.root).unwrap() = Layout {
         width: Size::Fill,
         height: Size::Fill,
         padding: if s.narrow { 12. } else { 24. },
-        gap: 16.,
+        gap: 8.,
         ..Layout::column()
     };
-    let header = row(w, s.root);
+    let header = panel(
+        w,
+        s.root,
+        Layout {
+            width: Size::Fill,
+            height: Size::Hug,
+            gap: 6.,
+            ..Layout::row()
+        },
+    );
     label(
         w,
         header,
-        &format!("Calendar · {}", s.day.format("%B %Y")),
-        Typography::Emphasis,
+        &s.day.format("%B %Y").to_string(),
+        Typography::Title,
     );
-    let tools = row(w, s.root);
     let enabled = s.draft.is_none() && s.mutation.is_none();
+    if !s.narrow {
+        for (name, mode) in [
+            ("Day", Mode::Day),
+            ("Week", Mode::Week),
+            ("Month", Mode::Month),
+        ] {
+            button(w, header, s, name, Action::Mode(mode), enabled);
+        }
+        button(w, header, s, "Search", Action::ToggleSearch, enabled);
+        button(w, header, s, "+ New event", Action::New, enabled);
+    }
+    let tools = row(w, s.root);
     for (name, a) in [
-        ("Previous", Action::Shift(-1)),
+        ("‹", Action::Shift(-1)),
         ("Today", Action::Today),
-        ("Next", Action::Shift(1)),
-        ("Day", Action::Mode(Mode::Day)),
-        ("Week", Action::Mode(Mode::Week)),
-        ("Month", Action::Mode(Mode::Month)),
-        ("New event", Action::New),
-        ("Refresh", Action::Refresh),
+        ("›", Action::Shift(1)),
     ] {
         button(w, tools, s, name, a, enabled);
     }
-    label(
+    if s.narrow {
+        for (name, mode) in [
+            ("Day", Mode::Day),
+            ("Week", Mode::Week),
+            ("Month", Mode::Month),
+        ] {
+            button(w, tools, s, name, Action::Mode(mode), enabled);
+        }
+        button(w, tools, s, "Search", Action::ToggleSearch, enabled);
+        button(w, tools, s, "+ New event", Action::New, enabled);
+    }
+    button(
         w,
-        s.root,
-        &format!(
-            "{} · {}{}",
-            s.path,
-            match s.mode {
-                Mode::Month => "Month",
-                Mode::Week => "Week agenda",
-                Mode::Day => "Day agenda",
-            },
-            if s.read.is_some() {
-                " · Loading…"
-            } else {
-                ""
-            }
-        ),
-        Typography::Secondary,
+        tools,
+        s,
+        if s.show_agenda {
+            "Hide agenda"
+        } else {
+            "Agenda"
+        },
+        Action::ToggleAgenda,
+        enabled,
     );
+    button(w, tools, s, "Calendar", Action::ToggleSource, enabled);
+    button(w, tools, s, "Refresh", Action::Refresh, enabled);
+    if s.show_source {
+        label(w, s.root, &s.path.clone(), Typography::Caption);
+    }
+    if s.read.is_some() {
+        label(w, s.root, "Loading…", Typography::Secondary);
+    }
     if !s.message.is_empty() {
         label(w, s.root, &s.message.clone(), Typography::Secondary);
+    }
+    if s.draft.is_none() && s.show_search {
+        let search_bar = col(w, s.root);
+        s.search_field = Some(field(
+            w,
+            search_bar,
+            "Search title, location, description · current view only",
+            &s.search_input,
+            false,
+            enabled,
+        ));
+        let search_actions = row(w, search_bar);
+        button(w, search_actions, s, "Search", Action::Search, enabled);
+        button(
+            w,
+            search_actions,
+            s,
+            "Clear search",
+            Action::ClearSearch,
+            enabled,
+        );
     }
     let body = panel(
         w,
@@ -366,7 +537,11 @@ pub(super) fn render(w: &mut World, s: &mut State) {
             width: Size::Fill,
             height: Size::Fill,
             gap: 20.,
-            ..Layout::row()
+            ..if s.narrow && s.show_agenda {
+                Layout::column()
+            } else {
+                Layout::row()
+            }
         },
     );
     if s.draft.is_some() {
@@ -378,23 +553,70 @@ pub(super) fn render(w: &mut World, s: &mut State) {
     }
     let main = col(w, body);
     w.get_mut::<Layout>(main).unwrap().height = Size::Fill;
-    w.insert(main, Scroll::default());
+    if s.mode != Mode::Month || !s.search.is_empty() {
+        w.insert(main, Scroll::default());
+    }
+    if !s.search.is_empty() {
+        label(
+            w,
+            main,
+            &format!(
+                "Results for ‘{}’ · current {} view only",
+                s.search,
+                match s.mode {
+                    Mode::Month => "Month",
+                    Mode::Week => "Week",
+                    Mode::Day => "Day",
+                }
+            ),
+            Typography::Emphasis,
+        );
+        let indices: Vec<_> = s
+            .events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| search_matches(s, e))
+            .map(|(i, _)| i)
+            .collect();
+        if indices.is_empty() {
+            label(
+                w,
+                main,
+                "No matching events in this view",
+                Typography::Secondary,
+            );
+        }
+        for i in indices {
+            label(
+                w,
+                main,
+                &event_day(&s.events[i]).format("%a, %b %e, %Y").to_string(),
+                Typography::Secondary,
+            );
+            event(w, main, s, i, false);
+        }
+        return;
+    }
     match s.mode {
         Mode::Month => {
             let start = grid(s.day);
+            w.get_mut::<Layout>(main).unwrap().gap = 1.;
+            visual::plane(w, main, Token::SubtleStroke);
             let weekdays = panel(
                 w,
                 main,
                 Layout {
                     width: Size::Fill,
-                    height: Size::Hug,
-                    gap: 4.,
+                    height: Size::Px(26.),
+                    gap: 1.,
                     ..Layout::row()
                 },
             );
             for name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] {
                 let c = col(w, weekdays);
-                label(w, c, name, Typography::Secondary);
+                w.get_mut::<Layout>(c).unwrap().height = Size::Fill;
+                visual::plane(w, c, visual::canvas());
+                label(w, c, name, Typography::Caption);
             }
             for r in 0..6 {
                 let line = panel(
@@ -402,8 +624,8 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                     main,
                     Layout {
                         width: Size::Fill,
-                        height: Size::Px(if s.narrow { 78. } else { 98. }),
-                        gap: 4.,
+                        height: Size::Fill,
+                        gap: 1.,
                         ..Layout::row()
                     },
                 );
@@ -415,13 +637,15 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                     visual::plane(
                         w,
                         cell,
-                        if day == Local::now().date_naive() {
-                            Token::Selected
-                        } else {
+                        if day == s.day {
                             visual::raised()
+                        } else if day.month() != s.day.month() || c == 0 || c == 6 {
+                            visual::navigation()
+                        } else {
+                            visual::canvas()
                         },
                     );
-                    w.insert(cell, Radius(5.));
+                    w.insert(cell, Radius(0.));
                     day_button(w, cell, s, day);
                     let indices: Vec<_> = s
                         .events
@@ -435,25 +659,24 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                         event(w, cell, s, *i, true);
                     }
                     if indices.len() > limit {
-                        label(
+                        button(
                             w,
                             cell,
+                            s,
                             &format!("+{} more", indices.len() - limit),
-                            Typography::Secondary,
+                            Action::Day(day),
+                            enabled,
                         );
                     }
                 }
             }
-            if s.narrow {
-                visual::rule(w, main);
-                agenda(w, main, s, s.day);
-            } else {
+            if s.show_agenda {
                 let rail = panel(
                     w,
                     body,
                     Layout {
-                        width: Size::Px(250.),
-                        height: Size::Fill,
+                        width: if s.narrow { Size::Fill } else { Size::Px(270.) },
+                        height: if s.narrow { Size::Px(180.) } else { Size::Fill },
                         padding: 12.,
                         gap: 10.,
                         ..Layout::column()
