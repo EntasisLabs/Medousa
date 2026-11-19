@@ -15,7 +15,8 @@ const NOTES: u64 = 0x5355_0002;
 const CODE: u64 = 0x5355_0003;
 const REVIEWS: u64 = 0x5355_0004;
 const CALENDAR: u64 = 0x5355_0005;
-const SURFACE_COUNT: usize = 5;
+const PEERS: u64 = 0x5355_0006;
+const SURFACE_COUNT: usize = 6;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SurfaceId {
     Chat,
@@ -23,6 +24,7 @@ pub enum SurfaceId {
     Code,
     Reviews,
     Calendar,
+    Peers,
 }
 impl SurfaceId {
     fn index(self) -> usize {
@@ -32,6 +34,7 @@ impl SurfaceId {
             Self::Code => 2,
             Self::Reviews => 3,
             Self::Calendar => 4,
+            Self::Peers => 5,
         }
     }
 }
@@ -82,6 +85,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         (CODE, Icon::Code, "Code"),
         (REVIEWS, Icon::Check, "Reviews"),
         (CALENDAR, Icon::Clock, "Calendar"),
+        (PEERS, Icon::MessageCircle, "Peers"),
     ] {
         let tile = panel(
             world,
@@ -161,7 +165,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
             ..Layout::column()
         },
     );
-    let roots = ["Chat", "Notes", "Code", "Reviews", "Calendar"].map(|name| {
+    let roots = ["Chat", "Notes", "Code", "Reviews", "Calendar", "Peers"].map(|name| {
         let entity = panel(
             world,
             content,
@@ -178,6 +182,7 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
     crate::code::mount(world, roots[2]);
     crate::reviews::mount(world, roots[3]);
     crate::calendar::mount(world, roots[4]);
+    crate::peers::mount(world, roots[5]);
     for root in &roots[1..] {
         world.insert(*root, Hidden);
     }
@@ -242,6 +247,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Code => !crate::code::can_deactivate(world),
         SurfaceId::Reviews => false,
         SurfaceId::Calendar => !crate::calendar::can_deactivate(world),
+        SurfaceId::Peers => !crate::peers::can_deactivate(world),
     };
     if composing {
         return;
@@ -270,6 +276,7 @@ pub fn select(world: &mut World, target: SurfaceId) {
         SurfaceId::Code => crate::code::activate(world),
         SurfaceId::Reviews => crate::reviews::activate(world),
         SurfaceId::Calendar => crate::calendar::activate(world),
+        SurfaceId::Peers => crate::peers::activate(world),
     }
     frame_wake(world).wake();
 }
@@ -280,6 +287,7 @@ pub fn action(world: &mut World, intent: &HostIntent) -> bool {
         HostIntent::Command(CODE) => SurfaceId::Code,
         HostIntent::Command(REVIEWS) => SurfaceId::Reviews,
         HostIntent::Command(CALENDAR) => SurfaceId::Calendar,
+        HostIntent::Command(PEERS) => SurfaceId::Peers,
         _ => return false,
     };
     select(world, target);
@@ -406,6 +414,7 @@ fn nav_raster(index: usize, px: u32, rgba: [u8; 4]) -> rndr_render::Raster {
         include_str!("nav_icons/code.svg"),
         include_str!("nav_icons/reviews.svg"),
         include_str!("nav_icons/calendar.svg"),
+        include_str!("nav_icons/users.svg"),
     ][index];
     let color = format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]);
     let svg = source.replace("currentColor", &color).replace(
@@ -471,7 +480,7 @@ mod tests {
                 assert!(w.has::<Focusable>(button.root));
                 assert_eq!(
                     w.get::<Semantics>(button.root).unwrap().name.as_deref(),
-                    Some(["Chat", "Notes", "Code", "Reviews", "Calendar"][i])
+                    Some(["Chat", "Notes", "Code", "Reviews", "Calendar", "Peers"][i])
                 );
                 let icon = w.get::<Rect>(host.icons[i]).unwrap();
                 assert_eq!((icon.w, icon.h), (NAV_ICON, NAV_ICON));

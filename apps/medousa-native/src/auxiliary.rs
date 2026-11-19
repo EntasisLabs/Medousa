@@ -16,12 +16,14 @@ pub enum Command {
     Code(crate::code::CodeCommand),
     Review(crate::reviews::Command),
     Calendar(crate::calendar::Command),
+    Peers(crate::peers::Command),
 }
 enum Update {
     Note(crate::notes::NoteUpdate),
     Code(crate::code::CodeUpdate),
     Review(crate::reviews::Update),
     Calendar(crate::calendar::Update),
+    Peers(crate::peers::Update),
     Preview(media_preview::PreviewUpdate),
     Context(context::ContextUpdate),
     Approval(approvals::ApprovalUpdate),
@@ -84,6 +86,7 @@ impl Auxiliary {
                     }
                     let result=match command {
                     Command::Preview(c)=> { let _permit=previews.acquire_owned().await.expect("preview semaphore"); Ok(Update::Preview(media_preview::execute(&client,c).await)) },
+                    Command::Peers(c)=>Ok(Update::Peers(crate::peers::execute(&client,c).await)),
                     Command::Calendar(c)=>Ok(Update::Calendar(crate::calendar::execute(&client,c).await)),
                     Command::Note(c)=>Ok(Update::Note(crate::notes::execute(&client,c).await)),
                     Command::Review(c)=>Ok(Update::Review(crate::reviews::execute(&client,c).await)),
@@ -114,6 +117,7 @@ pub fn tick(world: &mut World) {
         .unwrap_or_default();
     for update in updates {
         match update {
+            Update::Peers(u) => crate::peers::apply(world,u),
             Update::Calendar(u) => crate::calendar::apply(world, u),
             Update::Note(u) => crate::notes::apply(world, u),
             Update::Review(u) => crate::reviews::apply(world, u),
@@ -154,6 +158,7 @@ pub fn dispatch(world: &mut World) {
         .into_iter()
         .map(Command::Note)
         .chain(crate::calendar::take_commands(world).into_iter().map(Command::Calendar))
+        .chain(crate::peers::take_commands(world).into_iter().map(Command::Peers))
         .chain(
             crate::reviews::take_commands(world)
                 .into_iter()

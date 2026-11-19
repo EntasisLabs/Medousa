@@ -161,3 +161,12 @@ preflight exact revision identity and daemon allowed actions; unknown writes
 require refresh and are never replayed. Drafts are window-lifetime and isolated
 by work/evidence. This is not hosted-provider pull-request integration. See
 [the native workspace guide](../../docs/guides/native-workspace.md#review-sealed-forge-work).
+
+## Trusted Peers
+
+Peers provides retained trusted-workshop threads, search, unread counts,
+explicit mark-read and text sends through the shared desktop-host authenticated
+peer service. Window-only drafts survive peer/surface changes. Unknown delivery
+is never retried automatically. Incoming updates use explicit Refresh; pairing,
+trust management, sharing and attachment opening remain in the reference app.
+See [the native workspace guide](../../docs/guides/native-workspace.md#peers-trusted-workshop-conversations).

@@ -1,301 +1,33 @@
 //! Client-side registry of Medousa Engine connections (ADR-003).
 
+#[cfg(test)]
 use crate::daemon::types::DEFAULT_DAEMON_URL;
-use crate::daemon::{apply_daemon_url, resolve_daemon_url, DaemonState};
+use crate::daemon::{DaemonState, apply_daemon_url};
 use crate::workshop_runtime::resolve_workshop_url;
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
-use tauri::State;
 
-use medousa_types::authority_id::WorkshopScopeId;
+use std::fs;
+use tauri::State;
 
 #[cfg(test)]
 use medousa_desktop_host::workshop_registry::default_personal_workshop;
+#[allow(unused_imports)] // Preserve the renderer adapter public API.
 pub use medousa_desktop_host::workshop_registry::{
-    default_registry, now_iso, validate_registry, WorkshopClientState, WorkshopPairingRef,
-    WorkshopRegistry, WorkshopServer, MAX_WORKSHOPS, PERSONAL_WORKSHOP_ID,
+    MAX_WORKSHOPS, PERSONAL_WORKSHOP_ID, WorkshopClientState, WorkshopPairingRef, WorkshopRegistry,
+    WorkshopServer, default_registry, now_iso, validate_registry,
 };
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RegisterPairedInput {
-    pub pairing_id: String,
-    pub phone_id: String,
-    pub workshop_device_id: String,
-    pub workshop_peer_name: String,
-    pub daemon_url: String,
-    pub paired_at: String,
-    pub has_iroh_ticket: bool,
-    /// `portal` (full client) or `peer` (inbox/share only).
-    pub role: String,
-}
-
-pub fn normalize_connection_role(raw: &str) -> &'static str {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "peer" => "peer",
-        _ => "portal",
-    }
-}
-
-pub fn is_portal_kind(kind: &str) -> bool {
-    matches!(kind, "local" | "portal" | "paired")
-}
-
-pub fn is_peer_kind(kind: &str) -> bool {
-    kind == "peer"
-}
-
-pub fn medousa_data_dir() -> PathBuf {
-    crate::paths::medousa_data_dir()
-}
-
-pub fn workshops_registry_path() -> PathBuf {
-    medousa_data_dir().join("workshops.json")
-}
-
-pub fn pairing_credentials_rel_path(workshop_id: &str) -> Result<String, String> {
-    let workshop_id = WorkshopScopeId::parse(workshop_id).map_err(|err| err.to_string())?;
-    Ok(format!(
-        "workshops/{}/pairing.json",
-        workshop_id.storage_key().as_str()
-    ))
-}
-
-pub fn pairing_credentials_abs_path(workshop_id: &str) -> Result<PathBuf, String> {
-    Ok(medousa_data_dir().join(pairing_credentials_rel_path(workshop_id)?))
-}
-
-pub fn legacy_pairing_credentials_abs_path(workshop_id: &str) -> Option<PathBuf> {
-    let valid = !workshop_id.is_empty()
-        && workshop_id.len() <= 128
-        && workshop_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
-    valid.then(|| {
-        medousa_data_dir()
-            .join("workshops")
-            .join(workshop_id)
-            .join("pairing.json")
-    })
-}
-
-pub fn paired_workshop_id(workshop_device_id: &str) -> String {
-    format!("paired-{workshop_device_id}")
-}
-
-fn legacy_daemon_url_path() -> PathBuf {
-    medousa_data_dir().join("home_daemon_url.txt")
-}
-
-fn legacy_pairing_credentials_path() -> PathBuf {
-    medousa_data_dir().join("pairing_credentials.json")
-}
+#[cfg(test)]
+use medousa_desktop_host::workshop_registry::normalize_embedded_personal;
+#[allow(unused_imports)] // Preserve the renderer adapter public API.
+pub use medousa_desktop_host::workshop_registry::{
+    RegisterPairedInput, active_local_data_dir_for_url, active_workshop, ensure_migrated,
+    is_peer_kind, is_portal_kind, legacy_pairing_credentials_abs_path, load_registry,
+    medousa_data_dir, normalize_connection_role, paired_workshop_id, pairing_credentials_abs_path,
+    pairing_credentials_rel_path, register_paired_workshop, save_registry, workshops_registry_path,
+};
 
 fn normalize_url(raw: &str) -> String {
     raw.trim().trim_end_matches('/').to_string()
-}
-
-pub fn load_registry() -> Result<WorkshopRegistry, String> {
-    let path = workshops_registry_path();
-    let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    let mut registry: WorkshopRegistry =
-        serde_json::from_str(&raw).map_err(|err| err.to_string())?;
-    let embedded_migrated = normalize_embedded_personal(
-        &mut registry,
-        cfg!(any(target_os = "ios", target_os = "android")),
-    );
-    let migrated =
-        medousa_desktop_host::workshop_registry::normalize_desktop_registry(&mut registry)?
-            || embedded_migrated;
-    if migrated {
-        save_registry(&registry)?;
-    }
-    Ok(registry)
-}
-
-fn normalize_embedded_personal(registry: &mut WorkshopRegistry, embedded_personal: bool) -> bool {
-    if !embedded_personal {
-        return false;
-    }
-    let Some(personal) = registry
-        .workshops
-        .iter_mut()
-        .find(|workshop| workshop.id == PERSONAL_WORKSHOP_ID)
-    else {
-        return false;
-    };
-    let mut changed = false;
-    if personal.kind != "local" {
-        personal.kind = "local".to_string();
-        changed = true;
-    }
-    if normalize_url(&personal.url) != normalize_url(DEFAULT_DAEMON_URL) {
-        personal.url = DEFAULT_DAEMON_URL.to_string();
-        changed = true;
-    }
-    if changed {
-        personal.updated_at = now_iso();
-    }
-    changed
-}
-
-pub fn save_registry(registry: &WorkshopRegistry) -> Result<(), String> {
-    validate_registry(registry)?;
-    let path = workshops_registry_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let body = serde_json::to_string_pretty(registry).map_err(|err| err.to_string())?;
-    fs::write(path, body).map_err(|err| err.to_string())
-}
-
-fn read_legacy_daemon_url() -> Option<String> {
-    let raw = fs::read_to_string(legacy_daemon_url_path()).ok()?;
-    let trimmed = normalize_url(&raw);
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LegacyPairingCredentialsFile {
-    pairing_id: String,
-    phone_id: String,
-    workshop_device_id: String,
-    daemon_url: String,
-    paired_at: String,
-    #[serde(default)]
-    iroh_ticket: Option<String>,
-}
-
-fn read_legacy_pairing() -> Option<LegacyPairingCredentialsFile> {
-    let raw = fs::read_to_string(legacy_pairing_credentials_path()).ok()?;
-    serde_json::from_str(&raw).ok()
-}
-
-fn move_legacy_pairing_file(dest: &Path) -> Result<(), String> {
-    let legacy = legacy_pairing_credentials_path();
-    if !legacy.is_file() {
-        return Ok(());
-    }
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    if dest.is_file() {
-        fs::remove_file(&legacy).map_err(|err| err.to_string())?;
-        return Ok(());
-    }
-    fs::rename(&legacy, dest).or_else(|_| {
-        fs::copy(&legacy, dest).map_err(|err| err.to_string())?;
-        fs::remove_file(&legacy).map_err(|err| err.to_string())
-    })?;
-    Ok(())
-}
-
-fn is_loopback_url(url: &str) -> bool {
-    reqwest::Url::parse(url)
-        .ok()
-        .and_then(|parsed| {
-            parsed
-                .host_str()
-                .map(|host| host == "127.0.0.1" || host == "localhost" || host == "::1")
-        })
-        .unwrap_or(false)
-}
-
-pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
-    if workshops_registry_path().is_file() {
-        return load_registry();
-    }
-
-    let mut registry = default_registry();
-    let resolved = if cfg!(any(target_os = "ios", target_os = "android")) {
-        DEFAULT_DAEMON_URL.to_string()
-    } else {
-        normalize_url(&resolve_daemon_url())
-    };
-    if let Some(personal) = registry
-        .workshops
-        .iter_mut()
-        .find(|workshop| workshop.id == PERSONAL_WORKSHOP_ID)
-    {
-        personal.url = resolved.clone();
-        personal.updated_at = now_iso();
-    }
-
-    if let Some(legacy) = read_legacy_pairing() {
-        let workshop_id = paired_workshop_id(&legacy.workshop_device_id);
-        let credentials_path = pairing_credentials_abs_path(&workshop_id)?;
-        move_legacy_pairing_file(&credentials_path)?;
-        crate::pairing_client::migrate_legacy_session_token(
-            &legacy.workshop_device_id,
-            &legacy.pairing_id,
-        );
-
-        let url = normalize_url(&legacy.daemon_url);
-        let label = if legacy.daemon_url.trim().is_empty() {
-            "Paired workshop".to_string()
-        } else if is_loopback_url(&url) {
-            "Personal".to_string()
-        } else {
-            format!("Workshop {}", legacy.workshop_device_id)
-        };
-
-        let has_iroh = legacy
-            .iroh_ticket
-            .as_ref()
-            .is_some_and(|ticket| !ticket.trim().is_empty());
-
-        registry.workshops.push(WorkshopServer {
-            id: workshop_id.clone(),
-            label,
-            kind: "portal".to_string(),
-            url: url.clone(),
-            icon: Some("building".to_string()),
-            created_at: legacy.paired_at.clone(),
-            updated_at: now_iso(),
-            last_connected_at: None,
-            brand_color: None,
-            tagline: None,
-            data_dir: None,
-            bind: None,
-            pairing: Some(WorkshopPairingRef {
-                pairing_id: legacy.pairing_id,
-                phone_id: legacy.phone_id,
-                workshop_device_id: legacy.workshop_device_id,
-                paired_at: legacy.paired_at,
-                credentials_rel_path: Some(pairing_credentials_rel_path(&workshop_id)?),
-                has_iroh_ticket: Some(has_iroh),
-                workshop_peer_name: None,
-            }),
-            client_state: None,
-        });
-    }
-
-    save_registry(&registry)?;
-    Ok(registry)
-}
-
-pub fn active_workshop(registry: &WorkshopRegistry) -> Option<&WorkshopServer> {
-    registry
-        .workshops
-        .iter()
-        .find(|workshop| workshop.id == registry.active_workshop_id)
-}
-
-pub fn active_local_data_dir_for_url(url: &str) -> Option<PathBuf> {
-    let registry = ensure_migrated().ok()?;
-    let workshop = active_workshop(&registry)?;
-    if workshop.kind != "local"
-        || normalize_url(&resolve_workshop_url(workshop)) != normalize_url(url)
-    {
-        return None;
-    }
-    Some(crate::workshop_runtime::resolve_workshop_data_dir(workshop))
 }
 
 pub fn sync_daemon_state_from_registry(state: &DaemonState) -> Result<(), String> {
@@ -327,77 +59,6 @@ pub fn update_active_workshop_url(url: &str) -> Result<(), String> {
     workshop.url = normalize_url(url);
     workshop.updated_at = now_iso();
     save_registry(&registry)
-}
-
-pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, String> {
-    let mut registry = ensure_migrated()?;
-    let role = normalize_connection_role(&input.role);
-    let workshop_id = if role == "peer" {
-        format!("peer-{}", input.workshop_device_id)
-    } else {
-        paired_workshop_id(&input.workshop_device_id)
-    };
-    let credentials_rel = pairing_credentials_rel_path(&workshop_id)?;
-    let label = if input.workshop_peer_name.trim().is_empty() {
-        format!("Workshop {}", input.workshop_device_id)
-    } else {
-        input.workshop_peer_name.trim().to_string()
-    };
-    let url = normalize_url(&input.daemon_url);
-    let pairing = WorkshopPairingRef {
-        pairing_id: input.pairing_id,
-        phone_id: input.phone_id,
-        workshop_device_id: input.workshop_device_id,
-        paired_at: input.paired_at,
-        credentials_rel_path: Some(credentials_rel),
-        has_iroh_ticket: Some(input.has_iroh_ticket),
-        workshop_peer_name: Some(label.clone()),
-    };
-
-    let icon = if role == "peer" {
-        Some("users".to_string())
-    } else {
-        Some("building".to_string())
-    };
-
-    if let Some(existing) = registry
-        .workshops
-        .iter_mut()
-        .find(|workshop| workshop.id == workshop_id)
-    {
-        existing.label = label;
-        existing.url = url;
-        existing.kind = role.to_string();
-        existing.icon = icon;
-        existing.updated_at = now_iso();
-        existing.pairing = Some(pairing);
-    } else {
-        if registry.workshops.len() >= MAX_WORKSHOPS {
-            return Err(format!(
-                "Maximum of {MAX_WORKSHOPS} workshops reached — remove one before adding another."
-            ));
-        }
-        let iso = now_iso();
-        registry.workshops.push(WorkshopServer {
-            id: workshop_id.clone(),
-            label,
-            kind: role.to_string(),
-            url,
-            icon,
-            created_at: iso.clone(),
-            updated_at: iso,
-            last_connected_at: None,
-            brand_color: None,
-            tagline: None,
-            data_dir: None,
-            bind: None,
-            pairing: Some(pairing),
-            client_state: None,
-        });
-    }
-
-    save_registry(&registry)?;
-    Ok(workshop_id)
 }
 
 #[tauri::command]

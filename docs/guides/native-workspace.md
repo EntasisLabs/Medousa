@@ -361,3 +361,32 @@ editing, native notification delivery, task-reminder integration, global search,
 drag/resizing, and native `.ics`
 import/export controls remain outstanding. Opening an event does not enable a
 native notification service.
+
+## Peers: trusted workshop conversations
+
+Choose **Peers** in the native navigation rail to see already-trusted workshops.
+Search by name or full device identity, select a peer, and use **Refresh** to
+fetch messages. On narrow windows, **All peers** returns to the list. Unread
+counts reflect loaded messages; **Mark read** explicitly marks the selected
+thread's unread incoming messages, not other conversations.
+
+The first native slice supports text messaging, not agent assignments. Type a
+message and press **Send** explicitly; Enter does not send. Each peer has its
+own window-lifetime draft, retained when switching peers or surfaces, but not
+recovered after quitting. A delayed completion cannot clear a newer draft.
+Failed or uncertain sends retain the draft and block another send for that
+peer. Refresh and inspect the thread before explicitly unlocking another send;
+messages are never replayed automatically. A read failure may have marked some
+messages; refresh before deciding again.
+
+This surface reuses the reference app's local trust registry, secure token
+storage, pinned workshop identity, and signed LAN/Iroh transport. It does not
+pair a device, change trust, start an agent, or grant workspace access merely
+by opening a thread. Partial source failures are shown, not represented as a
+successful empty inbox. Availability is checked on request; a paired workshop
+is not necessarily online. Use Refresh for incoming updates in this slice.
+
+Discovery, pairing/invites, revocation and creating note/artifact shares still
+use the reference app. Existing attachment messages have informational previews
+only; native opening/import is not implemented. Save drafts before restarting
+the native app.

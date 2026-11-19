@@ -7,3 +7,8 @@ pub mod workshop_runtime;
 
 #[cfg(test)]
 mod connection_tests;
+
+pub mod mesh_envelope;
+pub mod pairing_client;
+pub mod peers;
+pub mod workshop_transport;

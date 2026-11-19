@@ -10,6 +10,7 @@ mod diff_presentation;
 mod media_preview;
 mod native_style;
 mod notes;
+mod peers;
 mod provider_timeline;
 mod reviews;
 mod runtimes;
