@@ -252,6 +252,8 @@ pub mod pairing;
 pub mod pairing_handlers;
 pub mod paths;
 pub mod payload_receipt;
+pub mod peer_connections;
+pub mod peer_connection_handlers;
 pub mod peer_message_handlers;
 pub mod peer_messages;
 pub mod peer_scope;

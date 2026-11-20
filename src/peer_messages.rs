@@ -27,6 +27,11 @@ pub struct PeerMessageAttachmentSummary {
     pub artifacts_imported: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault_notes_imported: Option<usize>,
+    /// Actual recipient-local identities, never source bundle identifiers.
+    #[serde(default)]
+    pub artifact_ids: Vec<String>,
+    #[serde(default)]
+    pub vault_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -313,6 +318,30 @@ pub fn build_inbound_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attachment_locators_are_backward_compatible_and_roundtrip() {
+        let legacy: PeerMessageAttachmentSummary = serde_json::from_value(serde_json::json!({
+            "imported": true, "artifactsImported": 1, "vaultNotesImported": 1
+        }))
+        .unwrap();
+        assert!(legacy.artifact_ids.is_empty());
+        assert!(legacy.vault_paths.is_empty());
+        let summary = PeerMessageAttachmentSummary {
+            artifact_ids: vec!["art:recipient".into()],
+            vault_paths: vec!["notes/example-imported.md".into()],
+            ..legacy
+        };
+        let wire = serde_json::to_value(&summary).unwrap();
+        assert_eq!(wire["artifactIds"], serde_json::json!(["art:recipient"]));
+        assert_eq!(
+            wire["vaultPaths"],
+            serde_json::json!(["notes/example-imported.md"])
+        );
+        let restored: PeerMessageAttachmentSummary = serde_json::from_value(wire).unwrap();
+        assert_eq!(restored.artifact_ids, summary.artifact_ids);
+        assert_eq!(restored.vault_paths, summary.vault_paths);
+    }
 
     #[test]
     fn build_inbound_rejects_empty() {

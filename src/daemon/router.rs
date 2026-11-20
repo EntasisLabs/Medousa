@@ -61,6 +61,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::peer_message_handlers::peer_message_surface().inventory())
         .expect("duplicate peer message route policy");
     inventory
+        .extend(crate::peer_connection_handlers::surface().inventory())
+        .expect("duplicate peer connection route policy");
+    inventory
         .extend(crate::mesh::handlers::mesh_surface().inventory())
         .expect("duplicate mesh route policy");
     inventory

@@ -102,8 +102,12 @@ pub struct ShareImportResult {
     pub surfaces_imported: usize,
     pub components_imported: usize,
     pub layout_presets_imported: usize,
+    /// Every successfully written source ID and its recipient artifact ID, including identity mappings.
     #[serde(default)]
     pub artifact_id_map: Vec<(String, String)>,
+    /// Successfully written source paths and their actual recipient vault paths.
+    #[serde(default)]
+    pub vault_note_path_map: Vec<(String, String)>,
     #[serde(default)]
     pub warnings: Vec<String>,
 }
@@ -171,5 +175,34 @@ impl ShareBundle {
             );
         }
         errors
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ShareImportResult;
+
+    #[test]
+    fn import_result_serializes_successful_recipient_mappings() {
+        let result = ShareImportResult {
+            artifact_id_map: vec![("art:source".into(), "art:recipient".into())],
+            vault_note_path_map: vec![(
+                "notes/example.md".into(),
+                "notes/example-imported.md".into(),
+            )],
+            ..Default::default()
+        };
+        let wire = serde_json::to_value(result).unwrap();
+        assert_eq!(
+            wire["artifactIdMap"],
+            serde_json::json!([["art:source", "art:recipient"]])
+        );
+        assert_eq!(
+            wire["vaultNotePathMap"],
+            serde_json::json!([["notes/example.md", "notes/example-imported.md"]])
+        );
+        let empty = serde_json::to_value(ShareImportResult::default()).unwrap();
+        assert_eq!(empty["artifactIdMap"], serde_json::json!([]));
+        assert_eq!(empty["vaultNotePathMap"], serde_json::json!([]));
     }
 }

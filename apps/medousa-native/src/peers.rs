@@ -57,6 +57,12 @@ pub struct Command {
 #[derive(Clone, Debug)]
 enum Kind {
     Refresh,
+    OpenAttachment {
+        peer: String,
+        message: Value,
+        item: String,
+        artifact: bool,
+    },
     Send {
         peer: String,
         body: String,
@@ -78,6 +84,7 @@ enum Response {
         warnings: Vec<String>,
     },
     Sent(Value),
+    Attachment(Value),
     Read,
 }
 #[derive(Clone)]
@@ -91,6 +98,8 @@ enum Action {
     MarkRead,
     AllowResend,
     Manage,
+    OpenAttachment(Value, String, bool),
+    CloseAttachment,
 }
 struct State {
     root: Entity,
@@ -106,6 +115,7 @@ struct State {
     send: Option<Entity>,
     peers: Vec<Peer>,
     messages: Vec<Value>,
+    attachment: Option<Value>,
     selected: Option<String>,
     drafts: HashMap<String, String>,
     actions: HashMap<u64, Action>,
@@ -139,6 +149,7 @@ fn empty(root: Entity) -> State {
         send: None,
         peers: vec![],
         messages: vec![],
+        attachment: None,
         selected: None,
         drafts: HashMap::new(),
         actions: HashMap::new(),
@@ -203,7 +214,9 @@ fn capture(w: &World, s: &mut State) {
     }
 }
 pub fn can_deactivate(w: &World) -> bool {
-    if !crate::peer_management::can_deactivate(w) { return false; }
+    if !crate::peer_management::can_deactivate(w) {
+        return false;
+    }
     w.resource::<State>().is_none_or(|s| {
         [Some(s.search), s.editor]
             .into_iter()
@@ -225,7 +238,13 @@ pub fn sync(w: &mut World) {
     let can = can_deactivate(w);
     with_state(w, |w, s| {
         capture(w, s);
-        if managing != s.managing { s.managing = managing; s.redraw = true; if !managing { s.refresh(); } }
+        if managing != s.managing {
+            s.managing = managing;
+            s.redraw = true;
+            if !managing {
+                s.refresh();
+            }
+        }
         let narrow = w.resource::<Viewport>().is_some_and(|v| v.width < 900.);
         if narrow != s.narrow {
             s.narrow = narrow;
@@ -254,7 +273,9 @@ pub fn sync(w: &mut World) {
     });
 }
 pub fn action(w: &mut World, intent: &HostIntent) -> bool {
-    if crate::peer_management::active(w) { return crate::peer_management::action(w, intent); }
+    if crate::peer_management::active(w) {
+        return crate::peer_management::action(w, intent);
+    }
     let HostIntent::Command(id) = intent else {
         return false;
     };
@@ -271,14 +292,44 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
     with_state(w, |w, s| {
         capture(w, s);
         match a {
-            Action::Manage if s.read.is_none() && s.mutation.is_none() => crate::peer_management::open(w),
+            Action::Manage if s.read.is_none() && s.mutation.is_none() => {
+                crate::peer_management::open(w)
+            }
             Action::Refresh => s.refresh(),
             Action::Select(id) => {
                 if s.peers.iter().any(|p| p.id == id) {
                     s.selected = Some(id);
+                    s.attachment = None;
                 }
             }
-            Action::Back => s.selected = None,
+            Action::Back => {
+                s.selected = None;
+                s.attachment = None;
+                s.read = None;
+            }
+            Action::CloseAttachment => {
+                s.attachment = None;
+                s.read = None;
+            }
+            Action::OpenAttachment(message, item, artifact)
+                if s.read.is_none() && s.mutation.is_none() =>
+            {
+                s.attachment = None;
+                let Some(peer) = s
+                    .peer()
+                    .filter(|p| involves(&message, p))
+                    .map(|p| p.id.clone())
+                else {
+                    return;
+                };
+                s.read = Some(s.enqueue(Kind::OpenAttachment {
+                    peer,
+                    message,
+                    item,
+                    artifact,
+                }));
+                s.status = "Loading imported attachment from its source workshop…".into();
+            }
             Action::Search => {
                 s.query = w
                     .get::<Label>(s.search)
@@ -345,6 +396,21 @@ pub fn apply(w: &mut World, u: Update) {
         capture(w, s);
         let c = u.command;
         match c.kind {
+            Kind::OpenAttachment { peer, .. } if s.read == Some(c.serial) => {
+                s.read = None;
+                if s.selected.as_ref() != Some(&peer) {
+                    return;
+                }
+                match u.result {
+                    Ok(Response::Attachment(bundle)) => {
+                        s.attachment = Some(bundle);
+                        s.status =
+                            "Read-only attachment preview · HTML/scripts are not executed".into();
+                    }
+                    Err(e) => s.status = format!("Could not open attachment: {e}"),
+                    _ => {}
+                }
+            }
             Kind::Refresh if s.read == Some(c.serial) => {
                 s.read = None;
                 match u.result {
@@ -366,6 +432,7 @@ pub fn apply(w: &mut World, u: Update) {
                             .is_some_and(|id| !s.peers.iter().any(|p| &p.id == id))
                         {
                             s.selected = None;
+                            s.attachment = None;
                         }
                         s.status = "Updated · use Refresh for new messages".into();
                     }
@@ -442,6 +509,15 @@ pub async fn execute(
             })
         }),
         Kind::Send { peer, body, .. } => service.send(peer, body).await.map(Response::Sent),
+        Kind::OpenAttachment {
+            message,
+            item,
+            artifact,
+            ..
+        } => service
+            .open_attachment(message, item, *artifact)
+            .await
+            .map(Response::Attachment),
         Kind::Read { messages, .. } => {
             let mut failure = None;
             for message in messages {

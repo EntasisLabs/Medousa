@@ -276,7 +276,65 @@ pub(super) fn render(w: &mut World, s: &mut State) {
         button(w, s.header, s, "‹ All peers", Action::Back, true);
     }
     let selected = s.peer().cloned();
-    if let Some(p) = &selected {
+    if let Some(bundle) = s.attachment.clone() {
+        label(
+            w,
+            s.header,
+            "Imported attachment · read-only",
+            Typography::Title,
+        );
+        button(
+            w,
+            s.header,
+            s,
+            "Back to conversation",
+            Action::CloseAttachment,
+            true,
+        );
+        label(
+            w,
+            s.thread,
+            "Source workshop content only. HTML/scripts are never executed. Preview limited to 32,000 characters per item.",
+            Typography::Secondary,
+        );
+        for note in bundle["vaultNotes"].as_array().into_iter().flatten() {
+            label(w, s.thread, &text(note, "path"), Typography::Title);
+            label(
+                w,
+                s.thread,
+                &text(note, "content")
+                    .chars()
+                    .take(32_000)
+                    .collect::<String>(),
+                Typography::Secondary,
+            );
+        }
+        for item in bundle["artifacts"].as_array().into_iter().flatten() {
+            use base64::Engine;
+            label(
+                w,
+                s.thread,
+                &format!("{} · {}", text(item, "title"), text(item, "mime")),
+                Typography::Title,
+            );
+            let encoded = text(item, "contentBase64");
+            let preview = if encoded.len() > 2 * 1024 * 1024 {
+                "Artifact is too large for inline preview.".into()
+            } else {
+                base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .ok()
+                    .and_then(|v| String::from_utf8(v).ok())
+                    .unwrap_or_else(|| "Binary artifact. Inline text preview unavailable.".into())
+            };
+            label(
+                w,
+                s.thread,
+                &preview.chars().take(32_000).collect::<String>(),
+                Typography::Secondary,
+            );
+        }
+    } else if let Some(p) = &selected {
         label(w, s.header, &p.name, Typography::Title);
         label(
             w,
@@ -411,14 +469,42 @@ pub(super) fn render(w: &mut World, s: &mut State) {
                 );
             }
             if !m["attachment"].is_null() {
-                label(
-                    w,
-                    bubble,
-                    "Shared attachment · open in the reference app",
-                    Typography::Secondary,
-                );
+                label(w, bubble, "Shared attachment", Typography::Secondary);
                 if let Some(summary) = m["attachmentResult"]["summary"].as_str() {
                     label(w, bubble, summary, Typography::Secondary);
+                }
+                let result = &m["attachmentResult"];
+                let mut count = 0;
+                if result["imported"] == true {
+                    for (key, artifact) in [("vaultPaths", false), ("artifactIds", true)] {
+                        for item in result[key]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                        {
+                            button(
+                                w,
+                                bubble,
+                                s,
+                                &format!(
+                                    "Open {}: {item}",
+                                    if artifact { "artifact" } else { "note" }
+                                ),
+                                Action::OpenAttachment(m.clone(), item.into(), artifact),
+                                s.read.is_none() && s.mutation.is_none(),
+                            );
+                            count += 1;
+                        }
+                    }
+                    if count == 0 {
+                        label(
+                            w,
+                            bubble,
+                            "This older message has no imported item IDs. Locate it in the source workshop; it will not be re-imported automatically.",
+                            Typography::Secondary,
+                        );
+                    }
                 }
             }
         }
@@ -481,7 +567,7 @@ pub(super) fn render(w: &mut World, s: &mut State) {
             s.send = Some(button(w, bar, s, "Send", Action::Send, false));
         }
     }
-    if selected.is_some() {
+    if selected.is_some() && s.attachment.is_none() {
         w.remove::<Hidden>(s.compose);
     } else {
         w.insert(s.compose, Hidden);

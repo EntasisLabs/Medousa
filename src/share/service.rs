@@ -221,9 +221,8 @@ pub async fn import_bundle(
         match import_artifact(artifact, request.conflict_strategy) {
             Ok(Some(mapped)) => {
                 result.artifacts_imported += 1;
-                if mapped.0 != mapped.1 {
-                    result.artifact_id_map.push(mapped);
-                }
+                // Include identity mappings too: every successful import is openable.
+                result.artifact_id_map.push(mapped);
             }
             Ok(None) => result.artifacts_skipped += 1,
             Err(err) => result
@@ -234,8 +233,11 @@ pub async fn import_bundle(
 
     for note in &request.bundle.vault_notes {
         match import_vault_note(note, request.conflict_strategy, store) {
-            Ok(true) => result.vault_notes_imported += 1,
-            Ok(false) => result.vault_notes_skipped += 1,
+            Ok(Some(mapped)) => {
+                result.vault_notes_imported += 1;
+                result.vault_note_path_map.push(mapped);
+            }
+            Ok(None) => result.vault_notes_skipped += 1,
             Err(err) => result
                 .warnings
                 .push(format!("vault {}: {err:#}", note.path)),
@@ -298,20 +300,40 @@ fn import_vault_note(
     note: &ShareVaultNoteEntry,
     strategy: ShareConflictStrategy,
     store: &crate::vault::store::VaultStore,
-) -> Result<bool> {
-    let exists = store.get_entry(&note.path).is_some();
-    if exists && strategy == ShareConflictStrategy::Skip {
-        return Ok(false);
+) -> Result<Option<(String, String)>> {
+    import_vault_note_with(
+        note,
+        strategy,
+        |path| store.get_entry(path).is_some(),
+        |path, content| Ok(store.write_content(path, content, None)?.path),
+    )
+}
+
+// Inject effects so collision and write-result handling can be tested without a live vault.
+fn import_vault_note_with(
+    note: &ShareVaultNoteEntry,
+    strategy: ShareConflictStrategy,
+    exists: impl Fn(&str) -> bool,
+    mut write: impl FnMut(&str, &str) -> Result<String>,
+) -> Result<Option<(String, String)>> {
+    let conflict = exists(&note.path);
+    if conflict && strategy == ShareConflictStrategy::Skip {
+        return Ok(None);
     }
 
-    let path = if exists && strategy == ShareConflictStrategy::Rename {
-        rename_path(&note.path)
-    } else {
-        note.path.clone()
-    };
+    let mut path = note.path.clone();
+    if conflict && strategy == ShareConflictStrategy::Rename {
+        let root = rename_path(&note.path);
+        path = root.clone();
+        let mut index = 2;
+        while exists(&path) {
+            path = format!("{}-{index}.md", root.trim_end_matches(".md"));
+            index += 1;
+        }
+    }
 
-    store.write_content(&path, &note.content, None)?;
-    Ok(true)
+    let actual_path = write(&path, &note.content)?;
+    Ok(Some((note.path.clone(), actual_path)))
 }
 
 fn rename_path(path: &str) -> String {
@@ -453,6 +475,69 @@ mod tests {
         SHARE_BUNDLE_VERSION, ShareBundle, ShareSourceWorkshop, export_single_artifact,
         export_single_vault_note,
     };
+
+    #[test]
+    fn imported_note_locators_follow_confirmed_write_paths() {
+        use super::{ShareConflictStrategy, ShareVaultNoteEntry, import_vault_note_with};
+        let note = ShareVaultNoteEntry {
+            path: "notes/example.md".into(),
+            content: "shared content".into(),
+        };
+        let mapped = import_vault_note_with(
+            &note,
+            ShareConflictStrategy::Rename,
+            |path| ["notes/example.md", "notes/example-imported.md"].contains(&path),
+            |path, content| {
+                assert_eq!(path, "notes/example-imported-2.md");
+                assert_eq!(content, note.content);
+                Ok(path.to_string())
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            mapped,
+            (note.path.clone(), "notes/example-imported-2.md".into())
+        );
+
+        let unchanged = import_vault_note_with(
+            &note,
+            ShareConflictStrategy::Rename,
+            |_| false,
+            |path, _| Ok(path.to_string()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(unchanged, (note.path.clone(), note.path.clone()));
+
+        let normalized = import_vault_note_with(
+            &note,
+            ShareConflictStrategy::Overwrite,
+            |_| true,
+            |_, _| Ok("normalized/example.md".into()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(normalized.1, "normalized/example.md");
+
+        let skipped = import_vault_note_with(
+            &note,
+            ShareConflictStrategy::Skip,
+            |_| true,
+            |_, _| panic!("skipped import must not write"),
+        )
+        .unwrap();
+        assert!(skipped.is_none());
+        assert!(
+            import_vault_note_with(
+                &note,
+                ShareConflictStrategy::Rename,
+                |_| false,
+                |_, _| anyhow::bail!("write failed"),
+            )
+            .is_err()
+        );
+    }
 
     fn sample_source() -> ShareSourceWorkshop {
         ShareSourceWorkshop {

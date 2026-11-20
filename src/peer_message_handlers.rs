@@ -330,16 +330,7 @@ async fn post_peer_message(
         .await
         {
             Ok(result) => {
-                let summary = format!(
-                    "Imported {} artifact(s), {} note(s)",
-                    result.artifacts_imported, result.vault_notes_imported
-                );
-                message.attachment_result = Some(PeerMessageAttachmentSummary {
-                    imported: true,
-                    summary: Some(summary),
-                    artifacts_imported: Some(result.artifacts_imported),
-                    vault_notes_imported: Some(result.vault_notes_imported),
-                });
+                message.attachment_result = Some(imported_attachment_summary(result));
                 message.attachment = None;
             }
             Err(err) => {
@@ -348,6 +339,8 @@ async fn post_peer_message(
                     summary: Some(err.to_string()),
                     artifacts_imported: None,
                     vault_notes_imported: None,
+                    artifact_ids: Vec::new(),
+                    vault_paths: Vec::new(),
                 });
             }
         }
@@ -359,6 +352,8 @@ async fn post_peer_message(
                 summary: Some("Attachment sent".to_string()),
                 artifacts_imported: None,
                 vault_notes_imported: None,
+                artifact_ids: Vec::new(),
+                vault_paths: Vec::new(),
             });
             message.attachment = None;
         }
@@ -370,6 +365,31 @@ async fn post_peer_message(
         let _ = bind_delivery_local_ref(inbox_id, &stored.id, &receipt.id);
     }
     Ok(with_mesh_receipt(stored, mesh_receipt))
+}
+
+// Only confirmed recipient identities survive removal of the inbound bundle.
+fn imported_attachment_summary(
+    result: crate::share::bundle::ShareImportResult,
+) -> PeerMessageAttachmentSummary {
+    PeerMessageAttachmentSummary {
+        imported: true,
+        summary: Some(format!(
+            "Imported {} artifact(s), {} note(s)",
+            result.artifacts_imported, result.vault_notes_imported
+        )),
+        artifacts_imported: Some(result.artifacts_imported),
+        vault_notes_imported: Some(result.vault_notes_imported),
+        artifact_ids: result
+            .artifact_id_map
+            .into_iter()
+            .map(|(_, id)| id)
+            .collect(),
+        vault_paths: result
+            .vault_note_path_map
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect(),
+    }
 }
 
 fn with_mesh_receipt(message: PeerMessage, receipt: Option<MeshReceipt>) -> Response {
@@ -491,6 +511,33 @@ fn mesh_status(err: crate::mesh::MeshEnvelopeError) -> (StatusCode, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn imported_attachment_summary_retains_only_actual_recipient_locators() {
+        let summary = imported_attachment_summary(crate::share::bundle::ShareImportResult {
+            artifacts_imported: 1,
+            vault_notes_imported: 1,
+            artifact_id_map: vec![("art:source".into(), "art:recipient".into())],
+            vault_note_path_map: vec![(
+                "notes/example.md".into(),
+                "notes/example-imported-2.md".into(),
+            )],
+            warnings: vec!["another note failed".into()],
+            ..Default::default()
+        });
+        assert!(summary.imported);
+        assert_eq!(summary.artifact_ids, ["art:recipient"]);
+        assert_eq!(summary.vault_paths, ["notes/example-imported-2.md"]);
+        let wire = serde_json::to_value(summary).unwrap();
+        assert_eq!(wire["artifactIds"], serde_json::json!(["art:recipient"]));
+        assert_eq!(
+            wire["vaultPaths"],
+            serde_json::json!(["notes/example-imported-2.md"])
+        );
+        let empty = imported_attachment_summary(Default::default());
+        assert!(empty.artifact_ids.is_empty());
+        assert!(empty.vault_paths.is_empty());
+    }
 
     #[test]
     fn peer_message_inventory_has_method_specific_limits() {

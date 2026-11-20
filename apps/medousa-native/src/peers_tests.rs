@@ -38,6 +38,51 @@ fn input(w: &mut World, t: &str) {
     sync(w);
 }
 #[test]
+fn attachment_preview_is_read_only_and_stale_peer_reply_is_ignored() {
+    let mut a = app();
+    let w = a.world_mut();
+    act(w, Action::Select("one".into()));
+    input(w, "keep draft");
+    act(
+        w,
+        Action::OpenAttachment(message("one"), "actual-imported.md".into(), false),
+    );
+    let c = take_commands(w).pop().unwrap();
+    act(w, Action::Select("two".into()));
+    apply(
+        w,
+        Update {
+            command: c,
+            result: Ok(Response::Attachment(
+                json!({"vaultNotes":[{"path":"actual-imported.md","content":"private source"}]}),
+            )),
+        },
+    );
+    sync(w);
+    assert!(w.resource::<State>().unwrap().attachment.is_none());
+    act(w, Action::Select("one".into()));
+    act(
+        w,
+        Action::OpenAttachment(message("one"), "actual-imported.md".into(), false),
+    );
+    let c = take_commands(w).pop().unwrap();
+    apply(
+        w,
+        Update {
+            command: c,
+            result: Ok(Response::Attachment(
+                json!({"vaultNotes":[{"path":"actual-imported.md","content":"<script>never execute</script>"}]}),
+            )),
+        },
+    );
+    sync(w);
+    assert!(w.has::<Hidden>(w.resource::<State>().unwrap().compose));
+    assert!(take_commands(w).is_empty());
+    act(w, Action::CloseAttachment);
+    assert_eq!(w.resource::<State>().unwrap().draft(), "keep draft");
+    assert!(!w.has::<Hidden>(w.resource::<State>().unwrap().compose));
+}
+#[test]
 fn exact_identity_and_unread() {
     let p = Peer::parse(&peer("one")).unwrap();
     assert!(involves(&message("one"), &p));

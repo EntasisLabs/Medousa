@@ -10,8 +10,9 @@ cargo run
 Uses the sibling RNDR checkout at `../../../../rndr`, shared
 `medousa-app-core`, and shared desktop-host connection discovery. On launch it
 attempts to attach to the configured local daemon using the existing local
-credentials. It does **not** start, install, or restart a daemon. An unavailable
-daemon is an ordinary connection error, not a separate preview application.
+credentials. It does **not** start, install, or restart a daemon on launch. The explicit,
+confirmed Peers LAN control can restart only the managed personal engine.
+An unavailable daemon is an ordinary connection error, not a separate preview application.
 
 The shell has a slim app-level rail for **Chat**, **Notes**, **Code**, and **Reviews**, separate from the
 contextual sidebar. Only mounted destinations appear; there are no placeholder
@@ -165,12 +166,18 @@ by work/evidence. This is not hosted-provider pull-request integration. See
 ## Trusted Peers
 
 Peers provides retained trusted-workshop threads, search, unread counts,
-explicit mark-read and text sends through the shared desktop-host authenticated
-peer service. Window-only drafts survive peer/surface changes. Unknown delivery
+explicit mark-read and text sends through the selected daemon's authenticated
+peer API. The native client does not hold peer credentials, perform pairing
+ceremonies, sign envelopes, or connect directly to peer daemons. The daemon owns
+these responsibilities even when embedded in a mobile app. Window-only drafts survive peer/surface changes. Unknown delivery
 is never retried automatically. Incoming updates use explicit Refresh.
 **Connections** adds nearby discovery, explicit peer-only invite pairing,
 current invite retrieval, incoming trust expiry/inactivity policies and confirmed
 forget/revoke. Remote execution permissions are not changed. Outbound removal
-forgets local credentials, not trust on the other workshop. Sharing and attachment
-opening remain in the reference app.
+forgets the daemon's outbound connection credentials, not trust on the other workshop. Connections also
+provides expiring pairing QR display, confirmed managed-personal-engine LAN
+controls, and single-item note/artifact Share, Ask and Bring actions. Imported
+attachments open read-only from their exact storage workshop, using recipient
+IDs rather than guessed paths. HTML/scripts never execute in previews.
+Camera scanning and QR-image-file import are not implemented.
 See [the native workspace guide](../../docs/guides/native-workspace.md#peers-trusted-workshop-conversations).

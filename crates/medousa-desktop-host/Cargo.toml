@@ -5,6 +5,12 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Shared non-Tauri desktop connection and local engine policy"
 
+[features]
+default = []
+# Compatibility for the existing Tauri portal client only. Native delegates peers
+# to its daemon; embedding that daemon on mobile does not change ownership.
+legacy-client-network = ["dep:medousa-sdk-iroh", "dep:medousa-iroh-http", "dep:medousa-secrets", "dep:medousa-local-credential", "dep:base64", "dep:ed25519-dalek", "dep:rand", "dep:uuid", "dep:url", "dep:bytes"]
+
 [dependencies]
 medousa-types = { path = "../medousa-types" }
 dirs = "6"
@@ -16,17 +22,17 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tokio = { version = "1", features = ["sync", "time"] }
 
 medousa-sdk = { path = "../medousa-sdk", default-features = false, features = ["async"] }
-medousa-sdk-iroh = { path = "../medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
-medousa-iroh-http = { path = "../medousa-iroh-http" }
-medousa-secrets = { path = "../medousa-secrets" }
-medousa-local-credential = { path = "../medousa-local-credential" }
-base64 = "0.22"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
-rand = "0.8"
-uuid = { version = "1", features = ["v4"] }
-url = "2"
+medousa-sdk-iroh = { path = "../medousa-sdk-iroh", optional = true, default-features = false, features = ["async", "sse"] }
+medousa-iroh-http = { path = "../medousa-iroh-http", optional = true }
+medousa-secrets = { path = "../medousa-secrets", optional = true }
+medousa-local-credential = { path = "../medousa-local-credential", optional = true }
+base64 = { version = "0.22", optional = true }
+ed25519-dalek = { version = "2", optional = true, features = ["rand_core"] }
+rand = { version = "0.8", optional = true }
+uuid = { version = "1", optional = true, features = ["v4"] }
+url = { version = "2", optional = true }
 urlencoding = "2"
-bytes = "1"
+bytes = { version = "1", optional = true }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 medousa-host = { path = "../medousa-host" }
@@ -36,3 +42,4 @@ libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

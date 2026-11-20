@@ -32,6 +32,8 @@ jobs:
         run: ./scripts/ci/check-runtime-context.sh
       - name: Test standalone daemon packaging invocations (no compilation)
         run: python3 scripts/ci/test-daemon-packaging.py
+      - name: Guard native daemon-owned peer boundary
+        run: bash scripts/ci/check-native-peer-boundary.sh
       - name: Guard standalone daemon dependency boundary
         run: python3 scripts/ci/check-daemon-dependencies.py
       - name: Check standalone daemon (no workspace feature unification)

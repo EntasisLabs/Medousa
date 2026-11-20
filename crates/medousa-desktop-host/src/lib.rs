@@ -8,8 +8,12 @@ pub mod workshop_runtime;
 #[cfg(test)]
 mod connection_tests;
 
+#[cfg(feature = "legacy-client-network")]
 pub mod mesh_envelope;
+#[cfg(feature = "legacy-client-network")]
 pub mod pairing_client;
-pub mod peers;
+pub mod peer_lan;
 pub mod peer_management;
+pub mod peers;
+#[cfg(feature = "legacy-client-network")]
 pub mod workshop_transport;

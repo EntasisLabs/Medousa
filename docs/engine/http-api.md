@@ -1086,6 +1086,56 @@ omits the profile mints an unbound invite.
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 
+### Imported peer attachment locators
+
+Successful inbound auto-imports on `POST /v1/peer/messages` clear the raw
+`attachment` and retain an `attachmentResult` with recipient-local `artifactIds`
+and vault-relative `vaultPaths`. These arrays contain only successfully written
+items, using the actual IDs and paths returned by import (including renamed
+collision targets), not the source bundle identifiers or paths mentioned in the
+message body. Counts and the human-readable `summary` remain available. A
+partially successful import exposes only its successful items. Failed imports
+and outbound copies expose empty locator arrays. Older inbox records without
+these additive fields deserialize as empty arrays; clients must not reconstruct
+locators from their summary or body.
+
+`ShareImportResult` also serializes `vaultNotePathMap` as source/recipient path
+pairs and `artifactIdMap` as source/recipient ID pairs. Both include every
+successful write, including unchanged identities; skipped or failed items have
+no mapping. Reading a locator still requires the normal authenticated access to
+the recipient workshop; it is not an additional filesystem or execution grant.
+
+### Daemon-owned peer connections
+
+Native clients send peer commands only to their selected daemon. The daemon owns
+its canonical signing identity, outbound pairing credentials, session refresh,
+LAN/Iroh transport, signed envelopes and local message history. Embedding that
+daemon in a mobile application changes packaging, not authority. These routes
+are native-only and require `admin.identity`; a paired peer cannot administer
+another daemon's connections. Responses never expose outbound session tokens.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/peers/connections` | Public connection summaries and inbound trust state |
+| GET | `/v1/peers/snapshot` | Daemon-local peer conversations and imported attachment locators |
+| POST | `/v1/peers/pair` | Pair outward using `{invite,url,name}`; requires a signed Medousa invite, uses daemon identity and peer role |
+| POST | `/v1/peers/send` | Send `{workshopId,body}` through the daemon's authenticated connection |
+| POST | `/v1/peers/share` | Export and send `{id,item,artifact,mode}` (`share`, `ask`, `bring`); optional `device` and `pairing` fence stale selections |
+| POST | `/v1/peers/forget` | Remove exact `{id,device,pairing}` outbound credentials or revoke exact inbound trust |
+| POST | `/v1/peers/policy` | Update exact inbound `{device,pairing,expires,idle}` trust; null clears a limit |
+| POST | `/v1/peers/attachment` | Read a text preview using `{messageId,sinkKind,workshopId,item,artifact}`; validates stored recipient-local import locators |
+| POST | `/v1/peers/read` | Mark a stored message read using `{messageId,sinkKind,workshopId}` |
+| GET | `/pair/discover` | Owner-only LAN discovery alias; `/v1/lan/workshops` remains the canonical client route |
+
+Snapshot messages use `sinkKind: "host"`; source selectors must have an empty or
+omitted `workshopId`. Remote message selectors and client-supplied attachment
+claims are rejected. A lost mutation acknowledgement is an unknown outcome and
+is not retried automatically on another transport. Forgetting an outbound
+connection does not revoke trust retained by the destination daemon. Existing
+client-only portal credentials are not silently copied: pair outward from the
+daemon explicitly. Unified browsing of remote daemon resources remains separate
+from this connection ownership foundation.
+
 ### Peer execution policy administration
 
 These native-only routes require `admin.execute` on the workshop whose inbound

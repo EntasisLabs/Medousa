@@ -142,10 +142,7 @@ pub fn normalize_desktop_registry(registry: &mut WorkshopRegistry) -> Result<boo
 }
 
 use medousa_types::authority_id::WorkshopScopeId;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::PathBuf};
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterPairedInput {
@@ -217,6 +214,7 @@ fn legacy_daemon_url_path() -> PathBuf {
     medousa_data_dir().join("home_daemon_url.txt")
 }
 
+#[cfg(feature = "legacy-client-network")]
 fn legacy_pairing_credentials_path() -> PathBuf {
     medousa_data_dir().join("pairing_credentials.json")
 }
@@ -291,6 +289,7 @@ fn read_legacy_daemon_url() -> Option<String> {
     }
 }
 
+#[cfg(feature = "legacy-client-network")]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LegacyPairingCredentialsFile {
@@ -303,12 +302,14 @@ struct LegacyPairingCredentialsFile {
     iroh_ticket: Option<String>,
 }
 
+#[cfg(feature = "legacy-client-network")]
 fn read_legacy_pairing() -> Option<LegacyPairingCredentialsFile> {
     let raw = fs::read_to_string(legacy_pairing_credentials_path()).ok()?;
     serde_json::from_str(&raw).ok()
 }
 
-fn move_legacy_pairing_file(dest: &Path) -> Result<(), String> {
+#[cfg(feature = "legacy-client-network")]
+fn move_legacy_pairing_file(dest: &std::path::Path) -> Result<(), String> {
     let legacy = legacy_pairing_credentials_path();
     if !legacy.is_file() {
         return Ok(());
@@ -327,6 +328,7 @@ fn move_legacy_pairing_file(dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "legacy-client-network")]
 fn is_loopback_url(url: &str) -> bool {
     reqwest::Url::parse(url)
         .ok()
@@ -364,6 +366,7 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
         personal.updated_at = now_iso();
     }
 
+    #[cfg(feature = "legacy-client-network")]
     if let Some(legacy) = read_legacy_pairing() {
         let workshop_id = paired_workshop_id(&legacy.workshop_device_id);
         let credentials_path = pairing_credentials_abs_path(&workshop_id)?;

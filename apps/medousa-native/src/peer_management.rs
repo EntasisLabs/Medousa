@@ -23,6 +23,13 @@ pub struct Command {
 pub struct Update {
     command: Command,
     result: Result<Value, String>,
+    qr: Option<QrPixels>,
+}
+#[derive(Clone)]
+struct QrPixels {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
 }
 #[derive(Clone)]
 enum Action {
@@ -32,6 +39,10 @@ enum Action {
     Refresh,
     Discover,
     Invite,
+    Qr,
+    LanStatus,
+    Lan(bool),
+    Share(bool, String),
     ChooseUrl(String),
     Select(String),
     Pair,
@@ -54,6 +65,9 @@ struct State {
     url: Entity,
     name: Entity,
     local_invite: Entity,
+    qr_view: Entity,
+    qr: Option<(QrPixels, String)>,
+    item: Entity,
     expires: Entity,
     idle: Entity,
     open: bool,
@@ -217,15 +231,38 @@ pub fn mount(w: &mut World, parent: Entity) {
     label(
         w,
         connect,
-        "Invite links are sensitive and expire. Share only with the intended device. Opening this panel does not create or rotate an invite. LAN pairing must already be enabled in Connection settings.",
+        "Invite links are sensitive and expire. Share only with the intended device. Opening this panel does not create or rotate an invite. Check LAN status below and explicitly enable pairing if needed.",
         Typography::Secondary,
     );
     let invite_controls = row(w, connect);
     let local_invite = field(w, connect, "Your current invite (copy to share)", "");
+    let qr_view = column(w, connect);
+    label(w, connect, "LAN pairing window", Typography::Title);
+    label(
+        w,
+        connect,
+        "Changing LAN pairing restarts your managed personal engine. Enabling exposes it on this network; disable after pairing. Private tunnels remain available. Custom/unmanaged engines are never restarted here.",
+        Typography::Secondary,
+    );
+    let lan_controls = row(w, connect);
     let trust = column(w, body);
     w.insert(trust, Hidden);
     label(w, trust, "Trusted peers", Typography::Title);
     let peers_view = column(w, trust);
+    label(
+        w,
+        trust,
+        "Send an item to the selected peer",
+        Typography::Title,
+    );
+    label(
+        w,
+        trust,
+        "Enter a note path or artifact ID from this workshop (not a local file). Sharing sends the full item; recipients auto-import with rename. Review the destination before confirming. No execution grant is included.",
+        Typography::Secondary,
+    );
+    let item = field(w, trust, "Note path or artifact ID", "");
+    let share_controls = column(w, trust);
     label(
         w,
         trust,
@@ -254,6 +291,9 @@ pub fn mount(w: &mut World, parent: Entity) {
         url,
         name,
         local_invite,
+        qr_view,
+        qr: None,
+        item,
         expires,
         idle,
         open: false,
@@ -320,6 +360,34 @@ pub fn mount(w: &mut World, parent: Entity) {
         Action::Forget,
         true,
     );
+    button(
+        w,
+        invite_controls,
+        &mut s,
+        "Show pairing QR",
+        Action::Qr,
+        true,
+    );
+    for (title, a) in [
+        ("Check LAN status", Action::LanStatus),
+        ("Enable LAN…", Action::Lan(true)),
+        ("Disable LAN…", Action::Lan(false)),
+    ] {
+        button(w, lan_controls, &mut s, title, a, true);
+    }
+    for (artifact, kind) in [(false, "note"), (true, "artifact")] {
+        let controls = row(w, share_controls);
+        for mode in ["share", "ask", "bring"] {
+            button(
+                w,
+                controls,
+                &mut s,
+                &format!("{mode} {kind}…"),
+                Action::Share(artifact, mode.into()),
+                true,
+            );
+        }
+    }
     s.persistent = s.actions.keys().copied().collect();
     w.insert_resource(s);
 }
@@ -328,9 +396,17 @@ pub fn active(w: &World) -> bool {
 }
 pub fn can_deactivate(w: &World) -> bool {
     w.resource::<State>().is_none_or(|s| {
-        [s.invite, s.url, s.name, s.expires, s.idle, s.local_invite]
-            .iter()
-            .all(|e| !w.has::<ImePreview>(*e))
+        [
+            s.invite,
+            s.url,
+            s.name,
+            s.expires,
+            s.idle,
+            s.local_invite,
+            s.item,
+        ]
+        .iter()
+        .all(|e| !w.has::<ImePreview>(*e))
     })
 }
 pub fn open(w: &mut World) {
@@ -358,6 +434,22 @@ fn selected(s: &State) -> Option<&Value> {
 }
 fn stage(w: &World, s: &State, a: &Action) -> Result<Request, String> {
     match a {
+        Action::Lan(enabled) => Ok(Request::LanEnabled { enabled: *enabled }),
+        Action::Share(artifact, mode) => {
+            let p = selected(s).ok_or("Select a trusted peer first")?;
+            let item = value(w, s.item);
+            if item.is_empty() {
+                return Err("Enter a note path or artifact ID first".into());
+            }
+            Ok(Request::Share {
+                id: text(p, "id"),
+                device: text(p, "device"),
+                pairing: text(p, "pairing"),
+                item,
+                artifact: *artifact,
+                mode: mode.clone(),
+            })
+        }
         Action::Pair => {
             let invite = value(w, s.invite);
             let url = value(w, s.url);
@@ -437,6 +529,8 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
                 s.open = false;
                 s.pending = None;
                 set(w, s.local_invite, "");
+                s.qr = None;
+                clear(w, s.qr_view);
                 w.insert(s.root, Hidden);
             }
             Action::Connect => {
@@ -454,6 +548,12 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
             }
             Action::Discover if s.busy.is_none() => enqueue(s, Request::Discover),
             Action::Invite if s.busy.is_none() => enqueue(s, Request::Invite),
+            Action::Qr if s.busy.is_none() => {
+                s.qr = None;
+                clear(w, s.qr_view);
+                enqueue(s, Request::QrImage);
+            }
+            Action::LanStatus if s.busy.is_none() => enqueue(s, Request::LanStatus),
             Action::ChooseUrl(url) if s.busy.is_none() => {
                 set(w, s.url, &url);
                 s.pending = None;
@@ -474,7 +574,9 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
                     );
                 }
             }
-            Action::Pair | Action::Forget | Action::Policy if s.busy.is_none() && !s.uncertain => {
+            Action::Pair | Action::Forget | Action::Policy | Action::Share(..) | Action::Lan(_)
+                if s.busy.is_none() && !s.uncertain =>
+            {
                 match stage(w, s, &a) {
                     Ok(r) => {
                         s.pending = Some(r);
@@ -500,6 +602,17 @@ pub fn action(w: &mut World, intent: &HostIntent) -> bool {
     true
 }
 pub fn sync(w: &mut World) {
+    with(w, |w, s| {
+        if s.qr.as_ref().is_some_and(|(_, expires)| {
+            chrono::DateTime::parse_from_rfc3339(expires).map_or(true, |d| d <= chrono::Utc::now())
+        }) {
+            s.qr = None;
+            clear(w, s.qr_view);
+            set(w, s.local_invite, "");
+            s.status = "Pairing QR expired — retrieve a fresh invite.".into();
+            s.dirty = true;
+        }
+    });
     if !can_deactivate(w) || !w.resource::<State>().is_some_and(|s| s.open && s.dirty) {
         return;
     }
@@ -588,7 +701,7 @@ pub fn sync(w: &mut World) {
                     if p["inbound"] == true {
                         "Connected to you"
                     } else {
-                        "Outbound — removal forgets local credentials only"
+                        "Outbound — removal forgets daemon connection credentials only"
                     },
                     text(&p, "device"),
                     text(&p, "pairing"),
@@ -603,6 +716,26 @@ pub fn sync(w: &mut World) {
         }
         if let Some(r) = s.pending.clone() {
             let summary = match r {
+                Request::LanEnabled { enabled } => format!(
+                    "{} LAN pairing? This restarts the managed personal engine and interrupts active connections. {}",
+                    if enabled { "Enable" } else { "Disable" },
+                    if enabled {
+                        "The engine becomes reachable from this network. Turn it off after pairing."
+                    } else {
+                        "The engine returns to loopback-only. Paired devices use private tunnels."
+                    }
+                ),
+                Request::Share {
+                    id,
+                    device,
+                    pairing,
+                    item,
+                    artifact,
+                    mode,
+                } => format!(
+                    "{mode} {} `{item}` to {id}?\nDevice: {device}\nPairing: {pairing}\nThe full item is sent and auto-imported with rename on the recipient. No execution permissions change.",
+                    if artifact { "artifact" } else { "note" }
+                ),
                 Request::Pair { url, .. } => format!(
                     "Pair with {url} as a peer? The signed invite will verify identity. No execution permissions are granted."
                 ),
@@ -611,7 +744,7 @@ pub fn sync(w: &mut World) {
                     device,
                     pairing,
                 } => format!(
-                    "Forget {id}\nDevice: {device}\nPairing: {pairing}\nIncoming: revoke this device's trust. Outbound: remove local credentials only, not trust held by the remote workshop. Message drafts stay in this window."
+                    "Forget {id}\nDevice: {device}\nPairing: {pairing}\nIncoming: revoke this device's trust. Outbound: remove this daemon's connection credentials only, not trust held by the remote workshop. Message drafts stay in this window."
                 ),
                 Request::Policy {
                     device,
@@ -634,9 +767,14 @@ pub fn sync(w: &mut World) {
         for (id, e) in &s.controls {
             let enabled = match s.actions.get(id) {
                 Some(Action::Close | Action::Connect | Action::Trust | Action::Cancel) => true,
-                Some(Action::Pair | Action::Forget | Action::Policy | Action::Confirm) => {
-                    s.busy.is_none() && !s.uncertain
-                }
+                Some(
+                    Action::Pair
+                    | Action::Forget
+                    | Action::Policy
+                    | Action::Confirm
+                    | Action::Share(..)
+                    | Action::Lan(_),
+                ) => s.busy.is_none() && !s.uncertain,
                 Some(Action::Unlock) => s.busy.is_none() && s.refreshed,
                 _ => s.busy.is_none(),
             };
@@ -678,9 +816,43 @@ pub fn apply(w: &mut World, u: Update) {
                         s.discovered.len()
                     );
                 }
-                Request::Invite => {
+                Request::LanStatus | Request::LanEnabled { .. } => {
+                    s.status = text(&v, "message");
+                    s.qr = None;
+                    clear(w, s.qr_view);
+                    set(w, s.local_invite, "");
+                }
+                Request::Share { .. } => {
+                    s.status = "Item sent. Return to conversations and refresh to see it. No automatic resend.".into();
+                }
+                Request::Invite | Request::QrImage => {
+                    s.qr = None;
+                    clear(w, s.qr_view);
                     if s.open {
                         set(w, s.local_invite, &text(&v, "url"));
+                    }
+                    if s.open {
+                        if let Some(pixels) = u.qr {
+                            clear(w, s.qr_view);
+                            let id = next();
+                            let _ = rndr_render::load_rgba(
+                                w,
+                                id,
+                                pixels.width,
+                                pixels.height,
+                                pixels.rgba.clone(),
+                            );
+                            let image = w.spawn((
+                                Layout {
+                                    width: Size::Px(240.),
+                                    height: Size::Px(240.),
+                                    ..Layout::column()
+                                },
+                                ImageView::new(id),
+                            ));
+                            set_parent(w, image, s.qr_view);
+                            s.qr = Some((pixels, text(&v, "expiresAt")));
+                        }
                     }
                     s.status = format!(
                         "Invite expires {} · code {}. Keep the link private.",
@@ -709,10 +881,51 @@ pub fn apply(w: &mut World, u: Update) {
     });
 }
 pub async fn execute(client: &Arc<medousa_sdk::MedousaClient>, command: Command) -> Update {
-    let result = medousa_desktop_host::peer_management::PeerManagementService::new(client.clone())
-        .execute(&command.request)
-        .await;
-    Update { command, result }
+    let mut result =
+        medousa_desktop_host::peer_management::PeerManagementService::new(client.clone())
+            .execute(&command.request)
+            .await;
+    let mut qr = None;
+    if matches!(command.request, Request::QrImage) {
+        if let Ok(v) = &result {
+            match decode_qr_pixels(v) {
+                Ok(p) => qr = Some(p),
+                Err(e) => result = Err(e),
+            }
+        }
+    }
+    Update {
+        command,
+        result,
+        qr,
+    }
+}
+fn decode_qr_pixels(v: &Value) -> Result<QrPixels, String> {
+    use base64::Engine;
+    let encoded = v["pngBase64"].as_str().ok_or("QR image missing")?;
+    if encoded.len() > 512 * 1024 {
+        return Err("QR image too large".into());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| "Invalid QR image")?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| "Invalid QR image")?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(1024);
+    limits.max_image_height = Some(1024);
+    limits.max_alloc = Some(8 * 1024 * 1024);
+    reader.limits(limits);
+    let image = reader
+        .decode()
+        .map_err(|_| "Invalid or oversized QR image")?
+        .into_rgba8();
+    Ok(QrPixels {
+        width: image.width(),
+        height: image.height(),
+        rgba: image.into_raw(),
+    })
 }
 #[cfg(test)]
 #[path = "peer_management_tests.rs"]

@@ -17,6 +17,7 @@ dist/
 
 # Frontend app build output
 apps/**/src-tauri/target/
+apps/medousa-native/target/
 apps/**/src-tauri/binaries/
 apps/**/dist/
 apps/**/build/
@@ -25,6 +26,9 @@ packages/**/node_modules/
 integrations/**/node_modules/
 integrations/vscode/*.vsix
 apps/**/.svelte-kit/
+
+# Native UI verification evidence (keep local, out of source control)
+/apps/medousa-native/verification/**/*.png
 
 package-lock.json
 !apps/medousa-home/package-lock.json

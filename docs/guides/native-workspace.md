@@ -379,10 +379,15 @@ peer. Refresh and inspect the thread before explicitly unlocking another send;
 messages are never replayed automatically. A read failure may have marked some
 messages; refresh before deciding again.
 
-This surface reuses the reference app's local trust registry, secure token
-storage, pinned workshop identity, and signed LAN/Iroh transport. It does not
-pair a device, change trust, start an agent, or grant workspace access merely
-by opening a thread. Partial source failures are shown, not represented as a
+This surface talks only to its selected daemon. That daemon owns peer identity,
+pairing, credentials, pinned identities, and signed LAN/Iroh connections; native
+never reads the old app's peer registry or connects directly to those peers.
+Embedding the daemon on mobile changes packaging, not this ownership boundary.
+Existing client-only Tauri pairings are not silently adopted as daemon trust;
+pair from Connections to establish a daemon-owned connection. The existing
+Tauri client retains its legacy portal behavior during migration.
+Opening a thread does not pair a device, change trust, start an agent, or grant
+workspace access. Partial source failures are shown, not represented as a
 successful empty inbox. Availability is checked on request; a paired workshop
 is not necessarily online. Use Refresh for incoming updates in this slice.
 
@@ -392,14 +397,24 @@ Open **Connections…** in Peers. Opening it reads trust status only; it does no
 create an invite, scan the LAN or pair a device. **Find nearby workshops** lists
 untrusted addresses. Choose **Use this address**, then paste the invite URL from
 that workshop. Alternatively enter its reachable workshop URL manually. Select
-**Review pairing**, check the destination and **Confirm change**. Pairing reuses
-signed identity verification and creates a peer, not a portal or execution grant.
+**Review pairing**, check the destination and **Confirm change**. The selected
+daemon performs signed pairing and retains the connection. This creates a peer,
+not a client portal or execution grant. It does not switch the active workshop.
+Unified browsing of connected workshops is a separate follow-on; these peer
+connections do not yet provide federated workspace browsing.
 
-To invite another device, enable LAN pairing in the reference app's Connection
-settings, then use **Get current invite**. Copy the displayed link to that device.
-Invite links are sensitive and expire; share only with the intended recipient.
-Native camera scanning, QR-image rendering and LAN enable/disable are not part
-of this slice.
+To invite another device, use **Check LAN status**, then **Enable LAN…** if
+needed. Review and confirm: this interrupts connections while restarting only
+the positively identified managed personal engine. Custom, remote or untracked
+engines are rejected. Use **Disable LAN…** after pairing to return to loopback;
+private tunnels and trust configuration are preserved. A partial restart failure
+is reported, never automatically retried; inspect the engine before unlocking.
+
+Use **Get current invite** to copy its link, or **Show pairing QR** to display an
+expiring QR image for another device to scan. Invite links and QR images are
+sensitive; share only with the intended recipient. Closing Connections clears
+the displayed QR; expired images disappear. Camera scanning and importing a QR
+image file are not implemented.
 
 In **Trusted peers**, select the exact device and pairing. Incoming peers support
 trust expiry (a future RFC3339 timestamp such as `2027-01-01T00:00:00Z`) and
@@ -409,13 +424,28 @@ session; the peer must authenticate again. Execution policies are unchanged.
 Outbound trust policy belongs to the remote workshop and is not editable here.
 
 **Forget selected peer…** requires confirmation. For incoming peers it revokes
-trust on this workshop. For outbound peers it removes only local registry and
-credentials; it does not revoke trust held by the other workshop. Full device
+trust on this workshop. For outbound peers it removes the selected daemon's
+connection credentials; it does not revoke trust held by the other workshop. Full device
 and pairing identities are checked again before removal or policy mutation.
 Refresh trust after a change. If a change cannot be confirmed, inspect both ends,
 use **Refresh trust**, then explicitly unlock actions; no mutation is replayed.
 Returning to conversations refreshes the peer list and preserves window drafts.
 
-Creating note/artifact shares and opening/importing attachment messages remain
-in the reference app. Existing attachment messages have informational previews
-only. Save drafts before restarting the native app.
+### Share notes and artifacts
+
+In **Connections… → Trusted peers**, select a peer and enter a note path or
+artifact ID from this workshop, not a path on the app device. Choose **share**,
+**ask** (review request), or **bring** (bring-home message) for the matching item
+type. Review the exact item, destination device and pairing, then confirm.
+The daemon exports the full item and sends it once through the authenticated
+peer transport. Recipients auto-import using rename-on-conflict. Ask/Bring are
+message kinds, not agent starts or execution grants. Uncertain delivery blocks
+another change until you inspect both ends, refresh trust and explicitly unlock.
+
+Return to conversations and Refresh. Newly imported attachment messages offer
+**Open note**/**Open artifact**, reading the actual recipient IDs from their exact
+storage workshop. Previews are read-only plain text, capped at 32,000 characters;
+HTML/scripts never execute and binary artifacts have no inline text preview.
+Older messages may lack imported IDs: locate those items in the source workshop
+rather than guessing a path or automatically importing again. Save window-only
+drafts before restarting the native app.

@@ -102,6 +102,44 @@ pub fn upsert_from_pairing(record: &PairedDeviceRecord) -> Result<MeshPeerRecord
     Ok(peer)
 }
 
+/// Register dial authority acquired by this daemon pairing outward. This does not
+/// create an inbound credential or grant the remote peer access to this workshop.
+pub fn register_outbound_identity(
+    device_id: &str,
+    name: &str,
+    public_key: &str,
+    pairing_id: &str,
+    endpoints: MeshPeerEndpoints,
+) -> Result<MeshPeerRecord> {
+    let _guard = MESH_IO_LOCK.lock().expect("mesh io lock");
+    let path = peers_path();
+    let mut file: MeshPeersFile = read_json_default(&path)?;
+    let peer = if let Some(existing) = file.peers.iter_mut().find(|p| p.device_id == device_id) {
+        if existing.public_key_b64 != public_key {
+            bail!("mesh peer public key mismatch");
+        }
+        existing.endpoints = endpoints;
+        existing.clone()
+    } else {
+        let record = MeshPeerRecord {
+            device_id: device_id.into(),
+            display_name: name.into(),
+            public_key_b64: public_key.into(),
+            pairing_id: pairing_id.into(),
+            role: PairingRole::Peer,
+            mesh_grants: vec![],
+            mesh_enabled: true,
+            last_seen: Utc::now(),
+            endpoints,
+            outbound_seq: 1,
+        };
+        file.peers.push(record.clone());
+        record
+    };
+    write_json(&path, &file)?;
+    Ok(peer)
+}
+
 pub fn set_mesh_enabled(device_id: &str, enabled: bool) -> Result<MeshPeerRecord> {
     update_peer(device_id, |peer| {
         peer.mesh_enabled = enabled;
@@ -165,7 +203,10 @@ pub fn allocate_outbound_seq(device_id: &str) -> Result<u64> {
         peer.outbound_seq = 1;
     }
     let seq = peer.outbound_seq;
-    peer.outbound_seq = peer.outbound_seq.saturating_add(1);
+    peer.outbound_seq = peer
+        .outbound_seq
+        .checked_add(1)
+        .context("mesh outbound sequence exhausted")?;
     write_json(&path, &file)?;
     Ok(seq)
 }

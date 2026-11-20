@@ -12,6 +12,7 @@ fn app() -> App {
         a.world_mut(),
         Update {
             command: c,
+            qr: None,
             result: Ok(snapshot()),
         },
     );
@@ -39,6 +40,7 @@ fn opening_only_reads_status_and_discovery_never_pairs() {
         w,
         Update {
             command: c,
+            qr: None,
             result: Ok(
                 json!({"workshops":[{"peerName":"Nearby","daemonUrl":"http://192.0.2.1:7419"}]}),
             ),
@@ -99,6 +101,7 @@ fn timeout_blocks_mutations_until_explicit_refresh_and_unlock() {
         w,
         Update {
             command: c.clone(),
+            qr: None,
             result: Err("timeout".into()),
         },
     );
@@ -114,6 +117,7 @@ fn timeout_blocks_mutations_until_explicit_refresh_and_unlock() {
         w,
         Update {
             command: refresh,
+            qr: None,
             result: Ok(snapshot()),
         },
     );
@@ -126,6 +130,7 @@ fn timeout_blocks_mutations_until_explicit_refresh_and_unlock() {
         w,
         Update {
             command: c,
+            qr: None,
             result: Ok(json!({})),
         },
     );
@@ -154,6 +159,78 @@ fn policy_validation_and_remote_policy_ownership() {
             ..
         }
     ));
+}
+#[test]
+fn sharing_and_lan_changes_require_confirmation_and_keep_snapshot() {
+    let mut a = app();
+    let w = a.world_mut();
+    act(w, Action::Select("inbound-device-a".into()));
+    let item = w.resource::<State>().unwrap().item;
+    set(w, item, "notes/plan.md");
+    act(w, Action::Share(false, "ask".into()));
+    assert!(take_commands(w).is_empty());
+    set(w, item, "other.md");
+    act(w, Action::Confirm);
+    let c = take_commands(w).pop().unwrap();
+    assert!(
+        matches!(&c.request, Request::Share { item, device, pairing, mode, .. }
+        if item == "notes/plan.md" && device == "device-a" && pairing == "pair-a" && mode == "ask")
+    );
+    apply(
+        w,
+        Update {
+            command: c,
+            result: Err("timeout".into()),
+            qr: None,
+        },
+    );
+    act(w, Action::Lan(true));
+    act(w, Action::Confirm);
+    assert!(take_commands(w).is_empty());
+    let mut a = app();
+    let w = a.world_mut();
+    act(w, Action::Lan(true));
+    assert!(take_commands(w).is_empty());
+    act(w, Action::Cancel);
+    act(w, Action::Confirm);
+    assert!(take_commands(w).is_empty());
+    act(w, Action::Lan(false));
+    act(w, Action::Confirm);
+    assert!(matches!(
+        take_commands(w).pop().unwrap().request,
+        Request::LanEnabled { enabled: false }
+    ));
+}
+#[test]
+fn pairing_qr_expiry_and_close_remove_private_image() {
+    let mut a = app();
+    let w = a.world_mut();
+    act(w, Action::Qr);
+    let c = take_commands(w).pop().unwrap();
+    assert!(!c.request.mutation());
+    apply(
+        w,
+        Update {
+            command: c,
+            result: Ok(json!({"url":"private-invite", "expiresAt":"2000-01-01T00:00:00Z"})),
+            qr: Some(QrPixels {
+                width: 1,
+                height: 1,
+                rgba: vec![0, 0, 0, 255],
+            }),
+        },
+    );
+    sync(w);
+    assert!(w.resource::<State>().unwrap().qr.is_none());
+    assert!(value(w, w.resource::<State>().unwrap().local_invite).is_empty());
+    act(w, Action::Close);
+    assert!(!active(w));
+}
+#[test]
+fn qr_decoder_rejects_missing_corrupt_and_oversized_data() {
+    assert!(decode_qr_pixels(&json!({})).is_err());
+    assert!(decode_qr_pixels(&json!({"pngBase64":"not an image"})).is_err());
+    assert!(decode_qr_pixels(&json!({"pngBase64":"a".repeat(512*1024+1)})).is_err());
 }
 #[test]
 fn fields_and_ime_survive_redraw_and_surface_switch() {

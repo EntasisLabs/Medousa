@@ -1134,6 +1134,9 @@ async fn start_daemon() -> Result<()> {
         .merge(
             medousa::peer_message_handlers::peer_message_surface().with_state(peer_message_state),
         )
+        .merge(medousa::peer_connection_handlers::surface().with_state(
+            medousa::peer_connection_handlers::PeerConnectionApiState { pairing: mesh_api_state.pairing.clone() },
+        ))
         .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state.clone()));
     if let Some(federation_state) = work_environment_federation_state {
         declared = declared.merge(
