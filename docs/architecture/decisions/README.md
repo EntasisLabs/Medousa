@@ -24,6 +24,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-018-untrusted-webview-isolation.md](adr-018-untrusted-webview-isolation.md) | Untrusted webview isolation and minimal browser bridge | Proposed |
 | [adr-019-generated-api-contract.md](adr-019-generated-api-contract.md) | Route-owned generated API and client contract | Accepted |
 | [adr-020-feature-boundaries-and-lazy-runtime.md](adr-020-feature-boundaries-and-lazy-runtime.md) | Feature boundaries, lazy runtime, and optional workloads | Accepted |
+| [adr-021-agent-session-messaging.md](adr-021-agent-session-messaging.md) | Agent messages and results return to the addressed session | Accepted |
 
 > **Numbering note:** two accepted decisions were independently assigned
 > ADR-010. Their filenames and identifiers remain unchanged so existing links
