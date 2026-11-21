@@ -40,23 +40,26 @@ impl LocalPeerDispatcher {
         crate::daemon::core::execution_target_inventory_for_state(&self.state).await
     }
 
-    pub(crate) async fn require_owned_work(&self, owner: &str, work_id: &str) -> Result<()> {
+    pub(crate) async fn owned_work(
+        &self,
+        owner: &str,
+        work_id: &str,
+    ) -> Result<medousa_forge::model::WorkItem> {
         let forge = self.state.forge.clone();
         let owner = owner.to_string();
         let work_id = work_id.to_string();
         self.state
             .forge_execution
             .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
-                Ok((|| -> Result<()> {
+                Ok((|| -> Result<_> {
                     let governed = forge.load(&medousa_forge::model::WorkId::from(work_id))?;
                     if governed.owner != owner {
                         bail!("governed Forge work does not belong to the authenticated owner");
                     }
-                    Ok(())
+                    Ok(governed)
                 })())
             })
-            .await??;
-        Ok(())
+            .await?
     }
 
     pub async fn active_work_for_turn(

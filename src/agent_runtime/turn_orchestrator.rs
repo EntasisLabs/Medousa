@@ -1542,6 +1542,9 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             Some(handoff_model_avec),
             handoff_continuity_bundle.clone(),
         )));
+    let mut runtime_ports = runtime_ports;
+    runtime_ports.session_events = super::execution_context::active_turn_execution_context()
+        .map(|turn| turn as Arc<dyn medousa_runtime::ports::SessionEventsPort>);
     let runtime_ports = match evidence_undertaking_id.clone() {
         Some(undertaking_id) => runtime_ports.with_perception_evidence(Arc::new(
             super::perception_governor::DaemonPerceptionEvidencePort::for_coder_undertaking(

@@ -858,6 +858,76 @@ impl PeerExecutionPolicyStore {
                     && network_policy_permits(policy.network_policy, grant.network_policy))))
     }
 
+    #[cfg(feature = "full-daemon")]
+    pub(crate) fn paired_tool_is_active(
+        &self,
+        grant: &TaskExecutionGrant,
+        tool: &str,
+    ) -> Result<bool> {
+        use crate::pairing::{DeviceIdentity, store::PairingStore};
+        let identity = DeviceIdentity::load_existing()?;
+        let pairs = PairingStore::new(identity.signing_key());
+        let Some(peer) = pairs.get_by_phone_id(&grant.peer_device_id)? else {
+            return Ok(false);
+        };
+        if pairs.is_revoked(&peer.pairing_id)? {
+            return Ok(false);
+        }
+        self.permits_paired_tool(grant, &peer, tool)
+    }
+
+    #[cfg(feature = "full-daemon")]
+    fn permits_paired_tool(
+        &self,
+        grant: &TaskExecutionGrant,
+        peer: &crate::pairing::PairedDeviceRecord,
+        tool: &str,
+    ) -> Result<bool> {
+        let domain = if grant.work_environment_materialization {
+            portable_coder_tool_domain(tool)
+        } else {
+            execution_tool_domain(tool)
+        };
+        if grant.peer_pairing_id != peer.pairing_id
+            || grant.peer_device_id != peer.phone_id
+            || !crate::pairing::service::pairing_trust_active(peer, Utc::now())
+            || !crate::mesh::grants::record_has_capability(
+                peer,
+                crate::mesh::grants::CAP_TASK_REQUEST,
+            )
+            || grant
+                .authorization_role
+                .is_some_and(|role| role != peer.role)
+            || grant.expires_at.is_some_and(|expiry| expiry <= Utc::now())
+            || !grant.effective_tool_domains.iter().any(|d| d == domain)
+            || (!grant.effective_tool_names.is_empty()
+                && !grant.effective_tool_names.iter().any(|n| n == tool))
+        {
+            return Ok(false);
+        }
+        if peer.role == PairingRole::Portal && grant.authorization_role == Some(PairingRole::Portal)
+        {
+            return Ok(true);
+        }
+        let policy = self
+            .policy_for_peer(&peer.phone_id, &peer.pairing_id, true)?
+            .policy;
+        let workload = if grant.worker_intent.eq_ignore_ascii_case("coder") {
+            policy.coder_work
+                && grant
+                    .project_id
+                    .as_ref()
+                    .is_some_and(|p| policy.allowed_project_ids.contains(p))
+        } else {
+            policy.assistant_work
+        };
+        Ok(workload
+            && policy.enabled
+            && !policy.is_expired_at(Utc::now())
+            && policy.allowed_tool_domains.contains(domain)
+            && (domain != "web" || policy.network_policy != PeerNetworkPolicy::Deny))
+    }
+
     /// Revalidate the destination-issued authority for one governed-world
     /// operation. The signed task grant is immutable provenance; current
     /// destination policy can still stop the next browser/computer boundary.
@@ -1627,6 +1697,79 @@ mod tests {
         assert_eq!(repaired.source, PeerExecutionPolicySource::DefaultDeny);
         assert!(!repaired.policy.assistant_work);
         assert_eq!(repaired.policy.peer_pairing_id, "pairing-new");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(feature = "full-daemon")]
+    #[test]
+    fn paired_tools_check_destination_grants_again_at_invocation() {
+        let (store, root) = test_store();
+        let now = Utc::now();
+        let mut pair: crate::pairing::PairedDeviceRecord = serde_json::from_value(serde_json::json!({
+            "pairingId": "pairing-1", "phoneId":"peer-a","phoneName":"Source","phonePublicKey":"test",
+            "pairedAt":now,"lastSeen":now,"sessionTokenHash":"test","sessionTokenExpiry":now,
+            "role":"peer","meshGrants":["task.request"]
+        })).unwrap();
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::AssistantWork,
+                    ..Default::default()
+                },
+                "operator",
+            )
+            .unwrap();
+        let grant = store
+            .admit_assistant_work(admission("peer-a", "worker-c"))
+            .unwrap()
+            .unwrap();
+        assert!(
+            store
+                .permits_paired_tool(&grant, &pair, "cognition_web_search")
+                .unwrap()
+        );
+        assert!(
+            !store
+                .permits_paired_tool(&grant, &pair, "cognition_coder_file_read")
+                .unwrap()
+        );
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate::default(),
+                "operator",
+            )
+            .unwrap();
+        assert!(
+            !store
+                .permits_paired_tool(&grant, &pair, "cognition_web_search")
+                .unwrap()
+        );
+        // Saved worker connections authenticate as portals on the destination.
+        pair.role = PairingRole::Portal;
+        let portal = store
+            .admit_portal_assistant_work(admission("peer-a", "worker-c"))
+            .unwrap()
+            .unwrap();
+        assert!(
+            store
+                .permits_paired_tool(&portal, &pair, "cognition_web_search")
+                .unwrap()
+        );
+        assert!(
+            !store
+                .permits_paired_tool(&portal, &pair, "cognition_coder_file_read")
+                .unwrap()
+        );
+        pair.trust_expires_at = Some(now);
+        assert!(
+            !store
+                .permits_paired_tool(&portal, &pair, "cognition_web_search")
+                .unwrap()
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

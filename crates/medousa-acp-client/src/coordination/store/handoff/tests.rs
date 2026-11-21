@@ -1,4 +1,5 @@
 use super::*;
+use medousa_types::work_unit::WorkContactPreference;
 use medousa_types::{ContextManifest, ConversationRangeSelection, ResolvedConversationRange};
 
 fn fixture(
@@ -137,7 +138,10 @@ fn aged_proposal_handoff_callbacks_use_the_fresh_approved_execution_window() {
     let root = tempfile::tempdir().unwrap();
     let (store, record, binding) = fixture_with_admission(
         root.path(),
-        PeerHandoffPolicy::default(),
+        PeerHandoffPolicy {
+            wake_on_accepted: true,
+            ..Default::default()
+        },
         PeerHandoffAdmission::Propose,
     );
     assert!(record.expires_at < chrono::Utc::now());
@@ -434,7 +438,7 @@ fn ownership_transfers_only_after_native_acceptance_and_callbacks_remain_indepen
     );
 }
 #[test]
-fn silent_callbacks_are_internal_and_exact_attempts_reconcile_after_restart() {
+fn silent_handoffs_return_to_the_origin_and_reconcile_after_restart() {
     let root = tempfile::tempdir().unwrap();
     let (store, record, binding) = fixture(
         root.path(),
@@ -447,7 +451,7 @@ fn silent_callbacks_are_internal_and_exact_attempts_reconcile_after_restart() {
     store.record_handoff_acceptance(&binding).unwrap();
     let event = terminal(&store, &binding);
     let session = CoordinationStore::handoff_wake_session(&record).unwrap();
-    assert_ne!(session, record.request.owner_session);
+    assert_eq!(session, record.request.owner_session);
     let lease = store.try_handoff_event_lease(&event).unwrap().unwrap();
     assert!(store.try_handoff_event_lease(&event).unwrap().is_none());
     let OwnerEventIntakeClaim::Started(attempt) =
@@ -506,7 +510,13 @@ fn silent_callbacks_are_internal_and_exact_attempts_reconcile_after_restart() {
 #[test]
 fn handoff_retry_cannot_change_review_policy_or_sender_and_revocation_blocks_wakes() {
     let root = tempfile::tempdir().unwrap();
-    let (store, record, binding) = fixture(root.path(), PeerHandoffPolicy::default());
+    let (store, record, binding) = fixture(
+        root.path(),
+        PeerHandoffPolicy {
+            wake_on_accepted: true,
+            ..Default::default()
+        },
+    );
     assert!(!store.record_handoff(&record).unwrap());
     let mut changed = record.clone();
     changed.policy.completion = HandoffCompletion::WorkerResult;
@@ -526,7 +536,13 @@ fn handoff_retry_cannot_change_review_policy_or_sender_and_revocation_blocks_wak
 #[test]
 fn only_definitively_rejected_attempts_can_retry_and_stale_turns_cannot_reenter() {
     let root = tempfile::tempdir().unwrap();
-    let (store, record, binding) = fixture(root.path(), PeerHandoffPolicy::default());
+    let (store, record, binding) = fixture(
+        root.path(),
+        PeerHandoffPolicy {
+            wake_on_accepted: true,
+            ..Default::default()
+        },
+    );
     store.record_peer(&binding).unwrap();
     store.record_handoff_acceptance(&binding).unwrap();
     let event = store.handoff_acceptance(&record).unwrap().unwrap();

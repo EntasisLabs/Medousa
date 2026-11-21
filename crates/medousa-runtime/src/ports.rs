@@ -12,6 +12,12 @@ use crate::loop_state::TurnLedgerRecord;
 
 pub type RuntimePortFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
+#[async_trait::async_trait]
+pub trait SessionEventsPort: Send + Sync {
+    /// A yielding loop sleeps while accepted work is outstanding.
+    async fn receive(&self, yielding: bool) -> stasis::prelude::Result<Vec<Value>>;
+}
+
 pub trait TurnLedgerSink: Send + Sync {
     fn persist(&self, record: &TurnLedgerRecord);
 }
@@ -193,6 +199,7 @@ pub trait ToolObservationHydrationPort: Send + Sync {
 /// an absent adapter cannot create a second runtime capability source of truth.
 #[derive(Clone, Default)]
 pub struct RuntimePorts {
+    pub session_events: Option<Arc<dyn SessionEventsPort>>,
     ledger_sink: Option<Arc<dyn TurnLedgerSink>>,
     delegation_control: Option<Arc<dyn DelegationControlPort>>,
     tool_run_events: Option<Arc<dyn ToolRunEventPort>>,

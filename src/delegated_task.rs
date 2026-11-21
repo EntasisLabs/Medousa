@@ -453,6 +453,18 @@ pub trait DelegatedTaskTransport: Send + Sync {
         request: DelegatedTaskRequest,
     ) -> Result<DelegatedTaskObservation, DelegatedTaskError>;
 
+    /// Use the same authenticated sender identity that the destination used
+    /// when deriving the worker ID on admission.
+    async fn destination_work_id(
+        &self,
+        _target: &crate::delegation::DelegationTarget,
+        _turn_id: &str,
+    ) -> Result<String, DelegatedTaskError> {
+        Err(DelegatedTaskError::transport(
+            "worker control address unavailable",
+        ))
+    }
+
     async fn control(
         &self,
         _target: &crate::delegation::DelegationTarget,

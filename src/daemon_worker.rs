@@ -85,12 +85,24 @@ impl Default for Store {
         }
     }
 }
+#[derive(Clone)]
 struct Identity {
     device_id: String,
     key: SigningKey,
 }
+#[derive(Clone, Default)]
+struct PeerRoutes(Arc<std::sync::OnceLock<Arc<crate::pairing::PairingService>>>);
+
+impl std::fmt::Debug for PeerRoutes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PeerRoutes")
+            .field("active", &self.0.get().is_some())
+            .finish()
+    }
+}
 #[derive(Debug, Clone)]
 pub struct DaemonWorkerPairing {
+    peers: PeerRoutes,
     root: PathBuf,
     client: reqwest::Client,
 }
@@ -102,6 +114,7 @@ impl Default for DaemonWorkerPairing {
 impl DaemonWorkerPairing {
     pub fn new(root: PathBuf) -> Self {
         Self {
+            peers: PeerRoutes::default(),
             root,
             client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(20))
@@ -194,11 +207,30 @@ impl DaemonWorkerPairing {
         Ok(Some(summary))
     }
 
+    pub fn install_peer_routes(&self, service: Arc<crate::pairing::PairingService>) -> Result<()> {
+        self.peers
+            .0
+            .set(service)
+            .map_err(|_| anyhow::anyhow!("peer routes already installed"))
+    }
+
+    fn routed_transport(&self) -> DaemonWorkerTransport {
+        let mut transport = DaemonWorkerTransport::new(self.root.clone(), self.client.clone());
+        transport.peers = self.peers.clone();
+        transport
+    }
+
     pub fn transport(&self) -> Arc<dyn DelegatedTaskTransport> {
-        Arc::new(DaemonWorkerTransport::new(
-            self.root.clone(),
-            self.client.clone(),
-        ))
+        Arc::new(self.routed_transport())
+    }
+
+    pub(crate) fn message_connections(&self) -> Result<Vec<DaemonWorkerConnection>> {
+        Ok(self
+            .routed_transport()
+            .routes()?
+            .into_iter()
+            .map(|(_, entry)| entry.summary)
+            .collect())
     }
 
     /// Read the result of an existing handoff using its exact saved pairing.
@@ -208,18 +240,19 @@ impl DaemonWorkerPairing {
         origin: &crate::peer_coordination_mesh::RemotePeerOriginAssociation,
     ) -> Result<crate::peer_coordination_mesh::RemotePeerCompletionResponse, DelegatedTaskError>
     {
-        let transport = DaemonWorkerTransport::new(self.root.clone(), self.client.clone());
-        let (identity, connections) = transport.all_async().await?;
-        if identity.device_id != origin.source_device_id {
-            return Err(DelegatedTaskError::conflict(
-                "saved completion source identity no longer matches pairing",
-            ));
-        }
-        let stored = connections
+        let transport = self.routed_transport();
+        let (identity, stored) = transport
+            .routes_async()
+            .await?
             .into_iter()
-            .find(|connection| connection.summary.workshop_device_id == origin.target_device_id)
+            .find(|(identity, stored)| {
+                identity.device_id == origin.source_device_id
+                    && stored.summary.workshop_device_id == origin.target_device_id
+            })
             .ok_or_else(|| {
-                DelegatedTaskError::conflict("completion workshop is no longer paired")
+                DelegatedTaskError::conflict(
+                    "completion workshop is no longer paired to the original source",
+                )
             })?;
         let query = crate::peer_coordination_mesh::RemotePeerCompletionQuery {
             schema_version: crate::peer_coordination_mesh::PEER_COMPLETION_QUERY_SCHEMA_VERSION,
@@ -438,10 +471,9 @@ impl DaemonWorkerPairing {
 }
 /// Prepared only by the admitted host I/O path; credentials never enter model output.
 pub(crate) struct AgentMessageRoute {
-    root: PathBuf,
+    transport: DaemonWorkerTransport,
     stored: Stored,
     identity: Identity,
-    client: reqwest::Client,
 }
 impl DaemonWorkerPairing {
     pub(crate) fn agent_message_route(
@@ -449,17 +481,17 @@ impl DaemonWorkerPairing {
         connection_id: &str,
         client: reqwest::Client,
     ) -> Result<AgentMessageRoute> {
-        let stored = self
-            .load()?
-            .connections
+        let mut transport = self.routed_transport();
+        transport.client = client;
+        let (identity, stored) = transport
+            .routes()?
             .into_iter()
-            .find(|stored| stored.summary.id == connection_id)
+            .find(|(_, stored)| stored.summary.id == connection_id)
             .context("agent message workshop connection was removed")?;
         Ok(AgentMessageRoute {
+            transport,
             stored,
-            root: self.root.clone(),
-            identity: self.identity()?,
-            client,
+            identity,
         })
     }
 }
@@ -475,15 +507,12 @@ impl AgentMessageRoute {
         path: &str,
         payload: P,
     ) -> Result<R> {
-        static SEQUENCE: once_cell::sync::Lazy<AtomicU64> = once_cell::sync::Lazy::new(|| {
-            AtomicU64::new(Utc::now().timestamp_millis().max(0) as u64)
-        });
         let hash = payload_hash_hex(&payload)?;
         let envelope = sign_envelope(
             &self.identity.key,
             &self.identity.device_id,
             &self.stored.summary.workshop_device_id,
-            SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            self.transport.next_sequence(&self.stored).await?,
             MeshCapability::Message,
             &hash,
             chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
@@ -494,15 +523,14 @@ impl AgentMessageRoute {
         }
         let (status, response) = tokio::time::timeout(
             Duration::from_secs(6),
-            DaemonWorkerTransport::new(self.root.clone(), self.client.clone())
-                .request_authenticated(
-                    &self.stored,
-                    &self.identity,
-                    Method::POST,
-                    path,
-                    Some(&body),
-                    256 * 1024,
-                ),
+            self.transport.request_authenticated(
+                &self.stored,
+                &self.identity,
+                Method::POST,
+                path,
+                Some(&body),
+                256 * 1024,
+            ),
         )
         .await
         .context("agent message workshop request timed out")??;
@@ -525,20 +553,21 @@ impl AgentMessageRoute {
 
 #[derive(Debug)]
 pub struct DaemonWorkerTransport {
+    peers: PeerRoutes,
     root: PathBuf,
     client: reqwest::Client,
-    seq: AtomicU64,
 }
 impl DaemonWorkerTransport {
     pub fn new(root: PathBuf, client: reqwest::Client) -> Self {
         Self {
             root,
             client,
-            seq: AtomicU64::new(Utc::now().timestamp_millis().max(0) as u64),
+            peers: PeerRoutes::default(),
         }
     }
     fn all(&self) -> Result<(Identity, Vec<Stored>)> {
         let p = DaemonWorkerPairing {
+            peers: self.peers.clone(),
             root: self.root.clone(),
             client: self.client.clone(),
         };
@@ -557,26 +586,66 @@ impl DaemonWorkerTransport {
             .map_err(|error| DelegatedTaskError::transport(error.to_string()))
     }
 
-    fn target(&self, t: &DelegationTarget) -> Result<(Identity, Stored)> {
-        let (i, s) = self.all()?;
-        Ok((
-            i,
-            s.into_iter()
-                .find(|x| {
-                    x.summary.id == t.route_ref && x.summary.workshop_device_id == t.peer_device_id
-                })
-                .context("worker route is not paired by this daemon")?,
-        ))
+    fn routes(&self) -> Result<Vec<(Identity, Stored)>> {
+        let (identity, workers) = self.all()?;
+        let mut routes: Vec<_> = workers
+            .into_iter()
+            .map(|entry| (identity.clone(), entry))
+            .collect();
+        if let Some(service) = self.peers.0.get() {
+            let identity = Identity {
+                device_id: service.device_id().to_owned(),
+                key: service.identity().signing_key().clone(),
+            };
+            for (summary, session_token) in crate::peer_connections::delegation_routes(service)? {
+                routes.push((
+                    identity.clone(),
+                    Stored {
+                        summary,
+                        session_token,
+                    },
+                ));
+            }
+        }
+        Ok(routes)
     }
+
+    async fn routes_async(&self) -> Result<Vec<(Identity, Stored)>, DelegatedTaskError> {
+        let mut transport = Self::new(self.root.clone(), self.client.clone());
+        transport.peers = self.peers.clone();
+        crate::peer_connections::store_io(move || transport.routes())
+            .await
+            .map_err(|error| DelegatedTaskError::transport(error.to_string()))
+    }
+
     async fn target_async(
         &self,
         target: DelegationTarget,
     ) -> Result<(Identity, Stored), DelegatedTaskError> {
-        let transport = Self::new(self.root.clone(), self.client.clone());
-        tokio::task::spawn_blocking(move || transport.target(&target))
+        self.routes_async()
+            .await?
+            .into_iter()
+            .find(|(_, entry)| {
+                entry.summary.id == target.route_ref
+                    && entry.summary.workshop_device_id == target.peer_device_id
+            })
+            .ok_or_else(|| DelegatedTaskError::conflict("workshop route is no longer paired"))
+    }
+
+    async fn next_sequence(&self, stored: &Stored) -> Result<u64, DelegatedTaskError> {
+        if stored.summary.id.starts_with("peer:") {
+            let destination = stored.summary.workshop_device_id.clone();
+            return crate::peer_connections::store_io(move || {
+                crate::mesh::registry::allocate_outbound_seq(&destination)
+            })
             .await
-            .map_err(|error| DelegatedTaskError::internal(error.to_string()))?
-            .map_err(|error| DelegatedTaskError::transport(error.to_string()))
+            .map_err(|e| DelegatedTaskError::conflict(e.to_string()));
+        }
+        static SEQUENCE: std::sync::LazyLock<AtomicU64> =
+            std::sync::LazyLock::new(
+                || AtomicU64::new(Utc::now().timestamp_millis().max(0) as u64),
+            );
+        Ok(SEQUENCE.fetch_add(1, Ordering::Relaxed))
     }
 
     async fn exchange<P: Serialize, R: Serialize + DeserializeOwned>(
@@ -603,7 +672,7 @@ impl DaemonWorkerTransport {
             &i.key,
             &i.device_id,
             &s.summary.workshop_device_id,
-            self.seq.fetch_add(1, Ordering::Relaxed),
+            self.next_sequence(s).await?,
             MeshCapability::TaskRequest,
             &hash,
             chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
@@ -681,9 +750,8 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
     async fn authorized_targets(
         &self,
     ) -> Result<Vec<AuthorizedDelegationTarget>, DelegatedTaskError> {
-        let (_, s) = self.all_async().await?;
         let mut out = vec![];
-        for x in s {
+        for (_, x) in self.routes_async().await? {
             let t = DelegationTarget {
                 route_ref: x.summary.id,
                 peer_device_id: x.summary.workshop_device_id,
@@ -705,9 +773,8 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
         &self,
         terminal: bool,
     ) -> Result<Vec<serde_json::Value>, DelegatedTaskError> {
-        let (i, s) = self.all_async().await?;
         let mut out = vec![];
-        for x in s {
+        for (i, x) in self.routes_async().await? {
             let target = serde_json::json!({"route_ref":x.summary.id,"execution_runtime_id":x.summary.workshop_device_id,"label":x.summary.label});
             let req = ActiveWorkInventoryProbeRequest {
                 schema_version: ACTIVE_WORK_INVENTORY_SCHEMA_VERSION,
@@ -879,6 +946,19 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
         }
         Ok(o)
     }
+    async fn destination_work_id(
+        &self,
+        target: &DelegationTarget,
+        turn_id: &str,
+    ) -> Result<String, DelegatedTaskError> {
+        let identity = if target.route_ref == "local" {
+            self.all_async().await?.0
+        } else {
+            self.target_async(target.clone()).await?.0
+        };
+        Ok(delegated_work_id(&identity.device_id, turn_id))
+    }
+
     async fn control(
         &self,
         t: &DelegationTarget,
@@ -1385,7 +1465,10 @@ mod tests {
         summary.daemon_public_key = remote_public;
         let temp = tempfile::tempdir().unwrap();
         let mut route = AgentMessageRoute {
-            root: temp.path().to_path_buf(),
+            transport: DaemonWorkerTransport::new(
+                temp.path().to_path_buf(),
+                reqwest::Client::new(),
+            ),
             stored: Stored {
                 summary,
                 session_token: "test-message-token".into(),
@@ -1394,7 +1477,6 @@ mod tests {
                 device_id: "worker-source".into(),
                 key: local_key,
             },
-            client: reqwest::Client::new(),
         };
         let payload =
             serde_json::json!({"schema_version":1,"request":{"action":"discover","query":null}});

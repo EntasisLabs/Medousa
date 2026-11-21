@@ -33,7 +33,7 @@ impl Default for PeerHandoffPolicy {
         Self {
             responsibility: HandoffResponsibility::Retain,
             completion: HandoffCompletion::SenderReview,
-            wake_on_accepted: true,
+            wake_on_accepted: false,
             wake_on_terminal: true,
             contact: WorkContactPreference::ReturnToOrigin,
         }

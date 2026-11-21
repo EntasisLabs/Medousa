@@ -43,6 +43,7 @@ use crate::delegated_task::{
 };
 
 mod continuity;
+pub(crate) mod session_results;
 use crate::delegation_tools::PendingRemoteWorker;
 use crate::execution_context::active_turn_execution_context;
 use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
@@ -200,9 +201,14 @@ impl TurnWaitStore for RuntimeDelegationWaitStore {
         record.updated_at = updated_at;
         let payload = serde_json::to_string(&record)
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
-        self.waits
+        let completed = self
+            .waits
             .complete_wait(turn_id, durable_status, Some(payload), None, updated_at)
-            .await
+            .await?;
+        if completed {
+            session_results::RESULTS_CHANGED.notify_waiters();
+        }
+        Ok(completed)
     }
 }
 
@@ -334,6 +340,22 @@ struct DelegationDispatchCheckpoint {
 }
 
 impl PendingDelegationSpawn {
+    fn wait_record(&self, job: &Job, turn_id: &str) -> TurnWaitRecord {
+        TurnWaitRecord {
+            turn_id: turn_id.to_string(),
+            job_id: job.id.clone(),
+            session_id: self.grant.session_id.clone(),
+            correlation_id: job.correlation_id.clone(),
+            participant_id: "paired-medousa-daemon".to_string(),
+            status: TurnWaitStatus::Pending,
+            deadline_at: self.deadline_at.unwrap_or(DateTime::<Utc>::MAX_UTC),
+            created_at: self.grant.occurred_at,
+            updated_at: Utc::now(),
+            result_payload: None,
+            error_message: None,
+        }
+    }
+
     fn resolve(
         &self,
         checkpoint: DelegationDispatchCheckpoint,
@@ -588,13 +610,6 @@ impl DelegationResultDelivery {
         let entries = self
             .session_store
             .load_transcript_entries(&source.session_id);
-        let parent_receipt_committed = entries.iter().any(|entry| {
-            entry.turn.role == "assistant" && entry.caused_by.as_ref() == Some(source)
-        });
-        if !parent_receipt_committed {
-            return Ok(false);
-        }
-
         let entry_id = TranscriptEntryId::parse(deterministic_identity(
             "ent_",
             &[
@@ -879,23 +894,7 @@ impl DelegationJobHandler {
                 return Ok(Self::terminal_outcome(wait));
             }
             Some(_) => {}
-            None => {
-                self.waits
-                    .insert(TurnWaitRecord {
-                        turn_id: turn_id.to_string(),
-                        job_id: job.id.clone(),
-                        session_id: pending.grant.session_id.clone(),
-                        correlation_id: job.correlation_id.clone(),
-                        participant_id: "paired-medousa-daemon".to_string(),
-                        status: TurnWaitStatus::Pending,
-                        deadline_at: pending.deadline_at.unwrap_or(DateTime::<Utc>::MAX_UTC),
-                        created_at: pending.grant.occurred_at,
-                        updated_at: Utc::now(),
-                        result_payload: None,
-                        error_message: None,
-                    })
-                    .await?
-            }
+            None => self.waits.insert(pending.wait_record(job, turn_id)).await?,
         }
         let remaining = pending
             .deadline_at
@@ -1847,6 +1846,9 @@ impl DelegationService {
                 .await?;
             register_in_flight_work(execution.session_id().as_str(), &work_id, &spawn.task);
         }
+        execution
+            .session_waits
+            .track(turn_id.clone(), work_id.clone(), self.waits.clone());
         self.start_driver(job_id.clone(), turn_id);
         Ok(json!({
             "ok":true, "worker_queued":true, "worker_spawned":false,
@@ -1950,7 +1952,26 @@ impl DelegationService {
             context,
         };
         crate::peer_coordination_mesh::validate_remote_peer_proposal_request(&request)?;
-        self.host.propose_peer(&target, request).await
+        let digest = crate::peer_coordination_mesh::remote_peer_proposal_request_digest(&request)
+            .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+        let response = self.host.propose_peer(&target, request).await?;
+        if let Some(binding) = response.binding.as_ref()
+            && continue_owner
+        {
+            let wait = session_results::NativeSessionWait::open(
+                &self.runtime,
+                &digest,
+                execution.session_id().as_str(),
+                &binding.assignment_id,
+                binding.execution_session.session_id.as_str(),
+            )
+            .await
+            .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
+            execution
+                .session_waits
+                .track(wait.id, binding.assignment_id.clone(), wait.store);
+        }
+        Ok(response)
     }
 
     pub async fn binding(&self) -> Result<Option<DelegationBinding>> {
@@ -2140,6 +2161,9 @@ impl DelegationService {
                 })
                 .await?;
         }
+        execution
+            .session_waits
+            .track(turn_id.clone(), work_id.clone(), self.waits.clone());
         self.start_driver(job_id.clone(), turn_id.clone());
         Ok(DelegationTicket {
             work_id,
@@ -2327,23 +2351,37 @@ impl DelegationService {
                     {
                         continue;
                     }
-                    job.state = JobState::Canceled;
-                    job.finished_at = Some(Utc::now());
-                    job.last_error = Some("queued spawn cancelled by host".to_string());
-                    self.runtime.save_job(job).await?;
-                    if let Some(turn_id) = pending.grant.turn_id.as_deref() {
+                    let message = "queued spawn cancelled by host".to_owned();
+                    let turn_id = pending
+                        .grant
+                        .turn_id
+                        .as_deref()
+                        .ok_or_else(|| port_failure("missing delegated turn ID"))?;
+                    if self.waits.get(turn_id).await?.is_none() {
                         self.waits
-                            .complete(
-                                turn_id,
-                                TurnWaitStatus::Cancelled,
-                                None,
-                                Some("queued spawn cancelled by host".to_string()),
-                                Utc::now(),
-                            )
+                            .insert(pending.wait_record(&job, turn_id))
                             .await?;
                     }
-                    // The cancellation tool's response is the acknowledgement;
-                    // no worker was dispatched and no separate result is due.
+                    if !self
+                        .delivery
+                        .deliver_spawn_failure(&pending, TurnWaitStatus::Cancelled, message.clone())
+                        .await?
+                    {
+                        return Err(port_failure("origin session is unavailable"));
+                    }
+                    self.waits
+                        .complete(
+                            turn_id,
+                            TurnWaitStatus::Cancelled,
+                            None,
+                            Some(message.clone()),
+                            Utc::now(),
+                        )
+                        .await?;
+                    job.state = JobState::Canceled;
+                    job.finished_at = Some(Utc::now());
+                    job.last_error = Some(message);
+                    self.runtime.save_job(job).await?;
                     return Ok(
                         json!({"ok":true, "work_id":work_id, "status":"cancelled", "execution_placement":null}),
                     );
@@ -2355,7 +2393,12 @@ impl DelegationService {
                 continue;
             }
             let control = self
-                .control_remote_worker(&payload, DelegatedTaskControlAction::Cancel, None)
+                .control_remote_worker(
+                    &payload,
+                    DelegatedTaskControlAction::Cancel,
+                    None,
+                    format!("control-{}", uuid::Uuid::new_v4().simple()),
+                )
                 .await?;
             if control.status != DelegatedTaskStatus::Cancelled {
                 return Err(StasisError::PortFailure(format!(
@@ -2399,6 +2442,20 @@ impl DelegationService {
     }
 
     pub async fn steer(&self, work_id: &str, message: &str) -> StasisResult<Value> {
+        self.send_worker_message(
+            work_id,
+            message,
+            format!("control-{}", uuid::Uuid::new_v4().simple()),
+        )
+        .await
+    }
+
+    pub async fn send_worker_message(
+        &self,
+        work_id: &str,
+        message: &str,
+        control_id: String,
+    ) -> StasisResult<Value> {
         let work_id = work_id.trim();
         let message = message.trim();
         if work_id.is_empty() {
@@ -2438,6 +2495,7 @@ impl DelegationService {
                     &payload,
                     DelegatedTaskControlAction::Steer,
                     Some(message.to_string()),
+                    control_id,
                 )
                 .await?;
             return Ok(json!({
@@ -2461,12 +2519,24 @@ impl DelegationService {
         payload: &DelegationJobPayload,
         action: DelegatedTaskControlAction,
         message: Option<String>,
+        control_id: String,
     ) -> StasisResult<crate::delegated_task::DelegatedTaskControlObservation> {
+        let turn_id = payload
+            .request
+            .grant
+            .turn_id
+            .as_deref()
+            .ok_or_else(|| port_failure("missing delegated turn ID"))?;
+        let work_id = self
+            .host
+            .destination_work_id(&payload.target, turn_id)
+            .await
+            .map_err(port_failure)?;
         let request = DelegatedTaskControlRequest {
             schema_version: DELEGATED_TASK_SCHEMA_VERSION,
-            control_id: format!("control-{}", uuid::Uuid::new_v4().simple()),
+            control_id,
             action,
-            work_id: payload.work_id.clone(),
+            work_id,
             source_execution: payload.request.source_execution.clone(),
             parent_runtime_id: payload.request.parent_runtime_id.clone(),
             correlation_id: payload.request.grant.correlation_id.clone(),
@@ -2981,7 +3051,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delegated_result_waits_for_handoff_and_commits_once() {
+    async fn delegated_result_can_arrive_before_sender_finishes_and_commits_once() {
         let request = request_for("delegation-job-delivery", "delegation-turn-delivery");
         let observation = terminal_observation(&request);
         let result = observation.result.as_ref().expect("terminal result");
@@ -3005,15 +3075,13 @@ mod tests {
             poll_interval_seconds: 1,
         };
 
-        assert!(!delivery.deliver_terminal(&payload, result).await.unwrap());
-        store.seed_parent_receipt(&request);
         assert!(delivery.deliver_terminal(&payload, result).await.unwrap());
         assert!(delivery.deliver_terminal(&payload, result).await.unwrap());
 
         let entries = store.load_transcript_entries(&request.source_execution.session_id);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[1].turn.content, "done");
-        assert_eq!(entries[1].caused_by, Some(result.execution.clone()));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].turn.content, "done");
+        assert_eq!(entries[0].caused_by, Some(result.execution.clone()));
     }
 
     struct RecoveringTransport {

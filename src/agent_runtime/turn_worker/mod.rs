@@ -1,9 +1,7 @@
 //! In-process host/worker turn bus (Phase 1).
 
 mod host_resume;
-mod intake;
-pub use intake::acknowledge_observed_worker_results;
-pub(crate) use intake::{RESULT_PAGE_CHARS, observe_worker_result_page};
+pub(crate) use host_resume::deliver_worker_parent_outcome;
 mod model_routing;
 mod policy;
 mod prompts;
@@ -13,10 +11,6 @@ mod run;
 mod status;
 mod store;
 
-pub use host_resume::{
-    fallback_host_resume_text, host_resume_prompt, maybe_resume_host_after_parallel_worker,
-    register_host_resume_ports,
-};
 pub use model_routing::{
     default_stage_role_for_intent, resolve_worker_llm_target, resolve_worker_llm_target_with_matrix,
 };
@@ -41,9 +35,8 @@ pub use routing::{
 };
 pub use run::{
     ActiveWorkerBusSession, EnterBoundWorkshopOutput, SpawnTurnWorkerOutput, TurnWorkerScheduler,
-    WorkerRuntimeContext, host_bus_mode_enabled, pipeline_for_turn_profile,
-    resume_synthesis_if_needed, run_worker_turn, system_prompt_for_host_bus,
-    with_worker_parent_scope,
+    WorkerRuntimeContext, host_bus_mode_enabled, pipeline_for_turn_profile, run_worker_turn,
+    system_prompt_for_host_bus, with_worker_parent_scope,
 };
 pub use status::{append_active_workers_hint, format_active_workers_block};
 pub use store::{

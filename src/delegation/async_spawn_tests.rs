@@ -633,3 +633,133 @@ async fn with_source_turn_context<F: Future>(future: F) -> F::Output {
     crate::agent_runtime::execution_context::with_turn_execution_context(Arc::new(context), future)
         .await
 }
+
+#[cfg(feature = "full-daemon")]
+#[tokio::test]
+async fn abc_session_results_reach_the_original_running_and_yielded_owner() {
+    use super::session_results::NativeSessionWait;
+    use crate::session_store::{SessionStore, TranscriptAppend};
+    use medousa_runtime::ports::SessionEventsPort;
+    use stasis::domain::agent::envelope::AgentEnvelopeKind;
+
+    let runtime = Arc::new(RuntimeComposition::InMemory(InMemoryRuntime::new()));
+    let request = request_for("delegation-job-abc", "delegation-turn-abc");
+    let transcripts = Arc::new(MemorySessionStore::default());
+    let mut source = request.source_execution;
+    source.execution_id = medousa_types::ExecutionId::parse("source-turn").unwrap();
+    let human = medousa_types::ConversationTurn::plain(
+        "user",
+        "Start B and C".into(),
+        Utc::now(),
+        vec![],
+        None,
+    );
+    transcripts
+        .append_transcript_batch(
+            &source.session_id,
+            &[TranscriptAppend::native(human, Some(source.clone()))],
+        )
+        .await
+        .unwrap();
+    let peer = Arc::new(RetryAfterCheckpointTransport {
+        target: DelegationTarget {
+            route_ref: "route-c".into(),
+            peer_device_id: "remote-daemon".into(),
+            label: None,
+        },
+        agent_selectable: true,
+        discoveries: AtomicUsize::new(0),
+        submissions: AtomicUsize::new(1),
+        submitted_targets: Mutex::new(Vec::new()),
+    });
+    let service = install_delegation_runtime(
+        runtime.clone(),
+        source.authority_id,
+        transcripts.clone(),
+        peer,
+    )
+    .unwrap();
+    with_source_turn_context(async {
+        let a = crate::execution_context::active_turn_execution_context().unwrap();
+        let handle = a.handle();
+        let b = NativeSessionWait::open(&runtime, "local", "ses_source", "request-b", "ses_b")
+            .await
+            .unwrap();
+        a.session_waits
+            .track(b.id.clone(), "request-b".into(), b.store.clone());
+        let c = service
+            .enqueue_spawn(pending_worker(), placement_request(false))
+            .await
+            .unwrap();
+        assert_eq!(c["worker_queued"], true);
+        let first = tokio::time::timeout(Duration::from_secs(12), async {
+            loop {
+                let got = a.receive(false).await.unwrap();
+                if !got.is_empty() {
+                    break got;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0]["request_id"], c["work_id"]);
+        assert_eq!(first[0]["result"], "done");
+        let result = serde_json::json!({"text":"B finished"});
+        let next = a.receive(true);
+        tokio::pin!(next);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), &mut next)
+                .await
+                .is_err()
+        );
+        b.settle(AgentEnvelopeKind::TurnCompleted, "b-done", result.clone())
+            .await
+            .unwrap();
+        let next = tokio::time::timeout(Duration::from_secs(2), next)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0]["request_id"], "request-b");
+        assert_eq!(next[0]["result"], "B finished");
+        let reopened =
+            NativeSessionWait::open(&runtime, "local", "ses_source", "request-b", "ses_b")
+                .await
+                .unwrap();
+        reopened
+            .settle(AgentEnvelopeKind::TurnCompleted, "b-done", result)
+            .await
+            .unwrap();
+        a.session_waits
+            .track(reopened.id, "request-b".into(), reopened.store);
+        assert!(a.receive(true).await.unwrap().is_empty());
+        for (request, kind, status) in [
+            ("failed", AgentEnvelopeKind::Failed, "Failed"),
+            ("cancelled", AgentEnvelopeKind::Cancelled, "Cancelled"),
+        ] {
+            let wait = NativeSessionWait::open(&runtime, "local", "ses_source", request, "ses_b")
+                .await
+                .unwrap();
+            a.session_waits
+                .track(wait.id.clone(), request.into(), wait.store.clone());
+            wait.settle(kind, request, serde_json::json!({"text":request}))
+                .await
+                .unwrap();
+            let got = a.receive(true).await.unwrap();
+            assert_eq!(
+                got[0]["status"].as_str().unwrap().to_lowercase(),
+                status.to_lowercase()
+            );
+        }
+        assert_eq!(
+            crate::execution_context::active_turn_execution_context()
+                .unwrap()
+                .handle(),
+            handle
+        );
+        assert_eq!(a.route().model(), "model-a");
+    })
+    .await;
+}

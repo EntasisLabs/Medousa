@@ -555,6 +555,12 @@ impl MedousaToolLoopPipeline {
         let mut past_budget_noted = false;
         if !tools.is_empty() {
             while !enforce_tool_round_limit || rounds_executed < effective_max_tool_rounds {
+                receive_session_events(
+                    completion_gate.as_deref(),
+                    &mut turn_ctx.tool_lane.messages,
+                    false,
+                )
+                .await?;
                 rounds_executed += 1;
                 if let Some(cap) = resume_round_cap
                     && !past_budget_noted
@@ -993,6 +999,15 @@ impl MedousaToolLoopPipeline {
 
                         match action {
                             TurnRoundAction::EndTurn { termination_reason } => {
+                                if receive_session_events(
+                                    completion_gate.as_deref(),
+                                    &mut turn_ctx.tool_lane.messages,
+                                    true,
+                                )
+                                .await?
+                                {
+                                    continue;
+                                }
                                 let text = terminal_text_for_fsm_end(termination_reason, text);
                                 let tools = if invocations.is_empty() {
                                     Vec::new()
@@ -1621,6 +1636,15 @@ impl MedousaToolLoopPipeline {
                 if !mixed_terminal_batch
                     && let Some(message) = finish_turn_from_invocations(round_invocations)
                 {
+                    if receive_session_events(
+                        completion_gate.as_deref(),
+                        &mut turn_ctx.tool_lane.messages,
+                        true,
+                    )
+                    .await?
+                    {
+                        continue;
+                    }
                     // The response's chronological prose is authoritative.
                     // A successful explicit finish is terminal even without
                     // new prose. Earlier text is already committed by the host;
@@ -1695,6 +1719,15 @@ impl MedousaToolLoopPipeline {
                 if !mixed_terminal_batch
                     && let Some(message) = checkpoint_turn_from_invocations(round_invocations)
                 {
+                    if receive_session_events(
+                        completion_gate.as_deref(),
+                        &mut turn_ctx.tool_lane.messages,
+                        true,
+                    )
+                    .await?
+                    {
+                        continue;
+                    }
                     if let Some(gate) = completion_gate.as_ref() {
                         let tools = collect_tool_names(&invocations);
                         persist_gate_ledger(
@@ -1741,6 +1774,15 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if let Some((work_id, ack)) = workshop_entered_from_invocations(round_invocations) {
+                    if receive_session_events(
+                        completion_gate.as_deref(),
+                        &mut turn_ctx.tool_lane.messages,
+                        true,
+                    )
+                    .await?
+                    {
+                        continue;
+                    }
                     let intent = invocations
                         .iter()
                         .find(|i| is_begin_work_tool_name(&i.tool_name, &i.tool_input))
@@ -2759,6 +2801,21 @@ fn sanitize_tool_name_for_model(name: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+async fn receive_session_events(
+    gate: Option<&ToolLoopCompletionGate<'_>>,
+    messages: &mut Vec<ChatMessage>,
+    yielding: bool,
+) -> stasis::prelude::Result<bool> {
+    let Some(inbox) = gate.and_then(|gate| gate.runtime_ports.session_events.as_ref()) else {
+        return Ok(false);
+    };
+    let events = inbox.receive(yielding).await?;
+    for event in &events {
+        messages.push(ChatMessage::user(format!("[Agent session event]\n{event}")));
+    }
+    Ok(!events.is_empty())
 }
 
 #[cfg(test)]

@@ -721,6 +721,9 @@ pub struct CoderTurnLease {
 /// destination's peer policy so revocation takes effect without moving work.
 pub trait CoderExecutionGuard: Send + Sync {
     fn verify(&self) -> Result<()>;
+    fn verify_tool(&self, _tool: &str) -> Result<()> {
+        self.verify()
+    }
     /// A scoped assignment cannot create workers without carrying its grant.
     fn allows_worker_spawns(&self) -> bool {
         true
@@ -1016,23 +1019,24 @@ impl ToolRegistry for PortableCoderToolRegistry {
 }
 
 impl CoderTurnLease {
-    async fn heartbeat_admitted(self: &Arc<Self>) -> Result<()> {
+    async fn heartbeat_admitted(self: &Arc<Self>, tool: &str) -> Result<()> {
         let service = self
             .execution_guard
             .as_ref()
             .and_then(|guard| guard.admission_service());
         if let Some(service) = service {
             let authority = self.clone();
+            let tool = tool.to_owned();
             service
                 .run(
                     medousa_forge::execution::ExecutionClass::StoreIo,
                     64 * 1024,
-                    move || Ok(authority.heartbeat()),
+                    move || Ok(authority.heartbeat(&tool)),
                 )
                 .await
                 .map_err(|error| StasisError::PortFailure(error.to_string()))?
         } else {
-            self.heartbeat()
+            self.heartbeat(tool)
         }
     }
     pub fn new(
@@ -1076,9 +1080,9 @@ impl CoderTurnLease {
         &self.lease
     }
 
-    fn heartbeat(&self) -> Result<()> {
+    fn heartbeat(&self, tool: &str) -> Result<()> {
         if let Some(guard) = &self.execution_guard {
-            guard.verify()?;
+            guard.verify_tool(tool)?;
         }
         self.forge.heartbeat(&self.lease).map_err(|err| {
             StasisError::PortFailure(format!("Coder Forge lease rejected: {err}"))
@@ -2973,7 +2977,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
             );
             return result;
         }
-        authority.heartbeat_admitted().await?;
+        authority.heartbeat_admitted(tool_name).await?;
         let (metadata, input) = take_coder_call(input)?;
         let intent = metadata.intent;
         let spawn_intent_hint = input

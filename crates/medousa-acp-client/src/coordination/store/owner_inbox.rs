@@ -91,7 +91,8 @@ impl CoordinationStore {
                 tracing::warn!(record = %entry.name, %error, "skipping invalid owner event record during bounded recovery scan");
                 continue;
             }
-            if event.owner_session.authority_id != *authority
+            if matches!(event.payload, OwnerEventPayload::AssignmentAccepted { .. })
+                || event.owner_session.authority_id != *authority
                 || after_event_id
                     .is_some_and(|after| owner_event_cursor_key(&event).as_str() <= after)
             {
@@ -189,6 +190,15 @@ impl CoordinationStore {
                         status: OwnerEventStatus::Consumed,
                         latest_attempt: Some(ack.intake.clone()),
                         acknowledgment: Some(ack),
+                        blocked: None,
+                    });
+                }
+                if matches!(event.payload, OwnerEventPayload::AssignmentAccepted { .. }) {
+                    return Ok(OwnerEventView {
+                        event,
+                        status: OwnerEventStatus::Consumed,
+                        latest_attempt: None,
+                        acknowledgment: None,
                         blocked: None,
                     });
                 }
@@ -511,17 +521,26 @@ impl CoordinationStore {
             }
             _ => None,
         };
-        let decision_session = match handoff_id {
-            Some(id) => self
-                .handoff(&event.channel, id)?
-                .as_ref()
-                .map(CoordinationStore::handoff_wake_session)
-                .transpose()?,
-            None => None,
+        let mut addressed = ack.decision.session == event.owner_session;
+        if !addressed
+            && let Some(id) = handoff_id
+            && let Some(old) = self.handoff(&event.channel, id)?
+        {
+            // Before session-addressed results, silent handoffs could acknowledge
+            // a decision in their deterministic internal chat. Keep old receipts readable.
+            use sha2::{Digest, Sha256};
+            let hash = Sha256::digest(serde_json::to_vec(&(
+                "handoff-wake-v1",
+                &old.request.channel,
+                &old.request.assignment_id,
+            ))?);
+            addressed = old.policy.contact
+                != medousa_types::work_unit::WorkContactPreference::ReturnToOrigin
+                && ack.decision.session.authority_id == event.owner_session.authority_id
+                && ack.decision.session.session_id.as_str() == format!("ses_handoff_{hash:x}");
         }
-        .unwrap_or_else(|| event.owner_session.clone());
         if ack.intake.event != *event
-            || ack.decision.session != decision_session
+            || !addressed
             || ack.decision.entry_seq == 0
             || ack.decision_digest.trim().is_empty()
         {

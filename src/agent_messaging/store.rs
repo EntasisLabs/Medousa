@@ -20,6 +20,29 @@ pub(super) enum MessageStatus {
     Uncertain,
 }
 impl Message {
+    pub(super) fn session_event(
+        &self,
+        execution: &str,
+    ) -> stasis::domain::agent::envelope::AgentEnvelope {
+        use stasis::domain::agent::envelope::{
+            AGENT_ENVELOPE_SCHEMA_VERSION_V1, AgentEnvelope, AgentEnvelopeKind,
+        };
+        AgentEnvelope {
+            schema_version: AGENT_ENVELOPE_SCHEMA_VERSION_V1,
+            kind: AgentEnvelopeKind::MessageAppended,
+            envelope_id: self.id.clone(),
+            session_id: self.target_session.clone(),
+            thread_id: None,
+            turn_id: Some(execution.into()),
+            job_id: None,
+            correlation_id: self.root_id.clone(),
+            causation_id: self.source_turn.clone(),
+            participant_id: Some(self.source_session.clone()),
+            occurred_at: self.created_at,
+            payload: serde_json::json!({"message":self.body,"source_workshop":self.source_workshop}),
+        }
+    }
+
     pub(super) fn wake_grant(&self) -> medousa_types::wake::WakeGrant {
         let source = match self.wake_source.as_deref() {
             Some("process_completed") => medousa_types::wake::WakeSource::ProcessCompleted,
@@ -86,6 +109,8 @@ pub(super) struct Message {
     /// Wake to install on the recipient turn. Absent means normal agent communication.
     #[serde(default)]
     pub wake_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_execution: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,6 +122,7 @@ pub(super) enum TransportRoute {
 
 #[derive(Debug)]
 pub(super) struct PendingMessage {
+    pub target_execution: Option<String>,
     pub id: String,
     pub profile_id: String,
     pub target_session: String,
@@ -196,7 +222,8 @@ impl MessageStore {
         }
         message.id = format!("msg_{:x}", digest.finalize());
         if let Some(existing) = Self::find(&transaction, &message.id)? {
-            if existing.target_session != message.target_session
+            if existing.target_execution != message.target_execution
+                || existing.target_session != message.target_session
                 || existing.body != message.body
                 || existing.in_reply_to != message.in_reply_to
                 || existing.source_workshop != message.source_workshop
@@ -207,6 +234,10 @@ impl MessageStore {
             return Ok(existing);
         }
         if message.source_session == message.target_session
+            && message
+                .target_execution
+                .as_deref()
+                .is_none_or(|target| target == message.source_turn)
             && message.source_workshop == message.target_workshop
         {
             bail!(
@@ -405,6 +436,7 @@ impl MessageStore {
             .map(|(payload, remote_outbound)| {
                 let message = decode(&payload)?;
                 Ok(PendingMessage {
+                    target_execution: message.target_execution,
                     id: message.id,
                     profile_id: message.profile_id,
                     target_session: message.target_session,
@@ -538,26 +570,31 @@ impl MessageStore {
     }
     #[cfg(test)]
     pub fn inbox(&self, profile: &str, session: &str, turn: &str) -> Result<Vec<Message>> {
-        self.inbox_allowed(profile, session, turn, |_| true)
+        self.inbox_matching(profile, session, turn, false, |_| true)
     }
-    pub fn inbox_allowed(
+
+    pub fn inbox_matching(
         &self,
         profile: &str,
         session: &str,
         turn: &str,
+        pinned_only: bool,
         allowed: impl Fn(&Message) -> bool,
     ) -> Result<Vec<Message>> {
         let mut connection = self.connection()?;
         let transaction =
             connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let mut messages: Vec<Message> = {
-            let mut statement = transaction.prepare("SELECT payload FROM agent_messages WHERE profile_id=?1 AND target_session=?2 AND status='queued' AND (coalesce(json_extract(payload,'$.remote_inbound'),0)=1 OR json_extract(payload,'$.target_workshop') IS NULL) ORDER BY rowid LIMIT 8")?;
+            let mut statement = transaction.prepare("SELECT payload FROM agent_messages WHERE profile_id=?1 AND target_session=?2 AND status='queued' AND ((NOT ?4 AND json_extract(payload,'$.target_execution') IS NULL) OR json_extract(payload,'$.target_execution')=?3) AND (coalesce(json_extract(payload,'$.remote_inbound'),0)=1 OR json_extract(payload,'$.target_workshop') IS NULL) ORDER BY rowid LIMIT 64")?;
             statement
-                .query_map(params![profile, session], |row| row.get::<_, String>(0))?
+                .query_map(params![profile, session, turn, pinned_only], |row| {
+                    row.get::<_, String>(0)
+                })?
                 .map(|raw| decode(&raw?))
                 .collect::<Result<_>>()?
         };
-        messages.retain(|message| allowed(message));
+        messages.retain(allowed);
+        messages.truncate(8);
         for message in &mut messages {
             message.status = MessageStatus::Delivered;
             message.receipt_acknowledged = false;
@@ -603,6 +640,7 @@ mod tests {
             attempts: 0,
             next_attempt_at: None,
             observed_phase: None,
+            target_execution: None,
             wake_source: None,
         }
     }
@@ -651,6 +689,41 @@ mod tests {
         );
     }
     #[test]
+    fn coder_clarification_is_read_only_by_the_addressed_assignment_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("messages.sqlite3");
+        let store = MessageStore::new(path.clone());
+        let mut clarification = message("ses_a", "ses_peer_b", "turn_a");
+        clarification.target_execution = Some("medousa_coder_assignment_b".into());
+        let sent = store
+            .enqueue_agent(clarification.clone(), "clarify", true)
+            .unwrap();
+        drop(store);
+        let store = MessageStore::new(path);
+        assert!(
+            store
+                .inbox("user:alice", "ses_peer_b", "other_assignment")
+                .unwrap()
+                .is_empty()
+        );
+        let got = store
+            .inbox("user:alice", "ses_peer_b", "medousa_coder_assignment_b")
+            .unwrap();
+        assert_eq!(got.len(), 1);
+        let event = got[0].session_event("medousa_coder_assignment_b");
+        assert_eq!(event.participant_id.as_deref(), Some("ses_a"));
+        assert_eq!(event.envelope_id, sent.id);
+        assert_eq!(event.payload["message"], clarification.body);
+        assert!(store.claim(&sent.id).unwrap().is_none());
+        assert!(
+            store
+                .inbox("user:alice", "ses_peer_b", "medousa_coder_assignment_b")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn busy_recipient_can_receive_without_a_second_wake() {
         let dir = tempfile::tempdir().unwrap();
         let store = MessageStore::new(dir.path().join("messages.sqlite3"));
@@ -694,6 +767,32 @@ mod tests {
             MessageStatus::Delivering
         );
         assert!(restarted.claim(&m.id).unwrap().is_none());
+    }
+    #[test]
+    fn addressed_worker_and_parent_each_consume_their_own_mail() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MessageStore::new(dir.path().join("messages.sqlite3"));
+        let mut pinned = message("a", "a", "parent");
+        pinned.target_execution = Some("worker".into());
+        let pinned = store.enqueue(pinned, "clarification").unwrap();
+        let normal = store.enqueue(message("c", "a", "sender"), "hello").unwrap();
+        assert!(
+            store
+                .inbox_matching("user:alice", "a", "sibling", true, |_| true)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            store
+                .inbox_matching("user:alice", "a", "worker", true, |_| true)
+                .unwrap()[0]
+                .id,
+            pinned.id
+        );
+        assert_eq!(
+            store.inbox("user:alice", "a", "parent").unwrap()[0].id,
+            normal.id
+        );
     }
     #[test]
     fn simultaneous_retries_create_one_message() {

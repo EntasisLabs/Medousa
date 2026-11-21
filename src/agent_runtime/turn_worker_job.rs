@@ -14,7 +14,7 @@ use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::agent_runtime::turn_worker::{
     TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, WorkerRuntimeContext,
-    resume_synthesis_if_needed, run_worker_turn, turn_worker_store,
+    deliver_worker_parent_outcome, run_worker_turn, turn_worker_store,
 };
 use crate::session::{ConversationTurn, append_turn};
 use crate::tools::TuiRuntime;
@@ -204,28 +204,7 @@ async fn job_needs_enqueue(composition: &RuntimeComposition, work_id: &str) -> b
 }
 
 pub async fn resume_pending_synthesis(agent: Arc<TuiRuntime>, record: TurnWorkRecord) {
-    if record.synthesis_delivered || record.stop_request_id.is_some() {
-        return;
-    }
-    let terminal_parallel = record.disposition
-        == crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel
-        && matches!(
-            record.status,
-            TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
-        );
-    if record.status != TurnWorkStatus::Completed && !terminal_parallel {
-        return;
-    }
-    let ctx = WorkerRuntimeContext::from_tui_runtime(agent.as_ref());
-    let sink = durable_worker_sink(&record);
-    resume_synthesis_if_needed(
-        &ctx,
-        &agent.execution_registry,
-        record,
-        sink,
-        Some(agent.as_ref()),
-    )
-    .await;
+    deliver_worker_parent_outcome(&agent.runtime, &record).await;
 }
 
 struct TurnWorkerJobHandler {
@@ -264,7 +243,14 @@ impl JobHandler for TurnWorkerJobHandler {
             ));
         }
 
-        if record.synthesis_delivered || record.stop_request_id.is_some() {
+        if record.synthesis_delivered
+            || record.archived
+            || (record.stop_request_id.is_some()
+                && matches!(
+                    record.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running
+                ))
+        {
             return Ok(success_outcome(format!(
                 "work_id={} already completed",
                 payload.work_id
@@ -278,14 +264,7 @@ impl JobHandler for TurnWorkerJobHandler {
             record.status,
             TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
         ) {
-            resume_synthesis_if_needed(
-                &ctx,
-                &self.agent.execution_registry,
-                record,
-                sink,
-                Some(self.agent.as_ref()),
-            )
-            .await;
+            deliver_worker_parent_outcome(&self.agent.runtime, &record).await;
             if let Some(outcome) =
                 pending_continuation_outcome(turn_worker_store().get(&payload.work_id).as_ref())
             {
@@ -692,44 +671,19 @@ fn truncate_line(value: &str, max: usize) -> String {
 /// Terminal-record handling above keeps these attempts from rerunning worker effects.
 fn pending_continuation_outcome(record: Option<&TurnWorkRecord>) -> Option<JobExecutionOutcome> {
     let record = record?;
-    if record.stop_request_id.is_some() {
-        return None;
-    }
-    let parallel_intake_needs_retry = record.disposition == TurnWorkDisposition::Parallel
-        && turn_worker_store().parallel_intake_needs_retry(record);
-    (continuation_needs_retry(
-        record.disposition,
-        record.status,
-        record.synthesis_delivered,
-        parallel_intake_needs_retry,
-    ))
+    (!record.archived
+        && !record.synthesis_delivered
+        && record.disposition != TurnWorkDisposition::Delegated
+        && matches!(
+            record.status,
+            TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+        ))
     .then(|| JobExecutionOutcome::Deferred {
         scheduled_at: Utc::now() + chrono::Duration::seconds(15),
         message: format!("host continuation pending for {}", record.work_id),
         execution_id: None,
         diagnostics: None,
     })
-}
-
-fn continuation_needs_retry(
-    disposition: TurnWorkDisposition,
-    status: TurnWorkStatus,
-    synthesis_delivered: bool,
-    parallel_intake_needs_retry: bool,
-) -> bool {
-    if synthesis_delivered {
-        return false;
-    }
-    match disposition {
-        TurnWorkDisposition::Bound => status == TurnWorkStatus::Completed,
-        TurnWorkDisposition::Parallel => {
-            matches!(
-                status,
-                TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
-            ) && parallel_intake_needs_retry
-        }
-        TurnWorkDisposition::Delegated => false,
-    }
 }
 
 fn success_outcome(summary: String) -> JobExecutionOutcome {
@@ -828,51 +782,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn undelivered_terminal_continuations_retry_without_relaunching_workers() {
-        assert!(continuation_needs_retry(
-            TurnWorkDisposition::Bound,
-            TurnWorkStatus::Completed,
-            false,
-            false,
-        ));
-        assert!(!continuation_needs_retry(
-            TurnWorkDisposition::Bound,
-            TurnWorkStatus::Completed,
-            true,
-            false,
-        ));
-        assert!(!continuation_needs_retry(
-            TurnWorkDisposition::Bound,
-            TurnWorkStatus::Failed,
-            false,
-            false,
-        ));
-        assert!(continuation_needs_retry(
-            TurnWorkDisposition::Parallel,
-            TurnWorkStatus::Completed,
-            false,
-            true,
-        ));
-        assert!(continuation_needs_retry(
-            TurnWorkDisposition::Parallel,
-            TurnWorkStatus::Failed,
-            false,
-            true,
-        ));
-        assert!(!continuation_needs_retry(
-            TurnWorkDisposition::Parallel,
-            TurnWorkStatus::Completed,
-            false,
-            false,
-        ));
-        assert!(!continuation_needs_retry(
-            TurnWorkDisposition::Delegated,
-            TurnWorkStatus::Completed,
-            false,
-            false,
-        ));
-    }
     #[test]
     fn pending_host_continuation_defers_without_spending_execution_retry_budget() {
         let mut record: TurnWorkRecord = serde_json::from_value(serde_json::json!({

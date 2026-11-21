@@ -738,12 +738,6 @@ async fn start_daemon() -> Result<()> {
     medousa::turn_worker_notify::register_parent_turn_stream_registry(
         state.interactive_turn_streams.clone(),
     );
-    medousa::agent_runtime::turn_worker::register_host_resume_ports(
-        state.turn_tickets.clone(),
-        state.clone(),
-        state.backend.clone(),
-    );
-
     let mut mdns_advertiser: Option<medousa::pairing::mdns::MdnsAdvertiser> = None;
     #[cfg(feature = "iroh-transport")]
     let mut iroh_gateway_hold: Option<medousa::iroh_transport::WorkshopGateway> = None;
@@ -802,6 +796,9 @@ async fn start_daemon() -> Result<()> {
             iroh_info,
             credential_lifecycle.clone(),
         ));
+        state
+            .daemon_workers
+            .install_peer_routes(pairing_service.clone())?;
         if medousa::pairing::mdns_should_advertise(bind) {
             let mut txt = std::collections::HashMap::new();
             txt.insert("dv".to_string(), pairing_service.device_id().to_string());
@@ -1135,7 +1132,9 @@ async fn start_daemon() -> Result<()> {
             medousa::peer_message_handlers::peer_message_surface().with_state(peer_message_state),
         )
         .merge(medousa::peer_connection_handlers::surface().with_state(
-            medousa::peer_connection_handlers::PeerConnectionApiState { pairing: mesh_api_state.pairing.clone() },
+            medousa::peer_connection_handlers::PeerConnectionApiState {
+                pairing: mesh_api_state.pairing.clone(),
+            },
         ))
         .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state.clone()));
     if let Some(federation_state) = work_environment_federation_state {

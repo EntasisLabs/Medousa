@@ -59,6 +59,25 @@ impl DaemonWorkerTransport {
         stale: &Stored,
         identity: &Identity,
     ) -> Result<Stored, DelegatedTaskError> {
+        if stale.summary.id.starts_with("peer:") {
+            let service = self
+                .peers
+                .0
+                .get()
+                .filter(|service| service.device_id() == identity.device_id)
+                .ok_or_else(|| DelegatedTaskError::conflict("peer route is no longer available"))?;
+            let token = crate::peer_connections::renew_delegation_token(
+                service.clone(),
+                &stale.summary,
+                &stale.session_token,
+            )
+            .await
+            .map_err(|error| DelegatedTaskError::conflict(error.to_string()))?;
+            return Ok(Stored {
+                session_token: token,
+                ..stale.clone()
+            });
+        }
         let _rotation = REFRESH_LOCK.lock().await;
         let (current_identity, connections) = self.all_async().await?;
         if current_identity.device_id != identity.device_id
@@ -89,7 +108,11 @@ impl DaemonWorkerTransport {
                 medousa_forge::execution::ExecutionClass::StoreIo,
                 medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
                 move || {
-                    let pairing = DaemonWorkerPairing { root, client };
+                    let pairing = DaemonWorkerPairing {
+                        root,
+                        client,
+                        peers: PeerRoutes::default(),
+                    };
                     Ok(pairing.update_store(|store| {
                         let saved = store
                             .connections

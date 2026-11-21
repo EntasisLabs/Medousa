@@ -94,8 +94,7 @@ or conflicting terminal marker fails closed.
 ## Sender-owned local handoffs
 
 On a full workshop daemon, `cognition_peer_handoff` delegates work already
-covered by the current authenticated human request or a verified owner callback
-continuing that work in the same project. Its input contains
+covered by the authenticated human request in the originating session. Its input contains
 `request_key`, `forge_work_id`, `instructions`, `after_entry_seq`,
 `through_entry_seq`, optional `runtime`, optional `admission` (`delegate` by
 default, `stage`, or `propose`), and optional `handoff` policy. Discover the owned project
@@ -108,23 +107,15 @@ The sender chooses four independent aspects of the handoff:
   native worker admission, not when a proposal, claim, or custody binding exists.
 - `completion`: `sender_review` (default) or `worker_result`. A completed worker
   result cannot waive a saved sender review requirement.
-- `wake_on_accepted` and `wake_on_terminal`: both default to `true`.
-- `contact`: the existing work contact preference, default `return_to_origin`.
-  `silent` keeps coordination callbacks in a hidden internal session. Alternate
-  participant/channel routes are retained for a separate contact adapter;
-  these callbacks do not send messages or start voice calls on those routes.
+- The dispatch result acknowledges acceptance. The runtime delivers each terminal receipt to the originating session, including failure and cancellation. The legacy wake flags remain readable on saved policies.
+- `contact` records the user's contact preference. It applies to user-facing delivery. The agent's return address is always the originating session.
 
 Human-turn admission requires operator execution capability and a committed user
 entry attributed to this exact human turn in the selected context. The host
 captures the sender session, Bot, source entry/digest, immutable assignment and
-24-hour expiry, then compiles the exact native grant. A continuation instead
-requires a durable, unsettled native callback matching the saved owner, project
-and source context, plus the originating Bot for sender-owned handoffs. Parallel
-workshop callbacks inherit their saved originating human execution, not a newer
-model-selected message. Rejected, acknowledged, cancelled or out-of-scope
-callbacks cannot admit work. Worker and provider turns cannot mint direct
-admission by supplying model-written approval or authority fields. The callback
-remains a member principal with no operator capabilities.
+24-hour expiry, then compiles the exact native grant. The original human turn
+retains this authority while waiting for results. Worker-initiated
+recommendations use the proposal path.
 `admission: "propose"` stores the same sender
 policy but waits for the existing native approval/start flow. The legacy
 `cognition_peer_propose` and portable remote `cognition_peer_delegate` contracts
@@ -141,46 +132,23 @@ provider. Register the returned proposal IDs with `work.coordinate` (including
 separately staged fix/review rounds if requested). The existing native controller
 then advances dependencies, pins the executor revision for review, and checks
 scope, visibility, deadline, expiry and revocation before effects. A daemon
-restart or worker callback does not require a new human turn to dispatch those
+restart or worker completion does not require a new human turn to dispatch those
 already-admitted stages. Registration alone still issues no grants.
 
 Do not use `delegate` for future reviewer/fix stages: it launches immediately,
 before the controller can pin the executor output or enforce dependencies.
 Unregistered staged grants do not launch themselves; registration failures must
 be reported with the saved proposal IDs, not described as running work. Their
-absolute expiry is not extended by a retry. Verified owner callbacks may also
-admit follow-on delegate or stage assignments within the same saved authorized
-project, including review and fixes; workers cannot. New project scope requires
-the proposal path or a concrete authorization blocker. A callback inherits its
-saved source; it cannot replay an arbitrary old human entry as new authority.
-
-Callbacks assess receipts against saved work and continue permitted verification,
-review and correction rather than treating a worker terminal or acknowledgment
-as project completion. Wake guidance does not grant operator privileges or waive
-sender review, independent review, integration approval, or user-contact admission.
+absolute expiry is not extended by a retry. After a result arrives, the sender can continue work covered by its original
+human request and project authority. New work outside that scope requires
+a proposal or further authorization.
 
 Expired or revoked Coder execution authority blocks further workspace work,
 but does not block `turn.finish`, `turn.checkpoint`, `turn.request_input`, or
 `turn.update_user`. These controls remain available to report a blocker and
 hand the result back without repeatedly retrying rejected workspace tools.
 
-Acceptance and verified terminal receipts are durable native events. The runtime
-serializes callbacks with other callbacks targeting the sender session and
-waits while an interactive turn is active. If completion overtakes acceptance,
-the terminal callback supersedes the stale starting message. Callback admission
-rechecks grants, owner/source visibility, pinned context and originating Bot.
-Callbacks resume the sender's normal Assistant tool surface, including the full
-`cognition_turn` controls, and use its normal turn budget. They do not impose a
-callback-specific allowlist or two-round limit. Existing Bot policies, work
-scope, permissions and contact preferences still apply; event data is evidence,
-not new user authority. Started attempts reconcile
-against their exact canonical ticket/transcript after restart; uncertain turns
-are never launched again. Rejected admissions have a bounded retry budget.
-
-If a callback fails after producing text or tool activity, its typed timeline is
-saved with `answer_state=failed` before terminal publication. Home restores that
-activity and failure state on refresh. Failed activity cannot acknowledge a
-callback as successfully delivered after restart.
+The send tool returns the request ID and execution session after admission. A terminal receipt settles a Stasis wait. The original loop reads available results at its next model boundary. If it reaches a finish boundary while a request is pending, it yields there and continues when a result is ready. Model, context, reasoning settings and tool authority belong to that same loop. The assignment ledger and the attributed result in the originating transcript support recovery. A separate reviewer runs only when the user or a registered workflow calls for one.
 
 A handoff requiring review remains `awaiting_sender_review` until the originating
 sender calls `cognition_peer_review` with the exact `channel`, `assignment_id`,
@@ -195,7 +163,7 @@ Proposal inbox records expose optional compact `handoff` summaries with saved
 policy, responsible session, state and sender review beside the existing native
 binding/receipt, without duplicating instructions and result payloads. This is
 backend metadata for the compact delegation UI; this slice does not change
-cards. `owner.events` reports callback consumption or an explicit blocker.
+cards. `owner.events` reports receipt delivery or an explicit blocker.
 
 ## Conversational peer proposals
 
@@ -247,14 +215,17 @@ Forge work; normal project lifecycle checks still apply.
 Optional `session_title` on a handoff names the executor chat at creation (or
 renames it on a follow-up). Titles are cosmetic, not custody or execution
 authority; exact discovered IDs disambiguate duplicate names. Native Coder titles
-are preserved on launch. Use this scoped handoff route, not generic
-`cognition_agent_message`, for delegated Coder follow-ups. Coder exposes native
+are preserved on launch. During an active assignment, send clarifications with
+`cognition_agent_message` using the execution session ID. The destination
+checks the original sender and grant and binds the message to that assignment.
+After completion, a new scoped handoff can reuse the Coder conversation. Coder exposes native
 peer discovery, proposal, handoff, and review in its `messages` domain. Exposure
 does not grant owner admission: direct handoff/review still requires the owning
-human turn or verified scoped owner callback; delegated executors cannot approve
-their own work.
+session and its applicable authority.
 
-For guidance to an already active local worker, `workshop.steer` addresses the
+To message a running background worker, send `cognition_agent_message` to its admitted `work_id`. Local delivery binds the inbox entry to that specific execution. Remote delegated workers use the authenticated control route bound to the originating session.
+
+For compatibility, `workshop.steer` addresses the
 exact `work_id` returned by `workshop.status` or `workshop.spawn`, whether the
 worker is parallel or bound. The frozen calling session must own it; terminal,
 archived, foreign, and remotely delegated workers are refused. Parallel guidance
@@ -453,9 +424,9 @@ operator proposal-creation endpoint.
 insensitive); stable Bot/chat IDs disambiguate names. Visibility and Bot
 archival/executor policy are checked at send and delivery. Replies derive the
 destination from the received message and cannot substitute another return
-route. External-runtime Bots, internal coordination sessions, and delegated
-`ses_peer_…` Coder chats are excluded. Coder chats retain assignment custody;
-use peer discovery and scoped handoff continuation as described above.
+route. Internal coordination sessions and external-runtime Bots use their own
+admission paths. A sends to an active native Coder using its exact execution
+session ID. A finished assignment requires a new scoped handoff.
 
 The workshop's `agent_messages.sqlite3` transactionally stores immutable sender,
 recipient, body, exchange root, retry key identity, and mutable delivery state.
@@ -482,8 +453,11 @@ hop or transport bookkeeping. Useful replies are explicit; otherwise the agent
 can finish silently. Runtime process/result notifications keep their own wake
 semantics and do not become agent conversations.
 
-`inbox` consumes up to eight queued messages for the calling chat, avoiding a
-second delivery wake. The background dispatcher defers busy recipients and
+A running chat receives messages as Stasis events at its next tool-loop boundary.
+For a native Coder, address the execution session returned by the send tool.
+The daemon checks the original sender, active assignment and grant, including
+the sending workshop for a paired assignment. The message is pinned to that
+execution. The explicit `inbox` action can also consume queued messages. The background dispatcher defers busy recipients and
 persists the `delivering` claim before turn admission. Native
 `agent_message_…` turns validate the exact journal record, prompt, recipient,
 profile, Assistant mode, and non-human attribution. They use a continuation
@@ -514,7 +488,7 @@ Native `POST /v1/mesh/agents/messages` requires `peer.exchange`, an active
 authenticated pairing ID must match the signed sender. The recipient verifies
 the complete payload, sender, recipient, and envelope freshness; responses are
 signed and pinned to the paired destination key and originating request hash.
-New remote discovery and delivery require destination policy permitting
+For an active Coder, the signed source workshop and session must match the recorded assignment. New conversations and general remote discovery require destination policy permitting
 unattended Assistant agent targeting (`enabled`, unexpired, `assistant_work`,
 `allow_agent_targeting`, `host_shell`), or a full Portal pairing. Queued inbound
 messages recheck pairing and policy before inbox consumption or wake admission.

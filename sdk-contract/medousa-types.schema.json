@@ -32984,7 +32984,7 @@
             "kind": "return_to_origin"
           },
           "responsibility": "retain",
-          "wake_on_accepted": true,
+          "wake_on_accepted": false,
           "wake_on_terminal": true
         },
         "allOf": [
@@ -33095,7 +33095,7 @@
             ]
           },
           "wake_on_accepted": {
-            "default": true,
+            "default": false,
             "type": "boolean"
           },
           "wake_on_terminal": {
@@ -33620,7 +33620,7 @@
             ]
           },
           "wake_on_accepted": {
-            "default": true,
+            "default": false,
             "type": "boolean"
           },
           "wake_on_terminal": {
@@ -34445,7 +34445,7 @@
             ]
           },
           "wake_on_accepted": {
-            "default": true,
+            "default": false,
             "type": "boolean"
           },
           "wake_on_terminal": {

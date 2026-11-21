@@ -895,7 +895,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         {
             return;
         }
-        super::turn_worker::acknowledge_observed_worker_results(&self.session_id, &body).await;
         self.publish_tracked_with_journal(final_event, Some(event))
             .await;
         self.sync_ask_job_succeeded(body).await;
@@ -1004,7 +1003,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         {
             return;
         }
-        super::turn_worker::acknowledge_observed_worker_results(&self.session_id, &body).await;
         self.publish_tracked_with_journal(needs_input_event, Some(event))
             .await;
 

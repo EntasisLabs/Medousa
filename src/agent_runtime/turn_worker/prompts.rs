@@ -1,12 +1,6 @@
-//! Host, worker, and synthesis prompt composition.
+//! Host and worker prompt composition.
 
 use super::policy::TurnWorkerIntent;
-
-const SYNTHESIS_VOICE_GUIDANCE: &str = r#"Voice for this reply:
-- Same thread as the host ack and [MEDOUSA_CONTINUATION] — one Medousa, not a second author.
-- Sharp, loyal, professional warmth: confident partner who already has their back.
-- Integrate worker receipts into natural prose; do not re-introduce yourself or reset the conversation.
-- Lead with what matters to the principal; cite evidence inline."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -91,19 +85,6 @@ pub fn host_system_prompt_for_parent_mode(parent_agent_mode: Option<&str>) -> St
     .rendered
 }
 
-pub fn worker_failure_user_prompt(
-    parent_user_prompt: &str,
-    work_id: &str,
-    intent: &str,
-    error: &str,
-) -> String {
-    format!(
-        "The background worker did not complete. Write one clear message for the principal: what failed, and what to try next. Do not invent tool results.\n\n\
-         WORK_ID: {work_id}\nWORKER_INTENT: {intent}\n\n\
-         ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\nWORKER_ERROR:\n{error}\n"
-    )
-}
-
 pub fn system_prompt_for_host_profile(
     base: &str,
     host_bus_active: bool,
@@ -122,70 +103,6 @@ pub fn system_prompt_for_host_profile(
         out.push_str(&host_route_appendix(Some(intent)));
     }
     out
-}
-
-pub fn synthesis_user_prompt_with_handoff(
-    handoff: &crate::agent_runtime::turn_context::WorkerHandoffCapsule,
-    worker_scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
-    worker_result: &str,
-    tool_names: &[String],
-    worker_tools_summary: &str,
-) -> String {
-    let tools = if tool_names.is_empty() {
-        "(none)".to_string()
-    } else {
-        tool_names.join(", ")
-    };
-    let scratch_block = worker_scratch
-        .map(|scratch| {
-            format!(
-                "\n\nWORKER_SCRATCHPAD (end of worker tool loop):\n{}",
-                scratch.format_control_body(0)
-            )
-        })
-        .unwrap_or_default();
-    let manuscript_line = handoff
-        .manuscript
-        .as_ref()
-        .map(|manuscript| format!("MANUSCRIPT: {} ({})\n", manuscript.name, manuscript.id))
-        .unwrap_or_default();
-    format!(
-        "Synthesize one principal-facing reply for the host bus. Continue the same conversation thread.\n\n\
-         {SYNTHESIS_VOICE_GUIDANCE}\n\n{manuscript_line}\
-         WORKER_INTENT: {}\nHOST_SCRATCH_DIGEST: {}\n\n\
-         ORIGINAL_USER_MESSAGE:\n{}\n\nWORKER_TASK:\n{}\n\n\
-         HOST_TOOL_DIGESTS:\n{}\n\nWORKER_TOOLS:\n{tools}\n\n\
-         WORKER_TOOL_SUMMARY:\n{worker_tools_summary}{scratch_block}\n\n\
-         WORKER_RESULT:\n{worker_result}\n\n\
-         Deliver the integrated answer for the principal. Include outcomes and receipts without internal jargon.",
-        handoff.intent,
-        handoff.scratch_digest_hash,
-        handoff.parent_user_prompt,
-        handoff.task_prompt,
-        handoff.host_tool_digests.join("\n"),
-    )
-}
-
-pub fn synthesis_user_prompt(
-    parent_user_prompt: &str,
-    task_prompt: &str,
-    work_id: &str,
-    intent: &str,
-    worker_result: &str,
-    tool_names: &[String],
-) -> String {
-    let tools = if tool_names.is_empty() {
-        "(none)".to_string()
-    } else {
-        tool_names.join(", ")
-    };
-    format!(
-        "Synthesize one principal-facing reply for the host bus. Continue the same conversation thread.\n\n\
-         {SYNTHESIS_VOICE_GUIDANCE}\n\nWORK_ID: {work_id}\nWORKER_INTENT: {intent}\n\n\
-         ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\nWORKER_TASK:\n{task_prompt}\n\n\
-         WORKER_TOOLS: {tools}\n\nWORKER_RESULT:\n{worker_result}\n\n\
-         Deliver the integrated answer for the principal. Include outcomes and receipts without internal jargon."
-    )
 }
 
 #[cfg(test)]

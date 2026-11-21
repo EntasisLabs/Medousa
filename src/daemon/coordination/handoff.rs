@@ -1,4 +1,4 @@
-//! Native admission from a human turn or its verified scoped owner callback.
+//! Native handoff admission from the originating turn and its committed source.
 //! The model supplies intent, never approval.
 use super::*;
 use crate::agent_runtime::execution_context::TurnExecutionContext;
@@ -15,28 +15,12 @@ fn source_for_admission<'a>(
         && entry.entry_seq <= through && (!direct || entry.caused_by.as_ref() == Some(execution)))
         .ok_or_else(|| anyhow::anyhow!("direct delegation requires this admitted human request in its committed context; use a proposal for recommendations"))
 }
-fn require_callback_scope(
-    owner: &str,
-    work_id: &str,
-    request_owner: &str,
-    request_work_id: &str,
-) -> Result<()> {
-    if request_owner != owner || request_work_id != work_id {
-        bail!("callback delegation must remain in its authorized owner and project scope");
-    }
-    Ok(())
-}
-
 fn require_handoff_admission(
     principal: &RequestPrincipal,
     admission: PeerHandoffAdmission,
 ) -> Result<()> {
     if admission.requires_human_admission()
         && !principal.capabilities().contains(Capability::AdminExecute)
-        && !(principal.kind() == crate::request_principal::PrincipalKind::Continuation
-            && principal
-                .capabilities()
-                .contains(Capability::WorkspaceWrite))
     {
         bail!("delegation requires the owning Assistant; executors must use a proposal");
     }
@@ -82,84 +66,15 @@ impl LocalPeerDispatcher {
             .ok_or_else(|| anyhow::anyhow!("handoff requires a frozen owner"))?
             .to_string();
         let principal = RequestPrincipal::worker(owner.clone());
-        let mut session_id = SessionId::parse(turn.session_id().as_str())?;
+        let session_id = SessionId::parse(turn.session_id().as_str())?;
         let execution =
             crate::workshop_authority::execution_ref(session_id.as_str(), turn.turn_id())
                 .map_err(anyhow::Error::msg)?;
-        // A callback is the same owner continuing saved work, not an operator.
-        // Resolve native provenance before accepting any model-supplied intent.
-        let callback = direct
-            && turn.principal().kind() == crate::request_principal::PrincipalKind::Continuation;
-        let mut inherited_source = None;
-        let mut inherited_execution = None;
-        if callback {
-            let session = medousa_types::SessionRef {
-                authority_id: execution.authority_id.clone(),
-                session_id: session_id.clone(),
-            };
-            let callback_turn = turn.turn_id().to_string();
-            let bot = turn.bot_identity().map(|bot| bot.bot_id().clone());
-            let expected_owner = owner.clone();
-            let expected_work = input.forge_work_id.clone();
-            let (parent, source, parent_execution) = self.stored(move |store| {
-                if let Ok(parent) = store.handoff_for_wake(&session, &callback_turn) {
-                    require_callback_scope(&expected_owner, &expected_work,
-                        &parent.request.owner_principal_id, &parent.request.forge_work_id)?;
-                    if parent.sender_bot_id != bot {
-                        bail!("callback delegation requires the originating sender Bot");
-                    }
-                    return Ok((Some(parent.request), Some((parent.source, parent.source_digest)), None));
-                }
-                if let Ok(parent) = store.owner_request_for_wake(&session, &callback_turn) {
-                    require_callback_scope(&expected_owner, &expected_work,
-                        &parent.owner_principal_id, &parent.forge_work_id)?;
-                    return Ok((Some(parent), None, None));
-                }
-                // Parallel workshop workers resume the owner with a separate,
-                // durable correlation ID. Do not trust a prompt claiming to be
-                // a worker result or an arbitrary continuation principal.
-                let records = crate::agent_runtime::turn_worker::turn_worker_store()
-                    .list_for_session(session.session_id.as_str());
-                let record = records.iter().find(|record|
-                    format!("{}-host-resume", record.work_id) == callback_turn
-                    && record.identity_user_id.as_deref() == Some(expected_owner.as_str())
-                    && record.parent_code_work_id.as_deref() == Some(expected_work.as_str())
-                    && matches!(record.status,
-                        crate::agent_runtime::turn_worker::TurnWorkStatus::Completed
-                        | crate::agent_runtime::turn_worker::TurnWorkStatus::Failed
-                        | crate::agent_runtime::turn_worker::TurnWorkStatus::Cancelled)
-                    && record.disposition == crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel
-                    && !record.synthesis_delivered
-                    && !record.archived
-                ).ok_or_else(|| anyhow::anyhow!("no native callback admission for this owned project; use a proposal for new scope"))?;
-                let parent_turn = record.parent_turn_correlation_id.as_deref()
-                    .filter(|id| !id.trim().is_empty())
-                    .ok_or_else(|| anyhow::anyhow!("callback has no saved originating turn; use a proposal"))?;
-                let parent_execution = crate::workshop_authority::execution_ref(
-                    session.session_id.as_str(), parent_turn,
-                ).map_err(anyhow::Error::msg)?;
-                Ok((None, None, Some(parent_execution)))
-            }).await?;
-            if let Some(parent) = parent {
-                self.hydrate(&principal, &parent, false).await?;
-                let selection = parent
-                    .context
-                    .sources
-                    .iter()
-                    .find(|source| source.selection.session == parent.owner_session)
-                    .ok_or_else(|| anyhow::anyhow!("callback has no saved owner context"))?;
-                session_id = parent.owner_session.session_id;
-                input.after_entry_seq = selection.selection.after_entry_seq.unwrap_or(0);
-                input.through_entry_seq = selection.selection.through_entry_seq;
-            }
-            inherited_source = source;
-            inherited_execution = parent_execution;
-        }
         let source_session = session_id.clone();
         let source_owner = owner.clone();
-        let mut after = input.after_entry_seq;
-        let mut through = input.through_entry_seq;
-        let (source, source_digest, inherited_range) = self
+        let after = input.after_entry_seq;
+        let through = input.through_entry_seq;
+        let (source, source_digest) = self
             .state
             .forge_execution
             .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
@@ -172,31 +87,7 @@ impl LocalPeerDispatcher {
                     }
                     let entries = crate::session_store::get_session_store()
                         .load_transcript_entries(&source_session);
-                    let entry = if let Some(parent_execution) = &inherited_execution {
-                        // A workshop callback inherits the human turn that
-                        // spawned it, never model-selected newer conversation.
-                        source_for_admission(&entries, parent_execution, true, 0, u64::MAX)?
-                    } else if let Some((reference, digest)) = &inherited_source {
-                        entries
-                            .iter()
-                            .find(|entry| {
-                                entry.entry_id == reference.entry_id
-                                    && entry.entry_seq == reference.entry_seq
-                                    && entry.content_digest == *digest
-                                    && entry.turn.role == "user"
-                            })
-                            .ok_or_else(|| {
-                                anyhow::anyhow!("saved human delegation source changed")
-                            })?
-                    } else {
-                        source_for_admission(
-                            &entries,
-                            &execution,
-                            direct && !callback,
-                            after,
-                            through,
-                        )?
-                    };
+                    let entry = source_for_admission(&entries, &execution, direct, after, through)?;
                     if crate::session_store::transcript_content_digest(&entry.turn)?
                         != entry.content_digest
                     {
@@ -212,17 +103,10 @@ impl LocalPeerDispatcher {
                             entry_seq: entry.entry_seq,
                         },
                         entry.content_digest.clone(),
-                        inherited_execution
-                            .as_ref()
-                            .map(|_| (entry.entry_seq - 1, entry.entry_seq)),
                     ))
                 })())
             })
             .await??;
-        if let Some((start, end)) = inherited_range {
-            after = start;
-            through = end;
-        }
         let proposal = self
             .compile_proposal_for_turn(
                 &principal,
@@ -249,8 +133,7 @@ impl LocalPeerDispatcher {
             source,
             source_digest,
             sender_bot_id: turn.bot_identity().map(|bot| bot.bot_id().clone()),
-            // Native handoffs are admitted immediately; this immutable window
-            // bounds their callbacks, not pending proposal review.
+            // The expiry belongs to this exact assignment.
             expires_at: proposal.expires_at,
         };
         if turn.cancellation().is_cancelled() {
@@ -284,8 +167,7 @@ impl LocalPeerDispatcher {
             if turn.cancellation().is_cancelled() {
                 bail!("cancelled owner turn cannot start delegation");
             }
-            // Native human admission or a verified owner callback compiles the
-            // exact scoped grant. Never promote a callback/worker to operator.
+            // The original human admission and project bind this exact grant.
             self.hydrate(&principal, &record.request, false).await?;
             let store = self.store.clone();
             let saved = record.clone();
@@ -314,16 +196,27 @@ impl LocalPeerDispatcher {
                 })
                 .await??;
             if dispatch_now {
+                let wait = self.handoff_wait(&record.request).await?;
                 self.dispatch(&principal, &record.request).await?;
+                turn.session_waits
+                    .track(wait.id, record.request.assignment_id.clone(), wait.store);
                 self.wake.notify_one();
             }
+        }
+        if dispatch_now {
+            return Ok(
+                serde_json::json!({"status": "accepted", "request_id": record.request.assignment_id,
+                "channel": record.request.channel, "session_id": record.request.execution_session.session_id,
+                "session": record.request.execution_session, "proposal_id": proposal.proposal_id}),
+            );
         }
         let store = self.store.clone();
         self.state.forge_execution.run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
             Ok((|| -> Result<_> {
                 let view = store.handoff_view(&record.request.channel, &record.request.assignment_id)?;
                 Ok(serde_json::json!({ "admission": record.admission, "proposal": proposal, "handoff": view,
-                    "status": if dispatch_now { "delegated" } else if direct { "staged" } else { "proposed" },
+                    "request_id": record.request.assignment_id, "session": record.request.execution_session,
+                    "status": if direct { "staged" } else { "proposed" },
                     "next_action": if direct && !dispatch_now { Some("Register this exact proposal with work.coordinate before dispatch; admit the other requested stages within this authorized project.") } else { None } }))
             })())
         }).await?
@@ -390,22 +283,14 @@ impl LocalPeerDispatcher {
                     {
                         bail!("handoff work ownership changed");
                     }
-                    let mut decision = decision;
                     if record.sender_bot_id != bot_id {
                         bail!("review requires the originating sender Bot")
                     }
-                    let sender = if session != record.request.owner_session {
-                        let admitted = store.handoff_for_wake(&session, &decision.turn_id)?;
-                        if admitted != record {
-                            bail!("callback belongs to another handoff")
-                        }
-                        decision.sender_session = record.request.owner_session.clone();
-                        record.request.owner_session
-                    } else {
-                        session
-                    };
+                    if session != record.request.owner_session {
+                        bail!("review requires the originating sender session");
+                    }
                     if !crate::session_catalog::session_visible_to_profile(
-                        sender.session_id.as_str(),
+                        session.session_id.as_str(),
                         &owner,
                     ) {
                         bail!("sender session no longer visible")
@@ -413,7 +298,7 @@ impl LocalPeerDispatcher {
                     store.review_handoff(
                         &input.channel,
                         &input.assignment_id,
-                        &sender,
+                        &session,
                         &owner,
                         &decision,
                     )?;
@@ -429,14 +314,6 @@ impl LocalPeerDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn callback_delegation_keeps_original_owner_and_project_scope() {
-        assert!(require_callback_scope("owner", "work-a", "owner", "work-a").is_ok());
-        assert!(require_callback_scope("owner", "work-b", "owner", "work-a").is_err());
-        assert!(require_callback_scope("other", "work-a", "owner", "work-a").is_err());
-        assert!(require_callback_scope("other", "work-b", "owner", "work-a").is_err());
-    }
-
     #[test]
     fn direct_admission_requires_this_turns_committed_human_request() {
         let execution = medousa_types::ExecutionRef {
@@ -489,7 +366,7 @@ mod tests {
         assert!(source_for_admission(&[changed], &execution, true, 0, 2).is_err());
     }
     #[test]
-    fn deferred_stages_allow_owner_callbacks_but_never_dispatch_immediately() {
+    fn deferred_stages_require_operator_admission_and_do_not_dispatch() {
         assert!(PeerHandoffAdmission::Stage.requires_human_admission());
         assert!(!PeerHandoffAdmission::Stage.dispatches_immediately());
         assert!(PeerHandoffAdmission::Delegate.requires_human_admission());
@@ -505,11 +382,9 @@ mod tests {
         assert_eq!(intent.admission, PeerHandoffAdmission::Stage);
         // Test the very same admission guard used before any native effect.
         let callback = RequestPrincipal::continuation("owner");
-        assert!(require_handoff_admission(&callback, PeerHandoffAdmission::Stage).is_ok());
-        assert!(require_handoff_admission(&callback, PeerHandoffAdmission::Delegate).is_ok());
+        assert!(require_handoff_admission(&callback, PeerHandoffAdmission::Stage).is_err());
+        assert!(require_handoff_admission(&callback, PeerHandoffAdmission::Delegate).is_err());
         assert!(!callback.capabilities().contains(Capability::AdminExecute));
-        // The guard alone is not admission: callback provenance and project
-        // scope are resolved before any effect in handoff_for_turn.
         let worker = RequestPrincipal::worker("owner");
         assert!(require_handoff_admission(&worker, PeerHandoffAdmission::Stage).is_err());
         assert!(require_handoff_admission(&worker, PeerHandoffAdmission::Delegate).is_err());

@@ -1672,3 +1672,78 @@ async fn golden_changed_failed_batches_allow_recovery() {
         assert_eq!(outcome.rounds_executed, 6);
     }
 }
+
+#[tokio::test]
+async fn original_loop_consumes_c_while_running_then_b_on_yield() {
+    struct Results(Mutex<usize>);
+    #[async_trait]
+    impl crate::ports::SessionEventsPort for Results {
+        async fn receive(&self, yielding: bool) -> StasisResult<Vec<Value>> {
+            let mut calls = self.0.lock().unwrap();
+            *calls += 1;
+            Ok(match (*calls, yielding) {
+                (2, false) => vec![json!({"request_id": "c", "result": "result from C"})],
+                (3, true) => vec![json!({"request_id": "b", "result": "result from B"})],
+                _ => vec![],
+            })
+        }
+    }
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(DataProbeTool).unwrap();
+    register_golden_turn_tool(&registry);
+    let client = Arc::new(ScriptedClient::new(vec![
+        tool_response(vec![tool_call(DataProbeTool.name(), json!({}))]),
+        tool_response(vec![checkpoint_call("Waiting for B")]),
+        tool_response(vec![finish_call("Both finished")]),
+    ]));
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    )
+    .with_window_policy(golden_window_policy());
+    let mut ports = RuntimePorts::new();
+    ports.session_events = Some(Arc::new(Results(Mutex::new(0))));
+    let mut gate = ToolLoopCompletionGate::new_for_execution(1, ports, 5);
+    let request = ToolLoopExecutionRequest {
+        user_prompt: "Start both workers".into(),
+        system_prompt: Some("Original A".into()),
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: ToolCallMode::Auto,
+    };
+    let outcome = with_turn_execution_boundary(
+        golden_execution_boundary(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
+            request,
+            vec![],
+            None,
+            5,
+            Some(&mut gate),
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    let requests = client.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(outcome.text, "Both finished");
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    for req in &requests[1..] {
+        assert_eq!(
+            req.tools
+                .as_ref()
+                .map(|tools| tools.iter().map(|t| &t.name).collect::<Vec<_>>()),
+            requests[0]
+                .tools
+                .as_ref()
+                .map(|tools| tools.iter().map(|t| &t.name).collect::<Vec<_>>())
+        );
+        assert_eq!(req.system, requests[0].system);
+    }
+    let second = format!("{:?}", requests[1].messages);
+    let third = format!("{:?}", requests[2].messages);
+    assert!(second.contains("result from C") && !second.contains("result from B"));
+    assert_eq!(third.matches("result from B").count(), 1);
+    assert_eq!(third.matches("result from C").count(), 1);
+}

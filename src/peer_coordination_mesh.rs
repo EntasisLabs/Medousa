@@ -291,10 +291,12 @@ pub async fn mark_remote_peer_origin_applied_admitted(
 
 pub async fn record_remote_peer_completion_destination_proposal_admitted(
     source_device_id: &str,
+    pairing_id: &str,
     request: &RemotePeerProposalRequest,
     proposal: &PeerAssignmentProposal,
 ) -> Result<RemotePeerCompletionDestination> {
     let source_device_id = source_device_id.to_string();
+    let pairing_id = pairing_id.to_owned();
     let request = request.clone();
     let proposal = proposal.clone();
     crate::peer_completion_delivery::completion_execution_service()
@@ -304,6 +306,7 @@ pub async fn record_remote_peer_completion_destination_proposal_admitted(
             move || {
                 Ok(record_remote_peer_completion_destination_proposal(
                     &source_device_id,
+                    &pairing_id,
                     &request,
                     &proposal,
                 ))
@@ -522,6 +525,7 @@ fn finalize_remote_peer_origin(
 /// destination before its signed proposal response is returned.
 pub fn record_remote_peer_completion_destination_proposal(
     source_device_id: &str,
+    pairing_id: &str,
     request: &RemotePeerProposalRequest,
     proposal: &PeerAssignmentProposal,
 ) -> Result<RemotePeerCompletionDestination> {
@@ -537,6 +541,8 @@ pub fn record_remote_peer_completion_destination_proposal(
     let association = RemotePeerCompletionDestination {
         schema_version: 1,
         source_device_id: source_device_id.to_string(),
+        pairing_id: Some(pairing_id.to_owned()),
+        source_session_id: Some(request.owner_session_id.clone()),
         source_request_digest: remote_peer_proposal_request_digest(request)?,
         proposal_id: proposal.proposal_id.clone(),
         assignment_id: proposal.request.assignment_id.clone(),
@@ -556,7 +562,11 @@ pub fn record_remote_peer_completion_destination_proposal(
         .position(|item| item.proposal_id == association.proposal_id)
     {
         let existing = &file.destinations[existing_index];
-        if existing.source_device_id != association.source_device_id
+        if existing
+            .pairing_id
+            .as_deref()
+            .is_some_and(|id| id != pairing_id)
+            || existing.source_device_id != association.source_device_id
             || existing.source_request_digest != association.source_request_digest
             || existing.proposal_request_digest != association.proposal_request_digest
             || existing.remote_owner_session != association.remote_owner_session
@@ -567,7 +577,13 @@ pub fn record_remote_peer_completion_destination_proposal(
         {
             bail!("proposal already has a different remote completion route");
         }
-        if existing.proposal.is_none() {
+        if existing.proposal.is_none()
+            || existing.source_session_id.is_none()
+            || existing.pairing_id.is_none()
+        {
+            file.destinations[existing_index].pairing_id = association.pairing_id.clone();
+            file.destinations[existing_index].source_session_id =
+                association.source_session_id.clone();
             file.destinations[existing_index].proposal = Some(proposal.clone());
             save_peer_completion_associations(&file)?;
         }
@@ -701,6 +717,44 @@ pub fn mark_remote_peer_origin_applied(
     Ok(true)
 }
 
+#[cfg(feature = "full-daemon")]
+pub(crate) fn remote_assignment_source(
+    assignment: &medousa_types::coordination::ExternalPeerAssignmentRequest,
+) -> Result<RemotePeerCompletionDestination> {
+    peer_completion_associations()?
+        .destinations
+        .into_iter()
+        .find(|route| {
+            route
+                .proposal
+                .as_ref()
+                .is_some_and(|p| &p.request == assignment)
+        })
+        .ok_or_else(|| anyhow::anyhow!("remote Coder assignment has no authenticated source"))
+}
+
+#[cfg(feature = "full-daemon")]
+pub(crate) fn remote_sender_owns_assignment(
+    device: &str,
+    session: &str,
+    assignment: &medousa_types::coordination::ExternalPeerAssignmentRequest,
+) -> Result<bool> {
+    Ok(peer_completion_associations()?
+        .destinations
+        .into_iter()
+        .any(|route| {
+            route.source_device_id == device
+                && route
+                    .source_session_id
+                    .as_ref()
+                    .is_some_and(|id| id.as_str() == session)
+                && route
+                    .proposal
+                    .as_ref()
+                    .is_some_and(|proposal| proposal.request == *assignment)
+        }))
+}
+
 pub fn remote_peer_completion_destination_for_query(
     source_device_id: &str,
     query: &RemotePeerCompletionQuery,
@@ -801,6 +855,10 @@ pub struct RemotePeerOriginAssociation {
 pub struct RemotePeerCompletionDestination {
     pub schema_version: u32,
     pub source_device_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pairing_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_session_id: Option<SessionId>,
     pub source_request_digest: String,
     pub proposal_id: String,
     pub assignment_id: String,
@@ -1507,7 +1565,11 @@ mod tests {
         );
         let pairing = Arc::new(crate::daemon_worker::DaemonWorkerPairing::new(root.clone()));
         let authority = request.source_execution.authority_id.clone();
+        let runtime = Arc::new(stasis::prelude::RuntimeComposition::InMemory(
+            stasis::application::runtime::in_memory_runtime::InMemoryRuntime::new(),
+        ));
         let mut puller = crate::daemon::remote_peer_completions::CompletionPuller::new(
+            runtime.clone(),
             pairing.clone(),
             store.clone(),
             authority.clone(),
@@ -1523,6 +1585,7 @@ mod tests {
         );
         completion_mode.store(1, Ordering::Relaxed);
         let mut reopened = crate::daemon::remote_peer_completions::CompletionPuller::new(
+            runtime.clone(),
             pairing.clone(),
             store.clone(),
             authority.clone(),
@@ -1536,6 +1599,26 @@ mod tests {
             2
         );
         assert_eq!(reopened.poll_once().await.unwrap().checked, 0);
+        let receipt = crate::delegation::session_results::NativeSessionWait::open(
+            &runtime,
+            &origin.request_digest,
+            request.owner_session_id.as_str(),
+            &response.proposal.request.assignment_id,
+            response
+                .proposal
+                .request
+                .execution_session
+                .session_id
+                .as_str(),
+        )
+        .await
+        .unwrap();
+        let terminal = receipt.store.get(&receipt.id).await.unwrap().unwrap();
+        assert_eq!(
+            terminal.status,
+            stasis::domain::agent::turn_wait::TurnWaitStatus::Completed
+        );
+        assert_eq!(terminal.session_id, request.owner_session_id.as_str());
         let reset_delivery = |clear_proposal: bool| {
             let mut file = peer_completion_associations().unwrap();
             let origin = &mut file.origins[0];
@@ -1553,6 +1636,7 @@ mod tests {
             reset_delivery(clear_proposal);
             let store = crate::session_store::test_file_session_store_at(source_store_root.clone());
             let mut restarted = crate::daemon::remote_peer_completions::CompletionPuller::new(
+                runtime.clone(),
                 pairing.clone(),
                 store.clone(),
                 authority.clone(),
@@ -1584,6 +1668,7 @@ mod tests {
         completion_mode.store(1, Ordering::Relaxed);
         let before = query_calls.load(Ordering::Relaxed);
         let foreign = crate::daemon::remote_peer_completions::CompletionPuller::new(
+            runtime.clone(),
             pairing.clone(),
             store.clone(),
             AuthorityId::parse(format!("auth_{}", "c".repeat(64))).unwrap(),
@@ -1645,7 +1730,30 @@ mod tests {
         );
         assert_ne!(proposal.request.context, request.context.manifest);
         record_remote_peer_origin_pending("phone", "runtime-mac", "profile", &request).unwrap();
-        record_remote_peer_completion_destination_proposal("phone", &request, &proposal).unwrap();
+        record_remote_peer_completion_destination_proposal("phone", "pair-id", &request, &proposal)
+            .unwrap();
+        #[cfg(feature = "full-daemon")]
+        {
+            assert!(
+                remote_sender_owns_assignment(
+                    "phone",
+                    request.owner_session_id.as_str(),
+                    &proposal.request
+                )
+                .unwrap()
+            );
+            assert!(
+                !remote_sender_owns_assignment(
+                    "other-device",
+                    request.owner_session_id.as_str(),
+                    &proposal.request
+                )
+                .unwrap()
+            );
+            assert!(
+                !remote_sender_owns_assignment("phone", "another-chat", &proposal.request).unwrap()
+            );
+        }
         let response = RemotePeerProposalResponse {
             schema_version: REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
             source_request_digest: Some(remote_peer_proposal_request_digest(&request).unwrap()),

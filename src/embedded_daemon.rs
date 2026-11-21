@@ -2408,6 +2408,8 @@ impl EmbeddedDaemon {
                         as Arc<dyn medousa_runtime::ToolObservationHydrationPort>
                 }),
             );
+        let mut runtime_ports = runtime_ports;
+        runtime_ports.session_events = Some(context.clone());
         let mut completion_gate = ToolLoopCompletionGate::new_for_execution(
             0,
             runtime_ports,
@@ -5340,6 +5342,7 @@ impl EmbeddedDaemonClient {
         self.require(Capability::ContentWrite)?;
         let owner_profile_id = self.active_profile_id()?;
         crate::peer_completion_delivery::apply_remote_peer_completion(
+            &self.daemon.runtime,
             Arc::clone(&self.daemon.session_store),
             origin,
             result,

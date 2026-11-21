@@ -22,8 +22,10 @@ struct PeerDelegateInput {
     instructions: String,
     /// Stable retry key for this exact assignment intent.
     request_key: String,
-    /// Ask for a separately approved result-only continuation in this chat.
-    continue_owner: bool,
+    /// Legacy option accepted on older calls. Terminal results return to the source session.
+    #[serde(default, rename = "continue_owner", skip_serializing)]
+    #[schemars(skip)]
+    _continue_owner: Option<bool>,
     /// Exact adoptable ACP session id from inventory; omission starts new work.
     existing_agent_session_id: Option<String>,
     /// Optional exact committed range in this chat. Omit for a byte-bounded recent tail plus available Locus continuity. Explicit ranges are never silently shortened.
@@ -46,7 +48,7 @@ impl PeerDelegateTool {
                 &input.request_key,
                 input.runtime,
                 &input.instructions,
-                input.continue_owner,
+                true,
                 input.existing_agent_session_id,
                 input.context,
             )
@@ -55,7 +57,9 @@ impl PeerDelegateTool {
         let started = response.binding.is_some();
         Ok(serde_json::json!({
             "status": if started { "started" } else { "pending_approval" },
-            "proposal": response.proposal,
+            "request_id": response.proposal.request.assignment_id,
+            "proposal_id": response.proposal.proposal_id,
+            "session_id": response.proposal.request.execution_session.session_id,
             "binding": response.binding,
             "started": started,
             "message": if started {

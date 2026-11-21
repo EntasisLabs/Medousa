@@ -1059,9 +1059,19 @@ async fn propose_remote_peer(
         .map_err(|error| (StatusCode::SERVICE_UNAVAILABLE, error))?
         .clone();
     let owner = crate::user_profiles::resolve_workshop_identity_user_id();
-    host.require_owned_work(&owner, &request.forge_work_id)
+    let work = host
+        .owned_work(&owner, &request.forge_work_id)
         .await
         .map_err(|error| (StatusCode::FORBIDDEN, error.to_string()))?;
+    let native_coder_authorized = request.runtime
+        == medousa_types::coordination::ExternalPeerRuntime::Medousa
+        && policy.as_ref().is_some_and(|p| {
+            p.coder_work
+                && work.environment.as_ref().is_some_and(|env| {
+                    p.allowed_project_ids
+                        .contains(&env.repo.repo_id.to_string())
+                })
+        });
     let shadow = materialize_remote_peer_proposal_context(
         crate::session_store::get_session_store().as_ref(),
         &authority,
@@ -1125,20 +1135,20 @@ async fn propose_remote_peer(
         .map_err(internal)?;
     record_remote_peer_completion_destination_proposal_admitted(
         &sender.phone_id,
+        &sender.pairing_id,
         &route_request,
         &proposal,
     )
     .await
     .map_err(internal)?;
     let binding = if sender.role.allows_full_portal()
+        || native_coder_authorized
         || policy
             .as_ref()
             .is_some_and(|policy| policy.permits_unattended_agent_launch(chrono::Utc::now()))
     {
-        // The signed peer request has already been authenticated and admitted
-        // by the destination-owned policy. Re-materialize operator authority
-        // locally only after that policy proves the device already holds host
-        // shell authority; model input can never manufacture this principal.
+        // Apply the destination decision only to this authenticated proposal.
+        // The native Coder checks the current project and tool grant on each call.
         let operator = RequestPrincipal::local_app(
             Arc::from(format!("trusted-assistant:{}", sender.phone_id)),
             TransportClass::Loopback,

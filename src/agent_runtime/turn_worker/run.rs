@@ -13,6 +13,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionReq
 use tokio::sync::RwLock;
 
 use crate::agent_runtime::provider_stream::{ProviderStreamBridge, fail_on_stream_overflow};
+use crate::agent_runtime::settings::runtime_settings_for_interactive_turn;
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::agent_runtime::turn_ledger::append_tool_loop_policy;
@@ -21,22 +22,14 @@ use crate::agent_runtime::turn_ledger::{
 };
 use crate::agent_runtime::turn_loop_settings::TurnLoopSettings;
 use crate::agent_runtime::turn_services;
-use crate::agent_runtime::{
-    MAX_REQUEST_PROMPT_CHARS, prompt_prep::truncate_text_for_budget,
-    settings::runtime_settings_for_interactive_turn,
-};
 use crate::channel_delivery::ChannelDeliveryTarget;
 use crate::daemon_api::InteractiveTurnRequest;
 use crate::runtime::settings::RuntimeSettings;
 use crate::stage_routing::StageRoutingMatrix;
 use crate::tools::TuiRuntime;
 use crate::turn_continuation::TurnContinuationScope;
-use stasis::application::orchestration::prompt_pipeline::{
-    PromptExecutionPipeline, PromptExecutionRequest,
-};
 use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::runtime::placement::WorkerCapabilities;
-use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use stasis::prelude::RuntimeComposition;
 
@@ -51,16 +44,11 @@ use crate::workshop_contract::{
     ExecutionTargetSelection, resolve_execution_target,
 };
 
-use super::prompts::{
-    synthesis_user_prompt, synthesis_user_prompt_with_handoff, worker_failure_user_prompt,
-};
 use super::registry::{
     AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry,
     WorldScopedToolRegistry,
 };
-use super::store::{
-    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
-};
+use super::store::{TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore};
 fn worker_canvas_lane_enabled(is_bound_workshop: bool, record: &TurnWorkRecord) -> bool {
     is_bound_workshop || record.supports_ui_artifacts
 }
@@ -614,12 +602,8 @@ pub async fn with_worker_parent_scope<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    super::intake::OBSERVED_RESULTS
-        .scope(super::intake::ObservedResults::default(), async {
-            ACTIVE_WORKER_PARENT
-                .scope(WorkerParentHandle::new(), future)
-                .await
-        })
+    ACTIVE_WORKER_PARENT
+        .scope(WorkerParentHandle::new(), future)
         .await
 }
 
@@ -1151,12 +1135,18 @@ impl TurnWorkerScheduler {
                 "cognition_workshop_mutate: stasis runtime not ready".to_string(),
             )
         })?;
+        let wait =
+            super::host_resume::worker_wait(runtime.as_ref(), &bus.session_id, &work_id).await?;
         crate::agent_runtime::turn_worker_job::enqueue_turn_worker_job(
             runtime.as_ref(),
             &work_id,
             bus.stream_turn_id,
         )
         .await?;
+        if let Some(turn) = crate::execution_context::active_turn_execution_context() {
+            turn.session_waits
+                .track(wait.id, work_id.clone(), wait.store);
+        }
 
         Ok(SpawnTurnWorkerOutput {
             ok: true,
@@ -1379,12 +1369,18 @@ impl TurnWorkerScheduler {
                 "cognition_turn_begin_work: stasis runtime not ready".to_string(),
             )
         })?;
+        let wait =
+            super::host_resume::worker_wait(runtime.as_ref(), &bus.session_id, &work_id).await?;
         crate::agent_runtime::turn_worker_job::enqueue_turn_worker_job(
             runtime.as_ref(),
             &work_id,
             bus.stream_turn_id,
         )
         .await?;
+        if let Some(turn) = crate::execution_context::active_turn_execution_context() {
+            turn.session_waits
+                .track(wait.id, work_id.clone(), wait.store);
+        }
 
         Ok(EnterBoundWorkshopOutput::Entered {
             ok: true,
@@ -1692,16 +1688,7 @@ async fn run_worker_turn_inner(
         sink.notice(format!("◈ work_cancelled work_id={work_id}"))
             .await;
         if let Some(updated) = store.get(&work_id) {
-            let is_bound_workshop = updated.disposition == TurnWorkDisposition::Bound;
-            deliver_worker_parent_outcome(
-                &ctx,
-                &agent,
-                updated,
-                sink,
-                stream_turn_id,
-                is_bound_workshop,
-            )
-            .await;
+            super::host_resume::deliver_worker_parent_outcome(&agent.runtime, &updated).await;
         }
         return;
     }
@@ -1759,15 +1746,8 @@ async fn run_worker_turn_inner(
                 sink.notice(format!("◈ work_failed work_id={work_id} error={message}"))
                     .await;
                 if let Some(failed) = store.get(&work_id) {
-                    deliver_worker_parent_outcome(
-                        &ctx,
-                        &agent,
-                        failed,
-                        sink,
-                        stream_turn_id,
-                        is_bound_workshop,
-                    )
-                    .await;
+                    super::host_resume::deliver_worker_parent_outcome(&agent.runtime, &failed)
+                        .await;
                 }
                 return;
             }
@@ -1811,12 +1791,16 @@ async fn run_worker_turn_inner(
         ))
     };
     let remote_world_authority = if is_delegated {
-        record.task_execution_grant.clone().map(|grant| {
-            (
-                crate::peer_execution_policy::PeerExecutionPolicyStore::default(),
-                grant,
-            )
-        })
+        record
+            .task_execution_grant
+            .clone()
+            .filter(|grant| grant.peer_pairing_id != "local-operator")
+            .map(|grant| {
+                (
+                    crate::peer_execution_policy::PeerExecutionPolicyStore::default(),
+                    grant,
+                )
+            })
     } else {
         None
     };
@@ -1934,7 +1918,7 @@ async fn run_worker_turn_inner(
                     ) as Arc<dyn medousa_runtime::ToolObservationHydrationPort>
                 }),
         );
-    let runtime_ports = if let Some(coder) = &prepared_coder {
+    let mut runtime_ports = if let Some(coder) = &prepared_coder {
         runtime_ports.with_perception_evidence(Arc::new(
             super::super::perception_governor::DaemonPerceptionEvidencePort::for_coder_undertaking(
                 coder.registry.undertaking_id().to_string(),
@@ -1944,6 +1928,8 @@ async fn run_worker_turn_inner(
     } else {
         runtime_ports
     };
+    runtime_ports.session_events = crate::execution_context::active_turn_execution_context()
+        .map(|turn| turn as Arc<dyn medousa_runtime::ports::SessionEventsPort>);
     let mut completion_gate = ToolLoopCompletionGate {
         stream_turn_id,
         runtime_ports,
@@ -1984,15 +1970,7 @@ async fn run_worker_turn_inner(
         sink.notice(format!("◈ work_cancelled work_id={work_id}"))
             .await;
         if let Some(updated) = store.get(&work_id) {
-            deliver_worker_parent_outcome(
-                &ctx,
-                &agent,
-                updated,
-                sink,
-                stream_turn_id,
-                is_bound_workshop,
-            )
-            .await;
+            super::host_resume::deliver_worker_parent_outcome(&agent.runtime, &updated).await;
         }
         return;
     }
@@ -2047,15 +2025,8 @@ async fn run_worker_turn_inner(
                 sink.notice(format!("◈ work_cancelled work_id={work_id}"))
                     .await;
                 if let Some(updated) = store.get(&work_id) {
-                    deliver_worker_parent_outcome(
-                        &ctx,
-                        &agent,
-                        updated,
-                        sink.clone(),
-                        stream_turn_id,
-                        is_bound_workshop,
-                    )
-                    .await;
+                    super::host_resume::deliver_worker_parent_outcome(&agent.runtime, &updated)
+                        .await;
                 }
             } else {
                 let tool_names: Vec<String> = response
@@ -2092,15 +2063,8 @@ async fn run_worker_turn_inner(
                     .await;
                 }
                 if let Some(updated) = store.get(&work_id) {
-                    deliver_worker_parent_outcome(
-                        &ctx,
-                        &agent,
-                        updated,
-                        sink,
-                        stream_turn_id,
-                        is_bound_workshop,
-                    )
-                    .await;
+                    super::host_resume::deliver_worker_parent_outcome(&agent.runtime, &updated)
+                        .await;
                 }
             }
         }
@@ -2116,15 +2080,8 @@ async fn run_worker_turn_inner(
                         .await;
                 }
                 if let Some(updated) = store.get(&work_id) {
-                    deliver_worker_parent_outcome(
-                        &ctx,
-                        &agent,
-                        updated,
-                        sink,
-                        stream_turn_id,
-                        is_bound_workshop,
-                    )
-                    .await;
+                    super::host_resume::deliver_worker_parent_outcome(&agent.runtime, &updated)
+                        .await;
                 }
                 return;
             }
@@ -2150,378 +2107,9 @@ async fn run_worker_turn_inner(
                 .await;
             }
             if let Some(failed) = store.get(&work_id) {
-                deliver_worker_parent_outcome(
-                    &ctx,
-                    &agent,
-                    failed,
-                    sink,
-                    stream_turn_id,
-                    is_bound_workshop,
-                )
-                .await;
+                super::host_resume::deliver_worker_parent_outcome(&agent.runtime, &failed).await;
             }
         }
-    }
-}
-
-async fn deliver_worker_parent_outcome(
-    ctx: &WorkerRuntimeContext,
-    agent: &TuiRuntime,
-    record: TurnWorkRecord,
-    sink: SharedAgentStreamSink,
-    stream_turn_id: u64,
-    is_bound_workshop: bool,
-) {
-    if record.disposition == TurnWorkDisposition::Delegated {
-        return;
-    }
-    if is_bound_workshop {
-        match record.status {
-            TurnWorkStatus::Completed => {
-                run_synthesis_turn(ctx, record, sink, stream_turn_id).await;
-            }
-            TurnWorkStatus::Failed => {
-                run_worker_failure_notify(ctx, record, sink, stream_turn_id).await;
-            }
-            _ => {}
-        }
-        return;
-    }
-    super::host_resume::maybe_resume_host_after_parallel_worker(
-        ctx,
-        &agent.execution_registry,
-        agent,
-        &record,
-        sink,
-    )
-    .await;
-}
-
-fn parallel_worker_uses_host_resume(disposition: TurnWorkDisposition) -> bool {
-    disposition == TurnWorkDisposition::Parallel
-}
-
-pub async fn resume_synthesis_if_needed(
-    ctx: &WorkerRuntimeContext,
-    execution_registry: &crate::agent_runtime::execution_context::TurnExecutionRegistry,
-    record: TurnWorkRecord,
-    sink: SharedAgentStreamSink,
-    agent: Option<&TuiRuntime>,
-) {
-    if record.stop_request_id.is_some()
-        || turn_worker_store()
-            .get(&record.work_id)
-            .is_some_and(|current| current.stop_request_id.is_some())
-    {
-        return;
-    }
-    if record.disposition == TurnWorkDisposition::Delegated {
-        return;
-    }
-    if parallel_worker_uses_host_resume(record.disposition) {
-        let Some(agent) = agent else {
-            tracing::warn!(
-                work_id = %record.work_id,
-                "parallel host resume skipped without agent runtime"
-            );
-            return;
-        };
-        super::host_resume::maybe_resume_host_after_parallel_worker(
-            ctx,
-            execution_registry,
-            agent,
-            &record,
-            sink,
-        )
-        .await;
-        return;
-    }
-    if record.synthesis_delivered || record.status != TurnWorkStatus::Completed {
-        return;
-    }
-    let Some(identity_user_id) = record
-        .identity_user_id
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-    else {
-        tracing::warn!(work_id = %record.work_id, "refusing synthesis resume without identity");
-        return;
-    };
-    if !crate::session_catalog::session_visible_to_profile(&record.session_id, &identity_user_id) {
-        tracing::warn!(work_id = %record.work_id, "refusing synthesis resume after authority revocation");
-        return;
-    }
-    let store = turn_worker_store();
-    let Some(continuation) = store.register_continuation(&[record.work_id.clone()]) else {
-        return;
-    };
-    let scope = worker_turn_scope(&record);
-    let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
-        format!("{}-synthesis", record.work_id),
-        crate::request_principal::RequestPrincipal::worker(identity_user_id),
-        continuation.cancellation(),
-        None::<std::time::Instant>,
-        scope,
-    ) {
-        Ok(execution) => execution,
-        Err(error) => {
-            tracing::warn!(work_id = %record.work_id, error = %error, "refusing synthesis resume with invalid session");
-            return;
-        }
-    };
-    let execution_lease = match execution_registry.admit(execution) {
-        Ok(lease) => lease,
-        Err(error) => {
-            tracing::warn!(work_id = %record.work_id, error = %error, "synthesis resume admission rejected");
-            return;
-        }
-    };
-    let execution_context = execution_lease.context().clone();
-    let stream_turn_id = record.parent_stream_turn_id;
-    crate::agent_runtime::execution_context::with_turn_execution_context(
-        execution_context,
-        run_synthesis_turn(ctx, record, sink, stream_turn_id),
-    )
-    .await;
-    drop(execution_lease);
-}
-
-async fn run_worker_failure_notify(
-    ctx: &WorkerRuntimeContext,
-    record: TurnWorkRecord,
-    sink: SharedAgentStreamSink,
-    notify_turn_id: u64,
-) {
-    let parent_prompt = record
-        .parent_user_prompt
-        .clone()
-        .unwrap_or_else(|| record.task_prompt.clone());
-    let error = record
-        .error
-        .clone()
-        .unwrap_or_else(|| "unknown worker error".to_string());
-
-    sink.notice(format!(
-        "◈ work_failure_notify work_id={} delivering user-visible error",
-        record.work_id
-    ))
-    .await;
-
-    let prompt =
-        worker_failure_user_prompt(&parent_prompt, &record.work_id, &record.intent, &error);
-
-    // Prefer the host turn's credentials for the user-visible failure note —
-    // the worker provider may be the reason the turn failed (missing key, etc.).
-    crate::workshop_env::apply_provider_llm_env(&ctx.provider);
-    let resolved_provider = crate::resolve_llm_provider(Some(ctx.provider.as_str()));
-    let resolved_model = crate::resolve_llm_model(Some(ctx.model.as_str()));
-    let resolved_base_url = crate::model_route::resolve_route_base_url(
-        &resolved_provider,
-        &ctx.provider,
-        ctx.base_url.as_deref(),
-    );
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
-        &resolved_provider,
-        &resolved_model,
-        resolved_base_url.as_deref(),
-    ));
-    let pipeline = PromptExecutionPipeline::new(chat_client);
-    let request = PromptExecutionRequest::from_user_prompt(truncate_text_for_budget(
-        &prompt,
-        MAX_REQUEST_PROMPT_CHARS,
-    ))
-    .with_context(PromptExecutionContext::default())
-    .with_system_prompt(super::prompts::host_system_prompt_for_parent_mode(
-        record.parent_agent_mode.as_deref(),
-    ));
-
-    let text = match pipeline.execute(request).await {
-        Ok(response) => response.text,
-        Err(err) => format!(
-            "The background task didn't finish (notify error: {err}). Worker error: {}",
-            truncate_text_for_budget(&error, 400)
-        ),
-    };
-
-    sink.agent_response(
-        notify_turn_id,
-        text,
-        vec!["turn_worker.failure".to_string()],
-    )
-    .await;
-
-    crate::feed_adapters::publish_workshop_finish_activity(
-        &record,
-        "failed",
-        Some(
-            &record
-                .error
-                .clone()
-                .unwrap_or_else(|| "worker failed".to_string()),
-        ),
-    )
-    .await;
-}
-
-async fn run_synthesis_turn(
-    ctx: &WorkerRuntimeContext,
-    record: TurnWorkRecord,
-    sink: SharedAgentStreamSink,
-    synthesis_turn_id: u64,
-) {
-    if worker_synthesis_pass_through(&record) {
-        let text = record
-            .result_text
-            .clone()
-            .unwrap_or_else(|| "(worker produced no text)".to_string());
-        sink.notice(format!(
-            "◈ work_synthesis work_id={} pass-through (worker finish)",
-            record.work_id
-        ))
-        .await;
-        deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
-        return;
-    }
-    let legacy_route =
-        crate::stage_routing::StageRoutingMatrix::default_for(&ctx.provider, &ctx.model)
-            .final_response;
-    let Some(parent_route) = super::store::continuation_route_for_record(&record, &legacy_route)
-    else {
-        tracing::warn!(work_id = %record.work_id, "worker synthesis has no usable parent continuation route");
-        sink.agent_error(
-            synthesis_turn_id,
-            "Worker synthesis has no usable parent continuation route".to_string(),
-        )
-        .await;
-        return;
-    };
-    let parent_prompt = record
-        .parent_user_prompt
-        .clone()
-        .unwrap_or_else(|| record.task_prompt.clone());
-    let worker_result = record
-        .result_text
-        .clone()
-        .unwrap_or_else(|| "(worker produced no text)".to_string());
-
-    let worker_tools_summary = if record.tool_names.is_empty() {
-        "(none)".to_string()
-    } else {
-        record
-            .tool_names
-            .iter()
-            .map(|name| format!("- {name}"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let synthesis_prompt = if let Some(capsule) = record.handoff_capsule.as_ref() {
-        synthesis_user_prompt_with_handoff(
-            capsule,
-            record.worker_scratch.as_ref(),
-            &worker_result,
-            &record.tool_names,
-            &worker_tools_summary,
-        )
-    } else {
-        synthesis_user_prompt(
-            &parent_prompt,
-            &record.task_prompt,
-            &record.work_id,
-            &record.intent,
-            &worker_result,
-            &record.tool_names,
-        )
-    };
-
-    sink.notice(format!(
-        "◈ work_synthesis work_id={} delivering final answer",
-        record.work_id
-    ))
-    .await;
-    tracing::info!(
-        work_id = %record.work_id,
-        provider = %parent_route.provider,
-        model = %parent_route.model,
-        policy_profile = %parent_route.policy_profile,
-        fallback_chain = %parent_route.fallback_chain.join(","),
-        "synthesizing worker result with parent continuation route"
-    );
-
-    crate::workshop_env::apply_provider_llm_env(&parent_route.provider);
-    let resolved_provider = crate::resolve_llm_provider(Some(parent_route.provider.as_str()));
-    let resolved_model = crate::resolve_llm_model(Some(parent_route.model.as_str()));
-    let resolved_base_url = crate::model_route::resolve_route_base_url(
-        &resolved_provider,
-        &ctx.provider,
-        ctx.base_url.as_deref(),
-    );
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
-        &resolved_provider,
-        &resolved_model,
-        resolved_base_url.as_deref(),
-    ));
-    let pipeline = PromptExecutionPipeline::new(chat_client);
-    let mut request = PromptExecutionRequest::from_user_prompt(truncate_text_for_budget(
-        &synthesis_prompt,
-        MAX_REQUEST_PROMPT_CHARS,
-    ))
-    .with_context(PromptExecutionContext::default());
-    request = request.with_system_prompt(super::prompts::host_system_prompt_for_parent_mode(
-        record.parent_agent_mode.as_deref(),
-    ));
-    let response = match pipeline.execute(request).await {
-        Ok(response) => response,
-        Err(err) => {
-            sink.agent_error(synthesis_turn_id, format!("Worker synthesis failed: {err}"))
-                .await;
-            return;
-        }
-    };
-
-    let text = response.text.clone();
-    deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
-}
-
-/// Phase 7C / 8D.2: skip host synthesis LLM when the worker committed via `cognition_turn_finish`.
-pub(crate) fn worker_synthesis_pass_through(record: &TurnWorkRecord) -> bool {
-    let has_result = record
-        .result_text
-        .as_ref()
-        .is_some_and(|text| !text.trim().is_empty());
-    if !has_result {
-        return false;
-    }
-    match record.needs_synthesis {
-        Some(needs_synthesis) => !needs_synthesis,
-        None => record.termination_reason.as_deref() == Some("cognition_turn_finish"),
-    }
-}
-
-pub(crate) async fn deliver_synthesis_response(
-    record: &TurnWorkRecord,
-    sink: &SharedAgentStreamSink,
-    synthesis_turn_id: u64,
-    text: String,
-) {
-    if turn_worker_store().is_work_cancelled(&record.work_id) {
-        return;
-    }
-    let tool_names = record.tool_names.clone();
-    // Worker synthesis must commit explicit finish prose, not stale host/worker stream draft.
-    sink.reset_streamed_markdown().await;
-    sink.agent_response(synthesis_turn_id, text.clone(), tool_names.clone())
-        .await;
-    crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(record, &text, &tool_names)
-        .await;
-    turn_worker_store().update(&record.work_id, |worker| {
-        worker.synthesis_delivered = true;
-        worker.result_text = Some(text.clone());
-    });
-    // Work-scoped finish on the workspace feed bus (independent of parent SSE).
-    crate::feed_adapters::publish_workshop_finish_activity(record, "synthesis", Some(&text)).await;
-    if record.disposition == TurnWorkDisposition::Bound {
-        crate::feed_adapters::publish_workshop_synthesis(record, &text).await;
-        crate::feed_adapters::publish_workshop_terminal(record, "done", Some(&text)).await;
     }
 }
 
@@ -2612,6 +2200,7 @@ pub fn system_prompt_for_host_bus(base: &str, host_bus: bool) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::turn_worker_store;
     use super::*;
     use crate::agent_runtime::turn_worker::store::{TurnWorkRecord, TurnWorkStatus};
     use async_trait::async_trait;
@@ -2842,87 +2431,6 @@ mod tests {
     }
 
     #[test]
-    fn pass_through_when_worker_finished_with_message() {
-        assert!(worker_synthesis_pass_through(&sample_record(
-            Some("cognition_turn_finish"),
-            Some("Here is the report.")
-        )));
-    }
-
-    #[test]
-    fn explicit_synthesis_decision_overrides_legacy_finish_heuristic() {
-        let mut synth = sample_record(Some("cognition_turn_finish"), Some("raw evidence"));
-        synth.needs_synthesis = Some(true);
-        assert!(!worker_synthesis_pass_through(&synth));
-
-        let mut complete = sample_record(Some("direct_prose"), Some("complete answer"));
-        complete.needs_synthesis = Some(false);
-        assert!(worker_synthesis_pass_through(&complete));
-    }
-
-    #[test]
-    fn synthesis_resume_selects_parent_route_when_worker_requires_host_synthesis() {
-        let mut record = sample_record(Some("cognition_turn_finish"), Some("partial evidence"));
-        record.provider = "worker-provider".into();
-        record.model = "worker-model".into();
-        record.needs_synthesis = Some(true);
-        record.parent_continuation_route = Some(super::super::store::ParentContinuationRoute {
-            schema_version: super::super::store::ParentContinuationRoute::SCHEMA_VERSION,
-            stage_role: "final_response".into(),
-            policy_profile: "host-careful".into(),
-            provider: "host-provider".into(),
-            model: "host-model".into(),
-            fallback_chain: vec!["host-fallback".into()],
-        });
-        let restored: TurnWorkRecord = serde_json::from_slice(
-            &serde_json::to_vec(&record).expect("serialize synthesis record"),
-        )
-        .expect("restore synthesis record");
-
-        // run_synthesis_turn bypasses route selection only for pass-through
-        // prose; synthesized work must retain and resolve the original route.
-        assert!(!worker_synthesis_pass_through(&restored));
-        let fallback =
-            crate::stage_routing::StageRoutingMatrix::default_for("changed", "changed-model")
-                .final_response;
-        let route = super::super::store::continuation_route_for_record(&restored, &fallback)
-            .expect("parent synthesis route");
-        assert_eq!(route.provider, "host-provider");
-        assert_eq!(route.model, "host-model");
-        assert_eq!(route.policy_profile, "host-careful");
-        assert_eq!(route.fallback_chain, ["host-fallback"]);
-    }
-
-    #[test]
-    fn no_pass_through_without_finish_or_empty_result() {
-        assert!(!worker_synthesis_pass_through(&sample_record(
-            Some("max_rounds_fuse"),
-            Some("partial")
-        )));
-        assert!(!worker_synthesis_pass_through(&sample_record(
-            Some("cognition_turn_finish"),
-            Some("   ")
-        )));
-        assert!(!worker_synthesis_pass_through(&sample_record(
-            None,
-            Some("done")
-        )));
-    }
-
-    /// Workers only pass through on an explicit cognition_turn_finish;
-    /// partial or fused results still go through host synthesis.
-    #[test]
-    fn worker_requires_finish_for_pass_through() {
-        let mut record = sample_record(Some("max_rounds_fuse"), Some("partial"));
-        record.disposition = TurnWorkDisposition::Bound;
-        assert!(!worker_synthesis_pass_through(&record));
-        assert!(worker_synthesis_pass_through(&sample_record(
-            Some("cognition_turn_finish"),
-            Some("Here is the report.")
-        )));
-    }
-
-    #[test]
     fn worker_scope_is_rebuilt_only_from_the_durable_record() {
         let mut record = sample_record(Some("cognition_turn_finish"), Some("done"));
         record.identity_user_id = Some("user:alice".to_string());
@@ -3143,15 +2651,5 @@ mod tests {
 
         drop(execution);
         assert_eq!(store.live_execution_count(), 0);
-    }
-
-    #[test]
-    fn parallel_workers_resume_host_bound_workers_synthesize() {
-        assert!(parallel_worker_uses_host_resume(
-            TurnWorkDisposition::Parallel
-        ));
-        assert!(!parallel_worker_uses_host_resume(
-            TurnWorkDisposition::Bound
-        ));
     }
 }

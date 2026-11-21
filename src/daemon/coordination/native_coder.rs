@@ -1,6 +1,7 @@
 //! Native Coder adapter: independent Forge-fenced turns and native receipts.
 use super::*;
 use crate::agent_runtime::coder_tools::CoderExecutionGuard;
+use anyhow::Context;
 use stasis::prelude::StasisError;
 
 struct NativeCoderGuard {
@@ -14,6 +15,72 @@ impl CoderExecutionGuard for NativeCoderGuard {
     }
     fn admission_service(&self) -> Option<Arc<medousa_forge::execution::ForgeExecutionService>> {
         Some(self.host.state.forge_execution.clone())
+    }
+    fn verify_tool(&self, tool: &str) -> stasis::prelude::Result<()> {
+        self.verify()?;
+        if !self
+            .request
+            .owner_session
+            .session_id
+            .as_str()
+            .starts_with("session_peer_")
+        {
+            return Ok(());
+        }
+        let check = || -> Result<()> {
+            let route = crate::peer_coordination_mesh::remote_assignment_source(&self.request)?;
+            let identity = crate::pairing::DeviceIdentity::load_existing()?;
+            let pairs = crate::pairing::store::PairingStore::new(identity.signing_key());
+            let pair = pairs
+                .get_by_phone_id(&route.source_device_id)?
+                .context("source pairing removed")?;
+            if route.pairing_id.as_deref() != Some(&pair.pairing_id)
+                || pairs.is_revoked(&pair.pairing_id)?
+                || !crate::pairing::service::pairing_trust_active(&pair, Utc::now())
+                || !crate::mesh::grants::record_has_capability(
+                    &pair,
+                    crate::mesh::grants::CAP_TASK_REQUEST,
+                )
+            {
+                bail!("source pairing no longer permits Coder execution");
+            }
+            if pair.role.allows_full_portal() {
+                return Ok(());
+            }
+            let policy = crate::peer_execution_policy::PeerExecutionPolicyStore::default()
+                .policy_for_peer(&pair.phone_id, &pair.pairing_id, true)?
+                .policy;
+            let work = self
+                .host
+                .state
+                .forge
+                .load(&medousa_forge::model::WorkId::from(
+                    self.request.forge_work_id.clone(),
+                ))?;
+            let domain = crate::peer_execution_policy::execution_tool_domain(tool);
+            if !policy.enabled
+                || policy.is_expired_at(Utc::now())
+                || !policy.allow_agent_targeting
+                || !policy.coder_work
+                || !policy.allowed_tool_domains.contains(domain)
+                || (!policy.host_shell
+                    && (tool.starts_with("cognition_coder_shell_")
+                        || tool.starts_with("cognition_shell_")))
+                || (!policy.sandbox_execution && domain == "sandbox")
+                || !work.environment.as_ref().is_some_and(|env| {
+                    policy
+                        .allowed_project_ids
+                        .contains(&env.repo.repo_id.to_string())
+                })
+                || (domain == "web"
+                    && policy.network_policy
+                        == crate::peer_execution_policy::PeerNetworkPolicy::Deny)
+            {
+                bail!("current peer policy denies {tool} for this Coder assignment");
+            }
+            Ok(())
+        };
+        check().map_err(|error| StasisError::PortFailure(error.to_string()))
     }
     fn verify(&self) -> stasis::prelude::Result<()> {
         let verify = || -> Result<()> {
@@ -61,6 +128,52 @@ impl CoderExecutionGuard for NativeCoderGuard {
 }
 
 impl LocalPeerDispatcher {
+    pub(crate) async fn verify_coder_message(
+        &self,
+        owner: &str,
+        sender: &str,
+        target: &str,
+        execution: &str,
+        source_device: Option<&str>,
+    ) -> Result<()> {
+        let authority = crate::workshop_authority::current()
+            .map_err(anyhow::Error::msg)?
+            .clone();
+        let id = execution.to_owned();
+        let source_device = source_device.map(str::to_owned);
+        let sender = sender.to_owned();
+        let request = self
+            .stored(move |store| {
+                let request = store.native_coder_request(&authority, &id)?;
+                store.require_assignment_grant(&request, Utc::now())?;
+                if store
+                    .receipt_if_recorded(&request.channel, &request.assignment_id)?
+                    .is_some()
+                {
+                    bail!("Coder assignment has finished");
+                }
+                let owns_assignment = match source_device {
+                    Some(device) => crate::peer_coordination_mesh::remote_sender_owns_assignment(
+                        &device, &sender, &request,
+                    )?,
+                    None => request.owner_session.session_id.as_str() == sender,
+                };
+                if !owns_assignment {
+                    bail!("only the originating session can address this assignment")
+                }
+                Ok(request)
+            })
+            .await?;
+        if request.owner_principal_id != owner
+            || request.execution_session.session_id.as_str() != target
+        {
+            bail!("message does not belong to this Coder assignment");
+        }
+        self.hydrate(&RequestPrincipal::worker(owner.to_string()), &request, true)
+            .await?;
+        Ok(())
+    }
+
     pub(crate) async fn coding_preferences(&self) -> Result<CodingRuntimePreferences> {
         self.state
             .forge_execution

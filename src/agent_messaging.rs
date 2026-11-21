@@ -57,6 +57,43 @@ struct Target {
     #[serde(default)]
     workshop_id: Option<String>,
 }
+async fn coder_execution(
+    host: &MessageHost,
+    owner: &str,
+    source: &str,
+    target: &str,
+    device: Option<&str>,
+) -> Result<String> {
+    let active = crate::turn_ticket::get_active_interactive_turn(&host.state.turn_tickets, target)
+        .await
+        .turn
+        .ok_or_else(|| anyhow::anyhow!("Coder assignment has finished"))?;
+    let dispatcher = crate::daemon::coordination::local_coordination_host()
+        .ok_or_else(|| anyhow::anyhow!("assignment host unavailable"))?;
+    dispatcher
+        .verify_coder_message(owner, source, target, &active.turn_id, device)
+        .await?;
+    Ok(active.turn_id)
+}
+
+fn live_session_worker(session: &str, address: &str) -> bool {
+    use crate::agent_runtime::turn_worker::{
+        TurnWorkDisposition, TurnWorkStatus, turn_worker_store,
+    };
+    turn_worker_store().get(address).is_some_and(|worker| {
+        worker.session_id == session
+            && !worker.archived
+            && matches!(
+                worker.disposition,
+                TurnWorkDisposition::Parallel | TurnWorkDisposition::Bound
+            )
+            && matches!(
+                worker.status,
+                TurnWorkStatus::Pending | TurnWorkStatus::Running
+            )
+    })
+}
+
 fn targets(profile: &str, query: Option<&str>) -> Result<Vec<Target>> {
     let bots = crate::bot_profiles::BotProfileStore::daemon_default()
         .list(profile)
@@ -118,9 +155,7 @@ fn resolve_target(profile: &str, selector: &str) -> Result<Target> {
         bail!("target name or ID is required (up to 160 bytes)");
     }
     if selector.starts_with("ses_peer_") {
-        bail!(
-            "delegated Coder chats retain assignment custody; use peer discovery reusable_sessions and peer_handoff with existing_agent_session_id for a scoped follow-up in the same chat"
-        );
+        bail!("delegated Coder chats require their active assignment and originating session");
     }
     if selector.starts_with("ses_handoff_")
         || selector.starts_with(medousa_types::work_coordinator::WORK_COORDINATOR_SESSION_PREFIX)
@@ -183,9 +218,7 @@ fn resolve_target(profile: &str, selector: &str) -> Result<Target> {
                 .as_deref()
                 .is_some_and(|id| id.starts_with("ses_peer_"))
             {
-                bail!(
-                    "delegated Coder chats use peer discovery reusable_sessions and peer_handoff with existing_agent_session_id, not native inbox delivery"
-                );
+                bail!("address an active Coder assignment by its session ID");
             }
             if !target.can_message {
                 bail!(
@@ -213,7 +246,7 @@ enum MessageAction {
 #[serde(deny_unknown_fields)]
 struct MessageInput {
     action: MessageAction,
-    /// Exact Bot name/ID or chat title/ID for send. Duplicate names require IDs.
+    /// Session ID, admitted worker work_id, or unique Bot/chat name. Coder handoffs return their session_id.
     #[serde(default)]
     target: Option<String>,
     /// Exact paired workshop ID/name from discover. Omit for this workshop. Reply uses its saved workshop route.
@@ -246,7 +279,7 @@ fn required(value: Option<String>, field: &str) -> Result<String> {
 
 #[medousa_tool(id = TOOL_ID)]
 impl AgentMessageTool {
-    /// Send a message to a named Bot or chat, reply to a received message, discover participants, read the inbox, or check delivery status. Runtime retains permission between chats admitted by a user turn and handles delivery and saved reply routes. Recipients use their normal Assistant loop; reply when useful, and finish silently when no response is needed. Messages do not grant additional tool permissions. External runtime Bots use their existing job/handoff route.
+    /// Send a message to a Bot or session, reply to a received message, discover participants, read the inbox, or check delivery status. Use the execution session ID to clarify an active Coder assignment. A running recipient reads messages in its current turn. Messages retain their sender and grant no tools.
     async fn invoke_typed(&self, input: MessageInput) -> stasis::prelude::Result<Value> {
         let turn = crate::agent_runtime::execution_context::active_turn_execution_context()
             .ok_or_else(|| error("agent messaging requires an admitted turn"))?;
@@ -319,6 +352,11 @@ impl AgentMessageTool {
                         &host,
                         peer,
                         mesh::Request::Discover {
+                            source_session: input
+                                .target
+                                .as_ref()
+                                .filter(|id| id.starts_with("ses_peer_"))
+                                .map(|_| source.clone()),
                             query: input.target,
                         },
                     )
@@ -334,18 +372,40 @@ impl AgentMessageTool {
                 } else {
                     let local = host.mesh.local_device_id.clone();
                     let host_lookup = host.clone();
-                    host.stored(move |_| {
-                        let workshops: Vec<_> = mesh::available_workshops(&host_lookup)?.into_iter().map(|peer| json!({"workshop_id": peer.id, "name": peer.label})).collect();
-                        let mut participants = targets(&profile, input.target.as_deref())?;
-                        participants.truncate(200);
-                        for target in &mut participants { target.workshop_id = Some(local.clone()); }
-                        Ok(json!({"participants": participants, "workshop": local, "workshops": workshops, "limit": 200}))
-                    }).await.map_err(error)
+                    let (mut participants, workshops) = host
+                        .stored({
+                            let profile = profile.clone();
+                            move |_| {
+                                let workshops: Vec<_> = mesh::available_workshops(&host_lookup)?
+                                    .into_iter()
+                                    .map(|peer| json!({"workshop_id": peer.id, "name": peer.label}))
+                                    .collect();
+                                Ok((targets(&profile, input.target.as_deref())?, workshops))
+                            }
+                        })
+                        .await
+                        .map_err(error)?;
+                    participants.truncate(200);
+                    for target in &mut participants {
+                        target.workshop_id = Some(local.clone());
+                        if let Some(id) = target
+                            .session_id
+                            .as_deref()
+                            .filter(|id| id.starts_with("ses_peer_"))
+                        {
+                            target.can_message =
+                                coder_execution(&host, &profile, &source, id, None)
+                                    .await
+                                    .is_ok();
+                        }
+                    }
+                    Ok(
+                        json!({"participants": participants, "workshop": local, "workshops": workshops, "limit": 200}),
+                    )
                 }
             }
             MessageAction::Inbox => {
-                let host_lookup = host.clone();
-                host.stored(move |store| Ok(json!({"messages": store.inbox_allowed(&profile, &source, &source_turn, |message| mesh::may_receive(&host_lookup, message))?}))).await.map_err(error)
+                Ok(json!({"messages": session_inbox(&turn, false).await.map_err(error)?}))
             }
             MessageAction::Status => {
                 let id = required(input.message_id, "message_id").map_err(error)?;
@@ -402,6 +462,32 @@ impl AgentMessageTool {
                     .and_then(|message| message.source_workshop.clone())
                     .or(input.workshop)
                     .filter(|id| id != "current" && id != &host.mesh.local_device_id);
+                if workshop.is_none()
+                    && previous.is_none()
+                    && selector.starts_with("work-delegation-")
+                {
+                    if body.len() > 8000 || key.len() > 160 {
+                        return Err(error(
+                            "message or request key exceeds the agent inbox limit",
+                        ));
+                    }
+                    let service = host
+                        .state
+                        .platform
+                        .delegation_service()
+                        .ok_or_else(|| error("workshop delegation is unavailable"))?;
+                    let bytes = serde_json::to_vec(&(&source, &source_turn, &selector, &key))
+                        .map_err(error)?;
+                    let id = format!("msg_{:x}", sha2::Sha256::digest(bytes));
+                    // The admitted delegation binds this return route to the source session.
+                    let result = service
+                        .send_worker_message(&selector, &body, id.clone())
+                        .await?;
+                    return Ok(
+                        json!({"queued":true, "message":{"id":id, "target":selector}, "receipt":result, "authority":"none"}),
+                    );
+                }
+                let mut target_execution = None;
                 let (target, target_workshop, transport_route, source_workshop) =
                     if let Some(workshop) = workshop {
                         if let Some(previous) = &previous {
@@ -445,6 +531,9 @@ impl AgentMessageTool {
                                 &host,
                                 peer,
                                 mesh::Request::Discover {
+                                    source_session: selector
+                                        .starts_with("ses_peer_")
+                                        .then(|| source.clone()),
                                     query: Some(selector.clone()),
                                 },
                             )
@@ -461,10 +550,49 @@ impl AgentMessageTool {
                         }
                     } else {
                         let owner = profile.clone();
-                        let target = host
-                            .stored(move |_| resolve_target(&owner, &selector))
-                            .await
-                            .map_err(error)?;
+                        let target =
+                            if previous.is_none() && live_session_worker(&source, &selector) {
+                                target_execution = Some(selector.clone());
+                                Target {
+                                    target_id: selector.clone(),
+                                    session_id: Some(source.clone()),
+                                    name: selector,
+                                    kind: "worker".into(),
+                                    can_message: true,
+                                    workshop_id: None,
+                                }
+                            } else if let Some(reply) = previous.as_ref().filter(|m| {
+                                m.target_execution.as_deref() == Some(&source_turn)
+                                    && m.target_session == m.source_session
+                            }) {
+                                target_execution = Some(reply.source_turn.clone());
+                                Target {
+                                    target_id: selector.clone(),
+                                    session_id: Some(selector.clone()),
+                                    name: selector,
+                                    kind: "chat".into(),
+                                    can_message: true,
+                                    workshop_id: None,
+                                }
+                            } else if selector.starts_with("ses_peer_") {
+                                target_execution = Some(
+                                    coder_execution(&host, &owner, &source, &selector, None)
+                                        .await
+                                        .map_err(error)?,
+                                );
+                                Target {
+                                    target_id: selector.clone(),
+                                    session_id: Some(selector.clone()),
+                                    name: selector,
+                                    kind: "chat".into(),
+                                    can_message: true,
+                                    workshop_id: None,
+                                }
+                            } else {
+                                host.stored(move |_| resolve_target(&owner, &selector))
+                                    .await
+                                    .map_err(error)?
+                            };
                         (target, None, None, None)
                     };
                 let message = host
@@ -508,6 +636,7 @@ impl AgentMessageTool {
                                 attempts: 0,
                                 next_attempt_at: None,
                                 observed_phase: None,
+                                target_execution,
                                 wake_source: None,
                             },
                             &key,
@@ -558,6 +687,59 @@ fn message_prompt(message: &Message) -> String {
     )
 }
 
+pub(crate) async fn receive_for_turn(
+    turn: &crate::execution_context::TurnExecutionContext,
+) -> Result<Vec<Value>> {
+    let messages = session_inbox(turn, true).await?;
+    messages
+        .iter()
+        .map(|message| Ok(serde_json::to_value(message.session_event(turn.turn_id()))?))
+        .collect()
+}
+
+async fn session_inbox(
+    turn: &crate::execution_context::TurnExecutionContext,
+    ordinary_events_only: bool,
+) -> Result<Vec<Message>> {
+    let Some(host) = HOST.get() else {
+        return Ok(vec![]);
+    };
+    let Some(profile) = turn
+        .principal()
+        .profile_id()
+        .or(turn.legacy_scope().identity_user_id.as_deref())
+    else {
+        return Ok(vec![]);
+    };
+    let profile = profile.to_owned();
+    let session = turn.session_id().to_string();
+    let execution = turn.turn_id().to_owned();
+    // Local workshop workers may share the parent's transcript. Only the
+    // ticket addressed by the sender may drain that chat's incoming messages.
+    let worker_in_parent_chat = turn.principal().kind() == PrincipalKind::Worker
+        && crate::turn_ticket::get_active_interactive_turn(&host.state.turn_tickets, &session)
+            .await
+            .turn
+            .is_none_or(|ticket| ticket.turn_id != execution);
+    let lookup = host.clone();
+    host.stored(move |store| {
+        if !crate::session_catalog::session_visible_to_profile(&session, &profile) {
+            return Ok(vec![]);
+        }
+        store.inbox_matching(
+            &profile,
+            &session,
+            &execution,
+            worker_in_parent_chat || session.starts_with("ses_peer_"),
+            |message| {
+                (!ordinary_events_only || message.wake_source.is_none())
+                    && mesh::may_receive(&lookup, message)
+            },
+        )
+    })
+    .await
+}
+
 pub async fn enqueue_process_event(
     profile_id: &str,
     source_session: &str,
@@ -605,6 +787,7 @@ pub async fn enqueue_process_event(
                     attempts: 0,
                     next_attempt_at: None,
                     observed_phase: None,
+                    target_execution: None,
                     wake_source: Some(wake_source),
                 },
                 &key,
@@ -824,14 +1007,35 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
             );
             continue;
         }
-        if crate::turn_ticket::get_active_interactive_turn(
+        let active = crate::turn_ticket::get_active_interactive_turn(
             &host.state.turn_tickets,
             &pending.target_session,
         )
         .await
-        .turn
-        .is_some()
+        .turn;
+        if pending
+            .target_execution
+            .as_deref()
+            .is_some_and(|target| live_session_worker(&pending.target_session, target))
         {
+            continue;
+        }
+        if let Some(target) = pending.target_execution.as_deref()
+            && active
+                .as_ref()
+                .is_none_or(|running| running.turn_id != target)
+        {
+            host.stored(move |store| {
+                store.outcome(
+                    &id,
+                    MessageStatus::Failed,
+                    Some("addressed assignment has ended".into()),
+                )
+            })
+            .await?;
+            continue;
+        }
+        if active.is_some() {
             let waiting = id.clone();
             host.stored(move |store| store.note_waiting(&waiting))
                 .await?;
@@ -952,10 +1156,9 @@ async fn deliver_pending(host: &Arc<MessageHost>) -> Result<()> {
 mod tests {
     use super::*;
     #[test]
-    fn delegated_coder_chat_requires_scoped_continuation_not_inbox_delivery() {
+    fn delegated_coder_chat_requires_the_assignment_source() {
         let error = resolve_target("owner", "ses_peer_owned_child").unwrap_err();
-        assert!(error.to_string().contains("existing_agent_session_id"));
-        assert!(error.to_string().contains("assignment custody"));
+        assert!(error.to_string().contains("originating session"));
     }
     fn message() -> Message {
         Message {
@@ -982,6 +1185,7 @@ mod tests {
             attempts: 0,
             next_attempt_at: None,
             observed_phase: None,
+            target_execution: None,
             wake_source: None,
         }
     }

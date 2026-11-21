@@ -5,9 +5,7 @@ use super::{
     object_path,
 };
 use anyhow::{Result, bail};
-use medousa_types::{
-    SessionId, SessionRef, coordination::*, work_handoff::*, work_unit::WorkContactPreference,
-};
+use medousa_types::{SessionRef, coordination::*, work_handoff::*};
 use sha2::{Digest, Sha256};
 
 impl CoordinationStore {
@@ -226,25 +224,12 @@ impl CoordinationStore {
         }
     }
     pub fn handoff_wake_session(record: &PeerHandoffRecord) -> Result<SessionRef> {
-        if record.policy.contact == WorkContactPreference::ReturnToOrigin {
-            return Ok(record.request.owner_session.clone());
-        }
-        // Silent/alternate reporting routes keep internal callbacks out of the user's chat.
-        // Contact delivery is separate native authority and is not performed by this wake.
-        let hash = Sha256::digest(serde_json::to_vec(&(
-            "handoff-wake-v1",
-            &record.request.channel,
-            &record.request.assignment_id,
-        ))?);
-        Ok(SessionRef {
-            authority_id: record.request.owner_session.authority_id.clone(),
-            session_id: SessionId::parse(format!("ses_handoff_{hash:x}"))?,
-        })
+        Ok(record.request.owner_session.clone())
     }
     pub fn require_handoff_event(&self, event: &OwnerEvent) -> Result<PeerHandoffRecord> {
-        let (id, terminal) = match &event.payload {
-            OwnerEventPayload::AssignmentAccepted { binding } => (&binding.assignment_id, false),
-            OwnerEventPayload::AssignmentTerminal { assignment_id, .. } => (assignment_id, true),
+        let id = match &event.payload {
+            OwnerEventPayload::AssignmentAccepted { binding } => &binding.assignment_id,
+            OwnerEventPayload::AssignmentTerminal { assignment_id, .. } => assignment_id,
             _ => bail!("not a native handoff lifecycle event"),
         };
         let record = self
@@ -255,9 +240,15 @@ impl CoordinationStore {
         {
             bail!("handoff callback owner mismatch");
         }
-        self.require_assignment_grant(&record.request, chrono::Utc::now())?;
         match &event.payload {
             OwnerEventPayload::AssignmentAccepted { binding } => {
+                self.require_assignment_grant(&record.request, chrono::Utc::now())?;
+                if !record.policy.wake_on_accepted
+                    || (record.admission.dispatches_immediately()
+                        && record.expires_at <= chrono::Utc::now())
+                {
+                    bail!("acceptance notification disabled or expired");
+                }
                 if self.handoff_acceptance(&record)?.as_ref() != Some(event)
                     || self.peer_if_recorded(&event.channel, id)?.as_ref() != Some(binding.as_ref())
                 {
@@ -265,23 +256,13 @@ impl CoordinationStore {
                 }
             }
             OwnerEventPayload::AssignmentTerminal { receipt, .. } => {
-                if self.receipt(&event.channel, id)? != **receipt {
+                if self.receipt(&event.channel, id)? != **receipt
+                    || self.peer_owner_event_for_receipt(receipt)? != *event
+                {
                     bail!("handoff terminal evidence mismatch")
                 }
             }
             _ => unreachable!(),
-        }
-        // A staged proposal's legacy snapshot date does not bound approval
-        // or callbacks. Its fresh execution grant was checked above. Direct
-        // delegation retains the original admitted handoff deadline as well.
-        if (record.admission.dispatches_immediately() && record.expires_at <= chrono::Utc::now())
-            || if terminal {
-                !record.policy.wake_on_terminal
-            } else {
-                !record.policy.wake_on_accepted
-            }
-        {
-            bail!("handoff callback disabled or expired");
         }
         Ok(record)
     }

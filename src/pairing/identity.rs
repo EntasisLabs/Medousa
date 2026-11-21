@@ -15,6 +15,10 @@ pub struct DeviceIdentity {
 }
 
 impl DeviceIdentity {
+    pub(crate) fn load_existing() -> Result<Self> {
+        Self::load_from_path(&identity_secret_path())
+    }
+
     pub fn load_or_create() -> Result<Self> {
         fs::create_dir_all(identity_dir()).context("failed to create identity directory")?;
         let path = identity_secret_path();

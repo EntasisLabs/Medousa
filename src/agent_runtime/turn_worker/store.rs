@@ -934,18 +934,15 @@ impl TurnWorkerStore {
             .values()
             .filter(|record| {
                 !record.archived
-                    && record.stop_request_id.is_none()
-                    && (matches!(
+                    && if matches!(
                         record.status,
                         TurnWorkStatus::Pending | TurnWorkStatus::Running
-                    ) || (!record.synthesis_delivered
-                        && record.disposition != TurnWorkDisposition::Delegated
-                        && (record.status == TurnWorkStatus::Completed
-                            || (record.disposition == TurnWorkDisposition::Parallel
-                                && matches!(
-                                    record.status,
-                                    TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
-                                )))))
+                    ) {
+                        record.stop_request_id.is_none()
+                    } else {
+                        !record.synthesis_delivered
+                            && record.disposition != TurnWorkDisposition::Delegated
+                    }
             })
             .cloned()
             .collect()
@@ -1003,6 +1000,35 @@ impl TurnWorkerStore {
     where
         F: FnOnce(&mut TurnWorkRecord) -> bool,
     {
+        self.persist_record_update(work_id, update, false)
+    }
+
+    pub(super) fn mark_result_delivered(
+        &self,
+        work_id: &str,
+    ) -> Result<Option<TurnWorkRecord>, crate::persistence::PersistenceError> {
+        self.persist_record_update(
+            work_id,
+            |record| {
+                !record.synthesis_delivered
+                    && !matches!(
+                        record.status,
+                        TurnWorkStatus::Pending | TurnWorkStatus::Running
+                    )
+            },
+            true,
+        )
+    }
+
+    fn persist_record_update<F>(
+        &self,
+        work_id: &str,
+        update: F,
+        delivered: bool,
+    ) -> Result<Option<TurnWorkRecord>, crate::persistence::PersistenceError>
+    where
+        F: FnOnce(&mut TurnWorkRecord) -> bool,
+    {
         let Some(current) = self.get(work_id) else {
             return Ok(None);
         };
@@ -1025,6 +1051,9 @@ impl TurnWorkerStore {
             return Ok(None);
         }
         preserve_stop_fence(record, previous.as_ref());
+        if delivered {
+            record.synthesis_delivered = true;
+        }
         record.updated_at = Utc::now();
         let snapshot = record.clone();
         self.persist_candidate(&mut candidate, work_id)?;
@@ -1879,6 +1908,8 @@ mod tests {
         assert_eq!(stopped.status, TurnWorkStatus::Cancelled);
         assert!(!stopped.synthesis_delivered);
         assert_eq!(stopped.stop_request_id.as_deref(), Some("request-1"));
+        assert_eq!(store.list_incomplete().len(), 1);
+        store.mark_result_delivered("stop-live").unwrap();
         assert!(store.list_incomplete().is_empty());
     }
 
@@ -2133,7 +2164,7 @@ mod tests {
     }
 
     #[test]
-    fn list_incomplete_retries_undelivered_failed_parallel_not_bound() {
+    fn list_incomplete_retries_each_undelivered_local_terminal_result() {
         let store = TurnWorkerStore::empty_for_tests();
         seed(
             &store,
@@ -2154,7 +2185,7 @@ mod tests {
             .map(|record| record.work_id)
             .collect();
         assert!(ids.contains(&"work-f".to_string()));
-        assert!(!ids.contains(&"work-bf".to_string()));
+        assert!(ids.contains(&"work-bf".to_string()));
         assert!(!ids.contains(&"work-d".to_string()));
         assert!(!ids.contains(&"work-delegated".to_string()));
     }

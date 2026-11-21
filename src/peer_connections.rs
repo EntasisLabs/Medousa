@@ -138,6 +138,45 @@ fn mutate<T>(
     store_root()?.atomic_write(&store_path(), &encrypt(&key(service), &rows)?)?;
     Ok(value)
 }
+/// Called on the admitted store I/O lane. The token stays inside the transport.
+pub(crate) fn delegation_routes(
+    service: &PairingService,
+) -> Result<Vec<(crate::daemon_worker::DaemonWorkerConnection, String)>> {
+    Ok(read(service)?
+        .into_iter()
+        .map(|row| {
+            let route = crate::daemon_worker::DaemonWorkerConnection {
+                id: format!("peer:{}", row.pairing_id),
+                label: row.label,
+                workshop_device_id: row.device_id,
+                daemon_url: row.lan_base,
+                pairing_id: row.pairing_id,
+                daemon_public_key: row.public_key,
+                iroh_ticket: row.iroh_ticket,
+                connected_at: String::new(),
+            };
+            (route, row.session_token)
+        })
+        .collect())
+}
+
+pub(crate) async fn renew_delegation_token(
+    service: Arc<PairingService>,
+    route: &crate::daemon_worker::DaemonWorkerConnection,
+    stale: &str,
+) -> Result<String> {
+    let renewed = refresh_after(
+        service,
+        route.workshop_device_id.clone(),
+        Some((&route.pairing_id, stale)),
+    )
+    .await?;
+    if renewed.public_key != route.daemon_public_key || renewed.pairing_id != route.pairing_id {
+        bail!("peer identity changed during session renewal");
+    }
+    Ok(renewed.session_token)
+}
+
 pub async fn list(service: Arc<PairingService>) -> Result<Vec<ConnectionSummary>> {
     store_io(move || {
         let _guard = STORE_LOCK
@@ -419,9 +458,24 @@ pub async fn pair(service: Arc<PairingService>, request: PairRequest) -> Result<
 }
 
 async fn refresh(service: Arc<PairingService>, device_id: String) -> Result<Connection> {
+    refresh_after(service, device_id, None).await
+}
+
+async fn refresh_after(
+    service: Arc<PairingService>,
+    device_id: String,
+    rejected: Option<(&str, &str)>,
+) -> Result<Connection> {
     let _guard = CEREMONY_LOCK.lock().await;
     let mut row = load(service.clone(), device_id).await?;
-    if row.session_expires_at > Utc::now() + chrono::Duration::seconds(60) {
+    if let Some((pairing, token)) = rejected {
+        if row.pairing_id != pairing {
+            bail!("peer pairing replaced");
+        }
+        if row.session_token != token {
+            return Ok(row);
+        }
+    } else if row.session_expires_at > Utc::now() + chrono::Duration::seconds(60) {
         return Ok(row);
     }
     let challenge = wire(

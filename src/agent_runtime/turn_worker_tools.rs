@@ -1,5 +1,7 @@
 //! Host-bus delegation tools (spawn / status / cancel).
 
+const RESULT_PAGE_CHARS: usize = 1200;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::domain::errors::StasisError;
@@ -296,7 +298,7 @@ impl TurnWorkerSummary {
             let mut chars = value.chars();
             let mut text: String = chars
                 .by_ref()
-                .take(super::turn_worker::RESULT_PAGE_CHARS)
+                .take(RESULT_PAGE_CHARS)
                 .collect();
             if chars.next().is_some() {
                 text.push('…');
@@ -309,12 +311,12 @@ impl TurnWorkerSummary {
             .map_or(0, |text| text.chars().count());
         let result_offset = offset.min(result_total_chars);
         let result_end = result_offset
-            .saturating_add(super::turn_worker::RESULT_PAGE_CHARS)
+            .saturating_add(RESULT_PAGE_CHARS)
             .min(result_total_chars);
         let result_text = record.result_text.as_deref().map(|text| {
             text.chars()
                 .skip(result_offset)
-                .take(super::turn_worker::RESULT_PAGE_CHARS)
+                .take(RESULT_PAGE_CHARS)
                 .collect()
         });
         Self {
@@ -364,13 +366,6 @@ impl CognitionTurnWorkerStatusTool {
             let record = store
                 .get(work_id)
                 .ok_or_else(|| StasisError::PortFailure(format!("work_id not found: {work_id}")))?;
-            if let Some(session) = active_control_session(&self.scheduler).await {
-                super::turn_worker::observe_worker_result_page(
-                    &record,
-                    input.result_offset,
-                    &session,
-                );
-            }
             return Ok(TurnWorkerStatusOutput::Record {
                 ok: true,
                 record: Box::new(TurnWorkerSummary::from_record(record, input.result_offset)),

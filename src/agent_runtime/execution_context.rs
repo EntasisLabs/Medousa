@@ -154,6 +154,7 @@ pub struct SurfaceCapabilities {
 /// All values selected at admission and immutable for the execution lifetime.
 #[derive(Debug)]
 pub struct TurnExecutionContext {
+    pub(crate) session_waits: crate::delegation::session_results::SessionWaits,
     handle: TurnHandle,
     turn_id: Arc<str>,
     correlation_id: Arc<str>,
@@ -189,6 +190,7 @@ impl TurnExecutionContext {
     ) -> Self {
         let tasks = Arc::new(TurnTaskGroup::new(cancellation.clone(), 64));
         Self {
+            session_waits: Default::default(),
             handle: TurnHandle::new(),
             turn_id: turn_id.into(),
             correlation_id: correlation_id.into(),

@@ -915,9 +915,7 @@ impl PairingService {
                 reason: Some("invalid_token".to_string()),
             });
         };
-        if record.session_token_expiry <= Utc::now()
-            || !pairing_trust_active(&record, Utc::now())
-        {
+        if record.session_token_expiry <= Utc::now() || !pairing_trust_active(&record, Utc::now()) {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
                 device_time: Utc::now(),
@@ -1361,7 +1359,7 @@ fn paired_device_summary(record: PairedDeviceRecord, now: DateTime<Utc>) -> Pair
     }
 }
 
-fn pairing_trust_active(record: &PairedDeviceRecord, now: DateTime<Utc>) -> bool {
+pub(crate) fn pairing_trust_active(record: &PairedDeviceRecord, now: DateTime<Utc>) -> bool {
     if record
         .trust_expires_at
         .is_some_and(|expires_at| expires_at <= now)
@@ -1989,8 +1987,7 @@ mod tests {
     #[tokio::test]
     async fn expired_session_rotates_with_the_durable_device_key() {
         let service = test_service();
-        let (pairing_id, old_token, phone_id, phone_key) =
-            pair_test_phone(&service, None).await;
+        let (pairing_id, old_token, phone_id, phone_key) = pair_test_phone(&service, None).await;
         let mut record = service
             .store
             .get_by_phone_id(&phone_id)

@@ -33,6 +33,7 @@ pub fn completion_execution_service() -> Arc<ForgeExecutionService> {
 /// Apply one verified remote answer to the exact source session. Returns true
 /// when newly appended and false for an exact replay after a prior commit.
 pub async fn apply_remote_peer_completion(
+    runtime: &stasis::prelude::RuntimeComposition,
     store: Arc<dyn SessionStore>,
     origin: &RemotePeerOriginAssociation,
     result: &RemotePeerCompletionResult,
@@ -45,7 +46,7 @@ pub async fn apply_remote_peer_completion(
     // The deterministic `caused_by` reference below makes crash replay
     // idempotent after the append commits.
     let _apply = APPLY_LOCK.lock().await;
-    append_remote_peer_completion_once(
+    let appended = append_remote_peer_completion_once(
         store,
         origin.request.owner_session_id.clone(),
         origin.request.source_execution.authority_id.clone(),
@@ -53,7 +54,31 @@ pub async fn apply_remote_peer_completion(
         result.clone(),
         crate::session_catalog::session_visible_to_profile,
     )
-    .await
+    .await?;
+    let wait = crate::delegation::session_results::NativeSessionWait::open(
+        runtime,
+        &origin.request_digest,
+        origin.request.owner_session_id.as_str(),
+        &result.binding.assignment_id,
+        result.binding.execution_session.session_id.as_str(),
+    )
+    .await?;
+    use medousa_types::coordination::PeerAssignmentOutcome;
+    use stasis::domain::agent::envelope::AgentEnvelopeKind;
+    let kind = match result.receipt.outcome {
+        PeerAssignmentOutcome::Completed => AgentEnvelopeKind::TurnCompleted,
+        PeerAssignmentOutcome::Cancelled => AgentEnvelopeKind::Cancelled,
+        PeerAssignmentOutcome::Failed | PeerAssignmentOutcome::Interrupted => {
+            AgentEnvelopeKind::Failed
+        }
+    };
+    wait.settle(
+        kind,
+        &result.receipt.receipt_id,
+        serde_json::json!({"text": result.receipt.result, "outcome": result.receipt.outcome}),
+    )
+    .await?;
+    Ok(appended)
 }
 
 async fn append_remote_peer_completion_once<F>(
@@ -119,7 +144,7 @@ where
     Ok(true)
 }
 
-fn find_completion_entry(
+pub(crate) fn find_completion_entry(
     store: &dyn SessionStore,
     session: &medousa_types::SessionId,
     caused_by: &ExecutionRef,

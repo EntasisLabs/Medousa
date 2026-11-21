@@ -13,9 +13,9 @@ use std::time::{Duration, Instant};
 use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::delegated_task::{
-    delegated_work_id, validate_task_control_observation, DelegatedTaskControlObservation,
-    DelegatedTaskControlRequest, DelegatedTaskError, DelegatedTaskObservation,
-    DelegatedTaskRequest, DelegatedTaskTransport,
+    DelegatedTaskControlObservation, DelegatedTaskControlRequest, DelegatedTaskError,
+    DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskTransport, delegated_work_id,
+    validate_task_control_observation,
 };
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::embedded_daemon::{
@@ -897,6 +897,19 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
             }
         }
         Ok(response.payload)
+    }
+
+    async fn destination_work_id(
+        &self,
+        target: &medousa::delegation::DelegationTarget,
+        turn_id: &str,
+    ) -> Result<String, DelegatedTaskError> {
+        let target = target.clone();
+        let config = tokio::task::spawn_blocking(move || delegation_transport_for(&target))
+            .await
+            .map_err(|_| DelegatedTaskError::transport("paired transport lookup failed"))?
+            .map_err(DelegatedTaskError::transport)?;
+        Ok(delegated_work_id(&config.phone_id, turn_id))
     }
 
     async fn control(

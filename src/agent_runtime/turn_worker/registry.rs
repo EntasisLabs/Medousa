@@ -493,6 +493,25 @@ impl ToolRegistry for WorldScopedToolRegistry {
     }
 
     async fn invoke_tool(&self, tool_name: &str, mut input: Value) -> Result<Value> {
+        if let Some((policy, grant)) = &self.remote_authority {
+            let policy = policy.clone();
+            let grant = grant.clone();
+            let name = tool_name.to_string();
+            let allowed = crate::peer_completion_delivery::completion_execution_service()
+                .run(
+                    medousa_forge::execution::ExecutionClass::StoreIo,
+                    64 * 1024,
+                    move || Ok(policy.paired_tool_is_active(&grant, &name)),
+                )
+                .await
+                .map_err(|err| StasisError::PortFailure(err.to_string()))?
+                .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+            if !allowed {
+                return Err(StasisError::PortFailure(format!(
+                    "destination pairing no longer permits {tool_name}"
+                )));
+            }
+        }
         let Some(expected_surface) = world_tool_surface(tool_name) else {
             return self.inner.invoke_tool(tool_name, input).await;
         };
@@ -810,11 +829,13 @@ mod tests {
         );
         for optional in ["message", "reason", "needs_synthesis"] {
             assert!(schema["properties"].get(optional).is_some());
-            assert!(!schema["required"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|name| name.as_str() == Some(optional)));
+            assert!(
+                !schema["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|name| name.as_str() == Some(optional))
+            );
         }
     }
 

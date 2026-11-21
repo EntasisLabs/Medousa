@@ -4,7 +4,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_agent_message",
-      "description": "Send a message to a named Bot or chat, reply to a received message, discover participants, read the inbox, or check delivery status. Runtime retains permission between chats admitted by a user turn and handles delivery and saved reply routes. Recipients use their normal Assistant loop; reply when useful, and finish silently when no response is needed. Messages do not grant additional tool permissions. External runtime Bots use their existing job/handoff route.",
+      "description": "Send a message to a Bot or session, reply to a received message, discover participants, read the inbox, or check delivery status. Use the execution session ID to clarify an active Coder assignment. A running recipient reads messages in its current turn. Messages retain their sender and grant no tools.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -49,7 +49,7 @@
           },
           "target": {
             "default": null,
-            "description": "Exact Bot name/ID or chat title/ID for send. Duplicate names require IDs.",
+            "description": "Session ID, admitted worker work_id, or unique Bot/chat name. Coder handoffs return their session_id.",
             "type": [
               "string",
               "null"
@@ -1938,7 +1938,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_peer_handoff",
-      "description": "Delegate user-requested work in an owned Forge project through native admission without a second approval card. To continue a terminal native Coder chat, use existing_agent_session_id from peer discovery reusable_sessions; a fresh scoped assignment reuses its conversation, never its old grant. Optional session_title names the executor chat for future discovery. Omission creates fresh work. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage and work.coordinate when the stages are known ahead of time. Verified owner callbacks may also delegate or stage follow-on workers in the same already-authorized Forge project without another approval card; native admission checks the durable callback, original owner, source context and project. Callbacks are not operators and cannot use this to authorize new project scope. Human turns must include the current human request in committed context; callbacks inherit their saved human source. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.",
+      "description": "Delegate user-requested work in an owned Forge project. The tool returns the admitted request ID and execution session. Send clarifications to that session with cognition_agent_message. The worker's terminal result returns to the originating session automatically. To continue a finished Coder assignment, pass the existing_agent_session_id from peer discovery. Use admission=propose for recommendations needing approval, or admission=stage for a user-requested sequence managed by work.coordinate.",
       "input_schema": {
         "additionalProperties": false,
         "description": "Model supplies intent. The native host captures source identity and issues scoped authority.",
@@ -1975,7 +1975,7 @@
                 "kind": "return_to_origin"
               },
               "responsibility": "retain",
-              "wake_on_accepted": true,
+              "wake_on_accepted": false,
               "wake_on_terminal": true
             },
             "properties": {
@@ -2137,7 +2137,7 @@
                 "type": "string"
               },
               "wake_on_accepted": {
-                "default": true,
+                "default": false,
                 "type": "boolean"
               },
               "wake_on_terminal": {
@@ -3150,7 +3150,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_agent_message",
-      "description": "Send a message to a named Bot or chat, reply to a received message, discover participants, read the inbox, or check delivery status. Runtime retains permission between chats admitted by a user turn and handles delivery and saved reply routes. Recipients use their normal Assistant loop; reply when useful, and finish silently when no response is needed. Messages do not grant additional tool permissions. External runtime Bots use their existing job/handoff route.",
+      "description": "Send a message to a Bot or session, reply to a received message, discover participants, read the inbox, or check delivery status. Use the execution session ID to clarify an active Coder assignment. A running recipient reads messages in its current turn. Messages retain their sender and grant no tools.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -3190,7 +3190,7 @@
           },
           "target": {
             "default": null,
-            "description": "Exact Bot name/ID or chat title/ID for send. Duplicate names require IDs.",
+            "description": "Session ID, admitted worker work_id, or unique Bot/chat name. Coder handoffs return their session_id.",
             "type": [
               "string",
               "null"
@@ -5915,10 +5915,6 @@
             ],
             "description": "Optional exact committed range in this chat. Omit for a byte-bounded recent tail plus available Locus continuity. Explicit ranges are never silently shortened."
           },
-          "continue_owner": {
-            "description": "Ask for a separately approved result-only continuation in this chat.",
-            "type": "boolean"
-          },
           "execution_runtime_id": {
             "description": "Exact agent-selectable execution_runtime_id from active-work discovery.",
             "type": "string"
@@ -5957,7 +5953,6 @@
           }
         },
         "required": [
-          "continue_owner",
           "execution_runtime_id",
           "forge_work_id",
           "instructions",
@@ -5990,7 +5985,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_peer_handoff",
-      "description": "Delegate user-requested work in an owned Forge project through native admission without a second approval card. To continue a terminal native Coder chat, use existing_agent_session_id from peer discovery reusable_sessions; a fresh scoped assignment reuses its conversation, never its old grant. Optional session_title names the executor chat for future discovery. Omission creates fresh work. Use admission=propose for recommendations needing a user decision. For a requested execute/review/fix sequence, use admission=stage and work.coordinate when the stages are known ahead of time. Verified owner callbacks may also delegate or stage follow-on workers in the same already-authorized Forge project without another approval card; native admission checks the durable callback, original owner, source context and project. Callbacks are not operators and cannot use this to authorize new project scope. Human turns must include the current human request in committed context; callbacks inherit their saved human source. Sender chooses retained/transferred responsibility, sender review/worker result, callbacks and user contact. Defaults retain responsibility, require sender review and wake on acceptance/terminal. A worker result cannot waive sender review. Ordinary delegation follows saved coding runtime preferences.",
+      "description": "Delegate user-requested work in an owned Forge project. The tool returns the admitted request ID and execution session. Send clarifications to that session with cognition_agent_message. The worker's terminal result returns to the originating session automatically. To continue a finished Coder assignment, pass the existing_agent_session_id from peer discovery. Use admission=propose for recommendations needing approval, or admission=stage for a user-requested sequence managed by work.coordinate.",
       "input_schema": {
         "additionalProperties": false,
         "description": "Model supplies intent. The native host captures source identity and issues scoped authority.",
@@ -6027,7 +6022,7 @@
                 "kind": "return_to_origin"
               },
               "responsibility": "retain",
-              "wake_on_accepted": true,
+              "wake_on_accepted": false,
               "wake_on_terminal": true
             },
             "properties": {
@@ -6189,7 +6184,7 @@
                 "type": "string"
               },
               "wake_on_accepted": {
-                "default": true,
+                "default": false,
                 "type": "boolean"
               },
               "wake_on_terminal": {

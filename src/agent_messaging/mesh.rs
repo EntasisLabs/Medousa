@@ -37,6 +37,8 @@ const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 pub(super) enum Request {
     Discover {
         query: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_session: Option<String>,
     },
     Deliver {
         message: Box<WireMessage>,
@@ -187,6 +189,7 @@ impl WireMessage {
             attempts: 0,
             next_attempt_at: None,
             observed_phase: None,
+            target_execution: None,
             wake_source: None,
         }
     }
@@ -203,7 +206,7 @@ pub(super) fn available_workshops(host: &MessageHost) -> Result<Vec<Workshop>> {
     let mut result: Vec<_> = host
         .state
         .daemon_workers
-        .list()?
+        .message_connections()?
         .into_iter()
         .map(|connection| Workshop {
             id: connection.workshop_device_id,
@@ -373,17 +376,22 @@ pub(super) fn may_receive(host: &MessageHost, message: &Message) -> bool {
     };
     if let Some(TransportRoute::Connection(route)) = &message.transport_route {
         return message.in_reply_to.is_some()
-            && host.state.daemon_workers.list().is_ok_and(|connections| {
-                connections.iter().any(|connection| {
-                    &connection.id == route && connection.workshop_device_id == sender
-                })
-            });
+            && host
+                .state
+                .daemon_workers
+                .message_connections()
+                .is_ok_and(|connections| {
+                    connections.iter().any(|connection| {
+                        &connection.id == route && connection.workshop_device_id == sender
+                    })
+                });
     }
     let state = &host.mesh;
     paired_sender(state, sender).is_ok_and(|sender| {
         message.in_reply_to.is_some()
             || (message.profile_id == destination_owner(&sender)
-                && require_targeting(state, &sender).is_ok())
+                && (message.target_execution.is_some()
+                    || require_targeting(state, &sender).is_ok()))
     })
 }
 
@@ -459,11 +467,41 @@ async fn exchange(
     let request_hash = payload_hash_hex(&wrapped.payload).map_err(http_error)?;
     let wake_recipient = matches!(&wrapped.payload.request, Request::Deliver { .. });
     let wire = wrapped.payload;
+    // The sender and request bytes have been authenticated. Pin Coder delivery
+    // to the exact live ticket so a reused session cannot read this message.
+    let coder_address = match &wire.request {
+        Request::Discover {
+            query: Some(target),
+            source_session: Some(source),
+        } if target.starts_with("ses_peer_") => Some((source.as_str(), target.as_str())),
+        Request::Deliver { message } if message.target_session.starts_with("ses_peer_") => Some((
+            message.source_session.as_str(),
+            message.target_session.as_str(),
+        )),
+        _ => None,
+    };
+    let coder_execution = if let Some((source, target)) = coder_address {
+        Some(
+            super::coder_execution(
+                &host,
+                &destination_owner(&sender),
+                source,
+                target,
+                Some(&sender.phone_id),
+            )
+            .await
+            .map_err(http_error)?,
+        )
+    } else {
+        None
+    };
     let response = host
         .stored({
             let state = state.clone();
             let sender = sender.clone();
-            move |store| process_request(store, &state, &sender, wire, request_hash)
+            move |store| {
+                process_request(store, &state, &sender, wire, request_hash, coder_execution)
+            }
         })
         .await
         .map_err(http_error)?;
@@ -504,6 +542,7 @@ fn process_request(
     sender: &PairedDeviceRecord,
     wire: WireRequest,
     request_hash: String,
+    coder_execution: Option<String>,
 ) -> Result<WireResponse> {
     let mut response = WireResponse {
         schema_version: SCHEMA_VERSION,
@@ -513,14 +552,27 @@ fn process_request(
         replies: Vec::new(),
     };
     match wire.request {
-        Request::Discover { query } => {
-            require_targeting(state, sender)?;
+        Request::Discover { query, .. } => {
+            if coder_execution.is_none() {
+                require_targeting(state, sender)?;
+            }
             if query.as_ref().is_some_and(|q| q.len() > 160) {
                 bail!("participant query exceeds 160 bytes");
             }
             let owner = destination_owner(sender);
             response.participants = Some(if let Some(query) = query {
-                vec![resolve_target(&owner, &query)?]
+                if coder_execution.is_some() {
+                    vec![Target {
+                        target_id: query.clone(),
+                        session_id: Some(query.clone()),
+                        name: query,
+                        kind: "chat".into(),
+                        can_message: true,
+                        workshop_id: None,
+                    }]
+                } else {
+                    vec![resolve_target(&owner, &query)?]
+                }
             } else {
                 let mut participants = targets(&owner, None)?;
                 participants.truncate(200);
@@ -553,11 +605,13 @@ fn process_request(
                     .ok_or_else(|| anyhow::anyhow!("reply has no saved outbound route"))?
                     .profile_id
             } else {
-                require_targeting(state, sender)?;
+                if coder_execution.is_none() {
+                    require_targeting(state, sender)?;
+                }
                 destination_owner(sender)
             };
-            let target = resolve_target(&owner, &message.target_session)?;
-            if !target.can_message
+            if (coder_execution.is_none()
+                && !resolve_target(&owner, &message.target_session)?.can_message)
                 || !crate::session_history::session_visible_to_profile(
                     &message.target_session,
                     &owner,
@@ -565,7 +619,9 @@ fn process_request(
             {
                 bail!("recipient is unavailable to this owner");
             }
-            let accepted = store.accept_remote(message.into_message(owner))?;
+            let mut incoming = message.into_message(owner);
+            incoming.target_execution = coder_execution;
+            let accepted = store.accept_remote(incoming)?;
             append_mailbox(store, &accepted, &[], &mut response)?;
             response.receipt = Some(accepted.into());
         }
@@ -959,6 +1015,7 @@ mod tests {
             attempts: 0,
             next_attempt_at: None,
             observed_phase: None,
+            target_execution: None,
             wake_source: None,
         }
     }

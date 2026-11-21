@@ -31,6 +31,7 @@ pub(crate) struct PullReport {
 }
 
 pub(crate) struct CompletionPuller {
+    runtime: Arc<stasis::prelude::RuntimeComposition>,
     pairing: Arc<DaemonWorkerPairing>,
     store: Arc<dyn SessionStore>,
     authority: AuthorityId,
@@ -40,12 +41,14 @@ pub(crate) struct CompletionPuller {
 
 impl CompletionPuller {
     pub(crate) fn new(
+        runtime: Arc<stasis::prelude::RuntimeComposition>,
         pairing: Arc<DaemonWorkerPairing>,
         store: Arc<dyn SessionStore>,
         authority: AuthorityId,
         profiles: Arc<std::sync::RwLock<UserProfileRegistry>>,
     ) -> Self {
         Self {
+            runtime,
             pairing,
             store,
             authority,
@@ -108,6 +111,7 @@ impl CompletionPuller {
             bail!("completion owner profile is no longer available");
         }
         let appended = apply_remote_peer_completion(
+            &self.runtime,
             self.store.clone(),
             &origin,
             &completion,
@@ -192,6 +196,7 @@ pub fn start(
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let mut puller = CompletionPuller::new(
+        state.platform.agent().runtime.clone(),
         state.daemon_workers,
         crate::session_store::get_session_store(),
         crate::workshop_authority::current()

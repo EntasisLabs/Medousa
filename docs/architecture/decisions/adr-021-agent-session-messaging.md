@@ -1,6 +1,6 @@
 # ADR-021 — Agent messages and results return to the addressed session
 
-**Status:** Accepted on 2026-11-20. Implementation pending.
+**Status:** Accepted on 2026-11-20. Implemented.
 
 ## Context
 
@@ -44,10 +44,20 @@ Use Stasis agent envelopes, correlated waits, and terminal results as the common
 4. Repeat with a worker failure, a cancellation, and a duplicate terminal event across a restart. Each accepted request has one observable terminal outcome. Count **zero replacement owner sessions, zero delivery-only inference calls, and zero unsolicited reviewer launches**.
 5. Run the remote case under worker, portal, and peer pairings. Verify an allowed and a denied tool call against each destination policy, including a grant revoked during the work.
 
+## Verification
+
+Run the [two-daemon A/B/C test](../../../scripts/ci/test-agent-session-messaging.py) on macOS with a built daemon:
+
+```sh
+python3 scripts/ci/test-agent-session-messaging.py --daemon /path/to/medousa_daemon
+```
+
+The test uses isolated data directories, loopback model endpoints, and real pairing, Forge, and Stasis execution. The worker connection negotiates portal authority. The peer case uses a separate native peer pairing and changes its destination grant during a Coder assignment. The restart case replays an already-recorded signed terminal result and compares transcript entry IDs, digests, and inference counts.
+
 ## Code anchors
 
 - [Stasis delegation and wait correlation](../../../src/delegation.rs)
 - [Native session messaging and Coder addressing](../../../src/agent_messaging.rs)
 - [Worker guidance](../../../src/agent_runtime/turn_worker_tools.rs)
-- [Local handoff completion](../../../src/daemon/coordination/handoff_wake.rs) and [owner turn construction](../../../src/daemon/coordination/owner_intake.rs)
+- [Local handoff completion](../../../src/daemon/coordination/handoff_wake.rs) and [owner result intake](../../../src/daemon/coordination/owner_intake.rs)
 - [Paired-workshop result delivery](../../engine/coordination.md#returning-a-paired-workshop-result)
