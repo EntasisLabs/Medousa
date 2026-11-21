@@ -1,0 +1,108 @@
+#[allow(dead_code)] // retained for docs / manual help dumps
+pub(crate) fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
+    let idx = args.iter().position(|a| a == key)?;
+    args.get(idx + 1).map(|s| s.as_str())
+}
+
+/// Full help including keys and slash commands (clap `--help` covers options only).
+#[allow(dead_code)]
+pub(crate) fn print_help() {
+    println!("medousa-tui — persistent cognitive terminal agent");
+    println!();
+    println!("USAGE:");
+    println!("  medousa_tui [OPTIONS]");
+    println!();
+    println!("OPTIONS:");
+    println!("  --provider <name>     LLM provider (env: MEDOUSA_LLM_PROVIDER)");
+    println!("  --model <name>        Model name (env: MEDOUSA_LLM_MODEL)");
+    println!("  --base-url <url>      Custom API base URL (env: MEDOUSA_LLM_BASE_URL)");
+    println!(
+        "  --backend <name>      Runtime backend: surreal-mem | in-memory | surreal-kv[:path]"
+    );
+    println!("  --tool-call-mode <m>  Tool call mode: auto | strict");
+    println!("  --max-tool-rounds <n> Max model tool-call rounds (1-50, default 10)");
+    println!("                        Enforce with MEDOUSA_TOOL_ROUND_LIMIT_ENABLED=1");
+    println!(
+        "                        Host orchestrator cap: MEDOUSA_HOST_BUS_MAX_TOOL_ROUNDS (default 8)"
+    );
+    println!("  --thinking-capture <b> Capture thinking chunks: true | false");
+    println!("  --thinking-max-lines <n> Retained thinking lines (50-5000)");
+    println!("  --daemon-url <url>    Medousa daemon base URL (env: MEDOUSA_DAEMON_URL)");
+    println!("                        Grapheme timeout env: MEDOUSA_GRAPHEME_EXECUTION_TIMEOUT_MS");
+    println!("  --session <id>        Resume a specific session by ID");
+    println!("  --help, -h            Print this help");
+    println!();
+    println!("KEYS:");
+    println!("  Enter        Submit message");
+    println!("  Backspace    Delete character");
+    println!("  Up/Down      Scroll conversation");
+    println!("  PageUp/Down  Scroll by 10 lines");
+    println!("  Home/End     Jump to start/end");
+    println!("  Ctrl+H       Open/close session history menu");
+    println!("  Ctrl+K       Open/close command palette");
+    println!("  Ctrl+,       Open/close settings menu");
+    println!("  Ctrl+O       Open/close observability detail panel");
+    println!("  Shift/Alt+Arrows  Scroll observability + job panes");
+    println!("  Alt+O / Alt+P      Scroll observability up/down");
+    println!("  Alt+J / Alt+K      Scroll job pane up/down");
+    println!("  Ctrl+U / Ctrl+D   Page observability + job panes up/down");
+    println!("  F2           Toggle thinking peek overlay");
+    println!("  F3           Toggle Grapheme console overlay");
+    println!("  Ctrl+T       Toggle thinking detail panel");
+    println!("  Ctrl+G       Stop active generation");
+    println!("  Esc          Close current menu");
+    println!("  Ctrl+;       Pane prefix (then % \" h/j/k/l z x c o f r t/T w n/p 1-4 ?)");
+    println!("  Ctrl+; o     Open vault notes picker");
+    println!("  Ctrl+; f     Open Forge code picker");
+    println!("  Ctrl+; r     Open Forge review picker");
+    println!("  Ctrl+; t     Open new workshop terminal pane");
+    println!("  Ctrl+; T     Attach existing shell session");
+    println!("  Ctrl+; w     Connection picker (workshop / daemon; l = browse LAN)");
+    println!("  Ctrl+S       Save focused note/code file");
+    println!("  Ctrl+E       Seal focused Forge code lease → review");
+    println!("  Ctrl+A       Ask about focused note (new chat tab)");
+    println!("  Tab          Notes/Code: cycle tree · buffer · links");
+    println!("  PgUp/PgDn    Terminal: scrollback pager (Esc = live)");
+    println!("  Ctrl+R       Reload note from vault (notes conflict)");
+    println!("  Ctrl+Y       Keep mine / overwrite note (notes conflict)");
+    println!("  Ctrl+C       Quit (in terminal pane: send to PTY; Ctrl+Q quits)");
+    println!();
+    println!("HISTORY:");
+    println!("  The selected workshop daemon stores conversation history.");
+    println!();
+    println!("SLASH COMMANDS:");
+    println!("  /new                    Start fresh session");
+    println!("  /notes [path|new path]  Vault library picker / open / create");
+    println!("  /code [work_id]         Forge code desk / picker");
+    println!("  /review [work_id]       Forge review desk / picker");
+    println!("  /terminal [id|list]     Workshop shell pane / attach / picker");
+    println!("  /connection [url]       Workshop Connection picker / switch URL");
+    println!("  /history                Open session history menu");
+    println!("  /name                   Show current session display name");
+    println!(
+        "  /name <label>           Set global session display name (Surreal when daemon uses it)"
+    );
+    println!("  /settings               Open settings menu");
+    println!("  /edit [path]            Open embedded editor (optional file)");
+    println!("  /open <path>            Open file in embedded editor");
+    println!("  /save [path]            Save editor buffer to file");
+    println!("  /run [path]             Execute .gr source via runtime (allowlist-enforced)");
+    println!("  /run-current            Execute current editor file path via runtime");
+    println!("  /close                  Exit medousa_tui gracefully");
+    println!("  /allowlist-preview      Open allowlist preview panel");
+    println!("  /clear-key              Clear stored API key");
+    println!("  /rotate-key             Rotate stored API key from draft value");
+    println!("  /model                  Show current provider:model");
+    println!("  /model <model>          Set model, keep provider");
+    println!("  /model <provider:model> Set provider and model");
+    println!("  /stop                   Stop active generation");
+    println!("  /regen                  Regenerate last user prompt");
+    println!("  /export [md|jsonl]      Export current transcript");
+    println!("  /perf report            Show current perf metrics snapshot");
+    println!("  /perf baseline [label]  Capture a baseline for delta comparisons");
+    println!("  /perf reset             Reset perf counters and baseline");
+    println!("  /daemon                 Show daemon URL and command help");
+    println!("  /daemon health          Probe central daemon status");
+    println!("  /daemon ask <prompt>    Submit prompt to central daemon");
+    println!("  /watch add <cron> <p>   Schedule recurring prompt on daemon");
+}

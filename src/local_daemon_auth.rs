@@ -120,10 +120,10 @@ mod tests {
             "medousa-local-auth-missing-{}",
             uuid::Uuid::new_v4()
         ));
-        let error = authorization_header_from_data_dir(
+        let _scope = crate::paths::scoped_test_data_dir(&missing);
+        let error = super::authorization_header(
             "http://127.0.0.1:7419",
             medousa_local_credential::CLI_LOCAL_NAME,
-            &missing,
         )
         .expect_err("missing local credential must fail closed");
         assert!(error.to_string().contains("start Medousa once"));

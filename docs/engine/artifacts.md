@@ -55,6 +55,8 @@ Vault uses the same primitives with `action=vault.*` — see [vault.md](vault.md
 | POST | `/v1/runtime/artifact/list-ui` | Library catalog (`ArtifactListUiRequest`) |
 | POST | `/v1/runtime/artifact/command` | TUI slash command DSL (`ArtifactCommandSpec`) |
 
+The `verifications` command returns structured history in the optional `verifications` array. The terminal client includes these records in session exports.
+
 `fetch` resolves to the **latest revision** in a lineage chain and returns the
 body plus portable metadata. Daemon filesystem paths are never part of the
 response; use `medousa:artifact/{session_id}/{artifact_id}` when a copyable

@@ -386,7 +386,6 @@ Comms/gateway pooling and circuit breakers are internal (`src/comms/`, `src/iroh
 
 | Variable | Purpose |
 |----------|---------|
-| `MEDOUSA_TUI_LOCAL_RUNTIME` | TUI uses in-process runtime vs daemon |
 
 ---
 

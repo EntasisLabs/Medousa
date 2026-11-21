@@ -8,6 +8,7 @@ homepage = "https://github.com/EntasisLabs/Medousa"
 description = "Permanent AI workspace — Medousa Engine and related crates"
 
 [workspace]
+default-members = [".", "crates/medousa-cli", "crates/medousa-tui"]
 members = [
     ".",
     "crates/medousa-types",
@@ -20,6 +21,8 @@ members = [
     "crates/medousa-runtime",
     "crates/medousa-ios-dependency-probe",
     "crates/medousa-sdk",
+    "crates/medousa-cli",
+    "crates/medousa-tui",
     "crates/medousa-sdk-iroh",
     "crates/medousa-iroh-http",
     "crates/medousa-local-engine",
@@ -53,11 +56,6 @@ members = [
 exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]
 
 [[bin]]
-name = "medousa_cli"
-path = "src/bin/medousa_cli.rs"
-required-features = ["full-daemon"]
-
-[[bin]]
 name = "medousa"
 path = "src/bin/medousa.rs"
 required-features = ["tui"]
@@ -66,11 +64,6 @@ required-features = ["tui"]
 name = "medousa_daemon"
 path = "src/bin/medousa_daemon.rs"
 required-features = ["full-daemon"]
-
-[[bin]]
-name = "medousa_tui"
-path = "src/bin/medousa_tui.rs"
-required-features = ["tui"]
 
 [[example]]
 name = "p03_feed_workspace"
@@ -235,7 +228,7 @@ web-sys = { version = "0.3", features = [
 [features]
 default = ["full-daemon"]
 # Terminal presentation is opt-in for daemon-only builds.
-tui = ["full-daemon", "grapheme-extended", "dep:ratatui", "dep:ratatui-image", "dep:crossterm"]
+tui = ["full-daemon", "dep:ratatui", "dep:ratatui-image", "dep:crossterm"]
 # The default native daemon uses the same Grapheme host surface as embedded-daemon.
 # Opt in to the previous heavy execution modules and in-process editor LSP.
 grapheme-extended = [

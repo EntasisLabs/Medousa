@@ -80,7 +80,7 @@ Assistant runtime: [Batch-stop workers, jobs and follow-ups](engine/agent-tools.
 |-------|----------------|
 | [Install & self-host](cookbook/install-and-self-host.md) | `install.sh`, setup, doctor, data paths |
 | [Configuration reference](configuration-reference.md) | **All env vars** — LLM, MCP, Locus, grapheme, channels |
-| [CLI & workspace](cookbook/cli-and-workspace.md) | `medousa` commands, TUI, `start daemon --inference` |
+| [CLI & workspace](cookbook/cli-and-workspace.md) | Daemon control with the CLI and TUI, launcher commands, `start daemon --inference` |
 | [Channels & chat commands](cookbook/channels-and-chat.md) | Discord, Telegram, Slack, WhatsApp, slash commands |
 | [Skills & specialties](cookbook/skills-and-specialties.md) | Manuscripts, Hermes/Cursor/OpenClaw import |
 | [Build from source](cookbook/build-from-source.md) | Cargo, Tauri dev, release builds, iPhone dev |

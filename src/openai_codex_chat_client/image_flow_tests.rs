@@ -16,6 +16,7 @@ struct ImageLoopClient {
     rounds: AtomicUsize,
     wire: Arc<Mutex<Option<Value>>>,
     parallel: bool,
+    lookup_schema: bool,
     live_expected: Option<String>,
 }
 
@@ -26,8 +27,8 @@ impl AiChatClient for ImageLoopClient {
         request: ChatRequest,
         options: Option<&ChatOptions>,
     ) -> StasisResult<ChatResponse> {
-        let first = self.rounds.fetch_add(1, Ordering::SeqCst) == 0;
-        let content = if first {
+        let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+        let content = if round == 0 {
             let calls = if self.parallel { 2 } else { 1 };
             MessageContent::from_parts(
                 (0..calls)
@@ -41,6 +42,13 @@ impl AiChatClient for ImageLoopClient {
                     })
                     .collect::<Vec<_>>(),
             )
+        } else if round == 1 && self.lookup_schema {
+            MessageContent::from_parts(vec![ContentPart::ToolCall(ToolCall {
+                call_id: "schema-lookup".into(),
+                fn_name: "cognition_schema".into(),
+                fn_arguments: json!({"types":["turn.finish"]}),
+                thought_signatures: None,
+            })])
         } else {
             *self.wire.lock().unwrap() = Some(
                 direct::request_body("gpt-6.1-sol", request.clone(), &ChatOptions::default())
@@ -85,10 +93,15 @@ struct ImageRootRegistry {
 #[async_trait]
 impl ToolRegistry for ImageRootRegistry {
     async fn list_tools(&self) -> StasisResult<Vec<Tool>> {
-        self.inner.list_tools().await
+        let mut tools = self.inner.list_tools().await?;
+        tools.push(Tool::new("cognition_schema"));
+        Ok(tools)
     }
 
     async fn invoke_tool(&self, name: &str, input: Value) -> StasisResult<Value> {
+        if name == "cognition_schema" {
+            return Ok(json!({"types":["turn.finish"]}));
+        }
         if let Some(barrier) = &self.parallel_barrier {
             tokio::time::timeout(std::time::Duration::from_secs(5), barrier.wait())
                 .await
@@ -104,15 +117,20 @@ impl ToolRegistry for ImageRootRegistry {
 
 #[tokio::test]
 async fn terminal_file_through_native_loop_reaches_provider_as_tool_pixels() {
-    assert_native_image_flow(false, false).await;
+    assert_native_image_flow(false, false, false).await;
 }
 
 #[tokio::test]
 async fn parallel_terminal_files_reach_provider_as_correlated_tool_pixels() {
-    assert_native_image_flow(true, false).await;
+    assert_native_image_flow(true, false, false).await;
 }
 
-async fn assert_native_image_flow(parallel: bool, live: bool) {
+#[tokio::test]
+async fn image_pixels_survive_an_intervening_tool_schema_lookup() {
+    assert_native_image_flow(false, true, false).await;
+}
+
+async fn assert_native_image_flow(parallel: bool, lookup_schema: bool, live: bool) {
     use crate::agent_runtime::execution_context::{
         TurnExecutionContext, with_turn_execution_context,
     };
@@ -178,6 +196,7 @@ async fn assert_native_image_flow(parallel: bool, live: bool) {
         rounds: AtomicUsize::new(0),
         wire: wire.clone(),
         parallel,
+        lookup_schema,
         live_expected: live.then_some(live_expected),
     });
     let mut registry = InMemoryToolRegistry::default();
@@ -189,6 +208,12 @@ async fn assert_native_image_flow(parallel: bool, live: bool) {
             root: root.clone(),
             parallel_barrier: parallel.then(|| Arc::new(tokio::sync::Barrier::new(2))),
         }),
+    )
+    .with_window_policy(
+        crate::model_capability_registry::window::inference_window_policy(
+            context.route().provider(),
+            context.route().model(),
+        ),
     )
     .with_parallel_execution_settings(
         medousa_runtime::execution_policy::ParallelExecutionSettings {
@@ -203,7 +228,8 @@ async fn assert_native_image_flow(parallel: bool, live: bool) {
             &session,
         ),
     ));
-    let mut gate = medousa_runtime::ToolLoopCompletionGate::new_for_execution(1, ports, 2);
+    let max_rounds = if lookup_schema { 3 } else { 2 };
+    let mut gate = medousa_runtime::ToolLoopCompletionGate::new_for_execution(1, ports, max_rounds);
     gate.skip_avec_ritual_check = true;
     gate.completion_profile = medousa_runtime::TurnCompletionProfile::WorkerSynthesis;
     with_turn_execution_context(
@@ -221,7 +247,7 @@ async fn assert_native_image_flow(parallel: bool, live: bool) {
                     },
                     vec![],
                     None,
-                    2,
+                    max_rounds,
                     Some(&mut gate),
                     None,
                 )
@@ -242,7 +268,7 @@ async fn assert_native_image_flow(parallel: bool, live: bool) {
             .iter()
             .filter(|item| item["type"] == "function_call_output")
             .count(),
-        expected_calls
+        expected_calls + usize::from(lookup_schema)
     );
     for (index, pixels) in expected_pixels.iter().enumerate().take(expected_calls) {
         let call_id = format!("native-image-call-{index}");
@@ -299,7 +325,7 @@ async fn assert_native_image_flow(parallel: bool, live: bool) {
 async fn live_generated_image_transport_probe() {
     tokio::time::timeout(
         std::time::Duration::from_secs(120),
-        assert_native_image_flow(false, true),
+        assert_native_image_flow(false, false, true),
     )
     .await
     .expect("live visual probe timed out");

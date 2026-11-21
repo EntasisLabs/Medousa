@@ -97,15 +97,15 @@ if ($Target) {
 # "no bin target named `medousa_telegram` in default-run packages".
 Write-MedousaLog "phase 1/2: cargo build (root workspace, release)..."
 # Separate invocations prevent terminal feature unification into the daemon.
-Invoke-MedousaCargo @cargoBuildArgs --bin medousa_daemon
+Invoke-MedousaCargo @cargoBuildArgs --bin medousa_daemon -p medousa
 # Preserve BEFORE any launcher/adapter build can replace Cargo's output.
 $daemonSrc = Find-MedousaReleaseBinary -Bin medousa_daemon -Target $Target
 if (-not $daemonSrc) { throw "expected binary missing: medousa_daemon" }
 Copy-Item -Force $daemonSrc (Join-Path $binDir (Get-MedousaBinaryFilename -Name medousa_daemon -Target $Target))
-Invoke-MedousaCargo @cargoBuildArgs --features tui `
-    --bin medousa `
-    --bin medousa_cli `
-    --bin medousa_tui
+Invoke-MedousaCargo @cargoBuildArgs --features tui -p medousa --bin medousa
+$clientArgs = @("--locked", "--release", "--no-default-features", "--target", $Target, "-p", "medousa-cli", "-p", "medousa-tui")
+if ($cargoFeatures -contains "iroh-transport") { $clientArgs += @("--features", "medousa-cli/iroh-transport") }
+Invoke-MedousaCargo @clientArgs --bin medousa_cli --bin medousa_tui
 
 $adapterManifests = @(
     @{ Label = "medousa_telegram"; Manifest = $MEDOUSA_TELEGRAM_MANIFEST },

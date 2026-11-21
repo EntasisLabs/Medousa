@@ -18,7 +18,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 BINS = {entry["name"]: entry.get("required-features", [])
-        for entry in tomllib.loads((ROOT / "Cargo.toml").read_text())["bin"]}
+        for manifest in ("Cargo.toml", "crates/medousa-cli/Cargo.toml", "crates/medousa-tui/Cargo.toml")
+        for entry in tomllib.loads((ROOT / manifest).read_text())["bin"]}
 FAKE_CARGO = '''#!{python}
 import json, os, pathlib, sys
 args = sys.argv[1:]
@@ -27,7 +28,7 @@ assert "--no-default-features" in args, args
 features = set()
 for i, arg in enumerate(args):
     if arg == "--features":
-        features.update(args[i + 1].split(","))
+        features.update(f.split("/")[-1] for f in args[i + 1].split(","))
 bins = [args[i + 1] for i, a in enumerate(args) if a == "--bin"]
 required = json.loads(os.environ["BINARY_REQUIREMENTS"])
 for name in bins:
@@ -123,6 +124,7 @@ class PackagingInvocations(unittest.TestCase):
         # validators are fixture bindings. No native binary qualification claimed.
         setup = '''
 NEED_ENGINE=1
+WITH_IROH=1
 TARGET=x86_64-unknown-linux-gnu
 CARGO_BUILD_ARGS=(--release --no-default-features --features full-daemon --target "$TARGET")
 BIN_DIR=/build/dist/bin

@@ -42,10 +42,18 @@ pub fn save_index(index: &CatalogIndex) -> Result<()> {
 
 pub fn load_provider_snapshot(provider: &str) -> Option<ProviderCatalogSnapshot> {
     let provider = ProviderId::parse(provider).ok()?;
-    let snapshot: ProviderCatalogSnapshot = read_json(&provider_path(&provider))
+    let mut snapshot: ProviderCatalogSnapshot = read_json(&provider_path(&provider))
         .or_else(|_| read_json(&legacy_provider_path(&provider)))
         .ok()?;
-    (snapshot.provider == provider.as_str()).then_some(snapshot)
+    if snapshot.provider != provider.as_str() {
+        return None;
+    }
+    if snapshot.provider == "openai-codex" && snapshot.source == "chatgpt_account" {
+        for record in &mut snapshot.models {
+            super::heuristic::restore_cached_account_inputs(record);
+        }
+    }
+    Some(snapshot)
 }
 
 pub fn save_provider_snapshot(snapshot: &ProviderCatalogSnapshot) -> Result<()> {

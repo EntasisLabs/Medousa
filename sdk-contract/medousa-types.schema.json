@@ -1838,6 +1838,63 @@
           "string",
           "null"
         ]
+      },
+      "verifications": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/VerificationRunRecord"
+        }
+      }
+    },
+    "definitions": {
+      "VerificationRunRecord": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "confidence_score",
+          "created_at_utc",
+          "is_verified",
+          "output_path",
+          "pack_id",
+          "selector",
+          "session_id",
+          "source",
+          "verification_id"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "confidence_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "is_verified": {
+            "type": "boolean"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": "string"
+          },
+          "selector": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "verification_id": {
+            "type": "string"
+          }
+        }
       }
     }
   },

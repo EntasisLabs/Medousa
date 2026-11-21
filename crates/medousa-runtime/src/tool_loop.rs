@@ -1320,11 +1320,18 @@ impl MedousaToolLoopPipeline {
                     });
                 }
 
-                // Pixels are request-local model input, not durable transcript.
-                // Once a model has consumed one observation, replace it at the
-                // next tool boundary instead of accumulating base64 across a
-                // long-running turn.
-                prune_transient_tool_observation_messages(&mut turn_ctx.tool_lane.messages);
+                // A schema lookup describes how to use a tool. Keep the current
+                // visual evidence available while the model works out its next call.
+                if !round_tool_calls.iter().all(|call| {
+                    matches!(
+                        call.fn_name.as_str(),
+                        "cognition_schema"
+                            | "cognition_tools_discover"
+                            | "cognition_coder_tools_discover"
+                    )
+                }) {
+                    prune_transient_tool_observation_messages(&mut turn_ctx.tool_lane.messages);
+                }
                 let hydration_batch = hydrate_tool_observation_batch(
                     tool_observation_hydration.clone(),
                     hydration_requests,

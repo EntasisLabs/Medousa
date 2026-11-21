@@ -268,11 +268,15 @@
       "features": [],
       "binaries": [
         "medousa",
-        "medousa_daemon",
-        "medousa_cli",
-        "medousa_tui"
+        "medousa_daemon"
       ],
       "inDefaultEngineLink": true
+    },
+    "terminal-clients": {
+      "crates": ["medousa-cli", "medousa-tui"],
+      "features": [],
+      "binaries": ["medousa_cli", "medousa_tui"],
+      "inDefaultEngineLink": false
     },
     "desktop": {
       "crates": [

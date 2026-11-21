@@ -3028,7 +3028,11 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand> {
             pre_args: vec![
                 "run".to_string(),
                 "-p".to_string(),
-                "medousa".to_string(),
+                match binary_name {
+                    "medousa_tui" => "medousa-tui",
+                    "medousa_cli" => "medousa-cli",
+                    _ => "medousa",
+                }.to_string(),
                 "--bin".to_string(),
                 binary_name.to_string(),
                 "--".to_string(),

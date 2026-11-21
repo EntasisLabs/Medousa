@@ -517,7 +517,7 @@ fn models_url(base: &str) -> String {
     }
 }
 
-fn parse_modalities(value: Option<&Value>) -> Vec<Modality> {
+pub(super) fn parse_modalities(value: Option<&Value>) -> Vec<Modality> {
     let Some(items) = value.and_then(|value| value.as_array()) else {
         return vec![Modality::Text];
     };

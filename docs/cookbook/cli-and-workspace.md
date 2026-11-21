@@ -24,6 +24,19 @@ medousa iroh …             Relay smoke / tickets
 ```
 Desktop Settings now read/write **per-engine** `tui_defaults.json` via `GET/PUT /v1/runtime/tui-defaults` (not host-global file).
 
+### Connect the terminal clients
+
+Start the daemon with `medousa start daemon`. Set `MEDOUSA_DAEMON_URL` or pass `--daemon-url` to either client to select the workshop. The daemon owns turn execution, history, provider settings and persistence. When it is unavailable, the TUI can still open its connection picker with Ctrl+; then w.
+
+```bash
+medousa_cli daemon-health
+medousa_cli ask "Summarize this workspace"
+medousa_cli llm "Summarize this paragraph" --provider openai --model gpt-4o-mini
+medousa_tui --session my-session
+```
+
+`ask` submits an agent job and `llm` submits a single prompt job. Both wait for the daemon’s result. Configure storage backends and provider base URLs on the daemon.
+
 ### Start services
 
 ```bash

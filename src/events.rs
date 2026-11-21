@@ -122,6 +122,9 @@ pub enum RuntimeEvent {
     },
 }
 
+/// Compatibility name for terminal consumers of the shared event contract.
+pub type TuiEvent = RuntimeEvent;
+
 #[cfg(test)]
 mod tests {
     use tokio::sync::mpsc;
@@ -152,6 +155,3 @@ mod tests {
         assert!(!sender.job_enqueued("job-1", "test.job"));
     }
 }
-
-/// Compatibility name for terminal consumers of the shared event contract.
-pub type TuiEvent = RuntimeEvent;

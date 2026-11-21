@@ -16,6 +16,7 @@ pub fn execute_artifact_command(
 
     let mut selected_context_pack_query =
         normalize_optional_query(request.selected_context_pack_query);
+    let mut verifications = Vec::new();
     let rendered_output = match request.command {
         ArtifactCommandSpec::Lookup { query } => {
             let query = normalize_optional_query(query);
@@ -351,13 +352,27 @@ pub fn execute_artifact_command(
             }
         }
         ArtifactCommandSpec::Verifications { limit } => {
-            let limit = limit.clamp(1, 200);
-            let records = crate::verification_store::list_verifications(&session_id, limit);
-            if records.is_empty() {
+            let limit = limit.clamp(1, 500);
+            verifications = crate::verification_store::list_verifications(&session_id, limit)
+                .into_iter()
+                .map(|record| medousa_types::VerificationRunRecord {
+                    verification_id: record.verification_id,
+                    session_id: record.session_id,
+                    pack_id: record.pack_id,
+                    artifact_id: record.artifact_id,
+                    selector: record.selector,
+                    source: record.source,
+                    is_verified: record.is_verified,
+                    confidence_score: record.confidence_score,
+                    created_at_utc: record.created_at_utc,
+                    output_path: record.output_path,
+                })
+                .collect();
+            if verifications.is_empty() {
                 "◈ verification history empty for current session".to_string()
             } else {
-                let mut out = format!("◈ verification history {}\n", records.len());
-                for record in records {
+                let mut out = format!("◈ verification history {}\n", verifications.len());
+                for record in &verifications {
                     out.push_str(&format!(
                         "{}  pack={}  verified={}  confidence={:.2}  source={}  {}\n",
                         record.verification_id,
@@ -396,6 +411,7 @@ pub fn execute_artifact_command(
     };
 
     Ok(ArtifactCommandResponse {
+        verifications,
         selected_context_pack_query,
         rendered_output,
     })

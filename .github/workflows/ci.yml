@@ -39,7 +39,9 @@ jobs:
       - name: Check standalone daemon (no workspace feature unification)
         run: cargo check --locked -p medousa --no-default-features --features full-daemon --bin medousa_daemon
       - name: Check terminal compatibility
-        run: cargo check --locked -p medousa --no-default-features --features tui --bin medousa_tui --bin medousa
+        run: cargo check --locked -p medousa --no-default-features --features tui --bin medousa
+      - name: Check standalone terminal clients
+        run: cargo test --locked -p medousa-tui -p medousa-cli --all-features
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh --features medousa/tui -- -D warnings
       - name: cargo check (WhatsApp adapter)

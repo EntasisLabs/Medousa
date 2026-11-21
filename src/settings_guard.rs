@@ -87,7 +87,7 @@ fn redact_text(text: &str) -> String {
         return "[REDACTED]".to_string();
     }
 
-    crate::grapheme_secret_bridge::redact_secret_grant_references(text)
+    crate::grapheme_grants::redact_secret_grant_references(text)
 }
 
 #[cfg(test)]

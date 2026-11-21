@@ -11,15 +11,8 @@ pub mod stasis_otel;
 pub mod stasis_surreal_schema;
 pub mod stasis_wire;
 pub mod surreal_startup;
-#[cfg(feature = "tui")]
-pub mod tui_platform;
 pub mod vault_surreal_schema;
 
 pub use platform::{
     MedousaPlatformRuntime, PlatformBuildConfig, build_daemon_platform, build_medousa_platform,
-};
-#[cfg(feature = "tui")]
-pub use tui_platform::{
-    TuiPlatformBuildConfig, TuiPlatformMode, build_tui_platform, is_daemon_bind_reachable,
-    resolve_tui_platform_mode,
 };

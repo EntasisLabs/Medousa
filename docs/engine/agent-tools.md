@@ -294,7 +294,7 @@ that the model saw pixels.
 On the ChatGPT Responses route, verified tool images use standard `input_image`
 message content, not images nested inside `function_call_output.output` arrays.
 The transient observation keeps its originating tool-call ID and untrusted-content
-label; it is not saved as a new principal chat turn. A successful receipt or an
+label. Schema and tool-discovery calls keep the current pixels available for the next inference. Other tool rounds replace the observation. A successful receipt or an
 image in a mocked HTTP payload alone does not establish visual understanding.
 The opt-in `live_generated_image_transport_probe` exercises the native image tool,
 artifact hydration, and real provider response against generated pixels whose

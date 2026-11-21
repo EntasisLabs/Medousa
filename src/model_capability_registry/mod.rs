@@ -4,6 +4,7 @@ pub mod cache;
 pub mod handlers;
 pub mod heuristic;
 pub mod types;
+pub mod window;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{OnceLock, RwLock};

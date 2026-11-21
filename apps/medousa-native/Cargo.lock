@@ -3776,6 +3776,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rndr_chart"
+version = "0.6.0"
+dependencies = [
+ "rndr_core",
+ "rndr_liquid",
+ "rndr_paint",
+]
+
+[[package]]
 name = "rndr_core"
 version = "0.6.0"
 dependencies = [
@@ -3790,6 +3799,17 @@ version = "0.6.0"
 dependencies = [
  "regex",
  "serde",
+]
+
+[[package]]
+name = "rndr_liquid_ui"
+version = "0.6.0"
+dependencies = [
+ "rndr_chart",
+ "rndr_core",
+ "rndr_liquid",
+ "rndr_paint",
+ "rndr_ui",
 ]
 
 [[package]]
@@ -3808,6 +3828,7 @@ version = "0.6.0"
 dependencies = [
  "rndr_core",
  "rndr_liquid",
+ "rndr_liquid_ui",
  "rndr_markdown",
  "rndr_ui",
  "unicode-segmentation",

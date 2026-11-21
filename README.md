@@ -91,29 +91,26 @@ The app is one surface of Medousa. The engine underneath provides durable jobs, 
 
 Run it headless. Call it from your stack. Integrate it into your existing context.
 
-### Building from source: daemon by default, terminal opt-in
+### Building the terminal clients from source
 
-The default feature set builds the daemon/CLI, not the terminal surface. Existing
-source users who run or install `medousa` / `medousa_tui` must opt in to `tui`:
+The CLI and TUI connect to a running workshop daemon. Each is a standalone Cargo package.
 
 ```bash
-# Standalone daemon and CLI (no terminal feature unification)
-cargo build --locked -p medousa --no-default-features --features full-daemon --bin medousa_daemon --bin medousa_cli
-cargo install --locked --path . --no-default-features --features full-daemon --bin medousa_daemon --bin medousa_cli
-# Terminal/management launcher, in a SEPARATE invocation
-cargo build --locked -p medousa --features tui --bin medousa --bin medousa_tui
-cargo install --locked --path . --features tui --bin medousa --bin medousa_tui
-cargo run -p medousa --features tui --bin medousa -- --help
+cargo build --locked --release -p medousa-tui -p medousa-cli
+cargo run --locked -p medousa-cli -- daemon-health --daemon-url http://127.0.0.1:7419
+cargo run --locked -p medousa-tui -- --daemon-url http://127.0.0.1:7419
 ```
 
-Do not combine daemon and terminal targets in one Cargo invocation when packaging
-a standalone daemon: features unify across the selected package. Copy the daemon
-artifact to its staging location **before** any terminal build, which may rebuild
-it as a launcher dependency. Cargo output defaults to `../.cache/cargo-target`
-(see `.cargo/config.toml`); set `CARGO_TARGET_DIR` explicitly when staging binaries.
-Docker and release packaging preserve the separately built daemon before building
-the launcher. Use a current Rust toolchain compatible with `Cargo.lock`; the
-inherited Docker Rust 1.85 is too old for locked dependencies (e.g. `time` needs 1.88).
+Add `--features medousa-cli/iroh-transport` for CLI callbacks over Iroh. The release script enables this by default.
+
+The `medousa` management launcher and standalone daemon are built separately for packaging.
+
+```bash
+cargo build --locked -p medousa --bin medousa_daemon
+cargo build --locked -p medousa --features tui --bin medousa
+```
+
+For a source install, use `cargo install --locked --path crates/medousa-cli` or `cargo install --locked --path crates/medousa-tui`. Use a Rust toolchain compatible with `Cargo.lock`. The release script stages the daemon before building the launcher. Cargo writes to `../.cache/cargo-target` by default.
 
 **[Developer docs →](docs/README.md)**
 

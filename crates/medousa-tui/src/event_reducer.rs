@@ -1,0 +1,1094 @@
+use chrono::Utc;
+use serde_json::Value;
+
+use medousa_tui::events::TuiEvent;
+use medousa_types::{TurnArtifactRef, TurnCompletionOutcomeV3, TurnStreamEventV3, WorkerAckKind};
+
+use super::{ConversationTurn, JobHistoryEntry, TuiState};
+
+fn event_turn_id(event: &TuiEvent) -> Option<u64> {
+    match event {
+        TuiEvent::AgentChunk { turn_id, .. }
+        | TuiEvent::AgentReasoningChunk { turn_id, .. }
+        | TuiEvent::AgentNeedsInput { turn_id, .. }
+        | TuiEvent::AgentResponse { turn_id, .. }
+        | TuiEvent::AgentError { turn_id, .. }
+        | TuiEvent::AgentTurnProgress { turn_id, .. }
+        | TuiEvent::TurnStreamV3 { turn_id, .. }
+        | TuiEvent::TurnBudgetApprovalRequired { turn_id, .. } => Some(*turn_id),
+        _ => None,
+    }
+}
+
+pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
+    let foreign_session = event_turn_id(&event).and_then(|turn_id| {
+        state
+            .turn_sessions
+            .get(&turn_id)
+            .cloned()
+            .filter(|session| session != &state.session_id)
+    });
+    let previous_session = foreign_session
+        .as_deref()
+        .map(|session| super::workspace_runtime::swap_to_session(state, session));
+
+    handle_tui_event_for_focused(event, state).await;
+
+    if let Some(previous) = previous_session {
+        let _ = super::workspace_runtime::swap_to_session(state, &previous);
+    }
+}
+
+async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
+    if !matches!(
+        event,
+        TuiEvent::AgentChunk { .. } | TuiEvent::AgentReasoningChunk { .. }
+    ) {
+        flush_pending_agent_chunks(state);
+    }
+
+    match event {
+        TuiEvent::TurnStreamV3 { turn_id, envelope } => {
+            handle_turn_stream_v3(turn_id, envelope.seq, envelope.event, state).await;
+        }
+        TuiEvent::UiNotice(text) => {
+            super::push_obs(state, text);
+        }
+        TuiEvent::ContextUsage { report } => {
+            state.last_context_usage = Some(report);
+        }
+        TuiEvent::ApprovalRequired {
+            server_id,
+            tool_name,
+            reason,
+        } => {
+            super::push_obs(
+                state,
+                format!(
+                    "⏸ approval required: {server_id}.{tool_name} — {reason}. \
+                     Reply yes/approve to retry with approval_granted: true."
+                ),
+            );
+        }
+        TuiEvent::TurnBudgetApprovalRequired {
+            turn_id: _,
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        } => {
+            state.pending_budget_request_id = Some(request_id.clone());
+            state.pending_budget_requested_rounds = Some(requested_rounds);
+            let progress = progress_summary
+                .map(|value| format!(" — {value}"))
+                .unwrap_or_default();
+            super::push_obs(
+                state,
+                format!(
+                    "⏸ turn budget request {request_id}: at {rounds_executed}/{max_tool_rounds}, \
+                     asking +{requested_rounds} rounds — {reason}{progress}. \
+                     Approve: /budget approve  Deny: /budget deny  List: /budget list"
+                ),
+            );
+        }
+        TuiEvent::AgentChunk { turn_id, delta } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            // After tool receipts, interim streamed prose belongs in progress/status only.
+            if should_suppress_stream_content_delta(state) {
+                return;
+            }
+            if !delta.is_empty() {
+                state.pending_agent_chunk_delta.push_str(&delta);
+                state.pending_agent_chunk_count = state.pending_agent_chunk_count.saturating_add(1);
+            }
+        }
+        TuiEvent::AgentReasoningChunk { turn_id, delta } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            if !delta.is_empty() {
+                state.received_native_reasoning = true;
+                state.in_thinking_tag = false;
+                state.stream_tag_tail.clear();
+                state.turn_parts.push_reasoning_delta(&delta);
+                super::push_thinking(state, delta);
+            }
+        }
+        TuiEvent::AgentTurnProgress {
+            turn_id,
+            message,
+            tool_names,
+        } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            // Never mirror status into the answer bubble; status is separate chrome.
+            state.turn_parts.archive_progress_note(&message);
+            super::push_obs(state, format!("◈ {message}"));
+            if let Some(idx) = state.active_agent_stream_turn
+                && let Some(turn) = state.conversation.get_mut(idx)
+            {
+                turn.tool_names = tool_names;
+                turn.answer_state = Some("tool_loop".to_string());
+                turn.timestamp = Utc::now();
+            }
+            if state.auto_scroll {
+                state.conv_scroll = state.conv_max_scroll;
+            }
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::AgentNeedsInput {
+            turn_id,
+            text,
+            tool_names,
+        } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            state.is_processing = false;
+            state.active_request_task = None;
+            state.open_stream_turn_id = None;
+            super::workspace_runtime::clear_stream_turn(state, turn_id);
+            let (visible_text, thinking_chunks) = strip_thinking_tags(&text);
+            if !state.received_native_reasoning {
+                for chunk in thinking_chunks {
+                    super::push_thinking(state, chunk);
+                }
+            }
+            state.in_thinking_tag = false;
+            state.received_native_reasoning = false;
+            super::flush_thinking_buffer(state);
+
+            let final_text = visible_text;
+            let finalized = if let Some(idx) = state.active_agent_stream_turn {
+                let after_tool_loop = turn_has_tool_loop(state, idx);
+                let content = state
+                    .conversation
+                    .get(idx)
+                    .map(|turn| {
+                        resolve_agent_turn_content(
+                            &turn.content,
+                            &final_text,
+                            true,
+                            after_tool_loop,
+                        )
+                    })
+                    .unwrap_or_else(|| final_text.clone());
+                let turn = state.turn_parts.finalize_assistant_turn(
+                    content,
+                    tool_names.clone(),
+                    Some("needs_input".to_string()),
+                );
+                if let Some(existing) = state.conversation.get_mut(idx) {
+                    *existing = turn.clone();
+                }
+                state.active_agent_stream_turn = None;
+                turn
+            } else {
+                let turn = state.turn_parts.finalize_assistant_turn(
+                    final_text.clone(),
+                    tool_names.clone(),
+                    Some("needs_input".to_string()),
+                );
+                state.conversation.push(turn.clone());
+                turn
+            };
+            let session_id = state.session_id.clone();
+            super::history_services::append_turn_daemon_first(state, &session_id, &finalized).await;
+            if state.auto_scroll {
+                state.conv_scroll = state.conv_max_scroll;
+            }
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::AgentResponse {
+            turn_id,
+            text,
+            tool_names,
+            terminal,
+            work_id,
+        } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            if terminal {
+                state.is_processing = false;
+                state.active_request_task = None;
+                state.open_stream_turn_id = None;
+                super::workspace_runtime::clear_stream_turn(state, turn_id);
+            }
+            let (visible_text, thinking_chunks) = strip_thinking_tags(&text);
+            if !state.received_native_reasoning {
+                for chunk in thinking_chunks {
+                    super::push_thinking(state, chunk);
+                }
+            }
+
+            if !state.stream_tag_tail.is_empty() {
+                if state.in_thinking_tag {
+                    let tail = std::mem::take(&mut state.stream_tag_tail);
+                    super::push_thinking(state, tail);
+                } else {
+                    let tail = std::mem::take(&mut state.stream_tag_tail);
+                    if let Some(idx) = state.active_agent_stream_turn
+                        && let Some(turn) = state.conversation.get_mut(idx)
+                    {
+                        turn.content.push_str(&tail);
+                    }
+                }
+            }
+            state.in_thinking_tag = false;
+            state.received_native_reasoning = false;
+            super::flush_thinking_buffer(state);
+
+            let answer_state = match state.pending_response_verified.take() {
+                Some(true) => Some("verified".to_string()),
+                Some(false) => Some("provisional".to_string()),
+                None => None,
+            };
+            let final_text = visible_text;
+            let is_worker_handoff = !terminal && work_id.is_some();
+
+            let persisted = if is_worker_handoff {
+                // Home updates the same bubble (whisper/handoff), never pushes a second turn.
+                let mut turn = state.turn_parts.finalize_worker_ack_turn(
+                    final_text.clone(),
+                    tool_names.clone(),
+                    work_id.clone(),
+                );
+                turn.content.clear();
+                if let Some(idx) = state.active_agent_stream_turn {
+                    if let Some(existing) = state.conversation.get_mut(idx) {
+                        *existing = turn.clone();
+                    }
+                } else {
+                    state.conversation.push(turn.clone());
+                }
+                state.active_agent_stream_turn = None;
+                turn
+            } else if let Some(idx) = state.active_agent_stream_turn {
+                let after_tool_loop = turn_has_tool_loop(state, idx);
+                let content = state
+                    .conversation
+                    .get(idx)
+                    .map(|turn| {
+                        resolve_agent_turn_content(
+                            &turn.content,
+                            &final_text,
+                            terminal,
+                            after_tool_loop,
+                        )
+                    })
+                    .unwrap_or_else(|| final_text.clone());
+                let turn = state.turn_parts.finalize_assistant_turn(
+                    content,
+                    tool_names.clone(),
+                    answer_state.clone(),
+                );
+                if let Some(existing) = state.conversation.get_mut(idx) {
+                    *existing = turn.clone();
+                }
+                if terminal {
+                    state.active_agent_stream_turn = None;
+                }
+                turn
+            } else {
+                let turn = state.turn_parts.finalize_assistant_turn(
+                    final_text.clone(),
+                    tool_names.clone(),
+                    answer_state.clone(),
+                );
+                state.conversation.push(turn.clone());
+                if !terminal {
+                    state.active_agent_stream_turn =
+                        Some(state.conversation.len().saturating_sub(1));
+                }
+                turn
+            };
+
+            let session_id = state.session_id.clone();
+            super::history_services::append_turn_daemon_first(state, &session_id, &persisted).await;
+            if state.auto_scroll {
+                state.conv_scroll = state.conv_max_scroll;
+            }
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::AgentError { turn_id, message } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            state.is_processing = false;
+            state.active_request_task = None;
+            state.open_stream_turn_id = None;
+            super::workspace_runtime::clear_stream_turn(state, turn_id);
+            state.active_agent_stream_turn = None;
+            state.in_thinking_tag = false;
+            state.stream_tag_tail.clear();
+            state.received_native_reasoning = false;
+            super::flush_thinking_buffer(state);
+            state.pending_response_verified = None;
+            super::push_obs(state, format!("⚠ {message}"));
+        }
+        TuiEvent::JobEnqueued { job_id, job_type } => {
+            super::push_obs(state, format!("+ {job_type}"));
+            state.job_history.push_front(JobHistoryEntry {
+                job_id,
+                job_type,
+                status: "enqueued".to_string(),
+            });
+            if state.job_history.len() > 100 {
+                state.job_history.pop_back();
+            }
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::JobProcessed {
+            job_id,
+            succeeded,
+            execution_id,
+        } => {
+            let symbol = if succeeded { "✓" } else { "✗" };
+            let exec_hint = execution_id.as_deref().unwrap_or("—");
+            super::push_obs(state, format!("{symbol} [{exec_hint:.12}]"));
+            for entry in state.job_history.iter_mut() {
+                if entry.job_id == job_id {
+                    entry.status = if succeeded { "succeeded" } else { "failed" }.to_string();
+                    break;
+                }
+            }
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::ToolRunStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            tool_round,
+        } => {
+            if let Some(draft) = state
+                .active_agent_stream_turn
+                .and_then(|index| state.conversation.get(index))
+                .map(|turn| turn.content.clone())
+            {
+                state.turn_parts.commit_legacy_text_draft(&draft);
+            }
+            state
+                .turn_parts
+                .tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
+            let label = super::tui_presentation::format_tool_name(&tool_name);
+            super::push_obs(state, format!("◆ {label}  {input_summary}"));
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::ToolRunFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            input_summary,
+            output_summary,
+            tool_round: _,
+        } => {
+            state.turn_parts.tool_finished(
+                &tool_run_id,
+                &status,
+                output_summary.clone(),
+                Vec::new(),
+            );
+            let label = super::tui_presentation::format_tool_name(&tool_name);
+            let suffix = output_summary
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| format!(" → {value}"))
+                .unwrap_or_default();
+            super::push_obs(
+                state,
+                format!("◈ tool {label} {status}  {input_summary}{suffix}"),
+            );
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::ToolInvoked {
+            tool_name,
+            input_summary,
+        } => {
+            super::push_obs(state, format!("◆ {tool_name}  {input_summary}"));
+        }
+        TuiEvent::ToolPayload {
+            tool_name,
+            tool_input,
+            tool_output,
+            input_receipt,
+            output_receipt,
+        } => {
+            if input_receipt.is_some() || output_receipt.is_some() {
+                let input_summary = match input_receipt.as_ref() {
+                    Some(meta) => format!(
+                        "in(bytes={},hash={})",
+                        meta.byte_size,
+                        trim_hash(&meta.hash64)
+                    ),
+                    None => "in(inline)".to_string(),
+                };
+                let output_summary = match output_receipt.as_ref() {
+                    Some(meta) => format!(
+                        "out(bytes={},hash={})",
+                        meta.byte_size,
+                        trim_hash(&meta.hash64)
+                    ),
+                    None => "out(inline)".to_string(),
+                };
+                super::push_obs(
+                    state,
+                    format!("◈ receipt {tool_name}  {input_summary}  {output_summary}"),
+                );
+            }
+
+            let request_id = super::next_worker_request_id(state);
+            let queued = super::queue_worker_command(
+                state,
+                super::WorkerCommand::FormatToolPayload {
+                    request_id,
+                    tool_name: tool_name.clone(),
+                    tool_input,
+                    tool_output: tool_output.clone(),
+                },
+                true,
+            );
+            if !queued {
+                super::push_obs(
+                    state,
+                    format!("◆ {tool_name}  payload omitted (formatter busy)"),
+                );
+            }
+
+            if tool_name == "editor.gr.run" {
+                let source = tool_output
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("editor:buffer");
+                let job_id = tool_output
+                    .get("job_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown-job");
+                let succeeded = tool_output
+                    .get("succeeded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let diagnostics = tool_output
+                    .get("diagnostics")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                super::push_grapheme_console_entry(state, source, job_id, succeeded, &diagnostics);
+            }
+        }
+    }
+}
+
+async fn handle_turn_stream_v3(
+    turn_id: u64,
+    seq: u64,
+    event: TurnStreamEventV3,
+    state: &mut TuiState,
+) {
+    if !is_active_stream_turn(state, turn_id) {
+        return;
+    }
+
+    match event {
+        TurnStreamEventV3::AssistantTextStarted {
+            segment_id,
+            model_round,
+        } => {
+            ensure_chronological_turn(state);
+            state
+                .turn_parts
+                .start_text_segment(&segment_id, Some(model_round));
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::ContentAppend { segment_id, text } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.append_text_segment(&segment_id, &text);
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::AssistantTextCommitted { segment_id } => {
+            state.turn_parts.finish_text_segment(&segment_id);
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::ReasoningAppend { text } => {
+            if !text.is_empty() {
+                state.received_native_reasoning = true;
+                state.turn_parts.push_reasoning_delta(&text);
+                super::push_thinking(state, text);
+            }
+        }
+        TurnStreamEventV3::Status {
+            phase,
+            operator_message,
+            ..
+        } => {
+            if let Some(message) = operator_message.filter(|value| !value.trim().is_empty()) {
+                super::push_obs(state, format!("◈ {phase} {message}"));
+            }
+        }
+        TurnStreamEventV3::Progress {
+            message,
+            tool_names,
+        } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.archive_progress_note(&message);
+            sync_chronological_turn(state, Some(tool_names), Some("tool_loop"));
+            if !message.trim().is_empty() {
+                super::push_obs(state, format!("◈ {message}"));
+            }
+        }
+        TurnStreamEventV3::ModelReceipt { provider, model } => {
+            state.turn_parts.set_model_receipt(&provider, &model);
+        }
+        TurnStreamEventV3::WorkerAck {
+            ack_kind,
+            text,
+            tool_names,
+            work_id,
+        } => {
+            ensure_chronological_turn(state);
+            let handoff_kind = match ack_kind {
+                WorkerAckKind::Worker => "worker",
+                WorkerAckKind::Workshop => "workshop",
+            };
+            state.turn_parts.push_handoff(handoff_kind, &text, work_id);
+            sync_chronological_turn(state, Some(tool_names), None);
+        }
+        TurnStreamEventV3::WorkerSynthesis {
+            text,
+            tool_names,
+            work_id,
+        } => {
+            ensure_chronological_turn(state);
+            let segment_id = format!("worker-synthesis-{seq}");
+            state
+                .turn_parts
+                .commit_text_segment(&text, Some(&segment_id), None);
+            if work_id.is_some() {
+                state
+                    .turn_parts
+                    .push_handoff("worker_synthesis", "", work_id);
+            }
+            sync_chronological_turn(state, Some(tool_names), None);
+        }
+        TurnStreamEventV3::Error {
+            operator_message, ..
+        } => {
+            // Error is a fact, not settlement. Later recovery prose and receipts
+            // remain part of this same chronological turn.
+            super::push_obs(state, format!("⚠ {operator_message}"));
+        }
+        TurnStreamEventV3::ToolStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            input_params,
+            tool_round,
+        } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.tool_started_with_params(
+                &tool_run_id,
+                &tool_name,
+                &input_summary,
+                input_params,
+                tool_round,
+            );
+            sync_chronological_turn(state, Some(vec![tool_name.clone()]), Some("tool_loop"));
+            let label = super::tui_presentation::format_tool_name(&tool_name);
+            super::push_obs(state, format!("◆ {label}  {input_summary}"));
+        }
+        TurnStreamEventV3::ToolFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            input_summary,
+            input_params,
+            output_summary,
+            tool_round,
+            artifact_refs,
+        } => {
+            ensure_chronological_turn(state);
+            let artifact_refs = artifact_refs
+                .into_iter()
+                .map(|artifact| TurnArtifactRef {
+                    role: artifact.role,
+                    content_type: artifact.content_type,
+                    byte_size: artifact.byte_size,
+                    hash64: artifact.hash64,
+                    artifact_id: artifact.artifact_id,
+                    label: artifact.label,
+                })
+                .collect();
+            state.turn_parts.tool_finished_observed(
+                &tool_run_id,
+                &tool_name,
+                &input_summary,
+                input_params,
+                tool_round,
+                &status,
+                output_summary.clone(),
+                artifact_refs,
+            );
+            sync_chronological_turn(state, Some(vec![tool_name.clone()]), Some("tool_loop"));
+            let suffix = output_summary
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| format!(" → {value}"))
+                .unwrap_or_default();
+            let label = super::tui_presentation::format_tool_name(&tool_name);
+            super::push_obs(state, format!("◈ tool {label} {status}{suffix}"));
+        }
+        TurnStreamEventV3::ArtifactPresented { artifact } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.push_attachment_ref(
+                &artifact.artifact_id,
+                &artifact.mime,
+                &artifact.label,
+                artifact.byte_size,
+                Some(artifact.presentation),
+                artifact.height_px,
+            );
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::ArtifactUpdated {
+            previous_artifact_id,
+            artifact,
+            ..
+        } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.replace_attachment_ref(
+                &previous_artifact_id,
+                &artifact.artifact_id,
+                &artifact.mime,
+                &artifact.label,
+                artifact.byte_size,
+                Some(artifact.presentation),
+                artifact.height_px,
+            );
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::BudgetApprovalRequired {
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        } => {
+            state.pending_budget_request_id = Some(request_id.clone());
+            state.pending_budget_requested_rounds = Some(requested_rounds);
+            let progress = progress_summary
+                .map(|value| format!(" — {value}"))
+                .unwrap_or_default();
+            super::push_obs(
+                state,
+                format!(
+                    "⏸ turn budget request {request_id}: at {rounds_executed}/{max_tool_rounds}, \
+                     asking +{requested_rounds} rounds — {reason}{progress}"
+                ),
+            );
+        }
+        TurnStreamEventV3::ContextUsage { report, .. } => {
+            state.last_context_usage = Some(report);
+        }
+        TurnStreamEventV3::BrowserChallenge { reason, .. } => {
+            super::push_obs(state, format!("◈ browser challenge {reason}"));
+        }
+        TurnStreamEventV3::BrowserNavigated { title, url, .. } => {
+            super::push_obs(
+                state,
+                format!("◈ browser navigated {}", title.as_deref().unwrap_or(&url)),
+            );
+        }
+        TurnStreamEventV3::PermissionRequest { message, .. } => {
+            super::push_obs(state, format!("⏸ permission required {message}"));
+        }
+        TurnStreamEventV3::SecretRequest { label, reason, .. } => {
+            super::push_obs(
+                state,
+                format!("⏸ secure credential entry requires Medousa — {label}: {reason}"),
+            );
+        }
+        TurnStreamEventV3::Reaction { reaction } => {
+            super::push_obs(state, format!("◉ agent reaction {}", reaction.emoji));
+        }
+        TurnStreamEventV3::UiScene { .. } => {}
+        TurnStreamEventV3::TurnCompleted {
+            outcome,
+            aggregate_text,
+            tool_names,
+            operator_message,
+            ..
+        } => {
+            ensure_chronological_turn(state);
+            let answer_state = match outcome {
+                TurnCompletionOutcomeV3::NeedsInput => Some("needs_input".to_string()),
+                TurnCompletionOutcomeV3::Fatal
+                | TurnCompletionOutcomeV3::Failed
+                | TurnCompletionOutcomeV3::Cancelled
+                | TurnCompletionOutcomeV3::FuseExhausted => Some("provisional".to_string()),
+                _ => state
+                    .pending_response_verified
+                    .take()
+                    .map(|verified| if verified { "verified" } else { "provisional" }.to_string()),
+            };
+            let finalized = state.turn_parts.finalize_chronological_turn(
+                aggregate_text,
+                tool_names,
+                answer_state,
+            );
+            if let Some(index) = state.active_agent_stream_turn {
+                if let Some(existing) = state.conversation.get_mut(index) {
+                    *existing = finalized.clone();
+                }
+            } else {
+                state.conversation.push(finalized.clone());
+            }
+            state.is_processing = false;
+            state.open_stream_turn_id = None;
+            state.active_agent_stream_turn = None;
+            state.in_thinking_tag = false;
+            state.stream_tag_tail.clear();
+            state.received_native_reasoning = false;
+            super::flush_thinking_buffer(state);
+            super::workspace_runtime::clear_stream_turn(state, turn_id);
+            if let Some(message) = operator_message.filter(|value| !value.trim().is_empty()) {
+                super::push_obs(state, format!("◈ {message}"));
+            }
+        }
+    }
+
+    if state.auto_scroll {
+        state.conv_scroll = state.conv_max_scroll;
+    }
+    super::invalidate_markdown_cache(state);
+}
+
+fn ensure_chronological_turn(state: &mut TuiState) {
+    if state.active_agent_stream_turn.is_some() {
+        return;
+    }
+    state.conversation.push(ConversationTurn::plain(
+        "assistant",
+        String::new(),
+        Utc::now(),
+        Vec::new(),
+        None,
+    ));
+    state.active_agent_stream_turn = Some(state.conversation.len().saturating_sub(1));
+}
+
+fn sync_chronological_turn(
+    state: &mut TuiState,
+    tool_names: Option<Vec<String>>,
+    answer_state: Option<&str>,
+) {
+    let content = state.turn_parts.chronological_text();
+    let Some(index) = state.active_agent_stream_turn else {
+        return;
+    };
+    let Some(turn) = state.conversation.get_mut(index) else {
+        return;
+    };
+    turn.content = content;
+    if let Some(names) = tool_names {
+        for name in names {
+            if !turn.tool_names.contains(&name) {
+                turn.tool_names.push(name);
+            }
+        }
+    }
+    if let Some(answer_state) = answer_state {
+        turn.answer_state = Some(answer_state.to_string());
+    }
+    turn.timestamp = Utc::now();
+}
+
+fn is_active_stream_turn(state: &TuiState, turn_id: u64) -> bool {
+    state.open_stream_turn_id == Some(turn_id)
+}
+
+fn trim_hash(hash: &str) -> &str {
+    const MAX: usize = 12;
+    if hash.len() <= MAX {
+        return hash;
+    }
+    &hash[..MAX]
+}
+
+/// Mid-turn `AgentResponse` (e.g. worker ack) replaces the draft; terminal keeps streamed body
+/// unless tools already ran — then prefer server `final_text` (Home `afterToolLoop`).
+fn resolve_agent_turn_content(
+    streamed_body: &str,
+    final_body: &str,
+    terminal: bool,
+    after_tool_loop: bool,
+) -> String {
+    if !terminal {
+        return final_body.to_string();
+    }
+
+    let final_trimmed = final_body.trim();
+    let streamed_trimmed = streamed_body.trim();
+
+    if after_tool_loop && !final_trimmed.is_empty() {
+        return final_body.to_string();
+    }
+
+    if !streamed_trimmed.is_empty() {
+        return streamed_body.to_string();
+    }
+
+    if !final_trimmed.is_empty() {
+        return final_body.to_string();
+    }
+
+    streamed_body.to_string()
+}
+
+fn turn_has_tool_loop(state: &TuiState, idx: usize) -> bool {
+    if state.turn_parts.has_pending_tool_runs() {
+        return true;
+    }
+    state
+        .conversation
+        .get(idx)
+        .is_some_and(|turn| !turn.tool_names.is_empty())
+}
+
+fn should_suppress_stream_content_delta(state: &TuiState) -> bool {
+    if state.turn_parts.has_pending_tool_runs() {
+        return true;
+    }
+    state
+        .active_agent_stream_turn
+        .and_then(|idx| state.conversation.get(idx))
+        .is_some_and(|turn| !turn.tool_names.is_empty())
+}
+
+fn apply_agent_chunk_delta(delta: &str, state: &mut TuiState) {
+    if delta.is_empty() {
+        return;
+    }
+
+    let (visible_delta, thinking_chunks) = if state.received_native_reasoning {
+        (delta.to_string(), Vec::new())
+    } else {
+        extract_thinking_from_stream(
+            delta,
+            &mut state.in_thinking_tag,
+            &mut state.stream_tag_tail,
+        )
+    };
+    if !state.received_native_reasoning {
+        for chunk in thinking_chunks {
+            super::push_thinking(state, chunk);
+        }
+    }
+
+    if visible_delta.is_empty() {
+        return;
+    }
+
+    if let Some(idx) = state.active_agent_stream_turn {
+        if let Some(turn) = state.conversation.get_mut(idx) {
+            turn.content.push_str(&visible_delta);
+        }
+    } else {
+        state.conversation.push(ConversationTurn::plain(
+            "agent",
+            visible_delta,
+            Utc::now(),
+            vec![],
+            None,
+        ));
+        state.active_agent_stream_turn = Some(state.conversation.len().saturating_sub(1));
+    }
+
+    if state.auto_scroll {
+        state.conv_scroll = state.conv_max_scroll;
+    }
+    super::invalidate_markdown_cache(state);
+}
+
+pub(crate) fn flush_pending_agent_chunks(state: &mut TuiState) {
+    if state.pending_agent_chunk_delta.is_empty() {
+        state.pending_agent_chunk_count = 0;
+        return;
+    }
+
+    let delta = std::mem::take(&mut state.pending_agent_chunk_delta);
+    if state.pending_agent_chunk_count > 1 {
+        state.perf.coalesced_agent_chunks = state
+            .perf
+            .coalesced_agent_chunks
+            .saturating_add(state.pending_agent_chunk_count.saturating_sub(1));
+    }
+    state.pending_agent_chunk_count = 0;
+    apply_agent_chunk_delta(&delta, state);
+}
+
+fn extract_thinking_from_stream(
+    delta: &str,
+    in_thinking: &mut bool,
+    tail: &mut String,
+) -> (String, Vec<String>) {
+    let mut buffer = String::with_capacity(tail.len() + delta.len());
+    buffer.push_str(tail);
+    buffer.push_str(delta);
+    tail.clear();
+
+    let mut visible = String::new();
+    let mut thinking = Vec::new();
+
+    loop {
+        if *in_thinking {
+            if let Some((idx, marker_len)) =
+                find_earliest_marker(&buffer, &["</think>", "</thinking>"])
+            {
+                let chunk = &buffer[..idx];
+                if !chunk.is_empty() {
+                    thinking.push(chunk.to_string());
+                }
+                buffer = buffer[idx + marker_len..].to_string();
+                *in_thinking = false;
+                continue;
+            }
+
+            let keep = trailing_prefix_len(&buffer, &["</think>", "</thinking>"]);
+            if buffer.len() > keep {
+                thinking.push(buffer[..buffer.len() - keep].to_string());
+            }
+            *tail = if keep > 0 {
+                buffer[buffer.len() - keep..].to_string()
+            } else {
+                String::new()
+            };
+            break;
+        }
+
+        if let Some((idx, marker_len)) = find_earliest_marker(&buffer, &["<think>", "<thinking>"]) {
+            visible.push_str(&buffer[..idx]);
+            buffer = buffer[idx + marker_len..].to_string();
+            *in_thinking = true;
+            continue;
+        }
+
+        let keep = trailing_prefix_len(&buffer, &["<think>", "<thinking>"]);
+        if buffer.len() > keep {
+            visible.push_str(&buffer[..buffer.len() - keep]);
+        }
+        *tail = if keep > 0 {
+            buffer[buffer.len() - keep..].to_string()
+        } else {
+            String::new()
+        };
+        break;
+    }
+
+    (visible, thinking)
+}
+
+fn strip_thinking_tags(text: &str) -> (String, Vec<String>) {
+    let mut remaining = text.to_string();
+    let mut visible = String::new();
+    let mut thinking = Vec::new();
+    let mut in_thinking = false;
+
+    loop {
+        if remaining.is_empty() {
+            break;
+        }
+
+        if in_thinking {
+            if let Some((idx, marker_len)) =
+                find_earliest_marker(&remaining, &["</think>", "</thinking>"])
+            {
+                let chunk = &remaining[..idx];
+                if !chunk.is_empty() {
+                    thinking.push(chunk.to_string());
+                }
+                remaining = remaining[idx + marker_len..].to_string();
+                in_thinking = false;
+            } else {
+                thinking.push(remaining);
+                break;
+            }
+        } else if let Some((idx, marker_len)) =
+            find_earliest_marker(&remaining, &["<think>", "<thinking>"])
+        {
+            visible.push_str(&remaining[..idx]);
+            remaining = remaining[idx + marker_len..].to_string();
+            in_thinking = true;
+        } else {
+            visible.push_str(&remaining);
+            break;
+        }
+    }
+
+    (visible, thinking)
+}
+
+fn find_earliest_marker(haystack: &str, markers: &[&str]) -> Option<(usize, usize)> {
+    markers
+        .iter()
+        .filter_map(|m| haystack.find(m).map(|idx| (idx, m.len())))
+        .min_by_key(|(idx, _)| *idx)
+}
+
+fn trailing_prefix_len(s: &str, markers: &[&str]) -> usize {
+    for start in s
+        .char_indices()
+        .map(|(idx, _)| idx)
+        .chain(std::iter::once(s.len()))
+        .rev()
+    {
+        if start == s.len() {
+            continue;
+        }
+        let suffix = &s[start..];
+        if markers.iter().any(|m| m.starts_with(suffix)) {
+            return s.len() - start;
+        }
+    }
+    0
+}
+
+#[cfg(test)]
+mod resolve_content_tests {
+    use super::resolve_agent_turn_content;
+
+    #[test]
+    fn terminal_keeps_substantive_stream_over_divergent_final() {
+        let streamed = "Here is what I found about locus: STTP nodes under session medousa-ux.";
+        let final_answer =
+            "Different rewrite from a synthesis pass that the user never saw stream.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
+        assert_eq!(merged, streamed);
+    }
+
+    #[test]
+    fn terminal_keeps_stream_even_when_final_differs() {
+        let streamed = "Let me dig into memory for you.";
+        let final_answer = "Here is what I found about locus: the project uses STTP nodes stored under session medousa-ux with several architecture notes from May.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
+        assert_eq!(merged, streamed);
+    }
+
+    #[test]
+    fn terminal_after_tool_loop_prefers_final() {
+        let streamed = "Let me dig into memory for you.";
+        let final_answer = "Here is what I found about locus.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, true);
+        assert_eq!(merged, final_answer);
+    }
+
+    #[test]
+    fn non_terminal_replaces_draft() {
+        let streamed = "Let me check that for you.";
+        let ack = "Delegated to background worker — I'll synthesize when done.";
+        let out = resolve_agent_turn_content(streamed, ack, false, false);
+        assert_eq!(out, ack);
+    }
+}

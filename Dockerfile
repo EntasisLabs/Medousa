@@ -6,7 +6,7 @@ COPY . .
 ENV CARGO_TARGET_DIR=/build/target
 # Stage standalone artifacts BEFORE enabling tui: Cargo features unify per invocation,
 # and a later build may rebuild the daemon as a launcher dependency.
-RUN cargo build --locked --release -p medousa --no-default-features --features full-daemon --bin medousa_daemon --bin medousa_cli \
+RUN cargo build --locked --release -p medousa -p medousa-cli --no-default-features --features medousa/full-daemon --bin medousa_daemon --bin medousa_cli \
     && mkdir -p /build/packaged \
     && cp /build/target/release/medousa_daemon /build/target/release/medousa_cli /build/packaged/
 RUN cargo build --locked --release -p medousa --no-default-features --features tui --bin medousa \

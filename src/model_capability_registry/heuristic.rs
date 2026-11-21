@@ -35,6 +35,11 @@ pub fn chatgpt_catalog_record(model: &serde_json::Value) -> ModelCapabilityRecor
     let mut record = infer_capability("openai-codex", model["slug"].as_str().unwrap_or_default());
     record.display_name = model["display_name"].as_str().map(str::to_owned);
     record.source = "chatgpt_account".into();
+    if let Some(inputs) = model.get("input_modalities").filter(|v| v.is_array()) {
+        record.source = "chatgpt_account.input_modalities".into();
+        record.input_modalities = super::adapters::parse_modalities(Some(inputs));
+        record.supports_vision = record.input_modalities.contains(&Modality::Image);
+    }
     let positive = |key: &str| model[key].as_u64().filter(|value| *value > 0);
     let window = match (positive("context_window"), positive("max_context_window")) {
         (Some(window), Some(maximum)) => Some(window.min(maximum)),
@@ -59,6 +64,20 @@ pub fn chatgpt_catalog_record(model: &serde_json::Value) -> ModelCapabilityRecor
     record
 }
 
+/// Older account snapshots populated modalities from model names. Apply the
+/// current fallback only to those rows, leaving advertised text-only models alone.
+pub(super) fn restore_cached_account_inputs(record: &mut ModelCapabilityRecord) {
+    if record.source == "chatgpt_account"
+        && !record.supports_vision
+        && infer_supports_vision("openai-codex", &record.model_id)
+    {
+        record.supports_vision = true;
+        if !record.input_modalities.contains(&Modality::Image) {
+            record.input_modalities.push(Modality::Image);
+        }
+    }
+}
+
 pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
     let model = model.trim().to_ascii_lowercase();
     if model.is_empty() {
@@ -80,6 +99,10 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
                 || model.starts_with("gpt-4.1")
                 || model.starts_with("gpt-4-turbo")
                 || model.starts_with("gpt-5")
+                || matches!(
+                    model.as_str(),
+                    "gpt-6.2-sol" | "gpt-6.2-astra" | "gpt-6.1-terra"
+                )
                 || model.starts_with("gpt-6.1-sol")
                 || model.starts_with("gpt-6-astra")
                 || model.starts_with("gpt-6-sol")
@@ -157,6 +180,42 @@ mod tests {
         assert_eq!(record.max_input_tokens, Some(100000));
         let record = chatgpt_catalog_record(&serde_json::json!({"max_context_window": 100000}));
         assert_eq!(record.max_input_tokens, Some(95000));
+    }
+
+    #[test]
+    fn account_input_modalities_take_precedence_over_the_model_name() {
+        let image = chatgpt_catalog_record(
+            &serde_json::json!({"slug":"new-model","input_modalities":["text","image"]}),
+        );
+        assert!(image.supports_vision);
+        assert_eq!(
+            image.input_modalities,
+            vec![Modality::Text, Modality::Image]
+        );
+        let text = chatgpt_catalog_record(
+            &serde_json::json!({"slug":"gpt-6.2-sol","input_modalities":["text"]}),
+        );
+        assert!(!text.supports_vision);
+        assert_eq!(text.input_modalities, vec![Modality::Text]);
+        assert!(chatgpt_catalog_record(&serde_json::json!({"slug":"gpt-6.2-sol"})).supports_vision);
+    }
+
+    #[test]
+    fn legacy_account_cache_is_repaired_but_explicit_text_only_is_preserved() {
+        let mut advertised = chatgpt_catalog_record(
+            &serde_json::json!({"slug":"gpt-6.2-sol","input_modalities":["text"]}),
+        );
+        let mut legacy = advertised.clone();
+        legacy.source = "chatgpt_account".into();
+        restore_cached_account_inputs(&mut legacy);
+        restore_cached_account_inputs(&mut advertised);
+        assert_eq!(
+            legacy.input_modalities,
+            vec![Modality::Text, Modality::Image]
+        );
+        assert!(legacy.supports_vision);
+        assert_eq!(advertised.input_modalities, vec![Modality::Text]);
+        assert!(!advertised.supports_vision);
     }
 
     #[test]

@@ -7813,6 +7813,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-cli"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.9",
+ "chrono",
+ "clap",
+ "dirs 5.0.1",
+ "medousa-adapter-common",
+ "medousa-iroh-http",
+ "medousa-local-credential",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid 1.23.1",
+ "zeroize",
+]
+
+[[package]]
 name = "medousa-code"
 version = "0.12.0"
 dependencies = [
@@ -8277,6 +8299,36 @@ dependencies = [
  "serde_json",
  "syn 2.0.117",
  "trybuild",
+]
+
+[[package]]
+name = "medousa-tui"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "crossterm 0.29.0",
+ "dirs 5.0.1",
+ "futures-util",
+ "libc",
+ "mdns-sd",
+ "medousa-local-credential",
+ "medousa-sdk",
+ "medousa-types",
+ "ratatui",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "urlencoding",
+ "uuid 1.23.1",
+ "vte 0.15.0",
+ "zeroize",
 ]
 
 [[package]]

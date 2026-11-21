@@ -1,7 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-pub use medousa_engine::ArtifactReceiptMeta;
+pub use medousa_types::receipt::ArtifactReceiptMeta;
 use serde_json::{Value, json};
 
 pub const DEFAULT_MAX_INLINE_BYTES: usize = 8 * 1024;

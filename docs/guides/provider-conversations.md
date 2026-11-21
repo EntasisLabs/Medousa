@@ -27,7 +27,7 @@ medousa-cli daemon-external-event "$CONVERSATION_ID" "$EVENT_ID" completed "$RES
   --request-id "$REQUEST_ID" --iroh-ticket "$IROH_TICKET"
 ```
 
-Alternatively, set `MEDOUSA_BRIDGE_IROH_TICKET` privately and omit `--iroh-ticket`. An explicit ticket takes precedence over this environment variable. `--worker` always uses its own saved ticket and bearer. Both Iroh forms skip direct HTTP, even when a LAN URL is available, and fail without HTTP fallback. A CLI built without Iroh support reports an error; source builds need `cargo build --release --features iroh-transport --bin medousa_cli` (the resulting binary is named `medousa_cli`).
+Alternatively, set `MEDOUSA_BRIDGE_IROH_TICKET` privately and omit `--iroh-ticket`. An explicit ticket takes precedence over this environment variable. `--worker` always uses its own saved ticket and bearer. Both Iroh forms skip direct HTTP, even when a LAN URL is available, and fail without HTTP fallback. A CLI built without Iroh support reports an error; source builds need `cargo build --release -p medousa-cli --features iroh-transport --bin medousa_cli` (the resulting binary is named `medousa_cli`).
 
 Without a ticket or `--worker`, the command uses HTTP and accepts `--daemon-url "$WORKSHOP_URL"`. Use a new event ID for each new report, but reuse the same ID when retrying an uncertain delivery so the workshop can deduplicate it. A 401 response means the paired workshop bearer needs renewal; callback delivery does not renew it automatically. A 403 means to check the pairing's portal permissions and the callback key.
 

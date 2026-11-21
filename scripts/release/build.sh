@@ -208,13 +208,17 @@ if [[ "${NEED_ENGINE}" -eq 1 ]]; then
     stage_bin medousa_daemon "${MEDOUSA_PREBUILT_DAEMON}"
   else
     # Separate invocation: terminal features must not unify into the daemon.
-    cargo build "${CARGO_BUILD_ARGS[@]}" --bin medousa_daemon
+    cargo build -p medousa "${CARGO_BUILD_ARGS[@]}" --bin medousa_daemon
     # Preserve BEFORE any launcher/adapter build can replace Cargo's output.
     src="$(medousa_find_release_binary medousa_daemon "${TARGET}")"
     [[ -n "${src}" ]] || { echo "error: expected binary missing: medousa_daemon" >&2; exit 1; }
     stage_bin medousa_daemon "${src}"
   fi
-  ROOT_BINS+=(medousa_cli medousa_tui)
+  CLIENT_ARGS=(--release --locked --no-default-features --target "${TARGET}" -p medousa-cli -p medousa-tui)
+  if [[ "${WITH_IROH}" -eq 1 ]]; then
+    CLIENT_ARGS+=(--features medousa-cli/iroh-transport)
+  fi
+  cargo build "${CLIENT_ARGS[@]}" --bin medousa_cli --bin medousa_tui
 fi
 
 if [[ ${#ROOT_BINS[@]} -gt 0 ]]; then
@@ -223,7 +227,7 @@ if [[ ${#ROOT_BINS[@]} -gt 0 ]]; then
   for bin in "${ROOT_BINS[@]}"; do
     BIN_ARGS+=(--bin "${bin}")
   done
-  cargo build "${CARGO_BUILD_ARGS[@]}" --features tui "${BIN_ARGS[@]}"
+  cargo build -p medousa "${CARGO_BUILD_ARGS[@]}" --features tui "${BIN_ARGS[@]}"
 fi
 
 build_adapter_manifest() {

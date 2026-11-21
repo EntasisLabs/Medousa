@@ -2372,7 +2372,13 @@ impl EmbeddedDaemon {
         } else {
             self.tool_registry.clone()
         };
-        let tool_loop = MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry);
+        let tool_loop = MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry)
+            .with_window_policy(
+                crate::model_capability_registry::window::inference_window_policy(
+                    context.route().provider(),
+                    context.route().model(),
+                ),
+            );
         let mut prompt_context = crate::reasoning_effort::prompt_execution_context(
             context.route().model(),
             Some(&reasoning_effort),

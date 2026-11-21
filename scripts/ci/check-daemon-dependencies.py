@@ -43,8 +43,7 @@ def main():
     assert "tui" not in manifest["features"]["default"]
     bins = {entry["name"]: entry for entry in manifest["bin"]}
     assert bins["medousa_daemon"]["required-features"] == ["full-daemon"]
-    for name in ("medousa", "medousa_tui"):
-        assert bins[name]["required-features"] == ["tui"]
+    assert bins["medousa"]["required-features"] == ["tui"]
     # A shared consumer must never import terminal-owned contracts/assembly again.
     for path in (ROOT / "src").rglob("*.rs"):
         relative = path.relative_to(ROOT / "src")
@@ -61,8 +60,8 @@ def main():
         else:
             raise AssertionError(f"deny rule accepted {name}")
 
-    def cargo_tree(extra):
-        command = ["cargo", "tree", "--locked", "-p", "medousa", "-e", "normal,build", "--prefix", "none"]
+    def cargo_tree(extra, package="medousa"):
+        command = ["cargo", "tree", "--locked", "-p", package, "-e", "normal,build", "--prefix", "none"]
         if args.offline:
             command.append("--offline")
         return subprocess.check_output(command + extra, cwd=ROOT, text=True)
@@ -101,10 +100,16 @@ def main():
         "grapheme-signatures": modules,
     }.items():
         assert required <= effective.get(package, set()), (package, required, effective.get(package))
-    assert grapheme_features(["--no-default-features", "--features", "tui"]) == effective
-    print("Extended/TUI Grapheme closure: implementations, signatures, AOT, WASIX and LSP retained")
+    assert grapheme_features(["--no-default-features", "--features", "tui"]) == slim
+    print("Extended Grapheme closure: implementations, signatures, AOT, WASIX and LSP retained")
     terminal = graph(["--no-default-features", "--features", "tui"])
     assert {"ratatui", "ratatui-image", "crossterm"} <= terminal
+    for client in ("medousa-cli", "medousa-tui"):
+        names = packages(cargo_tree(["--all-features"], client))
+        forbidden = {"medousa", "medousa-engine", "medousa-runtime", "surrealdb", "stasis-rs", "grapheme-runtime", "grapheme-sdk", "medousa-forge"}
+        assert not names & forbidden, (client, names & forbidden)
+        assert ("ratatui" in names) == (client == "medousa-tui")
+        print(f"{client}: {len(names)} packages, daemon runtime excluded")
     print("terminal positive control: rendering dependencies present")
     print("daemon-dependencies: PASS (host target, standalone package selection)")
 

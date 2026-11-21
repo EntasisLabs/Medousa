@@ -1277,7 +1277,24 @@ pub struct ArtifactCommandRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct VerificationRunRecord {
+    pub verification_id: String,
+    pub session_id: String,
+    pub pack_id: String,
+    pub artifact_id: String,
+    pub selector: String,
+    pub source: String,
+    pub is_verified: bool,
+    pub confidence_score: f32,
+    pub created_at_utc: DateTime<Utc>,
+    pub output_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactCommandResponse {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verifications: Vec<VerificationRunRecord>,
     pub selected_context_pack_query: Option<String>,
     pub rendered_output: String,
 }
