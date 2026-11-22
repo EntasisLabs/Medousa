@@ -54,14 +54,18 @@ Records it cannot interpret retain their summary and original-record view.
 
 ## Context during long runs
 
-Medousa selects a conversation baseline at the start of a turn and keeps it
-stable while tools run. Fresh temporary notes and work status can still update.
-The working context target triggers cleanup before the model's hard limit.
+Medousa keeps the selected conversation history stable while tools run. When
+you use ChatGPT sign-in, Medousa uses the model’s reported input usage to budget
+the next step. Fresh notes, instructions, and tool results still count toward it.
 
-During long Coder runs, older completed tool exchanges can move into retrievable
-evidence while recent results and errors stay available. The model receives a
-reference and can read the archived details without repeating completed actions.
-If a growing run still cannot fit, Medousa saves a recoverable checkpoint when
-storage is available and reports that a continuation is needed. This does not
-mean the task is complete. If checkpoint storage is unavailable, the run reports
-an explicit context error.
+During long Coder runs, Medousa can archive older completed tool exchanges and
+give the model a reference to the details. Recent results and errors stay
+available. If the next step still exceeds the input budget, Medousa tries again
+with fewer older chat exchanges. It can then keep working in the same turn,
+with the results of tools it already ran.
+
+If the required material still exceeds the budget, Medousa saves a checkpoint
+when storage is available. Send **continue** in the same chat to pick up the
+work. If the workspace changed in the meantime, Coder checks its current state
+before proceeding. If checkpoint storage is unavailable, the run reports an
+explicit context error.

@@ -306,14 +306,14 @@ impl MedousaToolLoopPipeline {
         completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
         current_turn_user_message: Option<ChatMessage>,
     ) -> Result<ToolLoopExecutionResponse> {
-        self.execute_internal(
+        crate::inference_window::with_turn_window(self.execute_internal(
             request,
             prior_messages,
             chunk_tx,
             max_tool_rounds,
             completion_gate,
             current_turn_user_message,
-        )
+        ))
         .await
     }
 
@@ -323,7 +323,7 @@ impl MedousaToolLoopPipeline {
         prior_messages: Vec<ChatMessage>,
         chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> Result<ToolLoopExecutionResponse> {
-        self.execute_internal(
+        self.execute_with_stream_prior_messages_max_rounds(
             request,
             prior_messages,
             chunk_tx,
@@ -683,7 +683,7 @@ impl MedousaToolLoopPipeline {
                 let baseline = selected_baseline
                     .as_ref()
                     .unwrap_or(&turn_ctx.user_lane_prefix);
-                let prefix_len = baseline.len();
+                let mut prefix_len = baseline.len();
                 let mut messages = Vec::new();
                 if systems > 0 {
                     messages.push(ChatMessage::system(
@@ -743,21 +743,57 @@ impl MedousaToolLoopPipeline {
                 } else {
                     None
                 };
-                let window_result = crate::context::ContextCoordinator::compile_inference_with_hud(
-                    &mut chat_request,
-                    &self.window_policy,
-                    systems,
-                    prefix_len,
-                    self.first_request_context.assembly.as_ref(),
-                    &mut perception_governor,
-                    work,
-                    previous_request.as_ref().and_then(
-                        |p: &crate::inference_usage::RequestFootprint| p.inference_window.as_ref(),
-                    ),
+                let previous_window = previous_request.as_ref().and_then(
+                    |p: &crate::inference_usage::RequestFootprint| p.inference_window.as_ref(),
                 );
+                let mut compile = |request: &mut ChatRequest, prefix, previous| {
+                    crate::context::ContextCoordinator::compile_inference_with_hud(
+                        request,
+                        &self.window_policy,
+                        systems,
+                        prefix,
+                        self.first_request_context.assembly.as_ref(),
+                        &mut perception_governor,
+                        work.clone(),
+                        previous,
+                    )
+                };
+                let mut window_result = compile(&mut chat_request, prefix_len, previous_window);
+                // At a hard stop, try the same history selection a continuation
+                // would get. Only the request copy changes; tools never replay.
+                let reselect =
+                    window_result.is_err() && previous_window.is_some() && prefix_len > 1;
+                if reselect {
+                    chat_request.messages.truncate(systems);
+                    chat_request
+                        .messages
+                        .extend(turn_ctx.user_lane_prefix.iter().cloned());
+                    chat_request
+                        .messages
+                        .extend(turn_ctx.tool_lane.messages.iter().cloned());
+                    ensure_assistant_tool_turn_reasoning(&mut chat_request.messages);
+                    prefix_len = turn_ctx.user_lane_prefix.len();
+                    window_result = compile(&mut chat_request, prefix_len, None);
+                    if let Ok(report) = &mut window_result {
+                        report.meaningful_changes = vec!["baseline_reselected".into()];
+                    }
+                }
                 let window_report = match window_result {
                     Ok(report) => report,
                     Err(overflow) if previous_request.is_some() => {
+                        let rejected = crate::inference_usage::RequestFootprint::new(
+                            &chat_request,
+                            shared_inputs.context.model_hint.clone(),
+                            shared_inputs.context.reasoning_effort.clone(),
+                        )
+                        .with_inference_window((*overflow.report).clone());
+                        crate::inference_usage::InferenceObservation::start(
+                            completion_gate.as_deref(),
+                            rounds_executed,
+                            rejected,
+                            previous_request.as_ref(),
+                        )
+                        .window_rejected();
                         rounds_executed = rounds_executed.saturating_sub(1);
                         let saved = persist_checkpoint!(
                             SafeCheckpointBoundary::RecoverableFailure,
@@ -784,7 +820,7 @@ impl MedousaToolLoopPipeline {
                             );
                         }
                         return Ok(ToolLoopExecutionResponse {
-                            text: "The context window needs a continuation. Progress is saved in a recoverable checkpoint.".into(),
+                            text: "I saved your progress because the next step exceeded the context budget. Send “continue” here to pick up from the saved work.".into(),
                             metadata: shared_inputs.context_clone(),
                             tool_name: String::new(), tool_output: Value::Null,
                             tool_invocations: invocations, rounds_executed,
@@ -797,7 +833,7 @@ impl MedousaToolLoopPipeline {
                         ));
                     }
                 };
-                if selected_baseline.is_none() {
+                if selected_baseline.is_none() || reselect {
                     selected_baseline = Some(
                         chat_request.messages[systems
                             ..systems
@@ -950,6 +986,10 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                 };
+                self.window_policy.observe_input(
+                    previous_request.as_ref().expect("dispatched request"),
+                    &response,
+                );
                 drop(observation);
                 let maybe_text = response
                     .first_text()

@@ -16,7 +16,7 @@ pub struct RequestSection {
     pub bytes: usize,
 }
 
-fn section(value: &impl Serialize) -> RequestSection {
+pub(crate) fn section(value: &impl Serialize) -> RequestSection {
     // Stream into the digest rather than allocating another copy of a large
     // tool result or base64 observation just to measure it.
     struct HashWriter {
@@ -328,6 +328,13 @@ impl InferenceObservation {
                 }
                 _ => {}
             }
+        }
+        self.persist();
+    }
+
+    pub fn window_rejected(&mut self) {
+        if let Some(usage) = self.usage.as_mut() {
+            usage.outcome = "window_rejected".into();
         }
         self.persist();
     }

@@ -10,6 +10,7 @@ use super::shell_output::ShellOutput;
 pub(crate) struct CoderShellState {
     pub owned_sessions: HashSet<String>,
     pub preferred_session: Option<String>,
+    pub(super) readiness_gate: Arc<Mutex<()>>,
     pub cursors: HashMap<String, u64>,
     pub busy_sessions: HashSet<String>,
     pub(super) commands: HashMap<String, Arc<Mutex<Option<ShellCommand>>>>,

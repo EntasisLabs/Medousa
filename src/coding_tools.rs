@@ -1707,6 +1707,16 @@ impl CognitionShellSessionRunTool {
             .filter(|session_id| !session_id.trim().is_empty())
         {
             Some(session_id) => session_id.to_string(),
+            None if poll => {
+                return Err(StasisError::PortFailure(
+                    "poll requires an existing session_id".into(),
+                ));
+            }
+            None if command.is_none() && raw_input.is_none() => {
+                return Err(StasisError::PortFailure(
+                    "provide command or input to start a shell session".into(),
+                ));
+            }
             None => {
                 let created = create_bound_shell_session(
                     work_id.as_deref(),
@@ -2097,6 +2107,43 @@ struct CoderShellStatusOutput {
     session: ExternalJson,
 }
 
+/// Keep the first-open behavior of readiness, but let overlapping probes see
+/// the same ready PTY. The ordinary state lock stays available to I/O and cleanup.
+async fn coder_readiness_session(
+    state: &tokio::sync::Mutex<CoderShellState>,
+    work_id: Option<&str>,
+    list: impl Future<Output = StasisResult<Value>>,
+    create: impl Future<Output = StasisResult<Value>>,
+) -> StasisResult<Value> {
+    let gate = state.lock().await.readiness_gate.clone();
+    let _probe = gate.lock().await;
+    let preferred = {
+        let state = state.lock().await;
+        state
+            .preferred_session
+            .as_ref()
+            .filter(|id| state.owned_sessions.contains(*id) && !state.busy_sessions.contains(*id))
+            .cloned()
+    };
+    if let Some(id) = preferred {
+        let response = list.await?;
+        let sessions = response["sessions"].as_array().ok_or_else(|| {
+            StasisError::PortFailure("session host did not return a session list".into())
+        })?;
+        if let Some(session) = sessions.iter().find(|session| {
+            session["session_id"].as_str() == Some(&id)
+                && session["work_id"].as_str() == work_id
+                && session["exited"].as_bool() == Some(false)
+        }) {
+            return Ok(session.clone());
+        }
+    }
+    let session = create.await?;
+    let id = daemon_session_id(&session)?;
+    state.lock().await.preferred_session = Some(id);
+    Ok(session)
+}
+
 #[medousa_tool(id = COGNITION_CODER_SHELL_STATUS_ID)]
 impl CognitionCoderShellStatusTool {
     /// Report shell readiness for the active Coder worktree.
@@ -2124,14 +2171,25 @@ impl CognitionCoderShellStatusTool {
         let lease_id = input.lease_id.into_option();
         let lease_generation = input.lease_generation.into_option();
         let attempt_id = input.attempt_id.into_option();
-        let created = create_bound_shell_session(
+        let create = create_bound_shell_session(
             work_id.as_deref(),
             lease_id.as_deref(),
             lease_generation,
             attempt_id.as_deref(),
-        )
-        .await?;
-        let session_id = created
+        );
+        let session = match CODER_SHELL_STATE.try_with(Clone::clone) {
+            Ok(state) => {
+                coder_readiness_session(
+                    &state,
+                    work_id.as_deref(),
+                    daemon_get("/v1/sessions/shell"),
+                    create,
+                )
+                .await?
+            }
+            Err(_) => create.await?,
+        };
+        let session_id = session
             .get("session_id")
             .and_then(Value::as_str)
             .map(str::to_string);
@@ -2139,7 +2197,7 @@ impl CognitionCoderShellStatusTool {
             ok: true,
             surface: "coder_pty".to_string(),
             session_id,
-            session: ExternalJson::new(created),
+            session: ExternalJson::new(session),
         })
     }
 }
@@ -2647,6 +2705,66 @@ mod tests {
         }))
         .unwrap();
         assert!(poll.command.is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_and_empty_calls_without_a_session_fail_before_opening_a_shell() {
+        for (input, message) in [
+            (
+                json!({"poll": true, "session_id": " "}),
+                "poll requires an existing session_id",
+            ),
+            (json!({}), "provide command or input"),
+        ] {
+            let input = serde_json::from_value(input).unwrap();
+            let error = with_coder_shell_state(
+                Default::default(),
+                CognitionShellSessionRunTool.invoke_typed(input),
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains(message), "{error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn readiness_reuses_only_a_live_owned_shell_and_coalesces_concurrent_opens() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let state = Arc::new(tokio::sync::Mutex::new(CoderShellState::default()));
+        let spawns = AtomicUsize::new(0);
+        let probe = |sessions: Value| {
+            coder_readiness_session(
+                &state,
+                Some("work"),
+                async move { Ok(json!({ "sessions": sessions })) },
+                async {
+                    tokio::task::yield_now().await;
+                    let id = format!("pty-{}", spawns.fetch_add(1, Ordering::Relaxed));
+                    state.lock().await.owned_sessions.insert(id.clone());
+                    Ok(json!({ "session_id": id }))
+                },
+            )
+        };
+        let live = json!([{"session_id":"pty-0", "work_id":"work", "exited":false}]);
+        let (first, second) = tokio::join!(probe(live.clone()), probe(live));
+        assert_eq!(first.unwrap()["session_id"], "pty-0");
+        assert_eq!(second.unwrap()["session_id"], "pty-0");
+        let replacement = probe(json!([
+            {"session_id":"pty-0", "work_id":"work", "exited":true},
+            {"session_id":"other", "work_id":"work", "exited":false}
+        ]))
+        .await
+        .unwrap();
+        assert_eq!(replacement["session_id"], "pty-1");
+        state.lock().await.busy_sessions.insert("pty-1".into());
+        let available = probe(json!([{"session_id":"pty-1", "work_id":"work", "exited":false}]))
+            .await
+            .unwrap();
+        assert_eq!(available["session_id"], "pty-2");
+        assert_eq!(spawns.load(Ordering::Relaxed), 3);
     }
 
     #[tokio::test]

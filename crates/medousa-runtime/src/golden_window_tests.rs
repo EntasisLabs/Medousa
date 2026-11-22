@@ -383,6 +383,178 @@ async fn hybrid_rollover_continues_productive_tools_with_durable_archives_and_st
 }
 
 #[tokio::test]
+async fn signed_codex_round_uses_reported_input_through_final_dispatch() {
+    for stream in [false, true] {
+        let policy = InferenceWindowPolicy {
+            target: "openai-codex:gpt-6-test".into(),
+            ..window(4000)
+        };
+        let signature = "Q8z_".repeat(500);
+        let mut call = tool_call("data_probe", json!({"step": 1}));
+        call.thought_signatures = Some(vec![signature.clone()]);
+        let mut signed = tool_response(vec![]);
+        signed.content = MessageContent::from_parts(vec![
+            ContentPart::ThoughtSignature(signature.clone()),
+            ContentPart::ToolCall(call),
+        ]);
+        signed.provider_model_iden = ModelIden::from_static(AdapterKind::OpenAIResp, "gpt-6-test");
+        signed.usage.prompt_tokens = Some(700);
+        let client = Arc::new(ScriptedClient::new(vec![
+            signed,
+            tool_response(vec![finish_call("done")]),
+        ]));
+        let registry = InMemoryToolRegistry::default();
+        registry.register_tool(DataProbeTool).unwrap();
+        register_golden_turn_tool(&registry);
+        let guarded =
+            crate::windowed_client::WindowedChatClient::new(client.clone(), policy.clone());
+        let pipeline = MedousaToolLoopPipeline::new(
+            PromptExecutionPipeline::new(Arc::new(guarded)),
+            Arc::new(registry),
+        )
+        .with_window_policy(policy.clone());
+        let (tx, _rx) = mpsc::channel(64);
+        let result = with_turn_execution_boundary(
+            golden_execution_boundary(),
+            pipeline.execute_with_stream_prior_messages_max_rounds(
+                ToolLoopExecutionRequest {
+                    user_prompt: "stable ".repeat(2300),
+                    system_prompt: None,
+                    context: Default::default(),
+                    tool_name: String::new(),
+                    tool_input: Value::Null,
+                    tool_call_mode: ToolCallMode::Auto,
+                },
+                vec![],
+                stream.then_some(&tx),
+                4,
+                None,
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.text, "done");
+        let requests = client.requests();
+        assert_eq!(requests.len(), 2);
+        assert!(policy.estimate(&requests[1]).total_tokens > policy.input_budget());
+        assert!(requests[1].messages.iter().any(|m| {
+            m.content
+                .parts()
+                .iter()
+                .any(|p| matches!(p, ContentPart::ThoughtSignature(s) if s == &signature))
+        }));
+    }
+}
+
+#[tokio::test]
+async fn measured_input_is_scoped_and_charges_each_new_message_in_full() {
+    use crate::inference_usage::RequestFootprint;
+    use crate::inference_window::with_turn_window;
+    let policy = InferenceWindowPolicy {
+        target: "openai-codex:gpt-6-test".into(),
+        ..window(4000)
+    };
+    let prior = ChatRequest::new(vec![
+        ChatMessage::user("fixed ".repeat(2000)),
+        ChatMessage::user("replace me"),
+    ]);
+    let footprint = RequestFootprint::new(&prior, None, None);
+    let mut reported = text_response("ok");
+    reported.provider_model_iden = ModelIden::from_static(AdapterKind::OpenAIResp, "gpt-6-test");
+    reported.usage.prompt_tokens = Some(600);
+    let raw = policy.estimate(&prior);
+    with_turn_window(async {
+        policy.observe_input(&footprint, &reported);
+        assert_eq!(policy.estimate(&prior).total_tokens, 600);
+        let mut next = prior.clone();
+        next.messages[1] = ChatMessage::user("changed message");
+        next.messages.push(next.messages[0].clone());
+        assert_eq!(
+            policy.estimate(&next).total_tokens,
+            600 + 64
+                + policy.text_tokens("changed message")
+                + policy.text_tokens(&"fixed ".repeat(2000))
+        );
+        let other_tools = prior
+            .clone()
+            .with_tools(vec![genai::chat::Tool::new("changed")]);
+        assert!(
+            policy
+                .estimate(&other_tools)
+                .previous_input_tokens
+                .is_none()
+        );
+        with_turn_window(async { assert_eq!(policy.estimate(&prior), raw) }).await;
+        assert_eq!(policy.estimate(&prior).total_tokens, 600);
+        reported.usage.prompt_tokens = None;
+        policy.observe_input(&footprint, &reported);
+        assert_eq!(policy.estimate(&prior), raw);
+    })
+    .await;
+    assert_eq!(policy.estimate(&prior), raw);
+}
+
+#[tokio::test]
+async fn hard_pressure_reselects_old_chat_and_finishes_without_replaying_tools() {
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(DataProbeTool).unwrap();
+    register_golden_turn_tool(&registry);
+    let client = Arc::new(ScriptedClient::new(vec![
+        tool_response(vec![tool_call(
+            "data_probe",
+            json!({"exact":"x".repeat(1500)}),
+        )]),
+        tool_response(vec![finish_call("done")]),
+    ]));
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    )
+    .with_window_policy(window(6500));
+    let result = with_turn_execution_boundary(
+        golden_execution_boundary(),
+        pipeline.execute_with_prior_messages(
+            ToolLoopExecutionRequest {
+                user_prompt: "keep current work".into(),
+                system_prompt: None,
+                context: Default::default(),
+                tool_name: String::new(),
+                tool_input: Value::Null,
+                tool_call_mode: ToolCallMode::Auto,
+            },
+            vec![
+                ChatMessage::user("old-context".repeat(380)),
+                ChatMessage::assistant("old reply"),
+            ],
+        ),
+    )
+    .await
+    .unwrap();
+    let requests = client.requests();
+    assert_eq!(result.text, "done");
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0]
+            .messages
+            .iter()
+            .any(|m| m.content.first_text() == Some("old reply"))
+    );
+    assert!(
+        !requests[1]
+            .messages
+            .iter()
+            .any(|m| m.content.first_text() == Some("old reply"))
+    );
+    assert!(
+        requests[1]
+            .messages
+            .iter()
+            .any(|m| !m.content.tool_responses().is_empty())
+    );
+}
+
+#[tokio::test]
 async fn context_exhaustion_saves_checkpoint_without_claiming_completion() {
     let registry = InMemoryToolRegistry::default();
     registry.register_tool(DataProbeTool).unwrap();
@@ -397,7 +569,12 @@ async fn context_exhaustion_saves_checkpoint_without_claiming_completion() {
     )
     .with_window_policy(window(6000));
     let checkpoints = CapturingCheckpoints::default();
-    let mut gate = ToolLoopCompletionGate::new_for_execution(1, RuntimePorts::new(), 4);
+    let ledger = Arc::new(CapturingPorts::default());
+    let mut gate = ToolLoopCompletionGate::new_for_execution(
+        1,
+        RuntimePorts::new().with_ledger_sink(ledger.clone()),
+        4,
+    );
     gate.active_turn_checkpoint_sink = Some(Arc::new(checkpoints.clone()));
     let response = with_turn_execution_boundary(
         golden_execution_boundary(),
@@ -422,6 +599,15 @@ async fn context_exhaustion_saves_checkpoint_without_claiming_completion() {
     assert_eq!(response.termination_reason, "context_window_checkpoint");
     assert_eq!(response.rounds_executed, 1);
     assert_eq!(client.requests().len(), 1);
+    let records = ledger.ledger.lock().unwrap();
+    let rejected = records
+        .iter()
+        .filter_map(|row| row.inference.as_ref())
+        .find(|usage| usage.outcome == "window_rejected")
+        .unwrap();
+    assert!(rejected.tokens.input.is_none());
+    let report = rejected.request.inference_window.as_ref().unwrap();
+    assert!(report.estimate.total_tokens > report.input_budget);
     let states = checkpoints.states.lock().unwrap();
     let saved = states.last().unwrap();
     assert_eq!(

@@ -27,8 +27,10 @@ def summarize(records):
             "completed_tool_calls": 0, "completed_tool_requests": 0, "tools_changed": 0,
             "history_rewrites": 0, "elapsed_ms": 0,
         })
-        turn["requests"] += 1
         turn["outcomes"][usage["outcome"]] += 1
+        if usage["outcome"] == "window_rejected":
+            continue
+        turn["requests"] += 1
         turn["models"][usage.get("provider_model") or usage["request"].get("model") or "unknown"] += 1
         turn["tools"].update(record.get("tools_invoked", []))
         turn["elapsed_ms"] += usage["elapsed_ms"]

@@ -166,6 +166,53 @@ fn utf8_and_tools_are_counted_without_chars_div_four_undercount() {
 }
 
 #[test]
+fn codex_counts_distinct_replay_signatures_once_per_message() {
+    let codex = InferenceWindowPolicy {
+        target: "openai-codex:gpt-6-test".into(),
+        ..policy(5000)
+    };
+    let base = ToolCall {
+        call_id: "a".into(),
+        fn_name: "read".into(),
+        fn_arguments: json!({}),
+        thought_signatures: None,
+    };
+    let request = |attached: bool| {
+        let mut calls = vec![
+            base.clone(),
+            ToolCall {
+                call_id: "b".into(),
+                ..base.clone()
+            },
+        ];
+        if attached {
+            for call in &mut calls {
+                call.thought_signatures = Some(vec!["first".into(), "second".into()]);
+            }
+        }
+        let mut parts: Vec<_> = calls.into_iter().map(ContentPart::ToolCall).collect();
+        parts.extend(["first", "second"].map(|s| ContentPart::ThoughtSignature(s.into())));
+        ChatRequest::new(vec![ChatMessage::assistant(MessageContent::from_parts(
+            parts,
+        ))])
+    };
+    let clean = request(false);
+    let duplicated = request(true);
+    assert_eq!(codex.estimate(&clean), codex.estimate(&duplicated));
+    assert!(estimate(&duplicated).total_tokens > estimate(&clean).total_tokens);
+    let mut separate = clean.clone();
+    separate
+        .messages
+        .push(ChatMessage::assistant(MessageContent::from_parts(vec![
+            ContentPart::ThoughtSignature("first".into()),
+        ])));
+    assert_eq!(
+        codex.estimate(&separate).total_tokens - codex.estimate(&clean).total_tokens,
+        32 + codex.text_tokens("first")
+    );
+}
+
+#[test]
 fn unknown_media_is_an_explicit_estimate_not_zero_or_base64_text() {
     let mut request = ChatRequest::new(vec![ChatMessage::user(MessageContent::from_parts(vec![
         ContentPart::from_binary_base64("image/png", "aGVsbG8=", None),

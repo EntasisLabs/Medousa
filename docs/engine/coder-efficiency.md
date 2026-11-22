@@ -63,9 +63,10 @@ reports remain the billing authority.
 
 Context uses a hybrid policy. At turn start, whole older chat exchanges may be
 selected out toward a soft working target of 280,000 estimated tokens, bounded
-by the route's available input budget. That selected baseline stays fixed through
-the tool loop. A new turn or checkpoint resume can select again from the stored
-source prefix. Stickies, work projections and the HUD remain replaceable tails.
+by the route's available input budget. The tool loop reuses the selected baseline. If a later request still
+exceeds the hard budget after maintenance, it tries selection once more from
+the stored source prefix with the current tool results. A new turn or checkpoint
+resume can also select again. Stickies, work projections and the HUD remain replaceable tails.
 Crossing the working target requests maintenance; it is not an admission failure.
 The separate hard budget follows the route's input/shared limits, output reserve,
 safety and observation headroom. Required input above the soft target can still
@@ -100,6 +101,17 @@ conservative UTF-8 byte estimate. Both add protocol framing and media allowances
 neither claims exact provider-rendered tokenization. Extra dispatch payload uses
 the same route accounting. Layer-only character/4 telemetry is a different
 measure; the inference report's total and hard `input_budget` govern dispatch.
+For ChatGPT sign-in, a replay signature contributes once per message even when
+multiple tool calls carry it. The full proxy records its share in
+`estimate.replay_signature_tokens`. With a positive input measurement from the
+same turn and model and matching tools and system instructions, Medousa can use
+the previous measured input plus the estimated cost of each new or replaced
+message. Removed messages receive no subtraction from measured usage. Selection
+and dispatch use the lower of that bound and the full estimate. When the
+measured bound wins, `estimate.previous_input_tokens` records its basis.
+A locally rejected follow-up appears in the ledger as `window_rejected`, with
+the candidate footprint, estimate and input budget. Provider usage summaries
+exclude these local decisions from dispatched request counts.
 Deferred session history remains stored and retrievable.
 
 The inference window report includes typed `deferred_pointers` with source scope,
@@ -419,7 +431,9 @@ use the configured login shell.
 One-shot commands execute in a child shell with explicit start/completion
 boundaries, so multiline scripts, quoted text, syntax errors, and `exit` cannot
 corrupt the persistent command shell. Coder can call the command tool directly;
-a readiness tool call is not required. Startup observes retained output from
+a readiness tool call is not required. The first readiness check can open a shell.
+Repeated checks reuse the current turn’s preferred idle shell, including when
+multiple checks arrive together. Startup observes retained output from
 sequence zero and waits for the shell's readiness marker. Slow login initialization
 does not kill the session; cancellation remains owned by the turn.
 

@@ -1,8 +1,11 @@
 //! Hybrid window policy: stable turn baseline, soft maintenance, hard admission.
 //! Producers retain storage, authority, and valid reductions. Only whole old chat
 //! exchanges may be deferred here; tool evidence is reduced by perception.
-use genai::chat::{ChatRequest, ChatRole, ContentPart};
+use crate::inference_usage::{RequestFootprint, RequestSection, section};
+use genai::chat::{ChatRequest, ChatResponse, ChatRole, ContentPart};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 use crate::context::{ContextCapacity, ContextCoordinator, ContextDecisionReport, ContextOwner};
 use crate::perception::ToolPerceptionGovernor;
@@ -44,6 +47,24 @@ impl Default for InferenceWindowPolicy {
             observation_tokens: 512,
         }
     }
+}
+
+// Both selection and the final dispatch guard run in this turn's scope.
+// Concurrent turns, nested tool loops and checkpoint resumes start fresh.
+tokio::task_local! {
+    static LAST_INPUT: RefCell<Option<MeasuredInput>>;
+}
+
+pub(crate) async fn with_turn_window<T>(turn: impl Future<Output = T>) -> T {
+    LAST_INPUT.scope(RefCell::default(), turn).await
+}
+
+struct MeasuredInput {
+    target: String,
+    input_tokens: u32,
+    system: RequestSection,
+    tools: RequestSection,
+    messages: HashMap<String, usize>,
 }
 
 impl InferenceWindowPolicy {
@@ -122,7 +143,53 @@ impl InferenceWindowPolicy {
     }
 
     pub fn estimate(&self, request: &ChatRequest) -> WindowEstimate {
-        estimate_with(request, |text| self.text_tokens(text))
+        let codex = self.target.starts_with("openai-codex:");
+        let count = |text: &str| self.text_tokens(text);
+        if codex
+            && let Ok(estimate) = LAST_INPUT.try_with(|last| {
+                let last = last.borrow();
+                let comparable = last.as_ref().filter(|m| {
+                    m.target == self.target
+                        && m.system == section(&request.system)
+                        && m.tools == section(&request.tools)
+                });
+                estimate_with(request, count, true, comparable)
+            })
+        {
+            return estimate;
+        }
+        estimate_with(request, count, codex, None)
+    }
+
+    pub(crate) fn observe_input(&self, footprint: &RequestFootprint, response: &ChatResponse) {
+        let Some(model) = self.target.strip_prefix("openai-codex:") else {
+            return;
+        };
+        let _ = LAST_INPUT.try_with(|last| {
+            let input = response
+                .usage
+                .prompt_tokens
+                .and_then(|n| u32::try_from(n).ok())
+                .filter(|n| {
+                    *n > 0
+                        && response.provider_model_iden.adapter_kind
+                            == genai::adapter::AdapterKind::OpenAIResp
+                        && response.provider_model_iden.model_name.as_str() == model
+                });
+            last.replace(input.map(|input_tokens| {
+                let mut messages = HashMap::new();
+                for message in &footprint.messages {
+                    *messages.entry(message.sha256.clone()).or_insert(0) += 1;
+                }
+                MeasuredInput {
+                    target: self.target.clone(),
+                    input_tokens,
+                    system: footprint.system.clone(),
+                    tools: footprint.tools.clone(),
+                    messages,
+                }
+            }));
+        });
     }
 
     /// Conversion for byte-based observation lanes only, not token admission.
@@ -143,9 +210,16 @@ impl InferenceWindowPolicy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowEstimate {
     pub text_and_protocol_tokens: u32,
+    /// Subset of text_and_protocol_tokens, available on the Codex bridge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_signature_tokens: Option<u32>,
     pub media_tokens: u32,
     pub media_parts: u32,
     pub framing_tokens: u32,
+    /// Full proxy breakdown above, with the admission total below adjusted only
+    /// when a comparable measured request gives a smaller conservative bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_input_tokens: Option<u32>,
     pub total_tokens: u32,
 }
 
@@ -158,12 +232,20 @@ fn add(total: &mut u32, value: usize) {
 /// uncertain 8192-token allowance per part (not a claim of measured media cost).
 /// Opaque payload bytes/base64 are deliberately not tokenized as text.
 pub fn estimate(request: &ChatRequest) -> WindowEstimate {
-    estimate_with(request, |text| {
-        u32::try_from(text.len()).unwrap_or(u32::MAX)
-    })
+    estimate_with(
+        request,
+        |text| u32::try_from(text.len()).unwrap_or(u32::MAX),
+        false,
+        None,
+    )
 }
 
-fn estimate_with(request: &ChatRequest, count: impl Fn(&str) -> u32) -> WindowEstimate {
+fn estimate_with(
+    request: &ChatRequest,
+    count: impl Fn(&str) -> u32,
+    codex: bool,
+    measured: Option<&MeasuredInput>,
+) -> WindowEstimate {
     let mut text = 0u32;
     let mut media_parts = 0u32;
     add(
@@ -176,24 +258,68 @@ fn estimate_with(request: &ChatRequest, count: impl Fn(&str) -> u32) -> WindowEs
             count(&serde_json::to_string(tool).expect("tool serializes")) as usize,
         );
     }
-    for part in request.messages.iter().flat_map(|m| m.content.parts()) {
-        match part {
-            ContentPart::Text(value)
-            | ContentPart::ReasoningContent(value)
-            | ContentPart::ThoughtSignature(value) => add(&mut text, count(value) as usize),
-            ContentPart::ToolCall(_) | ContentPart::ToolResponse(_) => {
-                add(
-                    &mut text,
-                    count(&serde_json::to_string(part).expect("tool part serializes")) as usize,
-                );
+    let mut retained = measured.map(|last| last.messages.clone());
+    let mut added_tokens = 0u32;
+    let mut signature_tokens = 0u32;
+    for message in &request.messages {
+        let mut signatures = HashSet::new();
+        let mut message_text = 0u32;
+        let mut message_media = 0u32;
+        for part in message.content.parts() {
+            // ChatGPT sign-in sends one reasoning item per distinct signature
+            // in a message, even when each parallel tool call also carries it.
+            if codex {
+                let replay_signatures: &[String] = match part {
+                    ContentPart::ThoughtSignature(value) => std::slice::from_ref(value),
+                    ContentPart::ToolCall(call) => {
+                        call.thought_signatures.as_deref().unwrap_or(&[])
+                    }
+                    _ => &[],
+                };
+                for signature in replay_signatures {
+                    if signatures.insert(signature.as_str()) {
+                        let cost = count(signature);
+                        signature_tokens = signature_tokens.saturating_add(cost);
+                        message_text = message_text.saturating_add(cost);
+                    }
+                }
             }
-            ContentPart::Binary(_) => media_parts = media_parts.saturating_add(1),
-            ContentPart::Custom(value) => {
-                add(
-                    &mut text,
-                    count(&serde_json::to_string(value).expect("custom part serializes")) as usize,
-                );
-                media_parts = media_parts.saturating_add(1);
+            let tokens = match part {
+                ContentPart::ThoughtSignature(_) | ContentPart::ReasoningContent(_) if codex => 0,
+                ContentPart::Text(value)
+                | ContentPart::ThoughtSignature(value)
+                | ContentPart::ReasoningContent(value) => count(value),
+                ContentPart::ToolCall(call) if codex => {
+                    let wire_call = serde_json::json!({"type":"function_call", "namespace":"medousa",
+                        "call_id":call.call_id, "name":call.fn_name, "arguments":call.fn_arguments.to_string()});
+                    count(&wire_call.to_string())
+                }
+                ContentPart::ToolCall(_) | ContentPart::ToolResponse(_) => {
+                    count(&serde_json::to_string(part).expect("tool part serializes"))
+                }
+                ContentPart::Binary(_) => {
+                    message_media = message_media.saturating_add(1);
+                    0
+                }
+                ContentPart::Custom(value) => {
+                    message_media = message_media.saturating_add(1);
+                    count(&serde_json::to_string(value).expect("custom part serializes"))
+                }
+            };
+            message_text = message_text.saturating_add(tokens);
+        }
+        text = text.saturating_add(message_text);
+        media_parts = media_parts.saturating_add(message_media);
+        if let Some(retained) = retained.as_mut() {
+            if let Some(remaining) = retained.get_mut(&section(message).sha256)
+                && *remaining > 0
+            {
+                *remaining -= 1;
+            } else {
+                added_tokens = added_tokens
+                    .saturating_add(message_text)
+                    .saturating_add(message_media.saturating_mul(8192))
+                    .saturating_add(32);
             }
         }
     }
@@ -202,14 +328,22 @@ fn estimate_with(request: &ChatRequest, count: impl Fn(&str) -> u32) -> WindowEs
         .unwrap_or(u32::MAX)
         .saturating_mul(32)
         .saturating_add(128);
+    let full = text
+        .saturating_add(media_tokens)
+        .saturating_add(framing_tokens);
+    // Count all previously measured input (including cached input), plus the
+    // whole cost of every new/replaced message. No estimated removal credits.
+    let anchored = measured.map(|m| m.input_tokens.saturating_add(added_tokens));
     WindowEstimate {
+        previous_input_tokens: measured
+            .filter(|_| anchored.is_some_and(|n| n < full))
+            .map(|m| m.input_tokens),
+        replay_signature_tokens: codex.then_some(signature_tokens),
         text_and_protocol_tokens: text,
         media_tokens,
         media_parts,
         framing_tokens,
-        total_tokens: text
-            .saturating_add(media_tokens)
-            .saturating_add(framing_tokens),
+        total_tokens: anchored.unwrap_or(full).min(full),
     }
 }
 

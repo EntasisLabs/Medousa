@@ -24,6 +24,12 @@ def row(tokens, outcome="completed"):
 
 
 class UsageReportTests(unittest.TestCase):
+    def test_locally_rejected_round_preserves_provider_totals(self):
+        report = usage.summarize([row({"input": 100}), row({}, "window_rejected")])["7"]
+        self.assertEqual(report["requests"], 1)
+        self.assertEqual(report["tokens"]["input"]["total"], 100)
+        self.assertEqual(report["outcomes"]["window_rejected"], 1)
+
     def test_execution_ids_separate_parent_worker_and_later_turn(self):
         records = []
         for execution, parent in [("turn-a", None), ("worker-a", "turn-a"), ("turn-b", None)]:
