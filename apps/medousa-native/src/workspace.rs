@@ -1,8 +1,8 @@
 //! Window-local layout. Never stored in the workshop daemon or chat state.
 use rndr_core::*;
 use rndr_ui::{
-    UiId,
-    split::{SplitSash, SplitSashChange, SplitSashHandle, SplitSashProps},
+    Surface, UiId,
+    split::{PaneFill, SplitSash, SplitSashChange, SplitSashHandle, SplitSashProps},
 };
 use std::{
     path::{Path, PathBuf},
@@ -151,6 +151,8 @@ fn sidebar_props(width: f32, visible: bool) -> SplitSashProps {
     props.page = 0.05;
     props.default_ratio = 0.20;
     props.enabled = visible;
+    // The pane keeps the sidebar's own surface while its contents ease in.
+    props.leading_fill = PaneFill::Theme(Surface::Navigation);
     props
 }
 fn details_props(visible: bool, width: f32) -> SplitSashProps {
@@ -162,6 +164,7 @@ fn details_props(visible: bool, width: f32) -> SplitSashProps {
     props.step = 0.025;
     props.default_ratio = 0.68;
     props.enabled = visible;
+    props.trailing_fill = PaneFill::Theme(Surface::Navigation);
     props
 }
 fn show(world: &mut World, e: Entity, visible: bool) {
@@ -169,6 +172,25 @@ fn show(world: &mut World, e: Entity, visible: bool) {
         world.remove::<Hidden>(e);
     } else {
         world.insert(e, Hidden);
+    }
+}
+/// Show a side pane, easing its contents in from the pane's own edge when it
+/// reappears. The pane surface stays solid, layout is final at once so the
+/// reading lane never reflows per frame, and hiding stays immediate.
+fn reveal(world: &mut World, e: Entity, visible: bool, from_x: f32) {
+    let appearing = visible && world.has::<Hidden>(e);
+    show(world, e, visible);
+    // Never animate a pane's first appearance at launch.
+    let laid_out = world.get::<Rect>(e).is_some_and(|r| r.w > 0.);
+    if appearing && laid_out && world.resource::<Time>().is_some_and(|t| !t.delta.is_zero()) {
+        for content in children_of(world, e) {
+            motion::enter(
+                world,
+                content,
+                motion::Transition::slide(from_x, 0.)
+                    .with_anim(motion::Curve::tween(0.18, motion::Easing::EaseOut).into()),
+            );
+        }
     }
 }
 /// Return the effective chat width. Responsive collapse does not overwrite the
@@ -239,9 +261,9 @@ pub fn sync(world: &mut World, sidebar_open: bool, details_open: bool) -> f32 {
         )
         .unwrap();
     }
-    show(world, outer.leading, sidebar);
+    reveal(world, outer.leading, sidebar, -12.);
     show(world, outer.sash, sidebar);
-    show(world, inner.trailing, details_open);
+    reveal(world, inner.trailing, details_open, 12.);
     show(world, inner.sash, details_open);
     // Thin, low-contrast divider; RNDR retains its focus/drag color and cursor.
     for split in [outer, inner] {

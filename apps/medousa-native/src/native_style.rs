@@ -166,8 +166,10 @@ pub fn trailing_meta(world: &mut World, h: rndr_ui::controls::ControlHandle) {
         },
     );
     for child in children_of(world, face) {
-        // Skip the label and RNDR's pinned selection bar.
-        if child == h.label || world.has::<Absolute>(child) {
+        // Skip the label, a leading disclosure chevron and RNDR's pinned
+        // selection bar.
+        if child == h.label || world.has::<Absolute>(child) || world.has::<DisclosureChevron>(child)
+        {
             continue;
         }
         if let Some(l) = world.get_mut::<Layout>(child) {
@@ -324,12 +326,115 @@ pub fn borders(world: &mut World) {
     }
 }
 
+/// Interaction-scale ease, matching medousa-home's 120–160ms transitions.
+pub const EASE_SECONDS: f32 = 0.15;
+
+/// Presented value of `prop` before the motion runtime owns it.
+fn resting(world: &World, entity: Entity, prop: motion::Prop) -> f32 {
+    if let Some(target) = motion::target(world, entity, prop) {
+        return target;
+    }
+    let transform = world.get::<Transform>(entity).copied().unwrap_or_default();
+    match prop {
+        motion::Prop::Opacity => world.get::<Opacity>(entity).map_or(1., |o| o.0),
+        motion::Prop::Rotate => transform.rotate,
+        motion::Prop::X => transform.translate[0],
+        motion::Prop::Y => transform.translate[1],
+        _ => f32::NAN,
+    }
+}
+
+/// Ease `prop` toward `target` while a clock drives frames. Headless steps and
+/// offscreen renders have none, so the value settles at once and reads exactly.
+pub fn ease(world: &mut World, entity: Entity, prop: motion::Prop, target: f32) {
+    if resting(world, entity, prop) == target {
+        return;
+    }
+    if world.resource::<Time>().is_some_and(|t| !t.delta.is_zero()) {
+        let curve = motion::Curve::tween(EASE_SECONDS, motion::Easing::EaseOut);
+        motion::animate(world, entity, prop, target, curve);
+        return;
+    }
+    if motion::target(world, entity, prop).is_some() {
+        motion::set(world, entity, prop, target);
+    }
+    // The runtime samples at the end of the frame; present the value now too.
+    match prop {
+        motion::Prop::Opacity => world.insert(entity, Opacity(target)),
+        motion::Prop::Rotate | motion::Prop::X | motion::Prop::Y => {
+            let mut transform = world.get::<Transform>(entity).copied().unwrap_or_default();
+            match prop {
+                motion::Prop::Rotate => transform.rotate = target,
+                motion::Prop::X => transform.translate[0] = target,
+                _ => transform.translate[1] = target,
+            }
+            world.insert(entity, transform);
+        }
+        _ => {}
+    }
+}
+
+/// A disclosure chevron owned by a retained control.
+pub struct Disclosure {
+    chevron: Entity,
+    open: bool,
+}
+impl Component for Disclosure {}
+struct DisclosureChevron;
+impl Component for DisclosureChevron {}
+
+/// One right-pointing chevron leading `face`, turned a quarter when `open`.
+/// It is decorative: the owning control keeps the name and expanded state.
+pub fn disclosure(world: &mut World, owner: Entity, face: Entity, open: bool) {
+    let angle = if open {
+        std::f32::consts::FRAC_PI_2
+    } else {
+        0.
+    };
+    if let Some(d) = world.get::<Disclosure>(owner)
+        && world.is_alive(d.chevron)
+    {
+        let (chevron, was) = (d.chevron, d.open);
+        if was != open {
+            world.insert(owner, Disclosure { chevron, open });
+            ease(world, chevron, motion::Prop::Rotate, angle);
+        }
+        return;
+    }
+    let chevron = world.spawn((
+        Layout::column(),
+        Label::new(Icon::ChevronRight.scalar().to_string()),
+        LabelBox::CONTENT,
+        UiStyle {
+            foreground: Some(secondary().into()),
+            typography: Some(Typography::Caption),
+            ..Default::default()
+        },
+        Transform {
+            rotate: angle,
+            ..Default::default()
+        },
+        DisclosureChevron,
+    ));
+    set_parent(world, chevron, face);
+    if let Some(children) = world.get_mut::<Children>(face) {
+        children.list.retain(|e| *e != chevron);
+        children.list.insert(0, chevron);
+    }
+    world.insert(owner, Disclosure { chevron, open });
+}
+
 /// A scrollbar appears only when its viewport overflows, or while the user
 /// operates it. The native target, focus route and drag gesture are unchanged.
 pub fn scrollbar_visibility(world: &mut World, bar: Entity, overflows: bool) {
     let active = world.resource::<Focus>().and_then(|f| f.entity) == Some(bar)
         || scrollbar_dragging(world, bar);
-    world.insert(bar, Opacity(if overflows || active { 1. } else { 0. }));
+    ease(
+        world,
+        bar,
+        motion::Prop::Opacity,
+        if overflows || active { 1. } else { 0. },
+    );
 }
 
 /// App-wide resting chrome: split lines are hairlines and idle scrollbars

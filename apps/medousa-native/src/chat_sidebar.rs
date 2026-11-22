@@ -556,15 +556,7 @@ pub(super) fn render(
         world.remove::<Hidden>(section);
         let hidden = !searching && collapsed.contains(&g);
         let mut props = ButtonProps::new(
-            format!(
-                "{} {}",
-                if hidden {
-                    Icon::ChevronRight.scalar()
-                } else {
-                    Icon::ChevronDown.scalar()
-                },
-                LABELS[g].to_uppercase()
-            ),
+            LABELS[g].to_uppercase(),
             HostIntent::Command(SECTION + g as u64),
         );
         props.enabled = !searching;
@@ -588,6 +580,9 @@ pub(super) fn render(
         };
         visual::section_heading(world, h.label);
         visual::trailing_meta(world, h);
+        if let Some(face) = world.get::<Parent>(h.label).map(|p| p.entity) {
+            visual::disclosure(world, h.root, face, !hidden);
+        }
         world.insert(
             h.root,
             Semantics {

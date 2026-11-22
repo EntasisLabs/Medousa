@@ -183,11 +183,23 @@ fn sync_navigation(world: &mut World, root: Entity) {
             )
             .unwrap();
             world.insert(control.label, LabelBox::CONTENT);
-            // Unavailable turn jumps leave no empty chrome beside the reading lane.
-            if enabled {
-                world.remove::<Hidden>(control.root);
-            } else {
-                world.insert(control.root, Hidden);
+        }
+        // Unavailable turn jumps fade away, then leave no empty chrome beside
+        // the reading lane. They are already disabled while fading.
+        let Some(control) = children_of(world, parent).into_iter().find(|e| {
+            world
+                .get::<NavigationTarget>(*e)
+                .is_some_and(|n| n.1 == command)
+        }) else {
+            continue;
+        };
+        if enabled {
+            world.remove::<Hidden>(control);
+            visual::ease(world, control, motion::Prop::Opacity, 1.);
+        } else {
+            visual::ease(world, control, motion::Prop::Opacity, 0.);
+            if world.get::<Opacity>(control).is_some_and(|o| o.0 <= 0.001) {
+                world.insert(control, Hidden);
             }
         }
     }
