@@ -172,6 +172,10 @@ pub fn mount(world: &mut World, root: Entity) -> Entity {
         },
     )
 }
+/// The window band, for overlays that hang from it.
+pub(crate) fn band(world: &World) -> Option<Entity> {
+    world.resource::<Chrome>().map(|c| c.band)
+}
 fn caption_action(world: &mut World, entity: Entity) {
     let action = match world.get::<WindowButton>(entity) {
         Some(WindowButton::Minimize) => WindowAction::Minimize,

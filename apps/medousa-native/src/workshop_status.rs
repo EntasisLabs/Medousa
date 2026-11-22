@@ -230,6 +230,17 @@ fn set_name(world: &mut World, root: Entity, name: &str) {
     }
 }
 
+/// Active work right now, for other entry points such as the palette.
+pub(super) fn active_count(world: &World) -> usize {
+    world
+        .resource::<State>()
+        .map_or(0, |s| s.work.iter().filter(|w| w.active()).count())
+}
+/// Open the activity menu from somewhere other than the rail button.
+pub(super) fn open_activity(world: &mut World) {
+    action(world, &HostIntent::Command(ACTIVITY));
+}
+
 /// Host routes native button intents here before surface actions.
 pub(super) fn action(world: &mut World, intent: &HostIntent) -> bool {
     let Some(state) = world.resource::<State>() else {

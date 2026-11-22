@@ -82,6 +82,8 @@ enum Action {
     Find,
     Browse(Browse),
     Picker(Picker, Entity),
+    /// The editor's "…" menu, anchored to its button.
+    Overflow(Entity),
     Group(Option<&'static str>),
     SearchList,
 }
@@ -249,6 +251,20 @@ fn button(
     visual::document_action(world, parent, id, label, enabled);
     n.actions.insert(id, action);
 }
+/// A quiet square icon action; `label` is its name and hint.
+fn icon_button(
+    world: &mut World,
+    parent: Entity,
+    n: &mut Notes,
+    icon: Icon,
+    label: &str,
+    action: impl FnOnce(Entity) -> Action,
+    enabled: bool,
+) {
+    let id = next();
+    let h = visual::icon_action(world, parent, id, icon, label, enabled);
+    n.actions.insert(id, action(h.root));
+}
 pub fn mount(world: &mut World, parent: Entity) {
     if world.resource::<Notes>().is_some() {
         return;
@@ -336,8 +352,15 @@ pub fn mount(world: &mut World, parent: Entity) {
         gap: 4.,
         ..Layout::row()
     };
-    // Measured actions flow onto another line instead of clipping or eliding.
-    world.insert(toolbar, Wrap { line_gap: 4. });
+    // One row: the path takes the slack and ellipsizes; actions stay pinned
+    // to the trailing edge.
+    world.insert(
+        toolbar,
+        Align {
+            items: Items::Center,
+            ..Default::default()
+        },
+    );
     let formatting = column(world, content, Size::Fill, Size::Px(34.));
     *world.get_mut::<Layout>(formatting).unwrap() = Layout {
         width: Size::Fill,
@@ -700,7 +723,10 @@ fn render(world: &mut World, n: &mut Notes) {
                 }
                 .into(),
                 row_height: 34.,
-                ..TreeProps::new("Notes library")
+                // The library sits on the sidebar's navigation plane: clear
+                // rows with a wash for hover and selection, not a content
+                // card inset in the sidebar.
+                ..TreeProps::new("Notes library").translucent()
             },
             &nodes,
             &expanded,
@@ -758,24 +784,17 @@ fn render(world: &mut World, n: &mut Notes) {
         return;
     };
     sync_rich(world, n, &path);
+    // Writing gets a compact row of format glyphs; quote, undo and redo sit
+    // in the "…" menu, and the editor keeps its own undo keys.
     if n.live {
-        for (label, command) in [
-            ("Bold", MarkdownCommand::Strong),
-            ("Italic", MarkdownCommand::Emphasis),
-            ("Heading", MarkdownCommand::Heading(1)),
-            ("List", MarkdownCommand::Bullet),
-            ("Quote", MarkdownCommand::Quote),
-            ("Undo", MarkdownCommand::Undo),
-            ("Redo", MarkdownCommand::Redo),
+        let enabled = can_deactivate_views(world, n);
+        for (icon, label, command) in [
+            (Icon::Bold, "Bold", MarkdownCommand::Strong),
+            (Icon::Italic, "Italic", MarkdownCommand::Emphasis),
+            (Icon::Type, "Heading", MarkdownCommand::Heading(1)),
+            (Icon::List, "List", MarkdownCommand::Bullet),
         ] {
-            button(
-                world,
-                formatting,
-                n,
-                label,
-                Action::Format(command),
-                can_deactivate_views(world, n),
-            );
+            icon_button(world, formatting, n, icon, label, |_| Action::Format(command), enabled);
         }
     }
     // Retained open documents are navigation, not a pile of form controls.
@@ -819,30 +838,8 @@ fn render(world: &mut World, n: &mut Notes) {
     .unwrap();
     world.get_mut::<Layout>(crumb).unwrap().width = Size::Fill;
     world.get_mut::<Label>(crumb).unwrap().overflow = TextOverflow::Ellipsis;
-    button(
-        world,
-        toolbar,
-        n,
-        if n.source { "Read" } else { "Edit source" },
-        Action::ToggleSource,
-        true,
-    );
-    button(
-        world,
-        toolbar,
-        n,
-        if n.live { "Read" } else { "Write" },
-        if n.live { Action::Read } else { Action::Write },
-        true,
-    );
-    button(
-        world,
-        toolbar,
-        n,
-        "Find / Replace",
-        Action::Find,
-        n.views.contains_key(&path),
-    );
+    // One header row, as in medousa-home: the path, Save only while there is
+    // something to save, find, and everything else behind "…".
     if n.loads.contains_key(&path) {
         caption(world, notice, "Checking latest version…");
     }
@@ -862,28 +859,25 @@ fn render(world: &mut World, n: &mut Notes) {
             );
         }
         let saving = n.saves.contains_key(&path);
-        button(
-            world,
-            toolbar,
-            n,
-            if saving { "Saving…" } else { "Save" },
-            Action::Save,
-            b.dirty
-                && !b.conflict
-                && !saving
-                && !n.loads.contains_key(&path)
-                && !n.uncertain.contains(&path)
-                && !n.remote.contains_key(&path)
-                && b.content_hash.as_ref().is_some_and(|s| !s.is_empty()),
-        );
-        button(
-            world,
-            toolbar,
-            n,
-            "Refresh",
-            Action::Check,
-            !saving && !n.loads.contains_key(&path),
-        );
+        if b.dirty || saving {
+            button(
+                world,
+                toolbar,
+                n,
+                if saving { "Saving…" } else { "Save" },
+                Action::Save,
+                b.dirty
+                    && !b.conflict
+                    && !saving
+                    && !n.loads.contains_key(&path)
+                    && !n.uncertain.contains(&path)
+                    && !n.remote.contains_key(&path)
+                    && b.content_hash.as_ref().is_some_and(|s| !s.is_empty()),
+            );
+        }
+        let viewing = n.views.contains_key(&path);
+        icon_button(world, toolbar, n, Icon::Search, "Find / Replace", |_| Action::Find, viewing);
+        icon_button(world, toolbar, n, Icon::Ellipsis, "More note actions", Action::Overflow, true);
         if let Some(remote) = n.remote.get(&path) {
             caption(
                 world,
@@ -991,6 +985,48 @@ fn open_note(world: &mut World, n: &mut Notes, path: String) {
             n.load(path);
         }
         n.redraw = true;
+    }
+}
+/// The editor's "…" menu: modes, find, refresh, and the format commands
+/// that have no glyph in the compact row.
+fn open_overflow(world: &mut World, n: &mut Notes, anchor: Entity) {
+    use rndr_ui::menu::{MenuAt, MenuEntry, MenuItem, open_menu};
+    let Some(path) = n.selected.clone() else {
+        return;
+    };
+    let idle = can_deactivate_views(world, n);
+    let busy = n.saves.contains_key(&path) || n.loads.contains_key(&path);
+    let mut actions = HashMap::new();
+    let mut entry = |label: &str, action: Action, enabled: bool| {
+        let id = next();
+        actions.insert(id, action);
+        MenuEntry::from(MenuItem::new(id, label).enabled(enabled))
+    };
+    let mut entries = vec![
+        if n.live {
+            entry("Read", Action::Read, true)
+        } else {
+            entry("Write", Action::Write, true)
+        },
+        entry(
+            if n.source { "Back to rich editing" } else { "Edit source" },
+            Action::ToggleSource,
+            true,
+        ),
+        entry("Find / Replace", Action::Find, n.views.contains_key(&path)),
+        entry("Check for changes", Action::Check, !busy),
+    ];
+    if n.live {
+        for (label, command) in [
+            ("Quote", MarkdownCommand::Quote),
+            ("Undo", MarkdownCommand::Undo),
+            ("Redo", MarkdownCommand::Redo),
+        ] {
+            entries.push(entry(label, Action::Format(command), idle));
+        }
+    }
+    if let Ok(menu) = open_menu(world, anchor, MenuAt::Below, &entries) {
+        n.menu = Some((menu, actions));
     }
 }
 pub fn tick(world: &mut World) {
@@ -1205,6 +1241,7 @@ pub fn action(world: &mut World, host: &HostIntent) -> bool {
             n.redraw = true;
         }
         Action::Picker(which, anchor) => open_picker(world, &mut n, which, anchor),
+        Action::Overflow(anchor) => open_overflow(world, &mut n, anchor),
         Action::Group(group) => {
             n.group = group;
             n.redraw = true;

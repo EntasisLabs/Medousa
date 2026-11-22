@@ -22,6 +22,15 @@ active workshop in the workshop registry, falling back to Obsidian, and follows
 the system light/dark setting. `src/theme.rs` maps Medousa's roles onto RNDR
 tokens; RNDR's high-contrast palette still takes precedence.
 
+Status speaks only when it has something to say, next to what it is about,
+instead of in a window-wide bar. The foot of the rail shows workshop activity
+with a count (warning tone when work needs a decision; its menu opens each
+item's conversation) and a connection glyph only while disconnected. Chat
+status reads as one line above the composer, the Code editor shows its caret
+and language, and Notes shows its word count. **⌘K** opens a command palette
+for destinations, conversation actions, workshop activity and recent
+conversations.
+
 The shell has a slim app-level rail for **Chat**, **Notes**, **Code**, and **Reviews**, separate from the
 contextual sidebar. Only mounted destinations appear; there are no placeholder
 screens. Switching surfaces retains chat tabs, splits, drafts, scroll, and ongoing

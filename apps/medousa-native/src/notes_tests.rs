@@ -1495,3 +1495,62 @@ fn group_popup_keeps_library_in_place_and_search_preserves_scope() {
     assert_eq!(w.resource::<Notes>().unwrap().group, Some("projects/"));
     assert!(drain_commands(w).is_empty());
 }
+
+fn names(w: &World, parent: Entity) -> Vec<String> {
+    children_of(w, parent)
+        .into_iter()
+        .filter_map(|e| w.get::<Semantics>(e).and_then(|s| s.name.clone()))
+        .collect()
+}
+
+#[test]
+fn note_header_is_one_quiet_row_and_the_rest_lives_behind_more() {
+    let mut app = fixture();
+    let w = app.world_mut();
+    load(w, "a.md", "# A\n\nbody", Some("v1"));
+    tick(w);
+    let toolbar = w.resource::<Notes>().unwrap().toolbar.unwrap();
+    // A clean note: the path, find and "…", no Save and no mode buttons.
+    assert_eq!(names(w, toolbar), ["Find / Replace", "More note actions"]);
+    edit(w, "a.md", "# A\n\nbody, edited");
+    assert!(names(w, toolbar).contains(&"Save".to_string()));
+    // Writing shows four format glyphs, not seven text buttons.
+    click(w, Action::Write);
+    tick(w);
+    let formatting = w.resource::<Notes>().unwrap().formatting.unwrap();
+    assert_eq!(names(w, formatting), ["Bold", "Italic", "Heading", "List"]);
+    // "…" opens a menu whose picks route through the same actions.
+    let more = children_of(w, toolbar)
+        .into_iter()
+        .find(|e| {
+            w.get::<Semantics>(*e).and_then(|s| s.name.as_deref()) == Some("More note actions")
+        })
+        .unwrap();
+    let id = w
+        .resource::<Notes>()
+        .unwrap()
+        .actions
+        .iter()
+        .find(|(_, a)| matches!(a, Action::Overflow(anchor) if *anchor == more))
+        .map(|(id, _)| *id)
+        .expect("the … button routes to the overflow menu");
+    assert!(action(w, &HostIntent::Command(id)));
+    let (menu, actions) = w.resource::<Notes>().unwrap().menu.clone().unwrap();
+    let source = actions
+        .iter()
+        .find(|(_, a)| matches!(a, Action::ToggleSource))
+        .map(|(id, _)| *id)
+        .unwrap();
+    assert!(actions.values().any(|a| matches!(a, Action::Format(MarkdownCommand::Quote))));
+    let before = w.resource::<Notes>().unwrap().source;
+    send(
+        w,
+        rndr_ui::menu::MenuPicked {
+            menu: menu.root,
+            item: source,
+        },
+    );
+    app.update();
+    tick(app.world_mut());
+    assert_ne!(app.world().resource::<Notes>().unwrap().source, before);
+}

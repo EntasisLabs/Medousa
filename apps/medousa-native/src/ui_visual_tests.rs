@@ -1090,3 +1090,49 @@ fn empty_presence_visual_acceptance() {
         .unwrap();
     }
 }
+
+#[test]
+#[ignore = "Command palette Parley/GPU acceptance"]
+fn command_palette_visual_acceptance() {
+    let engine: Arc<dyn TextEngine> = Arc::new(rndr_render::ParleyText::new());
+    let mut exporter = rndr_render::Exporter::new().unwrap();
+    std::fs::create_dir_all("verification").unwrap();
+    for (width, height, dark, suffix) in [(1200, 850, true, "dark"), (1200, 850, false, "light")] {
+        let (mut app, _rx) = fixture();
+        app.world_mut()
+            .insert_resource(rndr_ui::InteractionMotion::snap());
+        app.world_mut().insert_resource(engine.clone());
+        app.world_mut()
+            .insert_resource(Viewport::new(width as f32, height as f32));
+        publish_system_appearance(
+            app.world_mut(),
+            SystemAppearance {
+                dark: Some(dark),
+                ..Default::default()
+            },
+        );
+        for _ in 0..8 {
+            rndr_paint::frame(&mut app);
+        }
+        command_palette::open(app.world_mut());
+        // Let RNDR's popup entrance ease finish so the capture is settled.
+        for _ in 0..8 {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            rndr_paint::frame(&mut app);
+        }
+        assert!(command_palette::handle(app.world()).is_open(app.world()));
+        let (_, image) = rndr_paint::frame_with_snapshot_frame(&mut app, |world, frame| {
+            exporter
+                .render_frame(Some(world), frame, width, height, 1.)
+                .unwrap()
+        });
+        image::save_buffer(
+            format!("verification/native-command-palette-{suffix}.png"),
+            &image.rgba,
+            image.width,
+            image.height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+}
