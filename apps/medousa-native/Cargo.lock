@@ -2322,6 +2322,8 @@ dependencies = [
  "pulldown-cmark",
  "reqwest",
  "rfd",
+ "rndr_canvas",
+ "rndr_canvas_ui",
  "rndr_core",
  "rndr_markdown",
  "rndr_markdown_ui",
@@ -2329,6 +2331,7 @@ dependencies = [
  "rndr_render",
  "rndr_term",
  "rndr_ui",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -3774,6 +3777,25 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rndr_canvas"
+version = "0.6.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "rndr_canvas_ui"
+version = "0.6.0"
+dependencies = [
+ "rndr_canvas",
+ "rndr_core",
+ "rndr_paint",
+ "rndr_ui",
 ]
 
 [[package]]

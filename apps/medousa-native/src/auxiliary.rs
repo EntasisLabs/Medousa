@@ -16,6 +16,7 @@ pub enum Command {
     Code(crate::code::CodeCommand),
     Review(crate::reviews::Command),
     Calendar(crate::calendar::Command),
+    Create(crate::create::Command),
     Peers(crate::peers::Command),
     PeerManagement(crate::peer_management::Command),
     Workshop(crate::ui::workshop_status::Command),
@@ -25,6 +26,7 @@ enum Update {
     Code(crate::code::CodeUpdate),
     Review(crate::reviews::Update),
     Calendar(crate::calendar::Update),
+    Create(crate::create::Update),
     Peers(crate::peers::Update),
     PeerManagement(crate::peer_management::Update),
     Workshop(crate::ui::workshop_status::Update),
@@ -94,6 +96,7 @@ impl Auxiliary {
                     Command::Peers(c)=>Ok(Update::Peers(crate::peers::execute(&client,c).await)),
                     Command::Workshop(c)=>Ok(Update::Workshop(crate::ui::workshop_status::execute(&client,c).await)),
                     Command::Calendar(c)=>Ok(Update::Calendar(crate::calendar::execute(&client,c).await)),
+                    Command::Create(c)=>Ok(Update::Create(crate::create::execute(&client,c).await)),
                     Command::Note(c)=>Ok(Update::Note(crate::notes::execute(&client,c).await)),
                     Command::Review(c)=>Ok(Update::Review(crate::reviews::execute(&client,c).await)),
                     Command::Code(c)=>Ok(Update::Code(crate::code::execute(&client,c).await)),
@@ -127,6 +130,7 @@ pub fn tick(world: &mut World) {
             Update::Peers(u) => crate::peers::apply(world, u),
             Update::Workshop(u) => crate::ui::workshop_status::apply(world, u),
             Update::Calendar(u) => crate::calendar::apply(world, u),
+            Update::Create(u) => crate::create::apply(world, u),
             Update::Note(u) => crate::notes::apply(world, u),
             Update::Review(u) => crate::reviews::apply(world, u),
             Update::Code(u) => crate::code::apply(world, u),
@@ -169,6 +173,11 @@ pub fn dispatch(world: &mut World) {
             crate::calendar::take_commands(world)
                 .into_iter()
                 .map(Command::Calendar),
+        )
+        .chain(
+            crate::create::take_commands(world)
+                .into_iter()
+                .map(Command::Create),
         )
         .chain(
             crate::peers::take_commands(world)

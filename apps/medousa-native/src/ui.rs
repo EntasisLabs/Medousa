@@ -195,6 +195,8 @@ pub fn app() -> App {
         ..Default::default()
     });
     app.add_system(Schedule::Startup, setup);
+    // Before layout's scroll pass, so the canvas pans and zooms with the wheel.
+    app.add_system_front(Schedule::Input, crate::create::take_wheel);
     app.add_system(Schedule::Update, visual::reading_zoom);
     app.add_system(Schedule::Update, visual::sync_appearance);
     app.add_system(Schedule::Update, update);
@@ -1337,6 +1339,14 @@ fn update(world: &mut World) {
                 }
                 continue;
             }
+            crate::surfaces::SurfaceId::Create => {
+                if !rndr_canvas_ui::panels::dispatch(world, &intent)
+                    && let Some(host) = host
+                {
+                    crate::create::action(world, &host);
+                }
+                continue;
+            }
             crate::surfaces::SurfaceId::Peers => {
                 if let Some(host) = host {
                     crate::peers::action(world, &host);
@@ -1391,6 +1401,7 @@ fn update(world: &mut World) {
     crate::code::sync(world);
     crate::reviews::sync(world);
     crate::calendar::sync(world);
+    crate::create::sync(world);
     crate::peers::sync(world);
     auxiliary::dispatch(world);
     // Every adapter above reads canonical SourceSession text/revision, not its

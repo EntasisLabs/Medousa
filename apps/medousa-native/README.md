@@ -37,6 +37,15 @@ screens. Switching surfaces retains chat tabs, splits, drafts, scroll, and ongoi
 streams. Notes and Code have their own editor focus; chat send shortcuts are
 inactive in either editor.
 
+**Create** edits the workshop's canvas projects, the same `medousa-create`
+documents medousa-home opens. The sidebar starts a project from medousa-home's
+templates and lists pinned and recent ones. The canvas is RNDR's editor in
+remote mode: an edit shows at once and the worker saves it to the daemon in
+order, one request at a time. If the workshop is unreachable the edit stays on
+screen and **Retry** resends the same request; if another window saved first,
+the canvas reloads the daemon's copy. Tool letters reach the canvas only while
+no other control has focus.
+
 The Chat surface contains a left conversation sidebar and native chat workspace.
 Session search/paging and mutations, model/mode/depth controls, source-document
 composition, typed history/stream rendering, attachments, runtime controls,
